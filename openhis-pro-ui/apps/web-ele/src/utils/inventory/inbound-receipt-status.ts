@@ -1,6 +1,6 @@
 /**
  * 药库进货单状态（与后端枚举 code / 部分数字形态对齐）。
- * 可编辑：仅 PENDING_APPROVAL、REJECT；本地草稿另由调用方处理。
+ * 可编辑（已落库）：PENDING_APPROVAL、REJECT、WITHDRAW；本地草稿另由调用方处理。
  */
 
 /** 后端若用 1～12 等数字表示状态时的映射（与常见 Java ordinal 对齐，可按联调再调） */
@@ -40,11 +40,15 @@ export function normalizeInboundReceiptStatusEnum(raw: unknown): string {
   return String(raw).trim().toUpperCase();
 }
 
-/** 已落库单据是否允许改单头/明细（不含本地草稿） */
+/** 已落库单据是否允许改单头/明细（不含本地草稿）；待审核/驳回/已撤回可编辑后重提 */
 export function isInboundReceiptDocumentEditableByCode(normalizedCode: string): boolean {
   if (!normalizedCode) return false;
   if (normalizedCode === 'DRAFT') return true;
-  return normalizedCode === 'PENDING_APPROVAL' || normalizedCode === 'REJECT';
+  return (
+    normalizedCode === 'PENDING_APPROVAL' ||
+    normalizedCode === 'REJECT' ||
+    normalizedCode === 'WITHDRAW'
+  );
 }
 
 export function isInboundReceiptDocumentEditableRaw(statusRaw: unknown): boolean {
@@ -57,51 +61,62 @@ export function inboundReceiptStatusLabel(normalizedOrRaw: unknown): string {
   return STATUS_LABELS[code] ?? code;
 }
 
+/** 供应单据是否已审批通过（同意） */
+export function isSupplyStatusApproved(raw: unknown): boolean {
+  return normalizeInboundReceiptStatusEnum(raw) === 'AGREE';
+}
+
+/** 供应单据是否为本地/未落库草稿态 */
+export function isSupplyStatusDraft(raw: unknown): boolean {
+  const code = normalizeInboundReceiptStatusEnum(raw);
+  return !code || code === 'DRAFT';
+}
+
+/** 供应单据是否为驳回态（侧栏展示驳回原因用） */
+export function isSupplyStatusRejected(raw: unknown): boolean {
+  return normalizeInboundReceiptStatusEnum(raw) === 'REJECT';
+}
+
 export interface InboundReceiptDocActionFlags {
   saveDisabled: boolean;
   saveAndSubmitDisabled: boolean;
   removeDisabled: boolean;
-  submitApprovalDisabled: boolean;
-  withdrawDisabled: boolean;
-  approveDisabled: boolean;
-  rejectDisabled: boolean;
 }
 
 /**
  * 底部单据按钮禁用态（与 documentEditable、状态码组合）。
  * 草稿：可保存/保存并提交/删除草稿；提交/撤回/审批另走落库后逻辑。
+ * busy=true 时三键全禁用，防止双击并发建单/软删重插出重复明细。
  */
 export function buildInboundReceiptDocActionFlags(params: {
   documentEditable: boolean;
   hasPersistedBusNo: boolean;
   isDraft: boolean;
   statusRaw: unknown;
+  /** 保存/提交进行中 */
+  busy?: boolean;
 }): InboundReceiptDocActionFlags {
+  if (params.busy) {
+    return {
+      saveDisabled: true,
+      saveAndSubmitDisabled: true,
+      removeDisabled: true,
+    };
+  }
+
   if (params.isDraft) {
     return {
       saveDisabled: false,
       saveAndSubmitDisabled: false,
       removeDisabled: false,
-      submitApprovalDisabled: true,
-      withdrawDisabled: true,
-      approveDisabled: true,
-      rejectDisabled: true,
     };
   }
 
-  const code = normalizeInboundReceiptStatusEnum(params.statusRaw);
   const ro = !params.documentEditable;
-
-  const canResubmit =
-    params.hasPersistedBusNo && (code === 'REJECT' || code === 'WITHDRAW' || code === 'DRAFT');
 
   return {
     saveDisabled: ro,
     saveAndSubmitDisabled: ro,
     removeDisabled: ro,
-    submitApprovalDisabled: !canResubmit,
-    withdrawDisabled: !(code === 'PENDING_APPROVAL' || code === 'APPROVAL'),
-    approveDisabled: !(code === 'APPROVAL' || code === 'PENDING_REVIEW'),
-    rejectDisabled: !(code === 'APPROVAL' || code === 'PENDING_REVIEW'),
   };
 }

@@ -44,6 +44,8 @@ export interface NurseStationPatientListPanelContext {
   changeWardIds: (value: string[]) => void;
   toggleFilterPanel: () => void;
   refreshPatientFilters: () => Promise<void>;
+  /** 出院医嘱校对等变更就诊态后，同步刷新入出转床位图（含出 Tab） */
+  refreshWorkbenchAfterEncounterFlowChange: () => Promise<void>;
   togglePatientCardSelection: (id: string) => void;
   /** 双击患者卡片打开入科选床弹窗 */
   onPatientCardDblClick: (patient: PatientItem) => void;

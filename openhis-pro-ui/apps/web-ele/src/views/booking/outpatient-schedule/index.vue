@@ -131,20 +131,59 @@ const { run: runInit, loading: initLoading } = useRequest(loadScheduleFormInitAp
 const { run: runCalendar, loading: calendarLoading } = useRequest(pageSchedulesByCalendarApi, {
   manual: true,
   onSuccess: (res) => {
-    calendarDays.value = res?.days ?? [];
+    calendarDays.value = stripTemplatePreviewDays(res?.days ?? []);
   },
 });
 
 const { run: runMonth, loading: monthLoading } = useRequest(pageSchedulesByMonthApi, {
   manual: true,
   onSuccess: (res) => {
-    monthDays.value = res?.days ?? [];
+    monthDays.value = stripTemplatePreviewDays(res?.days ?? []);
     monthSummary.value = res?.summary;
     if (res?.yearMonth) {
       yearMonth.value = res.yearMonth;
     }
   },
 });
+
+/** 周历暂不展示 TW 占位预览格，避免未选模板时出现虚线预览 */
+function stripTemplatePreviewDays<T extends { schedules?: ScheduleCalendarCellDto[] }>(
+  days: T[],
+): T[] {
+  return days.map((day) => ({
+    ...day,
+    schedules: (day.schedules ?? []).filter(
+      (schedule) => !schedule.fromTemplate && schedule.statusEnum !== 'FROM_TEMPLATE',
+    ),
+  }));
+}
+
+function resolveGenerateRangeForKind(kind: 'DAY' | 'WEEK'): {
+  rangeStart: string;
+  rangeEnd: string;
+} {
+  if (kind === 'DAY') {
+    const day = anchorDate.value || todayLocalDateIso();
+    return { rangeStart: day, rangeEnd: day };
+  }
+  if (viewMode.value === 'month') {
+    return monthRangeIso(yearMonth.value);
+  }
+  return focusWeekRange.value;
+}
+
+function applyGenerateRangeForKind(kind: 'DAY' | 'WEEK') {
+  const range = resolveGenerateRangeForKind(kind);
+  t2GenerateRangeStart.value = range.rangeStart;
+  t2GenerateRangeEnd.value = range.rangeEnd;
+}
+
+function syncDayGenerateEnd() {
+  if (t2TemplateKind.value !== 'DAY') {
+    return;
+  }
+  t2GenerateRangeEnd.value = t2GenerateRangeStart.value;
+}
 
 function pickScheduleOrganizationId(
   departments: BookingOptionDto[] | undefined,
@@ -166,13 +205,16 @@ async function loadT1TemplateOptions(orgId?: BookingEntityId) {
   t1TemplateOptions.value = res?.options ?? [];
 }
 
-async function loadFormInit(preferredOrganizationId?: BookingEntityId) {
+async function loadFormInit(
+  preferredOrganizationId?: BookingEntityId,
+  practitionerId?: BookingEntityId,
+) {
   const candidate =
     preferredOrganizationId ?? scheduleOrganizationId.value ?? loginOrganizationId.value;
-  let response = await runInit({ organizationId: candidate });
+  let response = await runInit({ organizationId: candidate, practitionerId });
   let resolved = pickScheduleOrganizationId(response?.departments, candidate);
   if (resolved !== undefined && resolved !== candidate) {
-    response = await runInit({ organizationId: resolved });
+    response = await runInit({ organizationId: resolved, practitionerId });
   }
   scheduleOrganizationId.value = resolved;
   await loadT1TemplateOptions(resolved);
@@ -230,6 +272,12 @@ async function handleScheduleOrganizationChange() {
   await loadCalendar();
 }
 
+async function handlePractitionerFilterChange() {
+  filters.healthcareServiceId = undefined;
+  await loadFormInit(scheduleOrganizationId.value, filters.practitionerId);
+  await loadCalendar();
+}
+
 function shiftWeek(delta: number) {
   anchorDate.value = addDaysIso(anchorDate.value, delta * 7);
   yearMonth.value = currentYearMonth(anchorDate.value);
@@ -254,6 +302,7 @@ function switchViewMode(mode: ViewMode) {
 
 function handleCellSelect(payload: { date: string; schedule: ScheduleCalendarCellDto }) {
   actionCreateMode.value = false;
+  anchorDate.value = payload.date;
   selectedDate.value = payload.date;
   selectedSchedule.value = payload.schedule;
   actionVisible.value = true;
@@ -276,6 +325,25 @@ function handleMonthDaySelect(payload: { date: string; schedules: ScheduleCalend
   void loadWeekCalendar();
 }
 
+function handleDayAnchor(payload: { date: string }) {
+  anchorDate.value = payload.date;
+  selectedDate.value = payload.date;
+}
+
+function handleDayOpen(payload: { date: string; schedules: ScheduleCalendarCellDto[] }) {
+  anchorDate.value = payload.date;
+  selectedDate.value = payload.date;
+  if (payload.schedules.length === 1) {
+    handleCellSelect({ date: payload.date, schedule: payload.schedules[0]! });
+    return;
+  }
+  if (payload.schedules.length > 1) {
+    handleCellSelect({ date: payload.date, schedule: payload.schedules[0]! });
+    return;
+  }
+  openCreateDrawer(payload.date);
+}
+
 function openCreateDrawer(date?: string) {
   actionCreateMode.value = true;
   selectedSchedule.value = null;
@@ -286,10 +354,6 @@ function openCreateDrawer(date?: string) {
     selectedDate.value = anchorDate.value;
   }
   actionVisible.value = true;
-}
-
-function handleDayCreate(payload: { date: string }) {
-  openCreateDrawer(payload.date);
 }
 
 function targetWeekHasRealSchedules(rangeStart: string, rangeEnd: string) {
@@ -372,10 +436,7 @@ async function openT2TemplateDialog() {
   twTemplateId.value = toBookingId(twTemplateOptions.value[0]?.id);
   t2AutoPublish.value = true;
   t2AutoProvision.value = false;
-  const defaultRange =
-    viewMode.value === 'month' ? monthRangeIso(yearMonth.value) : focusWeekRange.value;
-  t2GenerateRangeStart.value = defaultRange.rangeStart;
-  t2GenerateRangeEnd.value = defaultRange.rangeEnd;
+  applyGenerateRangeForKind(t2TemplateKind.value);
   t2TemplateVisible.value = true;
 }
 
@@ -393,9 +454,12 @@ async function handleGenerateFromT2Template() {
     return;
   }
   const rangeStart = t2GenerateRangeStart.value?.trim();
-  const rangeEnd = t2GenerateRangeEnd.value?.trim();
+  let rangeEnd = t2GenerateRangeEnd.value?.trim();
+  if (t2TemplateKind.value === 'DAY') {
+    rangeEnd = rangeStart;
+  }
   if (!rangeStart || !rangeEnd) {
-    ElMessage.warning('请选择生成日期区间');
+    ElMessage.warning(t2TemplateKind.value === 'DAY' ? '请选择出诊日期' : '请选择生成日期区间');
     return;
   }
   if (rangeEnd < rangeStart) {
@@ -432,6 +496,13 @@ async function handleGenerateFromT2Template() {
   }
   ElMessage.success(msg);
 }
+
+watch(t2TemplateKind, (kind) => {
+  if (!t2TemplateVisible.value) {
+    return;
+  }
+  applyGenerateRangeForKind(kind);
+});
 
 watch(actionVisible, (open) => {
   if (!open) {
@@ -491,7 +562,7 @@ onMounted(refreshAll);
           filterable
           :placeholder="practitionerEmptyHint || '医师'"
           style="width: 180px"
-          @change="loadCalendar"
+          @change="handlePractitionerFilterChange"
         >
           <ElOption
             v-for="item in practitionerOptions"
@@ -574,9 +645,12 @@ onMounted(refreshAll);
           :days="calendarDays"
           :loading="calendarLoading"
           :anchor-date="anchorDate"
+          :organization-id="scheduleOrganizationId"
           :practitioners="initData.practitioners"
+          :departments="initData.departments"
           @select="handleCellSelect"
-          @create="handleDayCreate"
+          @anchor="handleDayAnchor"
+          @open-day="handleDayOpen"
         />
       </div>
 
@@ -595,7 +669,7 @@ onMounted(refreshAll);
         :selected-date="selectedDate"
         :schedule="selectedSchedule"
         :practitioners="initData.practitioners"
-        :clinic-locations="initData.clinicLocations"
+        :departments="initData.departments"
         :healthcare-services="initData.healthcareServices"
         :slot-provision-template-options="t1TemplateOptions"
         @refreshed="handleDrawerRefreshed"
@@ -603,9 +677,10 @@ onMounted(refreshAll);
 
       <ElDialog v-model="t2TemplateVisible" title="生成正式排班" width="520px">
         <p class="booking-schedule-page__hint booking-schedule-page__hint--block">
-          将「排班设置」中的<strong>日/周排班</strong>批量生成为正式日程。
-          默认<strong>自动发布</strong>（周历绿格）；关闭后生成<strong>草稿</strong>（灰格），点格子可手动发布。
-          无论哪种方式，还须<strong>放号</strong>后患者才可约。
+          将「排班设置」中的模板生成为正式日程。
+          <strong>日排班</strong>仅生成选定单日；<strong>周排班</strong>在区间内按 weekday
+          逐日映射。
+          默认自动发布（绿格）；关闭后为草稿（灰格）。还须<strong>放号</strong>后患者才可约。
         </p>
         <ElForm label-width="108px">
           <ElFormItem label="排班类型" required>
@@ -644,7 +719,18 @@ onMounted(refreshAll);
               />
             </ElSelect>
           </ElFormItem>
-          <ElFormItem label="生成区间" required>
+          <ElFormItem v-if="t2TemplateKind === 'DAY'" label="出诊日期" required>
+            <ElDatePicker
+              v-model="t2GenerateRangeStart"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="选择日期"
+              style="width: 100%"
+              @change="syncDayGenerateEnd"
+            />
+            <p class="booking-schedule-page__hint">仅生成选定单日；要排整周请切换为「周排班」</p>
+          </ElFormItem>
+          <ElFormItem v-else label="生成区间" required>
             <ElDatePicker
               v-model="t2GenerateRangeStart"
               type="date"
@@ -661,7 +747,7 @@ onMounted(refreshAll);
               style="width: 140px"
             />
             <p class="booking-schedule-page__hint">
-              区间内逐日生成；已存在排班或 T3 停诊日会自动跳过
+              按周排班模板映射 weekday；已存在排班或 T3 停诊日会自动跳过
             </p>
           </ElFormItem>
           <ElFormItem label="自动发布">

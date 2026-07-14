@@ -57,6 +57,7 @@ const {
   adviceMutationLoading,
   adviceTableRef,
   adviceWorkspaceTableLoading,
+  adviceWriteDisabled,
   addDrugGuardWestern,
   calcDrugLineTotalFee,
   feeNatureOptions,
@@ -154,7 +155,7 @@ async function promptInpatientTemplateTherapyType(): Promise<InpatientAdviceTher
 
 /** 侧栏点击组套：确认长临后预览并套用至当前就诊草稿 */
 async function handleOrderTemplateSelect(header: null | OrderTemplateHeaderItem) {
-  if (!header || orderTemplateApplyLoading.value) {
+  if (!header || orderTemplateApplyLoading.value || adviceWriteDisabled.value) {
     return;
   }
   const orderTemplateId = preserveApiIdForRequest(header.orderTemplateId);
@@ -240,30 +241,61 @@ function handleQuickAction(action: InpatientAdviceQuickAction) {
 
     <div class="ip-advice-workspace flex h-full min-h-0 flex-col p-2">
       <div class="mb-2 flex w-full flex-shrink-0 flex-wrap items-center gap-1">
-        <ElButton type="primary" @click="handleAdd()">新增</ElButton>
-        <ElButton type="primary" @click="handleOpenTcmDialog()">中药处方</ElButton>
-        <ElButton type="primary" :loading="adviceMutationLoading" @click="handleSign()">
+        <ElButton type="primary" :disabled="adviceWriteDisabled" @click="handleAdd()"
+          >新增</ElButton
+        >
+        <ElButton type="primary" :disabled="adviceWriteDisabled" @click="handleOpenTcmDialog()">
+          中药处方
+        </ElButton>
+        <ElButton
+          type="primary"
+          :disabled="adviceWriteDisabled"
+          :loading="adviceMutationLoading"
+          @click="handleSign()"
+        >
           签发
         </ElButton>
-        <ElButton type="warning" plain :loading="adviceMutationLoading" @click="handleWithdraw()">
+        <ElButton
+          type="warning"
+          plain
+          :disabled="adviceWriteDisabled"
+          :loading="adviceMutationLoading"
+          @click="handleWithdraw()"
+        >
           撤回
         </ElButton>
-        <ElButton type="warning" :loading="adviceMutationLoading" @click="handleStopLongTerm()">
+        <ElButton
+          type="warning"
+          :disabled="adviceWriteDisabled"
+          :loading="adviceMutationLoading"
+          @click="handleStopLongTerm()"
+        >
           停嘱
         </ElButton>
         <ElButton
           type="warning"
           plain
+          :disabled="adviceWriteDisabled"
           :loading="adviceMutationLoading"
           @click="handleCancelStopLongTerm()"
         >
           取消停嘱
         </ElButton>
-        <ElButton type="danger" plain :loading="adviceMutationLoading" @click="handleDelete()">
+        <ElButton
+          type="danger"
+          plain
+          :disabled="adviceWriteDisabled"
+          :loading="adviceMutationLoading"
+          @click="handleDelete()"
+        >
           删除
         </ElButton>
-        <ElButton plain @click="handleMedicationUngroup">拆组</ElButton>
-        <ElButton plain @click="handleMedicationAssignGroup">并组</ElButton>
+        <ElButton plain :disabled="adviceWriteDisabled" @click="handleMedicationUngroup"
+          >拆组</ElButton
+        >
+        <ElButton plain :disabled="adviceWriteDisabled" @click="handleMedicationAssignGroup"
+          >并组</ElButton
+        >
       </div>
 
       <div
@@ -395,7 +427,11 @@ function handleQuickAction(action: InpatientAdviceQuickAction) {
         </ElTable>
       </div>
 
-      <InpatientAdviceQuickActionBar class="flex-shrink-0" @action="handleQuickAction" />
+      <InpatientAdviceQuickActionBar
+        class="flex-shrink-0"
+        :disabled="adviceWriteDisabled"
+        @action="handleQuickAction"
+      />
 
       <AppDialog
         v-model="tcmDialogVisible"

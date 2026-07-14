@@ -69,7 +69,12 @@ function resolveEncounterClassCode(kind: EmrTemplateStationKind | undefined): st
 async function fetchDocumentTypesForTree(): Promise<DocumentTypeDto[]> {
   const params = props.documentTypesEnabledOnly ? { enabled: true } : {};
   const list = await getDocumentTypeListApi(params);
-  return unwrapApiList<DocumentTypeDto>(list);
+  const rows = unwrapApiList<DocumentTypeDto>(list);
+  if (rows.length > 0 || !props.documentTypesEnabledOnly) {
+    return rows;
+  }
+  const fallback = await getDocumentTypeListApi({});
+  return unwrapApiList<DocumentTypeDto>(fallback);
 }
 
 /** 模板分页拉全量（listForStation 不可用时的回退） */
@@ -106,7 +111,12 @@ async function fetchTemplatesForTree(): Promise<TemplateDto[]> {
       stationKind: kind,
       enabled: props.templatesEnabledOnly ? true : undefined,
     });
-    return unwrapApiList<TemplateDto>(list);
+    const rows = unwrapApiList<TemplateDto>(list);
+    if (rows.length > 0) {
+      return rows;
+    }
+    // listForStation 成功但为空：回退分页拉 IMP/AMB 模板（含全院维护、未挂科室可见范围的模板）
+    return fetchTemplatesByPagedList(encounterClassCode);
   } catch (stationError) {
     console.warn('[EmrTemplateTree] listForStation failed, fallback to getList', stationError);
     return fetchTemplatesByPagedList(encounterClassCode);
@@ -196,7 +206,10 @@ defineExpose({
 <template>
   <div v-loading="loading" class="min-h-[120px]">
     <div v-if="!loading && treeData.length === 0" class="text-text-sub py-8 text-center text-sm">
-      暂无文书类型或模板
+      <p>暂无文书类型或模板</p>
+      <p v-if="stationKind === EMR_TEMPLATE_STATION_KIND.INPATIENT" class="mt-2 text-xs">
+        请在「基础数据 → 病历模板」维护住院（IMP）文书类型与模板，或联系管理员配置全院模板
+      </p>
     </div>
     <ElTree
       v-else

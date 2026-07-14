@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { ActionRecord } from './types';
+import type { ActionRecord, NurseActionRecordTypeFilter } from './types';
+import { NURSE_ACTION_RECORD_TYPE_LABEL } from './types';
 
 import { ElButton, ElDrawer, ElTag } from 'element-plus';
 
@@ -16,7 +17,7 @@ interface Props {
 }
 
 const open = defineModel<boolean>('open', { required: true });
-const recordTypeFilter = defineModel<'全部' | '打印' | '执行'>('recordTypeFilter', {
+const recordTypeFilter = defineModel<NurseActionRecordTypeFilter>('recordTypeFilter', {
   required: true,
 });
 </script>
@@ -27,22 +28,22 @@ const recordTypeFilter = defineModel<'全部' | '打印' | '执行'>('recordType
       <div class="mb-3 flex items-center gap-2">
         <ElButton
           size="small"
-          :type="recordTypeFilter === '全部' ? 'primary' : 'default'"
-          @click="recordTypeFilter = '全部'"
+          :type="recordTypeFilter === '' ? 'primary' : 'default'"
+          @click="recordTypeFilter = ''"
         >
           全部
         </ElButton>
         <ElButton
           size="small"
-          :type="recordTypeFilter === '执行' ? 'primary' : 'default'"
-          @click="recordTypeFilter = '执行'"
+          :type="recordTypeFilter === 'EXECUTE' ? 'primary' : 'default'"
+          @click="recordTypeFilter = 'EXECUTE'"
         >
           执行
         </ElButton>
         <ElButton
           size="small"
-          :type="recordTypeFilter === '打印' ? 'primary' : 'default'"
-          @click="recordTypeFilter = '打印'"
+          :type="recordTypeFilter === 'PRINT' ? 'primary' : 'default'"
+          @click="recordTypeFilter = 'PRINT'"
         >
           打印
         </ElButton>
@@ -58,23 +59,22 @@ const recordTypeFilter = defineModel<'全部' | '打印' | '执行'>('recordType
         <div>操作人</div>
         <div>结果</div>
       </div>
-      <div class="mt-2 min-h-0 flex-1 space-y-2 overflow-y-auto">
+      <div class="min-h-0 flex-1 overflow-y-auto">
         <div
           v-for="record in records"
           :key="record.id"
-          class="bg-muted/45 grid grid-cols-[130px_52px_72px_minmax(0,1fr)_72px_52px] items-center gap-2 rounded-md px-3 py-2 text-xs text-gray-700"
+          class="grid grid-cols-[130px_52px_72px_minmax(0,1fr)_72px_52px] gap-2 border-b border-[var(--el-border-color-lighter)] px-2 py-2 text-xs"
         >
-          <div>{{ record.time }}</div>
-          <div>{{ record.type }}</div>
-          <div>{{ record.action }}</div>
-          <div class="truncate">{{ record.target }}</div>
-          <div class="truncate" :title="record.operator">{{ record.operator }}</div>
+          <div class="truncate">{{ record.time }}</div>
           <div>
-            <ElTag size="small" type="success">{{ record.result }}</ElTag>
+            <ElTag size="small" :type="record.type === 'EXECUTE' ? 'warning' : 'info'">
+              {{ NURSE_ACTION_RECORD_TYPE_LABEL[record.type] }}
+            </ElTag>
           </div>
-        </div>
-        <div v-if="records.length === 0" class="py-10 text-center text-sm text-gray-400">
-          暂无记录
+          <div class="truncate">{{ record.action }}</div>
+          <div class="truncate">{{ record.target }}</div>
+          <div class="truncate">{{ record.operator }}</div>
+          <div>{{ record.result }}</div>
         </div>
       </div>
     </div>

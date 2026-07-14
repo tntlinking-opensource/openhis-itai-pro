@@ -3,12 +3,12 @@ import type { ServiceCatalogInitResponse, ServiceCatalogItem } from '#/api';
 
 import type { NationalCatalogItem } from '#/chs/api';
 
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
 
 import { Delete, Plus } from '@element-plus/icons-vue';
-import { ElButton, ElMessage, ElMessageBox } from 'element-plus';
+import { ElAlert, ElButton, ElMessage, ElMessageBox } from 'element-plus';
 
 import { useVbenForm } from '#/adapter/form';
 import {
@@ -27,6 +27,27 @@ import {
 } from '#/chs/constants/insurance-contract';
 import { ensureInsuranceSignIn } from '#/chs/utils/ensure-insurance-sign-in';
 import ServiceCatalogSelect from '#/components/select-service-catalog.vue';
+import {
+  calcMoneyLineTotal,
+  formatMoneyDisplay,
+  sumMoneyThenSettle,
+} from '#/utils/format/money-scale';
+import {
+  applyCatalogEditabilityFromDetail,
+  buildCatalogEditabilitySchemaPatches,
+  CATALOG_EDITABILITY_OK,
+  isCatalogStructureLocked,
+  isServiceCatalogFieldLocked,
+} from '#/views/basic/catalog/catalog-editability';
+
+interface ServiceCatalogChildRow {
+  activityId?: number;
+  childrenId?: string;
+  childrenName?: string;
+  childrenNum?: number;
+  childrenRetailPrice?: number;
+  id?: number;
+}
 
 defineOptions({
   name: 'ServiceCatalogEditDialog',
@@ -57,6 +78,44 @@ const defaultContractBusNo = ref<string>();
 const originalData = ref<Partial<ServiceCatalogItem>>({});
 const insuranceFormData = ref<Partial<ServiceCatalogItem>>({});
 const formAreaRef = ref<HTMLElement | null>(null);
+const editabilityCode = ref(CATALOG_EDITABILITY_OK);
+const editabilityMessage = ref('');
+
+const catalogStructureLocked = computed(() => isCatalogStructureLocked(editabilityCode.value));
+
+type OptionItem = {
+  children?: OptionItem[];
+  info?: string;
+  label?: string;
+  name?: string;
+  text?: string;
+  value: number | string;
+};
+
+/** 将 init 下拉规范为 Select options（value 统一 string） */
+const convertOptions = (options: null | OptionItem[] | undefined | unknown) => {
+  if (!options || !Array.isArray(options)) {
+    return [];
+  }
+  return options
+    .filter(
+      (item): item is OptionItem =>
+        typeof item === 'object' &&
+        item !== null &&
+        'value' in item &&
+        (typeof (item as OptionItem).value === 'string' ||
+          typeof (item as OptionItem).value === 'number'),
+    )
+    .map((item) => ({
+      label: item.label || item.info || item.text || item.name || String(item.value),
+      value: String(item.value),
+    }));
+};
+
+/** 病案结算类型候选项（依赖列表页 init） */
+const mrSettlementTypeCodeOptions = computed(() =>
+  convertOptions(props.initOptions?.mrSettlementTypeCodeOptions as OptionItem[] | undefined),
+);
 
 const { handleFormKeydown: handleServiceFormKeydown } = useFormKeyboardNavigation(formAreaRef, {
   selectors: EXTENDED_FORM_KEYBOARD_SELECTORS,
@@ -209,18 +268,179 @@ async function handleRevoke3302() {
   }
 }
 
-const defaultChildrenRow = () => ({
-  childrenId: undefined as string | undefined,
+const childrenList = ref<ServiceCatalogChildRow[]>([]);
+
+const hasSelectedChildren = computed(() =>
+  childrenList.value.some((row) => Boolean(String(row.childrenId ?? '').trim())),
+);
+
+const defaultChildrenRow = (): ServiceCatalogChildRow => ({
+  childrenId: undefined,
   childrenName: '',
-  childrenNum: undefined as number | undefined,
+  childrenNum: undefined,
+  childrenRetailPrice: undefined,
 });
+
+/** 将接口金额字段转为数字，非法值返回 undefined */
+function coerceRetailPrice(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === '') {
+    return undefined;
+  }
+  const num = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(num) ? num : undefined;
+}
+
+/** 子项单价展示文案 */
+function formatChildUnitPrice(price: number | undefined): string {
+  if (price === undefined || price === null || !Number.isFinite(price)) {
+    return '-';
+  }
+  return formatMoneyDisplay(price);
+}
+
+/** 子项行小计（单价 × 执行次数） */
+function formatChildLineTotal(item: ServiceCatalogChildRow): string {
+  const price = item.childrenRetailPrice;
+  if (price === undefined || price === null || !Number.isFinite(price)) {
+    return '-';
+  }
+  const count = item.childrenNum && item.childrenNum > 0 ? item.childrenNum : 1;
+  return formatMoneyDisplay(calcMoneyLineTotal(price, count));
+}
+
+/** 按子项单价与执行次数合计零售价（6 位加总后 2 位） */
+function calcChildrenRetailTotal(list: ServiceCatalogChildRow[]): number {
+  const lineTotals: number[] = [];
+  for (const item of list) {
+    const childId = String(item.childrenId ?? '').trim();
+    if (!childId) {
+      continue;
+    }
+    const unitPrice = item.childrenRetailPrice;
+    if (unitPrice === undefined || unitPrice === null) {
+      continue;
+    }
+    const count = item.childrenNum && item.childrenNum > 0 ? item.childrenNum : 1;
+    lineTotals.push(calcMoneyLineTotal(unitPrice, count));
+  }
+  return sumMoneyThenSettle(lineTotals);
+}
+
+/** 存在已选子项时，将零售价同步为子项合计 */
+function syncRetailPriceFromChildren() {
+  if (!hasSelectedChildren.value) {
+    return;
+  }
+  formApi.setFieldValue('retailPrice', calcChildrenRetailTotal(childrenList.value));
+}
+
+/** 编辑回显时按子项 id 补齐单价 */
+async function hydrateChildrenRetailPrices(
+  children: ServiceCatalogChildRow[],
+): Promise<ServiceCatalogChildRow[]> {
+  return Promise.all(
+    children.map(async (child) => {
+      if (!child.childrenId || child.childrenRetailPrice !== undefined) {
+        return child;
+      }
+      try {
+        const response = await getServiceCatalogApi({ id: String(child.childrenId) });
+        return {
+          ...child,
+          childrenRetailPrice: coerceRetailPrice(response.data?.retailPrice),
+        };
+      } catch {
+        return child;
+      }
+    }),
+  );
+}
+
+/** 选中/清空子项时同步名称与单价 */
+function handleChildSelect(item: ServiceCatalogChildRow, selected: ServiceCatalogItem[]) {
+  const row = selected[0];
+  if (!row) {
+    item.childrenName = '';
+    item.childrenRetailPrice = undefined;
+    return;
+  }
+  item.childrenName = String(row.name ?? '');
+  item.childrenRetailPrice = coerceRetailPrice(row.retailPrice);
+}
 
 /** 清空弹窗表单与子项列表 */
 async function resetFormState() {
   originalData.value = {};
   insuranceFormData.value = {};
+  editabilityCode.value = CATALOG_EDITABILITY_OK;
+  editabilityMessage.value = '';
   await formApi.resetForm();
   childrenList.value = [defaultChildrenRow()];
+  syncFormFieldAvailability();
+}
+
+/** 按 editabilityCode 同步表单字段 disabled */
+function syncServiceEditabilitySchema() {
+  if (!formApi?.isMounted) {
+    return;
+  }
+  formApi.updateSchema(buildCatalogEditabilitySchemaPatches('service', editabilityCode.value));
+}
+
+/** 零售价禁用态：业务引用锁定优先，其次有子项时自动合计 */
+function syncRetailPriceFieldSchema() {
+  if (!formApi?.isMounted) {
+    return;
+  }
+  const lockedByEditability = isServiceCatalogFieldLocked(editabilityCode.value, 'retailPrice');
+  formApi.updateSchema([
+    {
+      fieldName: 'retailPrice',
+      componentProps: {
+        disabled: lockedByEditability || hasSelectedChildren.value,
+        placeholder: hasSelectedChildren.value ? '由子项自动合计' : '请输入零售价',
+      },
+    },
+  ]);
+}
+
+/** 病案结算类型下拉：保证 options 已挂到 schema（与药品目录 updateFormOptions 同序） */
+function syncMrSettlementTypeOptions() {
+  if (!formApi?.isMounted) {
+    return;
+  }
+  formApi.updateSchema([
+    {
+      fieldName: 'mrSettlementTypeCode',
+      componentProps: {
+        options: mrSettlementTypeCodeOptions.value,
+        filterable: true,
+        placeholder: '请选择病案结算类型',
+        clearable: true,
+        disabled: isServiceCatalogFieldLocked(editabilityCode.value, 'mrSettlementTypeCode'),
+      },
+    },
+  ]);
+}
+
+/** ElSelectV2：options 晚到或 schema 刷新后需重写 modelValue，否则有值也不显示文案 */
+async function reapplyMrSettlementTypeCode(source: Record<string, unknown> = originalData.value) {
+  if (!formApi?.isMounted) {
+    return;
+  }
+  const code = source.mrSettlementTypeCode;
+  if (code === undefined || code === null || code === '') {
+    return;
+  }
+  await formApi.setFieldValue('mrSettlementTypeCode', String(code));
+}
+
+/** 重置/切换模式后统一恢复字段可编辑态 */
+function syncFormFieldAvailability() {
+  syncServiceEditabilitySchema();
+  syncRetailPriceFieldSchema();
+  // editability 仅补丁 disabled 后重新挂上 options，避免 Select 无候选项而不回显
+  syncMrSettlementTypeOptions();
 }
 
 async function handleSubmit() {
@@ -239,15 +459,21 @@ async function handleSubmit() {
 
     // 过滤诊疗子项中的空行（名称和执行次数都为空的行不提交）
     if (Array.isArray(mergedData.children)) {
-      mergedData.children = mergedData.children.filter(
-        (item: { childrenId: null | string; childrenName: string; childrenNum: null | number }) => {
-          if (!item) return false;
-          const hasName = !!item.childrenName;
-          const hasNum =
-            item.childrenNum !== null && item.childrenNum !== undefined && item.childrenNum !== 0;
-          return hasName || hasNum;
-        },
-      );
+      mergedData.children = mergedData.children
+        .filter(
+          (item: {
+            childrenId: null | string;
+            childrenName: string;
+            childrenNum: null | number;
+          }) => {
+            if (!item) return false;
+            const hasName = !!item.childrenName;
+            const hasNum =
+              item.childrenNum !== null && item.childrenNum !== undefined && item.childrenNum !== 0;
+            return hasName || hasNum;
+          },
+        )
+        .map(({ childrenRetailPrice: _price, ...child }) => child);
       if (mergedData.children.length === 0) {
         delete mergedData.children;
       }
@@ -273,6 +499,7 @@ async function handleSubmit() {
     });
 
     if (isEditMode.value) {
+      submitData.editabilityCode = editabilityCode.value;
       await updateServiceCatalogApi(submitData);
       ElMessage.success('更新成功');
     } else {
@@ -291,6 +518,18 @@ async function handleSubmit() {
   }
 }
 
+/** 详情回写：先挂 options 再 setValues，最后单独回写病案结算类型 */
+async function applyDetailFormValues(normalizedData: Record<string, unknown>) {
+  syncMrSettlementTypeOptions();
+  await nextTick();
+  await formApi.setValues(normalizedData);
+  syncInsuranceFormData(normalizedData);
+  syncFormFieldAvailability();
+  await nextTick();
+  // schema/options 刷新后再写一次，避免 ElSelectV2 丢回显
+  await reapplyMrSettlementTypeCode(normalizedData);
+}
+
 async function loadFormData() {
   const id = props.formData?.id;
   if (id) {
@@ -299,11 +538,13 @@ async function loadFormData() {
       const response = await getServiceCatalogApi({ id: String(id) });
       const data = response.data;
       if (data) {
+        const editability = applyCatalogEditabilityFromDetail(data);
+        editabilityCode.value = editability.code;
+        editabilityMessage.value = editability.message;
         const normalizedData = normalizeFormSelectValues(data as Record<string, unknown>);
         originalData.value = { ...normalizedData };
-        formApi.setValues(normalizedData);
-        syncInsuranceFormData(normalizedData);
-        childrenList.value =
+        await applyDetailFormValues(normalizedData);
+        const mappedChildren =
           Array.isArray(data.children) && data.children.length > 0
             ? data.children.map((child) => ({
                 ...child,
@@ -313,6 +554,11 @@ async function loadFormData() {
                     : undefined,
               }))
             : [defaultChildrenRow()];
+        childrenList.value = await hydrateChildrenRetailPrices(mappedChildren);
+        syncRetailPriceFromChildren();
+        // 子项加载会触发 schema 刷新，再补一次病案结算类型回显
+        await nextTick();
+        await reapplyMrSettlementTypeCode(normalizedData);
       } else {
         ElMessage.warning('未找到服务目录信息');
         modalApi.close();
@@ -329,22 +575,17 @@ async function loadFormData() {
     if (props.formData && Object.keys(props.formData).length > 0) {
       const normalizedData = normalizeFormSelectValues(props.formData as Record<string, unknown>);
       originalData.value = { ...normalizedData };
-      formApi.setValues(normalizedData);
-      syncInsuranceFormData(normalizedData);
+      await applyDetailFormValues(normalizedData);
       // 初始化子项列表
-      childrenList.value =
+      const presetChildren =
         props.formData.children && Array.isArray(props.formData.children)
           ? [...props.formData.children]
           : [];
-      if (childrenList.value.length === 0) {
-        childrenList.value = [
-          {
-            childrenId: undefined,
-            childrenName: '',
-            childrenNum: undefined,
-          },
-        ];
-      }
+      childrenList.value =
+        presetChildren.length > 0
+          ? await hydrateChildrenRetailPrices(presetChildren)
+          : [defaultChildrenRow()];
+      syncRetailPriceFromChildren();
     } else {
       originalData.value = {};
       await resetFormState();
@@ -369,26 +610,6 @@ const [Modal, modalApi] = useVbenModal({
   cancelText: '取消',
   contentClass: 'service-catalog-form-dialog__content',
 });
-
-// 转换选项格式
-const convertOptions = (options: unknown) => {
-  if (!options || !Array.isArray(options)) {
-    return [];
-  }
-  return options
-    .filter(
-      (item): item is { label: string; value: number | string } =>
-        typeof item === 'object' &&
-        item !== null &&
-        'label' in item &&
-        'value' in item &&
-        (typeof item.value === 'string' || typeof item.value === 'number'),
-    )
-    .map((item) => ({
-      label: item.label,
-      value: String(item.value),
-    }));
-};
 
 /** 历史表单 salesUnitCode 与后端 packageUnitCode 对齐 */
 function mapLegacyPackageUnitFields(data: Record<string, unknown>) {
@@ -431,14 +652,20 @@ function normalizeFormSelectValues(data: Record<string, unknown>) {
   const next = { ...data };
   mapLegacyPackageUnitFields(next);
   // 这些字段在表单里是 Select，需要和 options.value 类型保持一致
-  ['typeEnum', 'chrgitmLv', 'packageUnitCode', 'categoryCode', 'itemTypeCode', 'ybType'].forEach(
-    (field) => {
-      const v = next[field];
-      if (v !== undefined && v !== null && v !== '') {
-        next[field] = String(v);
-      }
-    },
-  );
+  [
+    'typeEnum',
+    'chrgitmLv',
+    'mrSettlementTypeCode',
+    'packageUnitCode',
+    'categoryCode',
+    'itemTypeCode',
+    'ybType',
+  ].forEach((field) => {
+    const v = next[field];
+    if (v !== undefined && v !== null && v !== '') {
+      next[field] = String(v);
+    }
+  });
   const ybFlag = coerceWhetherOptionValue(next.ybFlag);
   if (ybFlag !== undefined) {
     next.ybFlag = ybFlag;
@@ -493,7 +720,7 @@ const [Form, formApi] = useVbenForm(
         class: 'w-full',
       },
     },
-    wrapperClass: 'grid grid-cols-3 gap-x-4',
+    wrapperClass: 'grid grid-cols-4 gap-x-4',
     schema: computed(() => [
       {
         component: 'SectionTitle',
@@ -538,6 +765,7 @@ const [Form, formApi] = useVbenForm(
         component: 'ApiTreeSelect',
         fieldName: 'packageUnitCode',
         label: '销售/计价单位',
+        rules: 'required',
         componentProps: {
           data: convertTreeOptions(props.initOptions?.unitCodeOptions),
           filterable: true,
@@ -582,11 +810,13 @@ const [Form, formApi] = useVbenForm(
         component: 'InputNumber',
         fieldName: 'retailPrice',
         label: '零售价',
+        rules: 'required',
         componentProps: {
           precision: 2,
           min: 0,
           controlsPosition: 'right',
-          placeholder: '请输入零售价',
+          placeholder: hasSelectedChildren.value ? '由子项自动合计' : '请输入零售价',
+          disabled: hasSelectedChildren.value,
         },
       },
       {
@@ -668,6 +898,17 @@ const [Form, formApi] = useVbenForm(
         },
       },
       {
+        component: 'Select',
+        fieldName: 'mrSettlementTypeCode',
+        label: '病案结算类型',
+        componentProps: {
+          options: mrSettlementTypeCodeOptions.value,
+          filterable: true,
+          placeholder: '请选择病案结算类型',
+          clearable: true,
+        },
+      },
+      {
         component: 'SectionTitle',
         fieldName: '__section_children',
         label: '子项',
@@ -690,17 +931,6 @@ const [Form, formApi] = useVbenForm(
   }),
 );
 
-// 子项列表管理
-const childrenList = ref<
-  Array<{
-    activityId?: number;
-    childrenId?: string;
-    childrenName?: string;
-    childrenNum?: number;
-    id?: number;
-  }>
->([]);
-
 const addChild = () => {
   childrenList.value.push({
     childrenId: undefined,
@@ -713,27 +943,22 @@ const removeChild = (index: number) => {
   childrenList.value.splice(index, 1);
 };
 
-// 监听表单值变化，同步 children
 watch(
-  () => props.formData,
-  async (formData) => {
-    if (formData?.children && Array.isArray(formData.children)) {
-      childrenList.value = [...formData.children];
-    } else {
-      const values = await formApi.getValues();
-      if (values?.children && Array.isArray(values.children)) {
-        childrenList.value = [...values.children];
-      }
+  () => props.formData?.id,
+  async (id) => {
+    if (!props.visible || id) {
+      return;
     }
+    await resetFormState();
   },
-  { immediate: true, deep: true },
 );
 
-// 监听 childrenList 变化，同步到表单
 watch(
   childrenList,
   (newList) => {
     formApi.setFieldValue('children', newList);
+    syncRetailPriceFromChildren();
+    syncRetailPriceFieldSchema();
   },
   { deep: true },
 );
@@ -749,59 +974,93 @@ watch(
   },
   { immediate: true },
 );
+
+/** init 就绪或弹窗打开时补挂 options，并重写已加载详情中的字段值 */
+watch(
+  () => [props.visible, mrSettlementTypeCodeOptions.value.length] as const,
+  async ([visible, optionsLen]) => {
+    if (!visible || optionsLen <= 0) {
+      return;
+    }
+    syncMrSettlementTypeOptions();
+    await nextTick();
+    await reapplyMrSettlementTypeCode();
+  },
+);
 </script>
 
 <template>
   <Modal
-    class="service-catalog-form-dialog w-[960px] max-w-[98vw]"
+    class="service-catalog-form-dialog w-[1100px] max-w-[98vw]"
     :title="isEditMode ? '编辑诊疗' : '新增诊疗'"
     :close-on-click-modal="false"
     :close-on-press-escape="false"
   >
+    <ElAlert
+      v-if="catalogStructureLocked"
+      class="mb-3"
+      type="warning"
+      :closable="false"
+      show-icon
+      :title="editabilityMessage || '该诊疗项目已产生业务引用，分类/单位/价格等字段不可修改'"
+    />
     <div ref="formAreaRef" @keydown.capture="handleServiceFormKeydown">
       <Form>
         <template #children>
-          <div class="w-full space-y-2">
-            <div class="flex items-center justify-start">
-              <el-button type="primary" :icon="Plus" @click="addChild">添加子项</el-button>
+          <div class="service-catalog-form-dialog__children-wrap w-full">
+            <div class="service-catalog-form-dialog__children-toolbar">
+              <el-button type="primary" size="small" :icon="Plus" @click="addChild">
+                添加子项
+              </el-button>
             </div>
-            <div class="w-full space-y-2">
-              <div
-                v-for="(item, index) in childrenList"
-                :key="index"
-                class="service-catalog-form-dialog__child-row flex w-full items-center gap-2 rounded border p-2"
-              >
-                <div class="flex flex-1 items-center gap-2">
-                  <label class="w-12 flex-shrink-0 text-sm">名称</label>
-                  <div class="min-w-0 flex-1">
+            <div class="service-catalog-form-dialog__children-panel w-full">
+              <div class="service-catalog-form-dialog__child-header">
+                <span>诊疗项目</span>
+                <span class="text-right">单价</span>
+                <span>执行次数</span>
+                <span class="text-right">小计</span>
+              </div>
+              <div class="service-catalog-form-dialog__children-list w-full">
+                <div
+                  v-for="(item, index) in childrenList"
+                  :key="index"
+                  class="service-catalog-form-dialog__child-row"
+                >
+                  <div class="service-catalog-form-dialog__child-select min-w-0">
                     <ServiceCatalogSelect
                       v-model="item.childrenId"
                       :exclude-id="isEditMode ? originalData.id : null"
                       :selected-label="item.childrenName"
                       placeholder="请选择诊疗项目"
                       :multiple="false"
-                      @change="(items) => (item.childrenName = items[0]?.name)"
+                      @change="(items) => handleChildSelect(item, items)"
                     />
                   </div>
-                </div>
-                <div class="flex w-[200px] items-center gap-2">
-                  <label class="w-16 flex-shrink-0 text-sm">执行次数</label>
+                  <div class="service-catalog-form-dialog__child-price text-right">
+                    {{ formatChildUnitPrice(item.childrenRetailPrice) }}
+                  </div>
                   <el-input-number
                     v-model="item.childrenNum"
+                    size="small"
                     :min="0"
                     :precision="0"
                     placeholder="次数"
-                    class="min-w-0 flex-1"
+                    class="service-catalog-form-dialog__child-num w-full min-w-0"
                     controls-position="right"
                   />
+                  <div class="service-catalog-form-dialog__child-subtotal">
+                    <span class="service-catalog-form-dialog__child-line-total">
+                      {{ formatChildLineTotal(item) }}
+                    </span>
+                    <el-button
+                      type="danger"
+                      :icon="Delete"
+                      link
+                      class="!p-0"
+                      @click="removeChild(index)"
+                    />
+                  </div>
                 </div>
-                <el-button
-                  type="danger"
-                  :icon="Delete"
-                  circle
-                  class="flex-shrink-0"
-                  @click="removeChild(index)"
-                />
               </div>
             </div>
           </div>
@@ -841,23 +1100,124 @@ watch(
 </template>
 
 <style scoped>
-.service-catalog-form-dialog__child-row {
-  border-color: var(--el-border-color-lighter);
-  background-color: var(--el-fill-color-lighter);
+.service-catalog-form-dialog__children-wrap {
+  margin-top: 2px;
 }
 
-.service-catalog-form-dialog__child-row label {
+.service-catalog-form-dialog__children-toolbar {
+  margin-bottom: 8px;
+}
+
+.service-catalog-form-dialog__children-panel {
+  overflow: hidden;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+  background-color: var(--el-bg-color);
+}
+
+.service-catalog-form-dialog__child-header,
+.service-catalog-form-dialog__child-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) 80px 108px 108px;
+  gap: 8px;
+  align-items: center;
+  padding: 0 12px;
+}
+
+.service-catalog-form-dialog__child-header {
+  min-height: 34px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  background-color: var(--el-fill-color-light);
+  font-size: 13px;
   color: var(--el-text-color-regular);
+}
+
+.service-catalog-form-dialog__children-list {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.service-catalog-form-dialog__child-row {
+  min-height: 36px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--el-border-color-extra-light);
+}
+
+.service-catalog-form-dialog__child-row:last-child {
+  border-bottom: none;
+}
+
+.service-catalog-form-dialog__child-price,
+.service-catalog-form-dialog__child-line-total {
+  font-size: 13px;
+  color: var(--el-text-color-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.service-catalog-form-dialog__child-subtotal {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+
+.service-catalog-form-dialog__children-list :deep(.vxe-input) {
+  height: 28px;
+  line-height: 28px;
+}
+
+.service-catalog-form-dialog__children-list :deep(.vxe-input--inner) {
+  height: 28px;
+  min-height: 28px;
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 13px;
+  line-height: 28px;
+}
+
+.service-catalog-form-dialog__children-list
+  :deep(.service-catalog-form-dialog__child-num.el-input-number) {
+  width: 100%;
+  line-height: 28px;
+}
+
+.service-catalog-form-dialog__children-list
+  :deep(.service-catalog-form-dialog__child-num .el-input__wrapper) {
+  min-height: 28px;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 </style>
 
 <style>
-.service-catalog-form-dialog {
-  max-height: 94vh !important;
+.service-catalog-form-dialog.el-dialog {
+  display: flex;
+  max-height: min(96vh, 1040px);
+  height: min(94vh, 1000px);
+  flex-direction: column;
+  margin-top: 2vh !important;
+  margin-bottom: 2vh !important;
 }
 
-.service-catalog-form-dialog__content {
-  overflow: visible !important;
+.service-catalog-form-dialog .el-dialog__header {
+  flex-shrink: 0;
+}
+
+.service-catalog-form-dialog .el-dialog__body {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.service-catalog-form-dialog .el-dialog__body > div {
+  min-height: 0;
+}
+
+.service-catalog-form-dialog .el-dialog__footer {
+  flex-shrink: 0;
 }
 
 .service-catalog-form-dialog .service-catalog-form-dialog__section-title {

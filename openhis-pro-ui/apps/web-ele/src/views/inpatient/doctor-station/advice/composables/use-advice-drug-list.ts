@@ -21,11 +21,16 @@ import { isInpatientLongTermMedicationTherapy } from '../services/advice-row';
 
 type ProductOption = AdviceProductOption;
 
-/** 单价 × 总量，两位小数；用于展示。 */
+import { calcMoneyLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
+
+/** 单价 × 总量草稿预览（6 位计算、2 位展示）。 */
 export function calcAdviceTotalFee(item: AdviceDrugItem) {
   const price = Number(item.selectedDrugPrice || 0);
   const amount = Number(item.totalAmount || 0);
-  return price > 0 && amount > 0 ? (price * amount).toFixed(2) : '0.00';
+  if (price <= 0 || amount <= 0) {
+    return '0.00';
+  }
+  return formatMoneyDisplay(calcMoneyLineTotal(price, amount));
 }
 
 export interface UseAdviceDrugListParams {

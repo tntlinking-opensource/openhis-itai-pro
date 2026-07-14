@@ -11,6 +11,15 @@ const chsRoutes: RouteRecordRaw[] = [
       title: '平台字典(1901)',
     },
   },
+  {
+    name: 'ChsReconciliation',
+    path: '/chs/reconciliation',
+    component: () => import('#/chs/reconciliation/index.vue'),
+    meta: {
+      hideInMenu: true,
+      title: '对账清算',
+    },
+  },
 ];
 
 export default chsRoutes;

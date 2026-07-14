@@ -4,6 +4,7 @@ import { isUnionPayWinReady } from '#/api/local/openhisWin';
 import { httpListOriginalPayChannelCodes } from '#/api/outpatient-refund/outpatient-refund.http';
 import { httpGetBpcOrdersByPayment, type BpcOrderSummaryDto } from '#/api/payment/union-pay-bpc';
 import { refundApi, toClientRefundResultDto } from '#/api/local/unionPayWin';
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
 
 import { mayRequireUnionPayBpcRefund } from './scan-refund-gate';
 import {
@@ -119,7 +120,7 @@ export async function submitScanRefund(
     throw new Error('原支付为扫码收单，请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
   }
 
-  const refundAmountYuan = Number(params.refundAmountYuan ?? 0).toFixed(2);
+  const refundAmountYuan = formatMoneyDisplay(params.refundAmountYuan ?? 0);
   const refundResult = await refundApi({
     merTradeNo: path.successOrder.merTradeNo!,
     tradeNo: path.successOrder.tradeNo!,

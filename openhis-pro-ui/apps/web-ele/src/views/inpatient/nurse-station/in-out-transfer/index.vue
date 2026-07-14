@@ -7,7 +7,7 @@ import type {
 } from '../services/map-bed-board';
 import type { PatientItem } from '../types';
 
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onActivated, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { ElMessage } from 'element-plus';
 
@@ -17,11 +17,15 @@ import {
   isEncounterInDischargeBedBoard,
 } from '../services/discharge-tab-scope';
 import { encounterStatusToDischargeLabel } from '../services/map-discharge-pending';
-import { isBedOperationalInUse, isBedVacant } from '../services/map-bed-board';
+import {
+  formatBedBoardNursingLevelLabel,
+  formatBedBoardOccupantMeta,
+  isBedOperationalInUse,
+  isBedVacant,
+} from '../services/map-bed-board';
 import { readNurseStationBedDragPatientId } from '../services/nurse-station-bed-drag-payload';
 
 import DischargePanel from './discharge-panel.vue';
-import PendingTransfer from './pending-transfer.vue';
 
 interface Props {
   /** 当前主操作患者 encounterId */
@@ -41,7 +45,7 @@ interface Props {
 }
 
 type BedFilter = 'all' | 'empty' | 'occupied';
-type InOutPanel = 'admission' | 'transfer-out' | 'discharge';
+type InOutPanel = 'admission' | 'discharge';
 
 defineOptions({
   name: 'InpatientNurseStationInOutTransferModule',
@@ -170,7 +174,8 @@ function patientItemFromOccupant(
     name: occupant.patientName,
     gender: occupant.gender,
     age: occupant.age,
-    level: occupant.level,
+    level: occupant.nursingLevel,
+    priorityEnum: occupant.priorityEnum,
     feeType: '—',
     diagnosis: occupant.diagnosis,
     accountBalance: occupant.accountBalance,
@@ -245,6 +250,11 @@ function onBedDragBridgeStart(ev: Event) {
 onMounted(() => {
   document.addEventListener('dragend', onDocumentDragEnd);
   window.addEventListener('nurse-station-bed-drag-start', onBedDragBridgeStart as EventListener);
+});
+
+/** KeepAlive 重新激活时重载当前 panel 床位图，避免校对出院医嘱后出 Tab 仍显示旧空态 */
+onActivated(() => {
+  void props.onReloadBedBoard?.(activePanel.value === 'discharge' ? 'discharge' : 'admission');
 });
 onUnmounted(() => {
   document.removeEventListener('dragend', onDocumentDragEnd);
@@ -347,7 +357,6 @@ function onDropOnBed(e: DragEvent, house: BedBoardHouseGroup, bed: BedBoardBedCe
         v-model="activePanel"
         :options="[
           { label: '入科', value: 'admission' },
-          { label: '转出', value: 'transfer-out' },
           { label: '出院', value: 'discharge' },
         ]"
       />
@@ -462,16 +471,24 @@ function onDropOnBed(e: DragEvent, house: BedBoardHouseGroup, bed: BedBoardBedCe
                     <div class="bed-card__main">
                       <div class="bed-card__row1">
                         <span class="bed-card__no">{{ bed.bedName }}</span>
-                        <ElTag size="small" type="info" effect="plain" class="bed-card__level">
-                          {{ bed.occupant.level.replace('护理', '') }}
-                        </ElTag>
+                        <span class="bed-card__status">
+                          {{ bed.occupant.statusEnumText?.trim() || '在院' }}
+                        </span>
                       </div>
                       <div class="bed-card__name">{{ bed.occupant.patientName }}</div>
                       <div class="bed-card__meta">
-                        {{ bed.occupant.gender }} {{ bed.occupant.age }} 岁
+                        {{ formatBedBoardOccupantMeta(bed.occupant) }}
                       </div>
+                      <ElTag
+                        v-if="formatBedBoardNursingLevelLabel(bed.occupant.nursingLevel)"
+                        size="small"
+                        type="info"
+                        effect="plain"
+                        class="bed-card__level"
+                      >
+                        {{ formatBedBoardNursingLevelLabel(bed.occupant.nursingLevel) }}
+                      </ElTag>
                     </div>
-                    <div class="bed-card__status">在院</div>
                   </div>
                   <div
                     v-else-if="isBedVacant(bed)"
@@ -498,7 +515,6 @@ function onDropOnBed(e: DragEvent, house: BedBoardHouseGroup, bed: BedBoardBedCe
         <ElEmpty v-else description="当前筛选下无可展示床位" />
       </div>
     </template>
-    <PendingTransfer v-else-if="activePanel === 'transfer-out'" />
     <div v-else class="discharge-layout">
       <div class="bed-map-toolbar bed-map-toolbar--discharge">
         <div class="bed-map-toolbar__hint">点击占床患者办理出院；结算完成后可清床离院</div>
@@ -745,10 +761,10 @@ function onDropOnBed(e: DragEvent, house: BedBoardHouseGroup, bed: BedBoardBedCe
   border-radius: 8px;
   box-sizing: border-box;
   display: flex;
-  min-height: 96px;
+  min-height: 88px;
   overflow: hidden;
   position: relative;
-  width: 128px;
+  width: 132px;
 }
 
 .bed-card--occupied {
@@ -805,9 +821,9 @@ function onDropOnBed(e: DragEvent, house: BedBoardHouseGroup, bed: BedBoardBedCe
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
-  padding: 8px 8px 8px 6px;
+  padding: 8px;
 }
 
 .bed-card__main--empty {
@@ -817,17 +833,19 @@ function onDropOnBed(e: DragEvent, house: BedBoardHouseGroup, bed: BedBoardBedCe
 }
 
 .bed-card__row1 {
-  align-items: center;
+  align-items: baseline;
   display: flex;
   gap: 4px;
   justify-content: space-between;
+  min-width: 0;
 }
 
 .bed-card__no {
   color: var(--el-text-color-primary);
-  font-size: 18px;
+  flex-shrink: 0;
+  font-size: 16px;
   font-weight: 700;
-  line-height: 1;
+  line-height: 1.2;
 }
 
 .bed-card__no--muted {
@@ -837,7 +855,8 @@ function onDropOnBed(e: DragEvent, house: BedBoardHouseGroup, bed: BedBoardBedCe
 }
 
 .bed-card__level {
-  max-width: 72px;
+  align-self: flex-start;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -856,6 +875,10 @@ function onDropOnBed(e: DragEvent, house: BedBoardHouseGroup, bed: BedBoardBedCe
 .bed-card__meta {
   color: var(--el-text-color-secondary);
   font-size: 11px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .bed-card__empty-label {
@@ -864,10 +887,10 @@ function onDropOnBed(e: DragEvent, house: BedBoardHouseGroup, bed: BedBoardBedCe
 }
 
 .bed-card__status {
-  align-self: flex-end;
   color: var(--el-text-color-secondary);
-  font-size: 11px;
-  margin: auto 6px 6px 0;
+  flex-shrink: 0;
+  font-size: 10px;
+  line-height: 1.2;
   white-space: nowrap;
 }
 

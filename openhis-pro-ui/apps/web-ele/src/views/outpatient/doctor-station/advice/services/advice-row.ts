@@ -66,6 +66,7 @@ export function validateWesternEditLineItem(item: AdviceDrugItem): boolean {
     return (
       Number(item.serviceQuantity) > 0 &&
       Number(item.totalAmount) > 0 &&
+      String(item.totalAmountUnit ?? '').trim() !== '' &&
       String(item.performOrgId ?? '').trim() !== ''
     );
   }

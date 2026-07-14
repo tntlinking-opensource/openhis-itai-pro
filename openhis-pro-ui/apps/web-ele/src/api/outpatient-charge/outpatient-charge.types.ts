@@ -93,6 +93,8 @@ export interface LoadPendingChargeItemsRequest {
 
 /** IF-OPC-03 响应 */
 export interface LoadPendingChargeItemsResponse {
+  /** 是否允许转医保/转自费（医保双账户挂号为 true，纯自费挂号为 false） */
+  accountSwitchEnabled?: boolean;
   encounterId: string;
   items: PendingChargeItemRowDto[];
 }
@@ -166,8 +168,21 @@ export interface PreSettleOutpatientChargesResponse {
   paymentDraftId: string;
   previews: PreSettleChargeLinePreviewDto[];
   selfPayRollup?: null | OpSelfPayRollupDto;
-  /** MIXED | INSURANCE_ONLY | SELF_PAY_ONLY */
+  /** MIXED | INSURANCE_ONLY | SELF_PAY_ONLY | WORK_INJURY_INVOKE */
   settlementComposition?: null | string;
+  /** 2206 完成后保留的 invoke sessionId（2207 用）。 */
+  workInjurySessionId?: string;
+  /** 工伤 invoke 首步（WORK_INJURY_INVOKE 时）。 */
+  workInjuryInvokeStep?: {
+    sessionId?: string;
+    stepToken?: string;
+    infno?: string;
+    fixmedinsCode?: string;
+    operatorNo?: string;
+    input?: Record<string, unknown>;
+    nextAction?: string;
+    errMsg?: string;
+  };
   ybAcctPay?: null | number | string;
   ybChrgBchno?: null | string;
   ybFundPaySumamt?: null | number | string;

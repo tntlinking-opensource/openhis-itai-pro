@@ -35,6 +35,7 @@ import {
   buildWesternProductSelectPatch,
   createAdviceDrugItem,
   inferDoseBandConvertK,
+  parseOptionalNumberInput,
   pickMainDiagnosisDisplayName,
   resolveDefaultDrugRowDiagnosisName,
 } from '../services/advice-edit';
@@ -93,6 +94,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   close: [];
+  deleteDrug: [index: number, item: AdviceDrugItem];
   editorDirtyChange: [value: boolean];
   saveGroup: [value: AdviceDrugItem[], encounterDiagnosisRows: EncounterDiagnosisRowDto[]];
 }>();
@@ -214,10 +216,19 @@ function mergeDrugRow(index: number, patch: Partial<AdviceDrugItem>) {
   drugItems.value = next;
 }
 
-const { autoCalcTotalAmount, debouncedRecalcFrequencyTotal } = useAdviceFrequencyTotal({
+const {
+  autoCalcTotalAmount,
+  debouncedRefreshFrequencyExecutionCount,
+  debouncedEnsureFrequencyCountAndRecalcTotal,
+  invalidateRowFrequencyRefresh,
+  markRowTotalAmountManualOverride,
+  refreshRowFrequencyExecutionCount,
+  recalcRowTotalAmountForTargetUnit,
+} = useAdviceFrequencyTotal({
   drugItems,
   isTcm,
   setField,
+  patchRow: mergeDrugRow,
 });
 
 const adviceCardBodyRef = ref<HTMLElement | null>(null);
@@ -280,6 +291,32 @@ function handleTotalAmountUnitSelect(index: number, value: unknown) {
   }
 }
 
+function handleTotalAmountFocus(index: number) {
+  markRowTotalAmountManualOverride(index);
+}
+
+function handleTotalAmountManualInput(index: number, value: unknown) {
+  invalidateRowFrequencyRefresh(index);
+  mergeDrugRow(index, {
+    totalAmountManualOverride: true,
+    totalAmount: parseOptionalNumberInput(value) as AdviceDrugItem['totalAmount'],
+  });
+}
+
+function handleTotalAmountUnitManualSelect(index: number, value: unknown) {
+  const nu = String(value ?? '').trim();
+  const item = drugItems.value[index];
+  if (!item || nu === String(item.totalAmountUnit ?? '').trim()) return;
+
+  if (autoCalcTotalAmount.value && !item.totalAmountManualOverride) {
+    recalcRowTotalAmountForTargetUnit(index, nu);
+    return;
+  }
+
+  markRowTotalAmountManualOverride(index);
+  handleTotalAmountUnitSelect(index, value);
+}
+
 const clearMedicationOnlyFields = (): Partial<AdviceDrugItem> => ({
   singleDose: undefined,
   doseConvertRatio: undefined,
@@ -300,6 +337,9 @@ const clearMedicationOnlyFields = (): Partial<AdviceDrugItem> => ({
   totalUnitSalesCode: undefined,
   totalUnitSalesName: undefined,
   totalAmountSplitToSalesK: undefined,
+  partAttributeEnum: undefined,
+  frequencyExecutionCount: undefined,
+  totalAmountManualOverride: false,
   tcmSpecialDecoction: '',
   serviceQuantity: undefined,
 });
@@ -330,8 +370,11 @@ const handleProductSelect = (index: number, row: AdviceProductOption) => {
   } else if (tbl === 'wkf_activity_definition') {
     const orgId = String(row.defaultPerformOrgId ?? '').trim();
     const orgName = String(row.defaultPerformOrgName ?? '').trim();
-    const uCode = String(row.defaultUnitCode ?? '').trim() || '次';
+    const uCode = String(row.defaultUnitCode ?? '').trim();
     const uName = String(row.defaultUnitName ?? '').trim() || uCode;
+    if (!uCode) {
+      ElMessage.warning('该诊疗项目未维护销售/计价单位，请先在「基础数据 > 诊疗目录」维护后再开立');
+    }
     mergeDrugRow(index, {
       ...base,
       selectedDrugPrice: row.price ?? '',
@@ -366,14 +409,23 @@ const handleProductSelect = (index: number, row: AdviceProductOption) => {
     mergeDrugRow(index, {
       ...base,
       ...(diagnosis ? { diagnosis } : {}),
-      ...buildWesternProductSelectPatch(prev, row, { totalUnitDefaultKind: 'PACKAGE' }),
+      totalAmountManualOverride: false,
+      ...buildWesternProductSelectPatch(prev, row),
     });
-    debouncedRecalcFrequencyTotal(index);
   }
   drugItems.value = drugItems.value.map((item, itemIndex) => ({
     ...item,
     expanded: itemIndex === index,
   }));
+  const mergedRow = drugItems.value[index];
+  if (
+    !isTcm.value &&
+    autoCalcTotalAmount.value &&
+    mergedRow &&
+    inferAdviceLineEditorKind(mergedRow) === 'MEDICATION'
+  ) {
+    void nextTick(() => refreshRowFrequencyExecutionCount(index));
+  }
   void focusWesternPrimarySingleDose();
 };
 
@@ -429,6 +481,15 @@ const handleEditDrug = (index: number) => {
 };
 
 const handleDeleteDrug = (index: number) => {
+  const item = drugItems.value[index];
+  if (!item) {
+    return;
+  }
+  const requestId = String(item.medicationRequestId ?? '').trim();
+  if (requestId) {
+    emit('deleteDrug', index, item);
+    return;
+  }
   if (drugItems.value.length <= 1) {
     ElMessage.warning('至少保留一条药品记录');
     return;
@@ -490,7 +551,8 @@ function handleDiagnosisDialogVisibleChange(visible: boolean) {
   diagnosisDialogTargetIndex.value = null;
 }
 
-const handleAddDrug = () => {
+const handleAddDrug = async () => {
+  await commitDrugFormPendingInputs();
   const lastItem = drugItems.value[drugItems.value.length - 1];
   if (!lastItem) return;
   const lastKind = inferAdviceLineEditorKind(lastItem);
@@ -548,7 +610,49 @@ const handleAddDrug = () => {
   drugItems.value = nextItems;
 };
 
-const handleSaveGroup = () => {
+/** 保存前从 DOM 读取总量输入框当前值，避免 ElInputNumber 未失焦时 state 仍为自动推算值。 */
+function syncExpandedWesternTotalAmountFromDom(root: HTMLElement) {
+  const entries = root.querySelectorAll(':scope > .drug-entry');
+  entries.forEach((entryEl, index) => {
+    const item = drugItems.value[index];
+    if (!item?.selectedId?.trim() || !item.expanded || isTcm.value) return;
+    if (inferAdviceLineEditorKind(item) !== 'MEDICATION') return;
+    const input = entryEl.querySelector(
+      '.total-amount-item .dose-qty-input input',
+    ) as HTMLInputElement | null;
+    if (!input) return;
+    const parsed = parseOptionalNumberInput(input.value);
+    if (parsed === undefined || !(parsed > 0)) return;
+    if (Number(item.totalAmount) === parsed) return;
+    invalidateRowFrequencyRefresh(index);
+    mergeDrugRow(index, {
+      totalAmountManualOverride: true,
+      totalAmount: parsed as AdviceDrugItem['totalAmount'],
+    });
+  });
+}
+
+/** 保存/新增前提交表单内未失焦的 ElInputNumber 等控件，避免手工总量尚未写入 state。 */
+async function commitDrugFormPendingInputs() {
+  const root = adviceCardBodyRef.value;
+  if (!root) return;
+  syncExpandedWesternTotalAmountFromDom(root);
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && root.contains(active)) {
+    active.blur();
+    await nextTick();
+  }
+  syncExpandedWesternTotalAmountFromDom(root);
+  drugItems.value.forEach((item, index) => {
+    if (item.totalAmountManualOverride) {
+      invalidateRowFrequencyRefresh(index);
+    }
+  });
+  await nextTick();
+}
+
+const handleSaveGroup = async () => {
+  await commitDrugFormPendingInputs();
   ensureMedicationRowsDiagnosisBeforeSave();
   const invalidIndex = drugItems.value.findIndex((item) => !assertRowValid(item));
   if (invalidIndex !== -1) {
@@ -578,8 +682,12 @@ function westernFormHandlers(index: number): WesternDrugFormHandlers {
     setField: (key, value) => setField(index, key, value),
     applySplitDoseToDoseSide: (v) => applySplitDoseToDoseSide(index, v),
     applyDoseQtyToSplitSide: (v) => applyDoseQtyToSplitSide(index, v),
-    debouncedRecalcFrequencyTotal: () => debouncedRecalcFrequencyTotal(index),
-    handleTotalAmountUnitSelect: (v) => handleTotalAmountUnitSelect(index, v),
+    debouncedRefreshFrequencyExecutionCount: () => debouncedRefreshFrequencyExecutionCount(index),
+    debouncedEnsureFrequencyCountAndRecalcTotal: () =>
+      debouncedEnsureFrequencyCountAndRecalcTotal(index),
+    handleTotalAmountFocus: () => handleTotalAmountFocus(index),
+    handleTotalAmountManualInput: (v) => handleTotalAmountManualInput(index, v),
+    handleTotalAmountUnitManualSelect: (v) => handleTotalAmountUnitManualSelect(index, v),
     handleDiagnosisFocus: () => handleDiagnosisFocus(index),
     openDiagnosisDialog: () => openDiagnosisDialog(index),
   };
@@ -707,10 +815,11 @@ onMounted(() => {
               编辑
             </ElButton>
             <ElButton
-              v-if="drugItems.length > 1"
+              v-if="drugItems.length > 1 || item.medicationRequestId"
               size="small"
               link
               class="entry-action-btn danger"
+              :loading="saveLoading"
               @click="handleDeleteDrug(index)"
             >
               删除

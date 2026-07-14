@@ -14,6 +14,7 @@ import { ensureInsuranceSignIn } from '#/chs/utils/ensure-insurance-sign-in';
 import {
   isInsuranceContractCategory,
   isPublicChargeContractCategory,
+  isWorkInjuryContractCategory,
   loadRegisterBenefitPreview,
 } from './register-benefit.service';
 import { applyInsuranceSnapshotToRefs } from './register-patient-identity.service';
@@ -214,6 +215,9 @@ export function useRegisterBenefit() {
   }
 
   function resolveBenefitRequirement(contractCategory?: string) {
+    if (isWorkInjuryContractCategory(contractCategory)) {
+      return 'WORK_INJURY' as const;
+    }
     if (isInsuranceContractCategory(contractCategory)) {
       return 'INSURANCE' as const;
     }

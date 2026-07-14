@@ -74,6 +74,13 @@ export interface PatientQueueItemDto {
   pinyinCode?: string;
   primaryNurseName?: string;
   priorityEnum?: string;
+  nursingLevelActivityId?: string;
+  /** 护理级别展示名（IF-IP-NUR-02 · BR-IP-NUR-015） */
+  nursingLevelName?: string;
+  /** 护理级别医嘱主键 */
+  nursingLevelServiceRequestId?: string;
+  /** 护理级别医嘱状态 DRAFT/ACTIVE/VERIFIED/STOPPED */
+  nursingLevelStatusEnum?: string;
   /** 是否可展示出院召回行操作 */
   recallEnabled?: boolean;
   startTime?: string;
@@ -156,6 +163,8 @@ export interface LoadAdmissionParticipantInitRequest {
 
 /** 分床责任医护下拉初始化响应 */
 export interface LoadAdmissionParticipantInitResponse {
+  /** 患者病情下拉（术语 adm_cond_code） */
+  admCondCodeOptions?: OptionDto[];
   doctorOptions?: OptionDto[];
   primaryNurseOptions?: OptionDto[];
 }

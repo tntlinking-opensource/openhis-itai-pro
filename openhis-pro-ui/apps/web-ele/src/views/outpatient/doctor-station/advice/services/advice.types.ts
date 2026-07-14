@@ -51,6 +51,12 @@ export interface AdviceDrugItem extends AdviceEditForm {
   /** 目录原始单价（SALES 带，未换算） */
   catalogUnitPrice?: number | string;
   unitBands?: DoctorStationMedicationUnitBandDto[];
+  /** 门诊拆分属性（OrderCalcRule code "1"~"4"） */
+  partAttributeEnum?: string;
+  /** 频次模块计算得到的计划执行次数（供前端推算总量） */
+  frequencyExecutionCount?: number;
+  /** 医生手工改过总量/单位后，自动推算不再覆盖本行 */
+  totalAmountManualOverride?: boolean;
   expanded: boolean;
   medicationRequestId?: string;
   productTableName?: string;
@@ -96,6 +102,8 @@ export interface AdviceProductOption {
   defaultUnitName?: string;
   /** 目录原始单价（SALES 带） */
   catalogUnitPrice?: number;
+  /** 门诊拆分属性（OrderCalcRule code "1"~"4"） */
+  partAttributeEnum?: string;
 }
 
 /** 开立页主表行（含嵌入编辑卡用的虚拟行） */
@@ -131,6 +139,7 @@ export interface AdviceRowItem {
   listDose?: number;
   listDoseUnitCode?: string;
   listUnitCode?: string;
+  listUnitName?: string;
   dispensePerDuration?: number;
   /** 列表计价数量（诊疗 quantity / 药品总量等） */
   listQuantity?: number;

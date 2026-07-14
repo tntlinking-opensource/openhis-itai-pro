@@ -4,11 +4,6 @@ import type {
   OrderTemplateApplyConfirmTemplateRow,
 } from './order-template-apply-confirm.types';
 
-import type {
-  AdviceDraftBindDialogRow,
-  AdviceDraftBindDialogSourceGroup,
-} from './advice-draft-bind.types';
-
 import { ref } from 'vue';
 
 type DialogPending = {
@@ -28,26 +23,12 @@ export const orderTemplateApplyConfirmDialogTemplateRows = ref<
   OrderTemplateApplyConfirmTemplateRow[]
 >([]);
 
-/** 绑定带出行（组件绑定） */
-export const orderTemplateApplyConfirmDialogBindRows = ref<AdviceDraftBindDialogRow[]>([]);
-
-/** 「不再提示」来源分组（组件绑定） */
-export const orderTemplateApplyConfirmDialogBindSourceGroups = ref<
-  AdviceDraftBindDialogSourceGroup[]
->([]);
-
-/** 用户勾选「不再提示」的来源键 */
-export const orderTemplateApplyConfirmDialogSkipSourceKeys = ref<string[]>([]);
-
 function resetDialogState(): void {
   orderTemplateApplyConfirmDialogTemplateName.value = '';
   orderTemplateApplyConfirmDialogTemplateRows.value = [];
-  orderTemplateApplyConfirmDialogBindRows.value = [];
-  orderTemplateApplyConfirmDialogBindSourceGroups.value = [];
-  orderTemplateApplyConfirmDialogSkipSourceKeys.value = [];
 }
 
-/** 打开组套套用确认弹窗；确认返回带出行编辑结果，取消返回 null */
+/** 打开组套套用确认弹窗；确认返回编辑后的组套行，取消返回 null */
 export function openOrderTemplateApplyConfirmDialog(
   payload: OrderTemplateApplyConfirmDialogPayload,
 ): Promise<OrderTemplateApplyConfirmDialogResult | null> {
@@ -58,14 +39,6 @@ export function openOrderTemplateApplyConfirmDialog(
   orderTemplateApplyConfirmDialogTemplateRows.value = payload.templateRows.map((row) => ({
     ...row,
   }));
-  orderTemplateApplyConfirmDialogBindRows.value = payload.bindRows.map((row) => ({
-    ...row,
-    bindItem: { ...row.bindItem },
-  }));
-  orderTemplateApplyConfirmDialogBindSourceGroups.value = payload.bindSourceGroups.map((group) => ({
-    ...group,
-  }));
-  orderTemplateApplyConfirmDialogSkipSourceKeys.value = [];
   orderTemplateApplyConfirmDialogOpen.value = true;
   return new Promise((resolve) => {
     pendingState.current = { resolve };
@@ -103,16 +76,4 @@ export function replaceOrderTemplateApplyConfirmDialogTemplateRows(
   rows: OrderTemplateApplyConfirmTemplateRow[],
 ): void {
   orderTemplateApplyConfirmDialogTemplateRows.value = rows;
-}
-
-/** 组件内更新带出行快照 */
-export function replaceOrderTemplateApplyConfirmDialogBindRows(
-  rows: AdviceDraftBindDialogRow[],
-): void {
-  orderTemplateApplyConfirmDialogBindRows.value = rows;
-}
-
-/** 组件内更新「不再提示」勾选 */
-export function replaceOrderTemplateApplyConfirmDialogSkipSourceKeys(keys: string[]): void {
-  orderTemplateApplyConfirmDialogSkipSourceKeys.value = keys;
 }

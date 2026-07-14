@@ -19,12 +19,14 @@ import {
   stopServiceCatalogApi,
 } from '#/api';
 import StatusEnumTag from '#/components/status-enum-tag.vue';
+import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
 
 import EditDialog from './edit-dialog.vue';
 
 const queryParams = ref({
   pageNo: 1,
-  pageSize: 50,
+  pageSize: 10,
   keyword: '',
   name: '',
   categoryCode: '',
@@ -100,7 +102,7 @@ function formatRetailPrice(price: unknown): string {
     return '';
   }
   const num = Number(price);
-  return Number.isFinite(num) ? num.toFixed(2) : String(price);
+  return Number.isFinite(num) ? formatMoneyDisplay(num) : String(price);
 }
 
 const formItems = computed<FormItemConfig[]>(() => [
@@ -123,33 +125,23 @@ const formItems = computed<FormItemConfig[]>(() => [
 ]);
 
 const handleQuery = async (params: Record<string, unknown>) => {
+  queryParams.value = {
+    ...queryParams.value,
+    ...params,
+  };
   loading.value = true;
   try {
     const response = await pageServiceCatalogApi({
-      pageNo: typeof params.pageNo === 'number' ? params.pageNo : queryParams.value.pageNo,
-      pageSize: typeof params.pageSize === 'number' ? params.pageSize : queryParams.value.pageSize,
-      keyword:
-        typeof params.keyword === 'string' && params.keyword
-          ? params.keyword
-          : queryParams.value.keyword || undefined,
-      name:
-        typeof params.name === 'string' && params.name
-          ? params.name
-          : queryParams.value.name || undefined,
-      categoryCode:
-        typeof params.categoryCode === 'string' && params.categoryCode
-          ? params.categoryCode
-          : queryParams.value.categoryCode || undefined,
+      pageNo: queryParams.value.pageNo,
+      pageSize: queryParams.value.pageSize,
+      keyword: queryParams.value.keyword || undefined,
+      name: queryParams.value.name || undefined,
+      categoryCode: queryParams.value.categoryCode || undefined,
     });
 
-    const responseData = response.data;
-    if (responseData) {
-      tableData.value = responseData.content || [];
-      total.value = responseData.totalElements || 0;
-    } else {
-      tableData.value = [];
-      total.value = 0;
-    }
+    const parsed = parsePagedRowsFromApiData<ServiceCatalogItem>(response.data);
+    tableData.value = parsed.content;
+    total.value = parsed.totalCount;
   } catch (error) {
     console.error('查询失败:', error);
     ElMessage.error('查询失败，请稍后重试');
@@ -163,7 +155,7 @@ const handleQuery = async (params: Record<string, unknown>) => {
 const handleReset = () => {
   queryParams.value = {
     pageNo: 1,
-    pageSize: 50,
+    pageSize: 10,
     keyword: '',
     name: '',
     categoryCode: '',

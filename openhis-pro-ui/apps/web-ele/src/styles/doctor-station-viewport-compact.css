@@ -1,0 +1,257 @@
+/**
+ * 门诊医生站窄屏（html.layout-viewport-compact）样式。
+ * 与 useLayoutCompactViewport 联动；≥1680 不受影响。
+ * 侧栏宽度常量见 DOCTOR_STATION_SIDEBAR_WIDTH_PX。
+ */
+
+/* ========== 患者队列 ========== */
+html.layout-viewport-compact .doctor-patient-list {
+  --doctor-queue-width: 228px;
+}
+
+html.layout-viewport-compact .doctor-patient-list__header {
+  gap: 6px;
+  padding: 6px 8px 0;
+}
+
+html.layout-viewport-compact .doctor-patient-list__scroll {
+  padding-right: 8px;
+  padding-left: 8px;
+}
+
+html.layout-viewport-compact
+  .doctor-patient-list__card-list.space-y-2
+  > :not([hidden])
+  ~ :not([hidden]) {
+  margin-top: 6px;
+}
+
+html.layout-viewport-compact .doctor-queue-bottom-bar {
+  gap: 4px;
+  padding: 6px 8px 8px;
+}
+
+html.layout-viewport-compact .quick-action-footer {
+  padding: 8px;
+}
+
+html.layout-viewport-compact .quick-action-list {
+  gap: 4px;
+}
+
+html.layout-viewport-compact .quick-action-item {
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+html.layout-viewport-compact .patient-item {
+  border-radius: 10px;
+}
+
+html.layout-viewport-compact .patient-item__header {
+  gap: 8px;
+  padding: 10px 8px 8px;
+}
+
+html.layout-viewport-compact .patient-item__name {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+html.layout-viewport-compact .patient-item__body {
+  padding: 2px 8px 8px;
+}
+
+html.layout-viewport-compact .patient-item__row {
+  gap: 8px;
+  padding: 6px 0;
+}
+
+html.layout-viewport-compact .doctor-patient-list .group.rounded-xl > .relative.p-3 {
+  padding: 8px 10px;
+}
+
+html.layout-viewport-compact .doctor-patient-list .group.rounded-xl .text-base.font-medium {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+html.layout-viewport-compact .doctor-patient-list .group.rounded-xl .mb-3 {
+  margin-bottom: 8px;
+}
+
+html.layout-viewport-compact
+  .doctor-patient-list
+  .group.rounded-xl
+  .space-y-1\.5
+  > :not([hidden])
+  ~ :not([hidden]) {
+  margin-top: 4px;
+}
+
+html.layout-viewport-compact .doctor-patient-list .group.rounded-xl {
+  border-radius: 10px;
+}
+
+/* ========== 开立医嘱 ========== */
+html.layout-viewport-compact .advice-workspace-root {
+  --advice-template-panel-width: 208px;
+}
+
+html.layout-viewport-compact .advice-workspace-root__main {
+  padding: 6px;
+}
+
+html.layout-viewport-compact .advice-workspace-toolbar {
+  justify-content: flex-start;
+}
+
+html.layout-viewport-compact .advice-workspace-toolbar .advice-list-total {
+  margin-left: auto;
+}
+
+html.layout-viewport-compact .order-template-side-panel {
+  padding: 4px;
+}
+
+html.layout-viewport-compact .order-template-side-panel__search {
+  margin-bottom: 4px;
+}
+
+html.layout-viewport-compact .order-template-tree .el-tree-node__content {
+  height: 28px;
+}
+
+/* ========== 门诊病历 ========== */
+html.layout-viewport-compact .medical-record-form__toolbar {
+  padding-right: 8px;
+  padding-left: 8px;
+}
+
+html.layout-viewport-compact .medical-record-form__editor-wrap {
+  padding: 6px;
+}
+
+html.layout-viewport-compact .history-template-panel__tab {
+  padding-right: 8px;
+  padding-left: 8px;
+  font-size: 13px;
+}
+
+html.layout-viewport-compact .history-template-panel__search {
+  padding-right: 8px;
+  padding-left: 8px;
+}
+
+html.layout-viewport-compact .history-template-panel__template-wrap {
+  padding: 8px;
+}
+
+html.layout-viewport-compact .history-panel__list {
+  padding: 6px 4px;
+}
+
+html.layout-viewport-compact .history-panel__item {
+  margin-bottom: 4px;
+  padding: 6px 8px;
+}
+
+html.layout-viewport-compact .history-panel__item-title {
+  font-size: 12px;
+}
+
+html.layout-viewport-compact .history-panel__item-meta {
+  gap: 4px;
+  margin-top: 2px;
+  font-size: 11px;
+}
+
+/* ========== 诊断录入 ========== */
+html.layout-viewport-compact .diagnosis-list-panel {
+  gap: 6px;
+  padding: 6px;
+}
+
+html.layout-viewport-compact .diagnosis-list-body {
+  --diagnosis-quick-tree-width: 228px;
+  gap: 6px;
+}
+
+html.layout-viewport-compact .quick-tree {
+  padding: 8px;
+  border-radius: 6px;
+}
+
+html.layout-viewport-compact .quick-tree .el-tree-node__content {
+  height: 28px;
+}
+
+html.layout-viewport-compact .quick-tree .el-tree-node__label {
+  font-size: 13px;
+}
+
+/* ========== 中医处方 ========== */
+html.layout-viewport-compact .tcm-advice-root {
+  --tcm-sidebar-width: 208px;
+}
+
+html.layout-viewport-compact .tcm-advice-root__sidebar {
+  padding: 4px;
+}
+
+html.layout-viewport-compact .tcm-advice-root__sidebar .mb-1\.5 {
+  margin-bottom: 4px;
+}
+
+html.layout-viewport-compact .tcm-advice-root__main {
+  padding: 6px;
+}
+
+html.layout-viewport-compact .tcm-template-tree .el-tree-node__content {
+  height: 28px;
+}
+
+html.layout-viewport-compact .tcm-herb-grid {
+  gap: 8px;
+  padding: 8px;
+}
+
+/* ========== 业务 Tab / 区块工具条 ========== */
+html.layout-viewport-compact .doctor-header__tab.h-7 {
+  height: 26px;
+  padding-right: 10px;
+  padding-left: 10px;
+}
+
+html.layout-viewport-compact .doctor-header__tab-strip {
+  padding-top: 2px;
+}
+
+html.layout-viewport-compact .medical-record-form__toolbar {
+  height: 36px !important;
+  min-height: 36px;
+}
+
+html.layout-viewport-compact .history-template-panel__tabs {
+  height: 36px !important;
+  min-height: 36px;
+}
+
+html.layout-viewport-compact .history-template-panel__search {
+  height: 36px !important;
+  min-height: 36px;
+}
+
+/* ========== 开立医嘱表（多行/编辑行：不固定 tbody 行高） ========== */
+html.layout-viewport-compact .advice-table th.el-table__cell {
+  height: var(--table-header-height);
+}
+
+html.layout-viewport-compact .advice-table td.el-table__cell {
+  height: auto;
+}
+
+html.layout-viewport-compact .advice-table .advice-editor-cell .cell {
+  padding: 6px 8px !important;
+}

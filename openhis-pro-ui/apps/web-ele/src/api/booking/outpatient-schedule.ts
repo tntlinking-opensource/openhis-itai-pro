@@ -8,6 +8,8 @@ import type { BookingOptionDto } from './booking-types';
 
 export interface LoadScheduleFormInitRequest {
   organizationId?: BookingEntityId;
+  /** 非空时号源类型下拉收窄为该医师可接诊号源 */
+  practitionerId?: BookingEntityId;
 }
 
 export interface LoadScheduleFormInitResponse {

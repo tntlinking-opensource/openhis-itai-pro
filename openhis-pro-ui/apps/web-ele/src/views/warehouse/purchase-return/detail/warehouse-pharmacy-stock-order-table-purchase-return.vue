@@ -12,6 +12,7 @@ import WarehouseDocOrderHeadPanel from '#/components/warehouse/warehouse-doc-ord
 import WarehouseOrderDetailToolbar from '#/components/warehouse/warehouse-order-detail-toolbar.vue';
 import { formatPharmacyStockYmd } from '#/utils/warehouse/pharmacy-stock-order-el-format';
 import { isPurchaseRequestApproved } from '#/utils/warehouse/purchase-request-order-detail';
+import { calcMoneyLineTotal, formatMoneyDisplay, scaleMoneyCalc } from '#/utils/format/money-scale';
 
 import PurchaseReturnStockInImportDialog from './purchase-return-stock-in-import-dialog.vue';
 
@@ -190,23 +191,19 @@ const getPriceDisplayRow = (row, priceType) => {
   // 根据价格类型返回对应的值
   switch (priceType) {
     case 'price': {
-      return currentUnit?.priceMask ? Number.parseFloat(currentUnit.priceMask).toFixed(2) : '';
+      return currentUnit?.priceMask ? formatMoneyDisplay(currentUnit.priceMask) : '';
     }
     case 'retailPrice': {
-      return currentUnit?.retailPriceMask
-        ? Number.parseFloat(currentUnit.retailPriceMask).toFixed(2)
-        : '';
+      return currentUnit?.retailPriceMask ? formatMoneyDisplay(currentUnit.retailPriceMask) : '';
     }
     case 'totalPrice': {
       return row.totalPriceMask || currentUnit?.totalPriceMask
-        ? Number.parseFloat(row.totalPriceMask || currentUnit?.totalPriceMask).toFixed(2)
+        ? formatMoneyDisplay(row.totalPriceMask || currentUnit?.totalPriceMask)
         : '';
     }
     case 'totalRetailPrice': {
       return row.totalRetailPriceMask || currentUnit?.totalRetailPriceMask
-        ? Number.parseFloat(row.totalRetailPriceMask || currentUnit?.totalRetailPriceMask).toFixed(
-            2,
-          )
+        ? formatMoneyDisplay(row.totalRetailPriceMask || currentUnit?.totalRetailPriceMask)
         : '';
     }
     default: {
@@ -331,26 +328,31 @@ const handleItemQuantityChange = (row) => {
   const price = Number.parseFloat(row.price) || 0;
   const retailPrice = Number.parseFloat(row.retailPrice) || 0;
 
+  const lineTotal = calcMoneyLineTotal(price, quantity);
+  const lineRetailTotal = calcMoneyLineTotal(retailPrice, quantity);
+
   // 进价金额
-  row.totalPrice = Number.parseFloat((quantity * price).toFixed(2));
-  row.totalPriceMask = Number.parseFloat((quantity * price).toFixed(2));
+  row.totalPrice = lineTotal;
+  row.totalPriceMask = lineTotal;
   // 销售金额
-  row.totalRetailPrice = Number.parseFloat((quantity * retailPrice).toFixed(2));
-  row.totalRetailPriceMask = Number.parseFloat((quantity * retailPrice).toFixed(2));
+  row.totalRetailPrice = lineRetailTotal;
+  row.totalRetailPriceMask = lineRetailTotal;
 };
 // 监听进货价数量变化
 const handleItemPriceChange = (row) => {
+  const lineTotal = calcMoneyLineTotal(row.price, row.itemQuantity);
   //  进价金额
-  row.totalPrice = Number.parseFloat((row.itemQuantity * row.price).toFixed(2));
+  row.totalPrice = lineTotal;
   //  进价金额(假)
-  row.totalPriceMask = Number.parseFloat((row.itemQuantity * row.price).toFixed(2));
+  row.totalPriceMask = lineTotal;
 };
 // 监听销售价数量变化
 const handleItemRetailPriceChange = (row) => {
+  const lineRetailTotal = calcMoneyLineTotal(row.retailPrice, row.itemQuantity);
   // 销售金额
-  row.totalRetailPrice = Number.parseFloat((row.itemQuantity * row.retailPrice).toFixed(2));
+  row.totalRetailPrice = lineRetailTotal;
   // 销售金额(假)
-  row.totalRetailPriceMask = Number.parseFloat((row.itemQuantity * row.retailPrice).toFixed(2));
+  row.totalRetailPriceMask = lineRetailTotal;
 };
 /** VXE 选中药品回填当前编辑行 */
 const applyMedicineToGridRow = (row, rowValue) => {
@@ -392,21 +394,21 @@ const buildPrice = (item) => {
     // 销售价
     item.retailPrice = item.retailPrice;
     item.retailPriceMaxUnit = item.retailPrice;
-    item.retailPriceMinUnit = (
-      Number.parseFloat(item.retailPrice) / Number.parseInt(item.partPercent)
-    ).toFixed(2);
+    item.retailPriceMinUnit = formatMoneyDisplay(
+      Number.parseFloat(item.retailPrice) / Number.parseInt(item.partPercent),
+    );
   } else {
     // 进货价
     item.price = item.price;
-    item.priceMaxUnit = Number.parseFloat(
-      (item.price * Number.parseInt(item.partPercent)).toFixed(2),
+    item.priceMaxUnit = scaleMoneyCalc(
+      calcMoneyLineTotal(item.price, Number.parseInt(item.partPercent)),
     );
     item.priceMinUnit = item.price;
 
     // 销售价
     item.retailPrice = item.retailPrice;
-    item.retailPriceMaxUnit = Number.parseFloat(
-      (item.retailPrice * Number.parseInt(item.partPercent)).toFixed(2),
+    item.retailPriceMaxUnit = scaleMoneyCalc(
+      calcMoneyLineTotal(item.retailPrice, Number.parseInt(item.partPercent)),
     );
     item.retailPriceMinUnit = item.retailPrice;
   }
@@ -455,9 +457,9 @@ const buildUnitList = (row) => {
       // 进货价（假）
       item.priceMask = row.price / row.partPercent;
       // 销售价（假）
-      item.retailPriceMask = (
-        Number.parseFloat(row.retailPrice) / Number.parseFloat(row.partPercent)
-      ).toFixed(2);
+      item.retailPriceMask = formatMoneyDisplay(
+        Number.parseFloat(row.retailPrice) / Number.parseFloat(row.partPercent),
+      );
 
       // 进价金额（假）
       item.totalPriceMask = row.totalPrice;

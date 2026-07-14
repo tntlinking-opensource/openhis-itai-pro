@@ -81,8 +81,11 @@
   /* Default border color */
   --border: 240 5.9% 90%;
 
+  /* Form control border color (#dce3eb)，各主题不覆盖，保证全局一致 */
+  --form-control-border: 212 27.3% 89.2%;
+
   /* Border color for inputs such as <Input />, <Select />, <Textarea /> */
-  --input: 240deg 5.88% 90%;
+  --input: var(--form-control-border);
   --input-placeholder: 217 10.6% 65%;
   --input-background: 0 0% 100%;
 
@@ -91,6 +94,12 @@
 
   /* Border radius for card, input and buttons */
   --radius: 0.5rem;
+
+  /* Form control border radius (input / select / textarea) */
+  --form-control-radius: 6px;
+
+  /* Form control height (input / select / date-picker) */
+  --form-control-height: 30px;
 
   /* ============= custom ============= */
 
@@ -142,7 +151,7 @@
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 210 20% 98%;
   --border: 220 13% 91%;
-  --input: 220 13% 91%;
+  --input: var(--form-control-border);
   --ring: 262.1 83.3% 57.8%;
 }
 
@@ -163,7 +172,7 @@
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 0 0% 98%;
   --border: 240 5.9% 90%;
-  --input: 240 5.9% 90%;
+  --input: var(--form-control-border);
   --ring: 346.8 77.2% 49.8%;
 }
 
@@ -184,7 +193,7 @@
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 0 0% 98%;
   --border: 240 5.9% 90%;
-  --input: 240 5.9% 90%;
+  --input: var(--form-control-border);
   --ring: 346.8 77.2% 49.8%;
 }
 
@@ -205,7 +214,7 @@
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 210 40% 98%;
   --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
+  --input: var(--form-control-border);
   --ring: 221.2 83.2% 53.3%;
 }
 
@@ -226,7 +235,7 @@
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 210 40% 98%;
   --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
+  --input: var(--form-control-border);
   --ring: 221.2 83.2% 53.3%;
 }
 
@@ -247,7 +256,7 @@
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 0 0% 98%;
   --border: 240 5.9% 90%;
-  --input: 240 5.9% 90%;
+  --input: var(--form-control-border);
   --ring: 142.1 76.2% 36.3%;
 }
 
@@ -268,7 +277,7 @@
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 0 0% 98%;
   --border: 240 5.9% 90%;
-  --input: 240 5.9% 90%;
+  --input: var(--form-control-border);
   --ring: 142.1 76.2% 36.3%;
 }
 
@@ -289,7 +298,7 @@
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 60 9.1% 97.8%;
   --border: 20 5.9% 90%;
-  --input: 20 5.9% 90%;
+  --input: var(--form-control-border);
   --ring: 24.6 95% 53.1%;
 }
 
@@ -310,7 +319,7 @@
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 60 9.1% 97.8%;
   --border: 20 5.9% 90%;
-  --input: 20 5.9% 90%;
+  --input: var(--form-control-border);
   --ring: 20 14.3% 4.1%;
 }
 
@@ -331,7 +340,7 @@
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 0 0% 98%;
   --border: 240 5.9% 90%;
-  --input: 240 5.9% 90%;
+  --input: var(--form-control-border);
   --ring: 240 5.9% 10%;
 }
 
@@ -352,7 +361,7 @@
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 0 0% 98%;
   --border: 0 0% 89.8%;
-  --input: 0 0% 89.8%;
+  --input: var(--form-control-border);
   --ring: 0 0% 3.9%;
 }
 
@@ -373,7 +382,7 @@
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 210 40% 98%;
   --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
+  --input: var(--form-control-border);
   --ring: 222.2 84% 4.9%;
 }
 
@@ -394,6 +403,6 @@
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 210 20% 98%;
   --border: 220 13% 91%;
-  --input: 220 13% 91%;
+  --input: var(--form-control-border);
   --ring: 224 71.4% 4.1%;
 }

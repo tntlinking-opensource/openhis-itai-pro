@@ -223,53 +223,6 @@ async function handleConfirmReturn() {
   }
 }
 
-/** 拒绝退药（弹窗填写原因，后端必填） */
-async function handleDeclineReturn() {
-  const items = buildSubmitItems();
-  if (items.length === 0) {
-    ElMessage.warning('请先勾选要拒绝的明细');
-    return;
-  }
-  let reason: string | undefined;
-  try {
-    const { value } = await ElMessageBox.prompt('请输入拒绝原因', '拒绝退药', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      inputType: 'textarea',
-      inputPlaceholder: '拒绝原因',
-      inputValidator: (val) => (val?.trim() ? true : '请填写拒绝原因'),
-    });
-    reason = value.trim();
-    await ElMessageBox.confirm('确认拒绝所选退药申请？', '拒绝退药', {
-      type: 'warning',
-    });
-  } catch {
-    return;
-  }
-  submitLoading.value = true;
-  try {
-    const res = await httpConfirmMedicineReturn({
-      items,
-      confirmType: 'DECLINE',
-      reason,
-    });
-    if (res.success === false && (res.failedItems?.length ?? 0) > 0) {
-      ElMessage.error(res.message?.trim() || '操作失败，请刷新后重试');
-    } else {
-      ElMessage.success(res.message?.trim() || '已拒绝退药');
-    }
-    await reloadDetail();
-    await reloadQueue();
-    await nextTick(() => {
-      detailCenterRef.value?.clearDetailSelection();
-    });
-  } catch {
-    /* 拦截器提示 */
-  } finally {
-    submitLoading.value = false;
-  }
-}
-
 onMounted(async () => {
   await loadPageInit();
   try {
@@ -347,7 +300,6 @@ onMounted(async () => {
           :refund-queue-status="refundQueueStatus"
           :selected-patient="selectedPatient"
           @confirm-return="handleConfirmReturn"
-          @decline-return="handleDeclineReturn"
         />
       </template>
     </StationTriPaneLayout>

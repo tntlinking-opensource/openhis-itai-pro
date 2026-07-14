@@ -34,6 +34,7 @@ export interface LoadInpatientPharmacyDispensePageInitResponse {
   notPerformedReasonOptions?: ApiOptionItem[];
   wardOptions?: ApiOptionItem[];
   preparerCandidatePage?: SpringPage<PractitionerOptionDto>;
+  receiverCandidatePage?: SpringPage<PractitionerOptionDto>;
 }
 
 export interface PagePendingDispenseInpatientEncounterQueueRequest extends PageParams {

@@ -16,6 +16,7 @@ import '#/utils/print/mappers';
 export { PRINT_SCENARIO, type PrintScenario } from '../constants/print-scenario';
 
 export { groupSlipRowsByPrescriptionNo } from '../mappers/outpatient-prescription';
+export { resolveOutpatientPrescriptionPrintScenario } from '../resolve-outpatient-prescription-scenario';
 export { PrintRuntimeError, resolvePrintErrorMessage } from './errors';
 export {
   copyPrintChromeFlagUrl,

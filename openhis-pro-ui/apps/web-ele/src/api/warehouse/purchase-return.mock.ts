@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- mock 与后端字段宽松对齐 */
 import type { PurchaseReturnInitResponse } from './purchase-return';
 
+import { calcMoneyLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
+
 type CabinetOption = import('#/types/api-response').ApiOptionItem & {
   id?: string;
   name?: string;
@@ -153,10 +155,10 @@ function catalogToDetailLine(
     itemName: c.name,
     unitCodeDictText: c.unitCode_dictText,
     itemQuantity: qty,
-    totalPrice: Number.parseFloat((qty * Number(c.price)).toFixed(2)),
-    totalPriceMask: Number.parseFloat((qty * Number(c.price)).toFixed(2)).toFixed(2),
-    totalRetailPrice: Number.parseFloat((qty * Number(c.retailPrice)).toFixed(2)),
-    totalRetailPriceMask: Number.parseFloat((qty * Number(c.retailPrice)).toFixed(2)).toFixed(2),
+    totalPrice: calcMoneyLineTotal(c.price, qty),
+    totalPriceMask: formatMoneyDisplay(calcMoneyLineTotal(c.price, qty)),
+    totalRetailPrice: calcMoneyLineTotal(c.retailPrice, qty),
+    totalRetailPriceMask: formatMoneyDisplay(calcMoneyLineTotal(c.retailPrice, qty)),
     packagingConditionEnum: 1,
     acceptanceResultEnum: 1,
     lotNumber: `LOT-${c.busNo}-001`,

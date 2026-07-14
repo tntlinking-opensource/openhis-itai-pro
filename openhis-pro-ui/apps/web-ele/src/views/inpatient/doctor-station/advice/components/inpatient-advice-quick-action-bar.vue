@@ -22,7 +22,7 @@ const QUICK_ACTION_ITEMS: Array<{ action: InpatientAdviceQuickAction; label: str
   { action: 'allergy', label: '过敏史' },
 ];
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     disabled?: boolean;
   }>(),
@@ -37,6 +37,12 @@ const emit = defineEmits<{
 function handleClick(action: InpatientAdviceQuickAction) {
   emit('action', action);
 }
+
+/** 全局禁写时仍允许查看类入口（报告查询、过敏史） */
+function isQuickActionDisabled(action: InpatientAdviceQuickAction): boolean {
+  if (!props.disabled) return false;
+  return action !== 'allergy' && action !== 'report';
+}
 </script>
 
 <template>
@@ -47,7 +53,7 @@ function handleClick(action: InpatientAdviceQuickAction) {
         :key="item.action"
         plain
         class="ip-advice-quick-bar__btn"
-        :disabled="disabled"
+        :disabled="isQuickActionDisabled(item.action)"
         @click="handleClick(item.action)"
       >
         {{ item.label }}

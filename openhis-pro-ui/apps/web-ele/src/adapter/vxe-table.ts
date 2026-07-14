@@ -28,6 +28,7 @@ import {
 import { shouldInventoryRowShowPersistedForm } from '#/utils/inventory/inventory-doc-grid-edit';
 
 import ProductSelectTable from '../components/select-product.vue';
+import TraceCodeTooltip from '../components/trace/trace-code-tooltip.vue';
 import SelectPriceAdjustmentItem from '../components/select-price-adjustment-item.vue';
 import SelectPurchaseOrderMedicine from '../components/select-purchase-order-medicine.vue';
 import SelectPurchaseReturnMedicine from '../components/select-purchase-return-medicine.vue';
@@ -397,6 +398,42 @@ setupVbenVxeTable({
     };
     vxeUI.renderer.add('InventoryPersistElInput', inventoryPersistElInputRenderer);
 
+    /** 追溯码：未完成行常驻 ElInput；只读回显 TraceCodeTooltip */
+    const inventoryTraceNoCellRenderer = {
+      autofocus: '.el-input__inner',
+      renderTableEdit(renderOpts, { row, column }) {
+        const { props } = renderOpts;
+        const maxlength = props?.maxlength as number | undefined;
+        const clearable = props?.clearable === true;
+        return h(ElInput, {
+          class: '!w-full',
+          clearable,
+          maxlength,
+          modelValue: String(row[column.field] ?? ''),
+          'onUpdate:modelValue': (val: string) => {
+            row[column.field] = val;
+          },
+        });
+      },
+      renderTableCell(renderOpts, { row, column }) {
+        if (shouldInventoryRowShowPersistedForm(row)) {
+          return inventoryTraceNoCellRenderer.renderTableEdit(renderOpts, { row, column });
+        }
+        return h(TraceCodeTooltip, { value: String(row[column.field] ?? '') });
+      },
+    };
+    vxeUI.renderer.add('InventoryTraceNoCell', inventoryTraceNoCellRenderer);
+
+    /** 只读追溯码列（TraceCodeTooltip） */
+    vxeUI.renderer.add('TraceCodeTooltipCell', {
+      renderTableDefault(renderOpts, params) {
+        const { props } = renderOpts;
+        const { row, column } = params;
+        const field = String(props?.field ?? column.field ?? 'traceNo');
+        return h(TraceCodeTooltip, { value: String(row[field] ?? '') });
+      },
+    });
+
     /** 未完成行常驻：ElInputNumber 数字列（数量/损益数量等） */
     const inventoryPersistElInputNumberRenderer = {
       autofocus: '.el-input__inner',
@@ -478,6 +515,8 @@ setupVbenVxeTable({
         const unitField = String(props?.unitField ?? 'selectedBandKind');
         const useBandSelect = props?.useBandSelect !== false;
         const onUnitChange = props?.onUnitChange as ((row: TableRow) => void) | undefined;
+        const onQtyChange = props?.onQtyChange as ((row: TableRow) => void) | undefined;
+        const allowNegative = props?.allowNegative === true;
         const qty = Number(row[qtyField]);
         const qtyModel = Number.isFinite(qty) ? qty : undefined;
 
@@ -485,10 +524,11 @@ setupVbenVxeTable({
           controls: false,
           align: 'center',
           class: '!min-w-0 flex-1',
-          min: 0,
+          ...(allowNegative ? {} : { min: 0 }),
           modelValue: qtyModel,
           'onUpdate:modelValue': (val: number | undefined) => {
             row[qtyField] = val === undefined || val === null ? undefined : val;
+            onQtyChange?.(row);
           },
         });
 
@@ -500,15 +540,25 @@ setupVbenVxeTable({
             label: String(u.label ?? u.value_dictText ?? u.value ?? ''),
             value: u.value,
           }));
-          unitInput = h(ElSelect, {
-            class: '!min-w-0 flex-1',
-            modelValue: row[unitField],
-            options,
-            'onUpdate:modelValue': (val: string) => {
-              row[unitField] = val;
-              onUnitChange?.(row);
+          unitInput = h(
+            'div',
+            {
+              class: '!min-w-0 flex-1',
+              onMousedown: (e: MouseEvent) => e.stopPropagation(),
+              onClick: (e: MouseEvent) => e.stopPropagation(),
             },
-          });
+            [
+              h(ElSelect, {
+                class: 'w-full',
+                modelValue: row[unitField],
+                options,
+                'onUpdate:modelValue': (val: string) => {
+                  row[unitField] = val;
+                  onUnitChange?.(row);
+                },
+              }),
+            ],
+          );
         } else {
           unitInput = h(ElInput, {
             class: '!min-w-0 flex-1',
@@ -540,6 +590,18 @@ setupVbenVxeTable({
       },
     };
     vxeUI.renderer.add('InventoryQtyUnitCell', inventoryQtyUnitCellRenderer);
+
+    /** 只读：数量 + 单位合并展示（盘点当前库存等，常驻表单行也保持只读） */
+    vxeUI.renderer.add('InventoryQtyUnitReadonlyCell', {
+      renderTableDefault(renderOpts, params) {
+        const { props } = renderOpts;
+        const { row } = params;
+        const qtyField = String(props?.qtyField ?? 'itemQuantity');
+        const unitField = String(props?.unitField ?? 'selectedBandKind');
+        const text = formatInventoryQtyUnitCellText(row, qtyField, unitField);
+        return h('span', { class: 'block w-full text-center' }, text);
+      },
+    });
 
     /** 单价：编辑为数字；回显两位小数 + 计量单位 */
     const inventoryUnitPriceCellRenderer = {

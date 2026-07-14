@@ -19,6 +19,7 @@ const STANDARD_PAGE_SIZE_NAMES = new Set([
 /** 业务场景默认纸张（优先于模板 panel.paperType） */
 const SCENARIO_PAGE_SIZE: Partial<Record<PrintScenario, string>> = {
   [PRINT_SCENARIO.outpatientRx]: 'A5',
+  [PRINT_SCENARIO.outpatientTcmRx]: 'A5',
   [PRINT_SCENARIO.examinationPrint]: 'A5',
   [PRINT_SCENARIO.testPrint]: 'A5',
 };

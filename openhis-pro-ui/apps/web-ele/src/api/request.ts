@@ -22,6 +22,8 @@ import type { AuthApi } from '#/api/core/auth';
 
 import { isTenantScopeLostError, restoreLoginScopeOnce } from '#/utils/auth/restore-login-scope';
 import { formatInsuranceRegisterError } from '#/utils/http/format-insurance-register-error';
+import { formatInventoryLocationError } from '#/utils/http/format-inventory-location-error';
+import { isExpectedEmptyResponseError } from '#/utils/http/expected-empty-response-errors';
 import { formatStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
 import { showPersistentUserError } from '#/utils/http/show-persistent-user-message';
 
@@ -125,6 +127,23 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
     },
   });
 
+  // 蓝绿切流瞬间：502/503 自动重试一次
+  client.addResponseInterceptor({
+    rejected: async (error) => {
+      const config = error?.config as
+        | (typeof error.config & { __isGatewayRetryRequest?: boolean })
+        | undefined;
+      const status = error?.response?.status;
+      if (!config || config.__isGatewayRetryRequest || (status !== 502 && status !== 503)) {
+        throw error;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      config.__isGatewayRetryRequest = true;
+      return client.request(config.url, { ...config });
+    },
+  });
+
   // 后端重启后会话租户丢失：自动恢复 selectTenant/医院/科室 并重试一次
   client.addResponseInterceptor({
     rejected: async (error) => {
@@ -174,10 +193,22 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
       const errorMessage = responseData?.message ?? responseData?.error ?? error?.message ?? '';
       const errorCode = responseData?.errorCode ?? error?.errorCode;
       const displayMessage = errorMessage || msg;
+      const requestUrl = String(error?.config?.url ?? '');
 
       if (errorCode === 'MODULE_NOT_AVAILABLE') {
+        if (/workInjury/i.test(requestUrl)) {
+          throw error;
+        }
         ElMessage.warning(displayMessage);
         return;
+      }
+
+      if (errorCode === 'NOT_FOUND' && /workInjury/i.test(requestUrl)) {
+        throw error;
+      }
+
+      if (isExpectedEmptyResponseError(error)) {
+        throw error;
       }
 
       const registerInsuranceError = formatInsuranceRegisterError(
@@ -195,6 +226,12 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
       );
       if (staleCrossRoleError) {
         ElMessage.warning(staleCrossRoleError);
+        return;
+      }
+
+      const inventoryLocationError = formatInventoryLocationError(displayMessage);
+      if (inventoryLocationError) {
+        ElMessage.warning(inventoryLocationError);
         return;
       }
 

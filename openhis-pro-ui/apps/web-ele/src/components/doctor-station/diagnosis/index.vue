@@ -310,8 +310,10 @@ async function handleRemove(row: EncounterDiagnosisRowDto) {
 }
 
 .diagnosis-list-body {
+  /* default：DOCTOR_STATION_SIDEBAR_WIDTH_PX.diagnosisQuickTree */
+  --diagnosis-quick-tree-width: 260px;
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: var(--diagnosis-quick-tree-width) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   gap: 10px;
   flex: 1;

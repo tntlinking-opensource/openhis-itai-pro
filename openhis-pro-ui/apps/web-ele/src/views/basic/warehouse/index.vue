@@ -65,6 +65,12 @@ const tableColumns = ref<TableColumn[]>([
     headerAlign: 'center',
   },
   {
+    label: '上级科室',
+    prop: 'organizationName',
+    showOverflowTooltip: true,
+    slot: 'organizationName',
+  },
+  {
     label: '状态',
     prop: 'statusEnumText',
     align: 'center',
@@ -242,6 +248,9 @@ onMounted(() => {
         <ElTag :type="isWarehouseActive(row) ? 'success' : 'info'">
           {{ row.statusEnumText }}
         </ElTag>
+      </template>
+      <template #organizationName="{ row }">
+        {{ row.organizationName || '—' }}
       </template>
     </TableLayout>
     <EditDialog

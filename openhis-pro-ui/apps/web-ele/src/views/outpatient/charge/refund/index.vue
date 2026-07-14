@@ -34,10 +34,9 @@ import {
   httpLoadOutpatientRefundExecutionDetail,
   httpLoadOutpatientRefundPageInit,
   httpPageOutpatientRefundQueue,
-  httpSwitchPreservedChargeItemsToInsurance,
-  httpSwitchPreservedChargeItemsToSelfPay,
   httpVerifyRefundableBeforeExecution,
 } from '#/api/outpatient-refund/outpatient-refund.http';
+import { runWorkInjuryRefundReverse } from '#/chs/work-injury/use-work-injury-settle';
 import BillingPatientCard from '#/components/charge/billing-patient-card.vue';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
@@ -45,7 +44,7 @@ import SelectFuzzyInput from '#/components/select-fuzzy-input.vue';
 import { useUnionPayScanPay } from '#/composables/payment/useUnionPayScanPay';
 import { useRequest } from '#/hooks/use-request';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import { decimalAdd } from '#/utils/format/decimal-util';
+import { sumMoneyThenSettle } from '#/utils/format/money-scale';
 import { optionDtosToPayChannelOptions } from '#/utils/payment/payment-channel-options';
 import { submitScanRefund } from '#/utils/payment/submit-scan-refund';
 
@@ -319,11 +318,6 @@ const currentQueueRow = computed(
   () => queueRecords.value.find((r) => r.encounterId === selectedEncounterId.value) ?? null,
 );
 
-/** 是否存在半退保留行（控制转医保/自费可用） */
-const hasPreservedLines = computed(() =>
-  paymentGroups.value.some((g) => (g.preservedLines?.length ?? 0) > 0),
-);
-
 /** 性别展示：优先接口文本字段 */
 function queueGenderDisplay(row: null | OutpatientRefundQueueRowDto | undefined): string {
   if (!row) return '—';
@@ -343,13 +337,9 @@ const selectedPaymentGroupCount = computed(() => {
 });
 
 /** 已选拟退行金额合计（展示用，实退以支付组 refundableAmount 为准） */
-const selectedRefundingSum = computed(() => {
-  let sum = 0;
-  for (const row of selectedDetailRows.value) {
-    sum = decimalAdd(sum, row.lineTotalAmount ?? 0, 4);
-  }
-  return sum;
-});
+const selectedRefundingSum = computed(() =>
+  sumMoneyThenSettle(selectedDetailRows.value.map((row) => row.lineTotalAmount ?? 0)),
+);
 
 /** 患者信息栏费用摘要：与明细表同源，避免队列行空金额 */
 const refundPatientFeeSummary = computed(() => {
@@ -475,6 +465,7 @@ const mapToBillingPatientCard = (row: OutpatientRefundQueueRowDto): BillingPatie
     patientName: row.patientName,
     gender: queueGenderDisplay(row),
     ageText: row.ageText ?? undefined,
+    chargeStatusCode: settled ? 'SETTLED' : 'REFUNDING',
     chargeStatus: settled ? '已退费' : '待退费',
     visitDepartment: row.organizationName ?? '—',
     visitTime: row.startTime ?? '—',
@@ -601,52 +592,6 @@ const detailTableColumns: TableColumn[] = [
   },
 ];
 
-/** 半退保留行转医保 */
-const handleSwitchInsurance = async () => {
-  const eid = selectedEncounterId.value;
-  if (!eid) {
-    ElMessage.warning('请先选择就诊');
-    return;
-  }
-  if (!hasPreservedLines.value) {
-    ElMessage.warning('当前就诊无半退保留项');
-    return;
-  }
-  await ElMessageBox.confirm('将半退保留的费用项批量切换到医保记账账户，是否继续？', '转医保', {
-    cancelButtonText: '取消',
-    confirmButtonText: '确定',
-    type: 'warning',
-  });
-  const res = await httpSwitchPreservedChargeItemsToInsurance({ encounterId: eid });
-  if (res.success) {
-    ElMessage.success('已提交转医保');
-    await loadExecutionDetailForSelectedEncounter();
-  }
-};
-
-/** 半退保留行转自费 */
-const handleSwitchSelfPay = async () => {
-  const eid = selectedEncounterId.value;
-  if (!eid) {
-    ElMessage.warning('请先选择就诊');
-    return;
-  }
-  if (!hasPreservedLines.value) {
-    ElMessage.warning('当前就诊无半退保留项');
-    return;
-  }
-  await ElMessageBox.confirm('将半退保留的费用项批量切换到自费记账账户，是否继续？', '转自费', {
-    cancelButtonText: '取消',
-    confirmButtonText: '确定',
-    type: 'warning',
-  });
-  const res = await httpSwitchPreservedChargeItemsToSelfPay({ encounterId: eid });
-  if (res.success) {
-    ElMessage.success('已提交转自费');
-    await loadExecutionDetailForSelectedEncounter();
-  }
-};
-
 /** 打开退费确认窗：校验同笔原支付并做执行前门禁 */
 const handleOpenSettlement = async () => {
   const eid = selectedEncounterId.value;
@@ -753,6 +698,11 @@ const handleConfirmRefund = async () => {
   }
   confirmRefundLoading.value = true;
   try {
+    await runWorkInjuryRefundReverse({
+      encounterId: eid,
+      originalPaymentId: snap.originalPaymentId,
+    });
+
     let clientRefundResult;
     try {
       clientRefundResult =
@@ -930,20 +880,6 @@ onMounted(() => {
               <div class="mb-2 flex flex-wrap items-center gap-2">
                 <SectionTitle title="退费项目列表" />
                 <div class="flex-1"></div>
-                <ElButton
-                  :disabled="isSettledDetailView || !selectedEncounterId || !hasPreservedLines"
-                  class="mr-1"
-                  @click="handleSwitchInsurance"
-                >
-                  转医保
-                </ElButton>
-                <ElButton
-                  :disabled="isSettledDetailView || !selectedEncounterId || !hasPreservedLines"
-                  class="mr-1"
-                  @click="handleSwitchSelfPay"
-                >
-                  转自费
-                </ElButton>
                 <ElButton
                   type="primary"
                   class="mr-1"

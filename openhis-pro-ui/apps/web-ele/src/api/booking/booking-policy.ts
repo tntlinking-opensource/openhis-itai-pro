@@ -56,7 +56,7 @@ export interface SaveRegistrationPolicyRequest {
 }
 
 export interface GetRegistrationModeRequest {
-  organizationId: BookingEntityId;
+  organizationId?: BookingEntityId;
 }
 
 export interface GetRegistrationModeResponse {

@@ -9,6 +9,8 @@ import { ElEmpty, ElInput, ElMessage } from 'element-plus';
 
 import WorkbenchCustomSection from './components/workbench-custom-section.vue';
 import WorkbenchGroupSection from './components/workbench-group-section.vue';
+import WorkbenchInventoryWarningSection from './components/workbench-inventory-warning-section.vue';
+import WorkbenchWorkloadReportSection from './components/workbench-workload-report-section.vue';
 import { useWorkbenchCustomShortcuts } from './use-workbench-custom-shortcuts';
 import { useWorkbenchShortcuts } from './use-workbench-shortcuts';
 
@@ -71,6 +73,11 @@ function handleRemoveCustomShortcut(routeName: string) {
         />
       </div>
 
+      <div class="workbench-home__stats">
+        <WorkbenchInventoryWarningSection />
+        <WorkbenchWorkloadReportSection />
+      </div>
+
       <WorkbenchCustomSection
         v-if="showCustomShortcuts"
         class="workbench-home__custom"
@@ -113,7 +120,15 @@ function handleRemoveCustomShortcut(routeName: string) {
 
 .workbench-home__toolbar {
   flex-shrink: 0;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+}
+
+.workbench-home__stats {
+  display: grid;
+  flex-shrink: 0;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
 }
 
 .workbench-home__custom {

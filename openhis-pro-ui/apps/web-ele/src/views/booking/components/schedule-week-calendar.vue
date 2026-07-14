@@ -4,7 +4,7 @@ import type {
   ScheduleCalendarDayDto,
 } from '#/api/booking/outpatient-schedule';
 
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 import {
   dayLabel,
@@ -15,21 +15,29 @@ import {
   weekRangeAround,
   weekRangeLabel,
 } from '#/api/booking/booking-constants';
-import { schedulePractitionerLabel } from '#/views/booking/components/schedule-actor-labels';
+import type { BookingEntityId } from '#/api/booking/booking-id';
+import { scheduleCellActorLabel } from '#/views/booking/components/schedule-actor-labels';
 import type { BookingOptionDto } from '#/api/booking/booking-types';
 
 const props = defineProps<{
   days: ScheduleCalendarDayDto[];
   loading?: boolean;
-  /** 锚点日：双击日期列后更新，用于高亮与新建日程默认日期 */
+  /** 锚点日：单击日期列切换选中，用于高亮与新建/生成默认日期 */
   anchorDate?: string;
+  organizationId?: BookingEntityId;
   practitioners?: BookingOptionDto[];
+  departments?: BookingOptionDto[];
 }>();
 
 const emit = defineEmits<{
   select: [payload: { date: string; schedule: ScheduleCalendarCellDto }];
-  create: [payload: { date: string }];
+  /** 单击日期列：仅切换选中态，不打开抽屉 */
+  anchor: [payload: { date: string }];
+  /** 双击日期列：打开抽屉（有日程则详情，无则新建） */
+  'open-day': [payload: { date: string; schedules: ScheduleCalendarCellDto[] }];
 }>();
+
+const dayClickTimer = ref<ReturnType<typeof setTimeout>>();
 
 function isToday(date?: string) {
   return Boolean(date && date === todayLocalDateIso());
@@ -79,24 +87,60 @@ function cellKey(dayDate: string | undefined, schedule: ScheduleCalendarCellDto)
   return `${dayDate}-tpl-${schedule.dayScheduleTemplateId ?? schedule.weekScheduleTemplateId ?? schedule.name}`;
 }
 
-function handleSelect(date: string | undefined, schedule: ScheduleCalendarCellDto) {
-  if (!date) return;
-  emit('select', { date, schedule });
-}
-
-function handleDayDblClick(date: string | undefined, event: MouseEvent) {
+function handleSelect(
+  date: string | undefined,
+  schedule: ScheduleCalendarCellDto,
+  event: MouseEvent,
+) {
   if (!date) {
     return;
   }
+  event.stopPropagation();
+  emit('select', { date, schedule });
+}
+
+function isDaySurfaceTarget(event: MouseEvent) {
   const target = event.target as HTMLElement | null;
-  if (target?.closest('.schedule-week-calendar__cell')) {
+  return !target?.closest('.schedule-week-calendar__cell');
+}
+
+function handleDayClick(day: ScheduleCalendarDayDto, event: MouseEvent) {
+  const date = day.date;
+  if (!date || !isDaySurfaceTarget(event)) {
     return;
   }
-  emit('create', { date });
+  if (dayClickTimer.value) {
+    clearTimeout(dayClickTimer.value);
+  }
+  dayClickTimer.value = setTimeout(() => {
+    emit('anchor', { date });
+    dayClickTimer.value = undefined;
+  }, 220);
+}
+
+function handleDayDblClick(day: ScheduleCalendarDayDto, event: MouseEvent) {
+  const date = day.date;
+  if (!date || !isDaySurfaceTarget(event)) {
+    return;
+  }
+  if (dayClickTimer.value) {
+    clearTimeout(dayClickTimer.value);
+    dayClickTimer.value = undefined;
+  }
+  emit('open-day', { date, schedules: day.schedules ?? [] });
 }
 
 function weekBadge(isAnchorWeek: boolean) {
   return isAnchorWeek ? '选中周' : '次周';
+}
+
+/** 卡片第二行：科室号显示科室，医师号显示医师 */
+function cellActorLabel(schedule: ScheduleCalendarCellDto) {
+  return scheduleCellActorLabel(schedule, {
+    practitioners: props.practitioners,
+    organizationId: props.organizationId,
+    departments: props.departments,
+  });
 }
 </script>
 
@@ -139,7 +183,8 @@ function weekBadge(isAnchorWeek: boolean) {
             :key="day.date"
             class="schedule-week-calendar__day"
             :class="{ 'is-anchor': isAnchor(day.date) }"
-            @dblclick="handleDayDblClick(day.date, $event)"
+            @click="handleDayClick(day, $event)"
+            @dblclick="handleDayDblClick(day, $event)"
           >
             <header class="schedule-week-calendar__day-title">
               <span class="schedule-week-calendar__day-label">{{ dayLabel(day.date || '') }}</span>
@@ -155,20 +200,17 @@ function weekBadge(isAnchorWeek: boolean) {
                   scheduleStatusClass(schedule.statusEnum),
                   schedule.bookable === false ? 'is-template-readonly' : '',
                 ]"
-                @click="handleSelect(day.date, schedule)"
+                @click="handleSelect(day.date, schedule, $event)"
               >
                 <span class="schedule-week-calendar__cell-name">{{
                   schedule.name || '未命名'
                 }}</span>
                 <span
-                  v-if="schedulePractitionerLabel(schedule, practitioners)"
                   class="schedule-week-calendar__cell-practitioner"
+                  :class="{ 'is-empty': !cellActorLabel(schedule) }"
                 >
-                  {{ schedulePractitionerLabel(schedule, practitioners) }}
+                  {{ cellActorLabel(schedule) }}
                 </span>
-                <span v-else class="schedule-week-calendar__cell-practitioner is-empty"
-                  >未指定医师</span
-                >
                 <span class="schedule-week-calendar__cell-status">
                   <span
                     v-if="schedule.fromTemplate || schedule.statusEnum === 'FROM_TEMPLATE'"
@@ -186,7 +228,7 @@ function weekBadge(isAnchorWeek: boolean) {
               <div
                 v-if="!day.schedules?.length"
                 class="schedule-week-calendar__empty"
-                title="双击空白处新建日程"
+                title="单击选中；双击新建日程"
               >
                 —
               </div>
@@ -298,6 +340,7 @@ function weekBadge(isAnchorWeek: boolean) {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  cursor: pointer;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   background: var(--el-bg-color);

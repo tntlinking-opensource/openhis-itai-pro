@@ -1,9 +1,6 @@
 import type { TagProps } from 'element-plus';
 
-import {
-  FALLBACK_DEFAULT_PAY_CHANNEL,
-  FALLBACK_PAY_CHANNEL_OPTIONS,
-} from '#/utils/payment/payment-channel-options';
+import { FALLBACK_PAY_CHANNEL_OPTIONS } from '#/utils/payment/payment-channel-options';
 
 /** 收费项状态（与域枚举 `ChargeItemStatus` code 一致）→ 文案 + 标签类型 */
 export const CHARGE_ITEM_STATUS_LABEL_TAG: Record<
@@ -23,8 +20,24 @@ export const OUTPATIENT_CHARGE_SETTLE_OUTCOME_COMPLETED = '1';
 /** 正式结算失败：医嘱已变更须重新预结算（GAP-STALE-001 / EX-OPC-411） */
 export const OUTPATIENT_CHARGE_SETTLE_ADVICE_CHANGED_CODE = 'EX-OPC-411';
 
-/** 默认支付渠道 */
-export const DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE = FALLBACK_DEFAULT_PAY_CHANNEL;
+/** IF-OPC-04/05 账户切换语义码 → 用户提示（与 AS-OP-FIN-002 §5 对齐） */
+export const OUTPATIENT_CHARGE_SWITCH_ACCOUNT_MESSAGE: Record<string, string> = {
+  'EX-OPC-201': '未找到目标记账账户，请核对患者费用性质与挂号开户',
+  'EX-OPC-202': '账户切换失败，请稍后重试或联系管理员',
+  'EX-OPC-210': '当前就诊为自费挂号，仅单一记账账户，不支持转医保/转自费',
+  'EX-OPC-409': '操作成功',
+};
+
+/** 解析 IF-OPC-04/05 失败提示；未知码回落通用文案 */
+export function resolveOutpatientChargeSwitchAccountMessage(messageCode?: null | string): string {
+  if (messageCode && OUTPATIENT_CHARGE_SWITCH_ACCOUNT_MESSAGE[messageCode]) {
+    return OUTPATIENT_CHARGE_SWITCH_ACCOUNT_MESSAGE[messageCode];
+  }
+  return OUTPATIENT_CHARGE_SWITCH_ACCOUNT_MESSAGE['EX-OPC-202'] ?? '账户切换失败';
+}
+
+/** 默认支付渠道（门诊收费结算弹窗） */
+export const DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE = 'WECHAT';
 
 /** 结算弹窗可选渠道（API 不可用时的 fallback，不含 SCAN_PAY） */
 export const OUTPATIENT_CHARGE_PAY_CHANNEL_OPTIONS = [...FALLBACK_PAY_CHANNEL_OPTIONS];

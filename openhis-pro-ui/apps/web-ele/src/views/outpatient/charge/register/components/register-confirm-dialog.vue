@@ -11,6 +11,7 @@ import { ElAlert, ElButton, ElInput, ElMessage, ElRadioButton, ElRadioGroup } fr
 
 import AppDialog from '#/components/app-dialog.vue';
 import { isScanPayChannel } from '#/composables/payment/useUnionPayScanPay';
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
 import { settleWithScanRecovery } from '#/utils/payment/scan-settle-recovery';
 import { submitScanPayment } from '#/utils/payment/submit-scan-payment';
 import { schedulePrintRegistrationReceipt } from '#/utils/print/print-registration-receipt';
@@ -24,6 +25,8 @@ import {
   isInsuranceCredentialExpiredError,
 } from '../services/register-insurance-credential';
 import { DEFAULT_REGISTER_PAY_CHANNEL_CODE, payRegisterFee } from '../services/register.service';
+
+import WorkInjury2301RegisterAction from '#/chs/work-injury/work-injury-2301-register-action.vue';
 
 defineOptions({
   name: 'RegisterConfirmDialog',
@@ -46,7 +49,7 @@ const payChannelCode = ref(DEFAULT_REGISTER_PAY_CHANNEL_CODE);
 const scanCode = ref('');
 const scanStatusText = ref('');
 
-const { scanPayEnabled, effectivePayChannelOptions, ensurePayChannelsLoaded } =
+const { scanPayEnabled, effectivePayChannelOptions, refreshPayChannelsForDialog } =
   useRegisterPayChannels();
 
 const showScanPaySection = computed(
@@ -57,6 +60,8 @@ const detail = ref<null | RegisterConfirmDetail>(null);
 const insuranceMediumType = ref('');
 const ybCredentialReadAt = ref<null | number>(null);
 const rescanAndRefreshHandler = ref<null | RescanRefreshHandler>(null);
+const workInjuryRegister = ref(false);
+const workInjuryContractId = ref<string | number | undefined>(undefined);
 
 const insurancePreSettled = computed(() =>
   Boolean(
@@ -71,6 +76,18 @@ const insuranceFundPay = computed(() =>
 const insuranceAcctPay = computed(() =>
   Number((pendingPreSettlement.value as null | { ybAcctPay?: unknown })?.ybAcctPay ?? 0),
 );
+const workInjuryEncounterId = computed(
+  () => (pendingPreSettlement.value as null | { encounterId?: string | number })?.encounterId,
+);
+const showWorkInjury2301 = computed(
+  () =>
+    workInjuryRegister.value &&
+    workInjuryEncounterId.value != null &&
+    workInjuryEncounterId.value !== '' &&
+    workInjuryContractId.value != null &&
+    workInjuryContractId.value !== '',
+);
+
 const payableCashAmount = computed(() => {
   const raw = pendingPreSettlement.value as null | {
     totalAmount?: unknown;
@@ -169,13 +186,15 @@ function applyPreSettlement(pre: PreRegisterSettlementResult) {
   credentialExpiredHint.value = false;
 }
 
-function open(
+async function open(
   nextDetail: RegisterConfirmDetail,
   pre: PreRegisterSettlementResult,
   options?: {
     insuranceMediumType?: string;
     rescanAndRefresh?: RescanRefreshHandler;
     ybCredentialReadAt?: null | number;
+    workInjuryRegister?: boolean;
+    workInjuryContractId?: string | number;
   },
 ) {
   detail.value = nextDetail;
@@ -183,12 +202,14 @@ function open(
   insuranceMediumType.value = options?.insuranceMediumType ?? '';
   ybCredentialReadAt.value = options?.ybCredentialReadAt ?? null;
   rescanAndRefreshHandler.value = options?.rescanAndRefresh ?? null;
+  workInjuryRegister.value = Boolean(options?.workInjuryRegister);
+  workInjuryContractId.value = options?.workInjuryContractId;
   credentialExpiredHint.value = false;
   scanCode.value = '';
   scanStatusText.value = '';
   payChannelCode.value = DEFAULT_REGISTER_PAY_CHANNEL_CODE;
+  await refreshPayChannelsForDialog();
   visible.value = true;
-  void ensurePayChannelsLoaded();
 }
 
 function resetState() {
@@ -197,6 +218,8 @@ function resetState() {
   pendingPreSettlement.value = null;
   rescanAndRefreshHandler.value = null;
   credentialExpiredHint.value = false;
+  workInjuryRegister.value = false;
+  workInjuryContractId.value = undefined;
 }
 
 function handleCancelDialog() {
@@ -391,15 +414,15 @@ defineExpose({
       <div
         class="mt-4 rounded bg-[var(--el-fill-color-light)] px-2 py-2 text-[14px] font-semibold text-[var(--el-color-primary)]"
       >
-        挂号金额（预结算）：¥{{ payableCashAmount.toFixed(2) }}
+        挂号金额（预结算）：¥{{ formatMoneyDisplay(payableCashAmount) }}
       </div>
 
       <template v-if="insurancePreSettled">
         <div class="mt-3 space-y-1 text-[13px] text-[var(--el-text-color-regular)]">
-          <div>基金支付：¥{{ insuranceFundPay.toFixed(2) }}</div>
-          <div>个账支付：¥{{ insuranceAcctPay.toFixed(2) }}</div>
+          <div>基金支付：¥{{ formatMoneyDisplay(insuranceFundPay) }}</div>
+          <div>个账支付：¥{{ formatMoneyDisplay(insuranceAcctPay) }}</div>
           <div class="font-medium text-[var(--el-color-primary)]">
-            个人现金应付：¥{{ payableCashAmount.toFixed(2) }}
+            个人现金应付：¥{{ formatMoneyDisplay(payableCashAmount) }}
           </div>
         </div>
       </template>
@@ -455,18 +478,27 @@ defineExpose({
     </div>
 
     <template #footer>
-      <div class="flex justify-end gap-2">
-        <ElButton :disabled="payLoading || refreshLoading" @click="handleCancelDialog">
-          取消
-        </ElButton>
-        <ElButton
-          type="primary"
-          :loading="payLoading"
-          :disabled="refreshLoading"
-          @click="executeRegisterPayment"
-        >
-          确认缴费
-        </ElButton>
+      <div class="flex w-full items-center justify-between gap-2">
+        <WorkInjury2301RegisterAction
+          v-if="showWorkInjury2301"
+          link
+          :encounter-id="workInjuryEncounterId"
+          :contract-id="workInjuryContractId"
+        />
+        <div v-else class="flex-1" />
+        <div class="flex shrink-0 justify-end gap-2">
+          <ElButton :disabled="payLoading || refreshLoading" @click="handleCancelDialog">
+            取消
+          </ElButton>
+          <ElButton
+            type="primary"
+            :loading="payLoading"
+            :disabled="refreshLoading"
+            @click="executeRegisterPayment"
+          >
+            确认缴费
+          </ElButton>
+        </div>
       </div>
     </template>
   </AppDialog>

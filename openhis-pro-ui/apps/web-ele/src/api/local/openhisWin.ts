@@ -197,8 +197,9 @@ async function fetchOpenHisWinHealthOnce(
 export async function fetchOpenHisWinHealth(
   origin = getOpenHisWinOrigin(),
   timeoutMs = HEALTH_TIMEOUT_MS,
+  options?: { bypassNegativeCache?: boolean },
 ): Promise<null | OpenHisWinHealthResponse> {
-  if (Date.now() < hiprintHealthNegativeUntil) {
+  if (!options?.bypassNegativeCache && Date.now() < hiprintHealthNegativeUntil) {
     return null;
   }
   if (healthFetchPromise && healthFetchOrigin === origin) {
@@ -208,7 +209,11 @@ export async function fetchOpenHisWinHealth(
   healthFetchPromise = fetchOpenHisWinHealthOnce(origin, timeoutMs)
     .then((result) => {
       if (!result) {
-        markHiprintHealthUnavailable();
+        if (!options?.bypassNegativeCache) {
+          markHiprintHealthUnavailable();
+        }
+      } else if (result.status === 'ok') {
+        hiprintHealthNegativeUntil = 0;
       }
       return result;
     })
@@ -221,7 +226,9 @@ export async function fetchOpenHisWinHealth(
 
 /** 是否展示银联扫码入口（Win 在线 + unionpay 能力 + native 就绪） */
 export async function isUnionPayWinReady(origin = getOpenHisWinOrigin()): Promise<boolean> {
-  const health = await fetchOpenHisWinHealth(origin);
+  const health = await fetchOpenHisWinHealth(origin, HEALTH_TIMEOUT_MS, {
+    bypassNegativeCache: true,
+  });
   if (!health?.capabilities?.unionpay) {
     return false;
   }

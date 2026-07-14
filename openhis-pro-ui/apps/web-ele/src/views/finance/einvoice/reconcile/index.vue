@@ -21,6 +21,7 @@ import {
 
 import { checkDailyTotalApi } from '#/api/einvoice-boss/reconcile';
 import { useRequest } from '#/hooks/use-request';
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
 
 defineOptions({
   name: 'EinvoiceReconcile',
@@ -56,7 +57,7 @@ function formatAmount(value?: number) {
   if (value == null) {
     return '-';
   }
-  return Number(value).toFixed(2);
+  return formatMoneyDisplay(value);
 }
 
 async function handleCheck() {

@@ -5,6 +5,7 @@ import type {
   NurseStationCostDetailLineDto,
   NurseStationCostDetailPresentationMode,
   NurseStationCostDetailPresentationOptionDto,
+  NurseStationCostDetailStatusFilter,
   NurseStationCostDetailTotalsDto,
   NurseStationCostSummaryLineDto,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-cost-detail.types';
@@ -23,7 +24,14 @@ import { useRequest } from '#/hooks/use-request';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import CostDetailPanel from './components/cost-detail-panel.vue';
-import { isCostDetailPresentationMode } from './services/map-nurse-station-cost-detail';
+import {
+  buildNurseStationStickyPatientInfoFromModulePatient,
+  buildNurseStationStickyPatientInfoPlaceholder,
+} from '../components/build-nurse-station-sticky-patient-info';
+import {
+  isCostDetailPresentationMode,
+  isCostDetailStatusFilter,
+} from './services/map-nurse-station-cost-detail';
 
 type CostDetailQuickDay = 'today' | 'yesterday';
 
@@ -44,11 +52,22 @@ const DEFAULT_PRESENTATION_OPTIONS: NurseStationCostDetailPresentationOptionDto[
   { code: 'SUMMARY', display: '汇总' },
 ];
 
+const DEFAULT_STATUS_FILTER_OPTIONS: NurseStationCostDetailPresentationOptionDto[] = [
+  { code: 'PENDING_SETTLEMENT', display: '待结算' },
+  { code: 'SETTLED', display: '已结算' },
+];
+
+const DEFAULT_STATUS_FILTER: NurseStationCostDetailStatusFilter = 'PENDING_SETTLEMENT';
+
 const costDetailQuickDay = ref<CostDetailQuickDay>('today');
 const costDetailDateRange = ref<string[]>([]);
+const costDetailStatusEnum = ref<NurseStationCostDetailStatusFilter>(DEFAULT_STATUS_FILTER);
 const presentationMode = ref<NurseStationCostDetailPresentationMode>('DETAIL');
 const presentationOptions = ref<NurseStationCostDetailPresentationOptionDto[]>(
   DEFAULT_PRESENTATION_OPTIONS,
+);
+const statusFilterOptions = ref<NurseStationCostDetailPresentationOptionDto[]>(
+  DEFAULT_STATUS_FILTER_OPTIONS,
 );
 const detailLines = ref<NurseStationCostDetailLineDto[]>([]);
 const summaryLines = ref<NurseStationCostSummaryLineDto[]>([]);
@@ -84,36 +103,34 @@ const stickyPatientInfo = computed(() => {
     return null;
   }
   if (!canOperateCostDetail.value) {
-    return {
+    return buildNurseStationStickyPatientInfoPlaceholder({
       diagnosis: `当前已选 ${props.patients.length} 位患者（请单选后查看费用明细）`,
       name: '请选择单一患者',
-    };
+    });
   }
   const patient = props.patients[0];
   if (!patient) {
     return null;
   }
-  return {
-    age: patient.age,
-    bedNo: patient.bedNo,
-    diagnosis: patient.diagnosis ?? '—',
-    gender: patient.gender,
-    inpatientNo: patient.id,
-    insuranceType: patient.feeType ?? '—',
-    name: patient.name,
-  };
+  return buildNurseStationStickyPatientInfoFromModulePatient(patient);
 });
 
-/** 将服务端默认日期写入查询区间。 */
-function applyInitDateRange(dateFrom?: string, dateTo?: string) {
+/** 将服务端默认日期与费用状态筛选写入查询条件。 */
+function applyPageInitDefaults(dateFrom?: string, dateTo?: string, defaultStatusEnum?: string) {
   const from = dateFrom?.trim();
   const to = dateTo?.trim();
   if (from && to) {
     costDetailDateRange.value = [from, to];
-    return;
+  } else {
+    const today = dayjs().format('YYYY-MM-DD');
+    costDetailDateRange.value = [today, today];
   }
-  const today = dayjs().format('YYYY-MM-DD');
-  costDetailDateRange.value = [today, today];
+  const statusCode = defaultStatusEnum?.trim();
+  if (isCostDetailStatusFilter(statusCode)) {
+    costDetailStatusEnum.value = statusCode;
+  } else {
+    costDetailStatusEnum.value = DEFAULT_STATUS_FILTER;
+  }
 }
 
 /** 加载费用明细页默认配置。 */
@@ -121,7 +138,9 @@ async function loadPageInit() {
   const data = await initRequest.run();
   presentationOptions.value =
     data.presentationOptions?.length > 0 ? data.presentationOptions : DEFAULT_PRESENTATION_OPTIONS;
-  applyInitDateRange(data.dateFrom, data.dateTo);
+  statusFilterOptions.value =
+    data.statusFilterOptions?.length > 0 ? data.statusFilterOptions : DEFAULT_STATUS_FILTER_OPTIONS;
+  applyPageInitDefaults(data.dateFrom, data.dateTo, data.defaultStatusEnum);
   pageInitialized.value = true;
 }
 
@@ -140,6 +159,12 @@ function handlePresentationModeChange(mode: NurseStationCostDetailPresentationMo
   }
   presentationMode.value = mode;
   void handleCostDetailQuery();
+}
+
+/** 重置筛选条件为今日待结算。 */
+function handleCostDetailReset() {
+  handleCostDetailQuickDayChange('today');
+  costDetailStatusEnum.value = DEFAULT_STATUS_FILTER;
 }
 
 /** 校验查询入参是否完整。 */
@@ -162,12 +187,17 @@ function resolveQueryPayload() {
     ElMessage.warning('查询参数错误，请刷新页面');
     return null;
   }
+  if (!isCostDetailStatusFilter(costDetailStatusEnum.value)) {
+    ElMessage.warning('查询参数错误，请刷新页面');
+    return null;
+  }
   return {
     encounterId: context.encounterId,
     patientId: context.patientId,
     dateFrom,
     dateTo,
     presentationMode: presentationMode.value,
+    statusEnum: costDetailStatusEnum.value,
   };
 }
 
@@ -219,16 +249,19 @@ onMounted(async () => {
     <InpatientPatientInfoHeader :patient-info="stickyPatientInfo" />
     <CostDetailPanel
       v-model:date-range="costDetailDateRange"
+      v-model:status-enum="costDetailStatusEnum"
       :detail-lines="detailLines"
       :loading="queryRequest.loading.value || initRequest.loading.value"
       :presentation-mode="presentationMode"
       :presentation-options="presentationOptions"
       :quick-day="costDetailQuickDay"
+      :status-filter-options="statusFilterOptions"
       :summary-lines="summaryLines"
       :totals="totals"
       @on-presentation-mode-change="handlePresentationModeChange"
       @on-query="handleCostDetailQuery"
       @on-quick-day-change="handleCostDetailQuickDayChange"
+      @on-reset="handleCostDetailReset"
     />
   </div>
 </template>

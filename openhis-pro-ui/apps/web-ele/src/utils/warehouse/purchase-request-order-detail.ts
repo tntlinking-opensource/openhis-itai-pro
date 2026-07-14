@@ -9,6 +9,8 @@ import {
   formatInventoryTotalAmountDisplay,
   formatInventoryUnitPriceDisplay,
 } from '#/utils/inventory/inventory-qty-unit-display';
+import { calcMoneyLineTotal, scaleMoneyCalc } from '#/utils/format/money-scale';
+import { isSupplyStatusApproved } from '#/utils/inventory/inbound-receipt-status';
 
 /** 药品分页 / 选药弹层行（与 medication-info 接口字段宽松对齐） */
 export type PurchaseOrderMedicationRecord = Record<string, unknown> & {
@@ -65,10 +67,9 @@ export type PurchaseRequestOrderRowLike = {
 
 export function isPurchaseRequestApproved(row?: null | PurchaseRequestOrderRowLike): boolean {
   if (!row) return false;
-  if (row.statusEnum_enumText === '同意') return true;
   const s = row.statusEnum;
   if (s === 'AGREE' || s === 'agree') return true;
-  return s === 3 || s === '3';
+  return s === 3 || s === '3' || isSupplyStatusApproved(s);
 }
 
 function partPercentOf(row: PurchaseOrderDetailGridRow): number {
@@ -93,13 +94,13 @@ function buildPrice(item: PurchaseOrderDetailGridRow): void {
     item.priceMaxUnit = p;
     item.priceMinUnit = p / pp;
     item.retailPriceMaxUnit = rp;
-    item.retailPriceMinUnit = (rp / pp).toFixed(2);
+    item.retailPriceMinUnit = scaleMoneyCalc(rp / pp);
   } else {
     const p = Number(item.price ?? 0);
     const rp = Number.parseFloat(String(item.retailPrice ?? 0));
-    item.priceMaxUnit = Number.parseFloat((p * pp).toFixed(2));
+    item.priceMaxUnit = scaleMoneyCalc(p * pp);
     item.priceMinUnit = p;
-    item.retailPriceMaxUnit = Number.parseFloat((rp * pp).toFixed(2));
+    item.retailPriceMaxUnit = scaleMoneyCalc(rp * pp);
     item.retailPriceMinUnit = rp;
   }
 }
@@ -129,7 +130,7 @@ function buildUnitList(row: PurchaseOrderDetailGridRow): void {
       item.batchInventoryMinUnit = minUnitText;
     } else {
       item.priceMask = Number(row.price ?? 0) / pp;
-      item.retailPriceMask = (Number.parseFloat(String(row.retailPrice ?? 0)) / pp).toFixed(2);
+      item.retailPriceMask = scaleMoneyCalc(Number.parseFloat(String(row.retailPrice ?? 0)) / pp);
       item.totalPriceMask = row.totalPrice;
       item.totalRetailPriceMask = row.totalRetailPrice;
       item.specificationInventoryOriginal = specInv;
@@ -197,9 +198,9 @@ export function recalcRowAmounts(row: PurchaseOrderDetailGridRow): void {
   const quantity = Number.parseFloat(String(row.itemQuantity ?? 0)) || 0;
   const price = Number.parseFloat(String(row.price ?? 0)) || 0;
   const retailPrice = Number.parseFloat(String(row.retailPrice ?? 0)) || 0;
-  row.totalPrice = Number.parseFloat((quantity * price).toFixed(2));
+  row.totalPrice = scaleMoneyCalc(calcMoneyLineTotal(price, quantity));
   row.totalPriceMask = row.totalPrice;
-  row.totalRetailPrice = Number.parseFloat((quantity * retailPrice).toFixed(2));
+  row.totalRetailPrice = scaleMoneyCalc(calcMoneyLineTotal(retailPrice, quantity));
   row.totalRetailPriceMask = row.totalRetailPrice;
   rebuildTableData(row);
 }

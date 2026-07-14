@@ -145,8 +145,10 @@ function isBedUnassigned(bedNo: string | undefined): boolean {
   return !bedNo?.trim();
 }
 
-/** 护理级别联调占位（TODO: 读模型/字典对接后改为 row.level） */
-const nurseLevelPlaceholder = '二级护理';
+/** 患者卡片护理级别展示名（读模型 nursingLevelName；未开立时不展示） */
+function formatPatientNursingLevelLabel(row: (typeof filteredPatients.value)[number]): string {
+  return (row.level ?? '').trim();
+}
 
 /** 患者卡片就诊状态展示文案 */
 function formatPatientStatusLabel(row: (typeof filteredPatients.value)[number]): string {
@@ -340,12 +342,13 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
                         <div class="nurse-patient-card__name-row">
                           <span class="nurse-patient-card__name">{{ row.name }}</span>
                           <span
+                            v-if="formatPatientNursingLevelLabel(row)"
                             class="nurse-patient-card__level-wrap"
-                            :title="nurseLevelPlaceholder"
+                            :title="formatPatientNursingLevelLabel(row)"
                           >
                             <span class="nurse-patient-card__level-dot">·</span>
                             <span class="nurse-patient-card__level truncate">{{
-                              nurseLevelPlaceholder
+                              formatPatientNursingLevelLabel(row)
                             }}</span>
                           </span>
                           <span class="nurse-patient-card__meta"

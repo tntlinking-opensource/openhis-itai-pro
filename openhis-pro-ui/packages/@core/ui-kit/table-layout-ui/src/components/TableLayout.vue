@@ -355,8 +355,8 @@ defineExpose({
 </script>
 
 <template>
-  <div class="box-border flex min-h-0 flex-col overflow-hidden p-2">
-    <div class="relative flex min-h-0 gap-0">
+  <div class="box-border flex h-full min-h-0 flex-col overflow-hidden p-2">
+    <div class="relative flex min-h-0 flex-1 gap-0">
       <transition
         enter-active-class="transition-all duration-300 ease-in-out"
         leave-active-class="transition-all duration-300 ease-in-out"

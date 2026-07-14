@@ -1,21 +1,35 @@
 /**
  * 药房请领单 — 对接 {@code POST /api/app/inventoryPharmacyRequisition/<method>}
  */
-import type { ApiResponse } from '#/types/api-response';
+import type { ApiOptionItem, ApiResponse } from '#/types/api-response';
 
 import { requestClient } from '#/api/request';
+import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import {
+  filterWorkbenchListRowsByDateRange,
+  filterWorkbenchListRowsByKeyword,
+  INV_ALL_PHARMACIES_LABEL,
+  mapInitOptionDtoToApiItems,
+  mapInitOptionsToCabinetRowsWithAll,
+  resolveWorkbenchListPurposeLocationId,
+} from '#/utils/inventory/inventory-workbench-list';
 
 const BASE = '/inventoryPharmacyRequisition';
 
 // --- DTO（与 Java 驼峰一致）---
 
-export interface CabinetLocationOptionDto {
-  locationId?: number | string;
-  displayName?: string;
+/** 与后端 {@link com.openhis.whale.core.application.dto.OptionDto} 同构。 */
+export interface PharmacyRequisitionOptionDto {
+  sort?: string | number;
+  value?: string;
+  label?: string;
 }
 
-export interface PharmacyLocationOptionDto {
-  /** 常为雪花 Long 字符串，与 init 下拉 {@code value} 一致 */
+/**
+ * @deprecated 历史字段名；请使用 {@link PharmacyRequisitionOptionDto}（value/label）。
+ * 仍被出库等页引用，保留兼容别名。
+ */
+export interface PharmacyLocationOptionDto extends PharmacyRequisitionOptionDto {
   locationId?: number | string;
   displayName?: string;
 }
@@ -25,20 +39,34 @@ export interface LoadPharmacyRequisitionFormInitRequest {
 }
 
 export interface LoadPharmacyRequisitionFormInitResponse {
-  cabinetLocationOptions: CabinetLocationOptionDto[];
-  pharmacyLocationOptions: PharmacyLocationOptionDto[];
+  pharmacyLocationOptions: PharmacyRequisitionOptionDto[];
+  warehouseLocationOptions: PharmacyRequisitionOptionDto[];
+  statusOptions?: PharmacyRequisitionOptionDto[];
+}
+
+export interface PharmacyRequisitionListRowDto {
+  busNo?: string;
+  typeEnum?: string | number;
+  statusEnum?: string | number;
+  sourceLocationId?: number | string;
+  sourceLocationName?: string;
+  purposeLocationId?: number | string;
+  purposeLocationName?: string;
+  applyTime?: string;
+  approvalTime?: string;
+  occurrenceTime?: string;
 }
 
 export interface PagePharmacyRequisitionsRequest {
-  /** 目的药房，对应读模型 purpose_location_id */
-  purposeLocationId: number;
-  statusEnum?: number;
+  /** 目的药房，对应读模型 purpose_location_id；0 表示全部 */
+  purposeLocationId: number | string;
+  statusEnum?: string | number;
   keyword?: string;
   applyTimeFrom?: string;
   applyTimeTo?: string;
   pageNo: number;
   pageSize: number;
-  typeEnum?: number;
+  typeEnum?: string | number;
 }
 
 export interface WarehouseDocumentDetailRowDto {
@@ -60,7 +88,9 @@ export interface WarehouseDocumentDetailRowDto {
 
 export interface PagePharmacyRequisitionsResponse {
   total?: number;
-  records: WarehouseDocumentDetailRowDto[];
+  totalCount?: number;
+  records?: PharmacyRequisitionListRowDto[];
+  content?: PharmacyRequisitionListRowDto[];
 }
 
 export interface GetPharmacyRequisitionDetailRequest {
@@ -68,12 +98,25 @@ export interface GetPharmacyRequisitionDetailRequest {
 }
 
 export interface PharmacyRequisitionDetailLineDto {
-  id?: number;
+  id?: number | string;
   itemTable?: string;
-  itemId?: number;
+  itemId?: number | string;
+  inventoryItemId?: number | string;
   itemQuantity?: number;
   unitCode?: string;
+  unitCodeDictText?: string;
   productName?: string;
+  specification?: string;
+  manufacturer?: string;
+  lotNumber?: string;
+  startTime?: string;
+  endTime?: string;
+  traceNo?: string;
+  price?: number;
+  totalPrice?: number;
+  remake?: string;
+  occurrenceTime?: string;
+  productCatalog?: { unitBands?: unknown };
 }
 
 export interface GetPharmacyRequisitionDetailResponse {
@@ -90,36 +133,40 @@ export interface GetPharmacyRequisitionDetailResponse {
 
 export interface PharmacyRequisitionLineDto {
   itemTable?: string;
-  itemId?: number;
+  itemId?: number | string;
+  inventoryItemId?: number | string;
   itemQuantity?: number;
   unitCode?: string;
+  lotNumber?: string;
+  traceNo?: string;
+  price?: number;
+  totalPrice?: number;
   occurrenceTime?: string;
   reason?: string;
+  remake?: string;
 }
 
 export interface CreatePharmacyRequisitionRequest {
-  sourceLocationId: number;
-  purposeLocationId: number;
-  sourceTypeEnum: number;
-  purposeTypeEnum: number;
-  categoryEnum?: number;
-  applicantId: number;
-  applyTime: string;
+  sourceLocationId: number | string;
+  purposeLocationId: number | string;
+  sourceTypeEnum: string | number;
+  purposeTypeEnum: string | number;
+  categoryEnum?: string | number;
+  practitionerId: number | string;
   lines: PharmacyRequisitionLineDto[];
-  typeEnum?: number;
+  typeEnum?: string | number;
 }
 
 export interface UpdatePharmacyRequisitionRequest {
   busNo: string;
-  sourceLocationId: number;
-  purposeLocationId: number;
-  sourceTypeEnum: number;
-  purposeTypeEnum: number;
-  categoryEnum?: number;
-  applicantId: number;
-  applyTime: string;
+  sourceLocationId: number | string;
+  purposeLocationId: number | string;
+  sourceTypeEnum: string | number;
+  purposeTypeEnum: string | number;
+  categoryEnum?: string | number;
+  practitionerId: number | string;
   lines: PharmacyRequisitionLineDto[];
-  typeEnum?: number;
+  typeEnum?: string | number;
 }
 
 export interface CreatePharmacyRequisitionResponse {
@@ -190,16 +237,22 @@ export interface PageProductsForPharmacyRequisitionRequest {
 }
 
 export interface ProductDefinitionItemDto {
-  productDefinitionId?: number;
+  productDefinitionId?: number | string;
   productTableName?: string;
   productName?: string;
   merchandiseName?: string;
+  specification?: string;
   unitCode?: string;
   minUnitCode?: string;
   categoryCode?: string;
   price?: number;
   purchasePrice?: number;
+  purchaseUnitPrice?: number;
   manufacturer?: string;
+  lotNumber?: string;
+  expirationDate?: string;
+  inventoryItemId?: number | string;
+  availableQuantity?: number;
   pyStr?: string;
   wbStr?: string;
 }
@@ -209,15 +262,24 @@ export interface PageProductsForPharmacyRequisitionResponse {
   records: ProductDefinitionItemDto[];
 }
 
-// --- 与后端 SupplyType / SupplyRequestType / SupplyCategory 序列号一致 ---
+// --- 与后端 SupplyType / SupplyRequestType / SupplyCategory getCode() 字符串一致 ---
 
-/** 药房请领单 */
-export const PHA_QL_TYPE_ENUM = 12;
+/** {@link com.openhis.health.domain.share.enums.SupplyType#PHARMACY_REQUISITION} */
+export const PHA_REQUISITION_TYPE_ENUM = 'PHARMACY_REQUISITION';
 /** 源：药库 CABINET */
-export const PHA_QL_SOURCE_TYPE_CABINET = 11;
+export const PHA_REQUISITION_SOURCE_TYPE_ENUM = 'CABINET';
 /** 目的：药房 PHARMACY */
+export const PHA_REQUISITION_PURPOSE_TYPE_ENUM = 'PHARMACY';
+/** {@link com.openhis.health.domain.share.enums.SupplyCategory#STOCK_SUPPLY} */
+export const PHA_REQUISITION_CATEGORY_ENUM = 'STOCK_SUPPLY';
+
+/** @deprecated 使用 {@link PHA_REQUISITION_TYPE_ENUM} */
+export const PHA_QL_TYPE_ENUM = 12;
+/** @deprecated 使用 {@link PHA_REQUISITION_SOURCE_TYPE_ENUM} */
+export const PHA_QL_SOURCE_TYPE_CABINET = 11;
+/** @deprecated 使用 {@link PHA_REQUISITION_PURPOSE_TYPE_ENUM} */
 export const PHA_QL_PURPOSE_TYPE_PHARMACY = 16;
-/** 库存供应 */
+/** @deprecated 使用 {@link PHA_REQUISITION_CATEGORY_ENUM} */
 export const PHA_QL_CATEGORY_STOCK = 1;
 
 // --- API ---
@@ -305,4 +367,58 @@ export async function pageProductsForPharmacyRequisitionApi(
     `${BASE}/pageProductsForPharmacyRequisition`,
     body,
   );
+}
+
+/** init 源药库下拉 → ApiOptionItem（单头选源库）。 */
+export function mapPharmacyRequisitionWarehouseOptionsToApiItems(
+  list?: PharmacyRequisitionOptionDto[],
+): ApiOptionItem[] {
+  return mapInitOptionDtoToApiItems(list);
+}
+
+/** init 目的药房下拉 → ApiOptionItem（单头选目的药房）。 */
+export function mapPharmacyRequisitionPharmacyOptionsToApiItems(
+  list?: PharmacyRequisitionOptionDto[],
+): ApiOptionItem[] {
+  return mapInitOptionDtoToApiItems(list);
+}
+
+/** init 目的药房下拉 → 侧栏 cabinet 行（含「全部药房」）。 */
+export function mapPharmacyRequisitionInitToCabinetRows(
+  list?: PharmacyRequisitionOptionDto[],
+): Record<string, unknown>[] {
+  return mapInitOptionsToCabinetRowsWithAll(list ?? [], INV_ALL_PHARMACIES_LABEL);
+}
+
+/** 工作站左侧列表：purposeLocationId=0 表示全部；日期/关键字在前端筛。 */
+export async function pagePharmacyRequisitionWorkbenchListApi(params: {
+  purposeLocationId?: number | string;
+  typeEnum?: string | number;
+  keyword?: string;
+  applyTimeBegin?: string;
+  applyTimeEnd?: string;
+  pageNo?: number;
+  pageSize?: number;
+}): Promise<{ records: PharmacyRequisitionListRowDto[]; total: number }> {
+  const res = await pagePharmacyRequisitionsApi({
+    purposeLocationId: resolveWorkbenchListPurposeLocationId(params.purposeLocationId),
+    typeEnum: params.typeEnum ?? PHA_REQUISITION_TYPE_ENUM,
+    keyword: params.keyword?.trim() || undefined,
+    pageNo: params.pageNo ?? 1,
+    pageSize: params.pageSize ?? 200,
+  });
+  const { content, totalCount } = parsePagedRowsFromApiData<PharmacyRequisitionListRowDto>(
+    res.data,
+  );
+  const dateFiltered = filterWorkbenchListRowsByDateRange(
+    content,
+    params.applyTimeBegin,
+    params.applyTimeEnd,
+  );
+  const records = filterWorkbenchListRowsByKeyword(
+    dateFiltered as Record<string, unknown>[],
+    params.keyword,
+  ) as PharmacyRequisitionListRowDto[];
+  const filtered = (params.applyTimeBegin && params.applyTimeEnd) || params.keyword?.trim();
+  return { records, total: filtered ? records.length : totalCount };
 }

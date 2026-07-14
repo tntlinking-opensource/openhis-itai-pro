@@ -1,0 +1,468 @@
+{
+  "schemaVersion": 1,
+  "engine": "Print",
+  "panels": [
+    {
+      "name": "1",
+      "index": 0,
+      "width": 148,
+      "height": 210,
+      "paperType": "A5",
+      "paperFooter": 575.4,
+      "paperHeader": 0,
+      "printElements": [
+        {
+          "options": {
+            "top": 8,
+            "left": 28.3,
+            "field": "prescriptionNo",
+            "title": "处方号",
+            "width": 170.1,
+            "height": 14.2,
+            "fontSize": 9,
+            "textAlign": "left",
+            "fontWeight": "normal"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "处方号"
+          }
+        },
+        {
+          "options": {
+            "top": 22.7,
+            "left": 317.5,
+            "field": "prescriptionTypeLine1",
+            "width": 73.7,
+            "height": 14.2,
+            "fontSize": 9,
+            "hideTitle": true,
+            "textAlign": "center",
+            "fontWeight": "normal"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "文本"
+          }
+        },
+        {
+          "options": {
+            "top": 22.7,
+            "left": 28.3,
+            "field": "hospitalName",
+            "width": 362.8,
+            "height": 22.7,
+            "fontSize": 16,
+            "hideTitle": true,
+            "textAlign": "center",
+            "fontWeight": "bold"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "文本"
+          }
+        },
+        {
+          "options": {
+            "top": 36.9,
+            "left": 317.5,
+            "field": "prescriptionTypeLine2",
+            "width": 73.7,
+            "height": 14.2,
+            "fontSize": 9,
+            "hideTitle": true,
+            "textAlign": "center",
+            "fontWeight": "normal"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "文本"
+          }
+        },
+        {
+          "options": {
+            "top": 51,
+            "left": 28.3,
+            "field": "prescriptionDocumentTitle",
+            "width": 362.8,
+            "height": 19.8,
+            "fontSize": 13,
+            "hideTitle": true,
+            "textAlign": "center",
+            "fontWeight": "bold",
+            "testData": "中药处方笺"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "文本"
+          }
+        },
+        {
+          "options": {
+            "top": 79.4,
+            "left": 136.1,
+            "field": "ageText",
+            "title": "年龄",
+            "width": 107.7,
+            "height": 17,
+            "fontSize": 10.5,
+            "textAlign": "left",
+            "fontWeight": "normal"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "年龄"
+          }
+        },
+        {
+          "options": {
+            "top": 79.4,
+            "left": 249.4,
+            "field": "genderEnumText",
+            "title": "性别",
+            "width": 107.7,
+            "height": 17,
+            "fontSize": 10.5,
+            "textAlign": "left",
+            "fontWeight": "normal"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "性别"
+          }
+        },
+        {
+          "options": {
+            "top": 79.4,
+            "left": 28.3,
+            "field": "patientName",
+            "title": "姓名",
+            "width": 107.7,
+            "height": 17,
+            "fontSize": 10.5,
+            "textAlign": "left",
+            "fontWeight": "normal"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "姓名"
+          }
+        },
+        {
+          "options": {
+            "top": 99.2,
+            "left": 28.3,
+            "width": 362.8,
+            "height": 1,
+            "borderWidth": 1
+          },
+          "printElementType": {
+            "type": "hline",
+            "title": "横线"
+          }
+        },
+        {
+          "options": {
+            "top": 104.9,
+            "left": 136.1,
+            "field": "feeNatureText",
+            "title": "费用性质",
+            "width": 107.7,
+            "height": 17,
+            "fontSize": 10.5,
+            "textAlign": "left",
+            "fontWeight": "normal"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "费用性质"
+          }
+        },
+        {
+          "options": {
+            "top": 104.9,
+            "left": 249.4,
+            "field": "prescriptionDateText",
+            "title": "日期",
+            "width": 141.7,
+            "height": 17,
+            "fontSize": 10.5,
+            "textAlign": "left",
+            "fontWeight": "normal"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "日期"
+          }
+        },
+        {
+          "options": {
+            "top": 104.9,
+            "left": 28.3,
+            "field": "orderingDepartmentName",
+            "title": "科室",
+            "width": 107.7,
+            "height": 17,
+            "fontSize": 10.5,
+            "textAlign": "left",
+            "fontWeight": "normal"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "科室"
+          }
+        },
+        {
+          "options": {
+            "top": 124.7,
+            "left": 28.3,
+            "width": 362.8,
+            "height": 1,
+            "borderWidth": 1
+          },
+          "printElementType": {
+            "type": "hline",
+            "title": "横线"
+          }
+        },
+        {
+          "options": {
+            "top": 130.4,
+            "left": 28.3,
+            "field": "encounterBusNo",
+            "title": "门诊号",
+            "width": 204.1,
+            "height": 17,
+            "fontSize": 10.5,
+            "textAlign": "left",
+            "fontWeight": "normal"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "门诊号"
+          }
+        },
+        {
+          "options": {
+            "top": 130.4,
+            "left": 232.4,
+            "field": "patientPhone",
+            "title": "联系方式",
+            "width": 158.7,
+            "height": 17,
+            "fontSize": 10.5,
+            "textAlign": "left",
+            "fontWeight": "normal"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "联系方式"
+          }
+        },
+        {
+          "options": {
+            "top": 150.2,
+            "left": 28.3,
+            "width": 362.8,
+            "height": 1,
+            "borderWidth": 1
+          },
+          "printElementType": {
+            "type": "hline",
+            "title": "横线"
+          }
+        },
+        {
+          "options": {
+            "top": 155.9,
+            "left": 28.3,
+            "field": "conditionSummaryText",
+            "title": "诊断",
+            "width": 362.8,
+            "height": 22.7,
+            "fontSize": 10.5,
+            "textAlign": "left",
+            "fontWeight": "normal",
+            "testData": "咳嗽（风热犯肺）"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "诊断"
+          }
+        },
+        {
+          "options": {
+            "top": 181.4,
+            "left": 28.3,
+            "width": 362.8,
+            "height": 1,
+            "borderWidth": 1
+          },
+          "printElementType": {
+            "type": "hline",
+            "title": "横线"
+          }
+        },
+        {
+          "options": {
+            "top": 187.1,
+            "left": 28.3,
+            "field": "rpHeading",
+            "width": 56.7,
+            "height": 17,
+            "fontSize": 12,
+            "hideTitle": true,
+            "textAlign": "left",
+            "fontWeight": "bold"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "文本"
+          }
+        },
+        {
+          "options": {
+            "top": 204.1,
+            "left": 28.3,
+            "field": "tcmHerbRows",
+            "width": 362.8,
+            "height": 240,
+            "formatter": "function (data, options, templateData) {\n  var rows = templateData && templateData.tcmHerbRows;\n  if (typeof rows === 'string') {\n    try { rows = JSON.parse(rows); } catch (e) { rows = []; }\n  }\n  if (!Array.isArray(rows)) rows = [];\n  var cellStyle = 'display:inline-block;width:25%;box-sizing:border-box;padding:0 6px 0 0;vertical-align:top;position:relative;min-height:32px;font-size:10.5pt;line-height:32px;';\n  var noteStyle = 'position:absolute;top:1px;right:6px;font-size:9.5pt;color:#333;line-height:1;white-space:nowrap;';\n  var html = [];\n  rows.forEach(function (row) {\n    html.push('<div style=\"display:block;width:100%;margin-bottom:4px;overflow:hidden;\">');\n    for (var i = 1; i <= 4; i++) {\n      var col = row['col' + i] || '';\n      var note = row['note' + i] || '';\n      html.push('<span style=\"' + cellStyle + '\">');\n      if (col) html.push('<span>' + col + '</span>');\n      if (note) html.push('<span style=\"' + noteStyle + '\">' + note + '</span>');\n      html.push('</span>');\n    }\n    html.push('</div>');\n  });\n  var usage = templateData && templateData.tcmUsageText ? String(templateData.tcmUsageText) : '';\n  if (usage) {\n    html.push('<div style=\"text-align:right;margin-top:10px;font-size:10.5pt;line-height:16px;padding-right:4px;\">' + usage + '</div>');\n  }\n  html.push('<div style=\"margin-top:4px;height:28px;width:100%;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"100%\" preserveAspectRatio=\"none\"><line x1=\"0\" y1=\"100%\" x2=\"100%\" y2=\"0\" stroke=\"#000\" stroke-width=\"1.5\" vector-effect=\"non-scaling-stroke\"/></svg></div>');\n  return html.join('');\n}",
+            "testData": "[{\"col1\":\"茯苓 10g\",\"note1\":\"(包煎)\",\"col2\":\"白芍 10g\",\"note2\":\"(先煎)\",\"col3\":\"\",\"note3\":\"\",\"col4\":\"\",\"note4\":\"\"}]"
+          },
+          "printElementType": {
+            "type": "html",
+            "title": "HTML"
+          }
+        },
+        {
+          "options": {
+            "top": 483,
+            "left": 136.1,
+            "field": "pricingPractitionerName",
+            "fixed": true,
+            "title": "划价",
+            "width": 113.4,
+            "height": 17,
+            "fontSize": 10.5,
+            "textAlign": "left",
+            "fontWeight": "normal"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "划价"
+          }
+        },
+        {
+          "options": {
+            "top": 483,
+            "left": 249.4,
+            "field": "prescriptionTotalPriceText",
+            "fixed": true,
+            "title": "药费",
+            "width": 141.7,
+            "height": 17,
+            "fontSize": 10.5,
+            "hideTitle": true,
+            "textAlign": "left",
+            "fontWeight": "normal"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "药费"
+          }
+        },
+        {
+          "options": {
+            "top": 483,
+            "left": 28.3,
+            "field": "orderingPractitionerName",
+            "fixed": true,
+            "title": "医师",
+            "width": 113.4,
+            "height": 17,
+            "fontSize": 10.5,
+            "textAlign": "left",
+            "fontWeight": "normal"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "医师"
+          }
+        },
+        {
+          "options": {
+            "top": 502.8,
+            "left": 28.3,
+            "fixed": true,
+            "width": 362.8,
+            "height": 1,
+            "borderWidth": 1
+          },
+          "printElementType": {
+            "type": "hline",
+            "title": "横线"
+          }
+        },
+        {
+          "options": {
+            "top": 508.5,
+            "left": 192.8,
+            "field": "preparerPractitionerName",
+            "fixed": true,
+            "title": "调配",
+            "width": 170.1,
+            "height": 17,
+            "fontSize": 10.5,
+            "textAlign": "left",
+            "fontWeight": "normal"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "调配"
+          }
+        },
+        {
+          "options": {
+            "top": 508.5,
+            "left": 28.3,
+            "field": "dispensingPractitionerName",
+            "fixed": true,
+            "title": "发药",
+            "width": 170.1,
+            "height": 17,
+            "fontSize": 10.5,
+            "textAlign": "left",
+            "fontWeight": "normal"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "发药"
+          }
+        }
+      ],
+      "paperNumberTop": 573,
+      "paperNumberLeft": 389,
+      "watermarkOptions": {
+        "width": 200,
+        "format": "YYYY-MM-DD HH:mm",
+        "height": 200,
+        "rotate": 25,
+        "content": "",
+        "fontSize": "14px",
+        "fillStyle": "rgba(184, 184, 184, 0.3)",
+        "timestamp": false
+      },
+      "panelLayoutOptions": {
+        "layoutType": "column",
+        "paperStyle": "",
+        "paperWidth": 0,
+        "paperHeight": 0,
+        "layoutRowGap": 0,
+        "layoutColumnGap": 0
+      },
+      "paperNumberContinue": true,
+      "paperNumberDisabled": true
+    }
+  ]
+}

@@ -37,6 +37,7 @@ async function ensureAccessRoutes(router: Router) {
     accessInitPromise = (async () => {
       const authStore = useAuthStore();
       await requireLoginScopeReady();
+      await authStore.refreshApplicationConfiguration();
       const menuRequestStartAt = Date.now();
       const menus = await getMenuTreeByLoginUserApi();
       let menuData = Array.isArray(menus) ? menus : [];

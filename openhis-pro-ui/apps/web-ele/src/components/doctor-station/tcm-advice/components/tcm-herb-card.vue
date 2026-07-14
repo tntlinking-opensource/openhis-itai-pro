@@ -8,9 +8,10 @@ import type {
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 
 import { Delete } from '@element-plus/icons-vue';
-import { ElIcon, ElInputNumber } from 'element-plus';
+import { ElIcon, ElInputNumber, ElOption, ElSelect } from 'element-plus';
 
 import { decimalMul } from '#/utils/format/decimal-util';
+import { calcMoneyLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
 import { AdviceOrderSelect } from '#/views/outpatient/doctor-station/advice';
 
 defineOptions({ name: 'TcmHerbCard' });
@@ -18,7 +19,7 @@ defineOptions({ name: 'TcmHerbCard' });
 const props = withDefaults(defineProps<Props>(), {
   autofocusProduct: false,
   blurIgnoreSelectors: () => [],
-  chineseHerbsDoseQuantity: 1,
+  dosageInstructionOptions: () => [],
   editing: false,
   readonly: false,
   selected: false,
@@ -32,6 +33,7 @@ const emit = defineEmits<{
   remove: [];
   select: [];
   updateDose: [value: number];
+  updateDosageInstruction: [value: string];
 }>();
 
 export interface TcmHerbCardItem {
@@ -42,6 +44,13 @@ export interface TcmHerbCardItem {
   medicationDefinitionId: string;
   medicationName: string;
   retailPrice: number;
+  dosageInstructionCode?: string;
+  dosageInstructionText?: string;
+}
+
+interface DosageInstructionOption {
+  label: string;
+  value: string;
 }
 
 interface Props {
@@ -49,6 +58,8 @@ interface Props {
   /** 点击这些区域时不退出编辑（如组套维护页模板属性区） */
   blurIgnoreSelectors?: string[];
   chineseHerbsDoseQuantity?: number;
+  /** 特殊煎法下拉（dosage_instruction） */
+  dosageInstructionOptions?: DosageInstructionOption[];
   editing?: boolean;
   item: TcmHerbCardItem;
   productColumns: ProductColumn[];
@@ -83,47 +94,69 @@ const perDoseQtyText = computed(() => {
   return `${formatDoseQty(dose)}${doseUnitDisplay.value}`;
 });
 
+/** 当前付数（未填时不按 1 推算） */
+function resolveDoseCount(): number | undefined {
+  const doseCount = props.chineseHerbsDoseQuantity;
+  if (doseCount == null || doseCount <= 0) {
+    return undefined;
+  }
+  return doseCount;
+}
+
 /** 单剂 × 付数 = 请求总量 */
 const totalQtyText = computed(() => {
   const dose = Number(props.item.dose || 0);
-  const doseCount = Number(props.chineseHerbsDoseQuantity || 1);
-  const total = decimalMul(dose, doseCount > 0 ? doseCount : 1);
+  const doseCount = resolveDoseCount();
+  if (doseCount == null) {
+    return perDoseQtyText.value;
+  }
+  const total = decimalMul(dose, doseCount);
   return `${formatDoseQty(total)}${doseUnitDisplay.value}`;
 });
 
 const doseDisplayText = computed(() => {
-  const doseCount = Number(props.chineseHerbsDoseQuantity || 1);
-  if (doseCount <= 1) {
+  const doseCount = resolveDoseCount();
+  if (doseCount == null || doseCount <= 1) {
     return perDoseQtyText.value;
   }
   return `${perDoseQtyText.value}/付 · 共${totalQtyText.value}`;
 });
 
-/** 单剂行金额 */
-const lineTotalAmount = computed(() => {
-  const dose = Number(props.item.dose || 0);
-  const price = Number(props.item.retailPrice || 0);
-  return decimalMul(dose, price);
-});
+/** 收起态特殊煎法展示 */
+const decoctionDisplayText = computed(() => String(props.item.dosageInstructionText ?? '').trim());
 
-/** 付数合计金额 */
+/** 行内修改特殊煎法 */
+function handleDosageInstructionChange(value: string | undefined) {
+  emit('updateDosageInstruction', String(value ?? ''));
+}
+
+/** 单剂行金额（6 位） */
+const lineTotalAmount = computed(() =>
+  calcMoneyLineTotal(props.item.retailPrice, props.item.dose || 0),
+);
+
+/** 付数合计金额（6 位） */
 const linePrescriptionTotalAmount = computed(() => {
-  const doseCount = Number(props.chineseHerbsDoseQuantity || 1);
-  return decimalMul(lineTotalAmount.value, doseCount > 0 ? doseCount : 1);
+  const doseCount = resolveDoseCount();
+  if (doseCount == null) {
+    return lineTotalAmount.value;
+  }
+  const totalQty = Number(props.item.dose || 0) * doseCount;
+  return calcMoneyLineTotal(props.item.retailPrice, totalQty);
 });
 
 /** 单价展示文案 */
 const unitPriceDisplayText = computed(
-  () => `¥${Number(props.item.retailPrice || 0).toFixed(2)}/${doseUnitDisplay.value}`,
+  () => `¥${formatMoneyDisplay(props.item.retailPrice || 0)}/${doseUnitDisplay.value}`,
 );
 
 /** 本行单剂小计展示文案 */
 const lineTotalDisplayText = computed(() => {
-  const doseCount = Number(props.chineseHerbsDoseQuantity || 1);
-  if (doseCount <= 1) {
-    return `合计 ¥${lineTotalAmount.value.toFixed(2)}`;
+  const doseCount = resolveDoseCount();
+  if (doseCount == null || doseCount <= 1) {
+    return `合计 ¥${formatMoneyDisplay(lineTotalAmount.value)}`;
   }
-  return `单剂 ¥${lineTotalAmount.value.toFixed(2)} · ${doseCount}付 ¥${linePrescriptionTotalAmount.value.toFixed(2)}`;
+  return `单剂 ¥${formatMoneyDisplay(lineTotalAmount.value)} · ${doseCount}付 ¥${formatMoneyDisplay(linePrescriptionTotalAmount.value)}`;
 });
 
 /** 单击：延迟触发选中，避免与双击编辑冲突 */
@@ -270,8 +303,8 @@ onBeforeUnmount(() => {
           />
         </div>
 
-        <div class="tcm-herb-card__row tcm-herb-card__row--head">
-          <div class="tcm-herb-card__dose-edit" @click.stop>
+        <div class="tcm-herb-card__row tcm-herb-card__row--meta" @click.stop>
+          <div class="tcm-herb-card__dose-edit">
             <ElInputNumber
               :model-value="item.dose"
               class="tcm-herb-card__dose-input"
@@ -282,6 +315,20 @@ onBeforeUnmount(() => {
             />
             <span class="tcm-herb-card__dose-unit">{{ doseUnitDisplay }}</span>
           </div>
+          <ElSelect
+            :model-value="item.dosageInstructionCode ?? ''"
+            class="tcm-herb-card__decoction-select"
+            placeholder="煎法"
+            clearable
+            @update:model-value="handleDosageInstructionChange"
+          >
+            <ElOption
+              v-for="opt in dosageInstructionOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
+          </ElSelect>
           <button
             type="button"
             class="tcm-herb-card__remove-btn"
@@ -308,7 +355,12 @@ onBeforeUnmount(() => {
     <template v-else>
       <div class="tcm-herb-card__panel">
         <div class="tcm-herb-card__row tcm-herb-card__row--head">
-          <span class="tcm-herb-card__name">{{ item.medicationName || '未选药材' }}</span>
+          <div class="tcm-herb-card__name-line">
+            <span class="tcm-herb-card__name">{{ item.medicationName || '未选药材' }}</span>
+            <span v-if="decoctionDisplayText" class="tcm-herb-card__decoction-text">
+              · {{ decoctionDisplayText }}
+            </span>
+          </div>
           <div class="tcm-herb-card__head-actions">
             <span class="tcm-herb-card__dose-text">{{ doseDisplayText }}</span>
             <button
@@ -371,7 +423,7 @@ onBeforeUnmount(() => {
   background: var(--el-fill-color-blank);
   box-shadow: 0 0 0 1px var(--el-color-primary-light-8);
   cursor: default;
-  min-height: 120px;
+  min-height: 132px;
 }
 
 .tcm-herb-card--readonly {
@@ -444,24 +496,45 @@ onBeforeUnmount(() => {
   min-height: 32px;
 }
 
-.tcm-herb-card--editing .tcm-herb-card__row--head {
-  flex: 0;
-  justify-content: space-between;
+.tcm-herb-card__row--meta {
+  margin-top: 8px;
+  gap: 6px;
+}
+
+.tcm-herb-card__decoction-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.tcm-herb-card__decoction-select :deep(.el-select__wrapper) {
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px var(--el-border-color) inset;
+}
+
+.tcm-herb-card__decoction-select :deep(.el-select__wrapper.is-focused) {
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset;
+}
+
+.tcm-herb-card__decoction-select :deep(.el-select__placeholder),
+.tcm-herb-card__decoction-select :deep(.el-select__selected-item) {
+  font-size: 13px;
 }
 
 .tcm-herb-card__product-field {
-  width: 120px;
+  width: 100%;
   max-width: 100%;
   margin-bottom: 8px;
 }
 
 .tcm-herb-card__product-select {
-  width: 120px;
+  width: 100%;
   max-width: 100%;
 }
 
 .tcm-herb-card__product-select :deep(.advice-order-select-trigger-host) {
-  width: 120px !important;
+  width: 100% !important;
   max-width: 100%;
 }
 
@@ -477,15 +550,26 @@ onBeforeUnmount(() => {
   background: var(--el-border-color-extra-light);
 }
 
-.tcm-herb-card__name {
+.tcm-herb-card__name-line {
   min-width: 0;
   overflow: hidden;
+  flex: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tcm-herb-card__name {
   color: var(--el-text-color-primary);
   font-size: 16px;
   font-weight: 600;
   line-height: 24px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.tcm-herb-card__decoction-text {
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 24px;
 }
 
 .tcm-herb-card__dose-text {

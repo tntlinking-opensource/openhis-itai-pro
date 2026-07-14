@@ -340,3 +340,31 @@ export async function queryCrossProvinceReconFailuresApi(
   );
   return res.data ?? [];
 }
+
+/** 工伤对账 invoke 首步（1320；后续 prepare/submit 走 health workInjuryInvoke）。 */
+export interface StartWorkInjuryReconParams {
+  contractId: string | number;
+  operatorId?: string | number;
+  formContext?: Record<string, unknown>;
+}
+
+export interface WorkInjuryReconPrepareStep {
+  sessionId?: string;
+  stepToken?: string;
+  infno?: string;
+  fixmedinsCode?: string;
+  operatorNo?: string;
+  input?: Record<string, unknown>;
+  nextAction?: string;
+  errMsg?: string;
+}
+
+export async function startWorkInjuryReconApi(
+  params: StartWorkInjuryReconParams,
+): Promise<WorkInjuryReconPrepareStep> {
+  const res = await requestClient.post<ApiResponse<WorkInjuryReconPrepareStep>>(
+    `${BASE}/startWorkInjuryRecon`,
+    params,
+  );
+  return res.data ?? {};
+}

@@ -7,6 +7,7 @@ import type { DispensePrescriptionItemRow } from '#/views/outpatient/dispense/co
 import { formatDateTime } from '@vben/utils';
 
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
 
 /** 汇总合并行展示模型：批号由底层发放行聚合（BR-IPS-012 合并 DTO 不含 lotNumber） */
 export interface SummaryMergedLineDisplayRow extends InpatientPharmacySummarySlipLineDto {
@@ -99,7 +100,46 @@ export function formatSummaryPatientDispenseLineText(
   return `${name} ${quantity}`;
 }
 
-/** 发放行 → 追溯码弹窗扁平行 */
+/** 合并 Supply 行 → 追溯码弹窗扁平行（汇总路径不关联患者发放行） */
+export function mapSummaryMergedLinesToTraceLines(
+  lines: SummaryMergedLineDisplayRow[],
+): DispensePrescriptionItemRow[] {
+  return lines.map((line, index) => {
+    const id = preserveApiIdForRequest(line.supplyRequestId) ?? `summary-merged-${index}`;
+    const name = String(line.medicationName ?? '').trim();
+    const spec = String(line.specificationText ?? '').trim();
+    const itemName = name && spec ? `${name}【${spec}】` : name || spec || '—';
+    return {
+      id,
+      itemName,
+      quantity: formatSummaryMergedLineQuantity(line),
+      spec,
+      traceCode: String(line.traceNo ?? '').trim(),
+      batchNo: String(line.lotNumberText ?? '').trim() || '—',
+      amount:
+        line.totalPrice != null && line.totalPrice !== ''
+          ? formatMoneyDisplay(line.totalPrice)
+          : '—',
+      pharmacy: String(line.purposeLocationName ?? '').trim() || '—',
+      factory: String(line.manufacturerName ?? '').trim() || '—',
+      diagnosis: '—',
+      freq: '—',
+      rxId: id,
+      rxNo: id,
+      rxType: 'western',
+      deptName: '—',
+      doctorName: '—',
+      issuedAt: '—',
+      status: 'pending',
+      rxGroupIndex: 0,
+      rxRowSpan: 1,
+      isFirstInRx: true,
+      isLastInRx: true,
+    };
+  });
+}
+
+/** @deprecated 汇总追溯码不按患者发放行采集，请用 {@link mapSummaryMergedLinesToTraceLines} */
 export function mapSummaryDispenseItemsToTraceLines(
   items: InpatientPharmacySummaryDispenseItemDto[],
 ): DispensePrescriptionItemRow[] {
@@ -197,16 +237,16 @@ export function normalizeSummaryDispenseItems(
   return list;
 }
 
-/** IF-IPS-03：追溯码提交行（仅含非空 traceNo） */
+/** IF-IPS-03：追溯码提交行（锚定供应行 / SupplyDelivery，非 dispenseId） */
 export function buildSummaryDispenseTraceLines(
   traceByLineId: Record<string, string>,
-): Array<{ dispenseId: string; traceNo: string }> {
-  const lines: Array<{ dispenseId: string; traceNo: string }> = [];
-  for (const [dispenseIdRaw, traceNoRaw] of Object.entries(traceByLineId)) {
-    const dispenseId = preserveApiIdForRequest(dispenseIdRaw);
+): Array<{ supplyRequestId: string; traceNo: string }> {
+  const lines: Array<{ supplyRequestId: string; traceNo: string }> = [];
+  for (const [supplyRequestIdRaw, traceNoRaw] of Object.entries(traceByLineId)) {
+    const supplyRequestId = preserveApiIdForRequest(supplyRequestIdRaw);
     const traceNo = String(traceNoRaw ?? '').trim();
-    if (!dispenseId || !traceNo) continue;
-    lines.push({ dispenseId, traceNo });
+    if (!supplyRequestId || !traceNo) continue;
+    lines.push({ supplyRequestId, traceNo });
   }
   return lines;
 }

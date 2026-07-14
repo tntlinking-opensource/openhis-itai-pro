@@ -1,6 +1,7 @@
 /**
- * 进货单（IF-WHS-IN-11）选品下拉：列与 {@link InboundProductDefinitionItemDto} 字段 1:1。
- * 进货选品不汇总库存，{@code availableQuantity} 恒为 null，下拉不展示库存/批准文号列。
+ * 进货/订货（IF-WHS-IN-11 / IF-WHS-PO-11）选品下拉：列与产品定义选品字段 1:1。
+ * **按产品定义一行展开**（value-key=`productDefinitionId`），**不**展示批号（批号在明细录入）。
+ * 进货选品不汇总库存，`availableQuantity` 恒为 null，下拉不展示库存/批准文号列。
  */
 
 import {

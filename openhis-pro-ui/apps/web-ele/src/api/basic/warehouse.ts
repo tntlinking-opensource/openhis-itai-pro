@@ -1,19 +1,31 @@
 import type { GetInfoParams } from '#/types/api-response';
 
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+
 import { publicRequestClient } from '../request';
 
+/** 库房维护页物理形态，与后端 {@link LocationForm} code 一致 */
 export const WAREHOUSE_FORM_ENUM = {
-  PHARMACY: '16',
-  WAREHOUSE: '17',
+  PHARMACY: 'PHARMACY',
+  WAREHOUSE: 'WAREHOUSE',
+  DEPARTMENT_PHARMACY: 'DEPARTMENT_PHARMACY',
 } as const;
 
-/** 后端 DTO 可能返回领域 code（WAREHOUSE/PHARMACY）或前端下拉 code（17/16） */
 export function isWarehouseFormEnum(formEnum?: null | string): boolean {
-  return formEnum === WAREHOUSE_FORM_ENUM.WAREHOUSE || formEnum === 'WAREHOUSE';
+  return formEnum === WAREHOUSE_FORM_ENUM.WAREHOUSE;
 }
 
 export function isPharmacyFormEnum(formEnum?: null | string): boolean {
-  return formEnum === WAREHOUSE_FORM_ENUM.PHARMACY || formEnum === 'PHARMACY';
+  return formEnum === WAREHOUSE_FORM_ENUM.PHARMACY;
+}
+
+export function isDepartmentPharmacyFormEnum(formEnum?: null | string): boolean {
+  return formEnum === WAREHOUSE_FORM_ENUM.DEPARTMENT_PHARMACY;
+}
+
+/** 岗位「管理药房」可选范围：药房 + 科室药房（与后端 pharmacyLocationList 一致） */
+export function isManagedPharmacyLocationFormEnum(formEnum?: null | string): boolean {
+  return isPharmacyFormEnum(formEnum) || isDepartmentPharmacyFormEnum(formEnum);
 }
 
 export const WAREHOUSE_STATUS_ENUM = {
@@ -23,6 +35,12 @@ export const WAREHOUSE_STATUS_ENUM = {
 
 export interface ListWarehouseParams {
   keyword?: string;
+}
+
+export interface WarehouseInit {
+  formEnumOptions: Array<{ label: string; sort: number; value: string }>;
+  locationStatusOptions: Array<{ label: string; sort: number; value: string }>;
+  organizationOptions: Array<{ label: string; sort: number; value: string }>;
 }
 
 export interface Warehouse {
@@ -38,6 +56,7 @@ export interface Warehouse {
   operationalEnum: string;
   operationalEnumText: null | string;
   organizationId: null | string;
+  organizationName?: null | string;
   pyStr: string;
   statusEnum: string;
   statusEnumText: string;
@@ -49,10 +68,11 @@ export interface Warehouse {
 export interface CreateWarehouseParams {
   formEnum: string;
   name: string;
+  organizationId?: string;
 }
 
 export async function initWarehouseApi() {
-  return publicRequestClient.post<Warehouse[]>('/warehouse/init');
+  return publicRequestClient.post<WarehouseInit>('/warehouse/init');
 }
 
 export async function getWarehouseListApi(params?: ListWarehouseParams) {
@@ -60,11 +80,26 @@ export async function getWarehouseListApi(params?: ListWarehouseParams) {
 }
 
 export async function createWarehouseApi(params: CreateWarehouseParams) {
-  return publicRequestClient.post<null>('/warehouse/createWarehouse', params);
+  const payload: CreateWarehouseParams = {
+    formEnum: params.formEnum,
+    name: params.name,
+  };
+  if (params.organizationId) {
+    payload.organizationId = preserveApiIdForRequest(params.organizationId) ?? undefined;
+  }
+  return publicRequestClient.post<null>('/warehouse/createWarehouse', payload);
 }
 
 export async function editWarehouseApi(params: CreateWarehouseParams & { id: string }) {
-  return publicRequestClient.post<null>('/warehouse/editWarehouse', params);
+  const payload: CreateWarehouseParams & { id: string } = {
+    formEnum: params.formEnum,
+    name: params.name,
+    id: preserveApiIdForRequest(params.id) ?? params.id,
+  };
+  if (params.organizationId) {
+    payload.organizationId = preserveApiIdForRequest(params.organizationId) ?? undefined;
+  }
+  return publicRequestClient.post<null>('/warehouse/editWarehouse', payload);
 }
 
 export async function deactivateWarehouseApi(params: GetInfoParams) {

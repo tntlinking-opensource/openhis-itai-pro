@@ -4,6 +4,73 @@
   background-color: hsl(var(--bg-card)) !important;
 }
 
+/* 全局表单控件：在 element-plus/dist/index.css 之后加载，同步 EP 边框变量 */
+.el-input,
+.el-textarea,
+.el-date-editor,
+.el-select,
+.el-input-number,
+.el-cascader,
+.el-autocomplete,
+.el-mention,
+.el-checkbox,
+.el-radio,
+.el-color-picker {
+  --el-border-color: hsl(var(--form-control-border));
+  --el-border-color-dark: hsl(var(--form-control-border));
+  --el-border-color-extra-light: hsl(var(--form-control-border));
+  --el-border-color-light: hsl(var(--form-control-border));
+  --el-border-color-lighter: hsl(var(--form-control-border));
+  --el-input-border-color: hsl(var(--form-control-border));
+  --el-input-hover-border-color: hsl(var(--form-control-border));
+  --el-input-height: var(--form-control-height);
+  --el-input-border-radius: var(--form-control-radius);
+}
+
+.el-select {
+  --el-border-radius-base: var(--form-control-radius);
+}
+
+/* wrapper 兜底样式（含单日期、范围、时间选择） */
+.el-input .el-input__wrapper,
+.el-select .el-select__wrapper,
+.el-date-editor.el-input__wrapper,
+.el-date-editor.el-input .el-input__wrapper,
+.el-range-editor.el-input__wrapper,
+.el-input-number .el-input__wrapper,
+.el-cascader .el-input .el-input__wrapper,
+.el-autocomplete .el-input .el-input__wrapper,
+.el-mention .el-input .el-input__wrapper {
+  box-sizing: border-box;
+  min-height: var(--form-control-height);
+  height: var(--form-control-height);
+  padding-top: 0;
+  padding-bottom: 0;
+  border-radius: var(--form-control-radius);
+}
+
+.el-select .el-select__wrapper {
+  line-height: calc(var(--form-control-height) - 2px);
+}
+
+.el-date-editor.el-input,
+.el-date-editor.el-input__wrapper {
+  height: var(--form-control-height);
+}
+
+.el-date-editor .el-range-input {
+  height: calc(var(--form-control-height) - 2px);
+  line-height: calc(var(--form-control-height) - 2px);
+}
+
+.el-textarea .el-textarea__inner {
+  border-radius: var(--form-control-radius);
+}
+
+.el-form-item .el-form-item__label {
+  line-height: var(--form-control-height);
+}
+
 /* 移除 ElButton 的默认 margin-right，使用 flex gap 时不需要 */
 .el-button {
   margin-right: 0;
@@ -16,7 +83,8 @@
   }
 
   /** input 选择器的样式 */
-  .el-input .el-input__wrapper {
+  .el-input .el-input__wrapper,
+  .el-date-editor.el-input__wrapper {
     box-shadow: 0 0 0 1px var(--el-color-danger) inset;
   }
 

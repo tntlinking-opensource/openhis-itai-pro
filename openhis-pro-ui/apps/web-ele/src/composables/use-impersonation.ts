@@ -80,7 +80,7 @@ function applyConfiguration(
       username: configuration?.currentUser?.userName ?? user?.userName,
     }),
   );
-  authStore.setCanFinanceApprove(Boolean(configuration?.currentUser?.canFinanceApprove));
+  authStore.syncCanFinanceApproveFromConfiguration(configuration);
 }
 
 function backupAdminSession() {
@@ -209,8 +209,8 @@ export function useImpersonation() {
 
     if (backup) {
       try {
-        const configRes = await getApplicationConfigurationApi();
-        applyConfiguration(configRes.data, backup.userInfo);
+        const configuration = await getApplicationConfigurationApi();
+        applyConfiguration(configuration, backup.userInfo);
       } catch {
         // 已恢复备份权限码
       }
@@ -253,8 +253,8 @@ export async function bootstrapImpersonationMeta() {
     return;
   }
   try {
-    const configRes = await getApplicationConfigurationApi();
-    syncImpersonationMetaFromConfiguration(configRes.data);
+    const configuration = await getApplicationConfigurationApi();
+    syncImpersonationMetaFromConfiguration(configuration);
   } catch {
     // 配置拉取失败时保留无横幅状态，不影响主流程
   }

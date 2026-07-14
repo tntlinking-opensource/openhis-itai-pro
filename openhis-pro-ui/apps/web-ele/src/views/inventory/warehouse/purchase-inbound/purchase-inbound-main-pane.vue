@@ -2,30 +2,32 @@
   药库进货单右侧主区：单头/明细 + useVbenVxeGrid；单据操作吸底。
 -->
 <script setup lang="ts">
-import type { VxeGridProps, VxeGridPropTypes } from '#/adapter/vxe-table';
+import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { VxeGridPropTypes } from '#/adapter/vxe-table';
 import type {
   CreateInboundReceiptResponseDto,
   InboundReceiptLineDto,
+  LinkablePurchaseOrderListRowDto,
 } from '#/api/inventory/warehouse/inbound-receipt';
 import type { ApiOptionItem } from '#/types/api-response';
 import type { InboundProductUnitBand } from '#/utils/inventory/inbound-product-unit-bands';
 
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import type { FormInstance } from 'element-plus';
 
-import type { ChargeType } from '#/api/core/common';
-import { getChargeTypeListApi } from '#/api/core/common';
-import {
-  filterInsuranceChargeTypes,
-  resolveDefaultInsuranceBusNo,
-} from '#/chs/constants/insurance-contract';
+import { computed, nextTick, ref, watch } from 'vue';
 
 import { Trash2 } from '@vben/icons';
 import { formatDateTime } from '@vben/utils';
 
-import { Delete, Plus } from '@element-plus/icons-vue';
 import InvDocActions from '@inventory/components/inv-doc-actions.vue';
+import InvDocDetailGridShell from '@inventory/components/inv-doc-detail-grid-shell.vue';
+import InvDocGridToolbar from '@inventory/components/inv-doc-grid-toolbar.vue';
+import InvDocTraceScanBridge from '@inventory/components/inv-doc-trace-scan-bridge.vue';
+import InvDocLinkPickerDialog from '@inventory/components/inv-doc-link-picker-dialog.vue';
 import InvMainShell from '@inventory/components/inv-main-shell.vue';
+import InvPrimaryBtn from '@inventory/components/inv-primary-btn.vue';
 import {
+  ElAlert,
   ElButton,
   ElDatePicker,
   ElForm,
@@ -37,12 +39,14 @@ import {
   ElSelect,
 } from 'element-plus';
 
-import { useVbenVxeGrid } from '#/adapter/vxe-table';
-import { useFinanceApprovalAccess } from '#/composables/use-finance-approval-access';
-import { useInventoryDocGridEdit } from '#/composables/use-inventory-doc-grid-edit';
+import { useInvDocDetailGrid } from '#/composables/use-inv-doc-detail-grid';
+import { useInvDocGridRowOps } from '#/composables/use-inv-doc-grid-row-ops';
+import { useInvDocParentSyncSession } from '#/composables/use-inv-doc-parent-sync-session';
 import {
   agreeInboundReceiptApi,
   createInboundReceiptApi,
+  getLinkablePurchaseOrderDetailApi,
+  pageLinkablePurchaseOrdersApi,
   rejectInboundReceiptApi,
   removeInboundReceiptApi,
   submitInboundReceiptApprovalApi,
@@ -50,20 +54,30 @@ import {
   withdrawInboundReceiptApprovalApi,
 } from '#/api/inventory/warehouse/inbound-receipt';
 import SectionTitle from '#/components/layouts/section-title.vue';
+import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import {
+  INV_DOC_UPSTREAM_HINT,
+  INV_DOC_UPSTREAM_WELCOME,
+  hasNonEmptyBusNo,
+  warnInventoryDocRestriction,
+} from '#/utils/inventory/inventory-doc-restrictions';
 import PurchaseInboundBatchAddDialog from '#/views/inventory/warehouse/purchase-inbound/purchase-inbound-batch-add-dialog.vue';
-import { decimalMul } from '#/utils/format/decimal-util';
+import {
+  formatInventoryLineTotal,
+  formatMoneyDisplay,
+  inventoryLineTotalNumber,
+} from '#/utils/format/money-scale';
 import {
   canConvertDisplayQtyToSplitForBands,
-  convertInboundQtyBetweenBandKinds,
-  convertInboundUnitPriceBetweenBandKinds,
-  defaultInboundUnitBandKind,
   findInboundUnitBandByKind,
   hydrateInboundDetailQtyFromPersisted,
-  inboundResolveDisplayUnitPrice,
   inboundUnitBandSelectOptions,
   normalizeInboundProductUnitBands,
   persistDisplayQtyAsSplitForBands,
   resolveInboundLinePersistUnitCodeForBands,
+  handleInventoryUnitBandChanged,
+  warehouseNonInboundDefaultBandKind,
+  warehouseNonInboundResolveDisplayUnitPrice,
 } from '#/utils/inventory/inbound-product-unit-bands';
 import { inboundReceiptPickMedicineCell } from '#/utils/inventory/inbound-receipt-product-pick-list';
 import {
@@ -74,20 +88,33 @@ import {
   inventoryPickNumberField,
   inventoryPickStringField,
 } from '#/utils/inventory/inventory-product-pick-list';
+import {
+  isPresentItemId,
+  scheduleInventoryProductPickFocus,
+} from '#/utils/inventory/inventory-doc-grid-common';
+import {
+  INV_ALL_LOCATIONS_FILTER_ID,
+  INV_ALL_WAREHOUSES_LABEL,
+  isSpecificInventoryLocationId,
+  resolveFirstRealLocationIdFromInitOptions,
+  resolveSpecificInventoryLocationId,
+} from '#/utils/inventory/inventory-workbench-list';
+import {
+  buildInventoryLocationHeadFormRules,
+  clearInventoryHeadFormValidation,
+  validateInventoryHeadFormFields,
+} from '#/utils/inventory/inventory-doc-head-form-validation';
+import { withInvDocLinkPickerEnrichedColumns } from '#/utils/inventory/inv-doc-link-picker-display';
 
 interface Props {
   /** 当前选中单据号（来自左侧列表） */
   busNo?: string;
-  /** 左侧列表所选源药库 locationId（IF-WHS-IN-04/05 sourceLocationId） */
-  sourceLocationId?: number | string;
   /** 当前为新增草稿（无后端单号） */
   isDraftOrder?: boolean;
   /** 详情拉取后明细行（后端字段，与 index tableData 同源） */
   inboundDetailRows?: Record<string, unknown>[];
   /** IF-WHS-IN-01 入库项目类型选项 */
   itemTableTypeOptions?: ApiOptionItem[];
-  /** 目的药库 locationId（与侧栏一致，选品 IF-WHS-IN-11 必填） */
-  purposeLocationId?: number | string;
   /** 父级递增时：整页空态 + 刷新动效（如新增草稿） */
   resetKey?: number;
   /** 侧栏/单头制单时间（index tableForm.applyTime），写入明细 occurrenceTime */
@@ -100,35 +127,39 @@ interface Props {
   documentEditable?: boolean;
   /** IF-WHS-IN-04/05 经手人 practitionerId（医务人员主键），与 CreateInboundReceiptRequest 一致 */
   practitionerId?: number | string;
+  /** 未选中任何单据时展示欢迎空态（引导从订货单新建） */
+  showWelcomeEmpty?: boolean;
+  /** init 制单人/经手人选项（关联弹窗制单人列解析） */
+  practitionerOptions?: ApiOptionItem[];
 }
 
 defineOptions({ name: 'PurchaseInboundMainPane' });
 
 const props = withDefaults(defineProps<Props>(), {
   busNo: '',
-  sourceLocationId: undefined,
   isDraftOrder: false,
   inboundDetailRows: () => [],
   itemTableTypeOptions: () => [],
-  purposeLocationId: undefined,
   resetKey: 0,
   applyTime: '',
   supplierOptions: () => [],
   warehouseOptions: () => [],
   documentEditable: true,
   practitionerId: undefined,
+  showWelcomeEmpty: false,
+  practitionerOptions: () => [],
 });
 
 const emit = defineEmits<{
+  createFromUpstream: [row: LinkablePurchaseOrderListRowDto];
   documentChanged: [{ busNo?: string }];
   documentRemoved: [];
   documentSaved: [{ busNo?: string }];
 }>();
 
-const { canFinanceApprove } = useFinanceApprovalAccess();
-
 interface HeadFormModel {
   busNo: string;
+  originalBusNo: string;
   supplierId: string;
   applyTime: string;
   warehouseId: number | string;
@@ -138,6 +169,7 @@ interface HeadFormModel {
 function defaultHeadForm(): HeadFormModel {
   return {
     busNo: '',
+    originalBusNo: '',
     supplierId: '',
     applyTime: '',
     warehouseId: '',
@@ -178,33 +210,194 @@ function warehouseOptionValue(row: Record<string, unknown>): number | string {
   return String(v ?? '');
 }
 
-const headForm = ref<HeadFormModel>(defaultHeadForm());
-
-const insuranceContractBusNo = ref<string>();
-const insuranceChargeTypeOptions = ref<ChargeType[]>([]);
-
-async function loadInsuranceContractBusNo() {
-  try {
-    const chargeTypes = await getChargeTypeListApi();
-    const eligible = filterInsuranceChargeTypes(chargeTypes);
-    insuranceChargeTypeOptions.value = eligible;
-    insuranceContractBusNo.value = resolveDefaultInsuranceBusNo(
-      eligible,
-      insuranceContractBusNo.value,
-    );
-  } catch {
-    insuranceContractBusNo.value = undefined;
-    insuranceChargeTypeOptions.value = [];
-  }
+/** 选品接口药库门禁：与单头库房无关，取 init 返回的首个真实药库位满足后端 purposeLocationId 必填。 */
+function resolveInboundReceiptPickGateLocationId(): number | string | undefined {
+  return resolveFirstRealLocationIdFromInitOptions(props.warehouseOptions ?? []);
 }
 
-const docActionFlags = computed(() =>
-  buildInboundReceiptDocActionFlags({
+function resolveInboundItemTableTypeLabel(tableName?: string): string {
+  const key = String(tableName ?? '').trim();
+  if (!key) return '项目';
+  const hit = props.itemTableTypeOptions?.find((o) => String(o.value ?? '') === key);
+  return String(hit?.label ?? key).trim() || '项目';
+}
+
+/** 选品前：单头项目类型必填，且与已有明细、所选行 itemTable 一致（一张单仅药品或仅耗材）。 */
+function validateInboundPickItemTable(pick: Record<string, unknown>): boolean {
+  const docType = String(headForm.value.itemTableType ?? '').trim();
+  if (!docType) {
+    ElMessage.warning('请先在单头选择项目类型');
+    return false;
+  }
+  const pickTable = inventoryPickStringField(pick, 'productTableName');
+  if (pickTable && pickTable !== docType) {
+    ElMessage.warning(
+      `所选项目属于「${resolveInboundItemTableTypeLabel(pickTable)}」，与单头「${resolveInboundItemTableTypeLabel(docType)}」不一致`,
+    );
+    return false;
+  }
+  const existingRows = collectGridRows().filter((r) => isPresentItemId(r.itemId));
+  if (existingRows.length > 0) {
+    const lockedTable = String(existingRows[0]?.itemTable ?? '').trim();
+    if (lockedTable && pickTable && lockedTable !== pickTable) {
+      ElMessage.warning('一张进货单只能包含同一项目类型（药品或耗材）');
+      return false;
+    }
+  }
+  return true;
+}
+
+/** 保存前：明细行 itemTable 须与单头一致，且全单只有一种类型。 */
+function validateDocumentItemTableConsistency(rows: InboundPreviewRow[]): boolean {
+  const docType = String(headForm.value.itemTableType ?? '').trim();
+  if (!docType) {
+    ElMessage.warning('请选择项目类型');
+    return false;
+  }
+  const productRows = rows.filter((r) => isPresentItemId(r.itemId));
+  const itemTables = new Set(
+    productRows.map((r) => String(r.itemTable ?? '').trim()).filter((t) => t !== ''),
+  );
+  if (itemTables.size > 1) {
+    ElMessage.error('一张进货单只能包含同一项目类型（药品或耗材）');
+    return false;
+  }
+  if (itemTables.size === 1 && !itemTables.has(docType)) {
+    ElMessage.error('明细项目类型与单头项目类型不一致');
+    return false;
+  }
+  return true;
+}
+
+const headForm = ref<HeadFormModel>(defaultHeadForm());
+const headFormRef = ref<FormInstance>();
+
+const headFormRules = computed(() =>
+  buildInventoryLocationHeadFormRules({
+    warehouseId: '库房',
+  }),
+);
+
+const hasLinkedUpstream = computed(() => {
+  if (hasNonEmptyBusNo(headForm.value.originalBusNo)) return true;
+  const h = (props.inboundDetailRows?.[0] as Record<string, unknown> | undefined)?.originalBusNo;
+  return hasNonEmptyBusNo(h as string | undefined);
+});
+
+const linesGridEditable = computed(() => props.documentEditable && hasLinkedUpstream.value);
+
+const canEditOriginalBusNo = computed(() => props.documentEditable && props.isDraftOrder);
+
+/** 保存/保存并提交进行中：置灰防双击并发建单或软删重插出重复明细 */
+const saving = ref(false);
+
+const docActionFlags = computed(() => {
+  const base = buildInboundReceiptDocActionFlags({
     documentEditable: props.documentEditable,
     hasPersistedBusNo: Boolean(String(props.busNo ?? headForm.value.busNo ?? '').trim()),
     isDraft: props.isDraftOrder,
     statusRaw: (props.inboundDetailRows?.[0] as Record<string, unknown> | undefined)?.statusEnum,
-  }),
+    busy: saving.value,
+  });
+  const upstreamRequired = props.isDraftOrder && !hasLinkedUpstream.value;
+  return {
+    ...base,
+    saveDisabled: base.saveDisabled || upstreamRequired,
+    saveAndSubmitDisabled: base.saveAndSubmitDisabled || upstreamRequired,
+  };
+});
+
+const linkPoVisible = ref(false);
+const linkPoLoading = ref(false);
+const linkPoQueryParams = ref<{
+  keyword: string;
+  pageNo: number;
+  pageSize: number;
+  warehouseId: number | string;
+}>({
+  pageNo: 1,
+  pageSize: 20,
+  keyword: '',
+  warehouseId: INV_ALL_LOCATIONS_FILTER_ID,
+});
+const linkPoTotal = ref(0);
+const linkPoRecords = ref<LinkablePurchaseOrderListRowDto[]>([]);
+
+const linkPoWarehouseOptions = computed(() => {
+  const rows = (props.warehouseOptions ?? [])
+    .filter((row) => isSpecificInventoryLocationId(row.id ?? row.value))
+    .map((row) => ({
+      label: String(row.name ?? row.label ?? ''),
+      value: warehouseOptionValue(row),
+    }));
+  return [{ label: INV_ALL_WAREHOUSES_LABEL, value: INV_ALL_LOCATIONS_FILTER_ID }, ...rows];
+});
+
+function resolveLinkPoPurposeLocationId(): number | string {
+  const wh = resolveSpecificInventoryLocationId(linkPoQueryParams.value.warehouseId);
+  if (wh) return wh;
+  return INV_ALL_LOCATIONS_FILTER_ID;
+}
+
+function normalizeLinkPoWarehouseId(raw: unknown): number | string {
+  if (Array.isArray(raw)) {
+    const first = raw[0];
+    if (first === undefined || first === null) return INV_ALL_LOCATIONS_FILTER_ID;
+    return first as number | string;
+  }
+  if (raw === undefined || raw === null || raw === '') return INV_ALL_LOCATIONS_FILTER_ID;
+  return raw as number | string;
+}
+
+function handleLinkPoWarehouseChange(value: unknown) {
+  linkPoQueryParams.value.warehouseId = normalizeLinkPoWarehouseId(value);
+  linkPoQueryParams.value.pageNo = 1;
+  void fetchLinkablePurchaseOrders();
+}
+
+const linkPoFormItems = computed<FormItemConfig[]>(() => [
+  {
+    label: '库房',
+    prop: 'warehouseId',
+    type: 'select',
+    placeholder: '全部库房',
+    filterable: true,
+    clearable: false,
+    multiple: false,
+    options: linkPoWarehouseOptions.value,
+    onChange: handleLinkPoWarehouseChange,
+  },
+  {
+    label: '关键字',
+    prop: 'keyword',
+    type: 'input',
+    placeholder: '订货单号/关键字',
+  },
+]);
+
+function resolveLinkPoSupplierLabel(row: LinkablePurchaseOrderListRowDto): string {
+  const name = String(row.supplierName ?? '').trim();
+  if (name) return name;
+  const supplierId = String(row.supplierId ?? '').trim();
+  if (!supplierId) return '';
+  const hit = props.supplierOptions.find((item) => String(item.value ?? '') === supplierId);
+  return String(hit?.label ?? '').trim();
+}
+
+const linkPoTableColumns = computed<TableColumn[]>(() =>
+  withInvDocLinkPickerEnrichedColumns([
+    { type: 'index', label: '序号', width: 58, align: 'center' },
+    { prop: 'busNo', label: '订货单号', minWidth: 160, showOverflowTooltip: true },
+    {
+      prop: 'supplierName',
+      label: '供应商',
+      width: 160,
+      showOverflowTooltip: true,
+      slot: 'supplierName',
+    },
+    { prop: 'applyTime', label: '制单时间', minWidth: 160, slot: 'applyTime' },
+    { label: '操作', width: 88, align: 'center', fixed: 'right', slot: 'rowActions' },
+  ]),
 );
 
 const inboundHeaderStatusText = computed(() => {
@@ -230,11 +423,8 @@ function applyEmptyState() {
   headForm.value = defaultHeadForm();
   headForm.value.busNo = props.busNo ?? '';
   headForm.value.applyTime = formatDateTime(new Date());
-  headForm.value.warehouseId =
-    props.purposeLocationId === undefined || props.purposeLocationId === null
-      ? ''
-      : props.purposeLocationId;
   headForm.value.itemTableType = firstItemTableTypeValue();
+  clearInventoryHeadFormValidation(headFormRef.value);
   void nextTick(() => {
     gridApi?.grid?.loadData([]);
     patchInboundGridEditConfig();
@@ -245,6 +435,7 @@ function syncHeadFromDetailRows(rows: Record<string, unknown>[]) {
   const h = rows[0];
   if (!h) return;
   headForm.value.busNo = String(h.busNo ?? props.busNo ?? '');
+  headForm.value.originalBusNo = String(h.originalBusNo ?? '').trim();
   headForm.value.supplierId =
     h.supplierId !== undefined && h.supplierId !== null && String(h.supplierId) !== ''
       ? String(h.supplierId)
@@ -255,11 +446,7 @@ function syncHeadFromDetailRows(rows: Record<string, unknown>[]) {
       : formatDateTime(new Date());
   const pl = h.purposeLocationId ?? h.locationId;
   headForm.value.warehouseId =
-    pl !== undefined && pl !== null && pl !== ''
-      ? (pl as number | string)
-      : props.purposeLocationId === undefined || props.purposeLocationId === null
-        ? ''
-        : props.purposeLocationId;
+    pl !== undefined && pl !== null && pl !== '' ? (pl as number | string) : '';
   const firstItemTable = rows
     .map((r) => r.itemTable)
     .find((t) => t !== undefined && t !== null && t !== '');
@@ -422,9 +609,10 @@ function mapDetailRowToGrid(r: Record<string, unknown>): InboundPreviewRow {
       total === undefined || total === null || total === ''
         ? ''
         : typeof total === 'number'
-          ? total.toFixed(2)
+          ? formatMoneyDisplay(total)
           : String(total),
     batchNo: String(r.lotNumber ?? ''),
+    traceNo: String(r.traceNo ?? '').trim(),
     prodExpiry: mapStartEndToProdExpiry(r.startTime, r.endTime),
     remark: String(r.remake ?? ''),
   };
@@ -435,75 +623,18 @@ function recalcInboundLineTotal(row: InboundPreviewRow) {
   const qty = Number(row.purchaseQty);
   const unit = Number(row.unitPrice);
   row.totalAmount =
-    Number.isFinite(qty) && Number.isFinite(unit) ? String(decimalMul(qty, unit, 2)) : '';
-}
-
-/** 按当前计量带写入 unitCode；切换单位时按带换算单价，否则取目录/带单价 */
-function applyInboundBandKindToRow(
-  row: InboundPreviewRow,
-  kind: string,
-  opts?: { convertFromCurrentPrice?: boolean; fromBandKind?: string },
-) {
-  const k = kind.trim().toUpperCase();
-  if (k === 'LEGACY' || !row.unitBands?.length) {
-    return;
-  }
-  const b = findInboundUnitBandByKind(row.unitBands, k);
-  if (!b) {
-    return;
-  }
-  const code = String(b.unitCode ?? '').trim();
-  if (code !== '') {
-    row.purchaseUnit = code;
-  }
-  if (opts?.convertFromCurrentPrice) {
-    const fromK = String(opts.fromBandKind ?? '')
-      .trim()
-      .toUpperCase();
-    if (fromK && fromK !== k && fromK !== 'LEGACY') {
-      const converted = convertInboundUnitPriceBetweenBandKinds(
-        row.unitPrice,
-        fromK,
-        k,
-        row.unitBands,
-      );
-      if (converted !== undefined && Number.isFinite(converted)) {
-        row.unitPrice = converted;
-        return;
-      }
-    }
-  }
-  const resolved = inboundResolveDisplayUnitPrice({
-    bands: row.unitBands,
-    displayBandKind: k,
-    legacyUnitPrice: row.unitPrice,
-  });
-  if (resolved !== undefined) {
-    row.unitPrice = resolved;
-  }
+    Number.isFinite(qty) && Number.isFinite(unit) ? formatInventoryLineTotal(qty, unit) : '';
 }
 
 /** 切换采购单位带：数量按 ratioToSplit 换算到目标带 */
 function handleInboundUnitBandChanged(row: InboundPreviewRow) {
-  const newK = String(row.selectedBandKind ?? '')
-    .trim()
-    .toUpperCase();
-  const oldK = String(row.__prevBandKind ?? '')
-    .trim()
-    .toUpperCase();
-  const bands = row.unitBands ?? [];
-  if (oldK && newK && oldK !== newK && oldK !== 'LEGACY' && newK !== 'LEGACY' && bands.length > 0) {
-    const nq = convertInboundQtyBetweenBandKinds(Number(row.purchaseQty ?? 0), oldK, newK, bands);
-    if (nq !== undefined) {
-      row.purchaseQty = nq;
-    }
-  }
-  applyInboundBandKindToRow(row, newK, {
-    convertFromCurrentPrice: true,
-    fromBandKind: oldK,
+  handleInventoryUnitBandChanged(row, {
+    getQty: () => Number(row.purchaseQty ?? 0),
+    setQty: (qty) => {
+      row.purchaseQty = qty;
+    },
+    onAfterChanged: () => recalcInboundLineTotal(row),
   });
-  row.__prevBandKind = newK;
-  recalcInboundLineTotal(row);
 }
 
 /** 选品行写入明细：itemId / 选品 id 与接口同源，不做 Number() */
@@ -521,12 +652,16 @@ function syncRowFromInboundMedicinePick(pick: Record<string, unknown>, row: Inbo
   const bands = normalizeInboundProductUnitBands(pick.unitBands);
   row.unitBands = bands.length > 0 ? bands : undefined;
   if (bands.length > 0) {
-    const kind = defaultInboundUnitBandKind(bands);
+    const kind = warehouseNonInboundDefaultBandKind(bands);
     row.selectedBandKind = kind;
     row.unitList = inboundUnitBandSelectOptions(bands);
     row.__prevBandKind = kind;
-    applyInboundBandKindToRow(row, kind);
-    const resolved = inboundResolveDisplayUnitPrice({
+    const band = findInboundUnitBandByKind(bands, kind);
+    const code = String(band?.unitCode ?? '').trim();
+    if (code !== '') {
+      row.purchaseUnit = code;
+    }
+    const resolved = warehouseNonInboundResolveDisplayUnitPrice({
       bands,
       displayBandKind: kind,
       legacyUnitPrice: inventoryPickNumberField(pick, 'purchasePrice'),
@@ -568,16 +703,10 @@ interface InboundPreviewRow {
   unitPrice: number;
   totalAmount: string;
   batchNo: string;
+  /** 与后端 {@code InboundReceiptLineDto.traceNo} 一致 */
+  traceNo: string;
   prodExpiry?: [string, string] | null;
   remark: string;
-}
-
-function isPresentItemId(v: unknown): boolean {
-  if (v === undefined || v === null) return false;
-  if (typeof v === 'string') return v.trim() !== '';
-  if (typeof v === 'number') return Number.isFinite(v);
-  if (typeof v === 'bigint') return true;
-  return String(v).trim() !== '';
 }
 
 /** 明细行必填项是否已齐（与 buildLinesFromGrid 保存校验对齐） */
@@ -600,14 +729,9 @@ function isInboundRowComplete(row: InboundPreviewRow): boolean {
   return !!(startTime && endTime);
 }
 
-let inboundGridEdit!: ReturnType<typeof useInventoryDocGridEdit<InboundPreviewRow>>;
-
 /** 选品后进入整行表单并聚焦数量 */
 function handleInboundProductPick(row: InboundPreviewRow) {
-  void nextTick(async () => {
-    await nextTick();
-    await inboundGridEdit.onProductSelected(row);
-  });
+  scheduleInventoryProductPickFocus(inboundGridEdit, row);
 }
 
 const columns: VxeGridPropTypes.Column[] = [
@@ -618,20 +742,7 @@ const columns: VxeGridPropTypes.Column[] = [
     title: '项目名称',
     minWidth: 200,
     fixed: 'left',
-    editRender: {
-      name: 'PurchaseOrderMedicineSelect',
-      props: {
-        listSource: 'inbound-receipt',
-        query: async () => ({
-          purposeLocationId: props.purposeLocationId,
-          productTableName: headForm.value.itemTableType || undefined,
-        }),
-        onSelected: (product: Record<string, unknown>, row: InboundPreviewRow) => {
-          syncRowFromInboundMedicinePick(product, row);
-          handleInboundProductPick(row);
-        },
-      },
-    },
+    formatter: ({ row }: { row: InboundPreviewRow }) => resolveInboundRowProductName(row, 0),
     showOverflow: true,
   },
   {
@@ -701,6 +812,12 @@ const columns: VxeGridPropTypes.Column[] = [
     },
   },
   {
+    field: 'traceNo',
+    title: '追溯码',
+    minWidth: 140,
+    editRender: { name: 'InventoryTraceNoCell', props: { maxlength: 512, clearable: true } },
+  },
+  {
     field: 'prodExpiry',
     title: '生产日期~有效期至',
     minWidth: 240,
@@ -740,42 +857,20 @@ const columns: VxeGridPropTypes.Column[] = [
   },
 ];
 
-const gridOptions: VxeGridProps<InboundPreviewRow> = reactive({
-  autoResize: true,
-  height: '100%',
-  border: true,
-  stripe: true,
-  showOverflow: true,
-  showFooter: false,
-  size: 'medium',
-  keepSource: true,
-  columnConfig: { resizable: true },
-  data: [],
-  editConfig: {
-    enabled: true,
-    trigger: 'click',
-    mode: 'row',
-    autoClear: false,
-    beforeEditMethod: () => props.documentEditable,
-  },
-  columns,
-  pagerConfig: { enabled: false },
-});
-
 const INBOUND_EDITABLE_COLUMN_FIELDS = new Set([
   '_qtyUnit',
   'batchNo',
-  'medicinePick',
+  'traceNo',
   'prodExpiry',
   'remark',
   'unitPrice',
 ]);
 
 const INBOUND_EDIT_FIELD_ORDER = [
-  'medicinePick',
   '_qtyUnit',
   'unitPrice',
   'batchNo',
+  'traceNo',
   'prodExpiry',
   'remark',
 ] as const;
@@ -786,32 +881,24 @@ type InboundEditField = (typeof INBOUND_EDIT_FIELD_ORDER)[number];
 const INBOUND_VERTICAL_NAV_FIELDS = new Set<InboundEditField>([
   '_qtyUnit',
   'batchNo',
+  'traceNo',
   'prodExpiry',
   'remark',
   'unitPrice',
 ]);
 
-const inboundGridKeyboardRef = ref<HTMLElement | null>(null);
-
-const [Grid, gridApi] = useVbenVxeGrid<InboundPreviewRow>({
-  gridOptions,
-  gridEvents: {
-    cellClick: (params: { column?: { field?: string; type?: string }; row: InboundPreviewRow }) =>
-      inboundGridEdit.onCellClick(params),
-    editClosed(params: { row: InboundPreviewRow }) {
-      recalcInboundLineTotal(params.row);
-      inboundGridEdit.syncRowFormMode(params.row);
-    },
-  },
-  class: 'min-h-0 flex-1 !rounded-none !bg-transparent shadow-none',
-  gridClass: '!p-0',
-});
-
-inboundGridEdit = useInventoryDocGridEdit<InboundPreviewRow>({
-  getGridApi: () => gridApi ?? null,
-  gridWrapRef: inboundGridKeyboardRef,
-  documentEditable: () => props.documentEditable,
-  collectRows: collectGridRows,
+const {
+  Grid,
+  gridApi,
+  bindGridWrap,
+  gridEdit: inboundGridEdit,
+  collectGridRows,
+  patchGridEditConfig: patchInboundGridEditConfig,
+} = useInvDocDetailGrid<InboundPreviewRow>({
+  columns,
+  documentEditable: () => linesGridEditable.value,
+  beforeEditMethod: () => linesGridEditable.value,
+  onEditClosed: (row) => recalcInboundLineTotal(row),
   config: {
     rowKey: (row) => row.id,
     productField: 'medicinePick',
@@ -824,39 +911,24 @@ inboundGridEdit = useInventoryDocGridEdit<InboundPreviewRow>({
   },
 });
 
-function patchInboundGridEditConfig() {
-  const patched = inboundGridEdit.patchGridOptions({
-    ...(gridOptions as Record<string, unknown>),
-    editConfig: {
-      ...(gridOptions.editConfig as Record<string, unknown>),
-      enabled: props.documentEditable,
-    },
-  });
-  Object.assign(gridOptions, patched);
+const {
+  addItem: addGridItem,
+  deleteItem,
+  removeEmptyRows: removeEmptyInboundRows,
+} = useInvDocGridRowOps({
+  documentEditable: () => linesGridEditable.value,
+  getGridApi: () => gridApi ?? null,
+  gridEdit: inboundGridEdit,
+  createEmptyRow: createEmptyInboundRow,
+  hasProduct: (row) => isPresentItemId(row.itemId),
+});
+
+const traceScanBridgeRef = ref<InstanceType<typeof InvDocTraceScanBridge> | null>(null);
+
+/** 打开批量追溯码扫码弹窗 */
+function handleOpenTraceScan(): void {
+  traceScanBridgeRef.value?.open(collectGridRows());
 }
-
-watch(
-  () => props.documentEditable,
-  (editable) => {
-    patchInboundGridEditConfig();
-    void nextTick(() => {
-      if (!editable) {
-        inboundGridEdit.resetFormMode();
-        inboundGridEdit.clearGridEdit();
-      }
-    });
-  },
-  { immediate: true },
-);
-
-watch(
-  () => props.purposeLocationId,
-  (v) => {
-    if (v !== undefined && v !== null && v !== '') {
-      headForm.value.warehouseId = v;
-    }
-  },
-);
 
 watch(
   () => props.itemTableTypeOptions,
@@ -868,9 +940,82 @@ watch(
   { deep: true },
 );
 
+interface InboundDraftSnap {
+  head: HeadFormModel;
+  rows: InboundPreviewRow[];
+}
+
+const parentSync = useInvDocParentSyncSession<InboundDraftSnap>();
+
+/** 将父级已拉详情写入主区（含 loadGen 防异步串扰） */
+function applyPersistedDetailFromParent(loadGen?: number) {
+  if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
+  if (!props.busNo) {
+    inboundGridEdit.resetFormMode();
+    applyEmptyState();
+    return;
+  }
+  const rows = props.inboundDetailRows ?? [];
+  if (rows.length === 0) {
+    headForm.value.busNo = props.busNo;
+    headForm.value.applyTime = formatDateTime(new Date());
+    headForm.value.supplierId = '';
+    headForm.value.warehouseId = '';
+    headForm.value.itemTableType = firstItemTableTypeValue();
+    void nextTick(() => {
+      if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
+      gridApi?.grid?.loadData([]);
+      patchInboundGridEditConfig();
+    });
+    return;
+  }
+  syncHeadFromDetailRows(rows);
+  const gridRows = rows.map((r) => mapDetailRowToGrid(r));
+  inboundGridEdit.resetFormMode();
+  inboundGridEdit.clearGridEdit();
+  void nextTick(() => {
+    if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
+    gridApi?.grid?.loadData(gridRows);
+    patchInboundGridEditConfig();
+  });
+}
+
+/** 侧栏切单：缓存/恢复本地草稿，避免已落库明细污染新建单 */
+async function syncFromParentContext() {
+  await parentSync.syncFromParentContext(
+    { isDraftOrder: Boolean(props.isDraftOrder), parentBusNo: props.busNo },
+    {
+      getLocalPersistedBusNo: () => {
+        const headNo = String(headForm.value.busNo ?? '').trim();
+        if (props.isDraftOrder) return headNo || undefined;
+        return String(props.busNo ?? headNo).trim() || undefined;
+      },
+      captureDraft: () => ({
+        head: { ...headForm.value, busNo: '' },
+        rows: collectGridRows().map((r) => ({ ...r })),
+      }),
+      restoreDraft: async (snap) => {
+        headForm.value = { ...snap.head, busNo: '' };
+        inboundGridEdit.resetFormMode();
+        await nextTick();
+        gridApi?.grid?.loadData(snap.rows);
+        patchInboundGridEditConfig();
+      },
+      resetForCreate: () => {
+        inboundGridEdit.resetFormMode();
+        applyEmptyState();
+      },
+      loadByBusNo: async (_busNo, gen) => {
+        applyPersistedDetailFromParent(gen);
+      },
+    },
+  );
+}
+
 watch(
   () => props.resetKey,
   () => {
+    parentSync.discardDraftSession();
     inboundGridEdit.resetFormMode();
     applyEmptyState();
     triggerPaneFlash();
@@ -880,38 +1025,7 @@ watch(
 watch(
   () => [props.busNo, props.inboundDetailRows, props.isDraftOrder] as const,
   () => {
-    if (props.isDraftOrder) {
-      return;
-    }
-    if (!props.busNo) {
-      inboundGridEdit.resetFormMode();
-      applyEmptyState();
-      return;
-    }
-    const rows = props.inboundDetailRows ?? [];
-    if (rows.length === 0) {
-      headForm.value.busNo = props.busNo;
-      headForm.value.applyTime = formatDateTime(new Date());
-      headForm.value.supplierId = '';
-      headForm.value.warehouseId =
-        props.purposeLocationId === undefined || props.purposeLocationId === null
-          ? ''
-          : props.purposeLocationId;
-      headForm.value.itemTableType = firstItemTableTypeValue();
-      void nextTick(() => {
-        gridApi?.grid?.loadData([]);
-        patchInboundGridEditConfig();
-      });
-      return;
-    }
-    syncHeadFromDetailRows(rows);
-    const gridRows = rows.map((r) => mapDetailRowToGrid(r));
-    inboundGridEdit.resetFormMode();
-    inboundGridEdit.clearGridEdit();
-    void nextTick(() => {
-      gridApi?.grid?.loadData(gridRows);
-      patchInboundGridEditConfig();
-    });
+    void syncFromParentContext();
   },
   { deep: true, immediate: true },
 );
@@ -926,10 +1040,21 @@ function pickApiErrMsg(e: unknown): string {
   return '保存失败';
 }
 
-function collectGridRows(): InboundPreviewRow[] {
-  const g = gridApi?.grid as null | { getFullData?: () => InboundPreviewRow[] };
-  return g?.getFullData?.() ?? [];
-}
+watch(
+  () => headForm.value.itemTableType,
+  (newVal, oldVal) => {
+    const next = String(newVal ?? '').trim();
+    const prev = String(oldVal ?? '').trim();
+    if (!prev || next === prev) return;
+    const productRows = collectGridRows().filter((r) => isPresentItemId(r.itemId));
+    if (productRows.length === 0) return;
+    const lockedTable = String(productRows[0]?.itemTable ?? '').trim();
+    if (lockedTable && lockedTable !== next) {
+      ElMessage.warning('已有明细行，不能切换项目类型；请先删除明细后再切换');
+      headForm.value.itemTableType = prev;
+    }
+  },
+);
 
 function parseLineTotalPrice(row: InboundPreviewRow): number | undefined {
   const s = String(row.totalAmount ?? '').trim();
@@ -970,6 +1095,10 @@ function buildLinesFromGrid(): InboundReceiptLineDto[] | null {
     ElMessage.warning('请至少添加一行明细');
     return null;
   }
+  if (!validateDocumentItemTableConsistency(rows)) {
+    return null;
+  }
+  const docType = String(headForm.value.itemTableType ?? '').trim();
   const lines: InboundReceiptLineDto[] = [];
   const occurrenceTime = resolveInboundApplyOccurrenceTime();
   const itemLotSeen = new Map<string, number>();
@@ -979,6 +1108,10 @@ function buildLinesFromGrid(): InboundReceiptLineDto[] | null {
     const itemId = r.itemId;
     if (!itemTable || !isPresentItemId(itemId)) {
       ElMessage.error(`第 ${i + 1} 行请选择项目`);
+      return null;
+    }
+    if (itemTable !== docType) {
+      ElMessage.error(`第 ${i + 1} 行项目类型与单头不一致`);
       return null;
     }
     const qty = Number(r.purchaseQty);
@@ -1029,6 +1162,7 @@ function buildLinesFromGrid(): InboundReceiptLineDto[] | null {
       itemQuantity: persisted.itemQuantity,
       unitCode,
       lotNumber,
+      traceNo: String(r.traceNo ?? '').trim() || undefined,
       price: Number.isFinite(price) ? price : undefined,
       totalPrice: parseLineTotalPrice(r),
       occurrenceTime,
@@ -1065,8 +1199,20 @@ function optionalSupplierId(s: string): number | string | undefined {
 }
 
 function validateHeadBeforeSave(): boolean {
+  if (props.isDraftOrder && !hasLinkedUpstream.value) {
+    warnInventoryDocRestriction(INV_DOC_UPSTREAM_HINT.purchaseInbound);
+    return false;
+  }
   if (!String(headForm.value.supplierId ?? '').trim()) {
     ElMessage.warning('请选择供应商');
+    return false;
+  }
+  if (!String(headForm.value.itemTableType ?? '').trim()) {
+    ElMessage.warning('请选择项目类型');
+    return false;
+  }
+  if (!isSpecificInventoryLocationId(headForm.value.warehouseId)) {
+    warnInventoryLocationRequired('warehouse');
     return false;
   }
   return true;
@@ -1088,21 +1234,20 @@ function coercePractitionerId(v: unknown, label: string): number | string {
 }
 
 function buildSaveCommonPayload(lines: InboundReceiptLineDto[]) {
-  const sourceLocationId = coerceLocationId(props.sourceLocationId, '源药库');
-  const purposeLocationId = coerceLocationId(headForm.value.warehouseId, '入库库房');
+  const warehouseId = coerceLocationId(headForm.value.warehouseId, '入库库房');
   const head = (props.inboundDetailRows ?? [])[0] as Record<string, unknown> | undefined;
   const sourceTypeEnum = String(head?.sourceTypeEnum ?? 'CABINET').trim() || 'CABINET';
   const purposeTypeEnum = String(head?.purposeTypeEnum ?? 'CABINET').trim() || 'CABINET';
   const categoryEnum = String(head?.categoryEnum ?? 'STOCK_SUPPLY').trim() || 'STOCK_SUPPLY';
-  const originalRaw = head?.originalBusNo;
+  const originalRaw = headForm.value.originalBusNo || head?.originalBusNo;
   const originalBusNo =
     originalRaw !== undefined && originalRaw !== null && String(originalRaw).trim() !== ''
       ? String(originalRaw).trim()
       : undefined;
   return {
     originalBusNo,
-    sourceLocationId,
-    purposeLocationId,
+    sourceLocationId: warehouseId,
+    purposeLocationId: warehouseId,
     sourceTypeEnum,
     purposeTypeEnum,
     categoryEnum,
@@ -1113,6 +1258,8 @@ function buildSaveCommonPayload(lines: InboundReceiptLineDto[]) {
 }
 
 async function persistInbound(submitApproval: boolean): Promise<string | undefined> {
+  // 重入护栏：双击「保存/保存并提交」会并发 create 或软删重插，导致同单明细翻倍
+  if (saving.value) return undefined;
   if (!props.isDraftOrder && !props.documentEditable) {
     ElMessage.warning('当前状态不允许修改');
     return undefined;
@@ -1130,27 +1277,32 @@ async function persistInbound(submitApproval: boolean): Promise<string | undefin
     ElMessage.error(error instanceof Error ? error.message : '参数不完整');
     return undefined;
   }
+  saving.value = true;
   try {
     let busNo: string | undefined;
-    if (props.isDraftOrder) {
+    // 已有单号一律走修订（软删后重插），避免草稿标记未清时重复 create
+    const existingBusNo = String(props.busNo ?? headForm.value.busNo ?? '').trim();
+    if (existingBusNo) {
+      const head = (props.inboundDetailRows ?? [])[0] as Record<string, unknown> | undefined;
+      const rv = head?.rowVersion;
+      await updateInboundReceiptApi({
+        busNo: existingBusNo,
+        ...common,
+        rowVersion: rv !== undefined && rv !== null && String(rv) !== '' ? Number(rv) : undefined,
+      });
+      busNo = existingBusNo;
+    } else if (props.isDraftOrder) {
       const res = (await createInboundReceiptApi(common)) as CreateInboundReceiptResponseDto & {
         data?: CreateInboundReceiptResponseDto;
       };
       busNo = (res.busNo ?? res.data?.busNo)?.trim();
-    } else {
-      const bn = String(props.busNo ?? headForm.value.busNo ?? '').trim();
-      if (!bn) {
-        ElMessage.error('缺少单据号');
-        return undefined;
+      // 新建成功立即写入单头，后续「保存并提交」走 update 而非二次 create
+      if (busNo) {
+        headForm.value.busNo = busNo;
       }
-      const head = (props.inboundDetailRows ?? [])[0] as Record<string, unknown> | undefined;
-      const rv = head?.rowVersion;
-      await updateInboundReceiptApi({
-        busNo: bn,
-        ...common,
-        rowVersion: rv !== undefined && rv !== null && String(rv) !== '' ? Number(rv) : undefined,
-      });
-      busNo = bn;
+    } else {
+      ElMessage.error('缺少单据号');
+      return undefined;
     }
     if (!busNo) {
       ElMessage.warning('保存成功但未返回单号');
@@ -1166,6 +1318,8 @@ async function persistInbound(submitApproval: boolean): Promise<string | undefin
   } catch (error) {
     ElMessage.error(pickApiErrMsg(error));
     return undefined;
+  } finally {
+    saving.value = false;
   }
 }
 
@@ -1192,7 +1346,6 @@ async function handleSubmitApproval() {
     ElMessage.warning('请先保存单据');
     return;
   }
-  if (docActionFlags.value.submitApprovalDisabled) return;
   const busNo = currentPersistedBusNo();
   if (!busNo) {
     ElMessage.warning('请先选择或保存单据');
@@ -1212,7 +1365,6 @@ async function handleSubmitApproval() {
 
 async function handleWithdraw() {
   if (props.isDraftOrder) return;
-  if (docActionFlags.value.withdrawDisabled) return;
   const busNo = currentPersistedBusNo();
   if (!busNo) return;
   try {
@@ -1256,18 +1408,12 @@ async function handleRemoveDoc() {
 
 async function handleApprove() {
   if (props.isDraftOrder) return;
-  if (docActionFlags.value.approveDisabled) return;
   const busNo = currentPersistedBusNo();
   if (!busNo) return;
-  if (!insuranceContractBusNo.value?.trim()) {
-    ElMessage.warning('请选择医保契约');
-    return;
-  }
   try {
     await agreeInboundReceiptApi({
       busNo,
       approvalClock: nowIsoLocal(),
-      contractBusNo: insuranceContractBusNo.value,
     });
     ElMessage.success('审批同意');
     emit('documentChanged', { busNo });
@@ -1278,7 +1424,6 @@ async function handleApprove() {
 
 async function handleReject() {
   if (props.isDraftOrder) return;
-  if (docActionFlags.value.rejectDisabled) return;
   const busNo = currentPersistedBusNo();
   if (!busNo) return;
   let rejectReason: string;
@@ -1323,56 +1468,166 @@ function createEmptyInboundRow(): InboundPreviewRow {
     unitPrice: 0,
     totalAmount: '',
     batchNo: '',
+    traceNo: '',
     prodExpiry: null,
     remark: '',
   };
 }
 
-async function addItem() {
+const batchDialogVisible = ref(false);
+
+async function handleAddItem() {
   if (!props.documentEditable) return;
-  const $grid = gridApi?.grid;
-  if (!$grid) return;
-  const record = createEmptyInboundRow();
-  const { row } = await $grid.insertAt(record, null);
-  await $grid.$nextTick();
-  if (row) {
-    await $grid.scrollToRow(row);
-    await inboundGridEdit.enterRowFormMode(row as InboundPreviewRow, 'medicinePick');
+  if (!hasLinkedUpstream.value) {
+    warnInventoryDocRestriction(INV_DOC_UPSTREAM_HINT.purchaseInbound);
+    return;
+  }
+  if (!(await validateInventoryHeadFormFields(headFormRef.value, 'warehouseId'))) {
+    return;
+  }
+  await addGridItem();
+}
+
+function openUpstreamPicker() {
+  linkPoQueryParams.value = {
+    pageNo: 1,
+    pageSize: 20,
+    keyword: '',
+    warehouseId: INV_ALL_LOCATIONS_FILTER_ID,
+  };
+  linkPoRecords.value = [];
+  linkPoTotal.value = 0;
+  linkPoVisible.value = true;
+}
+
+async function openLinkPoDialog() {
+  if (!canEditOriginalBusNo.value) {
+    ElMessage.warning('仅新建单据时可关联订货单');
+    return;
+  }
+  await openUpstreamPicker();
+}
+
+function handleLinkPoQuery(params: Record<string, unknown>) {
+  Object.assign(linkPoQueryParams.value, params);
+  linkPoQueryParams.value.warehouseId = normalizeLinkPoWarehouseId(
+    linkPoQueryParams.value.warehouseId,
+  );
+  linkPoQueryParams.value.pageNo = 1;
+  void fetchLinkablePurchaseOrders();
+}
+
+function handleLinkPoReset() {
+  linkPoQueryParams.value = {
+    pageNo: 1,
+    pageSize: 20,
+    keyword: '',
+    warehouseId: INV_ALL_LOCATIONS_FILTER_ID,
+  };
+  void fetchLinkablePurchaseOrders();
+}
+
+function handleLinkPoPagination(pagination: { limit: number; page: number }) {
+  linkPoQueryParams.value.pageNo = pagination.page;
+  linkPoQueryParams.value.pageSize = pagination.limit;
+  void fetchLinkablePurchaseOrders();
+}
+
+async function fetchLinkablePurchaseOrders() {
+  linkPoQueryParams.value.warehouseId = normalizeLinkPoWarehouseId(
+    linkPoQueryParams.value.warehouseId,
+  );
+  linkPoLoading.value = true;
+  try {
+    const res = await pageLinkablePurchaseOrdersApi({
+      purposeLocationId: resolveLinkPoPurposeLocationId(),
+      keyword: String(linkPoQueryParams.value.keyword ?? '').trim() || undefined,
+      pageNo: linkPoQueryParams.value.pageNo,
+      pageSize: linkPoQueryParams.value.pageSize,
+    });
+    const { content, totalCount } = parsePagedRowsFromApiData<LinkablePurchaseOrderListRowDto>(
+      res.data,
+    );
+    linkPoRecords.value = content;
+    linkPoTotal.value = totalCount;
+  } catch {
+    linkPoRecords.value = [];
+    linkPoTotal.value = 0;
+  } finally {
+    linkPoLoading.value = false;
   }
 }
 
-async function deleteItem(row: 'select' | InboundPreviewRow) {
-  if (!props.documentEditable) return;
-  const $grid = gridApi?.grid;
-  if (!$grid) return;
-  const checked = $grid.getCheckboxRecords() as InboundPreviewRow[];
-  if (row === 'select' && checked.length === 0) return;
-  await $grid.remove(row === 'select' ? checked : row);
+async function applyLinkablePurchaseOrder(row: LinkablePurchaseOrderListRowDto) {
+  if (!props.isDraftOrder) {
+    emit('createFromUpstream', row);
+    return;
+  }
+  await applyLinkablePurchaseOrderToDraft(row);
 }
 
-/** 未选品的空行（批量回填前清理，避免多出一行） */
-function isInboundRowWithoutProduct(row: InboundPreviewRow): boolean {
-  return !isPresentItemId(row.itemId);
+async function applyLinkablePurchaseOrderToDraft(row: LinkablePurchaseOrderListRowDto) {
+  const poNo = String(row.busNo ?? row.originalBusNo ?? '').trim();
+  if (!poNo) return;
+  try {
+    const res = await getLinkablePurchaseOrderDetailApi({
+      busNo: poNo,
+    });
+    const data = res.data;
+    if (!data?.lines?.length) {
+      ElMessage.warning('未获取到订货明细');
+      return;
+    }
+    headForm.value.originalBusNo = data.originalBusNo ?? data.purchaseOrderBusNo ?? poNo;
+    if (data.supplierId !== undefined && data.supplierId !== null) {
+      headForm.value.supplierId = String(data.supplierId);
+    }
+    if (data.purposeLocationId) {
+      headForm.value.warehouseId = data.purposeLocationId as number | string;
+    }
+    const firstTable = data.lines[0]?.itemTable;
+    if (firstTable) {
+      headForm.value.itemTableType = String(firstTable);
+    }
+    const gridRows = (data.lines ?? []).map((ln) =>
+      mapDetailRowToGrid(ln as unknown as Record<string, unknown>),
+    );
+    inboundGridEdit.resetFormMode();
+    void nextTick(() => {
+      gridApi?.grid?.loadData(gridRows);
+      patchInboundGridEditConfig();
+    });
+    linkPoVisible.value = false;
+    ElMessage.success('已带入订货明细，请核对数量/批号后保存');
+  } catch {
+    /* handled */
+  }
 }
 
-/** 移除明细表中未选品的空行 */
-async function removeEmptyInboundRows() {
-  const $grid = gridApi?.grid;
-  if (!$grid) return;
-  const rows = ($grid.getFullData?.() ?? []) as InboundPreviewRow[];
-  const emptyRows = rows.filter((r) => isInboundRowWithoutProduct(r));
-  if (emptyRows.length === 0) return;
-  await $grid.remove(emptyRows);
-}
+const linkPoButtonLabel = computed(() =>
+  hasLinkedUpstream.value && props.isDraftOrder ? '更换订货单' : '从订货单选择',
+);
 
-const batchDialogVisible = ref(false);
+defineExpose({
+  applyLinkablePurchaseOrderToDraft,
+  openUpstreamPicker,
+});
 
-/** 打开批量选品弹窗（与单行选品共用 purposeLocationId） */
+watch(
+  () => linesGridEditable.value,
+  () => {
+    patchInboundGridEditConfig();
+  },
+);
+
+/** 打开批量选品弹窗（与单行选品共用单头项目类型） */
 function openBatchDialog() {
-  if (!props.documentEditable) return;
-  const purpose = props.purposeLocationId;
-  if (purpose === undefined || purpose === null || String(purpose).trim() === '') {
-    ElMessage.warning('请先在左侧选择目的药库');
+  if (!linesGridEditable.value) {
+    warnInventoryDocRestriction(INV_DOC_UPSTREAM_HINT.purchaseInbound);
+    return;
+  }
+  if (!String(headForm.value.itemTableType ?? '').trim()) {
+    ElMessage.warning('请先在单头选择项目类型');
     return;
   }
   batchDialogVisible.value = true;
@@ -1381,11 +1636,31 @@ function openBatchDialog() {
 /** 批量选品确认：逐条新建行并写入选品信息（等同多次单行选择） */
 async function handleBatchConfirm(products: Record<string, unknown>[]) {
   if (products.length === 0) return;
+  const docType = String(headForm.value.itemTableType ?? '').trim();
+  if (!docType) {
+    ElMessage.warning('请先在单头选择项目类型');
+    return;
+  }
+  for (const product of products) {
+    const pickTable = inventoryPickStringField(product, 'productTableName');
+    if (pickTable && pickTable !== docType) {
+      ElMessage.warning('批量添加的项目须与单头项目类型一致');
+      return;
+    }
+  }
+  const existingRows = collectGridRows().filter((r) => isPresentItemId(r.itemId));
+  if (existingRows.length > 0) {
+    const lockedTable = String(existingRows[0]?.itemTable ?? '').trim();
+    const firstPickTable = inventoryPickStringField(products[0]!, 'productTableName');
+    if (lockedTable && firstPickTable && lockedTable !== firstPickTable) {
+      ElMessage.warning('一张进货单只能包含同一项目类型（药品或耗材）');
+      return;
+    }
+  }
   const $grid = gridApi?.grid;
   if (!$grid) return;
   inboundGridEdit.clearGridEdit();
   await removeEmptyInboundRows();
-  // 每条选品独立一行，仅回填药品信息，数量/批号等由用户后续填写
   const insertedRows: InboundPreviewRow[] = [];
   for (const product of products) {
     const record = createEmptyInboundRow();
@@ -1403,12 +1678,8 @@ async function handleBatchConfirm(products: Record<string, unknown>[]) {
     await $grid.scrollToRow(firstInserted);
     await inboundGridEdit.enterRowFormMode(firstInserted, '_qtyUnit');
   }
-  ElMessage.success(`已添加 ${products.length} 条药品，请补充数量、批号等信息`);
+  ElMessage.success(`已添加 ${products.length} 条项目，请补充数量、批号等信息`);
 }
-
-onMounted(() => {
-  void loadInsuranceContractBusNo();
-});
 </script>
 
 <template>
@@ -1417,46 +1688,32 @@ onMounted(() => {
     :class="{ 'purchase-inbound-main-pane--flash': paneFlashActive }"
   >
     <InvMainShell>
-      <template #actionBar>
-        <div class="flex w-full flex-col gap-2">
-          <div
-            v-if="insuranceChargeTypeOptions.length > 0"
-            class="flex flex-wrap items-center gap-2"
-          >
-            <span class="text-xs text-[var(--el-text-color-secondary)]">医保契约</span>
-            <ElSelect
-              v-model="insuranceContractBusNo"
-              class="!w-72"
-              placeholder="请选择医保契约"
-              filterable
-              clearable
-              :disabled="docActionFlags.approveDisabled"
-            >
-              <ElOption
-                v-for="item in insuranceChargeTypeOptions"
-                :key="item.busNo"
-                :label="item.busNo ? `${item.label}（${item.busNo}）` : item.label"
-                :value="item.busNo"
-              />
-            </ElSelect>
-          </div>
-          <div class="flex w-full flex-wrap items-center justify-end gap-2">
-            <InvDocActions
-              v-bind="docActionFlags"
-              :show-approval-actions="canFinanceApprove"
-              @approve="handleApprove"
-              @reject="handleReject"
-              @remove-doc="handleRemoveDoc"
-              @save="handleSaveDoc"
-              @save-and-submit="handleSaveAndSubmitDoc"
-              @submit-approval="handleSubmitApproval"
-              @withdraw="handleWithdraw"
-            />
-          </div>
+      <template v-if="!showWelcomeEmpty" #actionBar>
+        <div class="flex w-full flex-wrap items-center justify-end gap-2">
+          <InvDocActions
+            v-bind="docActionFlags"
+            @approve="handleApprove"
+            @reject="handleReject"
+            @remove-doc="handleRemoveDoc"
+            @save="handleSaveDoc"
+            @save-and-submit="handleSaveAndSubmitDoc"
+            @submit-approval="handleSubmitApproval"
+            @withdraw="handleWithdraw"
+          />
         </div>
       </template>
 
       <div
+        v-if="showWelcomeEmpty"
+        class="flex min-h-0 flex-1 flex-col items-center justify-center px-4 py-12"
+      >
+        <el-empty :image-size="96" :description="INV_DOC_UPSTREAM_WELCOME.purchaseInbound">
+          <InvPrimaryBtn label="从订货单新建" @click="openUpstreamPicker" />
+        </el-empty>
+      </div>
+
+      <div
+        v-else
         class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2"
         @mousedown="inboundGridEdit.onSurfaceMouseDown"
       >
@@ -1468,9 +1725,15 @@ onMounted(() => {
               inboundHeaderStatusText
             }}</span>
           </div>
-          <ElForm :model="headForm" label-width="80px" class="compact-head-form mt-1">
+          <ElForm
+            ref="headFormRef"
+            :model="headForm"
+            :rules="headFormRules"
+            label-width="80px"
+            class="compact-head-form mt-1"
+          >
             <div
-              class="grid grid-cols-1 gap-x-2 gap-y-0 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5"
+              class="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
             >
               <ElFormItem label="单据号">
                 <ElInput v-model="headForm.busNo" disabled placeholder="未选择" />
@@ -1503,7 +1766,7 @@ onMounted(() => {
                   :disabled="!documentEditable"
                 />
               </ElFormItem>
-              <ElFormItem label="库房">
+              <ElFormItem label="库房" prop="warehouseId">
                 <ElSelect
                   v-model="headForm.warehouseId"
                   placeholder="请选择"
@@ -1536,43 +1799,56 @@ onMounted(() => {
                   />
                 </ElSelect>
               </ElFormItem>
+              <ElFormItem label="关联订货" class="sm:col-span-2 lg:col-span-2 xl:col-span-2">
+                <div class="flex min-w-0 items-center gap-2">
+                  <ElInput
+                    :model-value="headForm.originalBusNo"
+                    class="min-w-0 flex-1"
+                    readonly
+                    disabled
+                    placeholder="请选择订货单"
+                  />
+                  <ElButton
+                    class="shrink-0"
+                    :disabled="!canEditOriginalBusNo"
+                    @click="openLinkPoDialog"
+                  >
+                    {{ linkPoButtonLabel }}
+                  </ElButton>
+                </div>
+              </ElFormItem>
             </div>
           </ElForm>
         </div>
 
-        <div
-          ref="inboundGridKeyboardRef"
-          class="purchase-inbound-main-pane__grid-wrap flex min-h-0 min-w-0 flex-1 flex-col"
-          @keydown.capture="inboundGridEdit.onGridKeydown"
+        <ElAlert
+          v-if="documentEditable && !hasLinkedUpstream"
+          type="warning"
+          :closable="false"
+          show-icon
+          class="shrink-0"
+          :title="INV_DOC_UPSTREAM_HINT.purchaseInbound"
+        />
+
+        <InvDocDetailGridShell
+          :bind-grid-wrap="bindGridWrap"
+          :on-grid-keydown="inboundGridEdit.onGridKeydown"
         >
           <Grid>
             <template #toolbar-actions>
-              <ElButton
-                class="mr-2"
-                type="primary"
-                :icon="Plus"
-                :disabled="!documentEditable"
-                @click="addItem"
-              >
-                添加行
-              </ElButton>
-              <ElButton class="mr-2" :disabled="!documentEditable" @click="openBatchDialog">
-                批量添加
-              </ElButton>
-              <ElButton
-                type="danger"
-                :icon="Delete"
-                :disabled="!documentEditable"
-                @click="deleteItem('select')"
-              >
-                删除行
-              </ElButton>
+              <InvDocGridToolbar
+                :show-add="false"
+                :disabled="!linesGridEditable"
+                show-trace-scan
+                @delete-selected="deleteItem('select')"
+                @trace-scan="handleOpenTraceScan"
+              />
             </template>
             <template #action="{ row }">
               <ElButton
                 type="danger"
                 text
-                :disabled="!documentEditable"
+                :disabled="!linesGridEditable"
                 @click="deleteItem(row as InboundPreviewRow)"
               >
                 <Trash2 class="size-4" />
@@ -1580,17 +1856,61 @@ onMounted(() => {
               </ElButton>
             </template>
           </Grid>
-        </div>
+        </InvDocDetailGridShell>
       </div>
     </InvMainShell>
 
     <PurchaseInboundBatchAddDialog
       v-model:visible="batchDialogVisible"
-      :purpose-location-id="purposeLocationId"
+      :pick-gate-location-id="resolveInboundReceiptPickGateLocationId()"
       :product-table-name="headForm.itemTableType"
       @confirm="handleBatchConfirm"
     />
+
+    <InvDocLinkPickerDialog
+      v-model="linkPoVisible"
+      title="选择已同意的订货单"
+      :table-data="linkPoRecords"
+      :loading="linkPoLoading"
+      :total="linkPoTotal"
+      :query-params="linkPoQueryParams"
+      :form-items="linkPoFormItems"
+      :table-columns="linkPoTableColumns"
+      :location-options="warehouseOptions"
+      :practitioner-options="practitionerOptions"
+      @query="handleLinkPoQuery"
+      @reset="handleLinkPoReset"
+      @pagination="handleLinkPoPagination"
+      @opened="fetchLinkablePurchaseOrders"
+      @select="(row) => applyLinkablePurchaseOrder(row as LinkablePurchaseOrderListRowDto)"
+    >
+      <template #supplierName="{ row }">
+        {{ resolveLinkPoSupplierLabel(row as LinkablePurchaseOrderListRowDto) }}
+      </template>
+      <template #applyTime="{ row }">
+        {{
+          (row as LinkablePurchaseOrderListRowDto).applyTime
+            ? formatDateTime((row as LinkablePurchaseOrderListRowDto).applyTime as string)
+            : ''
+        }}
+      </template>
+      <template #rowActions="{ row }">
+        <ElButton
+          link
+          type="primary"
+          @click.stop="applyLinkablePurchaseOrder(row as LinkablePurchaseOrderListRowDto)"
+        >
+          选用
+        </ElButton>
+      </template>
+    </InvDocLinkPickerDialog>
   </div>
+  <InvDocTraceScanBridge
+    ref="traceScanBridgeRef"
+    scene="inbound"
+    lot-field="batchNo"
+    :default-location-id="headForm.warehouseId"
+  />
 </template>
 
 <style scoped lang="scss">
@@ -1600,11 +1920,6 @@ onMounted(() => {
 
 .compact-head-form :deep(.el-form-item__label) {
   padding-right: 8px;
-}
-
-.purchase-inbound-main-pane__grid-wrap :deep(.vxe-grid) {
-  flex: 1;
-  min-height: 0;
 }
 
 @keyframes purchase-inbound-pane-flash {

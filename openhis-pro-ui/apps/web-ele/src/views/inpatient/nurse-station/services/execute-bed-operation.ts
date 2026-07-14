@@ -94,8 +94,8 @@ export async function buildExecuteBedOperationRequest(
       return null;
     }
     base.participants = participants;
-    if (dragged.level && dragged.level !== '—') {
-      base.priorityEnum = dragged.level;
+    if (dragged.priorityEnum) {
+      base.priorityEnum = dragged.priorityEnum;
     }
   }
   return base;

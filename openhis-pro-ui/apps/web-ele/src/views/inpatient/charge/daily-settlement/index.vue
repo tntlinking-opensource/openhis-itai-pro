@@ -21,7 +21,6 @@ import {
   ElFormItem,
   ElInput,
   ElMessage,
-  ElMessageBox,
   ElOption,
   ElSelect,
   ElTooltip,
@@ -32,11 +31,17 @@ import {
   loadInpatientDailySettlementPageInitApi,
   normalizePreviewInpatientDailySettlementResponse,
   previewInpatientDailySettlementApi,
+  resolveDefaultCashierIdFromPageInit,
   submitInpatientDailySettlementApi,
 } from '#/api/inpatient/daily-settlement';
 import { useRequest } from '#/hooks/use-request';
 import { useAuthStore } from '#/store/auth';
-import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import {
+  preserveApiIdForRequest,
+  resolveLoginPractitionerIdForRequest,
+} from '#/utils/format/preserve-api-id';
+import { useUserStore } from '@vben/stores';
+import DailySettlementHandoverDialog from '#/components/charge/daily-settlement-handover-dialog.vue';
 
 defineOptions({
   name: 'ChargeIpDailySettlement',
@@ -64,17 +69,19 @@ interface ReconciliationFormState {
 }
 
 const authStore = useAuthStore();
+const userStore = useUserStore();
 
 const today = dayjs().format('YYYY-MM-DD');
 const queryForm = reactive<QueryFormState>({
   dateRange: [today, today],
-  expenseProperty: 'selfPay',
+  expenseProperty: '',
   cashierId: '',
 });
 
 const pageInit = ref<LoadInpatientDailySettlementPageInitResponse | null>(null);
 const previewResult = ref<PreviewInpatientDailySettlementResponse | null>(null);
 const hasQueried = ref(false);
+const handoverDialogVisible = ref(false);
 
 const { run: runInit, loading: initLoading } = useRequest(loadInpatientDailySettlementPageInitApi, {
   manual: true,
@@ -196,9 +203,10 @@ const paymentCountText = computed(() => {
   return String(previewResult.value?.paymentCount ?? 0);
 });
 
-/** 总收入是否为 0（含 0 元收费、一收一退抵净场景）。 */
+/** 总收入是否为 0（优先 handoverSummary，含 0 元收费、一收一退抵净场景）。 */
 const isZeroNetIncome = computed(() => {
-  const incomeText = resolvedSummary.value?.totalIncome;
+  const incomeText =
+    previewResult.value?.handoverSummary?.totalIncome ?? resolvedSummary.value?.totalIncome;
   if (!incomeText) {
     return false;
   }
@@ -213,7 +221,7 @@ function buildPreviewRequest() {
     dateFrom,
     dateTo,
     cashierId: preserveApiIdForRequest(queryForm.cashierId),
-    expenseProperty: queryForm.expenseProperty || undefined,
+    expenseProperty: queryForm.expenseProperty?.trim() || undefined,
   };
 }
 
@@ -225,13 +233,17 @@ async function loadPageInit() {
     queryForm.dateRange = [data.defaultDateFrom, data.defaultDateTo];
   }
   if (data.expensePropertyOptions?.length) {
-    queryForm.expenseProperty = data.expensePropertyOptions[0]?.value ?? 'selfPay';
+    const firstValue = data.expensePropertyOptions[0]?.value;
+    if (firstValue) {
+      queryForm.expenseProperty = firstValue;
+    }
   }
-  const defaultCashierId = preserveApiIdForRequest(data.currentCashierId);
+  const defaultCashierId = resolveDefaultCashierIdFromPageInit(
+    data,
+    resolveLoginPractitionerIdForRequest(userStore.userInfo),
+  );
   if (defaultCashierId) {
     queryForm.cashierId = defaultCashierId;
-  } else if (data.cashierOptions?.[0]?.value) {
-    queryForm.cashierId = data.cashierOptions[0].value;
   }
 }
 
@@ -240,6 +252,14 @@ async function handleSearch() {
   const [dateFrom, dateTo] = queryForm.dateRange;
   if (!dateFrom || !dateTo) {
     ElMessage.warning('请选择查询日期');
+    return;
+  }
+  if (!queryForm.expenseProperty?.trim()) {
+    ElMessage.warning('请选择费用性质');
+    return;
+  }
+  if (!queryForm.cashierId?.trim()) {
+    ElMessage.warning('请选择收款人');
     return;
   }
   try {
@@ -254,8 +274,8 @@ async function handleSearch() {
   }
 }
 
-// 二次确认后提交交账，成功后刷新预览。
-async function handleSubmitSettlement() {
+// 打开交账明细弹窗（默认全选待交账流水）。
+function handleSubmitSettlement() {
   const [dateFrom, dateTo] = queryForm.dateRange;
   if (!dateFrom || !dateTo) {
     ElMessage.warning('请选择查询日期');
@@ -270,18 +290,18 @@ async function handleSubmitSettlement() {
     ElMessage.warning('当前没有可交账流水');
     return;
   }
-  const pendingCount = previewResult.value?.paymentCount ?? 0;
-  let confirmMessage = '请确认账是否正确，交账后归档不可操作';
-  if (pendingCount > 0 && isZeroNetIncome.value) {
-    confirmMessage += `。本次共 ${pendingCount} 笔流水须归档（含 0 元或收支抵净流水，无实收金额亦须交账）`;
+  if (!previewResult.value?.items?.length) {
+    ElMessage.warning('待交账明细为空，请重新查询');
+    return;
   }
-  try {
-    await ElMessageBox.confirm(confirmMessage, '确认交账', {
-      confirmButtonText: '确认交账',
-      cancelButtonText: '取消',
-      type: 'warning',
-    });
-  } catch {
+  handoverDialogVisible.value = true;
+}
+
+// 弹窗确认后提交勾选 paymentIds。
+async function handleHandoverConfirm(paymentIds: string[]) {
+  const [dateFrom, dateTo] = queryForm.dateRange;
+  const orgId = preserveApiIdForRequest(authStore.getSelectedOrganization());
+  if (!dateFrom || !dateTo || !orgId || paymentIds.length === 0) {
     return;
   }
   try {
@@ -290,7 +310,9 @@ async function handleSubmitSettlement() {
       dateTo,
       cashierId: preserveApiIdForRequest(queryForm.cashierId),
       orgId,
+      paymentIds,
     });
+    handoverDialogVisible.value = false;
     ElMessage.success(`交账成功，单号 ${result.busNo ?? '—'}`);
     await handleSearch();
   } catch {
@@ -466,7 +488,7 @@ watch(
 
             <ElEmpty
               v-if="hasQueried && !queryLoading && !hasFinTypeDisplay && !hasSummaryDisplay"
-              description="当前条件下暂无未交账汇总"
+              description="当前日期范围内暂无收费汇总"
               class="py-8"
             />
           </div>
@@ -525,6 +547,17 @@ watch(
         </div>
       </ElCard>
     </div>
+
+    <DailySettlementHandoverDialog
+      v-model:visible="handoverDialogVisible"
+      :items="previewResult?.items ?? []"
+      :handover-rows="previewResult?.handoverRows"
+      :handover-summary="previewResult?.handoverSummary"
+      :summary-display="INPATIENT_DAILY_SETTLEMENT_SUMMARY_DISPLAY"
+      :zero-net-income-hint="isZeroNetIncome"
+      :loading="submitLoading"
+      @confirm="handleHandoverConfirm"
+    />
   </Page>
 </template>
 

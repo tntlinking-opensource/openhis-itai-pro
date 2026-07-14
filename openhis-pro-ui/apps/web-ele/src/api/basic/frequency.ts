@@ -52,6 +52,20 @@ export interface FrequencyInitResponse {
   periodUnitOptions?: Array<{ label: string; value: string }>;
 }
 
+/** 与后端 {@code ComputeFrequencyExecutionTimePointsRequest} 对齐（LocalDateTime，无时区） */
+export interface ComputeFrequencyExecutionTimePointsRequest {
+  rateCode: string;
+  /** 本地时间串，形如 2026-07-05T00:00:00 */
+  startTime: string;
+  endTime: string;
+}
+
+/** 与后端 {@code ComputeFrequencyExecutionTimePointsResponse} 对齐 */
+export interface ComputeFrequencyExecutionTimePointsResponse {
+  executionCount?: number;
+  executionAtList?: string[];
+}
+
 export interface CreateFrequencyParams {
   rateCode?: string;
   name: string;
@@ -80,6 +94,16 @@ export async function pageFrequencyApi(
   params: PageFrequencyParams,
 ): Promise<ApiResponse<PageFrequencyResponse>> {
   return requestClient.post<ApiResponse<PageFrequencyResponse>>('/frequency/page', params);
+}
+
+/** 计算频次在给定时间窗内的计划执行次数（DM-CUS-008 computeExecutionTimePoints）。 */
+export async function computeFrequencyExecutionTimePointsApi(
+  params: ComputeFrequencyExecutionTimePointsRequest,
+): Promise<ComputeFrequencyExecutionTimePointsResponse> {
+  return requestClient.post<ComputeFrequencyExecutionTimePointsResponse>(
+    '/frequency/computeExecutionTimePoints',
+    params,
+  );
 }
 
 export async function createFrequencyApi(

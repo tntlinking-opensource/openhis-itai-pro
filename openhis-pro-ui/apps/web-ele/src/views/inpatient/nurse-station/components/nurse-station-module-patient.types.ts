@@ -2,10 +2,12 @@
 export interface NurseStationModulePatient {
   id: string;
   patientId?: string;
-  /** 住院号（病历号展示用 busNo，非 encounterId）。 */
-  busNo?: string;
+  /** 住院号（就诊 encounterBusNo，非 encounterId）。 */
+  encounterBusNo?: string;
   /** 入院时间（YYYY-MM-DD HH:mm:ss）。 */
   admissionAt?: string;
+  /** 入科时间（YYYY-MM-DD HH:mm:ss；读模型 startTime）。 */
+  inWardAt?: string;
   /** 出院时间（YYYY-MM-DD HH:mm:ss）。 */
   dischargeAt?: string;
   bedNo: string;
@@ -28,6 +30,8 @@ export interface NurseStationModulePatient {
   pendingSettlementTotal?: number | string;
   lowBalanceWarning?: boolean;
   riskTags: string[];
+  /** 就诊状态 code（PENDING=待结算）。 */
+  statusEnum?: string;
 }
 
 import {

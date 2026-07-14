@@ -4,7 +4,16 @@ import type { VxeGridInstance, VxeGridListeners } from 'vxe-table';
 import type { TableProps } from '../types/Table.d';
 import type { TableColumn } from '../types/TableLayout.d';
 
-import { computed, ref, useSlots, useTemplateRef, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  useSlots,
+  useTemplateRef,
+  watch,
+} from 'vue';
 
 import { VxeGrid } from 'vxe-table';
 
@@ -190,13 +199,71 @@ const computedTableData = computed(() => {
 });
 
 const tableContainerRef = ref<HTMLDivElement | null>(null);
+const tableBodyRef = ref<HTMLDivElement | null>(null);
 const tableHeight = ref<null | number>(null);
+
+function updateAutoTableHeight() {
+  if (props.tableHeight || props.maxHeight) {
+    return;
+  }
+  const el = tableBodyRef.value;
+  if (!el) {
+    return;
+  }
+  const height = el.clientHeight;
+  if (height > 0) {
+    tableHeight.value = height;
+  }
+}
+
+let tableResizeObserver: null | ResizeObserver = null;
+
+onMounted(() => {
+  if (props.tableHeight || props.maxHeight) {
+    return;
+  }
+  setTimeout(() => {
+    updateAutoTableHeight();
+    if (typeof ResizeObserver === 'undefined' || !tableBodyRef.value) {
+      return;
+    }
+    tableResizeObserver = new ResizeObserver(() => {
+      updateAutoTableHeight();
+    });
+    tableResizeObserver.observe(tableBodyRef.value);
+  }, 50);
+});
+
+onBeforeUnmount(() => {
+  tableResizeObserver?.disconnect();
+  tableResizeObserver = null;
+});
+
+watch(
+  () => [props.tableHeight, props.maxHeight],
+  () => {
+    if (!props.tableHeight && !props.maxHeight) {
+      updateAutoTableHeight();
+      return;
+    }
+    tableHeight.value = null;
+  },
+);
 
 watch(
   () => props.tableData,
   () => {
     if (props.isAllData && internalPageNo.value !== 1 && props.tableData.length > 0) {
       internalPageNo.value = 1;
+    }
+  },
+);
+
+watch(
+  () => props.loading,
+  (loading) => {
+    if (!loading) {
+      nextTick(() => updateAutoTableHeight());
     }
   },
 );
@@ -287,7 +354,13 @@ const gridOptions = computed(() => {
     options.maxHeight =
       typeof props.maxHeight === 'string' ? props.maxHeight : `${props.maxHeight}px`;
   } else if (tableHeight.value) {
-    options.height = `${tableHeight.value}px`;
+    // 当前页行数较少时不锁死高度，避免正文区被压成一行、其余行需滚动才可见
+    const rowCount = computedTableData.value.length;
+    const pageSize = computedPageSize.value;
+    const useCompactAutoHeight = rowCount > 0 && rowCount <= Math.min(pageSize, 50);
+    if (!useCompactAutoHeight) {
+      options.height = `${tableHeight.value}px`;
+    }
   }
 
   return options;
@@ -351,7 +424,7 @@ defineExpose({
 
 <template>
   <div ref="tableContainerRef" class="flex min-h-0 flex-col overflow-hidden">
-    <div class="relative min-h-0 flex-1 overflow-hidden">
+    <div ref="tableBodyRef" class="relative min-h-0 flex-1 overflow-hidden">
       <VxeGrid ref="gridRef" v-bind="gridOptions" v-on="gridEvents as VxeGridListeners">
         <template #toolbar-actions>
           <slot name="toolbar-actions"></slot>

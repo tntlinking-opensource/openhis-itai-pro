@@ -60,16 +60,12 @@ function handleDateRangeChange(range: [string, string] | null) {
   emit('dateRangeChange', fallback);
 }
 
-/** 汇总单卡片状态标签类型 */
+/** 汇总单卡片状态标签类型（仅以发放表门控为准） */
 function resolveSummaryStatusTagType(row: InpatientPharmacySummarySlipHeaderDto) {
-  const status = String(row.supplyStatusEnum ?? '').trim();
-  if (status === 'AGREE') {
+  if (row.summaryDispenseCompleted === true) {
     return 'success';
   }
-  if (status === 'APPROVAL') {
-    return 'warning';
-  }
-  return 'info';
+  return 'warning';
 }
 
 /** 左侧列表标题（随待发/已发切换） */
@@ -156,9 +152,7 @@ function handleCardClick(row: InpatientPharmacySummarySlipHeaderDto) {
                   {{ row.busNo || '—' }}
                 </span>
                 <ElTag size="small" :type="resolveSummaryStatusTagType(row)" effect="plain">
-                  {{
-                    row.supplyStatusEnumText || (summaryScope === 'pending' ? '待核对' : '已发药')
-                  }}
+                  {{ row.summaryDispenseStatusText }}
                 </ElTag>
               </div>
               <p class="mt-1 truncate text-xs text-[var(--el-text-color-regular)]">

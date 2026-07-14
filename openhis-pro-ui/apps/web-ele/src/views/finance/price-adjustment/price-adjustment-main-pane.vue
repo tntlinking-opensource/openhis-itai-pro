@@ -45,9 +45,15 @@ import {
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { formatMoneyDisplay, sumMoneyThenSettle } from '#/utils/format/money-scale';
 
 import PriceAdjustmentApproveDialog from './components/price-adjustment-approve-dialog.vue';
 import type { PriceAdjustmentHeadForm, PriceAdjustmentLineRow } from './types';
+import {
+  isClinicalItemTable,
+  isLogisticsItemTable,
+  resolveAdjustmentStyle,
+} from './utils/price-adjustment-item-table';
 import {
   buildPriceAdjustmentDocActionFlags,
   priceAdjustmentStatusLabel,
@@ -142,13 +148,13 @@ const impactSummary = computed(() => {
   return {
     totalPurchaseImpact: purchase,
     totalSellingImpact: selling,
-    combined: Number((purchase + selling).toFixed(2)),
+    combined: sumMoneyThenSettle([purchase, selling]),
   };
 });
 
 const approveSummaryText = computed(() => {
   const rows = collectGridRows();
-  return `共 ${rows.length} 行 · 进价盈亏 ${impactSummary.value.totalPurchaseImpact.toFixed(2)} · 售价盈亏 ${impactSummary.value.totalSellingImpact.toFixed(2)}`;
+  return `共 ${rows.length} 行 · 进价盈亏 ${formatMoneyDisplay(impactSummary.value.totalPurchaseImpact)} · 售价盈亏 ${formatMoneyDisplay(impactSummary.value.totalSellingImpact)}`;
 });
 
 function triggerPaneFlash() {
@@ -161,7 +167,9 @@ function triggerPaneFlash() {
 }
 
 function isLogisticsRow(row: PriceAdjustmentLineRow): boolean {
-  return row.adjustmentStyle === 'logistics';
+  if (row.adjustmentStyle === 'logistics') return true;
+  if (row.adjustmentStyle === 'clinical') return false;
+  return isLogisticsItemTable(row.itemTable);
 }
 
 function formatAmount(value: unknown, placeholder = '—'): string {
@@ -172,7 +180,7 @@ function formatAmount(value: unknown, placeholder = '—'): string {
   if (!Number.isFinite(n)) {
     return placeholder;
   }
-  return n.toFixed(2);
+  return formatMoneyDisplay(n);
 }
 
 function formatQuantity(value: unknown, placeholder = '—'): string {
@@ -558,17 +566,27 @@ async function syncRowFromItemPick(item: AdjustableItemRowDto, row: PriceAdjustm
   row.newSellingAmount = undefined;
   row.details = [];
 
-  if (item.adjustmentStyle === 'logistics') {
+  const itemWithStyle: AdjustableItemRowDto = {
+    ...item,
+    itemTable,
+    adjustmentStyle: item.adjustmentStyle ?? resolveAdjustmentStyle(itemTable),
+  };
+
+  if (isLogisticsItemTable(itemTable)) {
     try {
       const snapRes = await loadLogisticsAdjustmentSnapshotApi({
         itemTable,
         itemIds: [itemId],
       });
-      const built = buildLogisticsLineFromSnapshot(item, snapRes.data?.rows ?? []);
+      const built = buildLogisticsLineFromSnapshot(itemWithStyle, snapRes.data?.rows ?? []);
       Object.assign(row, built, { id: row.id, itemPick: row.itemPick });
     } catch (error) {
       ElMessage.error(pickApiErrMsg(error));
     }
+    return;
+  }
+
+  if (!isClinicalItemTable(itemTable)) {
     return;
   }
 
@@ -579,7 +597,7 @@ async function syncRowFromItemPick(item: AdjustableItemRowDto, row: PriceAdjustm
   } catch {
     oldSellingAmount = undefined;
   }
-  const built = buildClinicalLine(item, oldSellingAmount);
+  const built = buildClinicalLine(itemWithStyle, oldSellingAmount);
   Object.assign(row, built, { id: row.id, itemPick: row.itemPick });
 }
 
@@ -952,11 +970,11 @@ watch(
           }}</strong>
           行 · 进价盈亏
           <strong class="tabular-nums text-[var(--el-text-color-primary)]">{{
-            impactSummary.totalPurchaseImpact.toFixed(2)
+            formatMoneyDisplay(impactSummary.totalPurchaseImpact)
           }}</strong>
           元 · 售价盈亏
           <strong class="tabular-nums text-[var(--el-text-color-primary)]">{{
-            impactSummary.totalSellingImpact.toFixed(2)
+            formatMoneyDisplay(impactSummary.totalSellingImpact)
           }}</strong>
           元
         </div>

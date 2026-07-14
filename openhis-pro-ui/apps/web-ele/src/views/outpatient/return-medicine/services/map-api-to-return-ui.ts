@@ -7,6 +7,8 @@ import type {
 
 import { formatDateTime } from '@vben/utils';
 
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
+
 function scalarToTrimmedString(value: null | number | string | undefined): string {
   if (value === null || value === undefined) return '';
   return String(value).trim();
@@ -44,7 +46,10 @@ export function mapReturnDetailRowToUi(row: ReturnMedicineDetailRowDto): ReturnM
     lotNumber: row.lotNumber?.trim() || '—',
     quantity: q || '—',
     unitText: row.unitCodeText?.trim() || '—',
-    totalPriceLabel: scalarToTrimmedString(row.totalPrice) || '—',
+    totalPriceLabel:
+      row.totalPrice != null && scalarToTrimmedString(row.totalPrice) !== ''
+        ? formatMoneyDisplay(row.totalPrice)
+        : '—',
     doctorName: row.doctorName?.trim() || '—',
     refundEnum,
     refundEnumText: row.refundEnumText?.trim() || '—',

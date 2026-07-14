@@ -2,8 +2,12 @@
 export interface BinaryExportResult {
   fileName?: string;
   contentType?: string;
+  /** 部分 AppService 使用 body 字段承载 xlsx 字节。 */
   body?: string;
+  /** 部分 AppService 使用 fileBytes 字段承载 xlsx 字节。 */
+  fileBytes?: string;
   exportedRowCount?: number;
+  rowCount?: number;
   truncated?: boolean;
 }
 
@@ -12,7 +16,7 @@ export function downloadBinaryExportFile(
   result: BinaryExportResult,
   defaultFileName = 'export.xlsx',
 ): void {
-  const base64 = result.body?.trim();
+  const base64 = (result.body ?? result.fileBytes)?.trim();
   if (!base64) {
     return;
   }

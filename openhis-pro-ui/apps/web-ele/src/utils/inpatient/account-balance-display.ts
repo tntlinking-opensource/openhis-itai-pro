@@ -13,13 +13,15 @@ export interface InpatientAccountBalanceDisplayFields {
   pendingSettlementTotal?: null | number | string;
 }
 
+import { formatMoneyYuan } from '#/utils/format/money-scale';
+
 function formatAmount(value?: null | number | string): string {
   if (value === null || value === undefined || value === '') {
     return '—';
   }
   const num = Number(value);
   if (Number.isFinite(num)) {
-    return `${num.toFixed(2)} 元`;
+    return formatMoneyYuan(num);
   }
   return String(value);
 }

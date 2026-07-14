@@ -30,7 +30,8 @@ import { httpExecuteBedOperation } from '#/api/inpatient/nurse-station/inpatient
 import AppDialog from '#/components/app-dialog.vue';
 import { useRequest } from '#/hooks/use-request';
 import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
-import { PATIENT_CONDITION_OPTIONS } from '#/views/inpatient/charge/register/inpatient-register.constants';
+import { normalizeTerminologyOptions } from '#/utils/terminology/resolve-terminology-option-label';
+import { normalizeAdmCondTermCode } from '#/utils/terminology/resolve-adm-cond-code-label';
 
 import type { AdmissionBedOperationIntent } from '../services/admission-bed-operation';
 import {
@@ -38,7 +39,10 @@ import {
   admissionBedDialogTitle,
   buildExecuteBedOperationFromIntent,
 } from '../services/admission-bed-operation';
-import { bedOperationSuccessMessage } from '../services/execute-bed-operation';
+import {
+  bedOperationSuccessMessage,
+  ENCOUNTER_STATUS_REGISTERED,
+} from '../services/execute-bed-operation';
 import {
   buildParticipantSubmitRows,
   mapParticipantsToFormIds,
@@ -74,6 +78,7 @@ const emit = defineEmits<{
 const detail = ref<PatientDetailDto | null>(null);
 const doctorOptions = ref<OptionDto[]>([]);
 const primaryNurseOptions = ref<OptionDto[]>([]);
+const admCondCodeOptions = ref<OptionDto[]>([]);
 
 const vitalForm = reactive({
   heightCm: '',
@@ -162,8 +167,10 @@ const feeTypeLabel = computed(
   () => (detail.value?.organizationName ?? props.patient?.feeType ?? '—').trim() || '—',
 );
 
-/** 护理等级 */
-const nursingLevelLabel = computed(() => (props.patient?.level ?? '').trim() || '');
+/** 护理级别（读模型 nursingLevelName） */
+const nursingLevelLabel = computed(
+  () => (detail.value?.nursingLevelName ?? props.patient?.level ?? '').trim() || '',
+);
 
 /** 是否已分床 */
 const hasAssignedBed = computed(() => {
@@ -251,10 +258,19 @@ const assignedBed = computed(() => {
   return (detail.value?.bedName ?? props.patient?.bedNo ?? '未分床').trim() || '未分床';
 });
 
-const priorityOptions = PATIENT_CONDITION_OPTIONS.map((item) => ({
-  label: item.label,
-  value: item.value,
-}));
+/** 入科时间回显：待入科取当前精确时分秒；已入科读后端 start_time/admissionTime */
+function resolveAdmissionTimeDisplay(row: PatientDetailDto): string {
+  const status = (row.statusEnum ?? '').trim();
+  if (status === ENCOUNTER_STATUS_REGISTERED) {
+    return dayjs().format('YYYY-MM-DD HH:mm:ss');
+  }
+  const admissionRaw = (row.admissionTime ?? row.startTime ?? '').trim();
+  if (!admissionRaw) {
+    return dayjs().format('YYYY-MM-DD HH:mm:ss');
+  }
+  const parsed = dayjs(admissionRaw);
+  return parsed.isValid() ? parsed.format('YYYY-MM-DD HH:mm:ss') : admissionRaw;
+}
 
 /** 重置体征与入院表单 */
 function resetForms() {
@@ -332,6 +348,7 @@ async function loadParticipantOptions() {
   );
   doctorOptions.value = merged.doctorOptions;
   primaryNurseOptions.value = merged.primaryNurseOptions;
+  admCondCodeOptions.value = normalizeTerminologyOptions(res.admCondCodeOptions);
 }
 
 /** 打开时拉取患者详情并回填表单 */
@@ -354,17 +371,9 @@ async function loadDetailAndForm() {
   admissionForm.attendingDoctorId = participantIds.attendingDoctorId;
   admissionForm.chiefDoctorId = participantIds.chiefDoctorId;
   admissionForm.primaryNurseId = participantIds.primaryNurseId;
-  admissionForm.priorityEnum = (row.priorityEnum ?? '').trim();
+  admissionForm.priorityEnum = normalizeAdmCondTermCode(row.priorityEnum);
   applyAdmissionVitalSignsToForm(row.admissionVitalSigns);
-  const admissionRaw = row.admissionTime ?? row.startTime;
-  if (admissionRaw) {
-    const parsed = dayjs(admissionRaw);
-    admissionForm.admissionTimeDisplay = parsed.isValid()
-      ? parsed.format('YYYY-MM-DD HH:mm:ss')
-      : String(admissionRaw);
-  } else {
-    admissionForm.admissionTimeDisplay = dayjs().format('YYYY-MM-DD HH:mm:ss');
-  }
+  admissionForm.admissionTimeDisplay = resolveAdmissionTimeDisplay(row);
   await loadParticipantOptions();
 }
 
@@ -626,7 +635,7 @@ watch(visible, (open) => {
                 class="w-full"
               >
                 <ElOption
-                  v-for="opt in priorityOptions"
+                  v-for="opt in admCondCodeOptions"
                   :key="opt.value"
                   :label="opt.label"
                   :value="opt.value"

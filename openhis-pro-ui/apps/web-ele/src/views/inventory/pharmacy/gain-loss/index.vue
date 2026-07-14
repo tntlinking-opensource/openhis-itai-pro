@@ -8,9 +8,16 @@ import { useRoute } from 'vue-router';
 import { formatDateTime } from '@vben/utils';
 
 import {
+  INV_ALL_LOCATIONS_FILTER_ID,
+  normalizeSidebarLocationFilterValue,
+  pickWorkbenchOrderAfterSave,
+  resolveDefaultAllLocationsFilterValue,
+} from '#/utils/inventory/inventory-workbench-list';
+import {
   loadPharmacyGainLossFormInitApi,
   mapPharmacyGainLossInitOptionsToApiItems,
-  pagePharmacyGainLosssApi,
+  mapPharmacyGainLossInitToCabinetRows,
+  pagePharmacyGainLossWorkbenchListApi,
 } from '#/api/inventory/pharmacy/gain-loss';
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
 import GainLossAsidePane from './gain-loss-aside-pane.vue';
@@ -37,7 +44,9 @@ const listKeywordModel = computed({
   },
 });
 
-const tableForm = ref<{ purposeLocationId?: number | string }>({ purposeLocationId: undefined });
+const tableForm = ref<{ purposeLocationId?: number | string }>({
+  purposeLocationId: INV_ALL_LOCATIONS_FILTER_ID,
+});
 const cabinetListOptions = ref<Record<string, unknown>[]>([]);
 const locationOptions = ref<ApiOptionItem[]>([]);
 const practitionerOptions = ref<ApiOptionItem[]>([]);
@@ -46,16 +55,6 @@ const orderList = ref<Record<string, unknown>[]>([]);
 const selectedOrder = ref<null | Record<string, unknown>>(null);
 const mainPaneResetKey = ref(0);
 const isAddDisabled = ref(false);
-const LIST_PAGE_SIZE = 200;
-
-function optionsToCabinetRows(list: ApiOptionItem[]): Record<string, unknown>[] {
-  return list.map((w) => ({
-    id: w.value,
-    value: w.value,
-    name: w.label,
-    label: w.label,
-  }));
-}
 
 function isDraftOrderRow(row?: null | Record<string, unknown>): boolean {
   return Boolean(row?._draft);
@@ -96,10 +95,16 @@ async function init() {
     itemTableTypeOptions.value = mapPharmacyGainLossInitOptionsToApiItems(
       data?.inboundItemTableTypeOptions,
     );
-    cabinetListOptions.value = optionsToCabinetRows(locationOptions.value);
-    if (tableForm.value.purposeLocationId === undefined && cabinetListOptions.value.length > 0) {
-      const first = cabinetListOptions.value[0] as Record<string, unknown>;
-      tableForm.value.purposeLocationId = (first.id ?? first.value) as number | string | undefined;
+    cabinetListOptions.value = mapPharmacyGainLossInitToCabinetRows(data?.pharmacyLocationOptions);
+    if (
+      tableForm.value.purposeLocationId === undefined ||
+      tableForm.value.purposeLocationId === null ||
+      String(tableForm.value.purposeLocationId).trim() === '' ||
+      tableForm.value.purposeLocationId === 0
+    ) {
+      tableForm.value.purposeLocationId = resolveDefaultAllLocationsFilterValue(
+        cabinetListOptions.value,
+      );
     }
   } catch {
     locationOptions.value = [];
@@ -110,23 +115,16 @@ async function init() {
 }
 
 async function getList() {
-  const pid = tableForm.value.purposeLocationId;
-  const draftRows = orderList.value.filter((r) => r._draft);
-  if (pid === undefined || pid === null || String(pid).trim() === '') {
-    orderList.value = [...draftRows];
-    return;
-  }
   const dr = listDateRange.value;
+  const draftRows = orderList.value.filter((r) => r._draft);
   try {
-    const res = await pagePharmacyGainLosssApi({
-      purposeLocationId: pid,
+    const { records } = await pagePharmacyGainLossWorkbenchListApi({
+      purposeLocationId: normalizeSidebarLocationFilterValue(tableForm.value.purposeLocationId),
       keyword: queryParams.value.keyword?.trim() || undefined,
-      pageNo: 1,
-      pageSize: LIST_PAGE_SIZE,
-      ...(dr?.[0] ? { applyTimeFrom: dr[0] } : {}),
-      ...(dr?.[1] ? { applyTimeTo: dr[1] } : {}),
+      applyTimeBegin: dr?.[0],
+      applyTimeEnd: dr?.[1],
     });
-    orderList.value = [...draftRows, ...(res.data?.records ?? [])];
+    orderList.value = [...draftRows, ...(records as Record<string, unknown>[])];
   } catch {
     orderList.value = [...draftRows];
   }
@@ -145,7 +143,7 @@ function handleAdd() {
 function handleOrderClick(order: Record<string, unknown>) {
   selectedOrder.value = order;
   if (isDraftOrderRow(order)) {
-    mainPaneResetKey.value += 1;
+    // 切回草稿由主区 sync 恢复缓存；勿 bump resetKey，否则会冲掉恢复内容
     return;
   }
   isAddDisabled.value = false;
@@ -156,9 +154,7 @@ async function handleDocumentSaved(payload: { busNo?: string }) {
   await getList();
   const busNo = payload.busNo?.trim();
   if (!busNo) return;
-  const row = orderList.value.find((item) => resolveBusNo(item) === busNo);
-  if (!row) return;
-  selectedOrder.value = row;
+  selectedOrder.value = pickWorkbenchOrderAfterSave(orderList.value, busNo, resolveBusNo);
   isAddDisabled.value = false;
 }
 
@@ -217,6 +213,7 @@ onMounted(async () => {
         :add-disabled="isAddDisabled"
         :cabinet-list-options="cabinetListOptions"
         :orders="orderList"
+        :practitioner-option="practitionerOptions"
         :selected-order="selectedOrder"
         location-label="药房"
         queue-title="历史损益单"
@@ -232,7 +229,6 @@ onMounted(async () => {
       :bus-no="selectedBusNo"
       :is-draft-order="isDraftOrder"
       :reset-key="mainPaneResetKey"
-      :sidebar-purpose-location-id="tableForm.purposeLocationId"
       :location-options="locationOptions"
       :practitioner-options="practitionerOptions"
       :item-table-type-options="itemTableTypeOptions"

@@ -2,11 +2,7 @@
 import type { EchartsUIType } from '@vben/plugins/echarts';
 
 import type { NurseStationModulePatient } from '../components/nurse-station-module-patient.types';
-import type {
-  TemperatureSheetChartPoint,
-  TemperatureSheetExtraRecordDraft,
-  TemperatureSheetFillRowDraft,
-} from './services/map-nurse-station-temperature-sheet';
+import type { TemperatureSheetChartPoint } from './services/map-nurse-station-temperature-sheet';
 import type {
   TemperatureSheetChartTextMarker,
   TemperatureSheetPhysicalCoolingChartPoint,
@@ -22,62 +18,39 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import dayjs from 'dayjs';
-import { ElMessage } from 'element-plus';
+import { ElLoading, ElMessage } from 'element-plus';
 
 import {
   httpGetNurseStationTemperatureSheetData,
   httpLoadNurseStationTemperatureSheetInit,
-  httpSaveNurseStationTemperatureSheetAtRecordedTime,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-temperature-sheet.http';
-import { useFormKeyboardNavigation } from '#/hooks/use-form-keyboard-navigation';
 import { useRequest } from '#/hooks/use-request';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import {
-  applyFillSlotsToDraft,
-  applySavedVitalSignIdsToFillRows,
   buildChartPointsFromGridRows,
   buildFooterDayCellsFromGridRows,
-  collectTemperatureSheetSaveRequests,
-  createEmptyExtraRecord,
-  createEmptyFillRows,
   extendDerivedMetaForWindow,
-  formatTemperatureSheetDisplayDate,
-  isBloodPressureInputDisabled,
   resolveMergedTemperatureSheetGridRows,
   resolveTemperatureSheetWindowStartDate,
-  shiftTemperatureSheetRecordDateYmd,
   TEMPERATURE_SHEET_FOOTER_SUPPLEMENT_ROWS,
 } from './services/map-nurse-station-temperature-sheet';
-import {
-  isSpecialEventTimeRequired,
-  SPECIAL_EVENT_ITEM_CODE,
-} from './services/temperature-sheet-detail-items';
 import {
   buildChartTextMarkers,
   buildPhysicalCoolingChartPoints,
   buildSpecialEventLabelMap,
-  buildSpecialEventSelectOptions,
   buildSpecialEventStoreFromGridRows,
   createEmptySpecialEventStore,
-  extractSlotFlagsFromFillRows,
-  handleSpecialEventPickerChange,
-  mergeSlotFlagsForDate,
-  resolveSpecialEventPickerOptions,
-  resolveSpecialEventPickerSlots,
-  resolveSpecialEventPickerValue,
-  syncSpecialEventShortcutFields,
-  syncSpecialEventTimesOnSelectionChange,
   TEMPERATURE_SHEET_PHYSICAL_COOLING_DELAY_MINUTES,
-  validateFillRowsSpecialEvents,
-  validateSpecialEventStore,
 } from './services/temperature-sheet-special-events';
-import { formatTemperatureSheetTimeSlotRange } from './services/temperature-sheet-time-format';
 import {
   PAPER_SHEET_DESIGN_WIDTH,
   usePaperSheetViewportScale,
 } from '../composables/use-paper-sheet-viewport-scale';
 import { usePaperSheetFullscreen } from '../composables/use-paper-sheet-fullscreen';
+import TemperatureSheetBatchFillDrawer from './components/temperature-sheet-batch-fill-drawer.vue';
+import TemperatureSheetSingleFillDrawer from './components/temperature-sheet-single-fill-drawer.vue';
+import './styles/temperature-sheet-fill-drawer.css';
 
 defineOptions({
   name: 'InpatientNurseStationTemperatureSheetModule',
@@ -122,18 +95,11 @@ const derivedMeta = ref<{
   weekNoByDate: {},
 });
 const totalPages = ref(1);
-const fillDrawerVisible = ref(false);
-const recordDate = ref('');
-const activeFillSlotIndex = ref(0);
-const savingAll = ref(false);
-const fillFormAreaRef = ref<HTMLElement | null>(null);
-const tempRecordRows = ref<TemperatureSheetFillRowDraft[]>(createEmptyFillRows());
-const extraRecord = ref<TemperatureSheetExtraRecordDraft>(createEmptyExtraRecord());
+const fillDrawerRef = ref<InstanceType<typeof TemperatureSheetSingleFillDrawer> | null>(null);
+const batchFillDrawerVisible = ref(false);
+const batchFillDrawerRef = ref<InstanceType<typeof TemperatureSheetBatchFillDrawer> | null>(null);
 const specialEventStore = ref<TemperatureSheetSpecialEventStore>(createEmptySpecialEventStore());
 const specialEventOptions = ref<TemperatureSheetSpecialEventOption[]>([]);
-const specialEventSelectOptions = computed(() =>
-  buildSpecialEventSelectOptions(specialEventOptions.value),
-);
 const specialEventLabelMap = computed(() => buildSpecialEventLabelMap(specialEventOptions.value));
 
 const tempMin = 34;
@@ -198,15 +164,6 @@ const selectedPatientContext = computed(() => {
 
 const selectedPatient = computed(() => selectedPatientContext.value?.patient);
 
-/** 补充记录中前一日统计项的归属日期（录入日 - 1） */
-const supplementStatisticalDateLabel = computed(() => {
-  const entryDate = recordDate.value.trim();
-  if (!entryDate) {
-    return '';
-  }
-  return formatTemperatureSheetDisplayDate(shiftTemperatureSheetRecordDateYmd(entryDate, -1));
-});
-
 /** 体温单抬头日期展示（取 YYYY-MM-DD） */
 function formatSheetPatientDate(value?: string): string {
   const text = (value ?? '').trim();
@@ -253,32 +210,8 @@ function goToNextPage() {
   }
 }
 
-const { handleFormKeydown: handleFillFormKeydown } = useFormKeyboardNavigation(fillFormAreaRef, {
-  keys: ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter'],
-  resolveFocusIndex: ({ currentIndex, direction, event, focusable }) => {
-    const currentTarget = focusable[currentIndex];
-    const currentCell = currentTarget?.closest<HTMLElement>('.nav-cell');
-    if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && currentCell) {
-      const { navCol, navGroup, navRow } = currentCell.dataset;
-      if (navGroup === 'vital' && navCol !== undefined && navRow !== undefined) {
-        const nextRow = Number(navRow) + (event.key === 'ArrowUp' ? -1 : 1);
-        const nextCell = fillFormAreaRef.value?.querySelector<HTMLElement>(
-          `.nav-cell[data-nav-group="${navGroup}"][data-nav-col="${navCol}"][data-nav-row="${nextRow}"]`,
-        );
-        if (nextCell) {
-          const nextFocusableIndex = focusable.findIndex(
-            (el) => el === nextCell || nextCell.contains(el),
-          );
-          if (nextFocusableIndex !== -1) return nextFocusableIndex;
-        }
-      }
-    }
-    return currentIndex + direction;
-  },
-});
-
 /** 加载体温单展示数据 */
-async function loadTemperatureSheetData(focusRecordDate?: string) {
+async function loadTemperatureSheetData() {
   const context = selectedPatientContext.value;
   if (!context) {
     chartPoints.value = [];
@@ -292,7 +225,6 @@ async function loadTemperatureSheetData(focusRecordDate?: string) {
     patientId: context.patientId,
     windowRange: WINDOW_RANGE,
     pageIndex: currentPage.value,
-    focusRecordDate,
   });
 
   const windowDayCount = WINDOW_DAY_COUNT;
@@ -306,83 +238,58 @@ async function loadTemperatureSheetData(focusRecordDate?: string) {
     windowDayCount,
   );
   specialEventStore.value = buildSpecialEventStoreFromGridRows(sheetGridRows.value);
-
-  if (focusRecordDate && response.fillSlots) {
-    const draft = applyFillSlotsToDraft(response.fillSlots);
-    draft.rows.forEach((row) => {
-      syncSpecialEventTimesOnSelectionChange(row);
-      syncSpecialEventShortcutFields(row);
-    });
-    tempRecordRows.value = draft.rows;
-    extraRecord.value = draft.extraRecord;
-  }
 }
 
-/** 加载录入抽屉指定日期的回显数据 */
-async function loadFillDrawerSlots() {
-  if (!recordDate.value) {
-    tempRecordRows.value = createEmptyFillRows();
-    extraRecord.value = createEmptyExtraRecord();
-    return;
-  }
-  await loadTemperatureSheetData(recordDate.value);
-}
-
-/** 打开录入抽屉并加载当日回显 */
-async function openFillDrawer() {
-  if (!selectedPatientContext.value) {
+/** 打开按患者录入抽屉（先加载回显再打开，避免抽屉上弹） */
+async function openFillDrawer(): Promise<void> {
+  const context = selectedPatientContext.value;
+  if (!context) {
     ElMessage.warning('请先选择患者');
     return;
   }
-  if (!recordDate.value) {
-    recordDate.value = dayjs().format('YYYY-MM-DD');
-  }
-  activeFillSlotIndex.value = 0;
-  fillDrawerVisible.value = true;
-  await loadFillDrawerSlots();
-  await nextTick();
-  const firstInput = fillFormAreaRef.value?.querySelector<HTMLInputElement>(
-    '.fill-row .el-input input',
-  );
-  firstInput?.focus();
+  const patient = context.patient;
+  await fillDrawerRef.value?.open({
+    patient: {
+      encounterId: context.encounterId,
+      patientId: context.patientId,
+      bedNo: patient.bedNo?.trim() || '-',
+      name: patient.name?.trim() || '-',
+      gender: patient.gender?.trim(),
+      admissionAt: patient.admissionAt,
+    },
+  });
 }
 
-/** 录入日期加减天数（工具栏快捷切换，不写入日期面板） */
-function shiftRecordDateByDays(offset: number): void {
-  const base = recordDate.value?.trim() ? dayjs(recordDate.value) : dayjs();
-  if (!base.isValid()) {
+/** 单人录入保存后刷新体温单图表 */
+function handleSingleFillSaved(): void {
+  void loadTemperatureSheetData();
+}
+
+/** 打开按时点批量录入抽屉 */
+async function openBatchFillDrawer(): Promise<void> {
+  const drawer = batchFillDrawerRef.value;
+  if (!drawer) {
     return;
   }
-  recordDate.value = base.add(offset, 'day').format('YYYY-MM-DD');
+  const loading = ElLoading.service({
+    lock: true,
+    text: '加载患者体温回显…',
+    background: 'rgba(255, 255, 255, 0.6)',
+  });
+  try {
+    await drawer.prepareOpen();
+    batchFillDrawerVisible.value = true;
+    await drawer.focusFirstInput();
+  } finally {
+    loading.close();
+  }
 }
 
-/** 复制上一时次录入值 */
-function copyPrevRow(index: number) {
-  if (index <= 0) return;
-  const prev = tempRecordRows.value[index - 1];
-  const current = tempRecordRows.value[index];
-  if (!prev || !current) return;
-  current.temp = prev.temp;
-  current.pulse = prev.pulse;
-  current.respiratory = prev.respiratory;
-  current.heartRate = prev.heartRate;
-}
-
-/** 保存前校验特殊事件（合并当日编辑到窗口存储） */
-function validateSpecialEventsBeforeSave(): string | null {
-  if (!recordDate.value) {
-    return null;
+/** 批量保存后刷新当前选中患者体温单 */
+function handleBatchFillSaved(): void {
+  if (selectedPatientContext.value) {
+    void loadTemperatureSheetData();
   }
-  const specialError = validateFillRowsSpecialEvents(
-    tempRecordRows.value,
-    specialEventLabelMap.value,
-  );
-  if (specialError) {
-    return specialError;
-  }
-  const slotFlags = extractSlotFlagsFromFillRows(tempRecordRows.value, recordDate.value);
-  const mergedStore = mergeSlotFlagsForDate(specialEventStore.value, recordDate.value, slotFlags);
-  return validateSpecialEventStore(mergedStore);
 }
 
 /** 底部血压半日列 span */
@@ -393,74 +300,6 @@ function resolveFooterBpHalfSpan(daySpan: number): number {
 /** 呼吸值是否显示在单元格上方（奇数时次低、偶数时次高，每日从高位重新开始） */
 function isRespiratoryHighSlot(index: number): boolean {
   return index % 2 === 0;
-}
-
-/** 将首行体温同步到全部时次 */
-function fillSameTemperature(value?: string) {
-  const text = (value ?? '').trim();
-  if (!text) return;
-  tempRecordRows.value.forEach((row) => {
-    row.temp = text;
-  });
-}
-
-/** 将首行生命体征同步到其余时次 */
-function fillSameFromFirstRow() {
-  const firstRow = tempRecordRows.value[0];
-  if (!firstRow) return;
-  tempRecordRows.value.forEach((row, index) => {
-    if (index === 0) return;
-    row.temp = firstRow.temp;
-    row.pulse = firstRow.pulse;
-    row.respiratory = firstRow.respiratory;
-    row.heartRate = firstRow.heartRate;
-  });
-}
-
-/** 批量保存当日全部已填写时次 */
-async function handleSaveAllSlots() {
-  const context = selectedPatientContext.value;
-  if (!context || !recordDate.value) {
-    ElMessage.warning('请先选择患者与录入日期');
-    return;
-  }
-
-  const saveRequests = collectTemperatureSheetSaveRequests(
-    tempRecordRows.value,
-    extraRecord.value,
-    recordDate.value,
-    context.encounterId,
-    context.patientId,
-  );
-  if (saveRequests.length === 0) {
-    ElMessage.warning('请至少填写一项生命体征或特殊事件');
-    return;
-  }
-
-  const specialEventError = validateSpecialEventsBeforeSave();
-  if (specialEventError) {
-    ElMessage.warning(specialEventError);
-    return;
-  }
-
-  savingAll.value = true;
-  try {
-    const savedResults: Array<{ timeSlot: string; vitalSignId?: string }> = [];
-    // 后端单槽保存，按有时次内容逐条提交（含特殊事件）
-    for (const request of saveRequests) {
-      const response = await httpSaveNurseStationTemperatureSheetAtRecordedTime(request);
-      savedResults.push({
-        timeSlot: request.timeSlot,
-        vitalSignId: response.vitalSignId ?? undefined,
-      });
-    }
-
-    tempRecordRows.value = applySavedVitalSignIdsToFillRows(tempRecordRows.value, savedResults);
-    await loadTemperatureSheetData(recordDate.value);
-    ElMessage.success(`已保存 ${saveRequests.length} 条体温单记录`);
-  } finally {
-    savingAll.value = false;
-  }
 }
 
 const chartColumns = computed(() => visiblePoints.value.length);
@@ -797,13 +636,6 @@ watch(selectedPatientContext, () => {
   void loadTemperatureSheetData();
 });
 
-watch(recordDate, () => {
-  if (!fillDrawerVisible.value) {
-    return;
-  }
-  void loadFillDrawerSlots();
-});
-
 watch(isFullscreen, () => {
   void nextTick(() => {
     remeasureContent();
@@ -820,7 +652,9 @@ watch(isFullscreen, () => {
 <template>
   <Teleport to="body" :disabled="!isFullscreen">
     <div class="temperature-sheet" :class="{ 'is-fullscreen': isFullscreen }">
-      <ElEmpty v-if="!canOperateSheet" description="请先从左侧选择一位患者" />
+      <ElEmpty v-if="!canOperateSheet" description="请先从左侧选择一位患者查看体温单">
+        <ElButton type="primary" plain @click="openBatchFillDrawer">按时点批量录入</ElButton>
+      </ElEmpty>
 
       <div
         v-else
@@ -845,7 +679,7 @@ watch(isFullscreen, () => {
                 <span>年龄：{{ selectedPatient?.age || '' }}岁</span>
                 <span>病室：{{ selectedPatient?.wardName || '' }}</span>
                 <span>床号：{{ selectedPatient?.bedNo || '' }}</span>
-                <span>病历号：{{ selectedPatient?.busNo || '' }}</span>
+                <span>病历号：{{ selectedPatient?.encounterBusNo || '' }}</span>
                 <span>入院日期：{{ formatSheetPatientDate(selectedPatient?.admissionAt) }}</span>
               </div>
 
@@ -999,327 +833,23 @@ watch(isFullscreen, () => {
             <ElButton size="small" @click="toggleFullscreen">
               {{ isFullscreen ? '退出全屏' : '全屏' }}
             </ElButton>
+            <ElButton size="small" plain type="primary" @click="openBatchFillDrawer">
+              按时点批量录入
+            </ElButton>
             <ElButton size="small" type="success" @click="openFillDrawer">填写体温单</ElButton>
           </div>
         </div>
       </div>
-      <ElDrawer
-        v-model="fillDrawerVisible"
-        :append-to-body="true"
-        :with-header="false"
-        class="temp-fill-drawer"
-        direction="btt"
-        size="72%"
-      >
-        <div ref="fillFormAreaRef" class="fill-drawer" @keydown="handleFillFormKeydown">
-          <div class="fill-toolbar">
-            <div class="fill-toolbar-left">
-              <div class="fill-record-date-nav">
-                <ElDatePicker
-                  v-model="recordDate"
-                  format="YYYY-MM-DD"
-                  placeholder="录入日期"
-                  type="date"
-                  value-format="YYYY-MM-DD"
-                />
-                <ElButton plain size="small" @click="shiftRecordDateByDays(-1)">上一天</ElButton>
-                <ElButton plain size="small" @click="shiftRecordDateByDays(1)">下一天</ElButton>
-              </div>
-              <ElTag type="info">键盘快捷：←/→ 切换，↑/↓ 同列切换，Enter 下一项</ElTag>
-            </div>
-            <div class="fill-toolbar-right">
-              <ElButton plain @click="fillSameTemperature(tempRecordRows[0]?.temp)">
-                同步体温到全部时次
-              </ElButton>
-              <ElButton plain @click="fillSameFromFirstRow">同步首行生命体征</ElButton>
-            </div>
-          </div>
-
-          <div class="fill-drawer-main">
-            <section class="fill-card">
-              <header class="fill-card-title">
-                生命体征（主录入）
-                <ElTag size="small" type="info"
-                  >快捷项：出院/物理降温/药物降温/体温不升；图表竖排仅展示入院/转科/手术/分娩/出院/死亡；转科/死亡/分娩/出院须选时间；入院由患者入院时间自动带入</ElTag
-                >
-              </header>
-              <div class="fill-grid-head">
-                <span>时次</span>
-                <span>体温(℃)</span>
-                <span>脉搏</span>
-                <span>呼吸</span>
-                <span>心率</span>
-                <span>收缩压</span>
-                <span>舒张压</span>
-                <span>特殊</span>
-                <span>操作</span>
-              </div>
-              <div class="fill-grid-body">
-                <div
-                  v-for="(row, index) in tempRecordRows"
-                  :key="row.timeSlot"
-                  class="fill-row"
-                  :class="{ 'is-active-slot': index === activeFillSlotIndex }"
-                  @click="activeFillSlotIndex = index"
-                >
-                  <div class="time-slot-cell">
-                    <span class="time-slot">{{ row.timeSlot }}:00</span>
-                    <span class="time-slot-range">{{
-                      formatTemperatureSheetTimeSlotRange(row.timeSlot)
-                    }}</span>
-                  </div>
-                  <div
-                    class="nav-cell"
-                    :data-nav-col="0"
-                    data-nav-group="vital"
-                    :data-nav-row="index"
-                  >
-                    <ElInput v-model="row.temp" placeholder="体温">
-                      <template #suffix>℃</template>
-                    </ElInput>
-                  </div>
-                  <div
-                    class="nav-cell"
-                    :data-nav-col="1"
-                    data-nav-group="vital"
-                    :data-nav-row="index"
-                  >
-                    <ElInput v-model="row.pulse" placeholder="脉搏">
-                      <template #suffix>次/分</template>
-                    </ElInput>
-                  </div>
-                  <div
-                    class="nav-cell"
-                    :data-nav-col="2"
-                    data-nav-group="vital"
-                    :data-nav-row="index"
-                  >
-                    <ElInput v-model="row.respiratory" placeholder="呼吸">
-                      <template #suffix>次/分</template>
-                    </ElInput>
-                  </div>
-                  <div
-                    class="nav-cell"
-                    :data-nav-col="3"
-                    data-nav-group="vital"
-                    :data-nav-row="index"
-                  >
-                    <ElInput v-model="row.heartRate" placeholder="心率">
-                      <template #suffix>bpm</template>
-                    </ElInput>
-                  </div>
-                  <div
-                    class="nav-cell"
-                    :data-nav-col="4"
-                    data-nav-group="vital"
-                    :data-nav-row="index"
-                  >
-                    <ElInput
-                      v-model="row.systolic"
-                      :disabled="isBloodPressureInputDisabled(row, tempRecordRows)"
-                      placeholder="收缩压"
-                    >
-                      <template #suffix>mmHg</template>
-                    </ElInput>
-                  </div>
-                  <div
-                    class="nav-cell"
-                    :data-nav-col="5"
-                    data-nav-group="vital"
-                    :data-nav-row="index"
-                  >
-                    <ElInput
-                      v-model="row.diastolic"
-                      :disabled="isBloodPressureInputDisabled(row, tempRecordRows)"
-                      placeholder="舒张压"
-                    >
-                      <template #suffix>mmHg</template>
-                    </ElInput>
-                  </div>
-                  <div class="fill-row-special" @click.stop>
-                    <div class="special-event-main-row">
-                      <ElCheckbox
-                        v-model="row.dischargeEnabled"
-                        class="special-cooling-checkbox"
-                        label="出院"
-                        @change="syncSpecialEventShortcutFields(row)"
-                      />
-                      <ElTimePicker
-                        v-if="row.dischargeEnabled"
-                        v-model="row.specialEventTimesByCode[SPECIAL_EVENT_ITEM_CODE.DISCHARGE]"
-                        class="special-event-time-picker"
-                        format="HH:mm"
-                        placeholder="时间"
-                        style="width: 110px; --el-date-editor-width: 110px"
-                        value-format="HH:mm"
-                        :clearable="false"
-                      />
-                      <ElCheckbox
-                        v-model="row.physicalCoolingEnabled"
-                        class="special-cooling-checkbox"
-                        label="物理降温"
-                      />
-                      <ElInput
-                        v-if="row.physicalCoolingEnabled"
-                        v-model="row.cooledTemperature"
-                        class="cooled-temp-input"
-                        placeholder="降温后"
-                      >
-                        <template #suffix>℃</template>
-                      </ElInput>
-                      <ElCheckbox
-                        v-model="row.medicationCoolingEnabled"
-                        class="special-cooling-checkbox"
-                        label="药物降温"
-                        @change="syncSpecialEventShortcutFields(row)"
-                      />
-                      <ElInput
-                        v-if="row.medicationCoolingEnabled"
-                        v-model="row.medicationCooledTemperature"
-                        class="cooled-temp-input"
-                        placeholder="降温后"
-                      >
-                        <template #suffix>℃</template>
-                      </ElInput>
-                      <ElCheckbox
-                        v-model="row.tempNotRisingEnabled"
-                        class="special-cooling-checkbox"
-                        label="体温不升"
-                      />
-                      <template
-                        v-for="slotIndex in resolveSpecialEventPickerSlots(row)"
-                        :key="`${row.timeSlot}-special-${slotIndex}`"
-                      >
-                        <ElSelect
-                          class="special-event-select"
-                          clearable
-                          :model-value="resolveSpecialEventPickerValue(row, slotIndex)"
-                          placeholder="特殊事件"
-                          @update:model-value="
-                            (value: string | undefined) =>
-                              handleSpecialEventPickerChange(row, slotIndex, value)
-                          "
-                        >
-                          <ElOption
-                            v-for="option in resolveSpecialEventPickerOptions(
-                              row,
-                              slotIndex,
-                              specialEventSelectOptions,
-                            )"
-                            :key="`${row.timeSlot}-${slotIndex}-${option.value}`"
-                            :label="option.label"
-                            :value="option.value"
-                          />
-                        </ElSelect>
-                        <ElTimePicker
-                          v-if="
-                            isSpecialEventTimeRequired(
-                              resolveSpecialEventPickerValue(row, slotIndex),
-                            )
-                          "
-                          v-model="
-                            row.specialEventTimesByCode[
-                              resolveSpecialEventPickerValue(row, slotIndex)
-                            ]
-                          "
-                          class="special-event-time-picker"
-                          format="HH:mm"
-                          placeholder="时间"
-                          style="width: 110px; --el-date-editor-width: 110px"
-                          value-format="HH:mm"
-                          :clearable="false"
-                        />
-                      </template>
-                    </div>
-                  </div>
-                  <div class="fill-row-action">
-                    <ElButton link type="primary" @click.stop="copyPrevRow(index)"
-                      >复制上条</ElButton
-                    >
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section class="fill-card fill-extra-card">
-              <header class="fill-card-title">
-                补充记录
-                <ElTag size="small" type="info">
-                  大便次数、小便次数、总入量、其他、尿量为前一日（{{
-                    supplementStatisticalDateLabel || '—'
-                  }}）统计，保存后显示在前一日列
-                </ElTag>
-              </header>
-              <div class="extra-grid">
-                <div class="extra-item">
-                  <span class="extra-label">体重(kg)</span>
-                  <ElInput v-model="extraRecord.weight" placeholder="请输入体重">
-                    <template #suffix>kg</template>
-                  </ElInput>
-                </div>
-                <div class="extra-item">
-                  <span class="extra-label">小便次数(次)</span>
-                  <ElInput v-model="extraRecord.urineCount" placeholder="请输入小便次数">
-                    <template #suffix>次</template>
-                  </ElInput>
-                </div>
-                <div class="extra-item">
-                  <span class="extra-label">腹围(cm)</span>
-                  <ElInput v-model="extraRecord.abdominalCircumference" placeholder="请输入腹围">
-                    <template #suffix>cm</template>
-                  </ElInput>
-                </div>
-                <div class="extra-item">
-                  <span class="extra-label">大便次数(次)</span>
-                  <ElInput v-model="extraRecord.stoolCount" placeholder="请输入大便次数">
-                    <template #suffix>次</template>
-                  </ElInput>
-                </div>
-                <div class="extra-item">
-                  <span class="extra-label">身高(cm)</span>
-                  <ElInput v-model="extraRecord.height" placeholder="请输入身高">
-                    <template #suffix>cm</template>
-                  </ElInput>
-                </div>
-                <div class="extra-item">
-                  <span class="extra-label">入量(ml)</span>
-                  <ElInput v-model="extraRecord.intake" placeholder="请输入入量">
-                    <template #suffix>ml</template>
-                  </ElInput>
-                </div>
-                <div class="extra-item">
-                  <span class="extra-label">皮试阳性</span>
-                  <ElInput v-model="extraRecord.skinTestPositive" placeholder="请输入皮试阳性">
-                    <template #suffix>次</template>
-                  </ElInput>
-                </div>
-                <div class="extra-item">
-                  <span class="extra-label">尿量(ml)</span>
-                  <ElInput v-model="extraRecord.urine" placeholder="请输入尿量">
-                    <template #suffix>ml</template>
-                  </ElInput>
-                </div>
-                <div class="extra-item">
-                  <span class="extra-label">其他(ml)</span>
-                  <ElInput v-model="extraRecord.other" placeholder="请输入其他">
-                    <template #suffix>ml</template>
-                  </ElInput>
-                </div>
-              </div>
-            </section>
-          </div>
-        </div>
-        <template #footer>
-          <div class="fill-footer">
-            <ElButton @click="fillDrawerVisible = false">取消</ElButton>
-            <ElButton :loading="savingAll" type="primary" @click="handleSaveAllSlots"
-              >保存</ElButton
-            >
-          </div>
-        </template>
-      </ElDrawer>
     </div>
   </Teleport>
+
+  <TemperatureSheetSingleFillDrawer ref="fillDrawerRef" @saved="handleSingleFillSaved" />
+
+  <TemperatureSheetBatchFillDrawer
+    ref="batchFillDrawerRef"
+    v-model:visible="batchFillDrawerVisible"
+    @saved="handleBatchFillSaved"
+  />
 </template>
 
 <style scoped>
@@ -1420,204 +950,7 @@ watch(isFullscreen, () => {
   font-size: 12px;
   color: #6b7280;
 }
-.fill-drawer {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  height: 100%;
-}
-.fill-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 2px;
-}
-.fill-toolbar-left,
-.fill-toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.fill-record-date-nav {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-.fill-drawer-main {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 0;
-  flex: 1;
-  overflow: auto;
-}
-.fill-card {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #fff;
-  overflow: hidden;
-}
-.fill-card-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 32px;
-  padding: 0 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #334155;
-  background: #f8fafc;
-  border-bottom: 1px solid #e5e7eb;
-}
-.fill-grid-head,
-.fill-row {
-  display: grid;
-  grid-template-columns: 88px repeat(6, 160px) minmax(0, 1fr) 72px;
-  gap: 8px;
-  align-items: start;
-}
-.fill-grid-head {
-  padding: 6px 8px;
-  background: #eff6ff;
-  font-size: 12px;
-  color: #334155;
-  text-align: center;
-  align-items: center;
-}
-.fill-grid-body {
-  flex: 1;
-  overflow: auto;
-  padding: 4px 8px 8px;
-}
-.fill-row {
-  padding: 8px 0;
-  border-bottom: 1px dashed #e5e7eb;
-}
-.fill-row:last-child {
-  border-bottom: none;
-}
-.fill-row.is-active-slot {
-  margin: 0 -4px;
-  padding: 8px 4px;
-  background: #eff6ff;
-  border-radius: 6px;
-  outline: 1px solid #93c5fd;
-}
-.fill-row-action {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 4px;
-}
-.fill-row-special {
-  min-width: 0;
-}
-.special-event-main-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  min-width: 0;
-}
-.time-slot-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-}
-.time-slot {
-  font-weight: 700;
-  font-size: 13px;
-  color: #1f2937;
-}
-.time-slot-range {
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.2;
-  color: var(--el-text-color-secondary);
-  white-space: nowrap;
-}
-.fill-row .nav-cell :deep(.el-input),
-.extra-grid :deep(.el-input) {
-  width: 100%;
-}
-.fill-row .nav-cell :deep(.el-input__suffix),
-.extra-grid :deep(.el-input__suffix) {
-  color: #6b7280;
-  font-size: 11px;
-}
-.fill-extra-card {
-  flex-shrink: 0;
-}
-.special-cooling-checkbox {
-  flex-shrink: 0;
-  margin-right: 0;
-}
-.special-cooling-checkbox :deep(.el-checkbox__label) {
-  padding-left: 4px;
-  font-size: 12px;
-  color: var(--el-text-color-regular);
-}
-.cooled-temp-input {
-  width: 110px;
-  flex-shrink: 0;
-}
-.cooled-temp-input :deep(.el-input__suffix) {
-  font-size: 11px;
-  color: var(--el-text-color-secondary);
-}
-.special-event-select {
-  width: 110px;
-  flex-shrink: 0;
-}
-.special-event-time-picker {
-  flex-shrink: 0;
-}
-.extra-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px 12px;
-  padding: 8px;
-}
-.extra-item {
-  display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-}
-.extra-label {
-  text-align: left;
-  font-size: 12px;
-  color: #4b5563;
-}
-.extra-item :deep(.el-input__wrapper) {
-  min-height: 26px;
-}
-.fill-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 4px;
-}
 
-:global(.temp-fill-drawer .el-drawer__body) {
-  padding: 10px 0 0;
-}
-
-:global(.temp-fill-drawer .el-drawer__header) {
-  margin: 0;
-  padding: 4px 10px;
-  min-height: 34px;
-}
-
-:global(.temp-fill-drawer .el-drawer__footer) {
-  padding: 4px 10px;
-}
 .sheet-title {
   text-align: center;
   font-size: 28px;

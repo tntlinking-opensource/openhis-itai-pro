@@ -12,7 +12,11 @@ export function isTcmDiagnosisRow(row: EncounterDiagnosisRowDto): boolean {
   const kind = String(row.medicineType ?? row.diagnosisKind ?? '')
     .trim()
     .toUpperCase();
-  return kind === 'TCM';
+  if (kind === 'TCM') {
+    return true;
+  }
+  const source = String(row.sourceEnum ?? '').trim();
+  return source === TCM_CATALOG_SOURCE_DISEASE || source === TCM_CATALOG_SOURCE_SYNDROME;
 }
 
 /** 是否中医病名目录来源 */

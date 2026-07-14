@@ -54,6 +54,7 @@ import {
   reconcileDailyLedgerApi,
   reconcileDetailLedgerApi,
   revokeJilinClearApi,
+  startWorkInjuryReconApi,
   summarizeClearAmountsApi,
 } from '#/chs/api';
 import {
@@ -72,10 +73,14 @@ import {
 } from '#/chs/constants/insurance-contract';
 import { ensureInsuranceSignIn } from '#/chs/utils/ensure-insurance-sign-in';
 import { useRequest } from '#/hooks/use-request';
+import { continueWorkInjurySession } from '#/chs/work-injury/run-work-injury-phase';
+import { httpWorkInjuryModuleCapability } from '#/chs/work-injury/work-injury.http';
+import { isWorkInjuryPluginOnline } from '#/chs/work-injury/work-injury-plugin';
+import { isWorkInjuryContractCategory } from '#/views/outpatient/charge/register/services/charge-type-category';
 
 defineOptions({ name: 'ChsReconciliationPage' });
 
-const activeTab = ref<'daily' | 'clear'>('daily');
+const activeTab = ref<'clear' | 'daily' | 'workInjury'>('daily');
 const contractBusNo = ref<string>();
 const chargeTypeOptions = ref<ChargeType[]>([]);
 
@@ -120,6 +125,91 @@ const clearStatusStas = ref('10');
 const clearStatusYm = ref('');
 const clearLocalRecords = ref<LocalClearApplyRecord[]>([]);
 const crossProvinceRows = ref<CrossProvinceReconRow[]>([]);
+
+interface WiChargeTypeOption {
+  contractId: string;
+  label: string;
+  busNo: string;
+}
+
+const wiModuleEnabled = ref(false);
+const wiContractOptions = ref<WiChargeTypeOption[]>([]);
+const wiContractId = ref<string>();
+const wiDateRange = ref<[string, string]>();
+const wiSocialPoolCode = ref('220100');
+const wiMonth = ref('');
+const wiRunning = ref(false);
+const wiLastSummary = ref<string>();
+
+function filterWorkInjuryChargeTypes(
+  items: Array<{ value?: string; label?: string; busNo?: string; categoryEnum?: string }>,
+): WiChargeTypeOption[] {
+  return items
+    .filter(
+      (item) =>
+        Boolean(item.value?.trim()) &&
+        Boolean(item.busNo?.trim()) &&
+        (isWorkInjuryContractCategory(item.categoryEnum) || item.busNo!.trim().endsWith('-GS')),
+    )
+    .map((item) => ({
+      contractId: String(item.value).trim(),
+      label: (item.label ?? item.busNo ?? item.value ?? '').trim(),
+      busNo: (item.busNo ?? '').trim(),
+    }));
+}
+
+async function loadWorkInjuryReconInit() {
+  try {
+    const cap = await httpWorkInjuryModuleCapability();
+    wiModuleEnabled.value = cap?.enabled === true;
+  } catch {
+    wiModuleEnabled.value = false;
+  }
+  if (!wiModuleEnabled.value) {
+    wiContractOptions.value = [];
+    if (activeTab.value === 'workInjury') {
+      activeTab.value = 'daily';
+    }
+    return;
+  }
+  const list = await getChargeTypeListApi();
+  wiContractOptions.value = filterWorkInjuryChargeTypes(list);
+}
+
+async function runWorkInjuryRecon() {
+  const cid = wiContractId.value?.trim();
+  if (!cid) {
+    ElMessage.warning('请选择工伤费用性质');
+    return;
+  }
+  if (!(await isWorkInjuryPluginOnline())) {
+    ElMessage.warning('请启动 OpenHIS.Win 并启用工伤模块');
+    return;
+  }
+  const formContext: Record<string, unknown> = {
+    socialPoolCode: wiSocialPoolCode.value.trim() || '220100',
+    month: wiMonth.value.trim(),
+  };
+  if (wiDateRange.value?.length === 2) {
+    formContext.stmtBegindate = wiDateRange.value[0]!.replaceAll('-', '');
+    formContext.stmtEnddate = wiDateRange.value[1]!.replaceAll('-', '');
+  }
+  wiRunning.value = true;
+  wiLastSummary.value = undefined;
+  try {
+    const prep = await startWorkInjuryReconApi({ contractId: cid, formContext });
+    const result = await continueWorkInjurySession(prep, 'RECON', {
+      contractId: cid,
+      context: formContext,
+    });
+    wiLastSummary.value = result.summary ?? '对账 invoke 链已完成（1320→1321→1322）';
+    ElMessage.success(wiLastSummary.value);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '工伤对账失败');
+  } finally {
+    wiRunning.value = false;
+  }
+}
 
 const clearAmountForm = ref({
   medfeeSumamt: undefined as number | undefined,
@@ -396,6 +486,7 @@ function refreshLocalRecords() {
 
 onMounted(async () => {
   await loadChargeTypes();
+  await loadWorkInjuryReconInit();
   if (contractBusNo.value) {
     await Promise.all([loadDailyLocalRecords(), loadDetailLocalRecords(), loadClearLocalRecords()]);
   }
@@ -891,6 +982,40 @@ onMounted(async () => {
             </ElCard>
           </ElCol>
         </ElRow>
+      </ElTabPane>
+
+      <ElTabPane v-if="wiModuleEnabled" label="工伤对账（1320）" name="workInjury">
+        <ElCard shadow="never">
+          <ElForm label-width="120px" class="max-w-2xl">
+            <ElFormItem label="工伤费用性质" required>
+              <ElSelect v-model="wiContractId" class="!w-full" placeholder="请选择">
+                <ElOption
+                  v-for="item in wiContractOptions"
+                  :key="item.contractId"
+                  :label="`${item.label}（${item.busNo}）`"
+                  :value="item.contractId"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="对账日期">
+              <ElDatePicker v-model="wiDateRange" v-bind="dateFieldProps" class="!w-full" />
+            </ElFormItem>
+            <ElFormItem label="统筹区编码">
+              <ElInput v-model="wiSocialPoolCode" placeholder="220100" />
+            </ElFormItem>
+            <ElFormItem label="对账月份">
+              <ElInput v-model="wiMonth" placeholder="yyyyMM（可选）" />
+            </ElFormItem>
+            <ElFormItem>
+              <ElButton type="primary" :loading="wiRunning" @click="runWorkInjuryRecon">
+                启动工伤对账（1320→1322）
+              </ElButton>
+            </ElFormItem>
+            <ElFormItem v-if="wiLastSummary" label="结果">
+              <span>{{ wiLastSummary }}</span>
+            </ElFormItem>
+          </ElForm>
+        </ElCard>
       </ElTabPane>
     </ElTabs>
   </Page>

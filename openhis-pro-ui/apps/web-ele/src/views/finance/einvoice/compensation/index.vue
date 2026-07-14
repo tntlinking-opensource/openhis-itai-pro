@@ -18,6 +18,7 @@ import { TableLayout } from '@vben-core/table-layout-ui';
 
 import {
   ElButton,
+  ElAlert,
   ElDropdown,
   ElDropdownItem,
   ElDropdownMenu,
@@ -37,6 +38,7 @@ import {
 import EinvoiceConfirmDialog from '#/components/einvoice/EinvoiceConfirmDialog.vue';
 import { refreshEinvoiceCompensationMenuBadge } from '#/composables/use-einvoice-compensation-badge';
 import { useRequest } from '#/hooks/use-request';
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
 
 defineOptions({
   name: 'EinvoiceCompensation',
@@ -104,6 +106,8 @@ const batchRequeueCount = computed(
 const batchIssueCount = computed(
   () => selectedRows.value.filter((row) => row.canIssueNow && row.invoiceId).length,
 );
+
+const scanTruncated = computed(() => Boolean(stats.value.scanTruncated));
 
 const statsSummary = computed(() => {
   const s = stats.value;
@@ -311,6 +315,14 @@ onMounted(() => {
 
 <template>
   <Page auto-content-height>
+    <ElAlert
+      v-if="scanTruncated"
+      class="mb-3"
+      title="待补偿扫描命中上限，统计与列表可能不完整，请缩小筛选范围"
+      type="warning"
+      show-icon
+      :closable="false"
+    />
     <div class="mb-3 flex flex-wrap gap-4 text-sm text-[var(--el-text-color-regular)]">
       <span v-for="item in statsSummary" :key="item.label">
         {{ item.label }}
@@ -352,7 +364,7 @@ onMounted(() => {
         </ElButton>
       </template>
       <template #paymentAmt="{ row }">
-        {{ row.paymentAmt != null ? Number(row.paymentAmt).toFixed(2) : '-' }}
+        {{ row.paymentAmt != null ? formatMoneyDisplay(row.paymentAmt) : '-' }}
       </template>
       <template #exceptionType="{ row }">
         <ElTag :type="exceptionTagType(row.exceptionType)" size="small">

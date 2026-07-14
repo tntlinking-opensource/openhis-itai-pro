@@ -62,6 +62,7 @@ interface Props {
   skinTestRows: OutpatientSkinTestRowDto[];
   skinTestTableLoading?: boolean;
   defaultPractitionerId?: string;
+  defaultPractitionerName?: string;
   savingServiceRequestId?: string;
   deletingAllergyRecordId?: string;
 }
@@ -79,7 +80,7 @@ const showEmptyState = computed(
   () => !props.skinTestTableLoading && props.skinTestRows.length === 0,
 );
 
-/** 合并行内已保存护士，避免下拉只显示 ID */
+/** 合并行内已保存护士与默认登录护士，避免下拉只显示 ID */
 function practitionerOptionsForRow(row: NurseSkinTestTableRow): { label: string; value: string }[] {
   const merged = [...props.practitionerOptions];
   const append = (id: string, name?: string) => {
@@ -92,6 +93,8 @@ function practitionerOptionsForRow(row: NurseSkinTestTableRow): { label: string;
       label: String(name ?? '').trim() || value,
     });
   };
+  const defaultName = String(props.defaultPractitionerName ?? '').trim();
+  append(props.defaultPractitionerId ?? '', defaultName === '—' ? '' : defaultName);
   append(row.practitionerId, row.practitionerName);
   append(row.checkPractitionerId, row.checkPractitionerName);
   return merged;
@@ -105,7 +108,13 @@ function syncCardRowsFromApi() {
 }
 
 watch(
-  () => [props.skinTestRows, props.defaultPractitionerId, props.practitionerOptions] as const,
+  () =>
+    [
+      props.skinTestRows,
+      props.defaultPractitionerId,
+      props.defaultPractitionerName,
+      props.practitionerOptions,
+    ] as const,
   () => {
     syncCardRowsFromApi();
   },

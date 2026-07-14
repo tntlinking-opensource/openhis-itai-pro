@@ -1,13 +1,11 @@
 <script setup lang="ts">
-import type { RegisterRightPanelExpose, RegisterSlotSelectionPayload } from './services';
-
-import type { BookingEntityId } from '#/api/booking/booking-id';
+import type { RegisterRightPanelExpose } from './services';
 
 import { ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import { toBookingId } from '#/api/booking/booking-id';
+import { getDateRangeQuick } from '#/utils/format/date-range-quick';
 
 import RegisterLeftPanel from './components/register-left-panel.vue';
 import RegisterRightPanel from './components/register-right-panel.vue';
@@ -16,62 +14,80 @@ defineOptions({
   name: 'ChargeOpRegister',
 });
 
-const leftPanelRef = ref<null | {
-  applySlotSelection: (payload: RegisterSlotSelectionPayload) => Promise<void>;
-}>(null);
-const rightPanelRef = ref<null | RegisterRightPanelExpose>(null);
-const slotOrganizationId = ref<BookingEntityId | undefined>();
-const slotPractitionerId = ref<BookingEntityId | undefined>();
-const slotHealthcareServiceId = ref<BookingEntityId | undefined>();
+const historyRef = ref<null | RegisterRightPanelExpose>(null);
+const historyDateRange = ref(getDateRangeQuick({ strategy: 'calendar-day' }) as [string, string]);
 
-/**
- * 左侧挂号结算成功后，刷新右侧统计与当前 Tab。
- */
+/** 挂号结算成功或取消核对后，刷新底部历史与统计 */
 async function handleRegisterSuccess() {
-  await rightPanelRef.value?.refresh();
+  await historyRef.value?.refresh();
 }
 
-/** 当日号源点选：仅回填左侧挂号表单，不改右侧筛选条 */
-async function handleSlotSelected(payload: RegisterSlotSelectionPayload) {
-  await leftPanelRef.value?.applySlotSelection(payload);
-}
-
-/** 左侧科室变更时同步右侧号源查询科室 */
-function handleDepartmentChange(organizationId: string) {
-  slotOrganizationId.value = toBookingId(organizationId);
-  slotPractitionerId.value = undefined;
-  slotHealthcareServiceId.value = undefined;
-}
-
-/** 左侧医师变更时同步右侧号源筛选 */
-function handleDoctorChange(practitionerId: string) {
-  slotPractitionerId.value = toBookingId(practitionerId);
-}
-
-/** 左侧号源类型变更时同步右侧号源筛选 */
-function handleServiceTypeChange(serviceTypeId: string) {
-  slotHealthcareServiceId.value = toBookingId(serviceTypeId);
+/** 顶栏日期范围变更：同步底部历史查询 */
+function handleDateRangeChange(range: [string, string]) {
+  historyDateRange.value = range;
 }
 </script>
 
 <template>
-  <Page>
-    <div class="flex h-full min-h-0 flex-1 flex-row gap-2 !overflow-hidden !p-2">
+  <Page content-class="register-page-content">
+    <div class="register-page">
       <RegisterLeftPanel
-        ref="leftPanelRef"
+        class="register-page__workspace"
         @register-success="handleRegisterSuccess"
         @register-cancelled="handleRegisterSuccess"
-        @department-change="handleDepartmentChange"
-        @doctor-change="handleDoctorChange"
-        @service-type-change="handleServiceTypeChange"
       />
       <RegisterRightPanel
-        ref="rightPanelRef"
-        :organization-id="slotOrganizationId"
-        :practitioner-id="slotPractitionerId"
-        :healthcare-service-id="slotHealthcareServiceId"
-        @slot-selected="handleSlotSelected"
+        ref="historyRef"
+        class="register-page__history"
+        :date-range="historyDateRange"
+        @date-range-change="handleDateRangeChange"
       />
     </div>
   </Page>
 </template>
+
+<style scoped>
+.register-page {
+  display: grid;
+  grid-template-rows: 55fr 45fr;
+  gap: 8px;
+  height: 100%;
+  min-height: 0;
+  padding: 8px;
+  overflow: hidden;
+}
+
+.register-page__workspace,
+.register-page__history {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 窄屏（<1680，含 1600）：压缩上方、给历史列表更多高度 */
+@media (max-width: 1679px) {
+  .register-page {
+    grid-template-rows: auto minmax(320px, 1fr);
+    gap: 6px;
+    padding: 4px;
+  }
+
+  .register-page__workspace {
+    height: auto;
+    overflow: visible;
+  }
+
+  .register-page__workspace :deep(.reg-bill-form-area),
+  .register-page__workspace :deep(.register-workspace-layout) {
+    height: auto;
+  }
+}
+</style>
+
+<style>
+@media (max-width: 1679px) {
+  .register-page-content {
+    padding: 4px !important;
+    padding-bottom: 0 !important;
+  }
+}
+</style>

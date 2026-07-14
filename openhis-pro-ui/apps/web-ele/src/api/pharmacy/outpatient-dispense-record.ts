@@ -56,6 +56,7 @@ export interface OutpatientPharmacyDispenseRecordRow {
   orderingDepartmentId?: string;
   orderingDepartmentName?: string;
   usageText?: string;
+  manufacturerText?: string;
   summaryNo?: string;
   medReqId?: string;
 }

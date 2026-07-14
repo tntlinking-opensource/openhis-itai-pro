@@ -72,3 +72,64 @@ export async function httpRetrySettleFromBpcOrder(body: RetrySettleFromBpcOrderR
 export async function httpProbeUnionPayBpcModule(): Promise<void> {
   await publicRequestClient.post(`${BASE}/retrySettleFromBpcOrder`, {});
 }
+
+export interface PageBpcOrdersRequest {
+  pageNo?: number;
+  pageSize?: number;
+  dateFrom?: string;
+  dateTo?: string;
+  /** 仅 BPC 已成功、HIS payment 仍为 DRAFT 的半成功单 */
+  pendingSettleOnly?: boolean;
+  paymentId?: number | string;
+  merTradeNo?: string;
+  tradeNo?: string;
+  status?: string;
+  payType?: string;
+  tranType?: string;
+}
+
+export interface BpcOrderListItemDto {
+  orderId?: number | string;
+  paymentId?: number | string;
+  detailIndex?: number;
+  merTradeNo?: string;
+  tradeNo?: string;
+  tranType?: string;
+  txnAmtFen?: number;
+  payType?: string;
+  status?: string;
+  respCode?: string;
+  respMsg?: string;
+  posNo?: string;
+  /** fin_payment_reconciliation.status_enum */
+  paymentStatus?: string;
+  /** BPC SUCCESS + C 且 payment 仍为 DRAFT */
+  pendingSettle?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PageBpcOrdersResponse {
+  total?: number;
+  rows?: BpcOrderListItemDto[];
+}
+
+export async function httpPageBpcOrders(body: PageBpcOrdersRequest) {
+  return publicRequestClient.post<PageBpcOrdersResponse>(`${BASE}/pageOrders`, body);
+}
+
+export async function httpQueryBpcOrder(body: {
+  merTradeNo?: string;
+  tradeNo?: string;
+  paymentId?: number | string;
+}) {
+  return publicRequestClient.post<{
+    success?: boolean;
+    orderId?: number | string;
+    merTradeNo?: string;
+    tradeNo?: string;
+    status?: string;
+    payType?: string;
+    txnAmtFen?: number;
+  }>(`${BASE}/queryOrder`, body);
+}

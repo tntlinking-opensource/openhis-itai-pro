@@ -18,6 +18,7 @@ import {
 
 import { issueCommonApi } from '#/api/einvoice-boss/common';
 import { useRequest } from '#/hooks/use-request';
+import { formatMoneyDisplay, sumMoneyThenSettle } from '#/utils/format/money-scale';
 
 defineOptions({
   name: 'EinvoiceCommon',
@@ -36,7 +37,7 @@ const result = ref<Awaited<ReturnType<typeof issueCommonApi>> | null>(null);
 const { run: runIssue, loading } = useRequest(issueCommonApi, { manual: true });
 
 const lineTotal = computed(() =>
-  (formModel.lines ?? []).reduce((sum, line) => sum + Number(line.amount ?? 0), 0),
+  sumMoneyThenSettle((formModel.lines ?? []).map((line) => line.amount ?? 0)),
 );
 
 function addLine() {
@@ -166,7 +167,7 @@ async function handleSubmit() {
       <ElButton class="mb-4" @click="addLine">添加明细</ElButton>
 
       <div class="mb-4 text-sm">
-        明细合计：<strong>{{ lineTotal.toFixed(2) }}</strong> 元
+        明细合计：<strong>{{ formatMoneyDisplay(lineTotal) }}</strong> 元
       </div>
 
       <ElFormItem>

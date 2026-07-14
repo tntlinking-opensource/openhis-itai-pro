@@ -9,7 +9,7 @@ param(
     [switch]$SkipInstall,
     [switch]$SkipPortable,
     [switch]$SkipNginxDownload,
-    [string]$ListenPort = '8080',
+    [string]$ListenPort = '18080',
     [string]$BackendHost = '127.0.0.1',
     [string]$BackendPort = '8081'
 )

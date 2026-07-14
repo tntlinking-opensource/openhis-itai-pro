@@ -1,8 +1,13 @@
 import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
+import type { TcmDiagnosisGroupRowDto } from '#/api/doctor-station/tcm.types';
 
 import type { DiagnosisItem } from './diagnosis.types';
 
-import { mergeEncounterDiagnosisListForDisplay } from './merge-encounter-diagnosis-display';
+import {
+  buildEncounterDiagnosisDisplayList,
+  isTcmDiagnosisRow,
+  mergeEncounterDiagnosisListForDisplay,
+} from './merge-encounter-diagnosis-display';
 
 /** 就诊诊断原始行 → 医嘱/申请单下拉用合并展示行 */
 export function resolveEncounterDiagnosisDisplayRows(
@@ -37,9 +42,24 @@ export function mapEncounterRowToDiagnosisItem(
 
 /** 从合并后的就诊诊断中取主诊断展示名 */
 export function pickMainDiagnosisDisplayName(rows: EncounterDiagnosisRowDto[]): string {
-  const named = resolveEncounterDiagnosisDisplayRows(rows).filter((r) =>
-    (r.conditionDefinitionName ?? '').trim(),
+  return pickMainDiagnosisFromDisplayRows(resolveEncounterDiagnosisDisplayRows(rows));
+}
+
+/**
+ * 中药处方等场景：仅取中医主诊断（病证合并展示），不受西医主诊断干扰。
+ */
+export function pickMainTcmDiagnosisDisplayName(
+  rows: EncounterDiagnosisRowDto[],
+  tcmGroups: TcmDiagnosisGroupRowDto[] = [],
+): string {
+  const displayRows = buildEncounterDiagnosisDisplayList(rows, tcmGroups);
+  const tcmNamed = displayRows.filter(
+    (row) => isTcmDiagnosisRow(row) && (row.conditionDefinitionName ?? '').trim(),
   );
+  return pickMainDiagnosisFromDisplayRows(tcmNamed);
+}
+
+function pickMainDiagnosisFromDisplayRows(named: EncounterDiagnosisRowDto[]): string {
   if (named.length === 0) return '';
   const mains = named.filter((r) => Number(r.mainDiagnosisFlag) === 1);
   const pool = mains.length > 0 ? mains : named;

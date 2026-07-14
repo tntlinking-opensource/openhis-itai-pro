@@ -14,18 +14,15 @@ import type {
   WeekScheduleTemplateItemDto,
 } from '#/api/booking/schedule-template';
 import type { BookingEntityId } from '#/api/booking/booking-id';
-import { bookingOptionValue, toBookingId } from '#/api/booking/booking-id';
+import { bookingOptionValue, isSameBookingId, toBookingId } from '#/api/booking/booking-id';
 import type { LoadScheduleFormInitResponse } from '#/api/booking/outpatient-schedule';
-import type { ReleasePolicyDto } from '#/api/booking/booking-policy';
 
 import { computed, onMounted, reactive, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
 import { TableLayout } from '@vben-core/table-layout-ui';
 
-import { pageReleasePoliciesApi } from '#/api/booking/booking-policy';
 import { loadScheduleFormInitApi } from '#/api/booking/outpatient-schedule';
 import {
   deleteScheduleTemplateApi,
@@ -53,8 +50,14 @@ import {
 } from '#/api/booking/calendar-exception';
 import { useBookingOrganization } from '#/views/booking/composables/use-booking-organization';
 import CalendarExceptionMonth from '#/views/booking/components/calendar-exception-month.vue';
-import ReleasePolicyPanel from '#/views/booking/components/release-policy-panel.vue';
 import ScheduleTemplateGuide from '#/views/booking/components/schedule-template-guide.vue';
+import SlotTemplateRowsField from '#/views/booking/components/slot-template-rows-field.vue';
+import {
+  isDepartmentScheduleMode,
+  normalizeScheduleModeForForm,
+  scheduleModeLabel,
+  SCHEDULE_MODE_OPTIONS,
+} from '#/views/booking/components/schedule-template-shared';
 import { useRequest } from '#/hooks/use-request';
 import {
   ElAlert,
@@ -75,7 +78,6 @@ import {
 
 defineOptions({ name: 'BookingScheduleTemplate' });
 
-const router = useRouter();
 const { organizationId } = useBookingOrganization();
 const activeTab = ref('slot');
 
@@ -126,45 +128,216 @@ const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六
 
 const initData = ref<LoadScheduleFormInitResponse>({});
 const t1Options = ref<{ value: string; label: string }[]>([]);
-const releasePolicies = ref<ReleasePolicyDto[]>([]);
+/** 日排班弹窗内按所选科室加载的下拉（号源类型 / 医师 / 放号时段） */
+const t2DialogInitData = ref<LoadScheduleFormInitResponse>({});
+const t2DialogT1Options = ref<{ value: string; label: string }[]>([]);
 
-const scheduleModeOptions = [
-  { value: 'MODE-A', label: '医师门诊 (MODE-A)' },
-  { value: 'MODE-B', label: '科室号 (MODE-B)' },
-  { value: 'MODE-C', label: '诊区号 (MODE-C)' },
+/** 周排班弹窗：先选科室与排班方式，再过滤日排班 */
+type TwScheduleScope = 'DEPARTMENT' | 'PRACTITIONER';
+const twDialogOrganizationId = ref<BookingEntityId>();
+const twScheduleScope = ref<TwScheduleScope>('DEPARTMENT');
+const twDialogInitData = ref<LoadScheduleFormInitResponse>({});
+const twOrgT2List = ref<ScheduleTemplateDto[]>([]);
+
+const twScheduleScopeOptions = [
+  { value: 'DEPARTMENT' as const, label: '按科室' },
+  { value: 'PRACTITIONER' as const, label: '按医师' },
 ];
 
+const isTwDepartmentScope = computed(() => twScheduleScope.value === 'DEPARTMENT');
+
+const scheduleModeOptions = SCHEDULE_MODE_OPTIONS;
+
+/** 主数据 label 映射，供周排班日排班下拉展示 */
+function buildOptionLabelMap(options?: { label?: string; value?: unknown }[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const option of options ?? []) {
+    const key = bookingOptionValue(option.value);
+    if (key) {
+      map.set(key, String(option.label ?? key));
+    }
+  }
+  return map;
+}
+
+/** 拼接展示片段，跳过与已有片段重复的文案 */
+function appendDistinctLabel(parts: string[], segment?: string): void {
+  const text = segment?.trim();
+  if (!text) {
+    return;
+  }
+  if (parts.some((part) => part === text)) {
+    return;
+  }
+  parts.push(text);
+}
+
+/** 周排班日排班下拉展示文案 */
+function buildTwT2OptionLabel(
+  template: ScheduleTemplateDto,
+  practitionerLabelMap: Map<string, string>,
+  healthcareLabelMap: Map<string, string>,
+): string {
+  const name = template.templateName?.trim() || String(template.id ?? '');
+  const serviceLabel = healthcareLabelMap.get(
+    bookingOptionValue(template.healthcareServiceId) ?? '',
+  );
+  if (isDepartmentScheduleMode(template.scheduleMode)) {
+    const parts: string[] = ['[科室号]'];
+    appendDistinctLabel(parts, name);
+    appendDistinctLabel(parts, serviceLabel);
+    return parts.join(' · ');
+  }
+  const doctorLabel =
+    practitionerLabelMap.get(bookingOptionValue(template.practitionerId) ?? '') ?? '未指定医师';
+  const parts: string[] = ['[医师号]'];
+  appendDistinctLabel(parts, doctorLabel);
+  appendDistinctLabel(parts, name);
+  appendDistinctLabel(parts, serviceLabel);
+  return parts.join(' · ');
+}
+
+/** 按科室加载全部日排班（供周排班弹窗过滤） */
+async function loadTwDialogContext(orgId?: BookingEntityId) {
+  const resolvedOrgId = toBookingId(orgId);
+  if (!resolvedOrgId) {
+    twOrgT2List.value = [];
+    twDialogInitData.value = {};
+    return;
+  }
+  const [init, page] = await Promise.all([
+    loadScheduleFormInitApi({ organizationId: resolvedOrgId }),
+    pageScheduleTemplatesApi({
+      organizationId: resolvedOrgId,
+      pageNo: 1,
+      pageSize: 500,
+    }),
+  ]);
+  twDialogInitData.value = init ?? {};
+  twOrgT2List.value = (page?.content ?? []).filter((row) => row.enabled !== false);
+}
+
+/** 按科室 + 排班方式过滤后的日排班选项 */
+const twFilteredT2Options = computed(() => {
+  const orgId = twDialogOrganizationId.value;
+  if (!orgId) {
+    return [];
+  }
+  const practitionerLabelMap = buildOptionLabelMap(twDialogInitData.value.practitioners);
+  const healthcareLabelMap = buildOptionLabelMap(twDialogInitData.value.healthcareServices);
+  return twOrgT2List.value
+    .filter((template) => {
+      if (!isSameBookingId(template.organizationId, orgId)) {
+        return false;
+      }
+      if (isTwDepartmentScope.value) {
+        return isDepartmentScheduleMode(template.scheduleMode);
+      }
+      return !isDepartmentScheduleMode(template.scheduleMode);
+    })
+    .map((template) => {
+      const value = toBookingId(template.id);
+      if (!value) {
+        return null;
+      }
+      return {
+        value,
+        label: buildTwT2OptionLabel(template, practitionerLabelMap, healthcareLabelMap),
+      };
+    })
+    .filter((item): item is { value: string; label: string } => item !== null);
+});
+
+/** 周排班弹窗可选门诊科室 */
+const twDepartmentOptions = computed(
+  () => twDialogInitData.value.departments ?? initData.value.departments ?? [],
+);
+
+/** 周明细是否可编辑（须先选出诊科室） */
+const twWeekGridDisabled = computed(() => !twDialogOrganizationId.value);
+
+/** 清除周明细里已不在当前过滤结果中的日排班 */
+function sanitizeTwWeekSelections() {
+  const allowed = new Set(twFilteredT2Options.value.map((item) => item.value));
+  for (const row of twForm.value.items ?? []) {
+    const templateId = toBookingId(row.dayScheduleTemplateId);
+    if (templateId && !allowed.has(templateId)) {
+      row.dayScheduleTemplateId = undefined;
+    }
+  }
+}
+
+/** 编辑回显：从已绑定的日排班推断排班方式 */
+function inferTwDialogScopeFromItems(items?: WeekScheduleTemplateItemDto[]): TwScheduleScope {
+  const templates: ScheduleTemplateDto[] = [];
+  for (const row of items ?? []) {
+    const templateId = toBookingId(row.dayScheduleTemplateId);
+    if (!templateId) {
+      continue;
+    }
+    const template = twOrgT2List.value.find((item) => isSameBookingId(item.id, templateId));
+    if (template) {
+      templates.push(template);
+    }
+  }
+  if (!templates.length) {
+    return 'DEPARTMENT';
+  }
+  if (templates.every((item) => isDepartmentScheduleMode(item.scheduleMode))) {
+    return 'DEPARTMENT';
+  }
+  return 'PRACTITIONER';
+}
+
+/** 重置周排班弹窗筛选条件（新建） */
+function resetTwDialogFilters(orgId?: BookingEntityId) {
+  twDialogOrganizationId.value = pickDefaultT2OrganizationId(orgId);
+  twScheduleScope.value = 'DEPARTMENT';
+}
+
+/** 日排班是否为「医师号」模式（须选出诊医师） */
+const isPractitionerSchedule = computed(() => t2Form.value.scheduleMode !== 'MODE-B');
+
+/** 科室号可选的门诊科室（来自 formInit） */
+const departmentOptions = computed(() => initData.value.departments ?? []);
+
+/** 放号时段 id → 名称，供日排班列表回显 */
+const t1OptionLabelMap = computed(() => {
+  const map = new Map<string, string>();
+  for (const option of t1Options.value) {
+    map.set(option.value, option.label);
+  }
+  return map;
+});
+
 const t1FormItems: FormItemConfig[] = [
-  { prop: 'keyword', label: '关键词', type: 'input', placeholder: '编码/名称' },
+  { prop: 'keyword', label: '关键词', type: 'input', placeholder: '名称' },
 ];
 
 const t2FormItems: FormItemConfig[] = [
-  { prop: 'keyword', label: '关键词', type: 'input', placeholder: '编码/名称' },
+  { prop: 'keyword', label: '关键词', type: 'input', placeholder: '名称' },
 ];
 
 const t1Columns: TableColumn[] = [
-  { prop: 'templateName', label: '名称', minWidth: 160 },
-  { prop: 'enabled', label: '启用', width: 80, slot: 'enabled' },
+  { prop: 'templateName', label: '名称', minWidth: 140 },
+  { prop: 'slotSummary', label: '时段', minWidth: 200, slot: 'slotSummary' },
   { prop: 'actions', label: '操作', width: 140, slot: 'actions' },
 ];
 
 const t2Columns: TableColumn[] = [
   { prop: 'templateName', label: '名称', minWidth: 140 },
-  { prop: 'scheduleMode', label: '模式', width: 100 },
-  { prop: 'enabled', label: '启用', width: 80, slot: 'enabled' },
+  { prop: 'scheduleMode', label: '号别类型', width: 90, slot: 'scheduleMode' },
+  { prop: 'slotProvisionTemplateId', label: '放号时段', minWidth: 120, slot: 'slotTemplate' },
   { prop: 'actions', label: '操作', width: 140, slot: 'actions' },
 ];
 
 const twColumns: TableColumn[] = [
   { prop: 'templateName', label: '名称', minWidth: 160 },
-  { prop: 'isDefault', label: '默认', width: 70, slot: 'isDefault' },
-  { prop: 'fallbackBookable', label: '可约', width: 70, slot: 'fallbackBookable' },
-  { prop: 'enabled', label: '启用', width: 70, slot: 'enabled' },
   { prop: 'actions', label: '操作', width: 140, slot: 'actions' },
 ];
 
 const twFormItems: FormItemConfig[] = [
-  { prop: 'keyword', label: '关键词', type: 'input', placeholder: '编码/名称' },
+  { prop: 'keyword', label: '关键词', type: 'input', placeholder: '名称' },
 ];
 
 const t3FormItems: FormItemConfig[] = [
@@ -273,12 +446,83 @@ async function loadT3Data() {
 function normalizeScheduleTemplateForm(dto: ScheduleTemplateDto): Partial<ScheduleTemplateDto> {
   return {
     ...dto,
+    scheduleMode: normalizeScheduleModeForForm(dto.scheduleMode),
+    organizationId: toBookingId(dto.organizationId),
     healthcareServiceId: toBookingId(dto.healthcareServiceId),
     practitionerId: toBookingId(dto.practitionerId),
-    locationId: toBookingId(dto.locationId),
     slotProvisionTemplateId: toBookingId(dto.slotProvisionTemplateId),
-    defaultReleasePolicyId: toBookingId(dto.defaultReleasePolicyId),
   };
+}
+
+/** 日排班弹窗默认科室：优先登录科室，否则取可选列表首项 */
+function pickDefaultT2OrganizationId(preferred?: BookingEntityId): BookingEntityId | undefined {
+  const departments = departmentOptions.value;
+  const pref = toBookingId(preferred) ?? organizationId.value;
+  if (pref && departments.some((item) => isSameBookingId(item.value, pref))) {
+    return pref;
+  }
+  return toBookingId(departments[0]?.value) ?? pref;
+}
+
+/** 按科室刷新日排班弹窗内的号源类型、医师、放号时段下拉；医师号时传 practitionerId 收窄号源 */
+async function loadT2DialogContext(orgId?: BookingEntityId, practitionerId?: BookingEntityId) {
+  const resolvedOrgId = toBookingId(orgId);
+  if (!resolvedOrgId) {
+    t2DialogInitData.value = {};
+    t2DialogT1Options.value = [];
+    return;
+  }
+  const resolvedPractitionerId = toBookingId(practitionerId);
+  const [init, t1Opts] = await Promise.all([
+    loadScheduleFormInitApi({
+      organizationId: resolvedOrgId,
+      practitionerId: resolvedPractitionerId,
+    }),
+    listSlotProvisionTemplateOptionsApi({ organizationId: resolvedOrgId }),
+  ]);
+  t2DialogInitData.value = init ?? {};
+  t2DialogT1Options.value = (t1Opts?.options ?? []).map((option) => ({
+    value: bookingOptionValue(option.value),
+    label: String(option.label ?? option.value),
+  }));
+}
+
+/** 医师号模式下是否已选出诊医师（号源类型须在其后选择） */
+const t2PractitionerSelected = computed(
+  () => isPractitionerSchedule.value && Boolean(toBookingId(t2Form.value.practitionerId)),
+);
+
+/** 科室号保存时使用的科室主键 */
+function resolveT2SaveOrganizationId(
+  form: Partial<ScheduleTemplateDto>,
+): BookingEntityId | undefined {
+  if (form.scheduleMode === 'MODE-B') {
+    return toBookingId(form.organizationId);
+  }
+  return organizationId.value;
+}
+
+/** 放号时段列表展示：各段起止与容量 */
+function formatSlotSummary(row: SlotProvisionTemplateDto): string {
+  const items = row.slotTemplates ?? [];
+  if (!items.length) {
+    return '-';
+  }
+  return items
+    .map((item) => `${item.startTime ?? ''}-${item.endTime ?? ''}（${item.capacity ?? 1}号）`)
+    .join('；');
+}
+
+/** 日排班列表展示：绑定的放号时段名称 */
+function resolveSlotTemplateLabel(slotProvisionTemplateId?: BookingEntityId): string {
+  if (!slotProvisionTemplateId) {
+    return '-';
+  }
+  const key = toBookingId(slotProvisionTemplateId);
+  if (!key) {
+    return '-';
+  }
+  return t1OptionLabelMap.value.get(key) ?? '-';
 }
 
 /** 排班模板按登录科室隔离，未选科室时阻断保存类操作 */
@@ -290,36 +534,53 @@ function ensureOrganizationId(): boolean {
   return true;
 }
 
-/** 周明细里的日排班主键与下拉选项统一为 string，避免 Long 精度丢失 */
-function normalizeTwFormItems(
+/** 周明细固定 7 行：周一～周日，未选日排班表示该日不出诊 */
+function buildEmptyTwWeekItems(): WeekScheduleTemplateItemDto[] {
+  return weekdayLabels.map((_, index) => ({
+    weekday: index + 1,
+    enabled: true,
+    sortNo: 0,
+  }));
+}
+
+/** 编辑回显：将已保存明细合并进固定周网格（同 weekday 多条时取首条） */
+function mergeTwItemsToWeekGrid(
   items?: WeekScheduleTemplateItemDto[],
 ): WeekScheduleTemplateItemDto[] {
+  const grid = buildEmptyTwWeekItems();
   if (!items?.length) {
-    return [];
+    return grid;
   }
-  return items.map((row) => ({
-    ...row,
-    dayScheduleTemplateId: toBookingId(row.dayScheduleTemplateId),
-  }));
+  for (const row of items) {
+    const weekday = row.weekday;
+    if (!weekday || weekday < 1 || weekday > 7) {
+      continue;
+    }
+    const slot = grid[weekday - 1];
+    if (slot && !slot.dayScheduleTemplateId) {
+      grid[weekday - 1] = {
+        ...row,
+        weekday,
+        dayScheduleTemplateId: toBookingId(row.dayScheduleTemplateId),
+        sortNo: row.sortNo ?? 0,
+        enabled: row.enabled !== false,
+      };
+    }
+  }
+  return grid;
 }
 
 async function loadAuxData() {
   if (!organizationId.value) return;
-  const [init, t1Opts, policies] = await Promise.all([
+  const [init, t1Opts] = await Promise.all([
     loadScheduleFormInitApi({ organizationId: organizationId.value }),
     listSlotProvisionTemplateOptionsApi({ organizationId: organizationId.value }),
-    pageReleasePoliciesApi({
-      organizationId: organizationId.value,
-      pageNo: 1,
-      pageSize: 100,
-    }),
   ]);
   initData.value = init ?? {};
   t1Options.value = (t1Opts?.options ?? []).map((o) => ({
     value: bookingOptionValue(o.value),
     label: String(o.label ?? o.value),
   }));
-  releasePolicies.value = policies?.content ?? [];
   t2Options.value =
     (
       await pageScheduleTemplatesApi({
@@ -348,16 +609,6 @@ async function openT1Edit(row: SlotProvisionTemplateDto) {
   t1EditVisible.value = true;
 }
 
-function addSlotRow() {
-  const items = t1Form.value.slotTemplates ?? [];
-  items.push({ startTime: '14:00', endTime: '17:00', capacity: 10 });
-  t1Form.value.slotTemplates = items;
-}
-
-function removeSlotRow(index: number) {
-  t1Form.value.slotTemplates?.splice(index, 1);
-}
-
 async function handleSaveT1() {
   const form = t1Form.value;
   if (!form.templateName?.trim()) {
@@ -373,12 +624,28 @@ async function handleSaveT1() {
     organizationId: organizationId.value,
     templateName: form.templateName.trim(),
     slotTemplates: form.slotTemplates as SlotProvisionTemplateItemDto[],
-    enabled: form.enabled !== false,
+    enabled: true,
   });
   ElMessage.success('放号时段已保存');
   t1EditVisible.value = false;
   await loadT1List();
   await loadAuxData();
+}
+
+/** 打开日排班编辑前校验是否已维护放号时段 */
+async function prepareT2Dialog(preferredOrgId?: BookingEntityId): Promise<boolean> {
+  if (!ensureOrganizationId()) {
+    return false;
+  }
+  await loadAuxData();
+  const dialogOrgId = pickDefaultT2OrganizationId(preferredOrgId);
+  await loadT2DialogContext(dialogOrgId);
+  if (t2DialogT1Options.value.length === 0) {
+    ElMessage.warning('请先在「① 放号时段」中新建至少一套放号时段');
+    activeTab.value = 'slot';
+    return false;
+  }
+  return true;
 }
 
 async function handleDeleteT1(row: SlotProvisionTemplateDto) {
@@ -394,24 +661,40 @@ async function handleDeleteT1(row: SlotProvisionTemplateDto) {
 }
 
 async function openT2Create() {
-  if (!ensureOrganizationId()) {
+  if (!(await prepareT2Dialog())) {
     return;
   }
-  await loadAuxData();
+  const defaultOrgId = pickDefaultT2OrganizationId();
   t2Form.value = {
     enabled: true,
-    organizationId: organizationId.value,
+    organizationId: defaultOrgId,
     scheduleMode: 'MODE-A',
     priority: 0,
+    slotProvisionTemplateId: t2DialogT1Options.value[0]?.value,
   };
   t2EditVisible.value = true;
 }
 
 async function openT2Edit(row: ScheduleTemplateDto) {
   if (!row.id) return;
-  await loadAuxData();
   const loaded = await loadScheduleTemplateApi({ id: row.id });
-  t2Form.value = normalizeScheduleTemplateForm(loaded);
+  const normalized = normalizeScheduleTemplateForm(loaded);
+  const mode = normalized.scheduleMode ?? 'MODE-A';
+  const dialogOrgId =
+    mode === 'MODE-B'
+      ? pickDefaultT2OrganizationId(toBookingId(normalized.organizationId))
+      : organizationId.value;
+  if (!(await prepareT2Dialog(dialogOrgId))) {
+    return;
+  }
+  t2Form.value = {
+    ...normalized,
+    organizationId: mode === 'MODE-B' ? dialogOrgId : organizationId.value,
+  };
+  await loadT2DialogContext(
+    mode === 'MODE-B' ? dialogOrgId : organizationId.value,
+    mode === 'MODE-A' ? toBookingId(normalized.practitionerId) : undefined,
+  );
   t2EditVisible.value = true;
 }
 
@@ -420,28 +703,47 @@ async function handleSaveT2() {
   if (!ensureOrganizationId()) {
     return;
   }
-  if (!form.templateName?.trim() || !form.healthcareServiceId) {
-    ElMessage.warning('请填写名称并选择号源类型');
+  if (!form.templateName?.trim()) {
+    ElMessage.warning('请填写名称');
+    return;
+  }
+  const scheduleMode = form.scheduleMode ?? 'MODE-A';
+  const saveOrganizationId = resolveT2SaveOrganizationId(form);
+  if (scheduleMode === 'MODE-A' && !form.practitionerId) {
+    ElMessage.warning('医师号须先选择出诊医师');
+    return;
+  }
+  if (scheduleMode === 'MODE-B' && !saveOrganizationId) {
+    ElMessage.warning('科室号须选择出诊科室');
+    return;
+  }
+  if (!form.healthcareServiceId) {
+    ElMessage.warning(
+      scheduleMode === 'MODE-A' ? '请选择该医师可接诊的号源类型' : '请选择号源类型',
+    );
+    return;
+  }
+  if (!form.slotProvisionTemplateId) {
+    ElMessage.warning('请选择放号时段');
     return;
   }
   await saveScheduleTemplateApi({
     id: form.id,
-    organizationId: organizationId.value,
+    organizationId: saveOrganizationId!,
     templateName: form.templateName.trim(),
-    scheduleMode: form.scheduleMode ?? 'MODE-A',
-    practitionerId: form.practitionerId,
-    locationId: form.locationId,
+    scheduleMode,
+    practitionerId: scheduleMode === 'MODE-A' ? form.practitionerId : undefined,
     healthcareServiceId: form.healthcareServiceId,
     slotProvisionTemplateId: form.slotProvisionTemplateId,
-    defaultReleasePolicyId: form.defaultReleasePolicyId,
     effectiveStart: form.effectiveStart,
     effectiveEnd: form.effectiveEnd,
     priority: Number(form.priority ?? 0),
-    enabled: form.enabled !== false,
+    enabled: true,
   });
   ElMessage.success('日排班已保存');
   t2EditVisible.value = false;
   await loadT2List();
+  await loadAuxData();
 }
 
 async function handleDeleteT2(row: ScheduleTemplateDto) {
@@ -518,13 +820,19 @@ async function handleDeleteT3(row: CalendarExceptionDto) {
   }
 }
 
-/** 打开周排班编辑前刷新日排班下拉，并校验前置数据 */
+/** 打开周排班弹窗前校验登录科室并刷新主数据 */
 async function prepareTwDialog(): Promise<boolean> {
   if (!ensureOrganizationId()) {
     return false;
   }
   await loadAuxData();
-  if (t2Options.value.length === 0) {
+  return true;
+}
+
+/** 打开周排班弹窗后加载科室上下文，并校验是否存在日排班 */
+async function ensureTwDialogContext(): Promise<boolean> {
+  await loadTwDialogContext(twDialogOrganizationId.value);
+  if (twOrgT2List.value.length === 0) {
     ElMessage.warning('请先在「② 日排班」中新建至少一条日排班');
     activeTab.value = 'schedule';
     return false;
@@ -536,12 +844,16 @@ async function openTwCreate() {
   if (!(await prepareTwDialog())) {
     return;
   }
+  resetTwDialogFilters();
+  if (!(await ensureTwDialogContext())) {
+    return;
+  }
   twForm.value = {
     enabled: true,
     fallbackBookable: false,
     isDefault: true,
-    organizationId: organizationId.value,
-    items: [{ weekday: 1, enabled: true, sortNo: 0 }],
+    organizationId: twDialogOrganizationId.value,
+    items: buildEmptyTwWeekItems(),
   };
   twEditVisible.value = true;
 }
@@ -552,40 +864,26 @@ async function openTwEdit(row: WeekScheduleTemplateDto) {
     return;
   }
   const loaded = await loadWeekScheduleTemplateApi({ id: row.id });
+  resetTwDialogFilters(toBookingId(loaded.organizationId));
+  if (!(await ensureTwDialogContext())) {
+    return;
+  }
+  const inferred = inferTwDialogScopeFromItems(loaded.items);
+  twScheduleScope.value = inferred;
   twForm.value = {
     ...loaded,
-    items: normalizeTwFormItems(loaded.items),
+    organizationId: twDialogOrganizationId.value,
+    items: mergeTwItemsToWeekGrid(loaded.items),
   };
+  sanitizeTwWeekSelections();
   twEditVisible.value = true;
-}
-
-function addTwItemRow() {
-  const items = twForm.value.items ?? [];
-  items.push({ weekday: 1, enabled: true, sortNo: items.length });
-  twForm.value.items = items;
-}
-
-function removeTwItemRow(index: number) {
-  twForm.value.items?.splice(index, 1);
-}
-
-/** 保存后引导去门诊排班落地 */
-async function promptGoOutpatientSchedule() {
-  try {
-    await ElMessageBox.confirm(
-      '模板已保存，患者尚不可约。请前往「门诊排班」→「生成正式排班」选择日期，再逐条发布并放号。',
-      '下一步：门诊排班',
-      { confirmButtonText: '前往门诊排班', cancelButtonText: '稍后', type: 'info' },
-    );
-    await router.push('/booking/outpatient-schedule');
-  } catch {
-    // 用户选择稍后
-  }
 }
 
 async function handleSaveTw() {
   const form = twForm.value;
-  if (!ensureOrganizationId()) {
+  const saveOrgId = toBookingId(twDialogOrganizationId.value);
+  if (!saveOrgId) {
+    ElMessage.warning('请选择出诊科室');
     return;
   }
   if (!form.templateName?.trim()) {
@@ -593,24 +891,27 @@ async function handleSaveTw() {
     return;
   }
   const items = form.items ?? [];
-  if (items.length === 0) {
-    ElMessage.warning('请至少添加一行周明细');
+  const filledItems = items.filter((row) => row.weekday && toBookingId(row.dayScheduleTemplateId));
+  if (filledItems.length === 0) {
+    ElMessage.warning('请至少为一个工作日选择日排班');
     return;
   }
-  for (const row of items) {
-    if (!row.weekday || !row.dayScheduleTemplateId) {
-      ElMessage.warning('周明细每一行都须选择「星期几」和「日排班」');
+  const allowed = new Set(twFilteredT2Options.value.map((item) => item.value));
+  for (const row of filledItems) {
+    const templateId = toBookingId(row.dayScheduleTemplateId);
+    if (!templateId || !allowed.has(templateId)) {
+      ElMessage.warning('所选日排班与当前科室、排班方式不匹配，请重新选择');
       return;
     }
   }
   await saveWeekScheduleTemplateApi({
     id: form.id,
-    organizationId: organizationId.value,
+    organizationId: saveOrgId,
     templateName: form.templateName.trim(),
     fallbackBookable: false,
-    isDefault: form.isDefault !== false,
-    enabled: form.enabled !== false,
-    items: items.map((row: WeekScheduleTemplateItemDto) => ({
+    isDefault: true,
+    enabled: true,
+    items: filledItems.map((row: WeekScheduleTemplateItemDto) => ({
       weekday: row.weekday!,
       dayScheduleTemplateId: toBookingId(row.dayScheduleTemplateId)!,
       sortNo: row.sortNo,
@@ -620,7 +921,6 @@ async function handleSaveTw() {
   ElMessage.success('周排班已保存');
   twEditVisible.value = false;
   await loadTwList();
-  await promptGoOutpatientSchedule();
 }
 
 async function handleDeleteTw(row: WeekScheduleTemplateDto) {
@@ -654,11 +954,106 @@ watch(t3Month, () => {
   void loadT3Month();
 });
 
-const twDaySchedulePlaceholder = computed(() => {
-  if (!t2Options.value.length) {
-    return '请先在「② 日排班」新建日排班';
+/** 号别类型切换：科室号须选科室并刷新下拉；医师号沿用登录科室 */
+watch(
+  () => t2Form.value.scheduleMode,
+  async (mode) => {
+    if (!t2EditVisible.value) {
+      return;
+    }
+    if (mode === 'MODE-B') {
+      t2Form.value.practitionerId = undefined;
+      t2Form.value.organizationId = pickDefaultT2OrganizationId(t2Form.value.organizationId);
+      await loadT2DialogContext(toBookingId(t2Form.value.organizationId));
+      if (
+        t2Form.value.slotProvisionTemplateId &&
+        !t2DialogT1Options.value.some((item) =>
+          isSameBookingId(item.value, t2Form.value.slotProvisionTemplateId),
+        )
+      ) {
+        t2Form.value.slotProvisionTemplateId = t2DialogT1Options.value[0]?.value;
+      }
+      return;
+    }
+    t2Form.value.organizationId = organizationId.value;
+    t2Form.value.healthcareServiceId = undefined;
+    await loadT2DialogContext(organizationId.value);
+  },
+);
+
+/** 医师号切换出诊医师时，按用户管理中的可接诊号源收窄号源类型 */
+watch(
+  () => t2Form.value.practitionerId,
+  async (practitionerId, prevId) => {
+    if (!t2EditVisible.value || t2Form.value.scheduleMode !== 'MODE-A') {
+      return;
+    }
+    if (isSameBookingId(practitionerId, prevId)) {
+      return;
+    }
+    await loadT2DialogContext(organizationId.value, toBookingId(practitionerId));
+    if (
+      t2Form.value.healthcareServiceId &&
+      !t2DialogInitData.value.healthcareServices?.some((item) =>
+        isSameBookingId(item.value, t2Form.value.healthcareServiceId),
+      )
+    ) {
+      t2Form.value.healthcareServiceId = undefined;
+    }
+  },
+);
+
+/** 科室号切换出诊科室时，按新科室刷新号源类型与放号时段 */
+watch(
+  () => t2Form.value.organizationId,
+  async (orgId, prevOrgId) => {
+    if (!t2EditVisible.value || t2Form.value.scheduleMode !== 'MODE-B') {
+      return;
+    }
+    if (isSameBookingId(orgId, prevOrgId)) {
+      return;
+    }
+    await loadT2DialogContext(toBookingId(orgId));
+    t2Form.value.healthcareServiceId = undefined;
+    if (
+      t2Form.value.slotProvisionTemplateId &&
+      !t2DialogT1Options.value.some((item) =>
+        isSameBookingId(item.value, t2Form.value.slotProvisionTemplateId),
+      )
+    ) {
+      t2Form.value.slotProvisionTemplateId = t2DialogT1Options.value[0]?.value;
+    }
+  },
+);
+
+/** 周排班切换出诊科室：重载日排班并清除无效明细 */
+watch(
+  () => twDialogOrganizationId.value,
+  async (orgId, prevOrgId) => {
+    if (!twEditVisible.value || isSameBookingId(orgId, prevOrgId)) {
+      return;
+    }
+    await loadTwDialogContext(orgId);
+    sanitizeTwWeekSelections();
+  },
+);
+
+/** 周排班切换排班方式：刷新可选日排班并清除不匹配明细 */
+watch(twScheduleScope, () => {
+  if (!twEditVisible.value) {
+    return;
   }
-  return '选择日排班';
+  sanitizeTwWeekSelections();
+});
+
+const twDaySchedulePlaceholder = computed(() => {
+  if (!twDialogOrganizationId.value) {
+    return '请先选择出诊科室';
+  }
+  if (!twFilteredT2Options.value.length) {
+    return isTwDepartmentScope.value ? '该科室暂无科室号日排班' : '该科室暂无医师号日排班';
+  }
+  return '选择日排班（留空表示不出诊）';
 });
 </script>
 
@@ -700,7 +1095,7 @@ const twDaySchedulePlaceholder = computed(() => {
             <template #toolbar-actions>
               <ElButton type="primary" @click="openT1Create">新建放号时段</ElButton>
             </template>
-            <template #enabled="{ row }">{{ row.enabled ? '是' : '否' }}</template>
+            <template #slotSummary="{ row }">{{ formatSlotSummary(row) }}</template>
             <template #actions="{ row }">
               <ElButton link type="primary" @click="openT1Edit(row)">编辑</ElButton>
               <ElButton link type="danger" @click="handleDeleteT1(row)">删除</ElButton>
@@ -709,6 +1104,14 @@ const twDaySchedulePlaceholder = computed(() => {
         </ElTabPane>
 
         <ElTabPane label="② 日排班" name="schedule">
+          <ElAlert
+            v-if="t1Total === 0"
+            type="warning"
+            :closable="false"
+            show-icon
+            title="请先在「① 放号时段」新建至少一套时段，再配置日排班"
+            class="schedule-template-page__tab-alert"
+          />
           <TableLayout
             v-model:query-params="t2Query"
             :form-items="t2FormItems"
@@ -733,7 +1136,10 @@ const twDaySchedulePlaceholder = computed(() => {
             <template #toolbar-actions>
               <ElButton type="primary" @click="openT2Create">新建日排班</ElButton>
             </template>
-            <template #enabled="{ row }">{{ row.enabled ? '是' : '否' }}</template>
+            <template #scheduleMode="{ row }">{{ scheduleModeLabel(row.scheduleMode) }}</template>
+            <template #slotTemplate="{ row }">
+              {{ resolveSlotTemplateLabel(row.slotProvisionTemplateId) }}
+            </template>
             <template #actions="{ row }">
               <ElButton link type="primary" @click="openT2Edit(row)">编辑</ElButton>
               <ElButton link type="danger" @click="handleDeleteT2(row)">删除</ElButton>
@@ -742,6 +1148,14 @@ const twDaySchedulePlaceholder = computed(() => {
         </ElTabPane>
 
         <ElTabPane label="③ 周排班" name="week">
+          <ElAlert
+            v-if="t2Total === 0"
+            type="warning"
+            :closable="false"
+            show-icon
+            title="请先在「② 日排班」新建至少一条日排班，再配置周排班"
+            class="schedule-template-page__tab-alert"
+          />
           <TableLayout
             v-model:query-params="twQuery"
             :form-items="twFormItems"
@@ -766,20 +1180,11 @@ const twDaySchedulePlaceholder = computed(() => {
             <template #toolbar-actions>
               <ElButton type="primary" @click="openTwCreate">新建周排班</ElButton>
             </template>
-            <template #isDefault="{ row }">{{ row.isDefault ? '是' : '否' }}</template>
-            <template #fallbackBookable="{ row }">{{
-              row.fallbackBookable ? '是' : '否'
-            }}</template>
-            <template #enabled="{ row }">{{ row.enabled ? '是' : '否' }}</template>
             <template #actions="{ row }">
               <ElButton link type="primary" @click="openTwEdit(row)">编辑</ElButton>
               <ElButton link type="danger" @click="handleDeleteTw(row)">删除</ElButton>
             </template>
           </TableLayout>
-        </ElTabPane>
-
-        <ElTabPane label="放号策略（可选）" name="releasePolicy">
-          <ReleasePolicyPanel @changed="loadAuxData" />
         </ElTabPane>
 
         <ElTabPane label="节假日例外（可选）" name="exception">
@@ -849,21 +1254,11 @@ const twDaySchedulePlaceholder = computed(() => {
           <ElFormItem label="名称" required>
             <ElInput v-model="t1Form.templateName" placeholder="如：上午20号" />
           </ElFormItem>
-          <ElFormItem label="启用">
-            <ElSwitch v-model="t1Form.enabled" />
-          </ElFormItem>
-          <ElFormItem label="时段">
-            <div class="slot-rows">
-              <div v-for="(row, idx) in t1Form.slotTemplates" :key="idx" class="slot-row">
-                <ElInput v-model="row.startTime" placeholder="08:00" style="width: 88px" />
-                <span>—</span>
-                <ElInput v-model="row.endTime" placeholder="12:00" style="width: 88px" />
-                <ElInputNumber v-model="row.capacity" :min="1" placeholder="容量" />
-                <ElButton link type="danger" @click="removeSlotRow(idx)">删</ElButton>
-              </div>
-              <ElButton link type="primary" @click="addSlotRow">+ 添加时段</ElButton>
-            </div>
-          </ElFormItem>
+          <SlotTemplateRowsField
+            :model-value="t1Form.slotTemplates || []"
+            label="时段"
+            @update:model-value="t1Form.slotTemplates = $event"
+          />
         </ElForm>
         <template #footer>
           <ElButton @click="t1EditVisible = false">取消</ElButton>
@@ -880,7 +1275,7 @@ const twDaySchedulePlaceholder = computed(() => {
           <ElFormItem label="名称" required>
             <ElInput v-model="t2Form.templateName" placeholder="如：张医生专家号" />
           </ElFormItem>
-          <ElFormItem label="模式" required>
+          <ElFormItem label="号别类型" required>
             <ElSelect v-model="t2Form.scheduleMode" style="width: 100%">
               <ElOption
                 v-for="item in scheduleModeOptions"
@@ -889,75 +1284,90 @@ const twDaySchedulePlaceholder = computed(() => {
                 :value="item.value"
               />
             </ElSelect>
+            <p class="schedule-template-page__hint">
+              医师号：指名到医生；科室号：只排到科室，到院再分诊
+            </p>
+          </ElFormItem>
+          <ElFormItem v-if="!isPractitionerSchedule" label="出诊科室" required>
+            <ElSelect v-model="t2Form.organizationId" filterable style="width: 100%">
+              <ElOption
+                v-for="item in departmentOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="bookingOptionValue(item.value)"
+              />
+            </ElSelect>
+            <p
+              v-if="!departmentOptions.length"
+              class="schedule-template-page__hint schedule-template-page__hint--warn"
+            >
+              暂无可选门诊科室，请先在基础资料维护科室或在顶部切换登录科室
+            </p>
+            <p v-else class="schedule-template-page__hint">
+              患者将预约到所选科室；列表按顶部登录科室展示，查看其它科室模板请先切换登录科室
+            </p>
+          </ElFormItem>
+          <ElFormItem v-if="isPractitionerSchedule" label="出诊医师" required>
+            <ElSelect v-model="t2Form.practitionerId" filterable style="width: 100%">
+              <ElOption
+                v-for="item in t2DialogInitData.practitioners || []"
+                :key="item.value"
+                :label="item.label"
+                :value="bookingOptionValue(item.value)"
+              />
+            </ElSelect>
+            <p class="schedule-template-page__hint">
+              先选医师，号源类型将根据该医师在用户管理中配置的可接诊号源显示
+            </p>
           </ElFormItem>
           <ElFormItem label="号源类型" required>
-            <ElSelect v-model="t2Form.healthcareServiceId" filterable style="width: 100%">
-              <ElOption
-                v-for="item in initData.healthcareServices || []"
-                :key="item.value"
-                :label="item.label"
-                :value="bookingOptionValue(item.value)"
-              />
-            </ElSelect>
-          </ElFormItem>
-          <ElFormItem label="医师">
-            <ElSelect v-model="t2Form.practitionerId" clearable filterable style="width: 100%">
-              <ElOption
-                v-for="item in initData.practitioners || []"
-                :key="item.value"
-                :label="item.label"
-                :value="bookingOptionValue(item.value)"
-              />
-            </ElSelect>
-          </ElFormItem>
-          <ElFormItem label="诊室">
-            <ElSelect v-model="t2Form.locationId" clearable filterable style="width: 100%">
-              <ElOption
-                v-for="item in initData.clinicLocations || []"
-                :key="item.value"
-                :label="item.label"
-                :value="bookingOptionValue(item.value)"
-              />
-            </ElSelect>
-          </ElFormItem>
-          <ElFormItem label="放号时段">
             <ElSelect
-              v-model="t2Form.slotProvisionTemplateId"
-              clearable
+              v-model="t2Form.healthcareServiceId"
               filterable
-              :placeholder="t1Options.length ? '请选择' : '请先在「放号时段」页新建并启用'"
+              :disabled="isPractitionerSchedule && !t2PractitionerSelected"
+              :placeholder="
+                isPractitionerSchedule && !t2PractitionerSelected ? '请先选择出诊医师' : '请选择'
+              "
               style="width: 100%"
             >
               <ElOption
-                v-for="item in t1Options"
+                v-for="item in t2DialogInitData.healthcareServices || []"
+                :key="item.value"
+                :label="item.label"
+                :value="bookingOptionValue(item.value)"
+              />
+            </ElSelect>
+            <p
+              v-if="
+                isPractitionerSchedule &&
+                t2PractitionerSelected &&
+                !(t2DialogInitData.healthcareServices || []).length
+              "
+              class="schedule-template-page__hint schedule-template-page__hint--warn"
+            >
+              该医师未配置可接诊号源，请先在用户管理中维护
+            </p>
+          </ElFormItem>
+          <ElFormItem label="放号时段" required>
+            <ElSelect
+              v-model="t2Form.slotProvisionTemplateId"
+              filterable
+              placeholder="请选择放号时段"
+              style="width: 100%"
+            >
+              <ElOption
+                v-for="item in t2DialogT1Options"
                 :key="item.value"
                 :label="item.label"
                 :value="item.value"
               />
             </ElSelect>
-          </ElFormItem>
-          <ElFormItem label="放号策略">
-            <ElSelect
-              v-model="t2Form.defaultReleasePolicyId"
-              clearable
-              filterable
-              :placeholder="
-                releasePolicies.length
-                  ? '可选：未选放号时段时才需要'
-                  : '请先在「放号策略」Tab 新建（通常可不选）'
-              "
-              style="width: 100%"
+            <p
+              v-if="!t2DialogT1Options.length"
+              class="schedule-template-page__hint schedule-template-page__hint--warn"
             >
-              <ElOption
-                v-for="item in releasePolicies"
-                :key="item.id"
-                :label="item.policyName"
-                :value="toBookingId(item.id)!"
-              />
-            </ElSelect>
-          </ElFormItem>
-          <ElFormItem label="启用">
-            <ElSwitch v-model="t2Form.enabled" />
+              该科室暂无放号时段，请先到「① 放号时段」Tab 为对应科室新建
+            </p>
           </ElFormItem>
         </ElForm>
         <template #footer>
@@ -975,51 +1385,72 @@ const twDaySchedulePlaceholder = computed(() => {
           <ElFormItem label="名称" required>
             <ElInput v-model="twForm.templateName" placeholder="内科默认周排班" />
           </ElFormItem>
-          <ElFormItem label="科室默认">
-            <ElSwitch v-model="twForm.isDefault" />
-            <p class="schedule-template-page__hint">
-              建议开启：门诊排班周历上才会显示<strong>预览格</strong>（尚未生成正式排班时的惯例提示）
+          <ElFormItem label="出诊科室" required>
+            <ElSelect v-model="twDialogOrganizationId" filterable style="width: 100%">
+              <ElOption
+                v-for="item in twDepartmentOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="bookingOptionValue(item.value)"
+              />
+            </ElSelect>
+            <p
+              v-if="!twDepartmentOptions.length"
+              class="schedule-template-page__hint schedule-template-page__hint--warn"
+            >
+              暂无可选门诊科室，请先在基础资料维护或在顶部切换登录科室
             </p>
           </ElFormItem>
-          <ElFormItem label="启用">
-            <ElSwitch v-model="twForm.enabled" />
+          <ElFormItem label="排班方式" required>
+            <ElSelect v-model="twScheduleScope" style="width: 100%">
+              <ElOption
+                v-for="item in twScheduleScopeOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </ElSelect>
+            <p class="schedule-template-page__hint">
+              按科室：列出该科室全部<strong>科室号</strong>日排班；按医师：列出该科室全部<strong>医师号</strong>日排班（一周可排多位医师）
+            </p>
           </ElFormItem>
           <ElFormItem label="周明细" required>
             <div class="slot-rows">
               <p
-                v-if="!t2Options.length"
+                v-if="twWeekGridDisabled"
                 class="schedule-template-page__hint schedule-template-page__hint--warn"
               >
-                暂无日排班可选，请先到「② 日排班」Tab 新建。
+                请先选择「出诊科室」
               </p>
-              <div v-for="(row, idx) in twForm.items" :key="idx" class="slot-row tw-item-row">
-                <ElSelect v-model="row.weekday" style="width: 88px">
-                  <ElOption
-                    v-for="(label, wIdx) in weekdayLabels"
-                    :key="wIdx + 1"
-                    :label="label"
-                    :value="wIdx + 1"
-                  />
-                </ElSelect>
+              <p
+                v-else-if="!twFilteredT2Options.length"
+                class="schedule-template-page__hint schedule-template-page__hint--warn"
+              >
+                {{
+                  isTwDepartmentScope ? '该科室暂无科室号日排班' : '该科室暂无医师号日排班'
+                }}，请先到「② 日排班」新建
+              </p>
+              <p v-else class="schedule-template-page__hint">
+                周一～周日固定展示，各天可任选一条日排班；留空表示该日不出诊
+              </p>
+              <div v-for="row in twForm.items" :key="row.weekday" class="slot-row tw-item-row">
+                <span class="tw-weekday-label">{{ weekdayLabels[(row.weekday ?? 1) - 1] }}</span>
                 <ElSelect
                   v-model="row.dayScheduleTemplateId"
+                  clearable
                   filterable
                   :placeholder="twDaySchedulePlaceholder"
-                  :disabled="!t2Options.length"
-                  style="width: 280px"
+                  :disabled="twWeekGridDisabled || !twFilteredT2Options.length"
+                  style="width: 320px"
                 >
                   <ElOption
-                    v-for="item in t2Options"
+                    v-for="item in twFilteredT2Options"
                     :key="item.value"
                     :label="item.label"
                     :value="item.value"
                   />
                 </ElSelect>
-                <ElButton link type="danger" @click="removeTwItemRow(idx)">删</ElButton>
               </div>
-              <ElButton link type="primary" @click="addTwItemRow"
-                >+ 添加一行（星期几 + 日排班）</ElButton
-              >
             </div>
           </ElFormItem>
         </ElForm>
@@ -1099,6 +1530,10 @@ const twDaySchedulePlaceholder = computed(() => {
   margin-bottom: 12px;
 }
 
+.schedule-template-page__tab-alert {
+  margin-bottom: 12px;
+}
+
 .schedule-template-page__hint {
   width: 100%;
   margin: 6px 0 0;
@@ -1123,6 +1558,13 @@ const twDaySchedulePlaceholder = computed(() => {
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+.tw-weekday-label {
+  flex-shrink: 0;
+  width: 40px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
 }
 
 .t3-layout {

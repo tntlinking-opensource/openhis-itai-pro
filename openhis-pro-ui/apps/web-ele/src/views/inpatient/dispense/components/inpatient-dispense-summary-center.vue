@@ -11,6 +11,7 @@ import { computed, ref, watch } from 'vue';
 import { ElButton, ElEmpty, ElOption, ElSelect, ElTable, ElTableColumn } from 'element-plus';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
 
 import {
   formatSummaryApplyTime,
@@ -251,13 +252,15 @@ const headerSummaryText = computed(() => {
                 {{ row.lotNumberText?.trim() || '—' }}
               </template>
             </ElTableColumn>
-            <ElTableColumn
-              prop="totalPrice"
-              label="金额"
-              min-width="88"
-              align="center"
-              header-align="center"
-            />
+            <ElTableColumn label="金额" min-width="88" align="center" header-align="center">
+              <template #default="{ row }">
+                {{
+                  row.totalPrice != null && row.totalPrice !== ''
+                    ? formatMoneyDisplay(row.totalPrice)
+                    : '—'
+                }}
+              </template>
+            </ElTableColumn>
             <ElTableColumn
               label="发放库房"
               min-width="120"

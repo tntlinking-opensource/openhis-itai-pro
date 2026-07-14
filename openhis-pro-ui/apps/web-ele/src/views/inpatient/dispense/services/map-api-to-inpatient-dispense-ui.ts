@@ -5,9 +5,16 @@ import type {
 
 import { formatDateTime } from '@vben/utils';
 
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
+
 import type { DispensePrescriptionBlock } from '#/views/outpatient/dispense/components/types';
 
 import type { InpatientDispenseQueuePatient } from '../components/types';
+import { HERBAL_MEDICATION_CATEGORY_CODE } from '#/views/outpatient/doctor-station/advice/services/advice-tab.constants';
+import {
+  buildTcmHerbGridRowsFromSlipRows,
+  buildTcmPrescriptionUsageTextFromSlipHead,
+} from '#/utils/tcm-prescription-display';
 
 /** 接口 number/string 统一为展示用字符串 */
 function scalarToTrimmedString(value: null | number | string | undefined): string {
@@ -19,8 +26,7 @@ function scalarToTrimmedString(value: null | number | string | undefined): strin
 function isHerbalSlipRow(row: EncounterMedicationDispenseSlipRowDto): boolean {
   if (row.tcmFlag === true) return true;
   if (row.tcmFlag === false) return false;
-  const text = `${row.tcmFlagText ?? ''}${row.medicationCategoryText ?? ''}`;
-  return text.includes('中药');
+  return String(row.medicationCategoryCode ?? '').trim() === HERBAL_MEDICATION_CATEGORY_CODE;
 }
 
 /** 住院队列行 DTO → 左侧列表患者模型 */
@@ -30,6 +36,7 @@ export function mapInpatientPendingQueueRowToPatient(
   const start = row.startTime ? formatDateTime(row.startTime) : '';
   return {
     id: row.encounterId,
+    patientId: row.patientId?.trim() || undefined,
     patientName: row.patientName?.trim() || '—',
     genderText: '',
     ageLabel: row.ageText?.trim() || '—',
@@ -45,10 +52,11 @@ export function mapInpatientPendingQueueRowToPatient(
 /** 同一处方组内根据发放状态推导组状态标签 */
 function blockStatusFromRows(
   rows: EncounterMedicationDispenseSlipRowDto[],
-): 'blocking' | 'completed' | 'partial' | 'pending' {
+): 'blocking' | 'completed' | 'partial' | 'pending' | 'prepared' {
   const set = new Set(rows.map((r) => r.statusEnum));
   if (set.has('PREPARATION')) return 'pending';
-  if (set.has('IN_PROGRESS')) return 'partial';
+  if (set.has('COMPLETED') && (set.has('IN_PROGRESS') || set.has('PREPARED'))) return 'partial';
+  if (set.has('IN_PROGRESS') || set.has('PREPARED')) return 'prepared';
   if (set.has('COMPLETED')) return 'completed';
   return 'blocking';
 }
@@ -93,6 +101,7 @@ export function mapInpatientSlipRowsToPrescriptionBlocks(
         : '—';
     const items = groupRows.map((line) => ({
       id: line.dispenseId,
+      medicationId: String(line.medicationId ?? '').trim() || undefined,
       itemName: line.medicationName?.trim() || line.merchandiseName?.trim() || '—',
       quantity: formatDispenseQuantityLabel(line),
       spec: line.specificationText?.trim() || '—',
@@ -102,14 +111,17 @@ export function mapInpatientSlipRowsToPrescriptionBlocks(
         line.totalPrice !== null &&
         line.totalPrice !== undefined &&
         scalarToTrimmedString(line.totalPrice) !== ''
-          ? String(line.totalPrice)
+          ? formatMoneyDisplay(line.totalPrice)
           : '—',
       pharmacy:
         line.dispenseLocationName?.trim() ||
         (line.dispenseLocationId ? `库房 ${line.dispenseLocationId}` : '—'),
+      dispenseLocationId: String(line.dispenseLocationId ?? '').trim() || undefined,
       factory: line.manufacturerName?.trim() || '—',
       diagnosis: line.conditionSummaryText?.trim() || '—',
       freq: line.frequencyText?.trim() || line.frequencyCode?.trim() || '—',
+      dosageInstructionText:
+        line.dosageInstructionText?.trim() || line.dosageInstructionCode?.trim() || '—',
     }));
     blocks.push({
       id: `block-${head.dispenseId}-${rxNo}`,
@@ -120,6 +132,12 @@ export function mapInpatientSlipRowsToPrescriptionBlocks(
       issuedAt: issued,
       status: blockStatusFromRows(groupRows),
       items,
+      ...(tcm
+        ? {
+            tcmHerbGridRows: buildTcmHerbGridRowsFromSlipRows(groupRows),
+            tcmUsageText: buildTcmPrescriptionUsageTextFromSlipHead(head),
+          }
+        : {}),
     });
   }
   blocks.sort((a, b) => a.issuedAt.localeCompare(b.issuedAt));

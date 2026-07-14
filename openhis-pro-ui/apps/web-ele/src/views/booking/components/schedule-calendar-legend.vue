@@ -1,13 +1,6 @@
 <template>
   <div class="schedule-calendar-legend" aria-label="周历图例">
     <span class="schedule-calendar-legend__item">
-      <i class="schedule-calendar-legend__swatch is-template" />
-      <span>
-        预览
-        <span class="schedule-calendar-legend__sub">（仅有惯例，尚未生成）</span>
-      </span>
-    </span>
-    <span class="schedule-calendar-legend__item">
       <i class="schedule-calendar-legend__swatch is-draft" />
       <span>
         草稿

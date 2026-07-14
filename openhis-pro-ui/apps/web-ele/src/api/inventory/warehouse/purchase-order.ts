@@ -1,25 +1,18 @@
 /**
  * 药库订货单 — 对接 Whale {@code POST /api/app/inventoryWarehousePurchaseOrder/<method>}
- * baseURL 含 /api/app 时使用短路径 /inventoryWarehousePurchaseOrder/...
+ * 契约见 AS-INV-WHS-001-SDD；枚举均为领域 {@code getCode()} 字符串。
  */
-import type { ApiResponse } from '#/types/api-response';
+import type { ApiOptionItem, ApiResponse } from '#/types/api-response';
 
 import { requestClient } from '#/api/request';
+import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 const BASE = '/inventoryWarehousePurchaseOrder';
 
-// --- 与后端 DTO 对齐的 TypeScript 类型（驼峰与 Java 一致）---
-
-export interface WarehouseOptionDto {
-  locationId?: number;
-  displayName?: string;
-  active?: boolean;
-}
-
-export interface SupplierOptionDto {
-  supplierId?: number;
-  supplierName?: string;
-  supplierType?: string;
+export interface PurchaseOrderFormInitOptionDto {
+  sort?: string;
+  value?: string;
+  label?: string;
 }
 
 export interface LoadPurchaseOrderFormInitRequest {
@@ -27,48 +20,48 @@ export interface LoadPurchaseOrderFormInitRequest {
 }
 
 export interface LoadPurchaseOrderFormInitResponse {
-  warehouseOptions: WarehouseOptionDto[];
-  supplierOptions: SupplierOptionDto[];
-  /** 左侧列表「全部药库」筛选项；locationId 为占位（约定 0），与后端一致 */
-  allWarehousesOption?: WarehouseOptionDto;
+  warehouseLocationOptions?: PurchaseOrderFormInitOptionDto[];
+  supplierOptions?: PurchaseOrderFormInitOptionDto[];
+  warehouseKeeperOptions?: PurchaseOrderFormInitOptionDto[];
+  statusOptions?: PurchaseOrderFormInitOptionDto[];
+  purchaseItemTableTypeOptions?: PurchaseOrderFormInitOptionDto[];
 }
 
 export interface PagePurchaseOrdersRequest {
-  /**
-   * 订货目的药库 Location.id（后端读模型 {@code purpose_location_id}）。
-   * {@link WHS_PO_ALL_WAREHOUSES_PURPOSE_LOCATION_ID}（0）表示全部（机构药库 ID IN；无药库主数据时按 tenant_id 回退）。
-   * 请求体请使用 JSON 数字 {@code 0}，勿使用字符串 {@code "0"}。
-   */
-  purposeLocationId: number;
-  statusEnum?: number;
+  /** 目的药库；{@link WHS_PO_ALL_WAREHOUSES_PURPOSE_LOCATION_ID}（0）表示全部 */
+  purposeLocationId: number | string;
+  statusEnum?: string;
   keyword?: string;
   applyTimeFrom?: string;
   applyTimeTo?: string;
   pageNo: number;
   pageSize: number;
-  typeEnum?: number;
 }
 
-export interface WarehouseDocumentDetailRowDto {
-  id?: number;
+export interface PurchaseOrderListRowDto {
   busNo?: string;
-  typeEnum?: number;
-  statusEnum?: number;
-  sourceLocationId?: number;
-  purposeLocationId?: number;
-  supplierId?: number;
-  itemId?: number;
-  itemTable?: string;
-  itemQuantity?: number;
-  unitCode?: string;
-  applyTime?: string;
+  supplierName?: string;
+  purposeLocationId?: number | string;
+  purposeLocationName?: string;
+  statusEnum?: string;
+  statusEnumText?: string;
+  creatorName?: string;
+  approverId?: number | string;
+  approverName?: string;
+  totalAmount?: number;
   approvalTime?: string;
-  totalPrice?: number;
+  applyTime?: string;
+  occurrenceTime?: string;
 }
 
 export interface PagePurchaseOrdersResponse {
+  totalCount?: number;
   total?: number;
-  records: WarehouseDocumentDetailRowDto[];
+  pageNo?: number;
+  pageSize?: number;
+  content?: PurchaseOrderListRowDto[];
+  /** 兼容旧分页字段 */
+  records?: PurchaseOrderListRowDto[];
 }
 
 export interface GetPurchaseOrderDetailRequest {
@@ -76,74 +69,74 @@ export interface GetPurchaseOrderDetailRequest {
 }
 
 export interface PurchaseOrderDetailLineDto {
-  id?: number;
+  id?: number | string;
   itemTable?: string;
-  itemId?: number;
+  itemId?: number | string;
   itemQuantity?: number;
   unitCode?: string;
+  unitCodeDictText?: string;
   price?: number;
   totalPrice?: number;
   occurrenceTime?: string;
   remake?: string;
   productName?: string;
+  specification?: string;
+  manufacturer?: string;
+  productCatalog?: unknown;
 }
 
 export interface GetPurchaseOrderDetailResponse {
   busNo?: string;
-  typeEnum?: number;
-  statusEnum?: number;
-  supplierId?: number;
-  sourceLocationId?: number;
-  purposeLocationId?: number;
-  sourceTypeEnum?: number;
-  purposeTypeEnum?: number;
-  categoryEnum?: number;
-  /** 乐观锁：修订订货单时回传 */
-  rowVersion?: number;
+  typeEnum?: string;
+  statusEnum?: string;
+  supplierId?: number | string;
+  sourceLocationId?: number | string;
+  purposeLocationId?: number | string;
+  sourceTypeEnum?: string;
+  purposeTypeEnum?: string;
+  categoryEnum?: string;
+  practitionerId?: number | string;
+  rowVersion?: number | string;
   lines: PurchaseOrderDetailLineDto[];
 }
 
 export interface PurchaseOrderLineDto {
-  itemTable?: string;
-  itemId?: number;
-  itemQuantity?: number;
-  unitCode?: string;
+  itemTable: string;
+  itemId: number | string;
+  itemQuantity: number;
+  unitCode: string;
   price?: number;
   totalPrice?: number;
-  occurrenceTime?: string;
+  occurrenceTime: string;
   remake?: string;
 }
 
 export interface CreatePurchaseOrderRequest {
-  /** 入库目的药库 */
-  purposeLocationId: number;
-  sourceTypeEnum?: number;
-  purposeTypeEnum: number;
-  categoryEnum?: number;
-  supplierId?: number;
+  purposeLocationId: number | string;
+  categoryEnum?: string;
+  supplierId?: number | string;
+  practitionerId: number | string;
   lines: PurchaseOrderLineDto[];
-  typeEnum?: number;
 }
 
 export interface UpdatePurchaseOrderRequest {
   busNo: string;
-  purposeLocationId: number;
-  sourceTypeEnum?: number;
-  purposeTypeEnum: number;
-  categoryEnum?: number;
-  supplierId?: number;
+  purposeLocationId: number | string;
+  categoryEnum?: string;
+  supplierId?: number | string;
+  practitionerId: number | string;
   lines: PurchaseOrderLineDto[];
-  rowVersion?: number;
+  rowVersion?: number | string;
 }
 
 export interface CreatePurchaseOrderResponse {
   busNo?: string;
-  statusEnum?: number;
+  statusEnum?: string;
 }
 
 export interface UpdatePurchaseOrderResponse {
   busNo?: string;
-  statusEnum?: number;
+  statusEnum?: string;
 }
 
 export interface SubmitPurchaseOrderApprovalRequest {
@@ -151,22 +144,18 @@ export interface SubmitPurchaseOrderApprovalRequest {
   applyClock?: string;
 }
 
+export interface SubmitPurchaseOrderApprovalResponse {
+  success?: boolean;
+  statusEnum?: string;
+}
+
 export interface WithdrawPurchaseOrderApprovalRequest {
   busNo: string;
 }
 
-/** 与后端 SubmitPurchaseOrderApprovalResponse 一致 */
-export interface SubmitPurchaseOrderApprovalResponse {
-  success?: boolean;
-  /** SupplyStatus.sortOrder，成功提交后为审核中 = 2 */
-  statusEnum?: number;
-}
-
-/** 与后端 WithdrawPurchaseOrderApprovalResponse 一致 */
 export interface WithdrawPurchaseOrderApprovalResponse {
   success?: boolean;
-  /** SupplyStatus.sortOrder，撤回后为已撤回 = 9 */
-  statusEnum?: number;
+  statusEnum?: string;
 }
 
 export interface AgreePurchaseOrderRequest {
@@ -187,11 +176,12 @@ export interface RemovePurchaseOrderRequest {
 }
 
 export interface PageProductsForPurchaseRequest {
+  purposeLocationId: number | string;
   productTableName?: string;
   keyword?: string;
   categoryCode?: string;
   activeFlag?: boolean;
-  supplierId?: number;
+  supplierId?: number | string;
   manufacturer?: string;
   includeInventory?: boolean;
   pageNo: number;
@@ -201,9 +191,8 @@ export interface PageProductsForPurchaseRequest {
 }
 
 export interface ProductDefinitionItemDto {
-  productDefinitionId?: number;
+  productDefinitionId?: number | string;
   productTableName?: string;
-  /** 项目业务编码（选品下拉「项目编码」列） */
   productBusNo?: string;
   productName?: string;
   merchandiseName?: string;
@@ -222,7 +211,14 @@ export interface PageProductsForPurchaseResponse {
   records: ProductDefinitionItemDto[];
 }
 
-// --- API ---
+/** 列表「全部药库」占位 purposeLocationId（与 init OptionDto.value 一致，字符串） */
+export const WHS_PO_ALL_WAREHOUSES_PURPOSE_LOCATION_ID = '0';
+
+/** 侧栏药库下拉「全部」占位项展示文案 */
+export const WHS_PO_ALL_WAREHOUSES_LABEL = '全部库房';
+
+/** {@link com.openhis.health.domain.share.enums.SupplyCategory#STOCK_SUPPLY} */
+export const WHS_PO_CATEGORY_STOCK = 'STOCK_SUPPLY';
 
 export async function loadPurchaseOrderFormInitApi(body?: LoadPurchaseOrderFormInitRequest) {
   return requestClient.post<ApiResponse<LoadPurchaseOrderFormInitResponse>>(
@@ -236,6 +232,72 @@ export async function pagePurchaseOrdersApi(body: PagePurchaseOrdersRequest) {
     `${BASE}/pagePurchaseOrders`,
     body,
   );
+}
+
+function resolvePurchaseOrderListPurposeLocationId(
+  purposeLocationId?: number | string,
+): number | string {
+  if (
+    purposeLocationId === undefined ||
+    purposeLocationId === null ||
+    String(purposeLocationId).trim() === '' ||
+    String(purposeLocationId).trim() === '0'
+  ) {
+    return WHS_PO_ALL_WAREHOUSES_PURPOSE_LOCATION_ID;
+  }
+  return purposeLocationId;
+}
+
+/** 列表行制单/申请时刻，用于前端日期筛选（待审核单 applyTime 可能为空）。 */
+function resolvePurchaseOrderListRowTime(row: PurchaseOrderListRowDto): string {
+  const raw = row.applyTime ?? row.occurrenceTime;
+  return raw === undefined || raw === null ? '' : String(raw).trim();
+}
+
+function filterPurchaseOrderListRowsByDateRange(
+  rows: PurchaseOrderListRowDto[],
+  applyTimeBegin?: string,
+  applyTimeEnd?: string,
+): PurchaseOrderListRowDto[] {
+  const begin = applyTimeBegin?.trim();
+  const end = applyTimeEnd?.trim();
+  if (!begin || !end) return rows;
+  const startMs = new Date(`${begin}T00:00:00`).getTime();
+  const endMs = new Date(`${end}T23:59:59`).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return rows;
+  return rows.filter((row) => {
+    const timeText = resolvePurchaseOrderListRowTime(row);
+    if (timeText === '') return true;
+    const normalized = timeText.includes('T') ? timeText : timeText.replace(' ', 'T');
+    const ms = new Date(normalized).getTime();
+    if (!Number.isFinite(ms)) return true;
+    return ms >= startMs && ms <= endMs;
+  });
+}
+
+/** 工作站左侧列表：未选药库 → purposeLocationId=0（全部）；日期在前端按 occurrence/apply 筛。 */
+export async function pagePurchaseOrderWorkbenchListApi(params?: {
+  purposeLocationId?: number | string;
+  keyword?: string;
+  applyTimeBegin?: string;
+  applyTimeEnd?: string;
+  pageNo?: number;
+  pageSize?: number;
+}): Promise<{ records: PurchaseOrderListRowDto[]; total: number }> {
+  const res = await pagePurchaseOrdersApi({
+    purposeLocationId: resolvePurchaseOrderListPurposeLocationId(params?.purposeLocationId),
+    keyword: params?.keyword?.trim() || undefined,
+    pageNo: params?.pageNo ?? 1,
+    pageSize: params?.pageSize ?? 100,
+  });
+  const { content, totalCount } = parsePagedRowsFromApiData<PurchaseOrderListRowDto>(res.data);
+  const records = filterPurchaseOrderListRowsByDateRange(
+    content,
+    params?.applyTimeBegin,
+    params?.applyTimeEnd,
+  );
+  const filtered = params?.applyTimeBegin && params?.applyTimeEnd;
+  return { records, total: filtered ? records.length : totalCount };
 }
 
 export async function getPurchaseOrderDetailApi(body: GetPurchaseOrderDetailRequest) {
@@ -298,10 +360,41 @@ export async function pageProductsForPurchaseApi(body: PageProductsForPurchaseRe
   );
 }
 
-/** 分页列表「全部药库」占位 purposeLocationId（非真实 Location）；与后端 InventoryWarehousePurchaseOrderAppService.ALL_WAREHOUSES_LIST_FILTER_LOCATION_ID 一致 */
-export const WHS_PO_ALL_WAREHOUSES_PURPOSE_LOCATION_ID = 0;
+/** init OptionDto → 侧栏药库下拉行（含「全部库房」首项 value=0） */
+export function mapPurchaseOrderInitToCabinetRows(
+  opts?: PurchaseOrderFormInitOptionDto[],
+): Record<string, unknown>[] {
+  return (opts ?? []).map((o) => {
+    const value = o.value;
+    const isAllWarehouses =
+      String(value ?? '').trim() === WHS_PO_ALL_WAREHOUSES_PURPOSE_LOCATION_ID;
+    const label = isAllWarehouses ? WHS_PO_ALL_WAREHOUSES_LABEL : (o.label ?? String(value ?? ''));
+    return {
+      id: value,
+      value,
+      name: label,
+      label,
+    };
+  });
+}
 
-/** 与后端一致：药库订货单 typeEnum=1、位置类型 11=库房、类别 1=库存供应 */
-export const WHS_PO_TYPE_ENUM = 1;
-export const WHS_PO_LOCATION_TYPE_CABINET = 11;
-export const WHS_PO_CATEGORY_STOCK = 1;
+/** init OptionDto → ApiOptionItem（库管员/项目类型等） */
+export function mapPurchaseOrderInitToApiOptions(
+  opts?: PurchaseOrderFormInitOptionDto[],
+): ApiOptionItem[] {
+  return (opts ?? []).map((o) => ({
+    label: String(o.label ?? ''),
+    value: String(o.value ?? ''),
+    sort:
+      o.sort !== undefined && o.sort !== '' && Number.isFinite(Number(o.sort))
+        ? Number(o.sort)
+        : undefined,
+  }));
+}
+
+/** 排除「全部」占位后的真实药库选项 */
+export function filterPurchaseOrderWarehouseOptions(
+  opts?: PurchaseOrderFormInitOptionDto[],
+): PurchaseOrderFormInitOptionDto[] {
+  return (opts ?? []).filter((o) => String(o.value ?? '') !== '0');
+}

@@ -12,7 +12,6 @@ import type { EnsureClinicalReceptionFn } from '#/components/doctor-station';
 import { computed, nextTick, onDeactivated, onMounted, provide, ref } from 'vue';
 
 import { useUserStore } from '@vben/stores';
-
 import { ElButton, ElMessage } from 'element-plus';
 import { storeToRefs } from 'pinia';
 
@@ -27,9 +26,11 @@ import MedicalRecordForm from '#/components/outpatient/medical-record-form.vue';
 import PatientInfoBar from '#/components/outpatient/patient-info-bar.vue';
 import { confirmEmrDiscardUnsaved } from '#/emrEditor';
 import { useAuthStore } from '#/store';
+import { isEncounterClinicalOrderMutationBlocked } from '#/utils/inpatient/encounter-clinical-order-gate';
 
 import { InpatientAdviceList } from './advice';
 import InpatientDischargeAdviceDialog from './components/inpatient-discharge-advice-dialog.vue';
+import InpatientNursingAdviceDialog from './components/inpatient-nursing-advice-dialog.vue';
 import DoctorPatientList from './doctor-patient-list.vue';
 import { useInpatientDoctorPatientStore } from './doctorPatientStore';
 import { useInpatientDoctorPatientQueue } from './use-inpatient-doctor-patient-queue';
@@ -66,6 +67,11 @@ const doctorDisplayName = computed(() => {
   if (!u) return '—';
   return u.realName || u.name || u.userName || u.username || '—';
 });
+
+/** 待结算/已结算/已离院：禁用出院、护理等开立类入口（查看不受影响） */
+const adviceWriteDisabled = computed(() =>
+  isEncounterClinicalOrderMutationBlocked(selectedPatient.value?.statusEnum),
+);
 
 /** 病历编辑器元数据：性别优先读模型文本字段 */
 const emrPatientInfo = computed(() => {
@@ -206,6 +212,7 @@ const handleRefresh = () => {
 
 const tabPanelRef = ref<null | { reload?: () => Promise<void> | void }>(null);
 const dischargeDialogVisible = ref(false);
+const nursingDialogVisible = ref(false);
 
 onMounted(() => {
   void loadInpatientDoctorStationList();
@@ -214,6 +221,7 @@ onMounted(() => {
 /** 离开页面（含 Tab 缓存切换）时关闭出院弹窗，避免遮罩残留 */
 onDeactivated(() => {
   dischargeDialogVisible.value = false;
+  nursingDialogVisible.value = false;
 });
 
 /** 住院侧无门诊接诊写接口：已选患者即可继续临床操作 */
@@ -254,6 +262,13 @@ const handleQuickAction = async (
   action: 'allergy' | 'exam' | 'lab' | 'pathology' | 'report' | 'surgery' | 'transfusion',
 ) => {
   if (!ensurePatientSelected()) return;
+  const isWriteQuickAction =
+    action === 'exam' ||
+    action === 'lab' ||
+    action === 'transfusion' ||
+    action === 'pathology' ||
+    action === 'surgery';
+  if (isWriteQuickAction && adviceWriteDisabled.value) return;
   if (action === 'report') {
     if (activeTab.value === DOCTOR_TABS.MEDICAL_RECORD) {
       const ok = await guardEmrUnsavedBeforeLeaveMedicalRecord();
@@ -324,14 +339,17 @@ async function handleDischargeAdviceSuccess() {
   }
 }
 
-const handleSpecialty = () => {
-  if (!ensurePatientSelected()) return;
-  ElMessage.info('专科功能待实现');
-};
+async function handleNursingAdviceSuccess() {
+  void loadInpatientDoctorStationList({ skipDefaultSelection: true });
+  const inst = tabPanelRef.value;
+  if (inst && typeof inst.reload === 'function') {
+    await inst.reload();
+  }
+}
 
 const handleNursing = () => {
   if (!ensurePatientSelected()) return;
-  ElMessage.info('护理功能待实现');
+  nursingDialogVisible.value = true;
 };
 </script>
 
@@ -358,9 +376,17 @@ const handleNursing = () => {
         >
           <template #actions>
             <ElButton type="primary" link @click="handleToolbarRefresh">刷新</ElButton>
-            <ElButton type="primary" link @click="handleCompleteVisit">出院</ElButton>
-            <ElButton type="primary" link @click="handleSpecialty">转科</ElButton>
-            <ElButton type="primary" link @click="handleNursing">护理</ElButton>
+            <ElButton
+              type="primary"
+              link
+              :disabled="adviceWriteDisabled"
+              @click="handleCompleteVisit"
+            >
+              出院
+            </ElButton>
+            <ElButton type="primary" link :disabled="adviceWriteDisabled" @click="handleNursing">
+              护理
+            </ElButton>
           </template>
         </DoctorHeader>
         <div class="flex min-h-0 flex-1 flex-col gap-0">
@@ -390,6 +416,12 @@ const handleNursing = () => {
       v-model="dischargeDialogVisible"
       :patient="selectedPatient"
       @success="handleDischargeAdviceSuccess"
+    />
+
+    <InpatientNursingAdviceDialog
+      v-model="nursingDialogVisible"
+      :patient="selectedPatient"
+      @success="handleNursingAdviceSuccess"
     />
 
     <ServiceApplyDialog

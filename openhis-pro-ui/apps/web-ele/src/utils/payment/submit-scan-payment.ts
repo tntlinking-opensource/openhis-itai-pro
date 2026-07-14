@@ -4,6 +4,7 @@ import { httpPreparePrepayAdvanceDeposit } from '#/api/inpatient-prepay';
 import { httpPrepareConsumerScan } from '#/api/payment/union-pay-bpc';
 import { consumerScanApi, toClientScanResultDto, UnionPayWinError } from '#/api/local/unionPayWin';
 import { pollUnionPayOrder } from '#/utils/payment/poll-union-pay-order';
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
 
 export interface SubmitScanPaymentParams {
   paymentDraftId: number | string;
@@ -78,7 +79,7 @@ export async function submitScanPayment(
     throw new Error('预下单失败：未返回商户订单号');
   }
 
-  const amountYuan = amountNum.toFixed(2);
+  const amountYuan = formatMoneyDisplay(amountNum);
   try {
     const scanResult = await consumerScanApi({
       merTradeNo,

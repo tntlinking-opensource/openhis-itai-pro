@@ -1,0 +1,469 @@
+/**
+ * 全局 shell + 表单/按钮 窄屏（<1680，含 1600）紧凑样式；1920 不受影响。
+ * 由 useLayoutCompactViewport 在 html 上切换 layout-viewport-compact。
+ * 尺寸常量见 APP_CONTROL_SIZE_PX / TABLE_SIZE_PX / TAB_SIZE_PX / OVERLAY_SIZE_PX / FORM_EXTRA_SIZE_PX / LAYOUT_SHELL_HEIGHT_PX。
+ */
+html.layout-viewport-compact {
+  --layout-shell-header-height: 44px;
+  --layout-shell-tabbar-height: 32px;
+  --vben-tabbar-height: 32px;
+
+  /* 表单（packages/styles/src/ele/index.css 已绑定 --form-control-height） */
+  --form-control-height: 28px;
+  --form-control-radius: 5px;
+
+  /* 自定义按钮档：介于 EP small(24) 与 default(32) 之间 */
+  --app-btn-height: 28px;
+  --app-btn-font-size: 13px;
+  --app-btn-padding-x: 12px;
+  --app-btn-padding-y: 6px;
+  --app-form-item-gap: 14px;
+  --app-form-label-font-size: 13px;
+
+  /* P1 弹层 / 下拉（与 OVERLAY_SIZE_PX.compact 对齐） */
+  --overlay-dialog-title-font-size: 16px;
+  --overlay-dialog-header-padding: 8px 14px;
+  --overlay-dialog-body-padding: 8px 14px 14px;
+  --overlay-dialog-footer-padding: 8px 14px 14px;
+  --overlay-drawer-title-font-size: 15px;
+  --overlay-drawer-padding: 14px 16px;
+  --overlay-dropdown-item-height: 30px;
+  --overlay-popover-padding: 8px 10px;
+  --overlay-body-font-size: 13px;
+
+  /* P1 表单补全（与 FORM_EXTRA_SIZE_PX.compact 对齐） */
+  --form-textarea-font-size: 13px;
+  --form-tree-node-height: 28px;
+
+  /* P0 表格 / 页签 / 分页（与 TABLE_SIZE_PX / TAB_SIZE_PX / PAGINATION_SIZE_PX 对齐） */
+  --table-header-height: 32px;
+  --table-row-min-height: 34px;
+  --table-cell-padding-x: 10px;
+  --table-cell-padding-y: 6px;
+  --table-font-size: 13px;
+  --tab-item-height: 32px;
+  --tab-item-padding-x: 12px;
+  --pagination-btn-height: 28px;
+
+  /* VxeGrid small 档（adapter 默认 size: small） */
+  --vxe-ui-font-size-small: 13px;
+  --vxe-ui-table-row-height-small: 34px;
+
+  /*
+   * medium 档全局变量预留：库房单据 createDefaultInvDocGridOptions 用 medium。
+   * 订货单已在 inventory-viewport-compact.css 试点覆盖；批量铺开时可改为全局生效。
+   */
+}
+
+/* 顶栏高度：覆盖 layout-header inline height */
+html.layout-viewport-compact header.top-0.flex.w-full.flex-\[0_0_auto\] {
+  height: var(--layout-shell-header-height) !important;
+  min-height: var(--layout-shell-header-height) !important;
+}
+
+/* 路由页签条高度：覆盖 layout-tabbar inline height */
+html.layout-viewport-compact
+  section.flex.w-full.shrink-0.items-center.overflow-hidden.border-b.border-border.bg-background {
+  height: var(--layout-shell-tabbar-height) !important;
+  min-height: var(--layout-shell-tabbar-height) !important;
+}
+
+/* 顶栏横向菜单项（窄屏统一 13px） */
+html.layout-viewport-compact .header-menu-scroll .vben-menu.is-horizontal {
+  --menu-item-height: 34px;
+  --menu-item-padding-x: 8px;
+  --menu-font-size: 13px;
+  --menu-item-icon-size: 15px;
+  font-size: 13px;
+}
+
+/*
+ * 顶栏子菜单下拉（teleport 到 body，仍在 html 下；与横向菜单同档）
+ * popup 内 item 使用 --menu-item-popup-padding-*，须一并压缩。
+ */
+html.layout-viewport-compact .vben-menu__popup-container,
+html.layout-viewport-compact .vben-menu__popup-container .vben-menu {
+  --menu-item-height: 36px;
+  --menu-font-size: 13px;
+  --menu-item-icon-size: 15px;
+  --menu-item-popup-padding-y: 6px;
+  --menu-item-popup-padding-x: 10px;
+  --menu-item-padding-y: 6px;
+  --menu-item-padding-x: 10px;
+  --menu-item-margin-y: 0px;
+  --menu-item-radius: 6px;
+  font-size: 13px;
+}
+
+html.layout-viewport-compact .vben-menu__popup {
+  padding: 6px 0;
+}
+
+html.layout-viewport-compact .vben-menu__popup-container .vben-menu__icon {
+  width: 15px;
+  height: 15px;
+  margin-right: 6px;
+}
+
+html.layout-viewport-compact .vben-menu__popup-container .vben-menu-item__content span,
+html.layout-viewport-compact .vben-menu__popup-container .vben-sub-menu-content__title {
+  font-size: 13px !important;
+}
+
+/* 路由 Chrome 页签（标题在内部 span.text-sm，须直接覆盖） */
+html.layout-viewport-compact .tabs-chrome__item-main {
+  padding-right: 12px !important;
+  padding-left: 6px !important;
+  font-size: 13px;
+}
+
+html.layout-viewport-compact .tabs-chrome__item-main > span,
+html.layout-viewport-compact .tabs-chrome__item-main span.flex-1 {
+  font-size: 13px !important;
+  line-height: 1.2;
+}
+
+html.layout-viewport-compact .tabs-chrome__item-main .size-4 {
+  width: 14px;
+  height: 14px;
+  margin-right: 2px;
+}
+
+/* 全局搜索：窄屏仅保留图标 */
+html.layout-viewport-compact .group.flex.h-8.cursor-pointer > span.hidden.md\:block {
+  display: none !important;
+}
+
+html.layout-viewport-compact .group.flex.h-8.cursor-pointer {
+  gap: 0;
+  padding-right: 4px;
+  padding-left: 4px;
+}
+
+/* 科室选择 */
+html.layout-viewport-compact .select-department-trigger {
+  font-size: 13px;
+}
+
+html.layout-viewport-compact .select-department-trigger .select-department-trigger__divider {
+  margin-right: 6px;
+  margin-left: 6px;
+}
+
+/* ========== 表单 ========== */
+html.layout-viewport-compact .el-form-item {
+  margin-bottom: var(--app-form-item-gap);
+}
+
+html.layout-viewport-compact .el-form-item .el-form-item__label {
+  font-size: var(--app-form-label-font-size);
+  line-height: var(--form-control-height);
+}
+
+html.layout-viewport-compact .el-input__inner,
+html.layout-viewport-compact .el-select__placeholder,
+html.layout-viewport-compact .el-select__selected-item,
+html.layout-viewport-compact .el-date-editor .el-range-input,
+html.layout-viewport-compact .el-input-number .el-input__inner {
+  font-size: var(--app-form-label-font-size);
+}
+
+/* ========== 按钮（排除 EP small / link / circle 单独分档） ========== */
+html.layout-viewport-compact .el-button:not(.el-button--small):not(.is-link):not(.is-circle) {
+  height: var(--app-btn-height);
+  padding: var(--app-btn-padding-y) var(--app-btn-padding-x);
+  font-size: var(--app-btn-font-size);
+  line-height: 1;
+}
+
+html.layout-viewport-compact .el-button.is-link:not(.el-button--small) {
+  height: auto;
+  padding: 3px 5px;
+  font-size: var(--app-btn-font-size);
+  line-height: 1.2;
+}
+
+html.layout-viewport-compact .el-button.is-circle:not(.el-button--small) {
+  width: var(--app-btn-height);
+  height: var(--app-btn-height);
+  padding: 0;
+  font-size: var(--app-btn-font-size);
+}
+
+/* ========== P1 弹层：Dialog / Drawer / MessageBox ========== */
+html.layout-viewport-compact .el-dialog__header {
+  padding: var(--overlay-dialog-header-padding);
+}
+
+html.layout-viewport-compact .el-dialog__title {
+  font-size: var(--overlay-dialog-title-font-size);
+  line-height: 1.3;
+}
+
+html.layout-viewport-compact .el-dialog__headerbtn {
+  width: 28px;
+  height: 28px;
+  font-size: 14px;
+}
+
+html.layout-viewport-compact .el-dialog__body {
+  padding: var(--overlay-dialog-body-padding);
+  font-size: var(--overlay-body-font-size);
+}
+
+html.layout-viewport-compact .el-dialog__footer {
+  padding: var(--overlay-dialog-footer-padding);
+}
+
+html.layout-viewport-compact .el-drawer__header {
+  margin-bottom: 0;
+  padding: var(--overlay-drawer-padding);
+}
+
+html.layout-viewport-compact .el-drawer__title {
+  font-size: var(--overlay-drawer-title-font-size);
+  line-height: 1.35;
+}
+
+html.layout-viewport-compact .el-drawer__body {
+  padding: var(--overlay-drawer-padding);
+  font-size: var(--overlay-body-font-size);
+}
+
+html.layout-viewport-compact .el-drawer__footer {
+  padding: 12px 14px;
+}
+
+html.layout-viewport-compact .el-message-box__header {
+  padding: 12px 16px 0;
+}
+
+html.layout-viewport-compact .el-message-box__title {
+  font-size: var(--overlay-dialog-title-font-size);
+  line-height: 1.35;
+}
+
+html.layout-viewport-compact .el-message-box__content {
+  padding: 12px 16px;
+}
+
+html.layout-viewport-compact .el-message-box__message,
+html.layout-viewport-compact .el-message-box__message p {
+  font-size: var(--overlay-body-font-size);
+  line-height: 1.55;
+}
+
+html.layout-viewport-compact .el-message-box__btns {
+  padding: 8px 16px 12px;
+}
+
+/* 错误/打印指引弹窗：标题保持 16px 醒目，正文随 compact 13px */
+html.layout-viewport-compact .whale-persistent-error-messagebox .el-message-box__message,
+html.layout-viewport-compact .whale-print-troubleshoot-messagebox .el-message-box__message {
+  font-size: var(--overlay-body-font-size);
+}
+
+/* ========== P1 下拉（teleport：Select / Dropdown / Cascader / Autocomplete） ========== */
+html.layout-viewport-compact .el-select-dropdown__item {
+  height: var(--overlay-dropdown-item-height);
+  padding: 0 28px 0 12px;
+  font-size: var(--overlay-body-font-size);
+  line-height: var(--overlay-dropdown-item-height);
+}
+
+html.layout-viewport-compact .el-select-dropdown__empty,
+html.layout-viewport-compact .el-select-group__title {
+  font-size: var(--overlay-body-font-size);
+}
+
+html.layout-viewport-compact .el-dropdown-menu__item {
+  padding: 0 12px;
+  font-size: var(--overlay-body-font-size);
+  line-height: var(--overlay-dropdown-item-height);
+}
+
+html.layout-viewport-compact .el-cascader-node {
+  height: var(--overlay-dropdown-item-height);
+  font-size: var(--overlay-body-font-size);
+  line-height: var(--overlay-dropdown-item-height);
+}
+
+html.layout-viewport-compact .el-autocomplete-suggestion li {
+  padding: 0 12px;
+  font-size: var(--overlay-body-font-size);
+  line-height: var(--overlay-dropdown-item-height);
+}
+
+html.layout-viewport-compact .el-picker-panel {
+  font-size: var(--overlay-body-font-size);
+}
+
+html.layout-viewport-compact .el-date-picker__header-label,
+html.layout-viewport-compact .el-picker-panel__icon-btn {
+  font-size: var(--overlay-body-font-size);
+}
+
+/* ========== P1 Popover ========== */
+html.layout-viewport-compact .el-popover.el-popper {
+  padding: var(--overlay-popover-padding);
+  font-size: var(--overlay-body-font-size);
+}
+
+html.layout-viewport-compact .el-popover .el-popover__title {
+  margin-bottom: 6px;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+/* ========== P1 表单补全：Textarea / Checkbox / Radio / Tree ========== */
+html.layout-viewport-compact .el-textarea__inner {
+  padding: 4px 8px;
+  font-size: var(--form-textarea-font-size);
+}
+
+html.layout-viewport-compact .el-checkbox__label,
+html.layout-viewport-compact .el-radio__label {
+  font-size: var(--form-textarea-font-size);
+}
+
+html.layout-viewport-compact .el-form-item .el-checkbox,
+html.layout-viewport-compact .el-form-item .el-radio {
+  height: var(--form-control-height);
+  line-height: var(--form-control-height);
+}
+
+html.layout-viewport-compact .el-tree-node__content {
+  height: var(--form-tree-node-height);
+}
+
+html.layout-viewport-compact .el-tree-node__label {
+  font-size: var(--form-textarea-font-size);
+}
+
+/* ========== P0 Table：ElTable（排除 .advice-table 固定行高） ========== */
+html.layout-viewport-compact .el-table {
+  font-size: var(--table-font-size);
+}
+
+html.layout-viewport-compact .el-table th.el-table__cell {
+  height: var(--table-header-height);
+  padding: 0;
+  font-size: var(--table-font-size);
+}
+
+html.layout-viewport-compact .el-table td.el-table__cell {
+  padding: 0;
+  font-size: var(--table-font-size);
+}
+
+html.layout-viewport-compact .el-table .cell {
+  padding: var(--table-cell-padding-y) var(--table-cell-padding-x);
+  font-size: var(--table-font-size);
+  line-height: 1.35;
+}
+
+html.layout-viewport-compact .el-table:not(.advice-table) .el-table__body tr td.el-table__cell {
+  height: var(--table-row-min-height);
+}
+
+/* 报表列表表：与全局 32/34 对齐（覆盖 scoped 36/35） */
+html.layout-viewport-compact .report-list-page__table th.el-table__cell {
+  height: var(--table-header-height) !important;
+}
+
+html.layout-viewport-compact .report-list-page__table td.el-table__cell {
+  height: var(--table-row-min-height) !important;
+}
+
+/* ========== P0 Table：VxeGrid / VxeTable ========== */
+html.layout-viewport-compact .vxe-table--header-wrapper .vxe-header--column {
+  height: var(--table-header-height);
+  font-size: var(--table-font-size);
+}
+
+html.layout-viewport-compact .vxe-header--column .vxe-cell {
+  height: var(--table-header-height);
+  padding: var(--table-cell-padding-y) var(--table-cell-padding-x);
+  font-size: var(--table-font-size);
+  line-height: 1.35;
+}
+
+html.layout-viewport-compact .vxe-body--column {
+  height: var(--table-row-min-height);
+  font-size: var(--table-font-size);
+}
+
+html.layout-viewport-compact .vxe-body--column .vxe-cell {
+  height: var(--table-row-min-height);
+  padding: var(--table-cell-padding-y) var(--table-cell-padding-x);
+  font-size: var(--table-font-size);
+  line-height: 1.35;
+}
+
+html.layout-viewport-compact .vxe-pager {
+  font-size: var(--table-font-size);
+}
+
+html.layout-viewport-compact .vxe-pager .vxe-pager--btn,
+html.layout-viewport-compact .vxe-pager .vxe-pager--num-btn,
+html.layout-viewport-compact .vxe-pager .vxe-pager--jump-prev,
+html.layout-viewport-compact .vxe-pager .vxe-pager--jump-next {
+  min-width: var(--pagination-btn-height);
+  height: var(--pagination-btn-height);
+  line-height: var(--pagination-btn-height);
+  font-size: var(--table-font-size);
+}
+
+html.layout-viewport-compact .vxe-pager .vxe-pager--sizes .vxe-input {
+  height: var(--pagination-btn-height);
+}
+
+html.layout-viewport-compact .vxe-pager .vxe-pager--sizes .vxe-input--inner {
+  font-size: var(--table-font-size);
+}
+
+/* ========== P0 Tab：ElTabs ========== */
+html.layout-viewport-compact .el-tabs__header {
+  margin-bottom: 8px;
+}
+
+html.layout-viewport-compact .el-tabs__item {
+  height: var(--tab-item-height);
+  padding: 0 var(--tab-item-padding-x);
+  font-size: var(--table-font-size);
+  line-height: var(--tab-item-height);
+}
+
+html.layout-viewport-compact .el-tabs--border-card > .el-tabs__header .el-tabs__item {
+  height: var(--tab-item-height);
+  line-height: var(--tab-item-height);
+}
+
+/* ========== P0 Pagination：ElPagination ========== */
+html.layout-viewport-compact .el-pagination {
+  font-size: var(--table-font-size);
+}
+
+html.layout-viewport-compact .el-pagination .btn-prev,
+html.layout-viewport-compact .el-pagination .btn-next,
+html.layout-viewport-compact .el-pagination .el-pager li {
+  min-width: var(--pagination-btn-height);
+  height: var(--pagination-btn-height);
+  font-size: var(--table-font-size);
+  line-height: var(--pagination-btn-height);
+}
+
+html.layout-viewport-compact .el-pagination button {
+  min-width: var(--pagination-btn-height);
+  height: var(--pagination-btn-height);
+  font-size: var(--table-font-size);
+}
+
+html.layout-viewport-compact .el-pagination .el-pagination__sizes .el-select .el-select__wrapper {
+  min-height: var(--pagination-btn-height);
+  height: var(--pagination-btn-height);
+}
+
+html.layout-viewport-compact .el-pagination .el-pagination__jump {
+  font-size: var(--table-font-size);
+}

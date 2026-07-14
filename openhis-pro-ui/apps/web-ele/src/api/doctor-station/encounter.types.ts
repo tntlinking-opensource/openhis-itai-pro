@@ -57,6 +57,11 @@ export interface OutpatientInfoItemDto {
   diagnoses?: EncounterDiagnosisRowDto[] | null;
   triageLevelEnum?: null | number;
   triageTime?: null | string;
+  workInjuryEncounter?: boolean | null;
+  workInjuryApprovalStatusLabel?: null | string;
+  workInjuryContractId?: null | number | string;
+  workInjuryQualificationValid?: boolean | null;
+  workInjuryNeeds2301Upload?: boolean | null;
 }
 
 /** IF-DOR-01 分页响应 */
@@ -78,6 +83,22 @@ export interface StartOutpatientReceptionRequest {
 
 /** 医生接诊写响应 */
 export interface StartOutpatientReceptionResponse {
+  encounterId: string;
+  success: boolean;
+}
+
+/** IF-DOR-04 门诊完诊写请求 */
+export interface CompleteOutpatientEncounterRequest {
+  encounterId: string;
+  /** 完诊时间，不传则由服务端默认当前时间 */
+  completedAt?: string;
+  /** 就诊小结或摘要 */
+  summary?: string;
+  operatorId: string;
+}
+
+/** IF-DOR-04 门诊完诊写响应 */
+export interface CompleteOutpatientEncounterResponse {
   encounterId: string;
   success: boolean;
 }

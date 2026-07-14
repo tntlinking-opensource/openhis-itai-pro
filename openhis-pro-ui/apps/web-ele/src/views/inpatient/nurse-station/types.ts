@@ -15,14 +15,19 @@ export interface PatientItem {
   patientId?: string;
   /** 住院号（就诊 busNo）。 */
   encounterBusNo?: string;
-  /** 入院时间（读模型 startTime）。 */
+  /** 入科时间（读模型 startTime）。 */
   startTime?: string;
+  /** 入院时间（读模型 admissionTime；缺省时与 startTime 同源）。 */
+  admissionTime?: string;
   /** 出院时间（读模型 endTime）。 */
   endTime?: string;
   name: string;
   gender: string;
   age: number;
+  /** 护理级别展示名（读模型 nursingLevelName；未开立时为空）。 */
   level: string;
+  /** 病情 code（读模型 priorityEnum；分床 ASSIGN 写路径用）。 */
+  priorityEnum?: string;
   /** 费用性质（如医保、自费）。 */
   feeType: string;
   /** 主要诊断描述。 */

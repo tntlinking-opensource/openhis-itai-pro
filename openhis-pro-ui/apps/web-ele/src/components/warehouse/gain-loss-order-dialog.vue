@@ -10,6 +10,7 @@ import {
   pagePurchaseOrderDetailForGainLossApi,
   pagePurchaseOrderForGainLossApi,
 } from '#/api/warehouse/gain-loss';
+import { isGainLossApproved } from '#/utils/warehouse/gain-loss-doc';
 import { mapDetailRecordToGridRow } from '#/utils/warehouse/purchase-request-order-detail';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
@@ -179,7 +180,7 @@ defineExpose({
         <el-table-column label="供应商" prop="supplierId_dictText" width="220" align="center" />
         <el-table-column label="审核状态" prop="statusEnum_enumText" width="100" align="center">
           <template #default="{ row }">
-            <el-tag v-if="row.statusEnum_enumText === '同意'" type="success">
+            <el-tag v-if="isGainLossApproved(row)" type="success">
               {{ row.statusEnum_enumText }}
             </el-tag>
             <el-tag v-else type="danger">{{ row.statusEnum_enumText }}</el-tag>

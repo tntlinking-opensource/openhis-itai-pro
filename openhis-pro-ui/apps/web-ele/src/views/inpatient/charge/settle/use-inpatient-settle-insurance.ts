@@ -12,9 +12,12 @@ import {
   YB_PLUGIN_FUNCTION_ID,
 } from '#/chs/utils/yb-plugin';
 
-import { ENCOUNTER_STATUS_PENDING } from './inpatient-settle.constants';
-
-const SELF_PAY_HINTS = ['自费', '现金', '个人'];
+import { ENCOUNTER_STATUS_ON_HOLD, ENCOUNTER_STATUS_PENDING } from './inpatient-settle.constants';
+import {
+  isInsuranceContractCategory,
+  isSelfPayContractCategory,
+  isWorkInjuryContractCategory,
+} from '#/views/outpatient/charge/register/services/charge-type-category';
 
 export interface InpatientSettleInsuranceContext {
   contractId: string;
@@ -25,32 +28,35 @@ export interface InpatientSettleInsuranceContext {
   ybMediumType: string;
 }
 
-/** 登记账户是否为医保性质（用于决定是否读卡）。 */
+/** 登记账户是否为医保性质（用于决定是否读卡；按 contractId 对应类别码判断）。 */
 export function isInpatientInsuranceRegistration(
   row: InpatientSettleQueueItemDto | null | undefined,
+  contractCategoryById?: Record<string, string>,
 ): boolean {
-  if (!row) {
+  if (!row?.contractId) {
     return false;
   }
-  if (row.contractId) {
-    const display = String(row.contractDisplay ?? '').trim();
-    if (display && SELF_PAY_HINTS.some((hint) => display.includes(hint))) {
-      return false;
-    }
+  const category = String(contractCategoryById?.[String(row.contractId)] ?? '').trim();
+  if (!category) {
     return true;
   }
-  const display = String(row.contractDisplay ?? '').trim();
-  if (!display) {
+  if (isSelfPayContractCategory(category)) {
     return false;
   }
-  if (SELF_PAY_HINTS.some((hint) => display.includes(hint))) {
-    return false;
-  }
-  return display.includes('医保');
+  return isInsuranceContractCategory(category) || isWorkInjuryContractCategory(category);
+}
+
+function isFullPendingSelection(
+  selectedChargeItemIds: string[],
+  allPendingChargeItemIds: string[],
+): boolean {
+  const selected = new Set(selectedChargeItemIds);
+  const allPending = new Set(allPendingChargeItemIds);
+  return selected.size === allPending.size && [...selected].every((id) => allPending.has(id));
 }
 
 /**
- * 推导结算模式（与后端 §15.2 对齐；显式 requestSettleMode 由调用方传入）。
+ * 推导结算模式：本期仅出院全结（PENDING + 全选待结算）；无中途结算。
  */
 export function resolveInpatientSettleMode(
   encounterStatus: string | undefined,
@@ -58,18 +64,49 @@ export function resolveInpatientSettleMode(
   allPendingChargeItemIds: string[],
   requestSettleMode?: string,
 ): string | undefined {
-  const selected = new Set(selectedChargeItemIds);
-  const allPending = new Set(allPendingChargeItemIds);
-  const fullSelection =
-    selected.size === allPending.size && [...selected].every((id) => allPending.has(id));
-
   if (requestSettleMode === 'MID_SETTLE') {
-    return 'MID_SETTLE';
+    return undefined;
   }
-  if (encounterStatus === ENCOUNTER_STATUS_PENDING) {
-    return fullSelection ? 'DISCHARGE_FULL' : 'MID_SETTLE';
+  const status = String(encounterStatus ?? '').trim();
+  if (status === ENCOUNTER_STATUS_ON_HOLD) {
+    return undefined;
   }
-  return fullSelection ? undefined : 'MID_SETTLE';
+  if (status !== ENCOUNTER_STATUS_PENDING) {
+    return undefined;
+  }
+  if (!isFullPendingSelection(selectedChargeItemIds, allPendingChargeItemIds)) {
+    return undefined;
+  }
+  return 'DISCHARGE_FULL';
+}
+
+/** 待出院态禁止任何结算 */
+export function isInpatientSettleBlockedByDischargeHold(
+  encounterStatus: string | undefined,
+): boolean {
+  return String(encounterStatus ?? '').trim() === ENCOUNTER_STATUS_ON_HOLD;
+}
+
+/** 结算按钮禁用原因（与后端 EX-IP-STL-107/108/111/112 对齐） */
+export function inpatientSettleBlockedMessage(
+  encounterStatus: string | undefined,
+  selectedChargeItemIds: string[],
+  allPendingChargeItemIds: string[],
+): string | undefined {
+  const status = String(encounterStatus ?? '').trim();
+  if (status === ENCOUNTER_STATUS_ON_HOLD) {
+    return '请先办理护士出院后再结算';
+  }
+  if (status !== ENCOUNTER_STATUS_PENDING) {
+    return '请先完成护士出院后再结算';
+  }
+  if (
+    allPendingChargeItemIds.length > 0 &&
+    !isFullPendingSelection(selectedChargeItemIds, allPendingChargeItemIds)
+  ) {
+    return '请全选待结算费用';
+  }
+  return undefined;
 }
 
 /** 无待结算费用、就诊 PENDING：零元出院全结。 */

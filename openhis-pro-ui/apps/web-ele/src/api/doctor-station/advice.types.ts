@@ -136,8 +136,10 @@ export interface DoctorStationAdviceRowDto {
   sortNumber?: number | string | null;
   /** 诊疗执行次数（结构-only 行） */
   executionCount?: number | string | null;
-  /** 目录分类码（如 2 西药、11 耗材、21 治疗） */
+  /** 目录分类码（如 2 西药、11 耗材、21 治疗、26 护理级别） */
   catalogCategoryCode?: string;
+  /** 诊疗服务类目持久化码（如 26 护理级别、出院/转科特殊类目） */
+  serviceCategoryEnum?: string;
   /** 活动类型码/名（诊疗） */
   activityTypeCode?: string;
   activityTypeName?: string;
@@ -252,6 +254,12 @@ export interface DoctorStationAdviceCatalogRowDto {
   /** 多计量带数组；若后端仅给 JSON 字符串则用 `unitBandsJson` */
   unitBands?: DoctorStationMedicationUnitBandDto[];
   unitBandsJson?: string;
+  /** 门诊拆分属性（OrderCalcRule code "1"~"4"） */
+  partAttributeEnum?: string;
+  partAttributeEnumDictText?: string;
+  /** 住院临时医嘱拆分属性 */
+  thoPartAttributeEnum?: string;
+  thoPartAttributeEnumDictText?: string;
 }
 
 export interface PageDoctorStationAdviceCatalogResponse {

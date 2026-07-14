@@ -17,14 +17,20 @@ import {
   unitCodeByBandKind,
   unitNameByBandKind,
 } from '../services/medication-unit-bands';
+import { preferredTotalUnitBandKindFromOrderCalcRule } from '../services/medication-order-total-calc';
 
 type ProductOption = AdviceProductOption;
 
-/** 单价 × 总量，两位小数；用于展示。 */
+import { calcMoneyLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
+
+/** 单价 × 总量草稿预览（6 位计算、2 位展示）；入账以预结算/ChargeItem 为准。 */
 export function calcAdviceTotalFee(item: AdviceDrugItem) {
   const price = Number(item.selectedDrugPrice || 0);
   const amount = Number(item.totalAmount || 0);
-  return price > 0 && amount > 0 ? (price * amount).toFixed(2) : '0.00';
+  if (price <= 0 || amount <= 0) {
+    return '0.00';
+  }
+  return formatMoneyDisplay(calcMoneyLineTotal(price, amount));
 }
 
 export interface UseAdviceDrugListParams {
@@ -82,7 +88,12 @@ function westernPatchFromCatalogRow(row: ProductOption): Partial<AdviceDrugItem>
   patch.totalUnitPackageName = packageName;
   patch.totalAmountSplitToSalesK =
     totalSk !== undefined && Number.isFinite(totalSk) && totalSk > 0 ? totalSk : undefined;
-  const totalUnit = defaultTotalAmountUnitCode(bands, 'PACKAGE');
+  const partAttr = String(row.partAttributeEnum ?? '').trim();
+  if (partAttr) patch.partAttributeEnum = partAttr;
+  const totalUnit = defaultTotalAmountUnitCode(
+    bands,
+    preferredTotalUnitBandKindFromOrderCalcRule(partAttr),
+  );
   patch.totalAmountUnit = totalUnit;
   const linePrice = resolveAdviceLineUnitPrice({
     bands,

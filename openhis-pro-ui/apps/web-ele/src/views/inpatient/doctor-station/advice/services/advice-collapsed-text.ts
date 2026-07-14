@@ -1,5 +1,7 @@
 import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
 
+import { calcMoneyLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
+
 import type { AdviceDrugItem } from './advice.types';
 import type { AdviceLineEditorKind } from './advice-row';
 import { isInpatientLongTermMedicationTherapy } from './advice-row';
@@ -11,7 +13,10 @@ import { totalAmountUnitDisplayLabel } from './medication-unit-bands';
 function calcLineTotalFee(item: AdviceDrugItem): string {
   const price = Number(item.selectedDrugPrice || 0);
   const amount = Number(item.totalAmount ?? 0);
-  return price > 0 && amount > 0 ? (price * amount).toFixed(2) : '0.00';
+  if (price <= 0 || amount <= 0) {
+    return '0.00';
+  }
+  return formatMoneyDisplay(calcMoneyLineTotal(price, amount));
 }
 
 export interface CollapsedSummaryOptions {

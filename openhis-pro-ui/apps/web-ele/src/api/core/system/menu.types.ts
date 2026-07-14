@@ -53,24 +53,25 @@ export interface CreateMenuParams {
  */
 export interface UpdateMenuParams {
   id: string;
-  request: {
+  request: Partial<{
     /** 为 true 时表示父菜单置空（根节点），与未传 parentId 的局部更新区分 */
     clearParent?: boolean;
-    component: string;
+    component?: string;
     displayName: string;
-    externalUrl: string;
-    icon: string;
+    externalUrl?: string;
+    icon?: string;
     isEnabled: string;
     isExternal: string;
     isHidden: string;
-    menuType: string;
-    name: string;
+    keepAlive?: boolean;
+    menuType?: string;
+    name?: string;
     parentId?: string;
-    path: string;
-    permissionName: string;
-    remark: string;
+    path?: string;
+    permissionName?: string;
+    remark?: string;
     sortOrder: number;
-  };
+  }>;
 }
 
 /**

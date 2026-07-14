@@ -27,19 +27,21 @@ import {
   ElTreeSelect,
 } from 'element-plus';
 
-import AppDialog from '#/components/app-dialog.vue';
 import { DiagnosisPickerDialog } from '#/components/doctor-station/diagnosis';
 import { useAuthStore } from '#/store';
-import { decimalAdd, decimalMul } from '#/utils/format/decimal-util';
+import {
+  calcMoneyLineTotal,
+  formatMoneyDisplay,
+  sumMoneyThenSettle,
+} from '#/utils/format/money-scale';
 import { printServiceApplyForms } from '#/utils/print/print-service-apply';
 import * as inpatientServiceApplyApi from '#/views/inpatient/doctor-station/service-apply/inpatient-service-apply.service';
 
-import AdviceDraftBindDialog from '../advice/components/advice-draft-bind-dialog.vue';
-import { saveServiceApplyBindItemsAfterApplyForm } from './service-apply-bind.service';
 import {
   buildDetailItems,
   buildSaveServiceApplyFormRequest,
   buildServiceApplyDiagnosisOptions,
+  buildServiceApplySelectedItemsFromAdviceRows,
   catalogRowCategoryLabel,
   catalogRowKey,
   catalogRowUnitPrice,
@@ -47,9 +49,13 @@ import {
   firstTreeOptionValue,
   mergeCatalogDefaultPerformOrgOptions,
   pickDefaultServiceApplyEncounterDiagnosisId,
+  resolveServiceApplyDiagnosisIdFromAdviceRow,
   validateServiceApplySelectedItems,
 } from './service-apply.service';
 import * as outpatientServiceApplyApi from './service-apply.service';
+import type { ServiceApplyDocumentGroup } from './service-apply-doc-groups';
+import { inferServiceApplyKindFromAdviceRow } from './service-apply-doc-groups';
+import ServiceApplyShellWrap from './service-apply-shell-wrap.vue';
 
 defineOptions({ name: 'ServiceApplyDialog' });
 
@@ -64,12 +70,18 @@ const props = withDefaults(
     printMeta?: ServiceApplyPrintMeta;
     /** 门诊 / 住院：决定申请单保存与签发所调 HTTP */
     stationScope?: 'inpatient' | 'outpatient';
+    /** 外层容器：弹窗 / 抽屉（编辑申请单用抽屉） */
+    shell?: 'dialog' | 'drawer';
+    /** 编辑模式：传入已聚组的申请单行，打开时回显 */
+    editDocumentGroup?: ServiceApplyDocumentGroup | null;
   }>(),
   {
     applyKind: 'lab',
     encounterId: '',
     patientId: '',
     stationScope: 'outpatient',
+    shell: 'dialog',
+    editDocumentGroup: null,
     patient: () => ({
       patientName: '—',
       genderText: '—',
@@ -118,18 +130,37 @@ const savedPrescriptionNo = ref('');
 let catalogSearchTimer: ReturnType<typeof setTimeout> | undefined;
 let catalogFetchToken = 0;
 
-/** 弹窗标题 */
-const dialogTitle = computed(() => (props.applyKind === 'lab' ? '检验申请' : '检查申请'));
+/** 弹窗/抽屉标题 */
+const isEditMode = computed(() => (props.editDocumentGroup?.lines.length ?? 0) > 0);
+const dialogTitle = computed(() => {
+  const kindLabel = effectiveApplyKind.value === 'lab' ? '检验' : '检查';
+  if (isEditMode.value) {
+    return `修改${kindLabel}申请单`;
+  }
+  return `${kindLabel}申请`;
+});
+
+/** 编辑回显时的申请单类型 */
+const effectiveApplyKind = computed((): ServiceApplyKind => {
+  const head = props.editDocumentGroup?.lines[0];
+  if (head) {
+    const inferred = inferServiceApplyKindFromAdviceRow(head);
+    if (inferred) {
+      return inferred;
+    }
+  }
+  return props.applyKind;
+});
 
 /** 明细下拉：检验样本 / 检查部位 */
 const detailOptions = computed(() =>
-  props.applyKind === 'lab' ? specimenDefinitionOptions.value : bodyStructureOptions.value,
+  effectiveApplyKind.value === 'lab' ? specimenDefinitionOptions.value : bodyStructureOptions.value,
 );
 
 /** 明细字段标签 */
-const detailFieldLabel = computed(() => (props.applyKind === 'lab' ? '样本' : '部位'));
+const detailFieldLabel = computed(() => (effectiveApplyKind.value === 'lab' ? '样本' : '部位'));
 
-const isLabApply = computed(() => props.applyKind === 'lab');
+const isLabApply = computed(() => effectiveApplyKind.value === 'lab');
 
 /** 分类列表（由已加载目录去重） */
 const categoryList = computed(() => {
@@ -155,14 +186,12 @@ const selectedCatalogRowKeys = computed(
   () => new Set(selectedItems.value.map((row) => row.catalogRowKey)),
 );
 
-/** 已选合计金额 */
-const selectedTotalAmount = computed(() => {
-  let sum = 0;
-  for (const row of selectedItems.value) {
-    sum = decimalAdd(sum, decimalMul(row.unitPrice, row.quantity, 4), 4);
-  }
-  return sum;
-});
+/** 已选合计金额（6 位加总后 2 位展示；入账以后端为准） */
+const selectedTotalAmount = computed(() =>
+  sumMoneyThenSettle(
+    selectedItems.value.map((row) => calcMoneyLineTotal(row.unitPrice, row.quantity)),
+  ),
+);
 
 /** 就诊/患者门控是否就绪 */
 const contextReady = computed(() => {
@@ -176,9 +205,9 @@ const diagnosisOptions = computed(() =>
   buildServiceApplyDiagnosisOptions(encounterDiagnosisRows.value),
 );
 
-/** 金额格式化 */
+/** 金额格式化（纯展示） */
 function formatMoney(value: number): string {
-  return value.toFixed(2);
+  return formatMoneyDisplay(value);
 }
 
 /** 生成已选行唯一 key */
@@ -201,7 +230,9 @@ function buildSelectedRow(row: DoctorStationAdviceCatalogRowDto): ServiceApplySe
     quantity: 1,
     unitCode: String(row.unitCode ?? '').trim(),
     unitPrice: catalogRowUnitPrice(row),
-    detailItems: defaultTargetId ? buildDetailItems(props.applyKind, [defaultTargetId]) : [],
+    detailItems: defaultTargetId
+      ? buildDetailItems(effectiveApplyKind.value, [defaultTargetId])
+      : [],
   };
 }
 
@@ -237,7 +268,7 @@ async function handleDiagnosisPickerSaved() {
   await refreshEncounterDiagnosisOptions();
 }
 
-/** 刷新整单执行科室下拉 */
+/** 刷新整单执行科室下拉（全局字段，选中后作用于清单全部项目） */
 async function refreshOrgOptions() {
   const encounterId = String(props.encounterId ?? '').trim();
   const patientId = String(props.patientId ?? '').trim();
@@ -275,7 +306,7 @@ async function loadPanelData() {
       serviceApplyApi.value.loadServiceApplyCatalog({
         encounterId,
         patientId,
-        applyKind: props.applyKind,
+        applyKind: effectiveApplyKind.value,
         keyword: keyword.value,
         organizationUnitId: resolveOrganizationUnitId(),
       }),
@@ -358,7 +389,7 @@ function buildPersistApplyFormRequest() {
   const request = buildSaveServiceApplyFormRequest({
     encounterId,
     patientId,
-    applyKind: props.applyKind,
+    applyKind: effectiveApplyKind.value,
     orgId: orgId.value,
     encounterDiagnosisId: encounterDiagnosisId.value,
     encounterDiagnosisRows: encounterDiagnosisRows.value,
@@ -382,33 +413,13 @@ async function persistApplyForm(): Promise<{
   return { encounterId, patientId, request, ...result };
 }
 
-/** 签发前解析并带出绑定项（暂存不调用） */
-async function resolveServiceApplyBindOnSign(
-  encounterId: string,
-  patientId: string,
-  request: ReturnType<typeof buildSaveServiceApplyFormRequest>,
-  applyResult: { prescriptionNo: string; requestIds: string[] },
-) {
-  await saveServiceApplyBindItemsAfterApplyForm({
-    encounterId,
-    patientId,
-    request,
-    stationScope: props.stationScope,
-    applyResult,
-  });
-}
-
-/** 签发申请单（保存 → 绑定 → 签发生效） */
+/** 签发申请单（保存 → 签发生效） */
 async function executeSignRequests(): Promise<{
   encounterId: string;
   patientId: string;
   prescriptionNo: string;
 }> {
-  const { encounterId, patientId, request, requestIds } = await persistApplyForm();
-  await resolveServiceApplyBindOnSign(encounterId, patientId, request, {
-    prescriptionNo: savedPrescriptionNo.value,
-    requestIds,
-  });
+  const { encounterId, patientId, requestIds } = await persistApplyForm();
   await serviceApplyApi.value.signServiceApplyRequests({ encounterId, patientId, requestIds });
   return {
     encounterId,
@@ -425,7 +436,7 @@ async function printSignedApplyForm(signResult: {
 }) {
   const performOrgName = orgOptions.value.find((item) => item.value === orgId.value)?.label ?? '';
   const results = await printServiceApplyForms({
-    applyKind: props.applyKind,
+    applyKind: effectiveApplyKind.value,
     encounterId: signResult.encounterId,
     patientId: signResult.patientId,
     prescriptionNo: signResult.prescriptionNo,
@@ -528,7 +539,41 @@ function handleCatalogTabChange(tab: CatalogTab) {
 
 /** 更新当前行 detailItems */
 function writeDetailTargetIds(row: ServiceApplySelectedItem, ids: string[]) {
-  row.detailItems = buildDetailItems(props.applyKind, ids);
+  row.detailItems = buildDetailItems(effectiveApplyKind.value, ids);
+}
+
+/** 编辑模式：将列表行回显到右侧清单 */
+async function hydrateFromEditDocumentGroup(group: ServiceApplyDocumentGroup) {
+  savedPrescriptionNo.value = group.applyFormNo;
+  selectedItems.value = buildServiceApplySelectedItemsFromAdviceRows(
+    group.lines,
+    effectiveApplyKind.value,
+  );
+  const head = group.lines[0];
+  orgId.value = String(head?.performOrgId ?? '').trim();
+  const options = buildServiceApplyDiagnosisOptions(encounterDiagnosisRows.value);
+  const matchedDiagnosisId = resolveServiceApplyDiagnosisIdFromAdviceRow(
+    String(head?.diagnosisSummary ?? ''),
+    options,
+  );
+  if (matchedDiagnosisId) {
+    encounterDiagnosisId.value = matchedDiagnosisId;
+  } else {
+    encounterDiagnosisId.value = pickDefaultServiceApplyEncounterDiagnosisId(
+      encounterDiagnosisRows.value,
+      options,
+    );
+  }
+  await refreshOrgOptions();
+  const performOrgName = String(head?.performOrgName ?? '').trim();
+  if (orgId.value && performOrgName) {
+    const existing = orgOptions.value.find((item) => item.value === orgId.value);
+    if (existing) {
+      existing.label = performOrgName;
+    } else {
+      orgOptions.value.unshift({ value: orgId.value, label: performOrgName });
+    }
+  }
 }
 
 /** 弹窗打开时重置为初始态并加载数据 */
@@ -551,15 +596,30 @@ function resetPanelState() {
 }
 
 watch(
-  () => [props.modelValue, props.applyKind, props.encounterId, props.patientId] as const,
+  () =>
+    [
+      props.modelValue,
+      props.applyKind,
+      props.encounterId,
+      props.patientId,
+      props.editDocumentGroup?.applyFormNo,
+    ] as const,
   ([open, kind, encounterId, patientId], prev) => {
     if (!open || !contextReady.value) return;
     const wasOpen = prev?.[0] ?? false;
     const contextChanged =
       !prev || prev[1] !== kind || prev[2] !== encounterId || prev[3] !== patientId;
-    if ((!wasOpen && open) || (wasOpen && contextChanged)) {
+    const editFormNo = props.editDocumentGroup?.applyFormNo ?? '';
+    const editChanged = prev?.[4] !== editFormNo;
+    if ((!wasOpen && open) || (wasOpen && (contextChanged || editChanged))) {
       resetPanelState();
-      void loadPanelData();
+      void (async () => {
+        await loadPanelData();
+        const group = props.editDocumentGroup;
+        if (group && group.lines.length > 0) {
+          await hydrateFromEditDocumentGroup(group);
+        }
+      })();
     }
   },
 );
@@ -574,17 +634,13 @@ watch(keyword, () => {
 </script>
 
 <template>
-  <AppDialog
+  <ServiceApplyShellWrap
     :model-value="modelValue"
+    :shell="shell"
     :title="dialogTitle"
-    width="1120px"
-    top="4vh"
-    destroy-on-close
-    append-to-body
-    class="service-apply-dialog"
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <div class="service-apply-root">
+    <div class="service-apply-root" :class="shell === 'drawer' ? 'service-apply-root--drawer' : ''">
       <div class="patient-strip">
         <div class="patient-strip__main">
           <span class="patient-strip__name">{{ patient.patientName }}</span>
@@ -730,7 +786,7 @@ watch(keyword, () => {
                   <div class="cart-item__title-row">
                     <span class="cart-item__name">{{ row.activityName }}</span>
                     <span class="cart-item__price">
-                      ¥{{ formatMoney(decimalMul(row.unitPrice, row.quantity, 4)) }}
+                      ¥{{ formatMoney(calcMoneyLineTotal(row.unitPrice, row.quantity)) }}
                     </span>
                   </div>
                 </div>
@@ -840,7 +896,7 @@ watch(keyword, () => {
         </div>
       </div>
     </template>
-  </AppDialog>
+  </ServiceApplyShellWrap>
 
   <DiagnosisPickerDialog
     v-model="diagnosisDialogVisible"
@@ -850,8 +906,6 @@ watch(keyword, () => {
     :existing-diagnosis-list="encounterDiagnosisRows"
     @saved="handleDiagnosisPickerSaved"
   />
-
-  <AdviceDraftBindDialog />
 </template>
 
 <style scoped>
@@ -861,6 +915,11 @@ watch(keyword, () => {
   gap: 8px;
   height: 700px;
   overflow: hidden;
+}
+
+.service-apply-root--drawer {
+  height: calc(100vh - 148px);
+  min-height: 560px;
 }
 
 .context-hint {

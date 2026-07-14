@@ -38,6 +38,7 @@ export interface MedicationCatalogItem {
  */
 export interface PageMedicationCatalogResponse {
   content?: MedicationCatalogItem[];
+  totalCount?: number;
   totalElements?: number;
   totalPages?: number;
   [key: string]: unknown;
@@ -56,12 +57,22 @@ export async function pageMedicationCatalogApi(
 }
 
 /**
+ * 目录编辑可编辑性（validate*Edit / 详情回填）
+ */
+export interface CatalogEditabilityResult {
+  editabilityCode?: string;
+  editabilityMessage?: string;
+}
+
+/**
  * 药品目录更新接口参数
  */
 export interface UpdateMedicationCatalogParams {
   id?: string;
   name?: string;
   categoryCode?: string;
+  /** 更新门禁业务码，与详情 editabilityCode 对齐 */
+  editabilityCode?: string;
   [key: string]: unknown;
 }
 
@@ -107,6 +118,18 @@ export async function getMedicationCatalogApi(
   return requestClient.post<ApiResponse<MedicationCatalogItem>>(
     '/medicationCatalog/getMedicationCatalog',
     params,
+  );
+}
+
+/**
+ * 药品目录编辑前校验（业务引用 / 可编辑性）
+ */
+export async function validateMedicationCatalogEditApi(
+  id: string,
+): Promise<ApiResponse<CatalogEditabilityResult>> {
+  return requestClient.post<ApiResponse<CatalogEditabilityResult>>(
+    '/medicationCatalog/validateMedicationCatalogEdit',
+    id,
   );
 }
 
@@ -177,6 +200,7 @@ export interface ServiceCatalogItem {
  */
 export interface PageServiceCatalogResponse {
   content?: ServiceCatalogItem[];
+  totalCount?: number;
   totalElements?: number;
   totalPages?: number;
   [key: string]: unknown;
@@ -214,12 +238,26 @@ export async function getServiceCatalogApi(
 }
 
 /**
+ * 诊疗目录编辑前校验（业务引用 / 可编辑性）
+ */
+export async function validateServiceCatalogEditApi(
+  params: GetServiceCatalogParams,
+): Promise<ApiResponse<CatalogEditabilityResult>> {
+  return requestClient.post<ApiResponse<CatalogEditabilityResult>>(
+    '/serviceCatalog/validateServiceCatalogEdit',
+    params,
+  );
+}
+
+/**
  * 诊疗更新接口参数
  */
 export interface UpdateServiceCatalogParams {
   id?: string;
   name?: string;
   categoryCode?: string;
+  /** 更新门禁业务码，与详情 editabilityCode 对齐 */
+  editabilityCode?: string;
   [key: string]: unknown;
 }
 
@@ -323,6 +361,7 @@ export interface DeviceCatalogItem {
  */
 export interface PageDeviceCatalogResponse {
   content?: DeviceCatalogItem[];
+  totalCount?: number;
   totalElements?: number;
   totalPages?: number;
   [key: string]: unknown;
@@ -345,6 +384,18 @@ export async function pageDeviceCatalogApi(
  */
 export async function getDeviceCatalogApi(id: string): Promise<ApiResponse<DeviceCatalogItem>> {
   return requestClient.post<ApiResponse<DeviceCatalogItem>>('/deviceCatalog/getDeviceCatalog', id);
+}
+
+/**
+ * 器材目录编辑前校验（业务引用 / 可编辑性）
+ */
+export async function validateDeviceCatalogEditApi(
+  id: string,
+): Promise<ApiResponse<CatalogEditabilityResult>> {
+  return requestClient.post<ApiResponse<CatalogEditabilityResult>>(
+    '/deviceCatalog/validateDeviceCatalogEdit',
+    id,
+  );
 }
 
 /**
@@ -404,6 +455,10 @@ export interface CreateDeviceCatalogParams {
   locationId_dictText?: string;
   modelNumber?: string;
   hvcmFlag?: boolean;
+  /** 是否为收费耗材标记 */
+  chargeableFlag?: boolean;
+  /** 病案结算类型编码（术语 mr_settlement_type_code） */
+  mrSettlementTypeCode?: string;
   /** 包装单位（持久化 package_unit_code） */
   packageUnitCode?: string;
   approvalNumber?: string;
@@ -519,6 +574,7 @@ export interface DiagnosisCatalogItem {
  */
 export interface PageDiagnosisCatalogResponse {
   content?: DiagnosisCatalogItem[];
+  totalCount?: number;
   totalElements?: number;
   totalPages?: number;
   [key: string]: unknown;

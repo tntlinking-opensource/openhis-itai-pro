@@ -23,6 +23,7 @@ import {
   listScheduledJobTenantOptionsApi,
   runScheduledJobNowApi,
 } from '#/api/core/system/scheduled-job';
+import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import EditDialog from './edit-dialog.vue';
@@ -45,16 +46,23 @@ const queryParams = ref<ScheduledJobListParams>({
   tenantId: '',
 });
 
-const tableData = ref<ScheduledJobInfo[]>([]);
+const tableData = ref<ScheduledJobTableRow[]>([]);
 const loading = ref(false);
 const total = ref(0);
 
 const dialogVisible = ref(false);
 const dialogFormData = ref<Partial<ScheduledJobInfo>>({});
 
-/** 列表行唯一键：Quartz JobKey */
-function rowKey(row: ScheduledJobInfo) {
-  return `${row.jobGroup}/${row.jobName}`;
+type ScheduledJobTableRow = ScheduledJobInfo & { _jobRowKey: string };
+
+/** 列表行唯一键：Quartz JobKey（须为字符串字段，TableLayout/vxe 不支持 function rowKey） */
+function buildJobRowKey(row: ScheduledJobInfo, index: number) {
+  const name = row.jobName?.trim();
+  const group = row.jobGroup?.trim() || 'DEFAULT';
+  if (!name) {
+    return `row-${index}`;
+  }
+  return `${group}/${name}`;
 }
 
 /** 仅运行中任务展示下次执行；暂停时 Quartz 缓存值易误导（仍显示未来时刻） */
@@ -161,8 +169,12 @@ const loadData = async () => {
       status: queryParams.value.status || undefined,
       tenantId: tenantId as string | undefined,
     });
-    tableData.value = response.content || [];
-    total.value = response.totalCount || 0;
+    const { content, totalCount } = parsePagedRowsFromApiData<ScheduledJobInfo>(response);
+    tableData.value = content.map((row, index) => ({
+      ...row,
+      _jobRowKey: buildJobRowKey(row, index),
+    }));
+    total.value = totalCount;
   } catch {
     ElMessage.error('加载定时任务失败，请稍后重试');
     tableData.value = [];
@@ -312,7 +324,8 @@ onMounted(async () => {
           :show-side-query="false"
           :show-top-query="true"
           :show-pagination="true"
-          :row-key="rowKey"
+          :max-height="560"
+          row-key="_jobRowKey"
           @query="handleQuery"
           @reset="handleReset"
           @pagination="handlePagination"

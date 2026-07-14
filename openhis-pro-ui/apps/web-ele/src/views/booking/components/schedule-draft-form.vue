@@ -1,19 +1,16 @@
 <script setup lang="ts">
 import type { BookingEntityId } from '#/api/booking/booking-id';
-import { bookingOptionValue } from '#/api/booking/booking-id';
+import { bookingOptionValue, isSameBookingId, toBookingId } from '#/api/booking/booking-id';
 import type { BookingOptionDto } from '#/api/booking/booking-types';
+import type { SlotProvisionTemplateItemDto } from '#/api/booking/schedule-template';
 import { loadSlotProvisionTemplateApi } from '#/api/booking/schedule-template';
 
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 
+import { isPractitionerScheduleMode } from '#/views/booking/components/schedule-draft-form.utils';
+import SlotTemplateRowsField from '#/views/booking/components/slot-template-rows-field.vue';
+import { SCHEDULE_MODE_OPTIONS } from '#/views/booking/components/schedule-template-shared';
 import {
-  applySessionPreset,
-  applyT1ItemsToForm,
-  SESSION_PRESETS,
-  type SessionPreset,
-} from '#/views/booking/components/schedule-draft-form.utils';
-import {
-  ElButton,
   ElDatePicker,
   ElForm,
   ElFormItem,
@@ -21,134 +18,198 @@ import {
   ElMessage,
   ElOption,
   ElSelect,
-  ElTimePicker,
 } from 'element-plus';
+
+defineOptions({ name: 'ScheduleDraftForm' });
 
 export interface ScheduleDraftFormModel {
   name: string;
+  scheduleMode: 'MODE-A' | 'MODE-B';
   practitionerId?: BookingEntityId;
-  locationId?: BookingEntityId;
   healthcareServiceId?: BookingEntityId;
   /** 出诊日期 YYYY-MM-DD */
   planningDate: string;
-  /** 开始时刻 HH:mm:ss */
+  /** 内部：保存时拼 planningHorizon */
   startTime: string;
-  /** 结束时刻 HH:mm:ss */
   endTime: string;
-  /** 关联 T1 放号时段模板 */
+  /** 可选：关联 T1 放号时段模板，选中后只读展示时段行 */
   slotProvisionTemplateId?: BookingEntityId;
 }
 
-defineProps<{
-  practitioners?: BookingOptionDto[];
-  clinicLocations?: BookingOptionDto[];
-  healthcareServices?: BookingOptionDto[];
-  slotProvisionTemplateOptions?: BookingOptionDto[];
+const props = withDefaults(
+  defineProps<{
+    organizationId?: BookingEntityId;
+    practitioners?: BookingOptionDto[];
+    healthcareServices?: BookingOptionDto[];
+    slotProvisionTemplateOptions?: BookingOptionDto[];
+  }>(),
+  {
+    practitioners: () => [],
+    healthcareServices: () => [],
+    slotProvisionTemplateOptions: () => [],
+  },
+);
+
+const emit = defineEmits<{
+  /** 号别类型或医师变更，父级重载号源/放号时段下拉 */
+  'reload-context': [payload: { practitionerId?: BookingEntityId }];
 }>();
 
 const model = defineModel<ScheduleDraftFormModel>({ required: true });
 
-const activePreset = computed<SessionPreset | null>(() => {
-  for (const key of Object.keys(SESSION_PRESETS) as SessionPreset[]) {
-    const preset = SESSION_PRESETS[key];
-    if (model.value.startTime === preset.startTime && model.value.endTime === preset.endTime) {
-      return key;
-    }
-  }
-  return null;
-});
+const isPractitionerSchedule = computed(() => isPractitionerScheduleMode(model.value.scheduleMode));
 
-function handlePreset(preset: SessionPreset) {
-  applySessionPreset(model.value, preset);
-}
+const practitionerSelected = computed(
+  () => isPractitionerSchedule.value && Boolean(toBookingId(model.value.practitionerId)),
+);
 
-async function handleT1Change(templateId?: BookingEntityId) {
-  if (!templateId) {
+/** 选中放号时段后只读展示的行（不在此维护） */
+const slotPreviewRows = ref<SlotProvisionTemplateItemDto[]>([]);
+
+/** 加载 T1 时段行用于只读预览 */
+async function loadSlotPreviewRows(templateId?: BookingEntityId) {
+  const resolvedId = toBookingId(templateId);
+  if (!resolvedId) {
+    slotPreviewRows.value = [];
     return;
   }
   try {
-    const detail = await loadSlotProvisionTemplateApi({ id: templateId });
-    applyT1ItemsToForm(model.value, detail?.slotTemplates);
+    const detail = await loadSlotProvisionTemplateApi({ id: resolvedId });
+    slotPreviewRows.value = detail?.slotTemplates ?? [];
   } catch (error) {
-    ElMessage.error((error as Error).message || '加载放号时段失败，请刷新页面后重试');
+    slotPreviewRows.value = [];
+    ElMessage.error((error as Error).message || '加载放号时段失败');
   }
 }
+
+async function handleT1Change(templateId?: BookingEntityId) {
+  await loadSlotPreviewRows(templateId);
+}
+
+watch(
+  () => model.value.slotProvisionTemplateId,
+  (templateId) => {
+    void loadSlotPreviewRows(templateId);
+  },
+  { immediate: true },
+);
+
+watch(
+  () => model.value.scheduleMode,
+  (mode, previous) => {
+    if (previous === undefined) {
+      return;
+    }
+    if (mode === 'MODE-B') {
+      model.value.practitionerId = undefined;
+    }
+    model.value.healthcareServiceId = undefined;
+    emit('reload-context', { practitionerId: undefined });
+  },
+);
+
+/** 医师号切换出诊医师时，通知父级按可接诊号源收窄下拉（含首次选择，避免仍见全科室号源） */
+watch(
+  () => model.value.practitionerId,
+  (practitionerId, previous) => {
+    if (model.value.scheduleMode !== 'MODE-A') {
+      return;
+    }
+    if (isSameBookingId(practitionerId, previous)) {
+      return;
+    }
+    model.value.healthcareServiceId = undefined;
+    emit('reload-context', {
+      practitionerId: toBookingId(practitionerId) || undefined,
+    });
+  },
+);
 </script>
 
 <template>
-  <ElForm label-width="88px">
+  <ElForm label-width="100px">
     <ElFormItem label="名称">
-      <ElInput v-model="model.name" placeholder="如：内科上午" />
+      <ElInput v-model="model.name" placeholder="如：张医生专家号" />
     </ElFormItem>
-    <ElFormItem label="出诊医师">
+    <ElFormItem label="号别类型" required>
+      <ElSelect v-model="model.scheduleMode" style="width: 100%">
+        <ElOption
+          v-for="item in SCHEDULE_MODE_OPTIONS"
+          :key="item.value"
+          :label="item.label"
+          :value="item.value"
+        />
+      </ElSelect>
+      <p class="schedule-draft-form__hint">医师号：指名到医生；科室号：只排到科室，到院再分诊</p>
+    </ElFormItem>
+    <ElFormItem v-if="isPractitionerSchedule" label="出诊医师" required>
       <ElSelect
         v-model="model.practitionerId"
-        clearable
         filterable
         placeholder="选择医师"
         style="width: 100%"
       >
         <ElOption
-          v-for="item in practitioners || []"
+          v-for="item in practitioners"
           :key="item.value"
           :label="item.label"
           :value="bookingOptionValue(item.value)"
         />
       </ElSelect>
-    </ElFormItem>
-    <ElFormItem label="诊室">
-      <ElSelect
-        v-model="model.locationId"
-        clearable
-        filterable
-        placeholder="可选，到院分诊时再定"
-        style="width: 100%"
-      >
-        <ElOption
-          v-for="item in clinicLocations || []"
-          :key="item.value"
-          :label="item.label"
-          :value="bookingOptionValue(item.value)"
-        />
-      </ElSelect>
+      <p class="schedule-draft-form__hint">
+        先选医师，号源类型将根据该医师在用户管理中配置的可接诊号源显示
+      </p>
     </ElFormItem>
     <ElFormItem label="号源类型" required>
       <ElSelect
         v-model="model.healthcareServiceId"
-        clearable
         filterable
-        placeholder="必选，如专家号/普通号"
+        :disabled="isPractitionerSchedule && !practitionerSelected"
+        :placeholder="
+          isPractitionerSchedule && !practitionerSelected ? '请先选择出诊医师' : '请选择'
+        "
         style="width: 100%"
       >
         <ElOption
-          v-for="item in healthcareServices || []"
+          v-for="item in healthcareServices"
           :key="item.value"
           :label="item.label"
           :value="bookingOptionValue(item.value)"
         />
       </ElSelect>
+      <p
+        v-if="isPractitionerSchedule && practitionerSelected && !healthcareServices.length"
+        class="schedule-draft-form__hint schedule-draft-form__hint--warn"
+      >
+        该医师未配置可接诊号源，请先在用户管理中维护
+      </p>
     </ElFormItem>
     <ElFormItem label="放号时段">
       <ElSelect
         v-model="model.slotProvisionTemplateId"
         clearable
         filterable
-        :placeholder="
-          slotProvisionTemplateOptions?.length
-            ? '可选，选中后自动带出出诊时段'
-            : '请先在「排班设置」配置放号时段'
-        "
+        placeholder="可选，选中后预览时段；具体放号在发布后批量放号"
         style="width: 100%"
         @change="handleT1Change"
       >
         <ElOption
-          v-for="item in slotProvisionTemplateOptions || []"
+          v-for="item in slotProvisionTemplateOptions"
           :key="item.value"
           :label="item.label"
           :value="bookingOptionValue(item.value)"
         />
       </ElSelect>
+      <p class="schedule-draft-form__hint">
+        时段明细在「批量放号」中导入或手动维护；此处仅绑定模板供预览
+      </p>
     </ElFormItem>
+    <SlotTemplateRowsField
+      v-if="model.slotProvisionTemplateId && slotPreviewRows.length"
+      v-model="slotPreviewRows"
+      readonly
+      label="时段"
+    />
     <ElFormItem label="出诊日期" required>
       <ElDatePicker
         v-model="model.planningDate"
@@ -158,56 +219,18 @@ async function handleT1Change(templateId?: BookingEntityId) {
         style="width: 100%"
       />
     </ElFormItem>
-    <ElFormItem label="出诊时段" required>
-      <div class="schedule-draft-form__presets">
-        <ElButton
-          v-for="(preset, key) in SESSION_PRESETS"
-          :key="key"
-          size="small"
-          :type="activePreset === key ? 'primary' : 'default'"
-          @click="handlePreset(key as SessionPreset)"
-        >
-          {{ preset.label }}
-        </ElButton>
-      </div>
-      <div class="schedule-draft-form__time-range">
-        <ElTimePicker
-          v-model="model.startTime"
-          placeholder="开始"
-          value-format="HH:mm:ss"
-          format="HH:mm"
-          style="width: 128px"
-        />
-        <span class="schedule-draft-form__time-sep">至</span>
-        <ElTimePicker
-          v-model="model.endTime"
-          placeholder="结束"
-          value-format="HH:mm:ss"
-          format="HH:mm"
-          style="width: 128px"
-        />
-      </div>
-    </ElFormItem>
   </ElForm>
 </template>
 
 <style scoped>
-.schedule-draft-form__presets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.schedule-draft-form__time-range {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-.schedule-draft-form__time-sep {
-  font-size: 13px;
+.schedule-draft-form__hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--el-text-color-secondary);
+}
+
+.schedule-draft-form__hint--warn {
+  color: var(--el-color-warning);
 }
 </style>

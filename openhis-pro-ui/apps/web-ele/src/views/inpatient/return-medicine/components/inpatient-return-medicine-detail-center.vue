@@ -11,6 +11,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 import { ElButton, ElEmpty, ElTable, ElTableColumn, ElTag } from 'element-plus';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
+import TraceCodeTooltip from '#/components/trace/trace-code-tooltip.vue';
 
 defineOptions({
   name: 'InpatientReturnMedicineDetailCenter',
@@ -164,7 +165,11 @@ defineExpose({
               </ElTag>
             </template>
           </ElTableColumn>
-          <ElTableColumn prop="traceNo" label="追溯码" min-width="120" show-overflow-tooltip />
+          <ElTableColumn prop="traceNo" label="追溯码" min-width="120">
+            <template #default="{ row }">
+              <TraceCodeTooltip :value="row.traceNo" />
+            </template>
+          </ElTableColumn>
         </ElTable>
         <ElEmpty
           v-else-if="selectedPatient && !detailLoading"

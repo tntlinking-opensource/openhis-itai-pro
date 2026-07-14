@@ -17,6 +17,7 @@ import {
 } from './mappers/outpatient-infusion-label';
 import { resolveNursePrescriptionPrintTargets } from './nurse-prescription-print';
 import { print, PRINT_SCENARIO } from './runtime';
+import { resolveOutpatientPrescriptionPrintScenario } from './resolve-outpatient-prescription-scenario';
 
 export interface PrintTreatmentSheetOptions {
   encounterId?: null | number | string;
@@ -163,7 +164,7 @@ export async function printNursePrescription(options: PrintNursePrescriptionOpti
     for (const group of groups) {
       const prescriptionNo = group[0]?.prescriptionNo?.trim() ?? '';
       const result = await print({
-        scenarioCode: PRINT_SCENARIO.outpatientRx,
+        scenarioCode: resolveOutpatientPrescriptionPrintScenario(group),
         source: group,
         bizRef: {
           encounterId,

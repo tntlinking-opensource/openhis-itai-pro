@@ -4,11 +4,19 @@
 import type { ApiResponse } from '#/types/api-response';
 
 import { requestClient } from '#/api/request';
+import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import {
+  coerceWorkbenchListLocationIdForApi,
+  filterWorkbenchListRowsByDateRange,
+  filterWorkbenchListRowsByKeyword,
+  INV_ALL_DEPT_PHARMACIES_LABEL,
+  mapInitOptionsToCabinetRowsWithAll,
+} from '#/utils/inventory/inventory-workbench-list';
 
 const BASE = '/inventoryDeptReturn';
 
 export interface LocationOptionDto {
-  locationId?: number;
+  locationId?: number | string;
   displayName?: string;
   active?: boolean;
 }
@@ -40,7 +48,7 @@ export interface DeptReturnListRowDto {
 }
 
 export interface PageDeptReturnsRequest {
-  sourceLocationId: number;
+  sourceLocationId: number | string;
   statusEnum?: number;
   keyword?: string;
   applyTimeFrom?: string;
@@ -52,7 +60,9 @@ export interface PageDeptReturnsRequest {
 
 export interface PageDeptReturnsResponse {
   total?: number;
-  records: DeptReturnListRowDto[];
+  totalCount?: number;
+  records?: DeptReturnListRowDto[];
+  content?: DeptReturnListRowDto[];
 }
 
 export interface GetDeptReturnDetailRequest {
@@ -89,7 +99,7 @@ export interface GetDeptReturnDetailResponse {
 
 export interface DeptReturnLineDto {
   itemTable?: string;
-  itemId?: number;
+  itemId?: number | string;
   itemQuantity?: number;
   unitCode?: string;
   lotNumber?: string;
@@ -101,8 +111,8 @@ export interface DeptReturnLineDto {
 
 export interface CreateDeptReturnRequest {
   originalBusNo: string;
-  sourceLocationId: number;
-  purposeLocationId: number;
+  sourceLocationId: number | string;
+  purposeLocationId: number | string;
   sourceTypeEnum?: number;
   purposeTypeEnum?: number;
   categoryEnum?: number;
@@ -112,8 +122,8 @@ export interface CreateDeptReturnRequest {
 
 export interface UpdateDeptReturnRequest {
   busNo: string;
-  sourceLocationId: number;
-  purposeLocationId: number;
+  sourceLocationId: number | string;
+  purposeLocationId: number | string;
   sourceTypeEnum?: number;
   purposeTypeEnum?: number;
   categoryEnum?: number;
@@ -203,7 +213,7 @@ export interface PageProductsForDeptReturnResponse {
 }
 
 export interface PageLinkableReturnSourceDocumentsRequest {
-  sourceLocationId: number;
+  sourceLocationId: number | string;
   keyword?: string;
   pageNo: number;
   pageSize: number;
@@ -281,6 +291,88 @@ export async function pageLinkableReturnSourceDocumentsApi(
     `${BASE}/pageLinkableReturnSourceDocuments`,
     body,
   );
+}
+
+export interface GetLinkableStockInDetailRequest {
+  busNo: string;
+  sourceLocationId?: number | string;
+  excludeReturnBusNo?: string;
+}
+
+export interface ReturnableStockInLineDto {
+  itemTable?: string;
+  itemId?: number | string;
+  productName?: string;
+  specification?: string;
+  manufacturer?: string;
+  returnableQuantity?: number;
+  unitCode?: string;
+  unitCodeDictText?: string;
+  lotNumber?: string;
+  traceNo?: string;
+  remake?: string;
+}
+
+export interface GetLinkableStockInDetailResponse {
+  originalBusNo?: string;
+  stockInBusNo?: string;
+  sourceLocationId?: number | string;
+  purposeLocationId?: number | string;
+  supplierId?: number | string;
+  categoryEnum?: string;
+  practitionerId?: number | string;
+  lines: ReturnableStockInLineDto[];
+}
+
+export async function getLinkableStockInDetailApi(body: GetLinkableStockInDetailRequest) {
+  return requestClient.post<ApiResponse<GetLinkableStockInDetailResponse>>(
+    `${BASE}/getLinkableStockInDetail`,
+    body,
+  );
+}
+
+/** 科室 init → 侧栏 cabinet 行（含「全部科室药房」）。 */
+export function mapDeptReturnInitToCabinetRows(
+  opts?: LocationOptionDto[],
+): Record<string, unknown>[] {
+  return mapInitOptionsToCabinetRowsWithAll(
+    (opts ?? []).map((o) => ({
+      value: o.locationId,
+      label: o.displayName,
+    })),
+    INV_ALL_DEPT_PHARMACIES_LABEL,
+  );
+}
+
+/** 工作站左侧列表：sourceLocationId=0 表示全部；日期/关键字在前端筛。 */
+export async function pageDeptReturnWorkbenchListApi(params: {
+  sourceLocationId?: number | string;
+  keyword?: string;
+  applyTimeBegin?: string;
+  applyTimeEnd?: string;
+  pageNo?: number;
+  pageSize?: number;
+}): Promise<{ records: DeptReturnListRowDto[]; total: number }> {
+  const sid = coerceWorkbenchListLocationIdForApi(params.sourceLocationId);
+  const res = await pageDeptReturnsApi({
+    sourceLocationId: sid,
+    typeEnum: DEP_RT_TYPE_ENUM,
+    keyword: params.keyword?.trim() || undefined,
+    pageNo: params.pageNo ?? 1,
+    pageSize: params.pageSize ?? 200,
+  });
+  const { content, totalCount } = parsePagedRowsFromApiData<DeptReturnListRowDto>(res.data);
+  const dateFiltered = filterWorkbenchListRowsByDateRange(
+    content,
+    params.applyTimeBegin,
+    params.applyTimeEnd,
+  );
+  const records = filterWorkbenchListRowsByKeyword(
+    dateFiltered as Record<string, unknown>[],
+    params.keyword,
+  ) as DeptReturnListRowDto[];
+  const filtered = (params.applyTimeBegin && params.applyTimeEnd) || params.keyword?.trim();
+  return { records, total: filtered ? records.length : totalCount };
 }
 
 /** typeEnum=22；SupplyRequestType DEPARTMENT=2；CABINET=11；SupplyCategory STOCK=1 */

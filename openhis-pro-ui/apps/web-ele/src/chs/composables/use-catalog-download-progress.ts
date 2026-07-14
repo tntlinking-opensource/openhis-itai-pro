@@ -314,8 +314,19 @@ export function useCatalogDownloadProgress() {
 
       if (!start.jobId) {
         overallPercent.value = 100;
+        for (const phase of batchPhases) {
+          phase.status = 'success';
+          phase.percent = 100;
+        }
         status.value = 'success';
-        detailLine.value = start.message ?? '无新版本需要入库';
+        detailLine.value =
+          start.message ?? '平台未返回可入库的 ZIP（无新版本或未拉到文件包）；游标与镜像行不会更新';
+        summary.value = {
+          totalUpsert: 0,
+          totalVersionCount: 0,
+          hasMore: false,
+          stoppedByLimit: false,
+        };
         return;
       }
 

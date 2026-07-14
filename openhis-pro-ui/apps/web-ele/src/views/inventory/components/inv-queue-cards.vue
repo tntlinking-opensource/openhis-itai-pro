@@ -11,7 +11,15 @@ import { Document } from '@element-plus/icons-vue';
 import { ElCard } from 'element-plus';
 
 import { formatInventoryTotalAmountDisplay } from '#/utils/inventory/inventory-qty-unit-display';
+import {
+  isSupplyStatusDraft,
+  isSupplyStatusRejected,
+} from '#/utils/inventory/inbound-receipt-status';
 import { isPurchaseRequestApproved } from '#/utils/warehouse/purchase-request-order-detail';
+import {
+  normalizeStocktakeStatusSort,
+  stocktakeStatusLabel,
+} from '#/utils/inventory/stocktake-doc-actions';
 
 import InvPrimaryBtn from './inv-primary-btn.vue';
 
@@ -23,7 +31,11 @@ const props = withDefaults(
     approverRoleLabel?: string;
     /** 库房下拉（用于草稿行 purpose 回退及 id→名称） */
     cabinetListOptions?: Record<string, unknown>[];
+    /** 空态主按钮文案（默认「新增单据」） */
+    emptyAddLabel?: string;
     emptyDescription?: string;
+    /** 空态是否展示「新增」按钮；只读壳单台账应关闭，避免歧义 */
+    showEmptyAdd?: boolean;
     /** 覆盖默认制单时间格式化 */
     formatApplyTime?: (value: unknown) => string;
     /** 覆盖默认审批时间格式化 */
@@ -53,9 +65,11 @@ const props = withDefaults(
     applicantRoleLabel: '制单人',
     approverRoleLabel: '审批人',
     cabinetListOptions: () => [],
+    emptyAddLabel: '新增单据',
     emptyDescription: '暂无单据',
     footerAmountLabel: '总金额',
     practitionerOption: () => [],
+    showEmptyAdd: true,
     showSupplier: false,
   },
 );
@@ -113,7 +127,7 @@ function displayBusNo(item: Record<string, unknown>): string {
 }
 
 function queueStatusClass(item: Record<string, unknown>): string {
-  if (item._draft || displayText(item.statusEnum_enumText) === '编辑中') {
+  if (item._draft || isSupplyStatusDraft(item.statusEnum)) {
     return 'queue-status--editing';
   }
   const approveFn = props.isApproved ?? isPurchaseRequestApproved;
@@ -151,7 +165,14 @@ function displayTotalAmount(row: Record<string, unknown>): string {
   if (fromFn !== undefined && fromFn !== null && String(fromFn).trim() !== '') {
     return String(fromFn).trim();
   }
-  const keys = ['totalPrice', 'totalAmount', 'totalMoney', 'sumTotalPrice', 'amount'];
+  const keys = [
+    'totalPrice',
+    'totalAmount',
+    'totalMoney',
+    'sumTotalPrice',
+    'amount',
+    'actualAmountSum',
+  ];
   for (const k of keys) {
     const raw = row[k];
     if (raw === undefined || raw === null || raw === '') continue;
@@ -191,6 +212,7 @@ function displayWarehouseLine(item: Record<string, unknown>): string {
     displayText(item.purposeLocationId_dictText) ||
     displayText(item.locationId_dictText) ||
     displayText(item.targetLocationId_dictText) ||
+    displayText(item.purposeLocationName) ||
     cabinetNameById(item.purposeLocationId ?? item.locationId);
   if (src && dst && src !== dst) return `${src} → ${dst}`;
   if (dst) return dst;
@@ -212,17 +234,50 @@ function practitionerLabelById(id: unknown): string {
   return '';
 }
 
-/** 审批人展示名：优先完全自定义，其次字典 + 职员选项 */
+/** 制单人展示名：优先后端 enrich 姓名，其次字典与职员选项 */
+function displayApplicantLine(item: Record<string, unknown>): string {
+  return (
+    displayText(item.applicantName) ||
+    displayText(item.applicantId_dictText) ||
+    displayText(item.creatorName) ||
+    practitionerLabelById(item.applicantId ?? item.practitionerId)
+  );
+}
+
+/** 审批人展示名：优先完全自定义，其次后端 enrich 姓名、字典 + 职员选项 */
 function displayApproverLine(item: Record<string, unknown>): string {
   const fromFn = props.resolveApproverLine?.(item);
   if (fromFn !== undefined && fromFn !== null && String(fromFn).trim() !== '') {
     return String(fromFn).trim();
   }
   return (
+    displayText(item.approverName) ||
     displayText(item.approverId_dictText) ||
     displayText(item.auditBy_dictText) ||
     displayText(item.reviewerId_dictText) ||
     practitionerLabelById(item.approverId ?? item.auditBy)
+  );
+}
+
+/** 状态徽章：优先 code→中文，避免透出 WITHDRAW 等英文 code */
+function displayStatusText(item: Record<string, unknown>): string {
+  const fromCode = stocktakeStatusLabel(
+    normalizeStocktakeStatusSort(
+      item.statusEnum ?? item.statusEnumText ?? item.statusEnum_enumText,
+    ),
+  );
+  if (fromCode && fromCode !== '—') return fromCode;
+  return displayText(item.statusEnumText) || displayText(item.statusEnum_enumText) || '—';
+}
+
+/** 驳回原因：列表 DTO rejectReason / reason */
+function displayRejectReason(item: Record<string, unknown>): string {
+  if (!isSupplyStatusRejected(item.statusEnum ?? item.statusEnumText)) return '';
+  return (
+    displayText(item.rejectReason) ||
+    displayText(item.reason) ||
+    displayText(item.changeReason) ||
+    ''
   );
 }
 </script>
@@ -246,7 +301,7 @@ function displayApproverLine(item: Record<string, unknown>): string {
               </div>
               <div class="queue-head__status">
                 <span class="queue-status" :class="queueStatusClass(item)">
-                  {{ item.statusEnum_enumText }}
+                  {{ displayStatusText(item) }}
                 </span>
               </div>
             </div>
@@ -258,8 +313,20 @@ function displayApproverLine(item: Record<string, unknown>): string {
               class="queue-line queue-line--plain queue-line--supplier min-w-0"
             >
               <span class="queue-plain-value truncate">{{
-                displayText(item.supplierId_dictText) || '—'
+                displayText(item.supplierId_dictText) || displayText(item.supplierName) || '—'
               }}</span>
+            </div>
+
+            <div
+              v-if="displayRejectReason(item)"
+              class="queue-line queue-line--plain queue-line--reject-reason min-w-0"
+            >
+              <span class="queue-label">驳回原因</span>
+              <span
+                class="queue-plain-value queue-reject-reason truncate"
+                :title="displayRejectReason(item)"
+                >{{ displayRejectReason(item) }}</span
+              >
             </div>
 
             <div class="queue-line queue-line--people-times">
@@ -267,7 +334,7 @@ function displayApproverLine(item: Record<string, unknown>): string {
                 <div class="queue-person-row min-w-0">
                   <span class="queue-label">{{ applicantRoleLabel }}</span>
                   <span class="queue-person-value truncate">{{
-                    displayText(item.applicantId_dictText) || '—'
+                    displayApplicantLine(item) || '—'
                   }}</span>
                 </div>
                 <div class="queue-person-row min-w-0">
@@ -308,7 +375,7 @@ function displayApproverLine(item: Record<string, unknown>): string {
     </template>
     <div v-else class="queue-empty flex flex-col items-center justify-center py-8">
       <el-empty :description="emptyDescription" :image-size="72">
-        <InvPrimaryBtn label="新增单据" @click="handleEmptyAdd" />
+        <InvPrimaryBtn v-if="showEmptyAdd" :label="emptyAddLabel" @click="handleEmptyAdd" />
       </el-empty>
     </div>
   </div>
@@ -451,6 +518,19 @@ function displayApproverLine(item: Record<string, unknown>): string {
 .queue-line {
   line-height: 1.35;
   min-width: 0;
+}
+
+.queue-line--reject-reason {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.queue-reject-reason {
+  min-width: 0;
+  flex: 1;
+  color: var(--el-color-danger);
+  font-size: 12px;
 }
 
 .queue-line--plain {

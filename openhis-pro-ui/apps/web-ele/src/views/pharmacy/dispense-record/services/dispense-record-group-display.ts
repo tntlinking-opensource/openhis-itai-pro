@@ -18,6 +18,7 @@ export interface DispenseRecordSourceRow {
 export type DispenseRecordTableRow = DispenseRecordSourceRow & {
   displayGroupKey?: string;
   displayGroupLineCount?: number;
+  displayGroupBlockIndex?: number;
   isFirstLineInDisplayGroup?: boolean;
   rowKey: string;
 };
@@ -50,7 +51,7 @@ const prescriptionMergeFieldSet = new Set<string>(DISPENSE_RECORD_PRESCRIPTION_M
 const encounterMergeFieldSet = new Set<string>(DISPENSE_RECORD_ENCOUNTER_MERGE_FIELDS);
 
 export interface DispenseRecordSpanMethodParams {
-  column: { field?: string };
+  column: { field?: string; property?: string };
   displayMode: DispenseRecordDisplayMode;
   row: DispenseRecordTableRow;
 }
@@ -232,6 +233,7 @@ export function enrichDispenseRecordRowsForDisplay(
   const orderedGroups =
     mode === 'BY_PRESCRIPTION' ? reorderRowGroupsForDispenseRefundPairs(groups) : groups;
   const result: DispenseRecordTableRow[] = [];
+  let blockIndex = 0;
   for (const group of orderedGroups) {
     const lineCount = group.rows.length;
     group.rows.forEach((row, lineIndex) => {
@@ -239,15 +241,17 @@ export function enrichDispenseRecordRowsForDisplay(
         ...row,
         displayGroupKey: group.groupKey,
         displayGroupLineCount: lineCount,
+        displayGroupBlockIndex: blockIndex,
         isFirstLineInDisplayGroup: lineIndex === 0,
         rowKey: String(row.dispenseId ?? ''),
       });
     });
+    blockIndex += 1;
   }
   return result;
 }
 
-/** VxeGrid spanMethod：按展示模式合并组头列；平铺模式不合并。 */
+/** ElTable / VxeGrid spanMethod：按展示模式合并组头列；平铺模式不合并。 */
 export function resolveDispenseRecordSpanMethod({
   row,
   column,
@@ -256,7 +260,7 @@ export function resolveDispenseRecordSpanMethod({
   if (displayMode === 'FLAT') {
     return undefined;
   }
-  const field = column.field;
+  const field = column.property ?? column.field;
   if (!field) {
     return undefined;
   }

@@ -22,8 +22,8 @@ withDefaults(defineProps<Props>(), {
 });
 
 export interface TcmPrescriptionHeaderForm {
-  chineseHerbsDoseQuantity: number;
-  days: number;
+  chineseHerbsDoseQuantity?: number;
+  days?: number;
   methodCode: string;
   rateCode: string;
   remark: string;
@@ -47,6 +47,20 @@ interface Props {
 }
 
 const model = defineModel<TcmPrescriptionHeaderForm>({ required: true });
+
+const emit = defineEmits<{
+  commit: [];
+}>();
+
+/** 下拉/开关变更后立即提交 */
+function handleFieldChangeCommit() {
+  emit('commit');
+}
+
+/** 输入框失焦后提交 */
+function handleFieldBlurCommit() {
+  emit('commit');
+}
 </script>
 
 <template>
@@ -57,7 +71,11 @@ const model = defineModel<TcmPrescriptionHeaderForm>({ required: true });
   >
     <div class="tcm-prescription-header__row tcm-prescription-header__row--primary">
       <div v-if="showTherapyType" class="tcm-prescription-header__therapy">
-        <ElRadioGroup v-model="model.therapyEnum" :disabled="disabled">
+        <ElRadioGroup
+          v-model="model.therapyEnum"
+          :disabled="disabled"
+          @change="handleFieldChangeCommit"
+        >
           <ElRadio label="LONG_TERM">长期</ElRadio>
           <ElRadio label="TEMPORARY">临时</ElRadio>
         </ElRadioGroup>
@@ -69,6 +87,7 @@ const model = defineModel<TcmPrescriptionHeaderForm>({ required: true });
           clearable
           placeholder="请选择用法"
           :disabled="disabled"
+          @change="handleFieldChangeCommit"
         >
           <ElOption
             v-for="opt in methodCodeOptions"
@@ -85,6 +104,7 @@ const model = defineModel<TcmPrescriptionHeaderForm>({ required: true });
           clearable
           placeholder="请选择频次"
           :disabled="disabled"
+          @change="handleFieldChangeCommit"
         >
           <ElOption
             v-for="opt in rateCodeOptions"
@@ -102,6 +122,7 @@ const model = defineModel<TcmPrescriptionHeaderForm>({ required: true });
           :max="30"
           :controls="false"
           :disabled="disabled"
+          @blur="handleFieldBlurCommit"
         />
       </ElFormItem>
       <ElFormItem label="付数" class="tcm-prescription-header__num">
@@ -112,10 +133,15 @@ const model = defineModel<TcmPrescriptionHeaderForm>({ required: true });
           :max="30"
           :controls="false"
           :disabled="disabled"
+          @blur="handleFieldBlurCommit"
         />
       </ElFormItem>
       <ElFormItem label="代煎" class="tcm-prescription-header__switch">
-        <ElSwitch v-model="model.sufferingFlag" :disabled="disabled" />
+        <ElSwitch
+          v-model="model.sufferingFlag"
+          :disabled="disabled"
+          @change="handleFieldChangeCommit"
+        />
       </ElFormItem>
     </div>
 
@@ -127,6 +153,7 @@ const model = defineModel<TcmPrescriptionHeaderForm>({ required: true });
           clearable
           placeholder="请选择诊断"
           :disabled="disabled"
+          @change="handleFieldChangeCommit"
         >
           <ElOption
             v-for="opt in syndromeGroupOptions"
@@ -143,6 +170,7 @@ const model = defineModel<TcmPrescriptionHeaderForm>({ required: true });
           placeholder="备注"
           :disabled="disabled"
           clearable
+          @blur="handleFieldBlurCommit"
         />
       </ElFormItem>
     </div>

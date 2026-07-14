@@ -1,6 +1,7 @@
 /** 住院发药左侧队列行（由接口 DTO 映射） */
 export interface InpatientDispenseQueuePatient {
   id: string;
+  patientId?: string;
   patientName: string;
   genderText: string;
   ageLabel: string;

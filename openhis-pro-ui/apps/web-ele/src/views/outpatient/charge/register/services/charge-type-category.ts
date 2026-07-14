@@ -1,9 +1,10 @@
-/** 费用性质分类码（与后端 {@code ChargeTypeCategory#getCode} 一致） */
+/** 费用性质分类码（与后端 {@code ContractCategory.code} 一致） */
 export const CHARGE_TYPE_CATEGORY = {
   SELF_PAY: '1',
   PUBLIC_PAY: '2',
   PROVINCIAL_INSURANCE: '3',
   MUNICIPAL_INSURANCE: '4',
+  WORKER_INSURANCE: 'WORKER_INSURANCE',
 } as const;
 
 export type ChargeTypeCategoryCode =
@@ -24,6 +25,28 @@ export function isInsuranceContractCategory(category?: string): boolean {
 
 export function isPublicChargeContractCategory(category?: string): boolean {
   return category ? PUBLIC_CHARGE_CONTRACT_CATEGORIES.has(category) : false;
+}
+
+export function isWorkInjuryContractCategory(category?: string): boolean {
+  return category === CHARGE_TYPE_CATEGORY.WORKER_INSURANCE;
+}
+
+/** 自费费用性质（与 {@link CHARGE_TYPE_CATEGORY.SELF_PAY} 一致） */
+export function isSelfPayContractCategory(category?: string): boolean {
+  return category === CHARGE_TYPE_CATEGORY.SELF_PAY;
+}
+
+/** 是否需走医保读卡/待遇链路（省/市医保、工伤；不含公费） */
+export function requiresInsuranceBenefitFlow(category?: string): boolean {
+  return isInsuranceContractCategory(category) || isWorkInjuryContractCategory(category);
+}
+
+/** 是否非自费费用性质（含公费、医保、工伤） */
+export function isNonSelfPayContractCategory(category?: string): boolean {
+  if (!category) {
+    return false;
+  }
+  return !isSelfPayContractCategory(category);
 }
 
 /** 读卡后引导 1101 时，医保费用性质优先顺序 */

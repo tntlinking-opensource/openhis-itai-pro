@@ -31,6 +31,13 @@ export interface InpatientDoctorStationPatientDto {
   genderEnumText?: string;
   houseName?: string;
   lowBalanceWarning?: boolean;
+  nursingLevelActivityId?: string;
+  /** 护理级别展示名（IF-IP-DOR-01 · BR-IP-DOR-009） */
+  nursingLevelName?: string;
+  /** 护理级别医嘱主键 */
+  nursingLevelServiceRequestId?: string;
+  /** 护理级别医嘱状态 DRAFT/ACTIVE/VERIFIED/STOPPED */
+  nursingLevelStatusEnum?: string;
   organizationId?: string;
   organizationName?: string;
   paidAmount?: number | string;

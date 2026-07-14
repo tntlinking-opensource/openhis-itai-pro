@@ -144,10 +144,10 @@ defineExpose({
 </script>
 
 <template>
-  <div class="flex h-full flex-col border-l bg-white">
-    <div class="flex h-[42px] border-b">
+  <div class="history-template-panel flex h-full flex-col border-l bg-white">
+    <div class="history-template-panel__tabs flex h-[42px] border-b">
       <div
-        class="flex-1 cursor-pointer px-4 py-2 text-center text-sm transition-colors"
+        class="history-template-panel__tab flex-1 cursor-pointer px-4 py-2 text-center text-sm transition-colors"
         :class="{
           'border-b-2 border-blue-500 font-medium text-blue-500': activeTab === 'template',
           'text-gray-600 hover:text-gray-900': activeTab !== 'template',
@@ -157,7 +157,7 @@ defineExpose({
         模版（新建）
       </div>
       <div
-        class="flex-1 cursor-pointer px-4 py-2 text-center text-sm transition-colors"
+        class="history-template-panel__tab flex-1 cursor-pointer px-4 py-2 text-center text-sm transition-colors"
         :class="{
           'border-b-2 border-blue-500 font-medium text-blue-500': activeTab === 'history',
           'text-gray-600 hover:text-gray-900': activeTab !== 'history',
@@ -168,7 +168,9 @@ defineExpose({
       </div>
     </div>
 
-    <div class="flex h-[42px] flex-shrink-0 items-center border-b px-[10px]">
+    <div
+      class="history-template-panel__search flex h-[42px] flex-shrink-0 items-center border-b px-[10px]"
+    >
       <ElInput
         v-model="searchKeyword"
         placeholder="病历名称搜索..."
@@ -180,7 +182,7 @@ defineExpose({
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto">
-      <div v-show="activeTab === 'template'" class="p-4">
+      <div v-show="activeTab === 'template'" class="history-template-panel__template-wrap p-4">
         <EmrTemplateTree
           ref="templateTreeRef"
           :station-kind="stationKind"

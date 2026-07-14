@@ -13,6 +13,7 @@ import type {
   YbRegisterBenefitPreviewDto,
 } from '#/api/outpatient-registration';
 
+import { isSameBookingId } from '#/api/booking/booking-id';
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
 import { ElAlert, ElButton, ElTabPane, ElTabs } from 'element-plus';
@@ -25,6 +26,7 @@ import {
   useFormKeyboardNavigation,
 } from '#/hooks/use-form-keyboard-navigation';
 import { calcAgeFromBirthDate, parseChineseIdCard18 } from '#/utils/format/id-card-cn';
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
 
 import {
   inferInsuranceCategoryFromInsuplc,
@@ -39,18 +41,34 @@ import { listPractitioners, loadRegisterFormInit } from '../services/register.se
 import { displayBenefitDash } from './register-benefit-display.utils';
 import RegisterBenefitPreviewPanel from './register-benefit-preview-panel.vue';
 import RegisterPatientEncounterHistory from './register-patient-encounter-history.vue';
+import WorkInjury2301RegisterAction from '#/chs/work-injury/work-injury-2301-register-action.vue';
 
 defineOptions({
   name: 'RegisterFormArea',
 });
 
-const props = defineProps<{
-  /** 当前选中患者，供历史就诊 Tab 查询 */
-  activePatientId?: string;
-  /** 待遇信息后台拉取中（含读卡/扫码） */
-  benefitLoading?: boolean;
-  benefitLoadingText?: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    /** 当前选中患者，供历史就诊 Tab 查询 */
+    activePatientId?: string;
+    /** 待遇信息后台拉取中（含读卡/扫码） */
+    benefitLoading?: boolean;
+    benefitLoadingText?: string;
+    /** 分栏布局：左患者信息、右挂号信息（对齐新挂号页线框） */
+    layout?: 'split' | 'stacked';
+    /** 工伤预结算后的就诊 ID（供 2301 审批上传入口）。 */
+    workInjuryPreEncounterId?: string | number;
+    workInjuryPreContractId?: string | number;
+  }>(),
+  {
+    activePatientId: undefined,
+    benefitLoading: false,
+    benefitLoadingText: '',
+    layout: 'split',
+    workInjuryPreEncounterId: undefined,
+    workInjuryPreContractId: undefined,
+  },
+);
 
 const emit = defineEmits<{
   contractChange: [category: string];
@@ -141,9 +159,11 @@ async function handleDoctorChange(value: string | undefined) {
   registerFormApi.setFieldValue('serviceTypeId', undefined);
   emit('serviceTypeChange', '');
   registerFeeAmount.value = 0;
+  await syncServiceTypeFieldState();
 }
 
-const formWrapperClass = 'grid grid-cols-2 gap-x-2 gap-y-1';
+const patientFormWrapperClass = 'register-patient-grid';
+const registerFormWrapperClass = 'register-reg-grid';
 const formAreaRef = ref<HTMLElement | null>(null);
 
 /** 挂号表单区键盘导航：与项目统一 Hook 对齐，并补上 tabindex 类控件与禁用态过滤。 */
@@ -210,10 +230,13 @@ async function handleDepartmentChange(value: string) {
   emit('serviceTypeChange', '');
   await refreshDoctorOptions(value || undefined);
   await refreshServiceTypeOptions(value || undefined, undefined);
+  registerFormApi.setFieldValue('serviceTypeId', undefined);
+  registerFeeAmount.value = 0;
+  await syncServiceTypeFieldState();
 }
 
 /**
- * 按科室/医师收窄号源类型下拉（booking 启用时与当日放号求交）。
+ * 按科室/医师重拉号源类型（后端按 BR-REG-014：医师可接诊号源；与排班/放号无关）。
  */
 async function refreshServiceTypeOptions(organizationId?: string, practitionerId?: string) {
   const init = await loadRegisterFormInit({
@@ -222,11 +245,21 @@ async function refreshServiceTypeOptions(organizationId?: string, practitionerId
   });
   serviceTypeOptions.value = [...init.serviceTypeOptions];
   serviceTypeFeeById.value = { ...init.serviceTypeFeeById };
+  await syncServiceTypeFieldState();
+}
+
+/** 须先选科室或医生后才允许选号源（预约锁定除外）。 */
+async function syncServiceTypeFieldState() {
+  const values = await registerFormApi.getValues();
+  const hasDepartment = String(values.departmentId ?? '').trim() !== '';
+  const hasDoctor = String(values.doctorId ?? '').trim() !== '';
+  const canSelectServiceType = bookingLocked.value || hasDepartment || hasDoctor;
   registerFormApi.updateSchema([
     {
       fieldName: 'serviceTypeId',
       componentProps: {
-        disabled: bookingLocked.value,
+        disabled: !canSelectServiceType || bookingLocked.value,
+        placeholder: canSelectServiceType ? '请选择号源类型' : '请先选择科室或医生',
         options: serviceTypeOptions.value,
         onChange: handleServiceTypeChange,
       },
@@ -308,6 +341,7 @@ async function applyBookingSnapshot(snapshot: {
  */
 async function applySlotSelection(payload: RegisterSlotSelectionPayload) {
   bookingLocked.value = false;
+  lastSlotSelection.value = { ...payload };
   const organizationId = String(payload.organizationId ?? '');
   const practitionerId =
     payload.practitionerId !== null &&
@@ -318,11 +352,33 @@ async function applySlotSelection(payload: RegisterSlotSelectionPayload) {
   const healthcareServiceId = String(payload.healthcareServiceId ?? '');
   await refreshDoctorOptions(organizationId || undefined);
   await refreshServiceTypeOptions(organizationId || undefined, practitionerId);
+  // 点选号源带回的类型可能不在「医师可接诊」收窄列表里；并入下拉，禁止只显示雪花 ID
+  ensureServiceTypeOptionPresent(healthcareServiceId, payload.healthcareServiceName || '号源类型');
   registerFormApi.setFieldValue('departmentId', organizationId || undefined);
   registerFormApi.setFieldValue('doctorId', practitionerId);
   registerFormApi.setFieldValue('serviceTypeId', healthcareServiceId || undefined);
   updateRegisterFeeDisplay(healthcareServiceId || undefined);
   syncBookingFieldLockState();
+}
+
+/**
+ * 保证号源类型下拉含指定项（与 isSameBookingId 对齐，避免 value 类型不一致漏匹配）。
+ */
+function ensureServiceTypeOptionPresent(serviceTypeId: string, label: string) {
+  if (!serviceTypeId) {
+    return;
+  }
+  const exists = serviceTypeOptions.value.some((item) =>
+    isSameBookingId(item.value, serviceTypeId),
+  );
+  if (exists) {
+    return;
+  }
+  serviceTypeOptions.value = [
+    ...serviceTypeOptions.value,
+    { value: serviceTypeId, label: label || '号源类型' },
+  ];
+  void syncServiceTypeFieldState();
 }
 
 /**
@@ -359,8 +415,9 @@ const [PatientForm, patientFormApi] = useVbenForm(
         style: { width: '100%' },
       },
     },
-    layout: 'horizontal',
-    wrapperClass: formWrapperClass,
+    compact: true,
+    layout: 'vertical',
+    wrapperClass: patientFormWrapperClass,
     schema: computed(() => [
       {
         component: 'Input',
@@ -395,15 +452,6 @@ const [PatientForm, patientFormApi] = useVbenForm(
         },
       },
       {
-        component: 'RadioGroup',
-        fieldName: 'patientGender',
-        label: '性别',
-        required: true,
-        componentProps: {
-          options: genderOptions.value,
-        },
-      },
-      {
         component: 'DatePicker',
         fieldName: 'patientBirthday',
         label: '出生日期',
@@ -413,6 +461,15 @@ const [PatientForm, patientFormApi] = useVbenForm(
           style: { width: '100%' },
           format: 'YYYY-MM-DD',
           valueFormat: 'YYYY-MM-DD',
+        },
+      },
+      {
+        component: 'RadioGroup',
+        fieldName: 'patientGender',
+        label: '性别',
+        required: true,
+        componentProps: {
+          options: genderOptions.value,
         },
       },
       {
@@ -436,9 +493,10 @@ const [RegisterForm, registerFormApi] = useVbenForm(
         style: { width: '100%' },
       },
     },
+    compact: true,
     handleValuesChange: handleRegisterValuesChange,
-    layout: 'horizontal',
-    wrapperClass: formWrapperClass,
+    layout: 'vertical',
+    wrapperClass: registerFormWrapperClass,
     schema: computed(() => [
       {
         component: 'Select',
@@ -461,6 +519,7 @@ const [RegisterForm, registerFormApi] = useVbenForm(
           placeholder: '请选择医生',
           filterable: true,
           options: doctorOptions.value,
+          onChange: handleDoctorChange,
         },
       },
       {
@@ -481,6 +540,8 @@ const [RegisterForm, registerFormApi] = useVbenForm(
         label: '号源类型',
         required: true,
         componentProps: {
+          placeholder: '请先选择科室或医生',
+          disabled: true,
           options: serviceTypeOptions.value,
           onChange: handleServiceTypeChange,
         },
@@ -500,10 +561,17 @@ const benefitInfo = ref<RegisterBenefitDisplayPayload>(emptyBenefitInfo());
 /** 1101/2001/5301/5206 完整预览（下方 Tab 展示） */
 const benefitYbPreview = ref<null | YbRegisterBenefitPreviewDto>(null);
 
+const benefitYbPreviewForDisplay = computed<YbRegisterBenefitPreviewDto>(
+  () => benefitYbPreview.value ?? {},
+);
+
 /** 切换多险种时重查 2001 */
 const benefitRefreshContext = ref<RegisterBenefitPreviewContext>({});
 
 const benefitSectionTab = ref<'benefit' | 'history'>('benefit');
+
+/** 右侧摘要：最近一次点选的号源（仅用于表单回填，不再展示摘要条） */
+const lastSlotSelection = ref<null | RegisterSlotSelectionPayload>(null);
 
 watch(
   () => props.benefitLoading,
@@ -524,6 +592,9 @@ const hasBenefitDisplay = computed(() => {
   }
   if (info.kind === 'STUDENT') {
     return Boolean(info.studentNo || info.studentName);
+  }
+  if (info.kind === 'WORK_INJURY') {
+    return Boolean(info.eligibilityMessage);
   }
   return false;
 });
@@ -729,7 +800,7 @@ function clearBenefitPreview() {
  * 按号源类型下拉 value 取展示用 label（挂号类型展示名）。
  */
 function getServiceTypeLabel(serviceTypeId: unknown): string | undefined {
-  return serviceTypeOptions.value.find((d) => d.value === String(serviceTypeId ?? ''))?.label;
+  return serviceTypeOptions.value.find((d) => isSameBookingId(d.value, serviceTypeId))?.label;
 }
 
 /**
@@ -737,6 +808,7 @@ function getServiceTypeLabel(serviceTypeId: unknown): string | undefined {
  */
 async function resetForSubmitSuccess() {
   bookingLocked.value = false;
+  lastSlotSelection.value = null;
   patientFormApi.resetForm();
   registerFormApi.resetForm();
   registerFeeAmount.value = 0;
@@ -754,6 +826,7 @@ async function resetForSubmitSuccess() {
  */
 function resetForClear() {
   bookingLocked.value = false;
+  lastSlotSelection.value = null;
   patientFormApi.resetForm();
   registerFormApi.resetForm();
   benefitInfo.value = emptyBenefitInfo();
@@ -872,16 +945,173 @@ onMounted(async () => {
     },
   ]);
   registerFeeAmount.value = 0;
+  await syncServiceTypeFieldState();
 });
 </script>
 
 <template>
   <div
     ref="formAreaRef"
-    class="reg-bill-form-area flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-1"
+    class="reg-bill-form-area h-full min-h-0"
     @keydown.capture="handleFormKeydown"
   >
-    <div class="space-y-2">
+    <div v-if="layout === 'split'" class="register-workspace-layout h-full min-h-0">
+      <div class="register-workspace-layout__main">
+        <aside class="register-workspace-layout__panel register-workspace-layout__panel--left">
+          <SectionTitle class="register-workspace-layout__section-title" title="患者信息" />
+          <div v-if="$slots['patient-toolbar']" class="register-workspace-layout__patient-toolbar">
+            <slot name="patient-toolbar" />
+          </div>
+          <PatientForm />
+
+          <div class="register-workspace-layout__section-split" />
+
+          <SectionTitle class="register-workspace-layout__section-title" title="待遇信息" />
+          <div
+            v-loading="benefitLoading"
+            :element-loading-text="benefitLoadingText || '正在拉取待遇信息…'"
+            class="register-workspace-layout__benefit"
+            :class="{ 'register-workspace-layout__benefit--filled': hasBenefitDisplay }"
+          >
+            <template
+              v-if="
+                benefitInfo.kind === 'STUDENT' && (benefitInfo.studentNo || benefitInfo.studentName)
+              "
+            >
+              <div class="register-benefit-section__field-grid">
+                <div class="register-benefit-section__field">
+                  <div class="register-benefit-section__field-label">姓名</div>
+                  <div class="register-benefit-section__field-value">
+                    {{ displayBenefitDashLocal(benefitInfo.studentName) }}
+                  </div>
+                </div>
+                <div class="register-benefit-section__field">
+                  <div class="register-benefit-section__field-label">学号</div>
+                  <div class="register-benefit-section__field-value">
+                    {{ displayBenefitDashLocal(benefitInfo.studentNo) }}
+                  </div>
+                </div>
+                <div
+                  class="register-benefit-section__field register-benefit-section__field--span-2"
+                >
+                  <div class="register-benefit-section__field-label">院系</div>
+                  <div class="register-benefit-section__field-value">
+                    {{ displayBenefitDashLocal(benefitInfo.college) }}
+                  </div>
+                </div>
+                <div
+                  class="register-benefit-section__field register-benefit-section__field--span-2"
+                >
+                  <div class="register-benefit-section__field-label">公费资格</div>
+                  <div class="register-benefit-section__field-value">
+                    {{
+                      benefitInfo.eligible === true
+                        ? '符合'
+                        : benefitInfo.eligible === false
+                          ? displayBenefitDashLocal(benefitInfo.eligibilityMessage || '不符合')
+                          : '—'
+                    }}
+                  </div>
+                </div>
+              </div>
+            </template>
+            <div v-else-if="benefitInfo.kind === 'WORK_INJURY'" class="space-y-2">
+              <div
+                class="register-workspace-layout__benefit-hint register-workspace-layout__benefit-hint--warning"
+              >
+                {{ benefitInfo.eligibilityMessage || '工伤保险：挂号费须自费' }}
+              </div>
+              <WorkInjury2301RegisterAction
+                v-if="workInjuryPreEncounterId && workInjuryPreContractId"
+                :encounter-id="workInjuryPreEncounterId"
+                :contract-id="workInjuryPreContractId"
+              />
+            </div>
+            <template v-else-if="hasBenefitDisplay">
+              <ElAlert
+                v-if="showContractMismatch && contractMatch?.hintMessage"
+                type="warning"
+                :closable="false"
+                show-icon
+                class="register-workspace-layout__benefit-alert"
+              >
+                <div class="flex flex-wrap items-center gap-2">
+                  <span>{{ contractMatch.hintMessage }}</span>
+                  <ElButton
+                    v-if="contractMatch.recommendedContractName"
+                    link
+                    type="primary"
+                    @click="applyRecommendedContract"
+                  >
+                    改用 {{ contractMatch.recommendedContractName }}
+                  </ElButton>
+                </div>
+              </ElAlert>
+              <RegisterBenefitPreviewPanel
+                layout="vertical"
+                :preview="benefitYbPreviewForDisplay"
+                :card-no="benefitInfo.cardNo"
+                :medium-type="benefitInfo.mediumType"
+                :contract-id="benefitRefreshContext.contractId"
+                :yb-card-info="benefitRefreshContext.ybCardInfo"
+                :yb-card-sn="benefitRefreshContext.ybCardSn"
+                :yb-certno="benefitRefreshContext.ybCertno"
+                :yb-medium-type="benefitRefreshContext.ybMediumType"
+                :scrollable-tables="false"
+                default-show-all-treatment
+              />
+            </template>
+            <div v-else class="register-workspace-layout__benefit-hint">
+              读卡或选择医保类费用性质后将显示待遇信息
+            </div>
+          </div>
+        </aside>
+
+        <aside class="register-workspace-layout__panel register-workspace-layout__panel--right">
+          <div class="register-workspace-layout__reg-head">
+            <SectionTitle class="register-workspace-layout__section-title" title="挂号信息" />
+            <div v-if="commonDepartments.length > 0" class="register-workspace-layout__dept-chips">
+              <ElButton
+                v-for="dept in commonDepartments"
+                :key="dept.value"
+                size="small"
+                @click="quickSelectDepartment(dept.value)"
+              >
+                {{ dept.label }}
+              </ElButton>
+            </div>
+          </div>
+          <RegisterForm />
+
+          <template v-if="$slots.slots">
+            <div class="register-workspace-layout__section-split" />
+            <div class="register-workspace-layout__slots-head">
+              <SectionTitle class="register-workspace-layout__section-title" title="选择号源" />
+              <div v-if="$slots['slots-toolbar']" class="register-workspace-layout__slots-meta">
+                <slot name="slots-toolbar" />
+              </div>
+            </div>
+            <div class="register-workspace-layout__slots">
+              <slot name="slots" />
+            </div>
+          </template>
+
+          <div v-if="$slots.actions" class="register-workspace-layout__slot-actions">
+            <div class="register-workspace-layout__slot-fee">
+              <span class="register-workspace-layout__slot-fee-label">挂号费用</span>
+              <span class="register-workspace-layout__slot-fee-amount">
+                ¥{{ registerFeeAmount.toFixed(2) }}
+              </span>
+            </div>
+            <div class="register-workspace-layout__slot-actions-btns">
+              <slot name="actions" />
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <div v-else class="space-y-2 overflow-y-auto px-2 py-1">
       <div>
         <SectionTitle class="mb-1" title="患者信息" />
         <PatientForm />
@@ -903,9 +1133,9 @@ onMounted(async () => {
         </div>
         <RegisterForm />
         <div class="ml-auto mt-2 flex w-1/2 items-baseline justify-end gap-2">
-          <span class="shrink-0 text-base text-gray-500">挂号费用</span>
+          <span class="shrink-0 text-base text-[var(--el-text-color-regular)]">挂号费用</span>
           <span class="text-xl font-semibold tabular-nums text-[var(--el-color-primary)]">
-            ¥{{ registerFeeAmount.toFixed(2) }}
+            ¥{{ formatMoneyDisplay(registerFeeAmount) }}
           </span>
         </div>
       </div>
@@ -915,16 +1145,54 @@ onMounted(async () => {
           <div
             v-loading="benefitLoading"
             :element-loading-text="benefitLoadingText || '正在拉取待遇信息…'"
-            class="benefit-tab-panel min-h-[140px] border-t bg-[#f8fafc] px-2 pb-2 pt-2"
+            class="benefit-tab-panel min-h-[140px] border-t bg-[var(--el-fill-color-lighter)] px-2 pb-2 pt-2"
           >
-            <div
-              v-if="!benefitLoading && !hasBenefitDisplay"
-              class="py-6 text-center text-sm text-gray-400"
-            >
-              切换医保/公费费用性质后将自动加载；医保类请先读身份证、医保卡或医保码
-            </div>
-            <div v-else-if="hasBenefitDisplay" class="benefit-tab-body space-y-2">
-              <template v-if="benefitInfo.kind === 'INSURANCE'">
+            <div class="benefit-tab-body space-y-2">
+              <template v-if="benefitInfo.kind === 'STUDENT'">
+                <div class="grid grid-cols-3 gap-x-2 gap-y-1 text-sm">
+                  <div>
+                    <div class="mb-0.5 text-[var(--el-text-color-secondary)]">姓名</div>
+                    <div class="font-medium">
+                      {{ displayBenefitDashLocal(benefitInfo.studentName) }}
+                    </div>
+                  </div>
+                  <div>
+                    <div class="mb-0.5 text-[var(--el-text-color-secondary)]">学号</div>
+                    <div class="font-medium">
+                      {{ displayBenefitDashLocal(benefitInfo.studentNo) }}
+                    </div>
+                  </div>
+                  <div>
+                    <div class="mb-0.5 text-[var(--el-text-color-secondary)]">院系</div>
+                    <div class="font-medium">
+                      {{ displayBenefitDashLocal(benefitInfo.college) }}
+                    </div>
+                  </div>
+                  <div class="col-span-3">
+                    <div class="mb-0.5 text-[var(--el-text-color-secondary)]">公费资格</div>
+                    <div class="font-medium">
+                      {{
+                        benefitInfo.eligible === true
+                          ? '符合'
+                          : benefitInfo.eligible === false
+                            ? displayBenefitDashLocal(benefitInfo.eligibilityMessage || '不符合')
+                            : '—'
+                      }}
+                    </div>
+                  </div>
+                </div>
+              </template>
+              <div v-else-if="benefitInfo.kind === 'WORK_INJURY'" class="space-y-2">
+                <div class="text-sm text-[var(--el-color-warning)]">
+                  {{ benefitInfo.eligibilityMessage || '工伤保险：挂号费须自费' }}
+                </div>
+                <WorkInjury2301RegisterAction
+                  v-if="workInjuryPreEncounterId && workInjuryPreContractId"
+                  :encounter-id="workInjuryPreEncounterId"
+                  :contract-id="workInjuryPreContractId"
+                />
+              </div>
+              <template v-else>
                 <ElAlert
                   v-if="showContractMismatch && contractMatch?.hintMessage"
                   type="warning"
@@ -944,8 +1212,7 @@ onMounted(async () => {
                   </div>
                 </ElAlert>
                 <RegisterBenefitPreviewPanel
-                  v-if="benefitYbPreview"
-                  :preview="benefitYbPreview"
+                  :preview="benefitYbPreviewForDisplay"
                   :card-no="benefitInfo.cardNo"
                   :medium-type="benefitInfo.mediumType"
                   :contract-id="benefitRefreshContext.contractId"
@@ -954,46 +1221,14 @@ onMounted(async () => {
                   :yb-certno="benefitRefreshContext.ybCertno"
                   :yb-medium-type="benefitRefreshContext.ybMediumType"
                   :scrollable-tables="false"
+                  default-show-all-treatment
                 />
               </template>
-              <div
-                v-else-if="benefitInfo.kind === 'STUDENT'"
-                class="grid grid-cols-3 gap-x-2 gap-y-1 text-sm"
-              >
-                <div>
-                  <div class="mb-0.5 text-gray-500">姓名</div>
-                  <div class="font-medium">
-                    {{ displayBenefitDashLocal(benefitInfo.studentName) }}
-                  </div>
-                </div>
-                <div>
-                  <div class="mb-0.5 text-gray-500">学号</div>
-                  <div class="font-medium">
-                    {{ displayBenefitDashLocal(benefitInfo.studentNo) }}
-                  </div>
-                </div>
-                <div>
-                  <div class="mb-0.5 text-gray-500">院系</div>
-                  <div class="font-medium">{{ displayBenefitDashLocal(benefitInfo.college) }}</div>
-                </div>
-                <div class="col-span-3">
-                  <div class="mb-0.5 text-gray-500">公费资格</div>
-                  <div class="font-medium">
-                    {{
-                      benefitInfo.eligible === true
-                        ? '符合'
-                        : benefitInfo.eligible === false
-                          ? displayBenefitDashLocal(benefitInfo.eligibilityMessage || '不符合')
-                          : '—'
-                    }}
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </ElTabPane>
         <ElTabPane label="历史就诊" name="history">
-          <div class="border-t bg-[#f8fafc] px-2 pb-2 pt-2">
+          <div class="border-t bg-[var(--el-fill-color-lighter)] px-2 pb-2 pt-2">
             <RegisterPatientEncounterHistory
               :patient-id="props.activePatientId"
               :patient-keyword="historyPatientKeyword"
@@ -1006,11 +1241,453 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.reg-bill-form-area :deep(.el-form-item__label) {
-  padding-right: 8px;
-  color: #020817;
+.register-workspace-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.register-workspace-layout__patient-toolbar {
+  flex-shrink: 0;
+  width: 100%;
+  min-width: 0;
+}
+
+/* 患者检索下拉与下方 Element 表单控件对齐 */
+.register-workspace-layout__patient-toolbar :deep(.vxe-pulldown) {
+  display: block !important;
+  width: 100% !important;
+  min-width: 0;
+}
+
+.register-workspace-layout__patient-toolbar :deep(.vxe-input) {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: var(--form-control-height);
+  font-size: var(--el-font-size-base);
+  line-height: calc(var(--form-control-height) - 2px);
+  border-radius: var(--form-control-radius);
+}
+
+.register-workspace-layout__patient-toolbar :deep(.vxe-input--inner) {
+  height: calc(var(--form-control-height) - 2px);
+  line-height: calc(var(--form-control-height) - 2px);
+}
+
+.register-workspace-layout__main {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 8px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.register-workspace-layout__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px 10px;
+  overflow: hidden;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+}
+
+.register-workspace-layout__panel--left {
+  flex: 0 0 46%;
+}
+
+.register-workspace-layout__panel--right {
+  flex: 1 1 auto;
+}
+
+.register-workspace-layout__section-title {
+  flex-shrink: 0;
+  margin-bottom: 0;
+  font-size: 14px;
+}
+
+.register-workspace-layout__section-split {
+  flex-shrink: 0;
+  margin: 2px 0;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.register-workspace-layout__reg-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.register-workspace-layout__dept-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.register-workspace-layout__benefit {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.register-workspace-layout__benefit--filled {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.register-workspace-layout__slots-head {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.register-workspace-layout__slots-meta {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.register-workspace-layout__slots {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: visible;
+}
+
+.register-workspace-layout__benefit-hint {
+  padding: 4px 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
+}
+
+.register-workspace-layout__benefit-hint--warning {
+  color: var(--el-color-warning);
+}
+
+.register-workspace-layout__benefit-alert {
+  padding: 4px 8px;
+  margin-bottom: 4px;
+}
+
+.register-benefit-section__field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 8px;
+  align-items: center;
+}
+
+.register-benefit-section__field {
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+  min-height: 22px;
+}
+
+.register-benefit-section__field--span-2 {
+  grid-column: span 2;
+}
+
+.register-benefit-section__field-label {
+  flex-shrink: 0;
+  width: 64px;
+  min-width: 64px;
+  font-size: 12px;
   font-weight: 500;
-  line-height: 28px;
+  line-height: 18px;
+  color: var(--el-text-color-secondary);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.register-benefit-section__field-label::after {
+  content: '：';
+}
+
+.register-benefit-section__field-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--el-text-color-primary);
+  white-space: nowrap;
+}
+
+.register-workspace-layout__benefit :deep(.register-benefit-preview-panel--vertical) {
+  gap: 4px;
+}
+
+.register-workspace-layout__benefit :deep(.register-benefit-preview-panel__field-grid) {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px 8px;
+}
+
+.register-workspace-layout__benefit :deep(.register-benefit-preview-panel__field--span-4) {
+  grid-column: span 3;
+}
+
+.register-workspace-layout__benefit :deep(.register-benefit-preview-panel__field--span-2) {
+  grid-column: span 2;
+}
+
+.register-workspace-layout__benefit :deep(.register-benefit-preview-panel__field) {
+  min-height: 22px;
+}
+
+.register-workspace-layout__benefit :deep(.register-benefit-preview-panel__field-label) {
+  width: 64px;
+  min-width: 64px;
+  max-width: 64px;
+  font-size: 12px;
+}
+
+.register-workspace-layout__benefit :deep(.register-benefit-preview-panel__field-value) {
+  font-size: 12px;
+}
+
+.register-workspace-layout__benefit :deep(.register-benefit-preview-panel__field-value--accent) {
+  font-weight: 600;
+  color: var(--el-color-warning);
+}
+
+.register-workspace-layout__slot-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 12px;
+  align-items: center;
+  justify-content: flex-end;
+  padding-top: 8px;
+  margin-top: auto;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.register-workspace-layout__panel--right :deep(.register-reg-grid) {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 8px 12px;
+  align-items: end;
+  width: 100%;
+}
+
+.register-workspace-layout__panel--right :deep(.register-reg-grid > *) {
+  min-width: 0;
+}
+
+.register-workspace-layout__panel--right :deep(.register-reg-grid .flex-col),
+.register-workspace-layout__panel--right :deep(.flex-col) {
+  align-items: flex-start;
+  width: 100%;
+}
+
+.register-workspace-layout__panel--right :deep(.register-reg-grid .flex-auto),
+.register-workspace-layout__panel--right :deep(.flex-auto) {
+  flex: none;
+  width: 100%;
+  max-width: none;
+}
+
+.register-workspace-layout__panel--right :deep(.el-input),
+.register-workspace-layout__panel--right :deep(.el-select),
+.register-workspace-layout__panel--right :deep(.el-select .el-select__wrapper),
+.register-workspace-layout__panel--right :deep(.el-date-editor) {
+  width: 100% !important;
+}
+
+.register-workspace-layout__slots :deep(.register-daily-slot-panel) {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  height: auto;
+  min-height: 0;
+}
+
+.register-workspace-layout__slots :deep(.register-daily-slot-panel__body--horizontal) {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.register-workspace-layout__slots :deep(.register-daily-slot-panel__pick-layout) {
+  gap: 6px;
+}
+
+.register-workspace-layout__slots :deep(.register-daily-slot-panel__slot-area) {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.register-workspace-layout__slots
+  :deep(.register-daily-slot-panel__slot-area .register-daily-slot-panel__grid--horizontal) {
+  display: flex !important;
+  flex: 0 0 auto;
+  flex-wrap: nowrap !important;
+  gap: 6px;
+  align-items: flex-start !important;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.register-workspace-layout__slots :deep(.register-daily-slot-panel__grid--horizontal) {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  gap: 6px;
+  align-items: flex-start !important;
+  width: 100%;
+}
+
+.register-workspace-layout__slots
+  :deep(.register-daily-slot-panel--horizontal .register-daily-slot-panel__card--slot) {
+  flex: 1 1 0 !important;
+  width: auto !important;
+  min-width: 120px;
+  max-width: none;
+  height: auto !important;
+  align-self: flex-start !important;
+}
+
+.register-workspace-layout__slots :deep(.register-slot-placeholder) {
+  height: auto;
+  min-height: 72px;
+}
+
+.register-workspace-layout__slot-fee {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.register-workspace-layout__slot-fee-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+}
+
+.register-workspace-layout__slot-fee-amount {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--el-color-primary);
+  white-space: nowrap;
+}
+
+.register-workspace-layout__slot-actions-btns {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  align-items: center;
+}
+
+.register-workspace-layout__slot-actions-btns :deep(.el-checkbox) {
+  height: auto;
+  margin-right: 0;
+  white-space: nowrap;
+}
+
+.register-workspace-layout__slot-actions-btns :deep(.el-checkbox__label) {
+  padding-left: 6px;
+  font-size: 12px;
+}
+
+.register-workspace-layout__panel--left :deep(.register-patient-grid) {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+
+.register-workspace-layout__panel--left :deep(.register-patient-grid .flex-col) {
+  align-items: flex-start;
+  width: 100%;
+}
+
+.register-workspace-layout__panel--left :deep(.register-patient-grid .flex-auto) {
+  flex: none;
+  width: 100%;
+  max-width: none;
+}
+
+.register-workspace-layout__panel--left :deep(.el-input),
+.register-workspace-layout__panel--left :deep(.el-select),
+.register-workspace-layout__panel--left :deep(.el-select .el-select__wrapper),
+.register-workspace-layout__panel--left :deep(.el-date-editor) {
+  width: 100% !important;
+}
+
+.register-workspace-layout__panel--left :deep(.register-patient-grid .flex-col > .flex.leading-6),
+.register-workspace-layout__panel--right :deep(.flex-col > .flex.leading-6) {
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--el-text-color-regular);
+}
+
+.register-workspace-layout__panel--left :deep(.register-patient-grid .pb-2),
+.register-workspace-layout__panel--right :deep(.pb-2) {
+  padding-bottom: 0;
+}
+
+.register-workspace-layout__panel--left :deep(.el-radio) {
+  height: var(--form-control-height);
+  margin-right: 12px;
+}
+
+.register-reg-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.register-reg-section :deep(.register-reg-grid) {
+  display: grid !important;
+  grid-template-columns: repeat(4, 200px) !important;
+  gap: 8px 16px;
+  align-items: end;
+}
+
+.register-reg-section :deep(.register-reg-grid.flex-col) {
+  flex-direction: unset !important;
+}
+
+@media (max-width: 1200px) {
+  .register-workspace-layout__main {
+    flex-direction: column;
+  }
+
+  .register-workspace-layout__panel--left {
+    flex: 0 0 auto;
+    max-height: 45%;
+  }
+
+  .register-reg-section :deep(.register-reg-grid) {
+    grid-template-columns: repeat(3, 200px);
+  }
+}
+
+@media (max-width: 992px) {
+  .register-workspace-layout__panel--left :deep(.register-patient-grid) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .register-reg-section :deep(.register-reg-grid) {
+    grid-template-columns: repeat(2, 200px);
+  }
 }
 
 .reg-bill-form-area :deep(.el-form-item__content) {
@@ -1022,20 +1699,18 @@ onMounted(async () => {
 }
 
 .reg-bill-form-area :deep(.el-input__wrapper) {
-  min-height: 30px;
-  padding-top: 2px;
-  padding-bottom: 2px;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .reg-bill-form-area :deep(.el-select .el-select__wrapper) {
-  min-height: 30px;
-  padding-top: 2px;
-  padding-bottom: 2px;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .reg-bill-form-area :deep(.el-radio) {
+  height: var(--form-control-height);
   margin-right: 14px;
-  height: 28px;
 }
 
 .benefit-section-tabs :deep(.el-tabs__header) {
@@ -1044,11 +1719,82 @@ onMounted(async () => {
 
 .benefit-section-tabs :deep(.el-tabs__item) {
   height: 32px;
-  line-height: 32px;
   font-size: 13px;
+  line-height: 32px;
 }
 
 .reg-bill-form-area :deep(.el-form-item:last-child) {
   margin-bottom: 0;
+}
+
+/* 窄屏（<1680，含 1600）：压缩间距与字号，给历史列表腾空间 */
+@media (max-width: 1679px) {
+  .register-workspace-layout {
+    gap: 4px;
+  }
+
+  .register-workspace-layout__main {
+    flex: 0 0 auto;
+    gap: 6px;
+  }
+
+  .register-workspace-layout__panel {
+    gap: 4px;
+    height: auto;
+    padding: 4px 8px;
+  }
+
+  .register-workspace-layout__section-title {
+    font-size: 13px;
+    line-height: 18px;
+  }
+
+  .register-workspace-layout__section-title :deep(.section-title) {
+    font-size: 13px;
+    line-height: 18px;
+  }
+
+  .register-workspace-layout__section-split {
+    margin: 1px 0;
+  }
+
+  .register-workspace-layout__benefit {
+    flex: 0 0 auto;
+  }
+
+  .register-workspace-layout__benefit--filled {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: 220px;
+  }
+
+  .register-workspace-layout__benefit-hint {
+    padding: 2px 0;
+    line-height: 1.4;
+  }
+
+  .register-workspace-layout__slot-actions {
+    padding-top: 4px;
+    margin-top: 0;
+  }
+
+  .register-workspace-layout__panel--right :deep(.register-reg-grid) {
+    gap: 4px 10px;
+  }
+
+  .register-workspace-layout__panel--left :deep(.register-patient-grid) {
+    gap: 4px 12px;
+  }
+
+  .register-workspace-layout__panel--left :deep(.register-patient-grid .flex-col > .flex.leading-6),
+  .register-workspace-layout__panel--right :deep(.flex-col > .flex.leading-6) {
+    margin-bottom: 2px;
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  .reg-bill-form-area :deep(.el-form-item) {
+    margin-bottom: 4px;
+  }
 }
 </style>

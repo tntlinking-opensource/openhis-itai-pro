@@ -5,7 +5,7 @@ export interface CancelNurseStationOrderExecutionsRequest {
   encounterIds: string[];
   /** 已执行 Tab 勾选槽位对应的净剩 COMPLETED procedureId，1～50 */
   procedureIds: string[];
-  /** 取消原因（必填） */
+  /** 取消原因（后端必填；前端使用默认文案，不弹窗收集） */
   statusReasonText: string;
 }
 

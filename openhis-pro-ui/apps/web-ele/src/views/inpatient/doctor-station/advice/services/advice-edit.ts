@@ -18,12 +18,13 @@ import {
   unitCodeByBandKind,
   unitNameByBandKind,
 } from './medication-unit-bands';
+import { preferredTotalUnitBandKindFromOrderCalcRule } from '#/utils/doctor-station/medication-order-total-calc';
 
 /** 编辑卡：新建行、选品回填、诊断映射、表单数值 */
 
 export interface WesternProductSelectPatchOptions {
-  /** 总量默认计量带：门诊与住院临时为 PACKAGE，住院长期默认 SALES */
-  totalUnitDefaultKind?: 'PACKAGE' | 'SALES';
+  /** 总量默认计量带；未传时按拆分属性推导（长期医嘱默认 SALES） */
+  totalUnitDefaultKind?: 'PACKAGE' | 'SALES' | 'SPLIT';
 }
 
 export interface CreateAdviceDrugItemContext {
@@ -184,7 +185,10 @@ export function buildWesternProductSelectPatch(
   const totalSk = totalAmountSplitToSalesFactor(bands);
   patch.totalAmountSplitToSalesK =
     totalSk !== undefined && Number.isFinite(totalSk) && totalSk > 0 ? totalSk : undefined;
-  const defaultKind = opts?.totalUnitDefaultKind ?? 'SALES';
+  const partAttr = String(row.partAttributeEnum ?? '').trim();
+  if (partAttr) patch.partAttributeEnum = partAttr;
+  const defaultKind =
+    opts?.totalUnitDefaultKind ?? preferredTotalUnitBandKindFromOrderCalcRule(partAttr);
   const totalUnit = defaultTotalAmountUnitCode(bands, defaultKind);
   patch.totalAmountUnit = totalUnit;
   const linePrice = resolveAdviceLineUnitPrice({

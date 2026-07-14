@@ -48,7 +48,10 @@ useTabsDrag(props, emit);
 </script>
 
 <template>
-  <div class="flex h-full flex-1 overflow-hidden">
+  <div
+    class="flex min-w-0 flex-1 items-center overflow-hidden"
+    :style="{ height: 'var(--vben-tabbar-height, 38px)' }"
+  >
     <!-- 左侧滚动按钮 -->
     <span
       v-show="showScrollButton"
@@ -56,23 +59,23 @@ useTabsDrag(props, emit);
         'cursor-pointer text-muted-foreground hover:bg-muted': !scrollIsAtLeft,
         'pointer-events-none opacity-30': scrollIsAtLeft,
       }"
-      class="border-r px-2"
+      class="flex items-center self-stretch border-r px-2"
       @click="scrollDirection('left')"
     >
-      <ChevronLeft class="size-4 h-full" />
+      <ChevronLeft class="size-4" />
     </span>
 
     <div
       :class="{
         'pt-[3px]': styleType === 'chrome',
       }"
-      class="size-full flex-1 overflow-hidden"
+      class="flex h-full min-w-0 flex-1 items-center overflow-hidden"
     >
       <VbenScrollbar
         ref="scrollbarRef"
         :shadow-bottom="false"
         :shadow-top="false"
-        class="h-full"
+        class="h-full w-full"
         horizontal
         scroll-bar-class="z-10 hidden "
         shadow
@@ -94,10 +97,10 @@ useTabsDrag(props, emit);
         'cursor-pointer text-muted-foreground hover:bg-muted': !scrollIsAtRight,
         'pointer-events-none opacity-30': scrollIsAtRight,
       }"
-      class="cursor-pointer border-l px-2 text-muted-foreground hover:bg-muted"
+      class="flex cursor-pointer items-center self-stretch border-l px-2 text-muted-foreground hover:bg-muted"
       @click="scrollDirection('right')"
     >
-      <ChevronRight class="size-4 h-full" />
+      <ChevronRight class="size-4" />
     </span>
   </div>
 </template>

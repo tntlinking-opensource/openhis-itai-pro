@@ -186,7 +186,7 @@ onMounted(async () => {
   <Page auto-content-height>
     <div class="booking-policy-page">
       <p class="booking-policy-page__intro">
-        挂号与停诊策略按科室配置，与「排班设置」中的出诊/放号模板相互独立。放号策略请在排班设置中维护。
+        挂号与停诊策略按科室配置，与「排班设置」中的出诊模板相互独立。
       </p>
       <ElTabs v-model="activeTab">
         <ElTabPane label="挂号策略" name="registration">

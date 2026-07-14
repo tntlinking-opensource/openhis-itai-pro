@@ -27,12 +27,15 @@ const departmentLabel = computed(() => (isInpatient.value ? '所在科室' : '�
 
 const timeLabel = computed(() => (isInpatient.value ? '入院时间' : '挂号时间'));
 
-const showChargeStatus = computed(() => Boolean(props.patient.chargeStatus));
+const showChargeStatus = computed(() =>
+  Boolean(props.patient.chargeStatusCode ?? props.patient.chargeStatus),
+);
 
 /** 待处理态（待收费 / 待退费）用橙色系，已结算用绿色系 */
-const isPendingChargeLike = computed(
-  () => props.patient.chargeStatus === '待收费' || props.patient.chargeStatus === '待退费',
-);
+const isPendingChargeLike = computed(() => {
+  const code = props.patient.chargeStatusCode;
+  return code === 'PLANNED' || code === 'REFUNDING';
+});
 
 /** 左侧色条：有收费状态时待处理橙、已结算绿；否则中性灰 */
 const statusBarClass = computed(() => {

@@ -17,23 +17,37 @@ export const useRegisterPayChannels = createSharedComposable(() => {
   const payChannelOptions = ref<PayChannelOption[]>([...FALLBACK_PAY_CHANNEL_OPTIONS]);
   let loadPromise: null | Promise<void> = null;
 
-  const { scanPayEnabled, effectivePayChannelOptions, refreshUnionPayCapabilities } =
-    useUnionPayScanPay(() => payChannelOptions.value);
+  const {
+    scanPayEnabled,
+    effectivePayChannelOptions,
+    refreshUnionPayCapabilities,
+    unionPayWinReady,
+  } = useUnionPayScanPay(() => payChannelOptions.value);
+
+  async function loadPayChannelOptionsFromServer(): Promise<void> {
+    try {
+      const init = await loadRegisterFormInit({});
+      payChannelOptions.value = optionDtosToPayChannelOptions(init.paymentChannelOptions);
+    } catch (error) {
+      payChannelOptions.value = [...FALLBACK_PAY_CHANNEL_OPTIONS];
+    }
+  }
 
   function ensurePayChannelsLoaded(): Promise<void> {
     if (loadPromise) {
       return loadPromise;
     }
     loadPromise = (async () => {
-      try {
-        const init = await loadRegisterFormInit({});
-        payChannelOptions.value = optionDtosToPayChannelOptions(init.paymentChannelOptions);
-      } catch {
-        payChannelOptions.value = [...FALLBACK_PAY_CHANNEL_OPTIONS];
-      }
-      void refreshUnionPayCapabilities();
+      await loadPayChannelOptionsFromServer();
+      await refreshUnionPayCapabilities();
     })();
     return loadPromise;
+  }
+
+  /** 打开收银弹窗前调用：重拉渠道 + 重探测 OpenHIS.Win（Win 后启动时必需） */
+  async function refreshPayChannelsForDialog(): Promise<void> {
+    await loadPayChannelOptionsFromServer();
+    await refreshUnionPayCapabilities();
   }
 
   return {
@@ -42,5 +56,6 @@ export const useRegisterPayChannels = createSharedComposable(() => {
     effectivePayChannelOptions,
     refreshUnionPayCapabilities,
     ensurePayChannelsLoaded,
+    refreshPayChannelsForDialog,
   };
 });

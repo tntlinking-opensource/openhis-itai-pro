@@ -79,7 +79,8 @@ export function convertInboundQtyBetweenBandKinds(
   const rt = ratioOf(findInboundUnitBandByKind(bands, tk));
   if (rf === undefined || rt === undefined) return undefined;
   const q = Number(qtyFrom);
-  if (!Number.isFinite(q) || q < 0) return undefined;
+  if (!Number.isFinite(q)) return undefined;
+  // 盘点盈亏、损溢等允许负数；比例换算对符号线性成立
   return decimalDiv(decimalMul(q, rf, 8), rt, 6);
 }
 
@@ -227,6 +228,85 @@ export function applyWarehouseNonInboundBandKindToRow(
   }
 }
 
+/** 进货/订货等：按当前计量带写入 purchaseUnit 与展示单价 */
+export interface InboundBandKindEditableRow {
+  unitBands?: InboundProductUnitBand[];
+  selectedBandKind?: string;
+  __prevBandKind?: string;
+  purchaseUnit?: string;
+  unitPrice?: number;
+}
+
+export function applyInboundBandKindToRow(
+  row: InboundBandKindEditableRow,
+  kind: string,
+  opts?: { convertFromCurrentPrice?: boolean; fromBandKind?: string },
+): void {
+  const k = kind.trim().toUpperCase();
+  if (k === 'LEGACY' || !row.unitBands?.length) {
+    return;
+  }
+  const b = findInboundUnitBandByKind(row.unitBands, k);
+  if (!b) {
+    return;
+  }
+  const code = String(b.unitCode ?? '').trim();
+  if (code !== '') {
+    row.purchaseUnit = code;
+  }
+  const unitPrice = row.unitPrice ?? 0;
+  if (opts?.convertFromCurrentPrice) {
+    const fromK = String(opts.fromBandKind ?? '')
+      .trim()
+      .toUpperCase();
+    if (fromK && fromK !== k && fromK !== 'LEGACY') {
+      const converted = convertInboundUnitPriceBetweenBandKinds(unitPrice, fromK, k, row.unitBands);
+      if (converted !== undefined && Number.isFinite(converted)) {
+        row.unitPrice = converted;
+        return;
+      }
+    }
+  }
+  const resolved = inboundResolveDisplayUnitPrice({
+    bands: row.unitBands,
+    displayBandKind: k,
+    legacyUnitPrice: unitPrice,
+  });
+  if (resolved !== undefined) {
+    row.unitPrice = resolved;
+  }
+}
+
+/** 明细表单位带切换：数量/单价按带换算（进货单、订货单等同构页面共用） */
+export function handleInventoryUnitBandChanged(
+  row: InboundBandKindEditableRow,
+  args: {
+    getQty: () => number;
+    setQty: (qty: number) => void;
+    onAfterChanged?: () => void;
+  },
+): void {
+  const newK = String(row.selectedBandKind ?? '')
+    .trim()
+    .toUpperCase();
+  const oldK = String(row.__prevBandKind ?? '')
+    .trim()
+    .toUpperCase();
+  const bands = row.unitBands ?? [];
+  if (oldK && newK && oldK !== newK && oldK !== 'LEGACY' && newK !== 'LEGACY' && bands.length > 0) {
+    const nq = convertInboundQtyBetweenBandKinds(args.getQty(), oldK, newK, bands);
+    if (nq !== undefined) {
+      args.setQty(nq);
+    }
+  }
+  applyInboundBandKindToRow(row, newK, {
+    convertFromCurrentPrice: true,
+    fromBandKind: oldK,
+  });
+  row.__prevBandKind = newK;
+  args.onAfterChanged?.();
+}
+
 /** 下拉选项：按 bandKind 去重，展示 unitName */
 export function inboundUnitBandSelectOptions(
   bands: InboundProductUnitBand[],
@@ -318,7 +398,7 @@ export function resolveInboundLinePersistUnitCodeForBands(args: {
   return code || legacy || undefined;
 }
 
-/** 保存前校验：非 LEGACY 且存在 SPLIT 带时，必须能换算到 SPLIT。 */
+/** 保存前校验：非 LEGACY 且存在 SPLIT 带时，必须能换算到 SPLIT（含负数盈亏/损溢）。 */
 export function canConvertDisplayQtyToSplitForBands(
   bands: InboundProductUnitBand[],
   displayQty: number,
@@ -377,9 +457,8 @@ export function hydrateInboundDetailQtyFromPersisted(args: {
 }
 
 /**
- * 进货详情回填：后端按 **SPLIT** 持久化时，将数量换到 **PURCHASE** 展示（有采购带时）；否则 SPLIT 或按 `unitCode` 推断。
- * 与 {@link warehouseNonInboundLoadPersistedSplitAsStockDisplay} 对称，入库不默认 STOCK。
- * 药库进货单详情请用 {@link hydrateInboundDetailQtyFromPersisted}（按保存时 `unitCode` 回显）。
+ * 进货详情回填（legacy）：后端 SPLIT 时强制换到 PURCHASE 展示。
+ * @deprecated 新页面请用 {@link hydrateInboundDetailQtyFromPersisted}（按保存 unitCode 回显）。
  */
 export function inboundLoadPersistedSplitAsPurchaseDisplay(args: {
   bands: InboundProductUnitBand[];
@@ -436,14 +515,53 @@ export function inboundLoadPersistedSplitAsPurchaseDisplay(args: {
 // --- 药库「非入库」：界面默认 **STOCK** 计量带（入库不用本段默认逻辑） ---
 
 /**
- * 药库除入库外的业务：有 `unitBands` 时默认选 **STOCK**（无可用 STOCK 则 SPLIT，再退化为进货默认带）。
+ * STOCK 与 PACKAGE 同单位码但倍数不一致时（如均为「盒」），库存数量展示须按 **PACKAGE** 倍数换算（对齐 AS-INV-WHS-004）。
  */
-export function warehouseNonInboundDefaultBandKind(bands: InboundProductUnitBand[]): string {
+function warehouseStockPackageSameCodeRatioConflict(bands: InboundProductUnitBand[]): boolean {
+  const stock = findInboundUnitBandByKind(bands, 'STOCK');
+  const pkg = findInboundUnitBandByKind(bands, 'PACKAGE');
+  if (!stock || !pkg) return false;
+  const stockRatio = ratioOf(stock);
+  const packageRatio = ratioOf(pkg);
+  if (stockRatio === undefined || packageRatio === undefined) return false;
+  const stockCode = String(stock.unitCode ?? '').trim();
+  const packageCode = String(pkg.unitCode ?? '').trim();
+  return stockCode !== '' && stockCode === packageCode && stockRatio !== packageRatio;
+}
+
+/**
+ * SPLIT 账面量 → 界面展示计量带：默认可编辑 **STOCK**；同码多带冲突时回落 **PACKAGE**。
+ */
+function resolveWarehouseNonInboundSplitDisplayBandKind(bands: InboundProductUnitBand[]): string {
+  if (warehouseStockPackageSameCodeRatioConflict(bands)) {
+    return 'PACKAGE';
+  }
+  if (ratioOf(findInboundUnitBandByKind(bands, 'STOCK'))) return 'STOCK';
+  if (ratioOf(findInboundUnitBandByKind(bands, 'PACKAGE'))) return 'PACKAGE';
+  if (ratioOf(findInboundUnitBandByKind(bands, 'SPLIT'))) return 'SPLIT';
+  return warehouseNonInboundDefaultBandKindWithoutConflict(bands);
+}
+
+function warehouseNonInboundDefaultBandKindWithoutConflict(
+  bands: InboundProductUnitBand[],
+): string {
   if (bands.length === 0) return 'LEGACY';
   if (ratioOf(findInboundUnitBandByKind(bands, 'STOCK'))) return 'STOCK';
   if (ratioOf(findInboundUnitBandByKind(bands, 'SPLIT'))) return 'SPLIT';
   const k = defaultInboundUnitBandKind(bands);
   return k || 'LEGACY';
+}
+
+/**
+ * 药库除入库外的业务：有 `unitBands` 时默认选 **STOCK**（无可用 STOCK 则 SPLIT，再退化为进货默认带）。
+ * 同码多带倍数冲突时默认 **PACKAGE**，与库存明细展示口径一致。
+ */
+export function warehouseNonInboundDefaultBandKind(bands: InboundProductUnitBand[]): string {
+  if (bands.length === 0) return 'LEGACY';
+  if (warehouseStockPackageSameCodeRatioConflict(bands)) {
+    return 'PACKAGE';
+  }
+  return warehouseNonInboundDefaultBandKindWithoutConflict(bands);
 }
 
 /**
@@ -459,7 +577,8 @@ export function inboundUnitBandNameByKind(
 }
 
 /**
- * 药库界面展示：后端按 **SPLIT** 持久化的数量 → **STOCK** 数量（有 unitBands 用带换算，否则用 legacy 倍数）。
+ * 药库界面展示：后端按 **SPLIT** 持久化的数量 → 展示计量带数量（默认可编辑 STOCK；同码多带冲突时用 PACKAGE）。
+ * 无 unitBands 时 legacy 倍数优先 **packageUnitRatio**（对齐 AS-INV-WHS-004）。
  */
 export function warehouseNonInboundDisplayQtyFromSplit(
   splitQty: number,
@@ -469,9 +588,10 @@ export function warehouseNonInboundDisplayQtyFromSplit(
   const q = Number(splitQty);
   if (!Number.isFinite(q)) return 0;
   if (bands.length > 0) {
-    const stockBand = findInboundUnitBandByKind(bands, 'STOCK');
-    if (stockBand && ratioOf(stockBand)) {
-      const converted = convertInboundQtyBetweenBandKinds(q, 'SPLIT', 'STOCK', bands);
+    const displayKind = resolveWarehouseNonInboundSplitDisplayBandKind(bands);
+    const displayBand = findInboundUnitBandByKind(bands, displayKind);
+    if (displayBand && ratioOf(displayBand)) {
+      const converted = convertInboundQtyBetweenBandKinds(q, 'SPLIT', displayKind, bands);
       if (converted !== undefined && Number.isFinite(converted)) return converted;
     }
   }
@@ -532,6 +652,10 @@ export function inferWarehouseNonInboundBandKindFromUnitCode(
 ): string {
   const code = String(unitCode ?? '').trim();
   if (!code || bands.length === 0) return warehouseNonInboundDefaultBandKind(bands);
+  if (warehouseStockPackageSameCodeRatioConflict(bands)) {
+    const pkg = findInboundUnitBandByKind(bands, 'PACKAGE');
+    if (pkg && String(pkg.unitCode ?? '').trim() === code) return 'PACKAGE';
+  }
   const kindsOrder = ['STOCK', 'SPLIT', 'PACKAGE', 'PURCHASE'] as const;
   for (const kk of kindsOrder) {
     const b = findInboundUnitBandByKind(bands, kk);
@@ -555,8 +679,63 @@ export function hydrateWarehouseDetailQtyFromPersisted(args: {
 }
 
 /**
- * 详情回填：后端按 **SPLIT** 持久化时，将数量换到 **STOCK** 展示（有 STOCK 带时）；否则保持 SPLIT 或按 `unitCode` 推断带。
- * 药库出库单详情请用 {@link hydrateWarehouseDetailQtyFromPersisted}（按保存时 `unitCode` 回显）。
+ * 供应单行（请领→出库、出库详情）数量回显：`itemQuantity` 为 SPLIT，`unitCode` 为保存时录入单位。
+ * 兼容旧请领单：`item_quantity` 仍为录入带展示数且 `unit_code` 非拆零码时直读数量。
+ */
+export function hydrateWarehouseSupplyLineQtyForGrid(args: {
+  bands: InboundProductUnitBand[];
+  persistedItemQuantity: number;
+  persistedUnitCode?: string;
+}): { bandKind: string; displayQty: number; unitCode: string } {
+  const bandsArr = args.bands ?? [];
+  const pq = Number(args.persistedItemQuantity);
+  const rawQty = Number.isFinite(pq) ? pq : 0;
+  const persistedCode = String(args.persistedUnitCode ?? '').trim();
+
+  if (bandsArr.length === 0) {
+    return { displayQty: rawQty, bandKind: 'LEGACY', unitCode: persistedCode };
+  }
+
+  const splitBand = findInboundUnitBandByKind(bandsArr, 'SPLIT');
+  const splitCode = String(splitBand?.unitCode ?? '').trim();
+
+  if (persistedCode && splitCode && persistedCode !== splitCode) {
+    const legacyKind = inferWarehouseNonInboundBandKindFromUnitCode(bandsArr, persistedCode);
+    if (legacyKind !== 'SPLIT') {
+      const legacyBand = findInboundUnitBandByKind(bandsArr, legacyKind);
+      const asDisplayFromSplit = convertInboundQtyBetweenBandKinds(
+        rawQty,
+        'SPLIT',
+        legacyKind,
+        bandsArr,
+      );
+      if (
+        legacyBand &&
+        rawQty >= 1 &&
+        Number.isInteger(rawQty) &&
+        asDisplayFromSplit !== undefined &&
+        asDisplayFromSplit > 0 &&
+        asDisplayFromSplit < 1
+      ) {
+        return {
+          displayQty: rawQty,
+          bandKind: legacyKind,
+          unitCode: String(legacyBand.unitCode ?? '').trim() || persistedCode,
+        };
+      }
+    }
+  }
+
+  return hydrateWarehouseDetailQtyFromPersisted({
+    bands: bandsArr,
+    persistedItemQuantity: rawQty,
+    persistedUnitCode: persistedCode,
+  });
+}
+
+/**
+ * 详情回填（legacy）：后端 SPLIT 时强制换到 STOCK 展示。
+ * @deprecated 新页面请用 {@link hydrateWarehouseDetailQtyFromPersisted}（按保存 unitCode 回显）。
  */
 export function warehouseNonInboundLoadPersistedSplitAsStockDisplay(args: {
   bands: InboundProductUnitBand[];
@@ -574,20 +753,29 @@ export function warehouseNonInboundLoadPersistedSplitAsStockDisplay(args: {
 
   const splitBand = findInboundUnitBandByKind(bandsArr, 'SPLIT');
   const splitCode = String(splitBand?.unitCode ?? '').trim();
-  const stockBand = findInboundUnitBandByKind(bandsArr, 'STOCK');
 
   const treatAsSplitPersisted =
     splitCode !== '' && (persistedCode === '' || persistedCode === splitCode);
 
-  if (treatAsSplitPersisted && stockBand && ratioOf(stockBand)) {
-    const stockQty = convertInboundQtyBetweenBandKinds(persistedQty, 'SPLIT', 'STOCK', bandsArr);
-    const dq = stockQty !== undefined && Number.isFinite(stockQty) ? stockQty : persistedQty;
-    const stockCode = String(stockBand.unitCode ?? '').trim();
-    return {
-      displayQty: dq,
-      bandKind: 'STOCK',
-      unitCode: stockCode || persistedCode,
-    };
+  if (treatAsSplitPersisted) {
+    const displayKind = resolveWarehouseNonInboundSplitDisplayBandKind(bandsArr);
+    const displayBand = findInboundUnitBandByKind(bandsArr, displayKind);
+    if (displayBand && ratioOf(displayBand)) {
+      const displayQty = convertInboundQtyBetweenBandKinds(
+        persistedQty,
+        'SPLIT',
+        displayKind,
+        bandsArr,
+      );
+      const dq =
+        displayQty !== undefined && Number.isFinite(displayQty) ? displayQty : persistedQty;
+      const displayCode = String(displayBand.unitCode ?? '').trim();
+      return {
+        displayQty: dq,
+        bandKind: displayKind,
+        unitCode: displayCode || persistedCode,
+      };
+    }
   }
 
   if (treatAsSplitPersisted && splitBand) {

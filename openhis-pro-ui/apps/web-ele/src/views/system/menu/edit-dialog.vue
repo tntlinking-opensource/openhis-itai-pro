@@ -124,6 +124,69 @@ const parentMenuOptions = computed(() => {
 
 // schema 是 computed，会自动响应 parentMenuOptions 的变化，不需要手动更新
 
+function parseBoolString(value: unknown, defaultValue: boolean): boolean {
+  if (value === true || value === 'true') {
+    return true;
+  }
+  if (value === false || value === 'false') {
+    return false;
+  }
+  return defaultValue;
+}
+
+/** 编辑模式局部更新：空字符串不传，避免误把 directory/path 等关键字段清空。 */
+function buildEditUpdateRequest(
+  mergedData: Partial<Menu>,
+  originalData: Partial<Menu>,
+  rawParentId: unknown,
+): UpdateMenuParams['request'] {
+  const hadParent =
+    originalData.parentId !== undefined &&
+    originalData.parentId !== null &&
+    String(originalData.parentId) !== '';
+  const clearParentInput = rawParentId === undefined || rawParentId === null || rawParentId === '';
+
+  const request: UpdateMenuParams['request'] = {
+    displayName: mergedData.displayName || mergedData.name || originalData.displayName || '',
+    isEnabled: String(parseBoolString(mergedData.isEnabled, originalData.isEnabled !== false)),
+    isHidden: String(parseBoolString(mergedData.isHidden, originalData.isHidden === true)),
+    isExternal: String(parseBoolString(mergedData.isExternal, originalData.isExternal === true)),
+    sortOrder: mergedData.sortOrder ?? originalData.sortOrder ?? 0,
+  };
+
+  if (mergedData.name?.trim()) {
+    request.name = mergedData.name.trim();
+  }
+  if (mergedData.path?.trim()) {
+    request.path = mergedData.path.trim();
+  }
+  if (mergedData.menuType?.trim()) {
+    request.menuType = mergedData.menuType.trim();
+  }
+  if (mergedData.component !== undefined && mergedData.component !== null) {
+    request.component = mergedData.component;
+  }
+  if (mergedData.icon !== undefined) {
+    request.icon = mergedData.icon || '';
+  }
+  if (mergedData.remark !== undefined) {
+    request.remark = mergedData.remark || '';
+  }
+  if (mergedData.externalUrl !== undefined) {
+    request.externalUrl = mergedData.externalUrl || '';
+  }
+  if (mergedData.keepAlive !== undefined) {
+    request.keepAlive = parseBoolString(mergedData.keepAlive, originalData.keepAlive === true);
+  }
+  if (clearParentInput && hadParent) {
+    request.clearParent = true;
+  } else if (!clearParentInput && rawParentId != null && rawParentId !== '') {
+    request.parentId = String(rawParentId);
+  }
+
+  return request;
+}
+
 async function handleSubmit() {
   const { valid } = await formApi.validate();
   if (!valid) {
@@ -143,24 +206,7 @@ async function handleSubmit() {
     if (isEditMode.value && originalData.value.id) {
       const updateParams: UpdateMenuParams = {
         id: originalData.value.id,
-        request: {
-          externalUrl: mergedData.externalUrl || '',
-          isExternal: String(mergedData.isExternal ?? false),
-          displayName: mergedData.displayName || mergedData.name || '',
-          icon: mergedData.icon || '',
-          remark: mergedData.remark || '',
-          clearParent,
-          parentId: clearParent ? undefined : String(rawParentId),
-          isHidden: String(mergedData.isHidden ?? false),
-          keepAlive: mergedData.keepAlive,
-          path: mergedData.path || '',
-          component: mergedData.component || '',
-          sortOrder: mergedData.sortOrder ?? 0,
-          isEnabled: String(mergedData.isEnabled ?? true),
-          name: mergedData.name || '',
-          menuType: mergedData.menuType || '',
-          permissionName: mergedData.permissionName || '',
-        },
+        request: buildEditUpdateRequest(mergedData, originalData.value, rawParentId),
       };
       await updateMenuApi(updateParams);
       ElMessage.success('更新成功');
@@ -339,9 +385,15 @@ const formConfig = reactive({
         },
       },
       {
-        component: 'Input',
+        component: 'Select',
         fieldName: 'menuType',
         label: '菜单类型',
+        componentProps: {
+          options: [
+            { label: '页面菜单 (menu)', value: 'menu' },
+            { label: '目录 (directory)', value: 'directory' },
+          ],
+        },
       },
       {
         component: 'TreeSelect',

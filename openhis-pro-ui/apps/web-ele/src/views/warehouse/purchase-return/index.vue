@@ -21,6 +21,7 @@ import {
 import WarehouseDocOrderQueue from '#/components/warehouse/warehouse-doc-order-queue.vue';
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
 import { isPurchaseRequestApproved } from '#/utils/warehouse/purchase-request-order-detail';
+import { calcMoneyLineTotal, formatMoneyDisplay, scaleMoneyCalc } from '#/utils/format/money-scale';
 
 import WarehousePharmacyStockOrderTable from '#/components/warehouse/warehouse-pharmacy-stock-order-table.vue';
 
@@ -262,11 +263,13 @@ function buildPrice(item: Record<string, any>) {
     item.priceMaxUnit = item.price;
     item.priceMinUnit = item.price / part;
     item.retailPriceMaxUnit = item.retailPrice;
-    item.retailPriceMinUnit = (Number.parseFloat(String(item.retailPrice)) / part).toFixed(2);
+    item.retailPriceMinUnit = formatMoneyDisplay(
+      Number.parseFloat(String(item.retailPrice)) / part,
+    );
   } else {
-    item.priceMaxUnit = Number.parseFloat((item.price * part).toFixed(2));
+    item.priceMaxUnit = scaleMoneyCalc(calcMoneyLineTotal(item.price, part));
     item.priceMinUnit = item.price;
-    item.retailPriceMaxUnit = Number.parseFloat((item.retailPrice * part).toFixed(2));
+    item.retailPriceMaxUnit = scaleMoneyCalc(calcMoneyLineTotal(item.retailPrice, part));
     item.retailPriceMinUnit = item.retailPrice;
   }
 }
@@ -277,12 +280,10 @@ function buildUnitList(item: Record<string, any>) {
     const isMinUnit = unit.value === item.minUnitCode;
     unit.priceMask = item.price;
     unit.retailPriceMask = item.retailPrice;
-    unit.totalPriceMask = (
-      Number.parseFloat(item.price) * Number.parseFloat(item.itemQuantity)
-    ).toFixed(2);
-    unit.totalRetailPriceMask = (
-      Number.parseFloat(item.retailPrice) * Number.parseFloat(item.itemQuantity)
-    ).toFixed(2);
+    unit.totalPriceMask = formatMoneyDisplay(calcMoneyLineTotal(item.price, item.itemQuantity));
+    unit.totalRetailPriceMask = formatMoneyDisplay(
+      calcMoneyLineTotal(item.retailPrice, item.itemQuantity),
+    );
     unit.specificationInventoryOriginal = item.specificationInventory;
 
     const part = Number.parseInt(String(item.partPercent), 10) || 1;

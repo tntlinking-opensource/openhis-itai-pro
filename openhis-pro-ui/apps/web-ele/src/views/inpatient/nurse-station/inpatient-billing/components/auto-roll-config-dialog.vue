@@ -17,6 +17,7 @@ import AppDialog from '#/components/app-dialog.vue';
 import { useRequest } from '#/hooks/use-request';
 import { useAuthStore } from '#/store';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import { PRICING_PRODUCT_TABLE_SERVICE } from '../services/map-nurse-station-inpatient-billing';
@@ -25,7 +26,6 @@ import {
   buildAutoRollCatalogFromTableRow,
   buildAutoRollCatalogRowKey,
   buildAutoRollFormFromTableRow,
-  buildDefaultAutoRollRuleName,
 } from '../services/map-nurse-station-auto-roll';
 
 defineOptions({
@@ -69,9 +69,7 @@ const catalogTotal = ref(0);
 const catalogRows = ref<NurseStationPricingCatalogRowDto[]>([]);
 const selectedCatalog = ref<AutoRollSelectedCatalogItem | null>(null);
 const formModel = reactive<AutoRollConfigFormModel>({
-  ruleName: '',
   quantityValue: 1,
-  priority: 0,
   remark: '',
 });
 
@@ -87,10 +85,23 @@ const visibleModel = computed({
 const isEditMode = computed(() => props.editRow != null);
 
 /** 弹窗标题文案。 */
-const dialogTitle = computed(() => (isEditMode.value ? '编辑自动计费配置' : '新增自动计费配置'));
+const dialogTitle = computed(() => (isEditMode.value ? '编辑床位费配置' : '新增床位费配置'));
 
 /** 当前选中的床位服务展示名。 */
 const selectedCatalogName = computed(() => selectedCatalog.value?.catalog.name?.trim() || '—');
+
+/** 当前选中的床位服务价格。 */
+const selectedCatalogPrice = computed(() => {
+  const raw = selectedCatalog.value?.catalog.unitPrice;
+  if (raw === undefined || raw === null || raw === '') {
+    return '—';
+  }
+  const num = Number(raw);
+  if (!Number.isFinite(num)) {
+    return '—';
+  }
+  return `￥${formatMoneyDisplay(num)}`;
+});
 
 /** 取当前登录机构，供选品目录查询。 */
 function resolveOrganizationUnitId(): string | undefined {
@@ -105,18 +116,14 @@ function resetDialogState() {
   catalogTotal.value = 0;
   catalogRows.value = [];
   selectedCatalog.value = null;
-  formModel.ruleName = '';
   formModel.quantityValue = 1;
-  formModel.priority = 0;
   formModel.remark = '';
 }
 
 /** 编辑模式下用表格行预填表单与选品。 */
 function applyEditRow(row: AutoRollConfigTableRow) {
   const form = buildAutoRollFormFromTableRow(row);
-  formModel.ruleName = form.ruleName;
   formModel.quantityValue = form.quantityValue;
-  formModel.priority = form.priority;
   formModel.remark = form.remark;
   selectedCatalog.value = buildAutoRollCatalogFromTableRow(row);
 }
@@ -157,20 +164,12 @@ async function handleDialogOpen() {
 function handleCatalogRowClick(row: NurseStationPricingCatalogRowDto) {
   const rowKey = buildAutoRollCatalogRowKey(row);
   selectedCatalog.value = { rowKey, catalog: row };
-  if (!isEditMode.value && !formModel.ruleName.trim()) {
-    formModel.ruleName = buildDefaultAutoRollRuleName(row);
-  }
 }
 
 /** 校验并提交表单。 */
 function handleSubmit() {
   if (!props.canOperate) {
     ElMessage.warning('住院记账仅支持单选患者，请在左侧只勾选 1 位患者');
-    return;
-  }
-  const ruleName = formModel.ruleName.trim();
-  if (!ruleName) {
-    ElMessage.warning('请填写规则名称');
     return;
   }
   if (!selectedCatalog.value) {
@@ -193,9 +192,7 @@ function handleSubmit() {
   }
   emit('saved', {
     form: {
-      ruleName,
       quantityValue: formModel.quantityValue,
-      priority: formModel.priority,
       remark: formModel.remark.trim(),
     },
     selectedCatalog: selectedCatalog.value,
@@ -274,7 +271,15 @@ watch(
           >
             <ElTableColumn prop="busNo" label="编码" min-width="92" />
             <ElTableColumn prop="name" label="项目名称" min-width="160" show-overflow-tooltip />
-            <ElTableColumn prop="categoryCodeDictText" label="类别" min-width="80" />
+            <ElTableColumn label="价格" min-width="88" align="right">
+              <template #default="{ row }">
+                {{
+                  row.unitPrice != null && row.unitPrice !== ''
+                    ? `￥${formatMoneyDisplay(Number(row.unitPrice))}`
+                    : '—'
+                }}
+              </template>
+            </ElTableColumn>
             <ElTableColumn prop="unitName" label="单位" width="60" />
           </ElTable>
           <div class="auto-roll-config-panel__pager">
@@ -291,26 +296,17 @@ watch(
 
         <section class="auto-roll-config-panel auto-roll-config-panel--right">
           <header class="auto-roll-config-panel__header">配置信息</header>
-          <ElForm label-width="88px" class="auto-roll-config-form">
-            <ElFormItem label="床位服务" required>
+          <ElForm label-width="72px" class="auto-roll-config-form">
+            <ElFormItem label="项目名称" required>
               <span class="auto-roll-config-form__readonly">{{ selectedCatalogName }}</span>
             </ElFormItem>
-            <ElFormItem label="规则名称" required>
-              <ElInput v-model="formModel.ruleName" maxlength="64" placeholder="请输入规则名称" />
+            <ElFormItem label="价格">
+              <span class="auto-roll-config-form__readonly">{{ selectedCatalogPrice }}</span>
             </ElFormItem>
             <ElFormItem label="数量" required>
               <ElInputNumber
                 v-model="formModel.quantityValue"
                 :min="1"
-                :step="1"
-                :controls="false"
-                class="auto-roll-config-form__qty"
-              />
-            </ElFormItem>
-            <ElFormItem label="优先级">
-              <ElInputNumber
-                v-model="formModel.priority"
-                :min="0"
                 :step="1"
                 :controls="false"
                 class="auto-roll-config-form__qty"

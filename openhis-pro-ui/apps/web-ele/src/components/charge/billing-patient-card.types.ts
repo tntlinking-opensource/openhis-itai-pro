@@ -1,6 +1,8 @@
 /**
  * 收费工作站患者卡片数据（门诊 / 住院收费列表共用）。
  */
+export type BillingPatientChargeStatusCode = 'PLANNED' | 'REFUNDING' | 'SETTLED';
+
 export interface BillingPatientCardPatient {
   id: string;
   patientName: string;
@@ -13,6 +15,8 @@ export interface BillingPatientCardPatient {
   insuranceType?: string;
   /** 不传则不展示卡片收费状态 */
   chargeStatus?: '已结算' | '待收费' | '待退费';
+  /** 收费状态 code（逻辑判断用） */
+  chargeStatusCode?: BillingPatientChargeStatusCode;
   /** 门诊：挂号科室；住院：科室或病区 */
   visitDepartment: string;
   /** 门诊：挂号时间；住院：入院时间 */

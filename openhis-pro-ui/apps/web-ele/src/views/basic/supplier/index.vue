@@ -32,7 +32,7 @@ defineOptions({ name: 'BasicSupplier' });
 
 const queryParams = ref<PageParams & { keyword?: string; typeEnum?: Array<number | string> }>({
   pageNo: 1,
-  pageSize: 50,
+  pageSize: 20,
 });
 
 const tableData = ref<Supplier[]>([]);
@@ -159,7 +159,7 @@ const handleQuery = (params: Record<string, unknown>) => {
 const handleReset = () => {
   queryParams.value = {
     pageNo: 1,
-    pageSize: 50,
+    pageSize: 20,
   };
   loadData();
 };
@@ -346,8 +346,9 @@ initPage();
 </script>
 
 <template>
-  <Page>
+  <Page auto-content-height content-class="!overflow-hidden flex h-full min-h-0 flex-col">
     <TableLayout
+      class="h-full min-h-0 flex-1"
       :table-data="tableData"
       :loading="loading"
       :total="total"
@@ -356,7 +357,6 @@ initPage();
       :table-columns="tableColumns"
       :show-side-query="false"
       :show-pagination="true"
-      :is-all-data="false"
       @query="handleQuery"
       @reset="handleReset"
       @pagination="handlePagination"

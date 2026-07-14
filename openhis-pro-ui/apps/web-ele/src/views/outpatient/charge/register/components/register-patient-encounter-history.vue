@@ -6,6 +6,7 @@ import { computed, ref, watch } from 'vue';
 import { ElEmpty, ElPagination, ElTable, ElTableColumn, ElTag } from 'element-plus';
 
 import { getDateRangeQuick } from '#/utils/format/date-range-quick';
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
 import { tagTypeByCode } from '#/utils/format/status-tag';
 
 import { ENCOUNTER_STATUS_EL_TAG_MAP, pageRegisterHistoryForTable } from '../services';
@@ -39,7 +40,7 @@ function formatAmount(value: unknown): string {
   if (!Number.isFinite(n)) {
     return '—';
   }
-  return n.toFixed(2);
+  return formatMoneyDisplay(n);
 }
 
 async function loadHistory() {

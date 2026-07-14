@@ -19,6 +19,7 @@ export function therapyEnumToLabel(code?: string): string {
 export function blockingReasonToLabel(code?: string): string {
   const c = (code ?? '').trim();
   if (c.includes('LONG_NOT_STOPPED')) return '长期医嘱未停嘱';
+  if (c.includes('LONG_PENDING_SLOTS')) return '长期医嘱仍有待执行时点';
   if (c.includes('TEMP_NOT_COMPLETED')) return '临时医嘱未完结';
   return c || '—';
 }

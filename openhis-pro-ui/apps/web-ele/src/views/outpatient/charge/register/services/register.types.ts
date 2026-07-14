@@ -44,6 +44,7 @@ export interface RegisterPatientRecord {
 /** 右侧就诊记录表格对外暴露能力（与 History 组件 defineExpose 对齐） */
 export interface RegisterHistoryExpose {
   refresh: () => Promise<void>;
+  search: () => Promise<void>;
 }
 
 /** 右侧容器对外暴露能力（统计 + 当前 Tab） */
@@ -52,6 +53,8 @@ export type RegisterRightPanelExpose = RegisterHistoryExpose;
 /** 当日号源点选后带入左侧挂号的上下文 */
 export interface RegisterSlotSelectionPayload {
   healthcareServiceId: number | string;
+  /** 号源类型展示名；带入时并入下拉，避免只显示主键 ID */
+  healthcareServiceName?: string;
   organizationId: number | string;
   practitionerId?: null | number | string;
   slotEnd?: string;
@@ -61,7 +64,7 @@ export interface RegisterSlotSelectionPayload {
 
 /** 下方「待遇确认」只读展示区（费用性质切换后异步灌入） */
 export interface RegisterBenefitDisplayPayload {
-  kind?: '' | 'INSURANCE' | 'STUDENT';
+  kind?: '' | 'INSURANCE' | 'STUDENT' | 'WORK_INJURY';
   areaHint?: string;
   balc?: number | string;
   cardNo?: string;

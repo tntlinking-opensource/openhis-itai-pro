@@ -17,6 +17,8 @@ import {
   type PerformOrgOption,
 } from '#/views/doctor-station/advice-shared/perform-org-options.service';
 
+import { calcMoneyLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
+
 import { parseOptionalNumberInput } from '../services/advice-edit';
 import { formatMoneyStrYuan, formatUnitPriceYuan } from '../services/advice-format';
 import type { AdviceLineEditorKind } from '../services/advice-row';
@@ -59,7 +61,10 @@ const calcTotalFee = computed(() => {
     props.editorKind === 'SERVICE'
       ? Number(item.serviceQuantity ?? 0)
       : Number(item.totalAmount ?? 0);
-  return price > 0 && amount > 0 ? (price * amount).toFixed(2) : '0.00';
+  if (price <= 0 || amount <= 0) {
+    return '0.00';
+  }
+  return formatMoneyDisplay(calcMoneyLineTotal(price, amount));
 });
 
 /** 诊疗数量后只读单位展示（与药品单次剂量 `dose-unit-tail` 一致）。 */

@@ -8,6 +8,8 @@ import { computed } from 'vue';
 
 import { ElButton, ElCheckbox, ElInputNumber, ElOption, ElSelect, ElSwitch } from 'element-plus';
 
+import { calcMoneyLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
+
 import { parseOptionalNumberInput } from '../services/advice-edit';
 import {
   contractSelectionFromValue,
@@ -21,8 +23,14 @@ export interface WesternDrugFormHandlers {
   setField: <K extends keyof AdviceDrugItem>(key: K, value: AdviceDrugItem[K]) => void;
   applySplitDoseToDoseSide: (singleDose: number) => void;
   applyDoseQtyToSplitSide: (doseQty: number) => void;
+  /** 频次/用药天数变更：调频次模块算执行次数 */
   debouncedRecalcFrequencyTotal: () => void;
-  handleTotalAmountUnitSelect: (value: unknown) => void;
+  /** 单次剂量等变更：仅前端重算总量 */
+  debouncedEnsureFrequencyCountAndRecalcTotal: () => void;
+  /** 医生手工修改总量 */
+  handleTotalAmountManualInput: (value: unknown) => void;
+  /** 医生手工修改总量单位（仅换算数量，不触发自动重算） */
+  handleTotalAmountUnitManualSelect: (value: unknown) => void;
   handleDiagnosisFocus: () => void;
   openDiagnosisDialog: () => void;
 }
@@ -50,7 +58,10 @@ const calcTotalFee = computed(() => {
   const item = props.item;
   const price = Number(item.selectedDrugPrice || 0);
   const amount = Number(item.totalAmount ?? 0);
-  return price > 0 && amount > 0 ? (price * amount).toFixed(2) : '0.00';
+  if (price <= 0 || amount <= 0) {
+    return '0.00';
+  }
+  return formatMoneyDisplay(calcMoneyLineTotal(price, amount));
 });
 </script>
 
@@ -142,7 +153,7 @@ const calcTotalFee = computed(() => {
                   if (v !== undefined && Number.isFinite(v)) {
                     formHandlers.applySplitDoseToDoseSide(v);
                   }
-                  formHandlers.debouncedRecalcFrequencyTotal();
+                  formHandlers.debouncedEnsureFrequencyCountAndRecalcTotal();
                 }
               "
             />
@@ -167,6 +178,7 @@ const calcTotalFee = computed(() => {
                   if (v !== undefined && Number.isFinite(v)) {
                     formHandlers.applyDoseQtyToSplitSide(v);
                   }
+                  formHandlers.debouncedEnsureFrequencyCountAndRecalcTotal();
                 }
               "
             />
@@ -243,11 +255,7 @@ const calcTotalFee = computed(() => {
             :min="0"
             :controls="false"
             @update:model-value="
-              (value: unknown) =>
-                formHandlers.setField(
-                  'totalAmount',
-                  parseOptionalNumberInput(value) as AdviceDrugItem['totalAmount'],
-                )
+              (value: unknown) => formHandlers.handleTotalAmountManualInput(value)
             "
           />
           <ElSelect
@@ -255,7 +263,7 @@ const calcTotalFee = computed(() => {
             class="unit-select total-unit-select"
             placeholder="选药"
             @update:model-value="
-              (value: unknown) => formHandlers.handleTotalAmountUnitSelect(value)
+              (value: unknown) => formHandlers.handleTotalAmountUnitManualSelect(value)
             "
           >
             <ElOption

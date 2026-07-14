@@ -1,0 +1,18 @@
+{
+  "SchemaVersion": 1,
+  "Description": "openhis-pro-ui open-source export config",
+
+  "ExcludedRootDirectories": [
+    "projects",
+    "node_modules",
+    "dist",
+    ".git",
+    ".turbo",
+    ".idea",
+    ".vscode"
+  ],
+
+  "ExcludedPaths": ["apps/web-ele/dist", "apps/web-ele/dist.zip"],
+
+  "VerifyBuildCommand": "build:ele"
+}

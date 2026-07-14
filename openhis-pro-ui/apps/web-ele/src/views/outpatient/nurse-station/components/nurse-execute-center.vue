@@ -12,6 +12,10 @@ import AdviceOrderDisplayCell from '#/components/outpatient/advice-order-display
 import PatientInfoBar from '#/components/outpatient/patient-info-bar.vue';
 
 import { isNurseExecuteMedicationRow } from '../services/map-nurse-station-api';
+import {
+  isNurseExecuteRowCompleted,
+  resolveNurseExecuteStatusTagType,
+} from '#/utils/nurse-station/nurse-execute-status';
 
 defineOptions({
   name: 'NurseExecuteCenter',
@@ -37,27 +41,10 @@ interface Props {
 
 const executeTableRef = ref<InstanceType<typeof ElTable> | null>(null);
 
-const getStatusTagType = (status: NurseAdviceExecuteRow['status']) => {
-  if (status === '待签发') {
-    return 'warning';
-  }
-  if (status === '已执行') {
-    return 'success';
-  }
-  if (status === '已收费') {
-    return 'info';
-  }
-  if (status === '已退费') {
-    return 'danger';
-  }
-  if (status === '已完成' || status === '已发放') {
-    return 'success';
-  }
-  if (status === '执行中') {
-    return 'warning';
-  }
-  if (status === '待执行') {
-    return 'primary';
+const getStatusTagType = (row: NurseAdviceExecuteRow) => {
+  const code = row.statusEnum;
+  if (code) {
+    return resolveNurseExecuteStatusTagType(code);
   }
   return 'info';
 };
@@ -74,7 +61,8 @@ const onSelectionChange = (selection: NurseAdviceExecuteRow[]) => {
 
 /** 药品行仅展示，不参与勾选与执行 */
 const executeRowSelectable = (row: NurseAdviceExecuteRow) =>
-  !isNurseExecuteMedicationRow(row) && row.status !== '已完成';
+  !isNurseExecuteMedicationRow(row) &&
+  !(row.statusEnum && isNurseExecuteRowCompleted(row.statusEnum));
 
 /** 同一申请单首行：用于组间分隔线 */
 const isApplyFormGroupStart = (row: NurseAdviceExecuteRow, rowIndex: number): boolean => {
@@ -116,7 +104,7 @@ const executeRowClassName = ({
   rowIndex: number;
 }) => {
   const parts: string[] = [];
-  if (row.status === '已完成') {
+  if (row.statusEnum && isNurseExecuteRowCompleted(row.statusEnum)) {
     parts.push('is-nurse-execute-done-row');
   }
   if (isNurseExecuteMedicationRow(row)) {
@@ -248,7 +236,7 @@ defineExpose({
         <ElTableColumn prop="status" label="状态" width="90" align="center">
           <template #default="{ row }">
             <template v-if="!isNurseExecuteMedicationRow(row)">
-              <ElTag size="small" effect="light" :type="getStatusTagType(row.status)">
+              <ElTag size="small" effect="light" :type="getStatusTagType(row)">
                 {{ row.status }}
               </ElTag>
             </template>

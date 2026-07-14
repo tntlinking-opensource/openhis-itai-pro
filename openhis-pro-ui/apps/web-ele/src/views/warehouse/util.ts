@@ -1,8 +1,8 @@
-import { decimalMul } from '#/utils/format/decimal-util';
+import { calcMoneyLineTotal } from '#/utils/format/money-scale';
 
-/** 数量 × 单价，用 decimal 避免浮点误差 */
+/** 数量 × 单价（6 位行金额；入账以后端为准） */
 export const calcTotalPrice = (quantity: number, price: number): number =>
-  decimalMul(quantity, price);
+  calcMoneyLineTotal(price, quantity);
 
 /**
  * 将小单位数量按拆零比、单位文案格式化展示

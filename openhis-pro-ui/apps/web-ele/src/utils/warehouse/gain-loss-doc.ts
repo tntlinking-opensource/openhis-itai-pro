@@ -2,6 +2,8 @@
  * 药库损益单：单据号解析与审批口径（列表队列 / 工作站页共用）。
  */
 
+import { isSupplyStatusApproved } from '#/utils/inventory/inbound-receipt-status';
+
 export type GainLossOrderRowLike = {
   busNo?: string;
   orderBusNo?: string;
@@ -25,7 +27,6 @@ export function resolveGainLossBusNo(row?: null | Record<string, unknown>): stri
 /** 是否已审批通过（同意） */
 export function isGainLossApproved(row?: GainLossOrderRowLike | null): boolean {
   if (!row) return false;
-  if (row.statusEnum_enumText === '同意') return true;
   const s = row.statusEnum;
-  return s === 3 || s === '3';
+  return s === 3 || s === '3' || isSupplyStatusApproved(s);
 }

@@ -38,6 +38,7 @@ import { settleWithScanRecovery } from '#/utils/payment/scan-settle-recovery';
 import { submitScanRefund } from '#/utils/payment/submit-scan-refund';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
+import { formatMoneyDisplay, formatMoneyYuanWithSymbol } from '#/utils/format/money-scale';
 import {
   preserveApiIdForRequest,
   resolveLoginPractitionerIdForRequest,
@@ -191,15 +192,15 @@ function formatCurrencyAmount(value: number | string | undefined): string {
   if (value === undefined || value === null || value === '') return '-';
   const num = Number(value);
   if (!Number.isFinite(num)) return String(value);
-  return `¥${num.toFixed(2)}`;
+  return formatMoneyYuanWithSymbol(num);
 }
 
 /** 预交金流水金额：退预交金（UN_PAY）前加负号 */
 function formatPrepayRecordAmount(row: PrepayPaymentRecordDto): string {
   const num = Math.abs(Number(row.amount));
   if (!Number.isFinite(num)) return '¥-';
-  const isRefund = row.paymentEnum === 'UN_PAY' || row.bizTypeText === '退预交金';
-  return isRefund ? `¥-${num.toFixed(2)}` : `¥${num.toFixed(2)}`;
+  const isRefund = row.paymentEnum === 'UN_PAY';
+  return isRefund ? `¥-${formatMoneyDisplay(num)}` : formatMoneyYuanWithSymbol(num);
 }
 
 /** 可原路退的收取流水选项 */
@@ -209,7 +210,6 @@ const collectPaymentOptions = computed(() =>
       (row) =>
         row.statusEnum === 'SUCCESS' &&
         row.paymentEnum !== 'UN_PAY' &&
-        row.bizTypeText !== '退预交金' &&
         String(row.paymentId ?? '').trim(),
     )
     .map((row) => ({
@@ -224,7 +224,6 @@ function resolveLatestCollectPaymentId(records: PrepayPaymentRecordDto[]): strin
     (row) =>
       row.statusEnum === 'SUCCESS' &&
       row.paymentEnum !== 'UN_PAY' &&
-      row.bizTypeText !== '退预交金' &&
       String(row.paymentId ?? '').trim(),
   );
   if (collectRows.length === 0) {
@@ -482,14 +481,17 @@ watch(
 );
 
 onMounted(async () => {
-  try {
-    const init = await httpLoadInpatientPrepayPageInit({});
-    payChannelOptions.value = optionDtosToPayChannelOptions(init.paymentChannelOptions);
-  } catch {
-    payChannelOptions.value = [...PAY_CHANNEL_OPTIONS];
-  }
-  await refreshUnionPayCapabilities();
-  await queryQueueData();
+  const initPromise = (async () => {
+    try {
+      const init = await httpLoadInpatientPrepayPageInit({});
+      payChannelOptions.value = optionDtosToPayChannelOptions(init.paymentChannelOptions);
+    } catch {
+      payChannelOptions.value = [...PAY_CHANNEL_OPTIONS];
+    }
+  })();
+  const queuePromise = queryQueueData();
+  const unionPayPromise = refreshUnionPayCapabilities();
+  await Promise.all([initPromise, queuePromise, unionPayPromise]);
   await queryPrepayRecords();
 });
 </script>

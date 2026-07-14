@@ -5,7 +5,7 @@ import type { RegisterHistoryTableRow } from '../services';
 
 import type { DateRangeQuickSpec } from '#/utils/format/date-range-quick';
 
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { TableLayout } from '@vben-core/table-layout-ui';
 
@@ -25,6 +25,7 @@ import AppDialog from '#/components/app-dialog.vue';
 import SelectFuzzyInput from '#/components/select-fuzzy-input.vue';
 import { isScanPayChannel } from '#/composables/payment/useUnionPayScanPay';
 import { getDateRangeQuick } from '#/utils/format/date-range-quick';
+import { formatMoneyDisplay, formatMoneyYuanWithSymbol } from '#/utils/format/money-scale';
 import { settleWithScanRecovery } from '#/utils/payment/scan-settle-recovery';
 import { submitScanPayment } from '#/utils/payment/submit-scan-payment';
 import { submitScanRefund } from '#/utils/payment/submit-scan-refund';
@@ -59,6 +60,20 @@ defineOptions({
   name: 'RegisterHistory',
 });
 
+const props = withDefaults(
+  defineProps<{
+    dateRange?: [string, string];
+    /** full：日期+关键字；keyword-only：仅关键字；hidden：无工具栏筛选 */
+    toolbarMode?: 'full' | 'hidden' | 'keyword-only';
+  }>(),
+  {
+    dateRange: undefined,
+    toolbarMode: 'full',
+  },
+);
+
+const keywordModel = defineModel<string>('keyword', { default: '' });
+
 const emit = defineEmits<{
   recordsChanged: [];
 }>();
@@ -84,8 +99,17 @@ const payChannelCode = ref(DEFAULT_REGISTER_PAY_CHANNEL_CODE);
 const scanCode = ref('');
 const scanStatusText = ref('');
 
-const { scanPayEnabled, effectivePayChannelOptions, ensurePayChannelsLoaded } =
-  useRegisterPayChannels();
+const {
+  scanPayEnabled,
+  effectivePayChannelOptions,
+  ensurePayChannelsLoaded,
+  refreshPayChannelsForDialog,
+} = useRegisterPayChannels();
+
+const showDateToolbar = computed(() => props.toolbarMode === 'full');
+const showKeywordToolbar = computed(
+  () => props.toolbarMode === 'full' || props.toolbarMode === 'keyword-only',
+);
 
 const showScanPaySection = computed(
   () =>
@@ -120,21 +144,19 @@ const tableColumns: TableColumn[] = [
   {
     type: 'index',
     label: '序号',
-    width: 60,
+    minWidth: 56,
     align: 'center',
     headerAlign: 'center',
   },
   {
     prop: 'encounterBusNo',
     label: '就诊号',
-    width: 140,
     align: 'center',
     headerAlign: 'center',
   },
   {
     prop: 'patientName',
     label: '患者信息',
-    minWidth: 140,
     align: 'center',
     headerAlign: 'center',
     formatter: (row) => formatPatientInfoCell(row as RegisterHistoryTableRow),
@@ -142,28 +164,24 @@ const tableColumns: TableColumn[] = [
   {
     prop: 'contactPhone',
     label: '联系电话',
-    width: 100,
     align: 'center',
     headerAlign: 'center',
   },
   {
     prop: 'organizationName',
     label: '科室',
-    width: 90,
     align: 'center',
     headerAlign: 'center',
   },
   {
     prop: 'doctorName',
     label: '医生',
-    width: 80,
     align: 'center',
     headerAlign: 'center',
   },
   {
     prop: 'contractName',
     label: '费用性质',
-    width: 100,
     align: 'center',
     headerAlign: 'center',
     formatter: (_row, _column, cellValue) => String(cellValue ?? '').trim() || '—',
@@ -171,7 +189,6 @@ const tableColumns: TableColumn[] = [
   {
     prop: 'insuplcAdmdvs',
     label: '参保地',
-    width: 90,
     align: 'center',
     headerAlign: 'center',
     formatter: (row, _column, cellValue) =>
@@ -183,7 +200,6 @@ const tableColumns: TableColumn[] = [
   {
     prop: 'serviceTypeName',
     label: '挂号类型',
-    width: 100,
     slot: 'registerType',
     align: 'center',
     headerAlign: 'center',
@@ -191,7 +207,6 @@ const tableColumns: TableColumn[] = [
   {
     prop: 'amount',
     label: '挂号费',
-    width: 80,
     align: 'right',
     headerAlign: 'center',
     formatter: (_row, _column, cellValue) => {
@@ -202,14 +217,13 @@ const tableColumns: TableColumn[] = [
   {
     prop: 'startTime',
     label: '挂号时间',
-    width: 150,
+    minWidth: 140,
     align: 'center',
     headerAlign: 'center',
   },
   {
     prop: 'statusText',
     label: '状态',
-    width: 80,
     slot: 'status',
     align: 'center',
     headerAlign: 'center',
@@ -218,7 +232,7 @@ const tableColumns: TableColumn[] = [
     prop: 'action',
     label: '操作',
     fixed: 'right',
-    width: 240,
+    minWidth: 180,
     slot: 'action',
     align: 'center',
     headerAlign: 'center',
@@ -246,6 +260,34 @@ const handleQuery = async () => {
   }
 };
 
+watch(
+  () => props.dateRange,
+  (range) => {
+    if (!range) {
+      return;
+    }
+    const [start, end] = range;
+    const [currentStart, currentEnd] = queryParams.value.dateRange;
+    if (start === currentStart && end === currentEnd) {
+      return;
+    }
+    queryParams.value.dateRange = range;
+    queryParams.value.pageNo = 1;
+    void handleQuery();
+  },
+);
+
+watch(
+  keywordModel,
+  (val) => {
+    if (props.toolbarMode !== 'hidden') {
+      return;
+    }
+    queryParams.value.keyword = val ?? '';
+  },
+  { immediate: true },
+);
+
 /**
  * 列表「患者信息」列：姓名/性别（接口无年龄字段，仅拼性别文案）。
  */
@@ -272,7 +314,7 @@ function formatAmountTwoDecimals(value: unknown): string {
   if (!Number.isFinite(n)) {
     return '—';
   }
-  return (Math.round(n * 100) / 100).toFixed(2);
+  return formatMoneyDisplay(n);
 }
 
 /**
@@ -291,8 +333,7 @@ function historyDialogAmountYuan(row: RegisterHistoryTableRow): string {
   if (!Number.isFinite(n)) {
     return '—';
   }
-  const s = (Math.round(n * 100) / 100).toFixed(2);
-  return `¥${s}`;
+  return formatMoneyYuanWithSymbol(n);
 }
 
 /**
@@ -322,6 +363,19 @@ function resolvePayError(error: unknown): { code?: string; message: string } {
     };
   }
   return { message: String(error ?? '') };
+}
+
+/** HTTP 业务错误已由 request 拦截器提示，避免重复弹窗。 */
+function isRequestLayerError(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && 'response' in error);
+}
+
+function resolveLocalActionErrorMessage(error: unknown, fallback: string): string {
+  if (isRequestLayerError(error)) {
+    return '';
+  }
+  const message = error instanceof Error ? error.message.trim() : String(error ?? '').trim();
+  return message || fallback;
 }
 
 async function handleHistoryRescanRefresh() {
@@ -396,7 +450,7 @@ async function handleReprintReceipt(row: RegisterHistoryTableRow) {
 /**
  * 打开收费核对弹窗（正式结算前由用户确认）。
  */
-function handleCharge(row: RegisterHistoryTableRow) {
+async function handleCharge(row: RegisterHistoryTableRow) {
   const draftId = String(row.paymentDraftId ?? '').trim();
   if (!draftId) {
     ElMessage.warning('当前记录无支付草稿，无法收费');
@@ -408,6 +462,7 @@ function handleCharge(row: RegisterHistoryTableRow) {
   scanCode.value = '';
   scanStatusText.value = '';
   historyCredentialExpiredHint.value = false;
+  await refreshPayChannelsForDialog();
   historyActionDialogVisible.value = true;
 }
 
@@ -535,6 +590,11 @@ async function executeYbCancelRegister() {
     ElMessage.success('医保退号成功');
     await handleQuery();
     emit('recordsChanged');
+  } catch (error) {
+    const message = resolveLocalActionErrorMessage(error, '医保退号失败，请稍后重试');
+    if (message) {
+      ElMessage.error(message);
+    }
   } finally {
     actionDialogLoading.value = false;
   }
@@ -581,6 +641,11 @@ async function executeCancelRegister() {
     }
     await handleQuery();
     emit('recordsChanged');
+  } catch (error) {
+    const message = resolveLocalActionErrorMessage(error, '退号失败，请稍后重试');
+    if (message) {
+      ElMessage.error(message);
+    }
   } finally {
     actionDialogLoading.value = false;
   }
@@ -598,9 +663,9 @@ const handlePagination = ({ page, limit }: { limit: number; page: number }) => {
 /**
  * 关键字搜索：回到第一页再查，避免仍停留在深页导致空表误解。
  */
-const handleKeywordSearch = () => {
+const handleKeywordSearch = async () => {
   queryParams.value.pageNo = 1;
-  handleQuery();
+  await handleQuery();
 };
 
 /**
@@ -639,6 +704,7 @@ onBeforeUnmount(() => {
 /** 供父页在挂号成功等场景触发右侧列表刷新 */
 defineExpose({
   refresh: handleQuery,
+  search: handleKeywordSearch,
 });
 </script>
 
@@ -646,6 +712,7 @@ defineExpose({
   <div
     ref="tableAreaRef"
     class="register-history flex h-full min-h-0 flex-1 flex-col overflow-hidden"
+    :class="{ 'register-history--toolbar-hidden': props.toolbarMode === 'hidden' }"
   >
     <TableLayout
       class="register-history__table h-full min-h-0 flex-1 !p-0"
@@ -657,33 +724,37 @@ defineExpose({
       :table-height="tableAreaHeight"
       :show-pagination="true"
       :show-top-query="false"
-      border
-      stripe
+      :border="false"
+      :stripe="false"
+      size="small"
       @pagination="handlePagination"
     >
-      <template #toolbar-actions>
-        <div class="flex w-full items-center gap-2">
+      <template v-if="showDateToolbar || showKeywordToolbar" #toolbar-actions>
+        <div v-if="showDateToolbar || showKeywordToolbar" class="flex w-full items-center gap-2">
           <SelectFuzzyInput
+            v-if="showKeywordToolbar"
             v-model="queryParams.keyword"
             placeholder="患者姓名/就诊号"
             @search="handleKeywordSearch"
           />
-          <ElDatePicker
-            v-model="queryParams.dateRange"
-            type="daterange"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
-            value-format="YYYY-MM-DD"
-            style="width: 260px; max-width: 260px; flex: 0 0 260px"
-            @change="handleDateRangeChange"
-          />
-          <ElButton @click="applyDateRangeQuick({ strategy: 'calendar-day' })">今天</ElButton>
-          <ElButton @click="applyDateRangeQuick({ strategy: 'calendar-week' })">本周</ElButton>
-          <ElButton @click="applyDateRangeQuick({ strategy: 'calendar-month' })">本月</ElButton>
+          <template v-if="showDateToolbar">
+            <ElDatePicker
+              v-model="queryParams.dateRange"
+              type="daterange"
+              range-separator="至"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+              value-format="YYYY-MM-DD"
+              style="width: 260px; max-width: 260px; flex: 0 0 260px"
+              @change="handleDateRangeChange"
+            />
+            <ElButton @click="applyDateRangeQuick({ strategy: 'calendar-day' })">今天</ElButton>
+            <ElButton @click="applyDateRangeQuick({ strategy: 'calendar-week' })">本周</ElButton>
+            <ElButton @click="applyDateRangeQuick({ strategy: 'calendar-month' })">本月</ElButton>
+          </template>
         </div>
       </template>
-      <template #toolbar-tools>
+      <template v-if="showDateToolbar || showKeywordToolbar" #toolbar-tools>
         <ElButton :icon="Refresh" circle @click="handleKeywordSearch" />
       </template>
       <template #registerType="{ row }">
@@ -938,10 +1009,121 @@ defineExpose({
 </template>
 
 <style scoped>
+.register-history--toolbar-hidden :deep(.vxe-toolbar) {
+  display: none;
+}
+
 .register-history__table :deep(> .relative) {
   flex: 1;
   min-height: 0;
   height: 100%;
+}
+
+.register-history__table :deep(.vxe-grid) {
+  --vxe-ui-table-border-color: #f0f4fa;
+  --vxe-ui-table-header-background-color: #f7fafc;
+  --vxe-ui-font-color: #1a2b3c;
+  --vxe-ui-font-size-small: 13px;
+  --vxe-ui-table-row-height-small: 34px;
+  font-size: 13px;
+}
+
+.register-history__table :deep(.vxe-table--header-wrapper) {
+  border-bottom: 2px solid #e6edf4;
+}
+
+.register-history__table :deep(.vxe-header--column) {
+  height: 34px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  color: #2c4054;
+  background: #f7fafc;
+}
+
+.register-history__table :deep(.vxe-header--column .vxe-cell) {
+  height: 34px;
+  padding: 6px 10px;
+  line-height: 20px;
+}
+
+.register-history__table :deep(.vxe-body--column) {
+  height: 34px;
+  border-bottom: 1px solid #f0f4fa;
+  background-image: none;
+}
+
+.register-history__table :deep(.vxe-body--column .vxe-cell) {
+  height: 34px;
+  padding: 6px 10px;
+  line-height: 20px;
+  color: #1a2b3c;
+  white-space: nowrap;
+}
+
+.register-history__table :deep(.vxe-body--row) {
+  background: #fff;
+}
+
+.register-history__table :deep(.vxe-body--row:hover .vxe-body--column) {
+  background: #fafcff;
+}
+
+.register-history__table :deep(.vxe-table--border-line) {
+  display: none;
+}
+
+.register-history__table :deep(.vxe-table--body-wrapper) {
+  overflow-x: auto;
+}
+
+.register-history__table :deep(.vxe-table--fixed-right-wrapper .vxe-body--column .vxe-cell) {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.register-history__table :deep(.vxe-toolbar) {
+  padding: 0 0 8px;
+  background: transparent;
+}
+
+.register-history__table :deep(.vxe-pager) {
+  padding-top: 12px;
+  font-size: 13px;
+  color: #4d6278;
+  background: transparent;
+}
+
+.register-history__table :deep(.vxe-pager .vxe-pager--wrapper) {
+  justify-content: space-between;
+}
+
+.register-history__table :deep(.vxe-pager .vxe-pager--btn),
+.register-history__table :deep(.vxe-pager .vxe-pager--num-btn),
+.register-history__table :deep(.vxe-pager .vxe-pager--jump-prev),
+.register-history__table :deep(.vxe-pager .vxe-pager--jump-next) {
+  min-width: 28px;
+  height: 28px;
+  color: #4d6278;
+  background: transparent;
+  border: 1px solid #dce3eb;
+  border-radius: 4px;
+}
+
+.register-history__table :deep(.vxe-pager .vxe-pager--num-btn.is--active) {
+  color: #fff;
+  background: #2a7de1;
+  border-color: #2a7de1;
+}
+
+.register-history__table :deep(.vxe-pager .vxe-pager--sizes .vxe-input) {
+  height: 28px;
+}
+
+.register-history__table :deep(.vxe-pager .vxe-pager--sizes .vxe-input--inner) {
+  font-size: 13px;
+  border: 1px solid #dce3eb;
+  border-radius: 4px;
 }
 
 .register-history__actions {
@@ -949,10 +1131,5 @@ defineExpose({
   flex-wrap: nowrap;
   align-items: center;
   white-space: nowrap;
-}
-
-.register-history__table :deep(.vxe-table--fixed-right-wrapper .vxe-body--column .vxe-cell) {
-  overflow: visible;
-  text-overflow: clip;
 }
 </style>

@@ -4,6 +4,17 @@
 import type { ApiOptionItem, ApiResponse } from '#/types/api-response';
 
 import { requestClient } from '#/api/request';
+import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import {
+  filterWorkbenchListRowsByDateRange,
+  filterWorkbenchListRowsByKeyword,
+  INV_ALL_DEPT_PHARMACIES_LABEL,
+  mapLocationOptionsToCabinetRows,
+  pickInitOptionDtoList,
+  prependAllLocationsCabinetOption,
+  resolveWorkbenchListPurposeLocationId,
+} from '#/utils/inventory/inventory-workbench-list';
+import { mapGainLossListRowToQueueCard } from '#/api/inventory/warehouse/gain-loss';
 
 const BASE = '/inventoryDeptGainLoss';
 
@@ -21,6 +32,8 @@ export interface LoadDeptGainLossFormInitRequest {
 
 export interface LoadDeptGainLossFormInitResponse {
   deptLocationOptions?: DeptGainLossOptionDto[];
+  /** 后端 IF-DEP-GL-01 实际字段名。 */
+  pharmacyLocationOptions?: DeptGainLossOptionDto[];
   inboundItemTableTypeOptions?: DeptGainLossOptionDto[];
   statusOptions?: DeptGainLossOptionDto[];
   nurseOptions?: DeptGainLossOptionDto[];
@@ -35,6 +48,7 @@ export interface DeptGainLossListRowDto {
   purposeLocationName?: string;
   itemCount?: number;
   gainLossQuantitySum?: number;
+  actualAmountSum?: number;
   applicantId?: number | string;
   applicantName?: string;
   applyTime?: string;
@@ -55,7 +69,9 @@ export interface PageDeptGainLosssRequest {
 
 export interface PageDeptGainLosssResponse {
   total?: number;
-  records: DeptGainLossListRowDto[];
+  totalCount?: number;
+  records?: DeptGainLossListRowDto[];
+  content?: DeptGainLossListRowDto[];
 }
 
 export interface GetDeptGainLossDetailRequest {
@@ -66,10 +82,12 @@ export interface DeptGainLossDetailLineDto {
   lineId?: number | string;
   itemTable?: string;
   itemId?: number | string;
+  inventoryItemId?: number | string;
   productName?: string;
   specification?: string;
   manufacturer?: string;
   lotNumber?: string;
+  traceNo?: string;
   unitCode?: string;
   bookQuantity?: number;
   gainLossQuantity?: number;
@@ -80,6 +98,7 @@ export interface DeptGainLossDetailLineDto {
   reason?: string;
   remake?: string;
   occurrenceTime?: string;
+  productCatalog?: { unitBands?: unknown };
 }
 
 export interface GetDeptGainLossDetailResponse {
@@ -98,11 +117,14 @@ export interface GetDeptGainLossDetailResponse {
 export interface DeptGainLossLineDto {
   itemTable?: string;
   itemId?: number | string;
+  inventoryItemId?: number | string;
   gainLossQuantity?: number;
   unitCode?: string;
   lotNumber?: string;
+  traceNo?: string;
   reason?: string;
   price?: number;
+  gainLossAmount?: number;
   occurrenceTime?: string;
 }
 
@@ -114,6 +136,19 @@ export interface CreateDeptGainLossRequest {
 }
 
 export interface CreateDeptGainLossResponse {
+  busNo?: string;
+  statusEnum?: string | number;
+}
+
+export interface UpdateDeptGainLossRequest {
+  busNo: string;
+  purposeLocationId: number | string;
+  practitionerId: number | string;
+  categoryEnum?: string;
+  lines: DeptGainLossLineDto[];
+}
+
+export interface UpdateDeptGainLossResponse {
   busNo?: string;
   statusEnum?: string | number;
 }
@@ -202,6 +237,14 @@ export async function createDeptGainLossApi(body: CreateDeptGainLossRequest) {
   );
 }
 
+/** 后端方法名为 updateGainLoss（与 SDD IF-DEP-GL-05 一致） */
+export async function updateDeptGainLossApi(body: UpdateDeptGainLossRequest) {
+  return requestClient.post<ApiResponse<UpdateDeptGainLossResponse>>(
+    `${BASE}/updateGainLoss`,
+    body,
+  );
+}
+
 export async function submitDeptGainLossApprovalApi(body: SubmitDeptGainLossApprovalRequest) {
   return requestClient.post<ApiResponse<SubmitDeptGainLossApprovalResponse>>(
     `${BASE}/submitDeptGainLossApproval`,
@@ -235,6 +278,16 @@ export async function pageProductsForDeptGainLossApi(body: PageProductsForDeptGa
   );
 }
 
+export function resolveDeptGainLossLocationOptionsFromInit(
+  data?: LoadDeptGainLossFormInitResponse | null,
+): DeptGainLossOptionDto[] {
+  return pickInitOptionDtoList(
+    data as Record<string, unknown> | undefined,
+    'deptLocationOptions',
+    'pharmacyLocationOptions',
+  ) as DeptGainLossOptionDto[];
+}
+
 export function mapDeptGainLossInitOptionsToApiItems(
   list?: DeptGainLossOptionDto[],
 ): ApiOptionItem[] {
@@ -242,4 +295,42 @@ export function mapDeptGainLossInitOptionsToApiItems(
     label: String(o.label ?? ''),
     value: String(o.value ?? ''),
   }));
+}
+
+export function mapDeptGainLossInitToCabinetRows(
+  list?: DeptGainLossOptionDto[],
+): Record<string, unknown>[] {
+  const rows = mapLocationOptionsToCabinetRows(
+    (list ?? []).map((o) => ({ value: o.value, label: o.label })),
+    INV_ALL_DEPT_PHARMACIES_LABEL,
+  );
+  return prependAllLocationsCabinetOption(rows, INV_ALL_DEPT_PHARMACIES_LABEL);
+}
+
+export async function pageDeptGainLossWorkbenchListApi(params?: {
+  purposeLocationId?: number | string;
+  keyword?: string;
+  applyTimeBegin?: string;
+  applyTimeEnd?: string;
+  pageNo?: number;
+  pageSize?: number;
+}): Promise<{ records: Record<string, unknown>[]; total: number }> {
+  const res = await pageDeptGainLosssApi({
+    purposeLocationId: resolveWorkbenchListPurposeLocationId(params?.purposeLocationId),
+    keyword: params?.keyword?.trim() || undefined,
+    pageNo: params?.pageNo ?? 1,
+    pageSize: params?.pageSize ?? 200,
+  });
+  const { content, totalCount } = parsePagedRowsFromApiData<DeptGainLossListRowDto>(res.data);
+  const dateFiltered = filterWorkbenchListRowsByDateRange(
+    content,
+    params?.applyTimeBegin,
+    params?.applyTimeEnd,
+  );
+  const records = filterWorkbenchListRowsByKeyword(
+    dateFiltered.map((r) => mapGainLossListRowToQueueCard(r)),
+    params?.keyword,
+  ) as Record<string, unknown>[];
+  const filtered = (params?.applyTimeBegin && params?.applyTimeEnd) || params?.keyword?.trim();
+  return { records, total: filtered ? records.length : totalCount };
 }

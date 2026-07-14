@@ -4,6 +4,7 @@ import type { AdviceDrugItem, AdviceProductOption, AdviceRowItem } from './advic
 import type { PrepickedProductKeyDto } from '#/api/doctor-station/advice.types';
 
 import { buildWesternProductSelectPatch } from './advice-edit';
+import { preferredTotalUnitBandKindFromOrderCalcRule } from './medication-order-total-calc';
 import {
   hydrateAdviceRowDoseFromBackend,
   resolveAdviceLineUnitPrice,
@@ -47,6 +48,7 @@ export function buildAdviceDrugItemSeedFromListRow(
   const isService = rt === 'SERVICE' || tbl.toLowerCase() === 'wkf_activity_definition';
   const qty = row.listQuantity;
   const unitCode = String(row.listUnitCode ?? '').trim();
+  const unitName = String(row.listUnitName ?? '').trim();
   const diagnosisRaw = String(row.conditionDefinitionName ?? row.diagnosisSummary ?? '').trim();
   const diagnosis = diagnosisRaw === '—' ? '' : diagnosisRaw;
   const displayName = String(row.adviceDisplayName ?? '').trim();
@@ -78,7 +80,13 @@ export function buildAdviceDrugItemSeedFromListRow(
       ? {
           serviceQuantity: qty ?? 1,
           totalAmount: positiveInt(row.listExecutionCount) ?? 1,
-          totalAmountUnit: unitCode || '次',
+          totalAmountUnit: unitCode,
+          ...(unitCode
+            ? {
+                totalUnitSalesCode: unitCode,
+                totalUnitSalesName: unitName || unitCode,
+              }
+            : {}),
           performOrgId: String(row.performOrgId ?? '').trim() || undefined,
           performOrgName: String(row.performOrgName ?? '').trim() || undefined,
         }
@@ -134,12 +142,21 @@ export function mergeCatalogIntoAdviceDrugItemForEdit(
       String(seed.performOrgId ?? catalog.defaultPerformOrgId ?? '').trim() || undefined;
     const performOrgName =
       String(seed.performOrgName ?? catalog.defaultPerformOrgName ?? '').trim() || undefined;
+    const uCode = String(seed.totalAmountUnit ?? catalog.defaultUnitCode ?? '').trim();
+    const uName = String(seed.totalUnitSalesName ?? catalog.defaultUnitName ?? '').trim();
     return {
       ...base,
       ...preserved,
       performOrgId,
       performOrgName,
       selectedDrugPrice: catalog.price ?? seed.selectedDrugPrice ?? '',
+      ...(uCode
+        ? {
+            totalAmountUnit: uCode,
+            totalUnitSalesCode: uCode,
+            totalUnitSalesName: uName || uCode,
+          }
+        : {}),
     };
   }
 
@@ -157,12 +174,9 @@ export function mergeCatalogIntoAdviceDrugItemForEdit(
     };
   }
 
-  const therapy =
-    String(opts?.therapyTypeCode ?? seed.therapyEnum ?? '')
-      .trim()
-      .toUpperCase() || undefined;
   const totalUnitDefaultKind =
-    opts?.totalUnitDefaultKind ?? (therapy === 'TEMPORARY' ? 'PACKAGE' : 'SALES');
+    opts?.totalUnitDefaultKind ??
+    preferredTotalUnitBandKindFromOrderCalcRule(catalog.partAttributeEnum);
   const catalogPatch = buildWesternProductSelectPatch(
     { ...(seed as AdviceDrugItem), ...preserved } as AdviceDrugItem,
     catalog,

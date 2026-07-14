@@ -4,6 +4,14 @@
 import type { ApiResponse } from '#/types/api-response';
 
 import { requestClient } from '#/api/request';
+import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import {
+  filterWorkbenchListRowsByDateRange,
+  filterWorkbenchListRowsByKeyword,
+  INV_ALL_PHARMACIES_LABEL,
+  mapInitOptionsToCabinetRowsWithAll,
+  resolveWorkbenchListPurposeLocationId,
+} from '#/utils/inventory/inventory-workbench-list';
 
 const BASE = '/inventoryWarehouseTransferIn';
 
@@ -53,7 +61,9 @@ export interface PageTransferInsRequest {
 
 export interface PageTransferInsResponse {
   total?: number;
-  records: TransferInListRowDto[];
+  totalCount?: number;
+  records?: TransferInListRowDto[];
+  content?: TransferInListRowDto[];
 }
 
 export interface GetTransferInDetailRequest {
@@ -65,14 +75,23 @@ export interface TransferInDetailLineDto {
   itemTable?: string;
   itemId?: number | string;
   productName?: string;
+  specification?: string;
+  manufacturer?: string;
   itemQuantity?: number;
   unitCode?: string;
+  unitCodeDictText?: string;
   lotNumber?: string;
   traceNo?: string;
   price?: number;
   totalPrice?: number;
   remake?: string;
   occurrenceTime?: string;
+  productCatalog?: {
+    merchandiseName?: string;
+    productBusNo?: string;
+    totalVolume?: string;
+    unitBands?: unknown;
+  };
 }
 
 export interface GetTransferInDetailResponse {
@@ -255,4 +274,43 @@ export async function pageProductsForTransferInApi(body: PageProductsForTransfer
     `${BASE}/pageProductsForTransferIn`,
     body,
   );
+}
+
+/** init 药库下拉 → 侧栏 cabinet 行（含「全部库房」）。 */
+export function mapTransferInInitToCabinetRows(
+  list?: TransferInOptionDto[],
+): Record<string, unknown>[] {
+  return mapInitOptionsToCabinetRowsWithAll(list ?? [], INV_ALL_PHARMACIES_LABEL);
+}
+
+/** 工作站左侧列表：purposeLocationId=0 表示全部；日期/关键字在前端筛。 */
+export async function pageTransferInWorkbenchListApi(params: {
+  purposeLocationId?: number | string;
+  typeEnum: string;
+  keyword?: string;
+  applyTimeBegin?: string;
+  applyTimeEnd?: string;
+  pageNo?: number;
+  pageSize?: number;
+}): Promise<{ records: TransferInListRowDto[]; total: number }> {
+  const pid = resolveWorkbenchListPurposeLocationId(params.purposeLocationId);
+  const res = await pageTransferInsApi({
+    purposeLocationId: pid,
+    typeEnum: params.typeEnum,
+    keyword: params.keyword?.trim() || undefined,
+    pageNo: params.pageNo ?? 1,
+    pageSize: params.pageSize ?? 200,
+  });
+  const { content, totalCount } = parsePagedRowsFromApiData<TransferInListRowDto>(res.data);
+  const dateFiltered = filterWorkbenchListRowsByDateRange(
+    content,
+    params.applyTimeBegin,
+    params.applyTimeEnd,
+  );
+  const records = filterWorkbenchListRowsByKeyword(
+    dateFiltered as Record<string, unknown>[],
+    params.keyword,
+  ) as TransferInListRowDto[];
+  const filtered = (params.applyTimeBegin && params.applyTimeEnd) || params.keyword?.trim();
+  return { records, total: filtered ? records.length : totalCount };
 }

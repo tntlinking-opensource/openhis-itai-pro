@@ -104,7 +104,11 @@ export function useInventoryDocGridEdit<TRow extends object>(
     void clearInventoryDocGridPersistedFormRows(options.getGridApi(), rows);
   }
 
-  function onCellClick(params: { column?: { field?: string; type?: string }; row: TRow }): void {
+  function onCellClick(params: {
+    column?: { field?: string; type?: string };
+    row: TRow;
+    $event?: Event;
+  }): void {
     handleInventoryDocGridCellClick(buildSession(), params);
   }
 

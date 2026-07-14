@@ -1,0 +1,57 @@
+worker_processes  1;
+error_log  logs/error.log;
+pid        logs/nginx.pid;
+
+events {
+    worker_connections  1024;
+}
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+
+    types {
+        application/javascript  mjs;
+    }
+
+    sendfile        on;
+    keepalive_timeout  65;
+    gzip  on;
+    gzip_types text/plain text/css application/javascript application/json;
+
+    server {
+        listen       {{LISTEN_PORT}};
+        server_name  localhost;
+
+        root   {{HTML_ROOT}};
+        index  index.html;
+
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+
+        location /api/ {
+            proxy_pass http://{{BACKEND_HOST}}:{{BACKEND_PORT}}/api/app/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_connect_timeout 5s;
+            proxy_read_timeout 180s;
+            proxy_send_timeout 180s;
+        }
+
+        location /ws {
+            proxy_pass http://{{BACKEND_HOST}}:{{BACKEND_PORT}};
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+        }
+
+        location /uploads/ {
+            proxy_pass http://{{BACKEND_HOST}}:{{BACKEND_PORT}};
+            proxy_set_header Host $host;
+        }
+    }
+}

@@ -198,6 +198,8 @@ export interface ConfirmInpatientSettleResponse {
 export interface SettledPaymentBriefDto {
   payMethodText?: string;
   paymentId: string;
+  /** 支付业务单号（fin_payment_reconciliation.payment_no） */
+  paymentNo?: string;
   /** 展示绝对值，不含反结符号 */
   receivableTotal: number | string;
   /** FORWARD 正向结单 / REVERSE 逆向反结单 */

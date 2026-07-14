@@ -21,6 +21,10 @@ import { useNurseStationPatientData } from './use-nurse-station-patient-data';
 import { useNurseStationPatientProjections } from './use-nurse-station-patient-projections';
 import { useNurseStationSelection } from './use-nurse-station-selection';
 import {
+  MULTI_PATIENT_OPERATION_TABS,
+  OPERATION_TAB,
+  OPERATION_TAB_LABEL,
+  SINGLE_PATIENT_OPERATION_TABS,
   operationComponentByTab,
   operationLoaderByTab,
   operationSelectionPolicyByTab,
@@ -34,7 +38,7 @@ defineOptions({
 function getSelectionPolicyByTab(tab: OperationTab) {
   return operationSelectionPolicyByTab[tab] ?? 'single';
 }
-const activeOperationTab = ref<OperationTab>('医嘱执行');
+const activeOperationTab = ref<OperationTab>(OPERATION_TAB.ORDER_EXECUTE);
 const {
   bootstrapPatientWorkbench,
   filteredPatients,
@@ -48,7 +52,7 @@ const {
   wardNameByIdRecord,
   wardOptions,
 } = useNurseStationPatientData();
-const IN_OUT_TRANSFER_TAB: OperationTab = '入出转管理';
+const IN_OUT_TRANSFER_TAB = OPERATION_TAB.IN_OUT_TRANSFER;
 /** 已出院结算列表：仅召回可用，禁止选中患者与右侧业务操作 */
 const isRecallListMode = computed(() => queueScopeFilter.value === 'settled-discharged');
 const { bedBoardGroups, bedBoardLoading, bedBoardPanel, loadBedBoard } = useNurseStationBedBoard({
@@ -77,7 +81,7 @@ const admissionBedDialogOperation = ref<AdmissionBedOperationIntent | null>(null
 const operationTabLoading = ref(false);
 /** 换床/互换直提交 loading（E4） */
 const directBedSubmitting = ref(false);
-const loadedOperationTabs = ref<Set<OperationTab>>(new Set(['医嘱执行']));
+const loadedOperationTabs = ref<Set<OperationTab>>(new Set([OPERATION_TAB.ORDER_EXECUTE]));
 const { selectedPatients, singlePanelPatients } = useNurseStationPatientProjections({
   activePatientId,
   patients,
@@ -89,22 +93,10 @@ const { selectedPatients, singlePanelPatients } = useNurseStationPatientProjecti
 const currentOperationComponent = computed(() => operationComponentByTab[activeOperationTab.value]);
 /** 根据当前导航拼装组件入参，保证 KeepAlive 缓存切换不丢状态。 */
 const currentOperationProps = computed<Record<string, unknown>>(() => {
-  if (
-    activeOperationTab.value === '医嘱执行' ||
-    activeOperationTab.value === '医嘱校对' ||
-    activeOperationTab.value === '汇总领药'
-  ) {
+  if (MULTI_PATIENT_OPERATION_TABS.has(activeOperationTab.value)) {
     return { patients: selectedPatients.value };
   }
-  if (
-    activeOperationTab.value === '医嘱查看' ||
-    activeOperationTab.value === '皮试管理' ||
-    activeOperationTab.value === '护理记录' ||
-    activeOperationTab.value === '体温单' ||
-    activeOperationTab.value === '住院记账' ||
-    activeOperationTab.value === '费用明细' ||
-    activeOperationTab.value === '病历调阅'
-  ) {
+  if (SINGLE_PATIENT_OPERATION_TABS.has(activeOperationTab.value)) {
     return { patients: singlePanelPatients.value };
   }
   if (activeOperationTab.value === IN_OUT_TRANSFER_TAB) {
@@ -131,17 +123,20 @@ function onWorkbenchTabChange(tabId: OperationTab, prevTabId: OperationTab) {
   setSelectionPolicy(policy, (msg) => ElMessage.warning(msg));
 }
 /** 切换右侧业务导航：首次进入模块时显示 loading，加载完成后再切换。 */
-async function handleOperationTabClick(tab: string) {
+async function handleOperationTabClick(tab: OperationTab) {
   if (isRecallListMode.value) {
     return;
   }
-  const nextTab = tab as OperationTab;
+  const nextTab = tab;
   const prevTab = activeOperationTab.value;
-  if (tab === activeOperationTab.value) return;
+  if (nextTab === activeOperationTab.value) return;
   const loader = operationLoaderByTab[nextTab];
   if (!loader || loadedOperationTabs.value.has(nextTab)) {
     activeOperationTab.value = nextTab;
     onWorkbenchTabChange(nextTab, prevTab);
+    if (nextTab === IN_OUT_TRANSFER_TAB) {
+      void loadBedBoard(bedBoardPanel.value);
+    }
     return;
   }
   operationTabLoading.value = true;
@@ -294,9 +289,21 @@ async function handleAdmissionBedDialogSaved() {
 
 /** 出院 / 清床后刷新患者队列与当前 panel 床位图（选中态由 selection watch 恢复） */
 async function handleInOutTransferRefresh() {
+  await refreshWorkbenchAfterEncounterFlowChange();
+}
+
+/** 出院医嘱校对等写操作后：刷新队列，并保证出 Tab 床位图与就诊态一致 */
+async function refreshWorkbenchAfterEncounterFlowChange() {
   await loadPatientQueue();
+  if (isRecallListMode.value) {
+    return;
+  }
   if (activeOperationTab.value === IN_OUT_TRANSFER_TAB) {
     await loadBedBoard(bedBoardPanel.value);
+    return;
+  }
+  if (loadedOperationTabs.value.has(IN_OUT_TRANSFER_TAB)) {
+    await loadBedBoard('discharge');
   }
 }
 
@@ -319,6 +326,7 @@ const patientListPanelContext: NurseStationPatientListPanelContext = {
   ...patientListPanelDataContext,
   ...patientListPanelSelectionContext,
   ...patientListPanelDragContext,
+  refreshWorkbenchAfterEncounterFlowChange,
   onPatientCardDblClick: handlePatientCardDblClick,
   onRecallPatient: handleRecallPatient,
 };
@@ -374,7 +382,7 @@ onMounted(async () => {
           :disabled="isRecallListMode"
           @click="handleOperationTabClick(tab)"
         >
-          {{ tab }}
+          {{ OPERATION_TAB_LABEL[tab] }}
         </button>
       </div>
       <div class="nurse-operation-content">

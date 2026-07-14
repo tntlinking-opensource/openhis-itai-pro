@@ -1,11 +1,14 @@
-import { createRequire } from 'node:module';
 import type { PluginOption } from 'vite';
+
+import { createRequire } from 'node:module';
 
 import { defineConfig } from '@vben/vite-config';
 
 import AutoImport from 'unplugin-auto-import/vite';
 import ElementPlus from 'unplugin-element-plus/vite';
 
+import { openHisWinDownloadsDevPlugin } from './vite.openhis-win-downloads';
+import { createOpenHisProjectOverridePlugin } from './vite.project-override-plugin';
 import { createWebEleResolveAliases } from './vite.resolve-aliases';
 
 const require = createRequire(import.meta.url);
@@ -42,6 +45,8 @@ const extraPlugins = [
 ] as PluginOption[];
 
 export default defineConfig(async () => {
+  const projectOverridePlugin = createOpenHisProjectOverridePlugin(import.meta.dirname);
+
   return {
     application: {},
     vite: {
@@ -54,12 +59,16 @@ export default defineConfig(async () => {
           },
         },
       },
-      plugins: extraPlugins,
+      plugins: [
+        ...(projectOverridePlugin ? [projectOverridePlugin] : []),
+        openHisWinDownloadsDevPlugin(),
+        ...extraPlugins,
+      ],
       define: {
         // sockjs-client@1.x 引用了 Node.js 的 global 变量，Vite ESM 环境中不存在
         global: 'globalThis',
       },
-        resolve: {
+      resolve: {
         // monorepo 本地打包：优先走各 workspace 包的 development/src 入口，避免 stub dist（含 jiti）进浏览器包
         conditions: ['development', 'module', 'browser', 'default'],
         alias: {

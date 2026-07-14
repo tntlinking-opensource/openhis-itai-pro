@@ -53,6 +53,12 @@ export interface LoadRegisterFormInitResult {
   /** 号源类型主键 → 挂号费销售价（元） */
   serviceTypeFeeById?: Record<string, number | string>;
   paymentChannelOptions?: OptionDto[];
+  workInjuryCapability?: {
+    enabled?: boolean;
+    winRequired?: boolean;
+    fixmedinsCode?: string;
+    contractBusNo?: string;
+  };
 }
 
 /** 患者检索分页请求参数 */
@@ -237,7 +243,8 @@ export interface LoadRegisterBenefitPreviewParams {
 }
 
 export interface LoadRegisterBenefitPreviewResult {
-  benefitKind?: 'INSURANCE' | 'NONE' | 'STUDENT' | string;
+  benefitKind?: 'INSURANCE' | 'NONE' | 'STUDENT' | 'WORK_INJURY' | string;
+  hintMessage?: string;
   contractMatch?: RegisterContractMatchDto;
   studentEligibility?: StudentEligibilityPreviewDto;
   studentPreview?: StudentRegisterBenefitPreviewDto;

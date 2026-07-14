@@ -9,6 +9,14 @@ import { useRoute } from 'vue-router';
 import { formatDateTime } from '@vben/utils';
 
 import {
+  INV_ALL_LOCATIONS_FILTER_ID,
+  INV_ITEM_TABLE_TYPE_DEVICE,
+  normalizeInventoryItemTableTypeOptions,
+  normalizeSidebarLocationFilterValue,
+  pickWorkbenchOrderAfterSave,
+  resolveDefaultAllLocationsFilterValue,
+} from '#/utils/inventory/inventory-workbench-list';
+import {
   initDeptStocktakeWorkbenchApi,
   pageDeptStocktakeWorkbenchListApi,
 } from '#/api/inventory/department/stocktake';
@@ -44,7 +52,7 @@ const listKeywordModel = computed({
 });
 
 const tableForm = ref<{ purposeLocationId?: number | string }>({
-  purposeLocationId: undefined,
+  purposeLocationId: INV_ALL_LOCATIONS_FILTER_ID,
 });
 
 const cabinetListOptions = ref<Record<string, unknown>[]>([]);
@@ -66,7 +74,6 @@ function createDraftOrderRow(): Record<string, unknown> {
     _clientDraftId: `draft:${Date.now()}:${Math.random().toString(36).slice(2, 9)}`,
     statusEnum_enumText: '编辑中',
     applyTime: formatDateTime(new Date()),
-    purposeLocationId: tableForm.value.purposeLocationId,
   };
 }
 
@@ -94,10 +101,19 @@ async function init() {
     const data = await initDeptStocktakeWorkbenchApi();
     cabinetListOptions.value = data.cabinetListOptions ?? [];
     locationRawOptions.value = data.locationRawOptions ?? [];
-    itemTableTypeOptions.value = data.itemTableTypeOptions ?? [];
-    if (tableForm.value.purposeLocationId === undefined && cabinetListOptions.value.length > 0) {
-      const first = cabinetListOptions.value[0] as Record<string, unknown>;
-      tableForm.value.purposeLocationId = (first.id ?? first.value) as number | string | undefined;
+    itemTableTypeOptions.value = normalizeInventoryItemTableTypeOptions(
+      data.itemTableTypeOptions,
+      INV_ITEM_TABLE_TYPE_DEVICE,
+    );
+    if (
+      tableForm.value.purposeLocationId === undefined ||
+      tableForm.value.purposeLocationId === null ||
+      String(tableForm.value.purposeLocationId).trim() === '' ||
+      tableForm.value.purposeLocationId === 0
+    ) {
+      tableForm.value.purposeLocationId = resolveDefaultAllLocationsFilterValue(
+        cabinetListOptions.value,
+      );
     }
   } catch {
     cabinetListOptions.value = [];
@@ -112,7 +128,7 @@ async function getList() {
   try {
     const data = await pageDeptStocktakeWorkbenchListApi({
       keyword: queryParams.value.keyword,
-      purposeLocationId: tableForm.value.purposeLocationId,
+      purposeLocationId: normalizeSidebarLocationFilterValue(tableForm.value.purposeLocationId),
       ...(dr?.[0] ? { applyTimeBegin: dr[0] } : {}),
       ...(dr?.[1] ? { applyTimeEnd: dr[1] } : {}),
     });
@@ -135,14 +151,14 @@ function handleAdd() {
 function handleOrderClick(order: Record<string, unknown>) {
   selectedOrder.value = order;
   if (isDraftOrderRow(order)) {
-    mainPaneResetKey.value += 1;
+    // 切回草稿由主区 sync 恢复缓存；勿 bump resetKey，否则会冲掉恢复内容
     return;
   }
   isAddDisabled.value = false;
 }
 
 function handleLocationChange(locationId?: number | string) {
-  tableForm.value.purposeLocationId = locationId;
+  tableForm.value.purposeLocationId = normalizeSidebarLocationFilterValue(locationId);
   void getList();
 }
 
@@ -151,9 +167,7 @@ async function handleDocumentSaved(payload: { busNo?: string }) {
   await getList();
   const busNo = payload.busNo?.trim();
   if (!busNo) return;
-  const row = orderList.value.find((item) => resolveStocktakeBusNo(item) === busNo);
-  if (!row) return;
-  selectedOrder.value = row;
+  selectedOrder.value = pickWorkbenchOrderAfterSave(orderList.value, busNo, resolveStocktakeBusNo);
   isAddDisabled.value = false;
 }
 
@@ -231,7 +245,6 @@ onMounted(async () => {
       location-field-label="盘点科室"
       head-section-title="科室盘点单"
       :reset-key="mainPaneResetKey"
-      :sidebar-purpose-location-id="tableForm.purposeLocationId"
       @document-removed="handleDocumentRemoved"
       @document-saved="handleDocumentSaved"
     />

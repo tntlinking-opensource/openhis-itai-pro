@@ -22,6 +22,7 @@ import WarehouseDocOrderQueue from '#/components/warehouse/warehouse-doc-order-q
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
 import WarehouseOrderDetailEdit from '#/components/warehouse/warehouse-order-detail-edit.vue';
 import { isPurchaseRequestApproved } from '#/utils/warehouse/purchase-request-order-detail';
+import { calcMoneyLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
 
 defineOptions({
   name: 'WarehousePurchaseRequest',
@@ -308,14 +309,12 @@ function buildUnitList(item: Record<string, any>) {
       : item.retailPrice / Number.parseInt(String(item.partPercent), 10);
 
     // 进价金额（假）
-    unit.totalPriceMask = (
-      Number.parseFloat(item.price) * Number.parseFloat(item.itemQuantity)
-    ).toFixed(2);
+    unit.totalPriceMask = formatMoneyDisplay(calcMoneyLineTotal(item.price, item.itemQuantity));
 
     // 销售金额（假）
-    unit.totalRetailPriceMask = (
-      Number.parseFloat(item.retailPrice) * Number.parseFloat(item.itemQuantity)
-    ).toFixed(2);
+    unit.totalRetailPriceMask = formatMoneyDisplay(
+      calcMoneyLineTotal(item.retailPrice, item.itemQuantity),
+    );
 
     // 规格库存
     unit.specificationInventoryOriginal = item.specificationInventory;

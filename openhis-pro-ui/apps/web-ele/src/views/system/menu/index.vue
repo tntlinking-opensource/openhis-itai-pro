@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
 
-import type { Menu, PageMenuParams } from '#/api/core/system/menu.types';
+import type { Menu, PageMenuParams, UpdateMenuParams } from '#/api/core/system/menu.types';
 
 import { computed, onMounted, ref } from 'vue';
 
@@ -11,7 +11,7 @@ import { IconifyIcon } from '@vben/icons';
 
 import { TableLayout } from '@vben-core/table-layout-ui';
 
-import { ElButton, ElMessage, ElMessageBox, ElTag } from 'element-plus';
+import { ElButton, ElMessage, ElMessageBox, ElSwitch, ElTag } from 'element-plus';
 
 import {
   deleteMenuApi,
@@ -19,6 +19,7 @@ import {
   enableMenuApi,
   getMenuTreeApi,
   pageMenuApi,
+  updateMenuApi,
 } from '#/api/core/system/menu';
 
 import { resetAndRefreshAccessRoutes } from '#/router/access-init';
@@ -81,6 +82,13 @@ const tableColumns: TableColumn[] = [
     label: '排序',
     width: 80,
     align: 'center',
+  },
+  {
+    prop: 'isHidden',
+    label: '是否隐藏',
+    slot: 'isHidden',
+    align: 'center',
+    width: 100,
   },
   {
     prop: 'isEnabled',
@@ -228,6 +236,55 @@ const handleEnable = async (row: Menu) => {
   }
 };
 
+const hiddenUpdatingIds = ref<Set<string>>(new Set());
+
+const refreshRoutesAfterMenuChange = async () => {
+  if (!accessStore.accessToken) {
+    return;
+  }
+  try {
+    await resetAndRefreshAccessRoutes(router);
+  } catch (error) {
+    console.error('[MenuList] refresh routes after menu change failed', error);
+  }
+};
+
+const handleToggleHidden = async (row: Menu, value: boolean) => {
+  if (!row.id) {
+    ElMessage.warning('缺少菜单ID');
+    return;
+  }
+  if (hiddenUpdatingIds.value.has(row.id)) {
+    return;
+  }
+
+  const previous = row.isHidden;
+  row.isHidden = value;
+  hiddenUpdatingIds.value.add(row.id);
+
+  try {
+    await updateMenuApi({
+      id: row.id,
+      request: {
+        isHidden: String(value),
+      } as UpdateMenuParams['request'],
+    });
+    ElMessage.success(value ? '已隐藏' : '已取消隐藏');
+    await refreshRoutesAfterMenuChange();
+  } catch (error: any) {
+    row.isHidden = previous;
+    const errorMessage =
+      error?.response?.data?.msg ||
+      error?.response?.data?.message ||
+      error?.message ||
+      error?.msg ||
+      '更新隐藏状态失败，请稍后重试';
+    ElMessage.error(errorMessage);
+  } finally {
+    hiddenUpdatingIds.value.delete(row.id);
+  }
+};
+
 const handleDisable = async (row: Menu) => {
   if (!row.id) {
     ElMessage.warning('缺少菜单ID');
@@ -287,14 +344,7 @@ const handleDelete = async (row: Menu) => {
 const handleDialogSuccess = async () => {
   loadData();
   loadAllMenus();
-  if (!accessStore.accessToken) {
-    return;
-  }
-  try {
-    await resetAndRefreshAccessRoutes(router);
-  } catch (error) {
-    console.error('[MenuList] refresh routes after menu change failed', error);
-  }
+  await refreshRoutesAfterMenuChange();
 };
 
 onMounted(() => {
@@ -337,6 +387,15 @@ onMounted(() => {
       <template #icon="{ row }">
         <IconifyIcon v-if="row.icon" :icon="row.icon" class="mx-auto size-5" />
         <span v-else class="text-gray-400">-</span>
+      </template>
+
+      <template #isHidden="{ row }">
+        <ElSwitch
+          :model-value="row.isHidden"
+          :disabled="hiddenUpdatingIds.has(row.id)"
+          @click.stop
+          @change="(value) => handleToggleHidden(row, value === true)"
+        />
       </template>
 
       <template #isEnabled="{ row }">

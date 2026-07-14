@@ -27,15 +27,16 @@ function goScheduleTemplate() {
 <template>
   <div v-if="visible" class="schedule-page-guide">
     <div class="schedule-page-guide__body">
-      <p class="schedule-page-guide__title">怎么排班、怎么才能约？</p>
+      <p class="schedule-page-guide__title">怎么排班、怎么现场挂号占号？</p>
       <p><strong>路径 A · 只排某一天</strong>：点「新建日程」→ 保存 → 发布 → 放号。</p>
       <p>
-        <strong>路径 B · 按周批量排</strong>：先在「排班设置」配好放号时段 / 日排班 / 周排班 →
-        回到本页点「生成正式排班」选日期 → 点格子「发布」→「放号」。
+        <strong>路径 B · 按模板生成</strong>：先在「排班设置」配好日/周排班 →
+        本页「生成正式排班」：<strong>日排班选单日</strong>，<strong>周排班选区间</strong> → 发布 →
+        放号。
       </p>
       <p class="schedule-page-guide__status">
         完成度：<span>生成正式排班</span> → <span>发布（绿格）</span> → <span>放号</span> →
-        门诊预约可见号源
+        挂号台选号源现场挂号（余量减 1）
       </p>
     </div>
     <div class="schedule-page-guide__actions">

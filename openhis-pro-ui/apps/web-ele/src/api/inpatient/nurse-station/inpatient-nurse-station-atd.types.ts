@@ -33,7 +33,11 @@ export interface BedBoardOccupantDto {
   encounterBusNo?: string;
   encounterId: string;
   genderEnum?: string;
+  /** 性别展示文案（如「男性」） */
+  genderEnumText?: string;
   lowBalanceWarning?: boolean;
+  /** 护理级别展示名（如「二级护理」） */
+  nursingLevelName?: string;
   patientId?: string;
   patientName?: string;
   primaryNurseName?: string;

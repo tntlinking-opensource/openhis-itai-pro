@@ -36,6 +36,8 @@ import {
   serializeEmrTemplateContent,
 } from '#/api/emr/template';
 import { ENSURE_CLINICAL_RECEPTION_KEY } from '#/components/doctor-station';
+import { useCompactViewport } from '#/composables/use-compact-viewport';
+import { DOCTOR_STATION_SIDEBAR_WIDTH_PX } from '#/constants/layout/viewport-breakpoints';
 import {
   buildMetadataValuesFromPatientInfo,
   isForceLogoutSession,
@@ -122,8 +124,12 @@ const editorSurface = ref<'document' | 'template'>('document');
 const templateLayoutLocked = ref(false);
 
 const leftCollapsed = ref(false);
-const SIDEBAR_WIDTH = 280;
 const COLLAPSED_WIDTH = 48;
+
+const { pickPreset } = useCompactViewport();
+
+/** 侧栏展开宽度：<1680 压缩，≥1680（含 1920）保持 default */
+const sidebarExpandedWidthPx = pickPreset(DOCTOR_STATION_SIDEBAR_WIDTH_PX.emrHistoryTemplate);
 
 const recordDoc = ref<JSONContent | null>(null);
 
@@ -810,10 +816,12 @@ defineExpose({
 </script>
 
 <template>
-  <div class="flex h-full overflow-hidden bg-white">
+  <div class="medical-record-form flex h-full overflow-hidden bg-white">
     <div
-      class="flex-shrink-0 bg-white transition-all duration-300"
-      :style="{ width: leftCollapsed ? `${COLLAPSED_WIDTH}px` : `${SIDEBAR_WIDTH}px` }"
+      class="medical-record-form__sidebar flex-shrink-0 bg-white transition-all duration-300"
+      :style="{
+        width: leftCollapsed ? `${COLLAPSED_WIDTH}px` : `${sidebarExpandedWidthPx}px`,
+      }"
     >
       <div v-if="!leftCollapsed" class="h-full">
         <HistoryTemplatePanel
@@ -841,7 +849,9 @@ defineExpose({
     </div>
 
     <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
-      <div class="flex h-[42px] flex-shrink-0 flex-wrap items-center gap-1 border-b px-3">
+      <div
+        class="medical-record-form__toolbar flex h-[42px] flex-shrink-0 flex-wrap items-center gap-1 border-b px-3"
+      >
         <ElButton
           type="primary"
           :loading="saveAsTemplateLoading"

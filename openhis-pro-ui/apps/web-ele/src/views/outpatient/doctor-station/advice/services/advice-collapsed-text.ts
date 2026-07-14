@@ -3,6 +3,8 @@ import type { AdviceDrugItem } from './advice.types';
 
 import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
 
+import { calcMoneyLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
+
 import { formatMoneyStrYuan, formatUnitPriceYuan, terminologyLabel } from './advice-format';
 import { totalAmountUnitDisplayLabel } from './medication-unit-bands';
 
@@ -12,7 +14,10 @@ function calcLineTotalFee(item: AdviceDrugItem, kind?: AdviceLineEditorKind): st
   const price = Number(item.selectedDrugPrice || 0);
   const amount =
     kind === 'SERVICE' ? Number(item.serviceQuantity ?? 0) : Number(item.totalAmount ?? 0);
-  return price > 0 && amount > 0 ? (price * amount).toFixed(2) : '0.00';
+  if (price <= 0 || amount <= 0) {
+    return '0.00';
+  }
+  return formatMoneyDisplay(calcMoneyLineTotal(price, amount));
 }
 
 export interface CollapsedSummaryOptions {

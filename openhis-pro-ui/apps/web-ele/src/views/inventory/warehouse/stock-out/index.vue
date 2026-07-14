@@ -3,6 +3,7 @@
 import type { PharmacyLocationOptionDto } from '#/api/inventory/pharmacy/requisition';
 import type {
   StockOutFormInitOptionDto,
+  StockOutListRowDto,
   WarehouseOptionDto,
 } from '#/api/inventory/warehouse/stock-out';
 import type { ApiOptionItem } from '#/types/api-response';
@@ -14,6 +15,13 @@ import { formatDateTime } from '@vben/utils';
 
 import { initWarehouseStockOutApi, pageWarehouseStockOutListApi } from '#/api/warehouse/stock-out';
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
+import {
+  INV_ALL_LOCATIONS_FILTER_ID,
+  enrichStockOutQueueCardRow,
+  normalizeSidebarLocationFilterValue,
+  pickWorkbenchOrderAfterSave,
+  resolveDefaultAllLocationsFilterValue,
+} from '#/utils/inventory/inventory-workbench-list';
 
 import StockOutAsidePane from './stock-out-aside-pane.vue';
 import StockOutMainPane from './stock-out-main-pane.vue';
@@ -60,29 +68,14 @@ const tableForm = ref<{
   purposeLocationId?: number | string;
   sourceLocationId?: number | string;
 }>({
-  purposeLocationId: undefined,
-  sourceLocationId: undefined,
+  purposeLocationId: INV_ALL_LOCATIONS_FILTER_ID,
+  sourceLocationId: INV_ALL_LOCATIONS_FILTER_ID,
 });
 
 const cabinetListOptions = ref<Record<string, unknown>[]>([]);
 const pharmacyCabinetListOptions = ref<Record<string, unknown>[]>([]);
 const warehouseRawOptions = ref<WarehouseOptionDto[]>([]);
 const pharmacyRawOptions = ref<PharmacyLocationOptionDto[]>([]);
-
-/** 将药房 init 下拉转为与侧栏同构的 option 行。 */
-function pharmacyOptionsToCabinetRows(
-  list: PharmacyLocationOptionDto[],
-): Record<string, unknown>[] {
-  return list.map((p) => {
-    const id = p.locationId;
-    return {
-      id,
-      value: id,
-      name: p.displayName ?? String(id ?? ''),
-      label: p.displayName ?? String(id ?? ''),
-    };
-  });
-}
 
 function mapInitItemTableTypes(opts: StockOutFormInitOptionDto[]): ApiOptionItem[] {
   return opts.map((o) => ({
@@ -99,6 +92,7 @@ const orderList = ref<Record<string, unknown>[]>([]);
 const selectedOrder = ref<null | Record<string, unknown>>(null);
 
 const mainPaneResetKey = ref(0);
+const mainPaneRef = ref<InstanceType<typeof StockOutMainPane> | null>(null);
 
 /** 与进货单 init 的「项目类型」同构，传入主区选品 productTableName */
 const itemTableTypeOptions = ref<ApiOptionItem[]>([]);
@@ -119,8 +113,6 @@ function createDraftOrderRow(): Record<string, unknown> {
     applyTime: formatDateTime(new Date()),
     applicantId_dictText: '',
     totalAmount: undefined,
-    sourceLocationId: tableForm.value.sourceLocationId,
-    purposeLocationId: tableForm.value.purposeLocationId,
   };
 }
 
@@ -179,19 +171,14 @@ async function init() {
     cabinetListOptions.value = wh.cabinetListOptions ?? [];
     warehouseRawOptions.value = wh.warehouseOptions ?? [];
     pharmacyRawOptions.value = wh.pharmacyLocationOptions ?? [];
-    pharmacyCabinetListOptions.value = pharmacyOptionsToCabinetRows(pharmacyRawOptions.value);
+    pharmacyCabinetListOptions.value = wh.pharmacyCabinetListOptions ?? [];
     itemTableTypeOptions.value = mapInitItemTableTypes(wh.inboundItemTableTypeOptions ?? []);
-    if (tableForm.value.sourceLocationId === undefined && cabinetListOptions.value.length > 0) {
-      const first = cabinetListOptions.value[0] as Record<string, unknown>;
-      tableForm.value.sourceLocationId = (first.id ?? first.value) as number | string | undefined;
-    }
-    if (
-      tableForm.value.purposeLocationId === undefined &&
-      pharmacyCabinetListOptions.value.length > 0
-    ) {
-      const first = pharmacyCabinetListOptions.value[0] as Record<string, unknown>;
-      tableForm.value.purposeLocationId = (first.id ?? first.value) as number | string | undefined;
-    }
+    tableForm.value.sourceLocationId = resolveDefaultAllLocationsFilterValue(
+      cabinetListOptions.value,
+    );
+    tableForm.value.purposeLocationId = resolveDefaultAllLocationsFilterValue(
+      pharmacyCabinetListOptions.value,
+    );
   } catch {
     itemTableTypeOptions.value = [];
     cabinetListOptions.value = [];
@@ -208,12 +195,27 @@ async function getList() {
   try {
     const data = await pageWarehouseStockOutListApi({
       keyword: queryParams.value.keyword,
-      purposeLocationId: tableForm.value.purposeLocationId,
-      sourceLocationId: tableForm.value.sourceLocationId,
+      purposeLocationId: normalizeSidebarLocationFilterValue(tableForm.value.purposeLocationId),
+      sourceLocationId: normalizeSidebarLocationFilterValue(tableForm.value.sourceLocationId),
       ...(dr?.[0] ? { applyTimeBegin: dr[0] } : {}),
       ...(dr?.[1] ? { applyTimeEnd: dr[1] } : {}),
     });
-    const records = data.records ?? [];
+    const records = (data.records ?? []).map((r) =>
+      enrichStockOutQueueCardRow(r as Record<string, unknown>, {
+        sourceOptions: cabinetListOptions.value as {
+          locationId?: unknown;
+          displayName?: string;
+          value?: unknown;
+          label?: string;
+        }[],
+        purposeOptions: pharmacyCabinetListOptions.value as {
+          locationId?: unknown;
+          displayName?: string;
+          value?: unknown;
+          label?: string;
+        }[],
+      }),
+    );
     orderList.value = [...draftRows, ...records];
   } catch {
     orderList.value = [...draftRows];
@@ -236,10 +238,51 @@ function handleAdd() {
 function handleOrderClick(order: Record<string, unknown>) {
   selectedOrder.value = order;
   if (isDraftOrderRow(order)) {
-    mainPaneResetKey.value += 1;
+    // 切回草稿由主区 sync 恢复缓存；勿 bump resetKey，否则会冲掉恢复内容
     return;
   }
   isAddDisabled.value = false;
+}
+
+/** 同步草稿卡片与侧栏筛选项上的源/目的库位（关联请领带入后刷新左侧展示）。 */
+function syncDraftHeadContext(payload: {
+  originalBusNo?: string;
+  purposeLocationId?: number | string;
+  sourceLocationId?: number | string;
+}) {
+  const draft = selectedOrder.value;
+  if (!draft?._draft) return;
+  if (payload.sourceLocationId !== undefined && payload.sourceLocationId !== null) {
+    draft.sourceLocationId = payload.sourceLocationId;
+    tableForm.value.sourceLocationId = payload.sourceLocationId;
+  }
+  if (payload.purposeLocationId !== undefined && payload.purposeLocationId !== null) {
+    draft.purposeLocationId = payload.purposeLocationId;
+    tableForm.value.purposeLocationId = payload.purposeLocationId;
+  }
+  if (payload.originalBusNo?.trim()) {
+    draft.originalBusNo = payload.originalBusNo.trim();
+  }
+}
+
+/** 从请领单新建：左侧插入草稿并带入明细。 */
+async function handleCreateFromRequisition(row: StockOutListRowDto) {
+  const draft = createDraftOrderRow();
+  orderList.value = [draft, ...orderList.value.filter((r) => !r._draft)];
+  selectedOrder.value = draft;
+  tableForm.value.applyTime = formatDateTime(new Date());
+  mainPaneResetKey.value += 1;
+  await nextTick();
+  isAddDisabled.value = true;
+  await mainPaneRef.value?.applyLinkablePharmacyRequisitionToDraft(row);
+}
+
+function handleDraftHeadSynced(payload: {
+  originalBusNo?: string;
+  purposeLocationId?: number | string;
+  sourceLocationId?: number | string;
+}) {
+  syncDraftHeadContext(payload);
 }
 
 /** 保存成功：清草稿、刷新并回选当前单号。 */
@@ -248,9 +291,7 @@ async function handleDocumentSaved(payload: { busNo?: string }) {
   await getList();
   const busNo = payload.busNo?.trim();
   if (!busNo) return;
-  const row = orderList.value.find((item) => resolveStockOutBusNo(item) === busNo);
-  if (!row) return;
-  selectedOrder.value = row;
+  selectedOrder.value = pickWorkbenchOrderAfterSave(orderList.value, busNo, resolveStockOutBusNo);
   isAddDisabled.value = false;
 }
 
@@ -325,6 +366,7 @@ onMounted(async () => {
     </template>
 
     <StockOutMainPane
+      ref="mainPaneRef"
       class="min-h-0 flex-1"
       :apply-time="tableForm.applyTime"
       :bus-no="selectedBusNo"
@@ -336,8 +378,10 @@ onMounted(async () => {
       :sidebar-purpose-location-id="tableForm.purposeLocationId"
       :sidebar-source-location-id="tableForm.sourceLocationId"
       :warehouse-options="warehouseRawOptions"
+      @create-from-requisition="handleCreateFromRequisition"
       @document-removed="handleDocumentRemoved"
       @document-saved="handleDocumentSaved"
+      @draft-head-synced="handleDraftHeadSynced"
     />
   </WarehouseDocWorkstation>
 </template>

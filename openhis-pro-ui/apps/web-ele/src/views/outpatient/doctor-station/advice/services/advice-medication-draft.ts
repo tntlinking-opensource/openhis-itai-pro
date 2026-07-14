@@ -213,7 +213,12 @@ function buildServiceDraftLine(
   const quantity = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
   const execRaw = Number(item.totalAmount ?? 0);
   const executionCount = Number.isFinite(execRaw) && execRaw > 0 ? execRaw : 1;
-  const unitCode = String(item.totalAmountUnit ?? '').trim() || '次';
+  const unitCode = String(item.totalAmountUnit ?? '').trim();
+  if (!unitCode) {
+    throw new Error(
+      '该诊疗项目未维护销售/计价单位，请先在「基础数据 > 诊疗目录」维护包装单位后再保存',
+    );
+  }
   const rateCode = String(item.frequency || '').trim() || undefined;
   const servicePayload: NonNullable<DoctorStationAdviceDraftLineRequest['servicePayload']> = {
     activityDefinitionId: defId || '',
@@ -268,6 +273,46 @@ export interface BuildAdviceDraftLinesOptions {
   encounterDiagnosisRows?: EncounterDiagnosisRowDto[];
   /** 当前就诊主表行，用于药品 sortNumber 追加分配 */
   existingAdviceRows?: AdviceRowItem[];
+}
+
+/** 编辑行 → DELETE 暂存行（仅已落库 requestId） */
+export function buildAdviceDraftDeleteLineFromDrugItem(
+  item: AdviceDrugItem,
+): DoctorStationAdviceDraftLineRequest | null {
+  const requestId = String(item.medicationRequestId ?? '').trim();
+  if (!requestId) {
+    return null;
+  }
+  const productTableName =
+    String(item.productTableName ?? '').trim() ||
+    parseProductTableNameFromSelectedId(item.selectedId);
+  return {
+    lineOp: 'DELETE',
+    requestId,
+    ...(productTableName ? { productTableName } : {}),
+  };
+}
+
+/** 编辑卡相对初始组被移除的已保存行 → DELETE 行 */
+export function collectRemovedAdviceDraftDeleteLines(
+  initialGroup: AdviceDrugItem[],
+  currentItems: AdviceDrugItem[],
+): DoctorStationAdviceDraftLineRequest[] {
+  const survivingIds = new Set(
+    currentItems.map((item) => String(item.medicationRequestId ?? '').trim()).filter(Boolean),
+  );
+  const lines: DoctorStationAdviceDraftLineRequest[] = [];
+  for (const item of initialGroup) {
+    const line = buildAdviceDraftDeleteLineFromDrugItem(item);
+    if (!line) {
+      continue;
+    }
+    const requestId = String(line.requestId ?? '').trim();
+    if (requestId && !survivingIds.has(requestId)) {
+      lines.push(line);
+    }
+  }
+  return lines;
 }
 
 export function buildAdviceDraftLines(

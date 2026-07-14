@@ -19,7 +19,9 @@ void import('#/locales').then((mod) => {
 
 <template>
   <ElConfigProvider :locale="elementLocale">
-    <RouterView />
+    <div class="h-full min-h-0">
+      <RouterView />
+    </div>
   </ElConfigProvider>
 </template>
 

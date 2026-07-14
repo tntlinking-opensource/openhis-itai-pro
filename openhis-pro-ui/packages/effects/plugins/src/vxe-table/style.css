@@ -20,7 +20,7 @@
   --vxe-ui-table-fixed-right-scrolling-box-shadow: -8px 0px 10px -5px hsl(var(--accent)); */
 
   /* input */
-  --vxe-ui-input-border-color: hsl(var(--border));
+  --vxe-ui-input-border-color: hsl(var(--form-control-border));
 
   /* --vxe-ui-input-placeholder-color: #8d9095; */
 

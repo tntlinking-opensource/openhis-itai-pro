@@ -7,6 +7,13 @@ import type { ApiOptionItem, ApiResponse } from '#/types/api-response';
 import { requestClient } from '#/api/request';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import {
+  filterWorkbenchListRowsByDateRange,
+  mapInitOptionDtoToLocationSelectOptions,
+  mapLocationOptionsToCabinetRows,
+  pickInitOptionDtoList,
+  prependAllLocationsCabinetOption,
+} from '#/utils/inventory/inventory-workbench-list';
+import {
   stocktakeStatusLabel,
   normalizeStocktakeStatusSort,
 } from '#/utils/inventory/stocktake-doc-actions';
@@ -26,7 +33,9 @@ export interface LoadStocktakeFormInitRequest {
 }
 
 export interface LoadStocktakeFormInitResponse {
+  /** 药库位置；后端 IF-WHS-ST-01 实际字段名为 pharmacyLocationOptions。 */
   warehouseLocationOptions?: StocktakeOptionDto[];
+  pharmacyLocationOptions?: StocktakeOptionDto[];
   inboundItemTableTypeOptions?: StocktakeOptionDto[];
   statusOptions?: StocktakeOptionDto[];
   pharmacistOptions?: StocktakeOptionDto[];
@@ -77,6 +86,7 @@ export interface StocktakeDetailLineDto {
   specification?: string;
   manufacturer?: string;
   lotNumber?: string;
+  traceNo?: string;
   expirationDate?: string;
   unitCode?: string;
   bookQuantity?: number;
@@ -112,6 +122,7 @@ export interface StocktakeLineDto {
   profitLossAmount?: number;
   unitCode?: string;
   lotNumber?: string;
+  traceNo?: string;
   inventoryItemId?: number | string;
   price?: number;
   remake?: string;
@@ -193,6 +204,7 @@ export interface StocktakeProductItemDto {
   specification?: string;
   manufacturer?: string;
   lotNumber?: string;
+  traceNo?: string;
   expirationDate?: string;
   availableQuantity?: number | string;
   unitBands?: StocktakeProductUnitBandDto[];
@@ -241,10 +253,7 @@ export function mapStocktakeInitItemTableTypes(opts?: StocktakeOptionDto[]): Api
 export function mapWarehouseStocktakeInitToLocationOptions(
   list?: StocktakeOptionDto[],
 ): WarehouseStocktakeLocationOption[] {
-  return (list ?? []).map((o) => ({
-    locationId: o.value,
-    displayName: o.label,
-  }));
+  return mapInitOptionDtoToLocationSelectOptions(list);
 }
 
 function mapStocktakeListRowToQueueCard(r: StocktakeListRowDto): Record<string, unknown> {
@@ -333,21 +342,25 @@ export async function pageWarehouseStocktakeWorkbenchListApi(params?: {
 
   const res = await pageWarehouseStocktakesApi({
     purposeLocationId,
-    applyTimeFrom: params?.applyTimeBegin ? `${params.applyTimeBegin}T00:00:00` : undefined,
-    applyTimeTo: params?.applyTimeEnd ? `${params.applyTimeEnd}T23:59:59` : undefined,
     pageNo: 1,
-    pageSize: 100,
+    pageSize: 200,
   });
   const { content, totalCount } = parsePagedRowsFromApiData<StocktakeListRowDto>(res.data);
+  const dateFiltered = filterWorkbenchListRowsByDateRange(
+    content,
+    params?.applyTimeBegin,
+    params?.applyTimeEnd,
+  );
   const kw = params?.keyword?.trim().toLowerCase();
-  let records = content.map((r) => mapStocktakeListRowToQueueCard(r));
+  let records = dateFiltered.map((r) => mapStocktakeListRowToQueueCard(r));
   if (kw) {
     records = records.filter((r) => {
       const no = String(r.busNo ?? r.supplyBusNo ?? '').toLowerCase();
       return no.includes(kw);
     });
   }
-  return { records, total: kw ? records.length : totalCount };
+  const filtered = params?.applyTimeBegin && params?.applyTimeEnd;
+  return { records, total: kw || filtered ? records.length : totalCount };
 }
 
 /** 进入页面：药库盘库 init。 */
@@ -358,10 +371,17 @@ export async function initWarehouseStocktakeWorkbenchApi(): Promise<{
 }> {
   const res = await loadWarehouseStocktakeFormInitApi({});
   const d = res.data;
-  const rows = (d?.warehouseLocationOptions ?? []).map(optionDtoToCabinetRow);
+  const locationOpts = pickInitOptionDtoList(
+    d as Record<string, unknown> | undefined,
+    'warehouseLocationOptions',
+    'pharmacyLocationOptions',
+  );
+  const rows = mapLocationOptionsToCabinetRows(
+    locationOpts.map((o) => ({ value: o.value, label: o.label })),
+  );
   return {
-    cabinetListOptions: rows,
-    locationRawOptions: mapWarehouseStocktakeInitToLocationOptions(d?.warehouseLocationOptions),
+    cabinetListOptions: prependAllLocationsCabinetOption(rows),
+    locationRawOptions: mapWarehouseStocktakeInitToLocationOptions(locationOpts),
     itemTableTypeOptions: mapStocktakeInitItemTableTypes(d?.inboundItemTableTypeOptions),
   };
 }

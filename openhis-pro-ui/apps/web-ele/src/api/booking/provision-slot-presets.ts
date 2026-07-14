@@ -85,6 +85,29 @@ export function slotTemplateKey(template: SlotTemplateRequest) {
   return template.startTime;
 }
 
+/** 机构级唯一键：organization_id + start_time + end_time */
+export function slotWindowKey(template: SlotTemplateRequest): string {
+  return `${normalizeDateTimeKey(template.startTime)}|${normalizeDateTimeKey(template.endTime)}`;
+}
+
+export function slotWindowKeyFromListItem(slot: {
+  startTime?: string;
+  endTime?: string;
+}): string | undefined {
+  if (!slot.startTime || !slot.endTime) {
+    return undefined;
+  }
+  return `${normalizeDateTimeKey(slot.startTime)}|${normalizeDateTimeKey(slot.endTime)}`;
+}
+
+/** 统一为 YYYY-MM-DDTHH:mm:ss，便于与库内 timestamp 比较 */
+export function normalizeDateTimeKey(value: string): string {
+  const trimmed = value.trim();
+  const withoutFraction = trimmed.replace(/\.\d+/, '');
+  const withoutTz = withoutFraction.replace(/([+-]\d{2}(?::\d{2})?|Z)$/i, '');
+  return withoutTz.replace(' ', 'T').slice(0, 19);
+}
+
 /** 合并待放号列表（按开始时间去重） */
 export function mergePendingTemplates(
   current: SlotTemplateRequest[],
@@ -103,7 +126,7 @@ export function mergePendingTemplates(
   return merged;
 }
 
-/** 过滤与已有号源重复的时段 */
+/** 过滤与已有号源重复的时段（按开始时刻，兼容旧逻辑） */
 export function filterAgainstExistingStarts(
   templates: SlotTemplateRequest[],
   existingStarts: Set<string>,
@@ -112,6 +135,23 @@ export function filterAgainstExistingStarts(
   let skippedExisting = 0;
   for (const template of templates) {
     if (existingStarts.has(template.startTime)) {
+      skippedExisting += 1;
+      continue;
+    }
+    accepted.push(template);
+  }
+  return { accepted, skippedExisting };
+}
+
+/** 过滤与同科室已占用时间窗冲突的时段（uk_wkf_slot_org_time_window） */
+export function filterAgainstExistingWindows(
+  templates: SlotTemplateRequest[],
+  occupiedWindows: Set<string>,
+): { accepted: SlotTemplateRequest[]; skippedExisting: number } {
+  const accepted: SlotTemplateRequest[] = [];
+  let skippedExisting = 0;
+  for (const template of templates) {
+    if (occupiedWindows.has(slotWindowKey(template))) {
       skippedExisting += 1;
       continue;
     }

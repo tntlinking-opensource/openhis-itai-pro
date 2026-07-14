@@ -8,23 +8,27 @@ import type {
   RegisterSlotSelectionPayload,
 } from '../services';
 
+import type { BookingEntityId } from '#/api/booking/booking-id';
 import type { RegisterContractMatchDto } from '#/api/outpatient-registration';
 
 import { computed, ref } from 'vue';
 
-import { ElButton, ElCard, ElCheckbox, ElMessage } from 'element-plus';
-
-import SelectTable from '#/components/select-table.vue';
-
+import { Refresh } from '@element-plus/icons-vue';
+import { todayLocalDateIso } from '#/api/booking/booking-constants';
+import { toBookingId } from '#/api/booking/booking-id';
+import { ElButton, ElCheckbox, ElMessage } from 'element-plus';
+import { useRegisterBookingMode } from '../composables/use-register-booking-mode';
 import { useRegisterPatientIdentity } from '../composables/use-register-patient-identity';
 import {
   CHARGE_TYPE_CATEGORY,
   enrichInsuranceBenefitPreview,
   isInsuranceContractCategory,
+  isWorkInjuryContractCategory,
   toInsuranceBenefitDisplay,
   toStudentBenefitDisplay,
 } from '../services/register-benefit.service';
 import { mergeRefreshIntoPreSettlement } from '../services/register-insurance-refresh.utils';
+import { runWorkInjuryRegister9102 } from '#/chs/work-injury/use-work-injury-register';
 import { PATIENT_IDENTITY_SOURCE_LABEL } from '../services/register-patient-identity.service';
 import {
   pageRegisterPatientsForSelect,
@@ -32,26 +36,41 @@ import {
   refreshRegisterFeeInsurancePreSettle,
 } from '../services/register.service';
 import { useRegisterBenefit } from '../services/use-register-benefit';
+import DailySlotPanel from './daily-slot-panel.vue';
 import RegisterConfirmDialog from './register-confirm-dialog.vue';
 import RegisterFormArea from './register-form-area.vue';
+import RegisterTopToolbar from './register-top-toolbar.vue';
 
 defineOptions({
   name: 'RegisterLeftPanel',
 });
 
 const emit = defineEmits<{
-  /** 左侧挂号科室变更：同步右侧当日号源查询 */
   departmentChange: [organizationId: string];
   doctorChange: [practitionerId: string];
-  /** 取消核对弹窗：刷新右侧待挂号列表 */
   registerCancelled: [];
-  /** 挂号费结算成功：由页面刷新右侧就诊记录 */
   registerSuccess: [];
   serviceTypeChange: [serviceTypeId: string];
 }>();
 
+const { bookingEnabled } = useRegisterBookingMode();
+const showSlotPanel = computed(() => bookingEnabled.value);
+
+const SLOT_WEEKDAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+const slotTodayDateLabel = computed(() => {
+  const date = todayLocalDateIso();
+  const parsed = new Date(`${date}T12:00:00`);
+  const weekday = Number.isNaN(parsed.getTime()) ? '' : SLOT_WEEKDAY_LABELS[parsed.getDay()];
+  return weekday ? `${date} ${weekday}` : date;
+});
+
+function handleSlotPanelRefresh() {
+  void slotPanelRef.value?.refresh();
+}
 const registerFormAreaRef = ref<null | RegisterFormAreaExpose>(null);
 const confirmDialogRef = ref<InstanceType<typeof RegisterConfirmDialog> | null>(null);
+const slotPanelRef = ref<null | { refresh: () => Promise<void> }>(null);
 
 const {
   benefitSyncing,
@@ -130,18 +149,34 @@ const patientSelectColumns = [
   { prop: 'idCardNoMasked', label: '身份证号', width: 190 },
 ];
 
-/** 患者 id → 下拉行；仅选 id 时从这里取姓名等回填表单 */
 const patientRowById = ref<Record<string, PatientItemDto>>({});
-
 const loading = ref(false);
+
+const slotOrganizationId = ref<BookingEntityId | undefined>();
+const slotPractitionerId = ref<BookingEntityId | undefined>();
+const slotHealthcareServiceId = ref<BookingEntityId | undefined>();
 
 const isInsuranceRegister = computed(() =>
   isInsuranceContractCategory(currentContractCategory.value),
 );
 
+const isWorkInjuryRegister = computed(() =>
+  isWorkInjuryContractCategory(currentContractCategory.value),
+);
+
+/** 工伤预结算后保留 encounter/contract，供待遇区与确认框 2301 入口。 */
+const workInjuryPreEncounterId = ref<string | number | undefined>(undefined);
+const workInjuryPreContractId = ref<string | number | undefined>(undefined);
+
+function clearWorkInjuryPreContext() {
+  workInjuryPreEncounterId.value = undefined;
+  workInjuryPreContractId.value = undefined;
+}
+
 function handleContractCategoryChange(category: string) {
   resetBenefitPreviewCache();
   registerFormAreaRef.value?.clearBenefitPreview();
+  clearWorkInjuryPreContext();
   currentContractCategory.value = category;
   void syncBenefitPreview();
 }
@@ -199,6 +234,14 @@ async function syncBenefitPreview(options?: { autoApplyRecommend?: boolean }) {
     if (student?.record) {
       area.applyBenefitPreview(toStudentBenefitDisplay(student.record, student.eligibility));
     }
+    return;
+  }
+  if (requirement === 'WORK_INJURY') {
+    area.applyBenefitPreview({
+      kind: 'WORK_INJURY',
+      eligibilityMessage:
+        '挂号费须自费；确认挂号前将 invoke 9102 审批查询，预结算后可上传 2301 审批',
+    });
   }
 }
 
@@ -241,9 +284,7 @@ async function refreshContractCategoryFromForm() {
   currentContractCategory.value = area.getContractCategory(values.contractId) ?? '';
 }
 
-/**
- * 按关键字与分页拉取患者列表，供头部患者下拉表格展示。
- */
+/** 按关键字与分页拉取患者列表，供顶栏患者下拉表格展示 */
 const queryPatientOptions = async ({
   pageNo = 1,
   pageSize = 20,
@@ -269,10 +310,7 @@ const queryPatientOptions = async ({
   };
 };
 
-/**
- * 处理患者下拉变更：清空选择时同步表单；选中时回填患者信息并聚焦到表单。
- * 读卡自动匹配时 preserveInsuranceRead 保留刚读入的医保凭证，避免待遇拉取失败。
- */
+/** 处理患者下拉变更：清空选择时同步表单；选中时回填患者信息 */
 const handlePatientSelect = async (
   value: string | string[],
   options?: { preserveInsuranceRead?: boolean },
@@ -307,7 +345,6 @@ const handlePatientSelect = async (
     patientPhone: String(p.phoneMasked ?? ''),
   });
   await area?.focusFirstField();
-  // 读卡匹配患者时由 bootstrapBenefitAfterCardRead 统一拉待遇，避免并发 1101 重复写 yb_person_cache
   if (!options?.preserveInsuranceRead) {
     void syncBenefitPreview();
   }
@@ -328,6 +365,18 @@ const { cardReadAction, isCardReadDisabled, isCardReadLoading, readPatientIdenti
 
 const benefitPanelLoading = computed(() => benefitSyncing.value || cardReadAction.value !== null);
 
+const cardReadDisabledMap = computed(() => ({
+  'yb-card': isCardReadDisabled('yb-card'),
+  id: isCardReadDisabled('id'),
+  'yb-ec': isCardReadDisabled('yb-ec'),
+}));
+
+const cardReadLoadingMap = computed(() => ({
+  'yb-card': isCardReadLoading('yb-card'),
+  id: isCardReadLoading('id'),
+  'yb-ec': isCardReadLoading('yb-ec'),
+}));
+
 const benefitLoadingText = computed(() => {
   const action = cardReadAction.value;
   if (action) {
@@ -339,11 +388,10 @@ const benefitLoadingText = computed(() => {
   return '';
 });
 
-/**
- * 一键清空：挂号表单、患者下拉及患者行缓存。
- */
+/** 一键清空：挂号表单、患者下拉及患者行缓存 */
 const handleClear = () => {
   resetBenefitState();
+  clearWorkInjuryPreContext();
   registerFormAreaRef.value?.resetForClear();
   selectedSlotId.value = '';
   selectedPatientId.value = '';
@@ -352,9 +400,27 @@ const handleClear = () => {
   currentContractCategory.value = '';
 };
 
-/**
- * 号源日历点选：预填挂号三要素。
- */
+/** 科室变更：同步号源查询并通知外层 */
+function handleDepartmentChange(organizationId: string) {
+  slotOrganizationId.value = toBookingId(organizationId);
+  slotPractitionerId.value = undefined;
+  slotHealthcareServiceId.value = undefined;
+  emit('departmentChange', organizationId);
+}
+
+/** 医师变更：同步号源筛选 */
+function handleDoctorChange(practitionerId: string) {
+  slotPractitionerId.value = toBookingId(practitionerId);
+  emit('doctorChange', practitionerId);
+}
+
+/** 号源类型变更：同步号源筛选 */
+function handleServiceTypeChange(serviceTypeId: string) {
+  slotHealthcareServiceId.value = toBookingId(serviceTypeId);
+  emit('serviceTypeChange', serviceTypeId);
+}
+
+/** 号源点选：预填挂号三要素 */
 async function applySlotSelection(payload: RegisterSlotSelectionPayload) {
   selectedSlotId.value = String(payload.slotId ?? '');
   await registerFormAreaRef.value?.applySlotSelection(payload);
@@ -365,16 +431,15 @@ defineExpose({
   applySlotSelection,
 });
 
-/**
- * 正式结算成功后：重置表单与患者选择，并通知外层刷新就诊记录。
- */
 async function onRegisterPaidSuccess() {
   resetBenefitState();
+  clearWorkInjuryPreContext();
   await registerFormAreaRef.value?.resetForSubmitSuccess();
   selectedSlotId.value = '';
   selectedPatientId.value = '';
   selectedPatientLabel.value = '';
   currentContractCategory.value = '';
+  await slotPanelRef.value?.refresh();
   emit('registerSuccess');
 }
 
@@ -409,9 +474,7 @@ async function rescanEcAndRefreshPreSettlement(
   return mergeRefreshIntoPreSettlement(pre, refresh);
 }
 
-/**
- * 提交挂号：预结算成功后打开核对弹窗，用户在弹窗内确认后再正式结算。
- */
+/** 提交挂号：预结算成功后打开核对弹窗 */
 const handleSubmit = async () => {
   const area = registerFormAreaRef.value;
   if (!area) {
@@ -481,6 +544,15 @@ const handleSubmit = async () => {
       return;
     }
 
+    if (isWorkInjuryRegister.value && pre.encounterId) {
+      workInjuryPreEncounterId.value = pre.encounterId;
+      workInjuryPreContractId.value = contractId;
+      await runWorkInjuryRegister9102({
+        encounterId: pre.encounterId,
+        contractId,
+      });
+    }
+
     let amountFromItems = 0;
     for (const item of chargeItems) {
       const amount = Number(item.amount);
@@ -524,6 +596,8 @@ const handleSubmit = async () => {
       insuranceMediumType: lastYbMediumType.value || undefined,
       ybCredentialReadAt: lastYbCredentialReadAt.value,
       rescanAndRefresh: (currentPre) => rescanEcAndRefreshPreSettlement(currentPre),
+      workInjuryRegister: isWorkInjuryRegister.value,
+      workInjuryContractId: isWorkInjuryRegister.value ? contractId : undefined,
     });
   } finally {
     loading.value = false;
@@ -532,104 +606,138 @@ const handleSubmit = async () => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 w-[37%] min-w-[460px] flex-col">
-    <ElCard
-      shadow="never"
-      class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg"
-      header-class="reg-bill-left-card-header shrink-0"
-      body-class="!flex !min-h-0 !flex-1 !flex-col !overflow-hidden !px-2 !py-1"
-      footer-class="reg-bill-left-card-footer shrink-0"
-    >
-      <template #header>
-        <div class="flex flex-col gap-2">
-          <div class="flex flex-wrap items-center gap-2">
-            <SelectTable
-              v-model="selectedPatientId"
-              style="width: 260px"
-              placeholder="搜索患者（姓名/病历号/证件号）"
-              :columns="patientSelectColumns"
-              :remote-method="queryPatientOptions"
-              value-key="patientId"
-              label-key="name"
-              :selected-label="selectedPatientLabel"
-              @change="handlePatientSelect"
-            />
-            <ElButton type="primary" @click="handleClear"> 清空 </ElButton>
-            <ElButton
-              :loading="isCardReadLoading('yb-card')"
-              :disabled="isCardReadDisabled('yb-card')"
-              @click="readPatientIdentity('yb-card')"
-            >
-              医保卡
-            </ElButton>
-            <ElButton
-              :loading="isCardReadLoading('id')"
-              :disabled="isCardReadDisabled('id')"
-              @click="readPatientIdentity('id')"
-            >
-              身份证
-            </ElButton>
-            <ElButton
-              :loading="isCardReadLoading('yb-ec')"
-              :disabled="isCardReadDisabled('yb-ec')"
-              @click="readPatientIdentity('yb-ec')"
-            >
-              医保码
-            </ElButton>
-          </div>
-        </div>
-      </template>
-
-      <template #footer>
-        <div class="mt-1 flex items-center gap-3">
-          <ElCheckbox
-            v-if="isInsuranceRegister"
-            v-model="useYbAcctPay"
-            class="shrink-0 whitespace-nowrap"
-          >
-            使用个账
-          </ElCheckbox>
-          <ElButton
-            type="primary"
-            size="default"
-            class="min-w-0 flex-1"
-            :loading="loading"
-            @click="handleSubmit"
-          >
-            确认挂号
-          </ElButton>
-        </div>
-      </template>
-
-      <RegisterFormArea
-        ref="registerFormAreaRef"
-        :active-patient-id="selectedPatientId"
-        :benefit-loading="benefitPanelLoading"
-        :benefit-loading-text="benefitLoadingText"
-        @contract-change="handleContractCategoryChange"
-        @department-change="(organizationId) => emit('departmentChange', organizationId)"
-        @doctor-change="(practitionerId) => emit('doctorChange', practitionerId)"
-        @service-type-change="(serviceTypeId) => emit('serviceTypeChange', serviceTypeId)"
+  <RegisterFormArea
+    ref="registerFormAreaRef"
+    class="h-full min-h-0"
+    layout="split"
+    :active-patient-id="selectedPatientId"
+    :benefit-loading="benefitPanelLoading"
+    :benefit-loading-text="benefitLoadingText"
+    :work-injury-pre-encounter-id="workInjuryPreEncounterId"
+    :work-injury-pre-contract-id="workInjuryPreContractId"
+    @contract-change="handleContractCategoryChange"
+    @department-change="handleDepartmentChange"
+    @doctor-change="handleDoctorChange"
+    @service-type-change="handleServiceTypeChange"
+  >
+    <template #patient-toolbar>
+      <RegisterTopToolbar
+        v-model:selected-patient-id="selectedPatientId"
+        :selected-patient-label="selectedPatientLabel"
+        :patient-select-columns="patientSelectColumns"
+        :query-patient-options="queryPatientOptions"
+        :card-read-disabled="cardReadDisabledMap"
+        :card-read-loading="cardReadLoadingMap"
+        variant="patient"
+        @patient-change="(value) => handlePatientSelect(value)"
+        @clear="handleClear"
+        @read-identity="readPatientIdentity"
       />
-    </ElCard>
+    </template>
+    <template #slots-toolbar>
+      <div class="register-slot-toolbar">
+        <span class="register-slot-toolbar__date">{{ slotTodayDateLabel }}</span>
+        <ElButton
+          v-if="showSlotPanel"
+          class="register-slot-toolbar__refresh ml-auto"
+          :icon="Refresh"
+          circle
+          text
+          title="刷新今日号源"
+          @click="handleSlotPanelRefresh"
+        />
+      </div>
+    </template>
+    <template #slots>
+      <DailySlotPanel
+        v-if="showSlotPanel"
+        ref="slotPanelRef"
+        variant="horizontal"
+        hide-toolbar
+        :show-filters="false"
+        :organization-id="slotOrganizationId"
+        :practitioner-id="slotPractitionerId"
+        :healthcare-service-id="slotHealthcareServiceId"
+        @slot-selected="applySlotSelection"
+      />
+      <div v-else class="register-slot-placeholder">
+        <span class="register-slot-placeholder__text"
+          >当前未启用号源功能，请在上方选择科室与医生</span
+        >
+      </div>
+    </template>
+    <template #actions>
+      <ElCheckbox
+        v-if="isInsuranceRegister"
+        v-model="useYbAcctPay"
+        class="shrink-0 whitespace-nowrap"
+      >
+        使用个账
+      </ElCheckbox>
+      <ElButton
+        type="primary"
+        class="register-workspace__confirm-btn"
+        :loading="loading"
+        @click="handleSubmit"
+      >
+        确认挂号
+      </ElButton>
+    </template>
+  </RegisterFormArea>
 
-    <RegisterConfirmDialog
-      ref="confirmDialogRef"
-      @success="onRegisterPaidSuccess"
-      @cancel="onRegisterConfirmCancelled"
-    />
-  </div>
+  <RegisterConfirmDialog
+    ref="confirmDialogRef"
+    @success="onRegisterPaidSuccess"
+    @cancel="onRegisterConfirmCancelled"
+  />
 </template>
 
 <style scoped>
-.reg-bill-left-card-header {
-  padding-top: 6px !important;
-  padding-bottom: 6px !important;
+.register-workspace__confirm-btn {
+  min-width: 120px;
+  height: 36px;
+  padding: 0 24px;
+  font-size: 14px;
 }
 
-.reg-bill-left-card-footer {
-  padding-top: 8px !important;
-  padding-bottom: 8px !important;
-  border-top: 1px solid var(--el-border-color-lighter);
+.register-slot-toolbar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  min-height: 36px;
+}
+
+.register-slot-toolbar__date {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--el-text-color-secondary);
+}
+
+.register-slot-toolbar__refresh.el-button.is-circle {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+}
+
+.register-slot-placeholder {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  padding: 24px 16px;
+  background: #fff;
+  border: 1px dashed #dce3eb;
+  border-radius: 8px;
+}
+
+.register-slot-placeholder__text {
+  max-width: 240px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
+  text-align: center;
 }
 </style>

@@ -21,7 +21,7 @@
  * - 无 `unitBands` 或缺少任一带的 `ratioToSplit` 时，`convertProductUnitPriceForDisplay` 返回原 `unitPrice`，不抛错。
  */
 
-import { decimalDiv, decimalMul } from '#/utils/format/decimal-util';
+import { scaleMoneyCalc, toMoneyDecimal } from '#/utils/format/money-scale';
 
 /**
  * 单价换算所需的计量带字段（与目录/选品接口 `unitBands[]` 元素结构一致）。
@@ -130,7 +130,7 @@ export function convertProductUnitPriceBetweenBandKinds(
   if (rf === undefined || rt === undefined) return undefined;
   const p = Number(priceFrom);
   if (!Number.isFinite(p)) return undefined;
-  return decimalDiv(decimalMul(p, rt, 8), rf, 6);
+  return scaleMoneyCalc(toMoneyDecimal(p).mul(rt).div(rf));
 }
 
 /** {@link convertProductUnitPriceForDisplay} 入参 */

@@ -119,7 +119,7 @@ export const MOCK_PRESCRIPTIONS_BY_PATIENT_ID: Record<string, DispensePrescripti
       deptName: '中医科',
       doctorName: '李医生',
       issuedAt: '2026-04-19 09:18',
-      status: 'partial',
+      status: 'prepared',
       items: [
         {
           id: 'rx-q1-h1-l1',

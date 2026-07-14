@@ -9,7 +9,6 @@ export function toPatientCardPatient(p: NursePatient): OutpatientPatientCardPayl
     encounterBusNo: (p.encounterBusNo ?? '').trim() || null,
     patientName: p.name,
     genderEnumText: p.genderEnumText ?? null,
-    genderEnum: p.gender === '男' ? 1 : p.gender === '女' ? 2 : undefined,
     ageText: p.age,
     phone: p.phone ?? null,
     startTime: p.registrationTime ?? p.admissionTime,

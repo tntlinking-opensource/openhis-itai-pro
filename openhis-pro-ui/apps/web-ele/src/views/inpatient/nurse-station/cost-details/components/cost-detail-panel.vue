@@ -5,6 +5,7 @@ import type {
   NurseStationCostDetailLineDto,
   NurseStationCostDetailPresentationMode,
   NurseStationCostDetailPresentationOptionDto,
+  NurseStationCostDetailStatusFilter,
   NurseStationCostDetailTotalsDto,
   NurseStationCostSummaryLineDto,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-cost-detail.types';
@@ -28,6 +29,8 @@ interface Props {
   presentationMode?: NurseStationCostDetailPresentationMode;
   presentationOptions?: NurseStationCostDetailPresentationOptionDto[];
   quickDay?: CostDetailQuickDay;
+  statusEnum?: NurseStationCostDetailStatusFilter;
+  statusFilterOptions?: NurseStationCostDetailPresentationOptionDto[];
   summaryLines?: NurseStationCostSummaryLineDto[];
   totals?: NurseStationCostDetailTotalsDto | null;
 }
@@ -43,6 +46,8 @@ const props = withDefaults(defineProps<Props>(), {
   presentationMode: 'DETAIL',
   presentationOptions: () => [],
   quickDay: 'today',
+  statusEnum: 'PENDING_SETTLEMENT',
+  statusFilterOptions: () => [],
   summaryLines: () => [],
   totals: null,
 });
@@ -51,12 +56,19 @@ const emit = defineEmits<{
   onQuery: [];
   onQuickDayChange: [day: CostDetailQuickDay];
   onPresentationModeChange: [mode: NurseStationCostDetailPresentationMode];
+  onReset: [];
   'update:dateRange': [value: string[]];
+  'update:statusEnum': [value: NurseStationCostDetailStatusFilter];
 }>();
 
 const dateRangeModel = computed({
   get: () => props.dateRange,
   set: (value: string[]) => emit('update:dateRange', value),
+});
+
+const statusEnumModel = computed({
+  get: () => props.statusEnum,
+  set: (value: NurseStationCostDetailStatusFilter) => emit('update:statusEnum', value),
 });
 
 const presentationModeModel = computed({
@@ -85,18 +97,20 @@ function isRefundHighlightRow(row: NurseStationCostDetailLineDto) {
 }
 
 /** 费用状态 → Tag 类型。 */
-function resolveStatusTagType(status: string | undefined): TagProps['type'] {
-  const text = String(status ?? '').trim();
-  if (!text) {
+function resolveStatusTagType(statusEnum: string | undefined): TagProps['type'] {
+  const code = String(statusEnum ?? '')
+    .trim()
+    .toUpperCase();
+  if (!code) {
     return 'info';
   }
-  if (text.includes('退')) {
+  if (code.includes('REFUND')) {
     return 'danger';
   }
-  if (text.includes('待')) {
+  if (code.includes('PENDING') || code === 'PLANNED') {
     return 'warning';
   }
-  if (text.includes('已') || text.includes('结')) {
+  if (code.includes('SETTLED') || code.includes('CHARGED') || code === 'BILLED') {
     return 'success';
   }
   return 'info';
@@ -131,9 +145,18 @@ function splitBusinessDateTime(value: string | undefined) {
           range-separator="至"
           class="cost-detail-filter__date"
         />
+        <span class="cost-detail-filter__label">费用状态</span>
+        <ElSelect v-model="statusEnumModel" class="cost-detail-filter__status">
+          <ElOption
+            v-for="option in statusFilterOptions"
+            :key="option.code"
+            :label="option.display ?? option.code"
+            :value="option.code"
+          />
+        </ElSelect>
       </div>
       <div class="cost-detail-filter__actions">
-        <ElButton @click="emit('onQuickDayChange', 'today')">重置</ElButton>
+        <ElButton @click="emit('onReset')">重置</ElButton>
         <ElButton type="primary" :loading="loading" @click="emit('onQuery')">查询</ElButton>
       </div>
     </section>
@@ -252,7 +275,7 @@ function splitBusinessDateTime(value: string | undefined) {
                 v-if="row.statusDisplay"
                 effect="light"
                 size="small"
-                :type="resolveStatusTagType(row.statusDisplay)"
+                :type="resolveStatusTagType(row.statusEnum)"
               >
                 {{ row.statusDisplay }}
               </ElTag>
@@ -350,6 +373,16 @@ function splitBusinessDateTime(value: string | undefined) {
 
 .cost-detail-filter__date {
   width: 280px;
+}
+
+.cost-detail-filter__label {
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.cost-detail-filter__status {
+  width: 120px;
 }
 
 .cost-detail-card {

@@ -10,6 +10,15 @@ import {
   pharmacyStockInStatusLabel,
 } from '#/utils/inventory/pharmacy-stock-in-doc-actions';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import {
+  filterWorkbenchListRowsByDateRange,
+  filterWorkbenchListRowsByKeyword,
+  INV_ALL_PHARMACIES_LABEL,
+  INV_ALL_WAREHOUSES_LABEL,
+  isAllLocationsFilterOptionValue,
+  mapInitOptionsToCabinetRowsWithAll,
+  resolveWorkbenchListPurposeLocationId,
+} from '#/utils/inventory/inventory-workbench-list';
 
 const BASE = '/inventoryPharmacyStockIn';
 
@@ -318,7 +327,7 @@ export async function pageProductsForPharmacyStockInApi(
   );
 }
 
-/** init 下拉项转侧栏/工作站卡片同构行。 */
+/** init 下拉项转侧栏/工作站卡片同构行（不含「全部」占位）。 */
 export function mapStockInInitOptionsToCabinetRows(
   opts?: StockInFormInitOptionDto[],
 ): Record<string, unknown>[] {
@@ -331,6 +340,20 @@ export function mapStockInInitOptionsToCabinetRows(
       label: o.label ?? String(v ?? ''),
     };
   });
+}
+
+/** 侧栏「源药库」下拉（含「全部库房」）。 */
+export function mapStockInInitWarehouseOptionsToCabinetRows(
+  opts?: StockInFormInitOptionDto[],
+): Record<string, unknown>[] {
+  return mapInitOptionsToCabinetRowsWithAll(opts ?? [], INV_ALL_WAREHOUSES_LABEL);
+}
+
+/** 侧栏「目的药房」下拉（含「全部药房」）。 */
+export function mapStockInInitPharmacyOptionsToCabinetRows(
+  opts?: StockInFormInitOptionDto[],
+): Record<string, unknown>[] {
+  return mapInitOptionsToCabinetRowsWithAll(opts ?? [], INV_ALL_PHARMACIES_LABEL);
 }
 
 /** 与药库出库 init 的入库项目类型选项同构（选品 productTableName）。 */
@@ -377,28 +400,40 @@ export async function pagePharmacyStockInWorkbenchListApi(params?: {
   applyTimeBegin?: string;
   applyTimeEnd?: string;
 }): Promise<{ records: Record<string, unknown>[]; total: number }> {
-  const pid = params?.purposeLocationId;
-  const purposeLocationId =
-    pid === undefined || pid === null || String(pid).trim() === '' ? '0' : String(pid).trim();
+  const purposeLocationId = resolveWorkbenchListPurposeLocationId(params?.purposeLocationId);
+  /** 「全部库房」不传 source，后端才会查全部源药库 */
+  const sourceRaw = params?.sourceLocationId;
+  const sourceLocationId =
+    sourceRaw === undefined ||
+    sourceRaw === null ||
+    String(sourceRaw).trim() === '' ||
+    isAllLocationsFilterOptionValue(sourceRaw)
+      ? undefined
+      : sourceRaw;
 
   const res = await pagePharmacyStockInsApi({
     purposeLocationId,
-    sourceLocationId:
-      params?.sourceLocationId !== undefined &&
-      params?.sourceLocationId !== null &&
-      String(params.sourceLocationId).trim() !== ''
-        ? params.sourceLocationId
-        : undefined,
+    sourceLocationId,
     keyword: params?.keyword?.trim() || undefined,
-    applyTimeFrom: params?.applyTimeBegin ? `${params.applyTimeBegin}T00:00:00` : undefined,
-    applyTimeTo: params?.applyTimeEnd ? `${params.applyTimeEnd}T23:59:59` : undefined,
     typeEnum: PHA_STOCK_IN_TYPE_ENUM,
     pageNo: 1,
-    pageSize: 100,
+    pageSize: 200,
   });
   const { content, totalCount } = parsePagedRowsFromApiData<PharmacyStockInListRowDto>(res.data);
-  const records = content.map((r) => mapPharmacyStockInListRowToQueueCard(r));
-  return { records, total: totalCount };
+  const dateFiltered = filterWorkbenchListRowsByDateRange(
+    content,
+    params?.applyTimeBegin,
+    params?.applyTimeEnd,
+  );
+  const keywordFiltered = filterWorkbenchListRowsByKeyword(
+    dateFiltered as Record<string, unknown>[],
+    params?.keyword,
+  );
+  const records = keywordFiltered.map((r) =>
+    mapPharmacyStockInListRowToQueueCard(r as PharmacyStockInListRowDto),
+  );
+  const filtered = (params?.applyTimeBegin && params?.applyTimeEnd) || params?.keyword?.trim();
+  return { records, total: filtered ? records.length : totalCount };
 }
 
 /** 进入页面：药房入库 init（目的药房、源药库、项目类型等）。 */
@@ -413,11 +448,11 @@ export async function initPharmacyStockInWorkbenchApi(): Promise<{
 }> {
   const res = await loadPharmacyStockInFormInitApi({});
   const d = res.data;
-  const pharmacyRows = mapStockInInitOptionsToCabinetRows(d?.pharmacyLocationOptions);
-  const warehouseRows = mapStockInInitOptionsToCabinetRows(d?.warehouseLocationOptions);
   return {
-    cabinetListOptions: warehouseRows,
-    pharmacyCabinetListOptions: pharmacyRows,
+    cabinetListOptions: mapStockInInitWarehouseOptionsToCabinetRows(d?.warehouseLocationOptions),
+    pharmacyCabinetListOptions: mapStockInInitPharmacyOptionsToCabinetRows(
+      d?.pharmacyLocationOptions,
+    ),
     warehouseRawOptions: mapWarehouseInitToLocationOptions(d?.warehouseLocationOptions),
     pharmacyRawOptions: mapWarehouseInitToLocationOptions(d?.pharmacyLocationOptions),
     itemTableTypeOptions: mapInitItemTableTypesForPharmacyStockIn(

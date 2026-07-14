@@ -22,13 +22,9 @@ export function isPriceAdjustmentDocumentEditable(status: unknown, isDraft?: boo
 
 /** 与 InvDocActions v-bind 同构的禁用态 */
 export interface PriceAdjustmentDocActionFlags {
-  approveDisabled: boolean;
-  rejectDisabled: boolean;
   removeDisabled: boolean;
   saveAndSubmitDisabled: boolean;
   saveDisabled: boolean;
-  submitApprovalDisabled: boolean;
-  withdrawDisabled: boolean;
 }
 
 /** 按单据状态计算底部按钮禁用态（对齐进货单 inv-doc-actions） */
@@ -43,10 +39,6 @@ export function buildPriceAdjustmentDocActionFlags(input: {
       saveDisabled: false,
       saveAndSubmitDisabled: false,
       removeDisabled: false,
-      submitApprovalDisabled: true,
-      withdrawDisabled: true,
-      approveDisabled: true,
-      rejectDisabled: true,
     };
   }
 
@@ -58,10 +50,6 @@ export function buildPriceAdjustmentDocActionFlags(input: {
       saveDisabled: true,
       saveAndSubmitDisabled: true,
       removeDisabled: true,
-      submitApprovalDisabled: true,
-      withdrawDisabled: true,
-      approveDisabled: false,
-      rejectDisabled: false,
     };
   }
 
@@ -70,10 +58,6 @@ export function buildPriceAdjustmentDocActionFlags(input: {
       saveDisabled: false,
       saveAndSubmitDisabled: false,
       removeDisabled: false,
-      submitApprovalDisabled: false,
-      withdrawDisabled: false,
-      approveDisabled: true,
-      rejectDisabled: true,
     };
   }
 
@@ -82,10 +66,6 @@ export function buildPriceAdjustmentDocActionFlags(input: {
       saveDisabled: ro,
       saveAndSubmitDisabled: ro,
       removeDisabled: true,
-      submitApprovalDisabled: ro,
-      withdrawDisabled: true,
-      approveDisabled: true,
-      rejectDisabled: true,
     };
   }
 
@@ -94,10 +74,6 @@ export function buildPriceAdjustmentDocActionFlags(input: {
       saveDisabled: true,
       saveAndSubmitDisabled: true,
       removeDisabled: true,
-      submitApprovalDisabled: true,
-      withdrawDisabled: true,
-      approveDisabled: true,
-      rejectDisabled: true,
     };
   }
 
@@ -105,9 +81,5 @@ export function buildPriceAdjustmentDocActionFlags(input: {
     saveDisabled: ro,
     saveAndSubmitDisabled: ro,
     removeDisabled: ro,
-    submitApprovalDisabled: ro,
-    withdrawDisabled: true,
-    approveDisabled: true,
-    rejectDisabled: true,
   };
 }

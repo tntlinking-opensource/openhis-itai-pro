@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
 import type { OutpatientInfoItemDto } from '#/api/doctor-station/encounter.types';
-import type { AdmissionDiagnosisSubmitDto } from '#/api/doctor-station/inpatient-admission.types';
 import type { OptionDto } from '#/api/inpatient-registration';
 
 import { computed, reactive, ref, watch } from 'vue';
@@ -15,7 +14,6 @@ import {
   ElDialog,
   ElForm,
   ElFormItem,
-  ElInput,
   ElMessage,
   ElOption,
   ElSelect,
@@ -32,16 +30,26 @@ import {
 import {
   httpListWardsByDepartment,
   httpLoadInpatientRegistrationContext,
+  type RegistrationEncounterDto,
 } from '#/api/inpatient-registration';
+import AdmissionDiagnosisField from '#/components/admission/admission-diagnosis-field.vue';
+import { createEmptyAdmissionDiagnosisFormState } from '#/components/admission/admission-diagnosis.types';
+import {
+  buildAdmissionDiagnosesFromFormState,
+  validateAdmissionDiagnosisFormState,
+} from '#/components/admission/services/build-admission-diagnoses';
+import {
+  mapEncounterDiagnosisToAdmissionFormState,
+  pickPrimaryEncounterDiagnosisForAdmission,
+} from '#/components/admission/services/map-admission-diagnosis-form';
 import { useRequest } from '#/hooks/use-request';
 import {
   preserveApiIdForRequest,
   resolveLoginPractitionerIdForRequest,
 } from '#/utils/format/preserve-api-id';
-import {
-  DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER,
-  PATIENT_CONDITION_OPTIONS,
-} from '#/views/inpatient/charge/register/inpatient-register.constants';
+import { DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER } from '#/views/inpatient/charge/register/inpatient-register.constants';
+import { normalizeTerminologyOptions } from '#/utils/terminology/resolve-terminology-option-label';
+import { normalizeAdmCondTermCode } from '#/utils/terminology/resolve-adm-cond-code-label';
 
 defineOptions({ name: 'DoctorStationInpatientAdmissionDialog' });
 
@@ -70,7 +78,8 @@ const organizationOptions = ref<OptionDto[]>([]);
 const wardOptions = ref<Array<{ label: string; value: string }>>([]);
 const inWayCodeOptions = ref<OptionDto[]>([]);
 const admitSourceCodeOptions = ref<OptionDto[]>([]);
-const diagnosisOptions = ref<OptionDto[]>([]);
+const admCondCodeOptions = ref<OptionDto[]>([]);
+const westernDiagnosisOptions = ref<OptionDto[]>([]);
 /** 门诊主诊预填行（提交时可带 conditionId） */
 const prefilledDiagnosisRow = ref<EncounterDiagnosisRowDto | null>(null);
 
@@ -83,11 +92,10 @@ const existingLine = reactive({
 const form = reactive({
   targetDepartmentId: '',
   wardId: '',
-  conditionDefinitionId: '',
-  diagnosisDescription: '',
   admitSourceCode: '',
   inWayCode: DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER,
   priorityCode: '',
+  admissionDiagnosis: createEmptyAdmissionDiagnosisFormState(),
 });
 
 const checkRequest = useRequest(httpCheckInpatientAdmissionExistsByAmbEncounter, { manual: true });
@@ -157,11 +165,10 @@ function onDialogModelValue(value: unknown) {
 function resetFormState() {
   form.targetDepartmentId = '';
   form.wardId = '';
-  form.conditionDefinitionId = '';
-  form.diagnosisDescription = '';
   form.admitSourceCode = '';
   form.inWayCode = DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER;
   form.priorityCode = '';
+  form.admissionDiagnosis = createEmptyAdmissionDiagnosisFormState();
   prefilledDiagnosisRow.value = null;
   existingLine.exists = false;
   existingLine.inpatientEncounterId = undefined;
@@ -184,12 +191,17 @@ async function loadOrganizationOptions() {
     label: item.label,
     value: String(item.value),
   }));
+  admCondCodeOptions.value = normalizeTerminologyOptions(context.admCondCodeOptions);
 }
 
-/** 加载入院诊断目录 */
-async function loadDiagnosisOptions() {
-  const res = await httpGetConditionDefinitionMetadata({ pageNo: 1, pageSize: 500 });
-  diagnosisOptions.value = (res.records ?? [])
+/** 加载西医入院诊断目录 */
+async function loadWesternDiagnosisOptions() {
+  const res = await httpGetConditionDefinitionMetadata({
+    diagnosisKindCode: '1',
+    pageNo: 1,
+    pageSize: 500,
+  });
+  westernDiagnosisOptions.value = (res.records ?? [])
     .filter((row) => row.conditionDefinitionId && row.conditionName)
     .map((row) => ({
       label: String(row.conditionName),
@@ -217,6 +229,69 @@ async function loadWardOptions(organizationId: string) {
     .filter((item): item is { label: string; value: string } => item !== null);
 }
 
+/** 补全科室下拉项（上下文中的科室可能不在 init 列表） */
+function ensureOrganizationOption(organizationId: string, organizationName: string) {
+  const value = organizationId.trim();
+  const label = organizationName.trim();
+  if (!value || !label) return;
+  if (organizationOptions.value.some((item) => item.value === value)) return;
+  organizationOptions.value = [{ label, value }, ...organizationOptions.value];
+}
+
+/** 补全病区下拉项 */
+function ensureWardOption(wardId: string, wardName: string) {
+  const value = wardId.trim();
+  const label = wardName.trim();
+  if (!value || !label) return;
+  if (wardOptions.value.some((item) => item.value === value)) return;
+  wardOptions.value = [{ label, value }, ...wardOptions.value];
+}
+
+/** 将住院登记上下文中的就诊信息写入表单（已申请只读回显） */
+async function applyExistingInpatientEncounterToForm(encounter: RegistrationEncounterDto) {
+  const orgId = preserveApiIdForRequest(encounter.organizationId);
+  const orgName = encounter.organizationName?.trim() ?? '';
+  if (orgId) {
+    ensureOrganizationOption(orgId, orgName);
+    form.targetDepartmentId = orgId;
+    await loadWardOptions(orgId);
+  }
+  const wardId = preserveApiIdForRequest(encounter.wardId);
+  const wardName = encounter.wardName?.trim() ?? '';
+  if (wardId) {
+    ensureWardOption(wardId, wardName);
+    form.wardId = wardId;
+  }
+  form.admitSourceCode = encounter.admitSourceCode?.trim() ?? '';
+  form.inWayCode = encounter.inWayCode?.trim() || DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER;
+  form.priorityCode = normalizeAdmCondTermCode(encounter.priorityEnum);
+  form.admissionDiagnosis = {
+    ...createEmptyAdmissionDiagnosisFormState(),
+    readonlyDisplay:
+      encounter.primaryConditionDefinitionName?.trim() ||
+      encounter.primaryConditionDefinitionId?.trim() ||
+      '',
+  };
+}
+
+/** 已提交住院申请：从住院线登记上下文回显科室/病区/诊断等 */
+async function loadExistingAdmissionContext() {
+  const encounterId = preserveApiIdForRequest(existingLine.inpatientEncounterId);
+  if (!encounterId) return;
+  const context = await httpLoadInpatientRegistrationContext({ encounterId });
+  if (!context.encounter) return;
+  await applyExistingInpatientEncounterToForm(context.encounter);
+}
+
+/** 门诊主诊预填后，补全西医下拉项（目录分页可能未含该 ID） */
+function ensureWesternDiagnosisOption(definitionId: string, label: string) {
+  const value = definitionId.trim();
+  const name = label.trim();
+  if (!value || !name) return;
+  if (westernDiagnosisOptions.value.some((item) => String(item.value) === value)) return;
+  westernDiagnosisOptions.value = [{ label: name, value }, ...westernDiagnosisOptions.value];
+}
+
 /** 从门诊就诊诊断预填主诊断 */
 async function prefillDiagnosisFromAmbEncounter() {
   const encounterId = preserveApiIdForRequest(props.ambEncounterId);
@@ -224,20 +299,15 @@ async function prefillDiagnosisFromAmbEncounter() {
   if (!encounterId || !patientId) return;
   const res = await httpGetEncounterDiagnosis({ encounterId, patientId });
   const rows = res.diagnosisList ?? res.content ?? [];
-  if (rows.length === 0) return;
-  const primary =
-    rows.find((row) => row.mainDiagnosisFlag === 1) ??
-    rows.find((row) => String(row.mainDiagnosisFlag) === '1') ??
-    rows[0];
+  const primary = pickPrimaryEncounterDiagnosisForAdmission(rows);
   if (!primary) return;
   prefilledDiagnosisRow.value = primary;
-  const defId = preserveApiIdForRequest(primary.conditionDefinitionId);
-  if (defId) {
-    form.conditionDefinitionId = defId;
-  }
-  const desc = primary.diagnosisDesc?.trim() || primary.conditionDefinitionName?.trim();
-  if (desc) {
-    form.diagnosisDescription = desc;
+  form.admissionDiagnosis = mapEncounterDiagnosisToAdmissionFormState(primary, rows);
+  if (form.admissionDiagnosis.medicineType === 'western') {
+    ensureWesternDiagnosisOption(
+      form.admissionDiagnosis.westernDefinitionId,
+      primary.conditionDefinitionName ?? '',
+    );
   }
 }
 
@@ -257,10 +327,12 @@ async function onDialogOpen() {
   try {
     await Promise.all([
       loadOrganizationOptions(),
-      loadDiagnosisOptions(),
+      loadWesternDiagnosisOptions(),
       loadExistingAdmissionLine(),
     ]);
-    if (!existingLine.exists) {
+    if (existingLine.exists) {
+      await loadExistingAdmissionContext();
+    } else {
       await prefillDiagnosisFromAmbEncounter();
     }
   } catch {
@@ -275,33 +347,13 @@ async function handleDepartmentChange(organizationId: string) {
   await loadWardOptions(organizationId);
 }
 
-/** 解析入院诊断说明 */
-function resolveDiagnosisDescription(conditionDefinitionId: string): string {
-  const custom = form.diagnosisDescription.trim();
-  if (custom) return custom;
-  const hit = diagnosisOptions.value.find((item) => item.value === conditionDefinitionId);
-  return hit?.label ?? '';
-}
-
 /** 组装提交的入院诊断列表 */
-function buildAdmissionDiagnoses(): AdmissionDiagnosisSubmitDto[] {
-  const conditionDefinitionId = preserveApiIdForRequest(form.conditionDefinitionId);
-  if (!conditionDefinitionId) return [];
+function buildAdmissionDiagnoses() {
   const prefilled = prefilledDiagnosisRow.value;
-  const prefilledDefId = preserveApiIdForRequest(prefilled?.conditionDefinitionId);
-  const conditionId =
-    prefilledDefId === conditionDefinitionId
-      ? preserveApiIdForRequest(prefilled?.conditionId)
-      : undefined;
-  const description = resolveDiagnosisDescription(conditionDefinitionId);
-  return [
-    {
-      primaryFlag: true,
-      conditionDefinitionId,
-      ...(conditionId ? { conditionId } : {}),
-      ...(description ? { description } : {}),
-    },
-  ];
+  return buildAdmissionDiagnosesFromFormState(form.admissionDiagnosis, {
+    prefilledConditionId: preserveApiIdForRequest(prefilled?.conditionId),
+    prefilledWesternDefinitionId: preserveApiIdForRequest(prefilled?.conditionDefinitionId),
+  });
 }
 
 /** 提交住院申请 */
@@ -314,7 +366,6 @@ async function handleSubmit() {
   const targetDepartmentId = preserveApiIdForRequest(form.targetDepartmentId);
   const requestDoctorId = resolveLoginPractitionerIdForRequest(userStore.userInfo);
   const operatorId = preserveApiIdForRequest(userStore.userInfo?.id);
-  const conditionDefinitionId = preserveApiIdForRequest(form.conditionDefinitionId);
   if (!ambEncounterId) {
     ElMessage.warning('缺少门诊就诊标识');
     return;
@@ -331,8 +382,9 @@ async function handleSubmit() {
     ElMessage.warning('无法获取当前操作人，请重新登录');
     return;
   }
-  if (!conditionDefinitionId) {
-    ElMessage.warning('请选择入院主诊断');
+  const diagnosisError = validateAdmissionDiagnosisFormState(form.admissionDiagnosis);
+  if (diagnosisError) {
+    ElMessage.warning(diagnosisError);
     return;
   }
   const admissionDiagnoses = buildAdmissionDiagnoses();
@@ -447,27 +499,12 @@ watch(
             />
           </ElSelect>
         </ElFormItem>
-        <ElFormItem label="入院主诊断" required>
-          <ElSelect
-            v-model="form.conditionDefinitionId"
-            filterable
-            placeholder="请选择入院主诊断"
-            class="w-full"
+        <ElFormItem label="入院主诊断" required class="admission-form__diagnosis-item">
+          <AdmissionDiagnosisField
+            v-model="form.admissionDiagnosis"
+            :western-options="westernDiagnosisOptions"
             :disabled="submitBlocked"
-          >
-            <ElOption
-              v-for="item in diagnosisOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </ElSelect>
-        </ElFormItem>
-        <ElFormItem label="诊断说明">
-          <ElInput
-            v-model="form.diagnosisDescription"
-            placeholder="可选"
-            :disabled="submitBlocked"
+            :readonly="submitBlocked"
           />
         </ElFormItem>
         <ElFormItem label="入院类型">
@@ -511,7 +548,7 @@ watch(
             :disabled="submitBlocked"
           >
             <ElOption
-              v-for="item in PATIENT_CONDITION_OPTIONS"
+              v-for="item in admCondCodeOptions"
               :key="item.value"
               :label="item.label"
               :value="item.value"
@@ -538,6 +575,10 @@ watch(
 <style scoped>
 .admission-form :deep(.el-form-item) {
   margin-bottom: 14px;
+}
+
+.admission-form__diagnosis-item :deep(.el-form-item__content) {
+  line-height: normal;
 }
 
 .patient-summary-grid {

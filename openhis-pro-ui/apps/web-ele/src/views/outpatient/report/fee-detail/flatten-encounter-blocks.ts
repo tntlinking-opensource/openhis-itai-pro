@@ -5,6 +5,7 @@ import type {
 
 export type FeeDetailTableRow = OutpatientFeeDetailLineDto & {
   busNo?: string;
+  encounterBlockIndex?: number;
   encounterBlockKey?: string;
   encounterDate?: string;
   encounterLineCount?: number;
@@ -21,7 +22,7 @@ export function flattenEncounterBlocksToTableRows(
 ): FeeDetailTableRow[] {
   const rows: FeeDetailTableRow[] = [];
   // 按块顺序展开明细行，块间插入小计行便于列表内分组阅读。
-  for (const block of blocks) {
+  for (const [blockIndex, block] of blocks.entries()) {
     const encounterKey = String(block.encounterId ?? block.busNo ?? rows.length);
     const lines = block.lines ?? [];
     const lineCount = lines.length;
@@ -31,6 +32,7 @@ export function flattenEncounterBlocksToTableRows(
         rowType: 'line',
         rowKey: `line-${encounterKey}-${String(line.chargeItemId ?? 'na')}-${String(line.paymentId ?? line.tradeDirection ?? line.billDate ?? lineIndex)}`,
         encounterBlockKey: encounterKey,
+        encounterBlockIndex: blockIndex,
         encounterLineCount: lineCount,
         isFirstLineInEncounter: lineIndex === 0,
         patientName: block.patientName,
@@ -44,6 +46,8 @@ export function flattenEncounterBlocksToTableRows(
       rows.push({
         rowType: 'subtotal',
         rowKey: `subtotal-${encounterKey}`,
+        encounterBlockKey: encounterKey,
+        encounterBlockIndex: blockIndex,
         patientName: '就诊小计',
         baseAmount: subtotal.baseAmountTotal,
         discountAmount: subtotal.discountAmountTotal,

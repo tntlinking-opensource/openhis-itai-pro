@@ -98,11 +98,20 @@ function resolveOrderBillingTherapyClass(category: OrderBillingTableRow['categor
 }
 
 /** 结算状态 → Tag 类型 */
-function resolveChargeStatusTagType(status: string): TagProps['type'] {
-  if (status.includes('待')) {
+function resolveChargeStatusTagType(statusEnum?: string): TagProps['type'] {
+  const code = String(statusEnum ?? '')
+    .trim()
+    .toUpperCase();
+  if (!code) {
+    return 'info';
+  }
+  if (code.includes('REFUND')) {
+    return 'danger';
+  }
+  if (code.includes('PENDING') || code === 'PLANNED') {
     return 'warning';
   }
-  if (status.includes('已') || status.includes('结')) {
+  if (code.includes('SETTLED') || code.includes('CHARGED') || code === 'BILLED') {
     return 'success';
   }
   return 'info';
@@ -224,7 +233,7 @@ watch(
                       <span class="order-billing-table__expand-detail-qty">{{ child.dosage }}</span>
                       <span
                         class="order-billing-table__expand-detail-status"
-                        :class="`is-${resolveChargeStatusTagType(child.executionCount)}`"
+                        :class="`is-${resolveChargeStatusTagType(child.chargeStatusEnum)}`"
                       >
                         {{ child.executionCount }}
                       </span>

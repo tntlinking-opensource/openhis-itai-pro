@@ -1,0 +1,29 @@
+/* 体温单录入抽屉：避免 btt 滑入后内容异步撑高导致二次上弹 */
+.temp-fill-drawer.el-drawer.btt,
+.temp-batch-fill-drawer.el-drawer.btt,
+.temp-single-fill-drawer.el-drawer.btt {
+  transition: transform 0.28s ease-out !important;
+}
+
+.temp-fill-drawer .el-drawer__body,
+.temp-batch-fill-drawer .el-drawer__body,
+.temp-single-fill-drawer .el-drawer__body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  padding: 10px 0 0;
+}
+
+.temp-fill-drawer .el-drawer__header,
+.temp-single-fill-drawer .el-drawer__header {
+  margin: 0;
+  padding: 4px 10px;
+  min-height: 34px;
+}
+
+.temp-fill-drawer .el-drawer__footer,
+.temp-batch-fill-drawer .el-drawer__footer,
+.temp-single-fill-drawer .el-drawer__footer {
+  padding: 4px 10px;
+}

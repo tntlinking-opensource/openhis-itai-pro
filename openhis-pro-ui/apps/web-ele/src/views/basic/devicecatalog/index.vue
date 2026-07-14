@@ -20,6 +20,8 @@ import {
 } from '#/api';
 import { PublicationStatusCode } from '#/constants/domain/publication-status';
 import StatusEnumTag from '#/components/status-enum-tag.vue';
+import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
 import DeviceCatalogEditDialog from './[id]/index.vue';
 
 function isDevicePublicationActive(row: DeviceCatalogItem): boolean {
@@ -43,7 +45,7 @@ function isDevicePublicationActive(row: DeviceCatalogItem): boolean {
 
 const queryParams = ref({
   pageNo: 1,
-  pageSize: 50,
+  pageSize: 10,
   keyword: '',
   /** 耗材分类筛选；空字符串表示「全部」 */
   categoryCode: '',
@@ -169,7 +171,7 @@ function formatRetailPriceWithUnit(price: unknown, unitText: unknown): string {
     return '';
   }
   const num = Number(price);
-  const formatted = Number.isFinite(num) ? num.toFixed(2) : String(price);
+  const formatted = Number.isFinite(num) ? formatMoneyDisplay(num) : String(price);
   const unit = typeof unitText === 'string' && unitText.trim() ? unitText.trim() : '';
   return unit ? `${formatted}/${unit}` : formatted;
 }
@@ -202,30 +204,22 @@ function normalizeCategoryCodeForApi(raw: unknown): string | undefined {
 }
 
 const handleQuery = async (params: Record<string, unknown>) => {
+  queryParams.value = {
+    ...queryParams.value,
+    ...params,
+  };
   loading.value = true;
   try {
-    const mergedCategoryRaw =
-      typeof params.categoryCode === 'string' && params.categoryCode
-        ? params.categoryCode
-        : queryParams.value.categoryCode || '';
     const response = await pageDeviceCatalogApi({
-      pageNo: typeof params.pageNo === 'number' ? params.pageNo : queryParams.value.pageNo,
-      pageSize: typeof params.pageSize === 'number' ? params.pageSize : queryParams.value.pageSize,
-      keyword:
-        typeof params.keyword === 'string' && params.keyword
-          ? params.keyword
-          : queryParams.value.keyword || undefined,
-      categoryCode: normalizeCategoryCodeForApi(mergedCategoryRaw),
+      pageNo: queryParams.value.pageNo,
+      pageSize: queryParams.value.pageSize,
+      keyword: queryParams.value.keyword || undefined,
+      categoryCode: normalizeCategoryCodeForApi(queryParams.value.categoryCode),
     });
 
-    const responseData = response.data;
-    if (responseData) {
-      tableData.value = responseData.content || [];
-      total.value = Number(responseData.totalCount ?? responseData.totalElements ?? 0);
-    } else {
-      tableData.value = [];
-      total.value = 0;
-    }
+    const parsed = parsePagedRowsFromApiData<DeviceCatalogItem>(response.data);
+    tableData.value = parsed.content;
+    total.value = parsed.totalCount;
   } catch (error) {
     console.error('查询失败:', error);
     ElMessage.error('查询失败，请稍后重试');
@@ -239,7 +233,7 @@ const handleQuery = async (params: Record<string, unknown>) => {
 const handleReset = () => {
   queryParams.value = {
     pageNo: 1,
-    pageSize: 50,
+    pageSize: 10,
     keyword: '',
     categoryCode: '',
   };

@@ -16,6 +16,10 @@ import { RotateCw } from '@vben/icons';
 import { TableLayout } from '@vben-core/table-layout-ui';
 
 import { useDebounceFn } from '@vueuse/core';
+import {
+  runWorkInjuryCharge2207Invoke,
+  runWorkInjuryChargePreSettleInvoke,
+} from '#/chs/work-injury/use-work-injury-settle';
 import dayjs from 'dayjs';
 import {
   ElButton,
@@ -47,7 +51,7 @@ import { usePrintClientWarmup } from '#/composables/use-print-client-warmup';
 import { useUnionPayScanPay } from '#/composables/payment/useUnionPayScanPay';
 import { useRequest } from '#/hooks/use-request';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import { decimalAdd } from '#/utils/format/decimal-util';
+import { sumMoneyThenSettle } from '#/utils/format/money-scale';
 import { optionDtosToPayChannelOptions } from '#/utils/payment/payment-channel-options';
 import { settleWithScanRecovery } from '#/utils/payment/scan-settle-recovery';
 import { submitScanPayment } from '#/utils/payment/submit-scan-payment';
@@ -62,6 +66,7 @@ import {
   DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE,
   OUTPATIENT_CHARGE_PAY_CHANNEL_OPTIONS,
   OUTPATIENT_CHARGE_SETTLE_OUTCOME_COMPLETED,
+  resolveOutpatientChargeSwitchAccountMessage,
 } from './outpatient-charge.constants';
 import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
 import ChargeSettlementDialog from './settlement-dialog.vue';
@@ -91,6 +96,8 @@ const queueLoading = ref(false);
 
 const selectedEncounterId = ref('');
 const pendingItems = ref<PendingChargeItemRowDto[]>([]);
+/** 当前就诊是否允许转医保/转自费（医保双账户挂号） */
+const encounterAccountSwitchEnabled = ref(false);
 const selectedChargeRows = ref<PendingChargeItemRowDto[]>([]);
 
 const preSettleSnapshot = ref<null | PreSettleOutpatientChargesResponse>(null);
@@ -184,13 +191,13 @@ function getChargeVxeGrid(): null | Record<string, unknown> {
   return (g.grid ?? cur) as Record<string, unknown>;
 }
 
-/** 是否已结算行（与枚举 `SETTLED`、展示文案「已结算」对齐，避免接口 code 不一致时仍可勾选） */
+/** 是否已结算行（仅认 statusCode） */
 function isOutpatientChargeItemSettled(row: PendingChargeItemRowDto) {
-  const code = (row.statusCode ?? '').toString().trim().toUpperCase();
-  if (code === 'SETTLED') return true;
-  const mapped = code ? CHARGE_ITEM_STATUS_LABEL_TAG[code] : undefined;
-  if (mapped?.label === '已结算') return true;
-  return (row.statusText ?? '').toString().includes('已结算');
+  return (
+    String(row.statusCode ?? '')
+      .trim()
+      .toUpperCase() === 'SETTLED'
+  );
 }
 
 /** 仅非「已结算」行可勾选 */
@@ -294,13 +301,9 @@ function chargeQueueGenderDisplay(row: ChargeQueueRowDto | null | undefined): st
 }
 
 /** 已选明细金额合计（展示用，以预结算返回为准收费） */
-const selectedChargeSum = computed(() => {
-  let sum = 0;
-  for (const row of selectedChargeRows.value) {
-    sum = decimalAdd(sum, row.totalPrice ?? 0, 4);
-  }
-  return sum;
-});
+const selectedChargeSum = computed(() =>
+  sumMoneyThenSettle(selectedChargeRows.value.map((row) => row.totalPrice ?? 0)),
+);
 
 /** 患者信息栏费用摘要：与待收明细同源，避免队列行空金额 */
 const chargePatientFeeSummary = computed(() => {
@@ -340,6 +343,7 @@ const { run: runLoadPending, loading: tableLoading } = useRequest(httpLoadPendin
   onSuccess: (data) => {
     const items = data.items ?? [];
     pendingItems.value = items;
+    encounterAccountSwitchEnabled.value = data.accountSwitchEnabled === true;
     selectAllPendingRowsInGrid(items);
   },
 });
@@ -375,6 +379,7 @@ const loadPendingForSelectedEncounter = async () => {
   const eid = selectedEncounterId.value;
   if (!eid) {
     pendingItems.value = [];
+    encounterAccountSwitchEnabled.value = false;
     selectedChargeRows.value = [];
     void nextTick(() => {
       const grid = getChargeVxeGrid();
@@ -422,6 +427,7 @@ const mapToBillingPatientCard = (row: ChargeQueueRowDto): BillingPatientCardPati
     patientName: row.patientName,
     gender: chargeQueueGenderDisplay(row),
     ageText: row.ageText ?? undefined,
+    chargeStatusCode: settled ? 'SETTLED' : 'PLANNED',
     chargeStatus: settled ? '已结算' : '待收费',
     visitDepartment: row.organizationName ?? '—',
     visitTime: row.startTime ?? '—',
@@ -579,43 +585,62 @@ const chargeTableColumns: TableColumn[] = [
   },
 ];
 
-/** 就诊维度转医保 */
-const handleSwitchInsurance = async () => {
+const switchAccountLoading = ref(false);
+
+/** 就诊维度批量切换记账账户（IF-OPC-04/05） */
+const submitEncounterAccountSwitch = async (
+  insurance: boolean,
+  confirmTitle: string,
+  confirmBody: string,
+  successText: string,
+) => {
   const eid = selectedEncounterId.value;
   if (!eid) {
     ElMessage.warning('请先选择就诊');
     return;
   }
-  await ElMessageBox.confirm('将当前就诊下费用项批量切换到医保记账账户，是否继续？', '转医保', {
+  if (!encounterAccountSwitchEnabled.value) {
+    ElMessage.warning('当前就诊为自费挂号，不支持转医保/转自费');
+    return;
+  }
+  await ElMessageBox.confirm(confirmBody, confirmTitle, {
     cancelButtonText: '取消',
     confirmButtonText: '确定',
     type: 'warning',
   });
-  const res = await httpSwitchEncounterChargeItemsToInsurance({ encounterId: eid });
-  if (res.success) {
-    ElMessage.success('已提交转医保');
-    await loadPendingForSelectedEncounter();
+  switchAccountLoading.value = true;
+  try {
+    const res = insurance
+      ? await httpSwitchEncounterChargeItemsToInsurance({ encounterId: eid })
+      : await httpSwitchEncounterChargeItemsToSelfPay({ encounterId: eid });
+    if (res.success) {
+      ElMessage.success(successText);
+      await loadPendingForSelectedEncounter();
+      return;
+    }
+    ElMessage.error(resolveOutpatientChargeSwitchAccountMessage(res.messageCode));
+  } finally {
+    switchAccountLoading.value = false;
   }
 };
 
-/** 就诊维度转自费 */
-const handleSwitchSelfPay = async () => {
-  const eid = selectedEncounterId.value;
-  if (!eid) {
-    ElMessage.warning('请先选择就诊');
-    return;
-  }
-  await ElMessageBox.confirm('将当前就诊下费用项批量切换到自费记账账户，是否继续？', '转自费', {
-    cancelButtonText: '取消',
-    confirmButtonText: '确定',
-    type: 'warning',
-  });
-  const res = await httpSwitchEncounterChargeItemsToSelfPay({ encounterId: eid });
-  if (res.success) {
-    ElMessage.success('已提交转自费');
-    await loadPendingForSelectedEncounter();
-  }
-};
+/** 就诊维度转医保：将待收明细 accountId 批量切至医保账户 */
+const handleSwitchInsurance = () =>
+  submitEncounterAccountSwitch(
+    true,
+    '转医保',
+    '将当前就诊下待收费用项批量切换到医保记账账户，是否继续？',
+    '已切换为医保记账',
+  );
+
+/** 就诊维度转自费：将待收明细 accountId 批量切至自费账户，后续可按自费结账 */
+const handleSwitchSelfPay = () =>
+  submitEncounterAccountSwitch(
+    false,
+    '转自费',
+    '将当前就诊下待收费用项批量切换到自费记账账户，是否继续？',
+    '已切换为自费记账',
+  );
 
 /** 打开结算前先做预结算，拿到草稿与应收 */
 const handleOpenSettlement = async () => {
@@ -636,7 +661,14 @@ const handleOpenSettlement = async () => {
       chargeItemIds: rows.map((r) => r.chargeItemId),
       encounterId: eid,
     });
-    preSettleSnapshot.value = res;
+    preSettleSnapshot.value =
+      res.settlementComposition === 'WORK_INJURY_INVOKE'
+        ? await runWorkInjuryChargePreSettleInvoke(
+            res,
+            eid,
+            rows.map((r) => r.chargeItemId),
+          )
+        : res;
     lockedChargeItemIds.value = selectedChargeRows.value.map((r) => r.chargeItemId);
     paymentForm.payChannelCode = DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE;
     settlementVisible.value = true;
@@ -660,6 +692,9 @@ const handleConfirmSettlement = async () => {
   confirmSettleLoading.value = true;
   scanStatusText.value = '';
   try {
+    if (snap.workInjurySessionId) {
+      await runWorkInjuryCharge2207Invoke(snap, eid, lockedChargeItemIds.value);
+    }
     let clientScanResult;
     if (isScanPay) {
       if (!scanPayEnabled.value) {
@@ -931,14 +966,20 @@ onMounted(() => {
                 <SectionTitle title="收费项目列表" />
                 <div class="flex-1"></div>
                 <ElButton
-                  :disabled="!selectedEncounterId"
+                  :disabled="
+                    !selectedEncounterId || !encounterAccountSwitchEnabled || switchAccountLoading
+                  "
+                  :loading="switchAccountLoading"
                   class="mr-1"
                   @click="handleSwitchInsurance"
                 >
                   转医保
                 </ElButton>
                 <ElButton
-                  :disabled="!selectedEncounterId"
+                  :disabled="
+                    !selectedEncounterId || !encounterAccountSwitchEnabled || switchAccountLoading
+                  "
+                  :loading="switchAccountLoading"
                   class="mr-1"
                   @click="handleSwitchSelfPay"
                 >

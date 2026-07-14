@@ -22,7 +22,6 @@ import {
   convertInboundQtyBetweenBandKinds,
   normalizeInboundProductUnitBands,
 } from '#/utils/inventory/inbound-product-unit-bands';
-import { saveAdviceDraftBatchWithBindResolution } from './advice-draft-bind.service';
 import {
   createAdviceDrugItem,
   inferDoseBandConvertK,
@@ -35,6 +34,7 @@ import {
 } from './advice-edit-hydrate';
 import { mapCatalogRowToOption } from './advice-list';
 import { buildAdviceDraftLines } from './advice-medication-draft';
+import { saveAdviceDraftBatchDirect } from './advice-draft-save.service';
 import { inferAdviceLineEditorKind, validateWesternEditLineItem } from './advice-row';
 import { ADVICE_PRICING_SOURCE_CODE } from './advice-tab.constants';
 import { unitCodeByBandKind } from './medication-unit-bands';
@@ -321,7 +321,7 @@ async function loadEncounterDiagnosisRows(
   return Array.isArray(list) ? list : [];
 }
 
-/** 历史医嘱复用至当前就诊草稿（静默保存） */
+/** 历史医嘱复用至当前就诊草稿（DIRECT_ONLY：不解析用法绑定，避免二次带出） */
 export async function applyHistoryAdviceToAdviceDraft(
   params: ApplyHistoryAdviceParams,
 ): Promise<ApplyHistoryAdviceResult> {
@@ -406,12 +406,11 @@ export async function applyHistoryAdviceToAdviceDraft(
       throw new HistoryAdviceApplyError(error instanceof Error ? error.message : '请求组包失败');
     }
   })();
-  const saveRes = await saveAdviceDraftBatchWithBindResolution({
+  const saveRes = await saveAdviceDraftBatchDirect({
     encounterId,
     patientId,
     pricingSourceCode: ADVICE_PRICING_SOURCE_CODE,
     lines: draftLines,
-    existingAdviceRows: params.existingAdviceRows ?? [],
   });
   if (saveRes.success === false) {
     throw new HistoryAdviceApplyError(String(saveRes.message ?? '').trim() || '保存医嘱草稿失败');

@@ -1,7 +1,8 @@
-import type { PrescriptionSheetData } from './prescription-sheet.types';
+import type { PrescriptionSheetData, PrescriptionSheetLine } from './prescription-sheet.types';
 import type { DispensePrescriptionBlock, DispenseQueuePatient } from './types';
 
-import { decimalAdd } from '#/utils/format/decimal-util';
+import type { TcmHerbGridDisplayRow } from '#/utils/tcm-prescription-display';
+import { formatMoneyYuan, sumMoneyThenSettle } from '#/utils/format/money-scale';
 
 export interface BuildPrescriptionSheetDataOptions {
   hospitalName?: string;
@@ -12,6 +13,8 @@ export interface BuildPrescriptionSheetDataOptions {
   deliverName?: string;
   /** 划价人展示名 */
   pricingClerkName?: string;
+  /** 中药处方：中医主诊断（病证合并） */
+  tcmDiagnosisText?: string;
 }
 
 /** 从开立时间等字段截取 YYYY-MM-DD */
@@ -40,25 +43,42 @@ export function buildPrescriptionSheetData(
 ): PrescriptionSheetData {
   const hospitalName = options?.hospitalName ?? '医疗机构';
   const feeNatureLabel = options?.feeNatureLabel ?? '自费';
+  const isHerbal = block.rxType === 'herbal';
   const items = block.items ?? [];
-  const firstDx = items[0]?.diagnosis?.trim() ?? '';
-  const diagnosis = firstDx || items.map((i) => i.diagnosis?.trim()).find(Boolean) || '—';
 
-  let total = 0;
-  for (const line of items) {
-    total = decimalAdd(total, amountToSumNumber(line.amount), 2);
+  let diagnosis: string;
+  if (isHerbal) {
+    diagnosis = options?.tcmDiagnosisText?.trim() || '—';
+  } else {
+    const firstDx = items[0]?.diagnosis?.trim() ?? '';
+    diagnosis = firstDx || items.map((i) => i.diagnosis?.trim()).find(Boolean) || '—';
   }
-  const lines = items.map((line) => {
-    const spec = (line.spec ?? '').trim();
-    const bracketed = spec ? `(${spec})` : '';
-    const qty = (line.quantity ?? '').trim();
-    const title = `${line.itemName}${bracketed}${qty ? ` X${qty}` : ''}`;
-    const freq = (line.freq ?? '').trim();
-    const usage = freq ? `用法用量：${freq}` : undefined;
-    return { title, usage };
-  });
+
+  const settledTotal = sumMoneyThenSettle(items.map((line) => amountToSumNumber(line.amount)));
+
+  let lines: PrescriptionSheetLine[];
+  let tcmHerbGridRows: TcmHerbGridDisplayRow[] | undefined;
+  let tcmUsageText: string | undefined;
+
+  if (isHerbal) {
+    tcmHerbGridRows = block.tcmHerbGridRows ?? [];
+    tcmUsageText = block.tcmUsageText?.trim() || undefined;
+    lines = [];
+  } else {
+    lines = items.map((line) => {
+      const spec = (line.spec ?? '').trim();
+      const bracketed = spec ? `(${spec})` : '';
+      const qty = (line.quantity ?? '').trim();
+      const title = `${line.itemName}${bracketed}${qty ? ` X${qty}` : ''}`;
+      const freq = (line.freq ?? '').trim();
+      const usage = freq ? `用法用量：${freq}` : undefined;
+      return { title, usage };
+    });
+  }
 
   return {
+    rxType: block.rxType,
+    documentTitle: isHerbal ? '中药处方笺' : '处方单',
     hospitalName,
     prescriptionNo: block.rxNo,
     patientName: patient.patientName,
@@ -71,10 +91,12 @@ export function buildPrescriptionSheetData(
     prescribingDoctorName: block.doctorName,
     diagnosis,
     lines,
+    tcmHerbGridRows,
+    tcmUsageText,
     footerDoctorName: block.doctorName,
     footerDispensingName: options?.dispensingName?.trim() || '—',
     footerDeliverName: options?.deliverName?.trim() || '—',
-    totalAmountLabel: `${total.toFixed(2)} 元`,
+    totalAmountLabel: formatMoneyYuan(settledTotal),
     footerPricingClerkName: options?.pricingClerkName?.trim() || '—',
   };
 }

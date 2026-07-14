@@ -8,6 +8,10 @@ import {
   ORAL_METHOD_CODES,
 } from './constants/medication-method-codes';
 import {
+  isNurseExecuteRowCompleted,
+  type NurseExecuteDisplayStatusCode,
+} from '#/utils/nurse-station/nurse-execute-status';
+import {
   SERVICE_CATEGORY_PROOF,
   SERVICE_CATEGORY_TEST,
 } from './constants/service-request-category-codes';
@@ -27,25 +31,46 @@ export interface MedicationLabelPrintGroup {
 
 /** 判断执行行是否为检验/采血类诊疗（serviceCategoryCode=22） */
 export function isLabSpecimenExecuteRow(row: NurseAdviceExecuteRow): boolean {
-  if (row.type !== '处置' || !row.key.startsWith('SR:')) {
+  if (row.rowType !== 'SERVICE' || !row.key.startsWith('SR:')) {
     return false;
   }
   return (row.serviceCategoryCode ?? '').trim() === SERVICE_CATEGORY_PROOF;
+}
+
+function isServiceExecuteRow(row: NurseAdviceExecuteRow): boolean {
+  return row.rowType === 'SERVICE' && Boolean(row.requestId) && row.key.startsWith('SR:');
+}
+
+function isMedicationExecuteRowKey(row: NurseAdviceExecuteRow): boolean {
+  return (
+    row.rowType === 'MEDICATION' &&
+    Boolean(row.requestId) &&
+    (row.key.startsWith('MR:') || row.key.startsWith('merged-med-'))
+  );
+}
+
+function isExecuteRowPending(row: NurseAdviceExecuteRow): boolean {
+  const code = String(row.statusEnum ?? '')
+    .trim()
+    .toUpperCase() as NurseExecuteDisplayStatusCode;
+  if (!code) {
+    return true;
+  }
+  if (code === 'REFUNDED' || code === 'REFUNDING') {
+    return false;
+  }
+  return !isNurseExecuteRowCompleted(code);
 }
 
 function filterServiceExecuteRows(
   rows: NurseAdviceExecuteRow[],
   selectedKeys?: string[],
 ): NurseAdviceExecuteRow[] {
-  const serviceRows = rows.filter(
-    (row) => row.type === '处置' && row.requestId && row.key.startsWith('SR:'),
-  );
+  const serviceRows = rows.filter(isServiceExecuteRow);
   if (selectedKeys && selectedKeys.length > 0) {
     return serviceRows.filter((row) => selectedKeys.includes(row.key));
   }
-  return serviceRows.filter(
-    (row) => row.status !== '已完成' && row.status !== '已退费' && row.status !== '待退费',
-  );
+  return serviceRows.filter(isExecuteRowPending);
 }
 
 /** 采血条码：每个检验医嘱一张 roll 标签 */
@@ -103,18 +128,11 @@ function filterMedicationExecuteRows(
   rows: NurseAdviceExecuteRow[],
   selectedKeys?: string[],
 ): NurseAdviceExecuteRow[] {
-  const medicationRows = rows.filter(
-    (row) =>
-      row.type === '药品' &&
-      row.requestId &&
-      (row.key.startsWith('MR:') || row.key.startsWith('merged-med-')),
-  );
+  const medicationRows = rows.filter(isMedicationExecuteRowKey);
   if (selectedKeys && selectedKeys.length > 0) {
     return medicationRows.filter((row) => selectedKeys.includes(row.key));
   }
-  return medicationRows.filter(
-    (row) => row.status !== '已完成' && row.status !== '已退费' && row.status !== '待退费',
-  );
+  return medicationRows.filter(isExecuteRowPending);
 }
 
 function isSkinTestMedicationRow(row: NurseAdviceExecuteRow): boolean {
@@ -146,20 +164,11 @@ export function groupMedicationLabelPrintTargets(
   selectedKeys: string[] | undefined,
   scope: 'injection' | 'nebulization' | 'oral' | 'skin_test',
 ): MedicationLabelPrintGroup[] {
-  const medicationRows = expandMedicationExecuteRows(
-    rows.filter(
-      (row) =>
-        row.type === '药品' &&
-        row.requestId &&
-        (row.key.startsWith('MR:') || row.key.startsWith('merged-med-')),
-    ),
-  );
+  const medicationRows = expandMedicationExecuteRows(rows.filter(isMedicationExecuteRowKey));
   const keyed =
     selectedKeys && selectedKeys.length > 0
       ? medicationRows.filter((row) => selectedKeys.includes(row.key))
-      : medicationRows.filter(
-          (row) => row.status !== '已完成' && row.status !== '已退费' && row.status !== '待退费',
-        );
+      : medicationRows.filter(isExecuteRowPending);
   const filtered = keyed.filter((row) => {
     if (scope === 'skin_test') {
       return isSkinTestMedicationRow(row);
@@ -194,7 +203,7 @@ export function groupMedicationLabelPrintTargets(
 
 /** 检查类处置行（serviceCategoryCode=23） */
 export function isExamExecuteRow(row: NurseAdviceExecuteRow): boolean {
-  if (row.type !== '处置' || !row.key.startsWith('SR:')) {
+  if (row.rowType !== 'SERVICE' || !row.key.startsWith('SR:')) {
     return false;
   }
   return (row.serviceCategoryCode ?? '').trim() === SERVICE_CATEGORY_TEST;

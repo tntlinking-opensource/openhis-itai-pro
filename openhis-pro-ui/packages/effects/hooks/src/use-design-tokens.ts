@@ -191,6 +191,8 @@ export function useElementPlusDesignTokens() {
           '--el-border-color-lighter': border,
 
           '--el-border-radius-base': getCssVariableValue('--radius', false),
+          '--el-input-height': getCssVariableValue('--form-control-height', false),
+
           '--el-color-danger': getCssVariableValue('--destructive-500'),
           '--el-color-danger-dark-2': isDark.value
             ? getCssVariableValue('--destructive-400')

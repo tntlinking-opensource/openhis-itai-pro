@@ -1,5 +1,5 @@
 <!--
-  药库进货单左侧：历史进货单检索 + 卡片队列 + 新增（布局与订货侧栏同构）。
+  药库进货单左侧：历史进货单检索 + 卡片队列 + 从订货单新建（布局与订货侧栏同构）。
 -->
 <script setup lang="ts">
 import type { ApiOptionItem } from '#/types/api-response';
@@ -179,13 +179,15 @@ function handleAdd() {
         :practitioner-option="practitionerOption"
         :selected-order="selectedOrder"
         :show-supplier="showSupplierInQueue"
+        empty-description="暂无进货单"
+        empty-add-label="从订货单新建"
         @add="handleAdd"
         @select="handleQueueSelect"
       />
     </template>
 
     <template #footer>
-      <InvPrimaryBtn label="新增进货单" :disabled="addDisabled" @click="handleAdd" />
+      <InvPrimaryBtn label="从订货单新建" :disabled="addDisabled" @click="handleAdd" />
     </template>
   </InvAsideShell>
 </template>

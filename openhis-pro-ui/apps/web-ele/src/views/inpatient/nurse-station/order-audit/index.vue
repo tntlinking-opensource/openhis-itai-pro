@@ -81,8 +81,16 @@ const encounterIds = computed(() =>
   props.patients.map((p) => String(p.id).trim()).filter((id) => id.length > 0),
 );
 
-/** 未校对 Tab 才允许批量校对/退回 */
-const writeActionsEnabled = computed(() => activeStatus.value === 'pending');
+/** 未校对 Tab 才允许批量校对 */
+const verifyActionsEnabled = computed(() => activeStatus.value === 'pending');
+
+/** 未校对/已校对 Tab 允许批量退回（已校对须后端校验无净执行/待发退/不可回退费用） */
+const rejectActionsEnabled = computed(
+  () => activeStatus.value === 'pending' || activeStatus.value === 'passed',
+);
+
+/** 当前 Tab 是否允许勾选医嘱（与退回范围一致） */
+const rowSelectionEnabled = computed(() => rejectActionsEnabled.value);
 
 /** 将接口分组与左侧已选患者合并为折叠卡片数据 */
 const visibleCards = computed<PatientOrderCard[]>(() => {
@@ -217,18 +225,22 @@ function assertBatchWithinLimit(count: number): boolean {
   return true;
 }
 
-/** 校对成功后刷新列表与左侧待校对计数 */
+/** 校对成功后刷新列表、队列与出 Tab 床位图 */
 async function afterWriteSuccess(message: string) {
   ElMessage.success(message);
   selectedRowKeys.value = new Set();
   selectedAll.value = false;
   await loadAuditList();
-  await listPanelContext?.refreshPatientFilters();
+  if (listPanelContext?.refreshWorkbenchAfterEncounterFlowChange) {
+    await listPanelContext.refreshWorkbenchAfterEncounterFlowChange();
+  } else {
+    await listPanelContext?.refreshPatientFilters();
+  }
 }
 
 /** 批量校对通过 */
 async function handleVerifyOrders() {
-  if (!writeActionsEnabled.value) return;
+  if (!verifyActionsEnabled.value) return;
   const rows = collectSelectedRows();
   if (!assertBatchWithinLimit(rows.length)) return;
 
@@ -249,7 +261,7 @@ async function handleVerifyOrders() {
 
 /** 批量退回（可选统一原因） */
 async function handleRejectOrders() {
-  if (!writeActionsEnabled.value) return;
+  if (!rejectActionsEnabled.value) return;
   const rows = collectSelectedRows();
   if (!assertBatchWithinLimit(rows.length)) return;
 
@@ -323,10 +335,10 @@ async function handleRejectOrders() {
             @update:model-value="handleSelectedAllChange"
           />
         </label>
-        <ElButton type="primary" :disabled="!writeActionsEnabled" @click="handleVerifyOrders">
+        <ElButton type="primary" :disabled="!verifyActionsEnabled" @click="handleVerifyOrders">
           校对通过
         </ElButton>
-        <ElButton type="danger" plain :disabled="!writeActionsEnabled" @click="handleRejectOrders">
+        <ElButton type="danger" plain :disabled="!rejectActionsEnabled" @click="handleRejectOrders">
           退回
         </ElButton>
       </div>
@@ -356,7 +368,7 @@ async function handleRejectOrders() {
                 <template #default="{ row }">
                   <ElCheckbox
                     :model-value="isRowSelected(row)"
-                    :disabled="!writeActionsEnabled"
+                    :disabled="!rowSelectionEnabled"
                     @update:model-value="(v: boolean) => toggleRowSelection(row, v)"
                   />
                 </template>

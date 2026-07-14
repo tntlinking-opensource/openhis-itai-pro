@@ -24,6 +24,7 @@ import type {
   PriceAdjustmentHeadForm,
   PriceAdjustmentLineRow,
 } from '#/views/finance/price-adjustment/types';
+import { resolveAdjustmentStyle } from '#/views/finance/price-adjustment/utils/price-adjustment-item-table';
 
 export interface PriceAdjustmentInitResult {
   adjustmentReasonOptions: ApiOptionItem[];
@@ -218,7 +219,7 @@ export function buildLogisticsLineFromSnapshot(
     itemId,
     itemPick: itemId ? { id: itemId, name: item.itemName } : undefined,
     itemName: item.itemName,
-    adjustmentStyle: item.adjustmentStyle ?? 'logistics',
+    adjustmentStyle: item.adjustmentStyle ?? resolveAdjustmentStyle(item.itemTable) ?? 'logistics',
     ...copyAdjustableItemMeta(item),
     quantity: sumDetailQuantities(details),
     newPurchaseAmount: undefined,
@@ -238,7 +239,7 @@ export function buildClinicalLine(
     itemId,
     itemPick: itemId ? { id: itemId, name: item.itemName } : undefined,
     itemName: item.itemName,
-    adjustmentStyle: item.adjustmentStyle ?? 'clinical',
+    adjustmentStyle: item.adjustmentStyle ?? resolveAdjustmentStyle(item.itemTable) ?? 'clinical',
     ...copyAdjustableItemMeta(item),
     currentSellingPrice: item.currentSellingPrice ?? oldSellingAmount,
     oldSellingAmount,

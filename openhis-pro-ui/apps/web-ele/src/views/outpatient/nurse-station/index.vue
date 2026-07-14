@@ -1,18 +1,23 @@
 <script setup lang="ts">
 import type {
   ActionRecord,
+  NurseActionRecordActionCode,
+  NurseActionRecordTypeFilter,
   NurseAdviceExecuteRow,
   NursePatient,
   SupplyItem,
   SupplyRoomOption,
 } from './components/types';
+import { LOCAL_DEDUP_ACTION_CODES, NURSE_ACTION_RECORD_ACTION_LABEL } from './components/types';
 import type { NurseSkinTestRowDraft } from './services/map-nurse-skin-test';
+import { mapSkinTestDraftToSaveRequest } from './services/map-nurse-skin-test';
 
 import type {
   NetRemainingProcedureRecordItemDto,
   NurseStationPatientQueueItemDto,
   NurseStationTreatmentLineDto,
   OrderExecutionSheetItemDto,
+  LoadOutpatientSkinTestInitResponse,
   OutpatientSkinTestEnumOptionDto,
   OutpatientSkinTestRowDto,
 } from '#/api/outpatient-nurse-station/outpatient-nurse-station.types';
@@ -65,7 +70,7 @@ import NurseFooterBar from './components/nurse-footer-bar.vue';
 import NurseQueuePanel from './components/nurse-queue-panel.vue';
 import NurseRightSidebar from './components/nurse-right-sidebar.vue';
 import NurseWorkstationCenter from './components/nurse-workstation-center.vue';
-import { mapSkinTestDraftToSaveRequest } from './services/map-nurse-skin-test';
+import { isNurseExecuteRowCompleted } from '#/utils/nurse-station/nurse-execute-status';
 import {
   isNurseExecuteMedicationRow,
   mapDeviceLinesToSupplyItems,
@@ -77,6 +82,11 @@ import {
   parseTreatmentSheetFromApiData,
   resolveSupplyDispenseIdForApi,
 } from './services/map-nurse-station-api';
+import {
+  NURSE_PRINT_ACTION,
+  NURSE_PRINT_ACTION_LABEL,
+  type NursePrintActionCode,
+} from './constants/nurse-print-action';
 
 defineOptions({
   name: 'OutpatientNurseStation',
@@ -108,7 +118,7 @@ const selectedSupplyRoomId = ref<string | undefined>(undefined);
 const supplyRoomOptions = ref<SupplyRoomOption[]>([]);
 
 const showRecordDrawer = ref(false);
-const recordTypeFilter = ref<'全部' | '打印' | '执行'>('全部');
+const recordTypeFilter = ref<NurseActionRecordTypeFilter>('');
 const workstationCenterRef = ref<InstanceType<typeof NurseWorkstationCenter> | null>(null);
 const activeWorkbenchTab = ref<'execute' | 'skintest'>('execute');
 const executeTableLoading = ref(false);
@@ -146,6 +156,10 @@ const verificationStatusOptions = ref<OutpatientSkinTestEnumOptionDto[]>([]);
 const criticalityOptions = ref<OutpatientSkinTestEnumOptionDto[]>([]);
 const severityOptions = ref<OutpatientSkinTestEnumOptionDto[]>([]);
 const practitionerOptions = ref<{ label: string; value: string }[]>([]);
+/** 皮试表单 init 是否已加载（护士下拉与枚举） */
+const skinTestPageInitialized = ref(false);
+/** init 进行中的 Promise，避免 onMounted 与选患者并发重复请求 */
+let skinTestInitInFlight: null | Promise<void> = null;
 /** 列表行带回的 patientId，用于保存时患者一致 Gate */
 const skinTestPatientIdByEncounter = ref<Record<string, string>>({});
 
@@ -169,7 +183,7 @@ function actionRecordTimeKey(t: string): number {
 const mergedActionRecords = computed(() => {
   // 批量执行/取消已由 IF-NUR-03 服务端记录覆盖，过滤历史本机汇总行避免重复展示
   const localRows = localClientRecords.value.filter(
-    (item) => item.action !== '执行并记录' && item.action !== '取消执行',
+    (item) => !item.actionCode || !LOCAL_DEDUP_ACTION_CODES.has(item.actionCode),
   );
   const list = [...serverActionRecords.value, ...localRows];
   list.sort((a, b) => actionRecordTimeKey(b.time) - actionRecordTimeKey(a.time));
@@ -240,9 +254,11 @@ const totalSelectedCount = computed(() => {
 
 const totalPendingCount = computed(() => {
   const pendingExecute = executeItems.value.filter(
-    (item) => !isNurseExecuteMedicationRow(item) && item.status !== '已完成',
+    (item) =>
+      !isNurseExecuteMedicationRow(item) &&
+      !(item.statusEnum && isNurseExecuteRowCompleted(item.statusEnum)),
   ).length;
-  const pendingSupply = supplyItems.value.filter((item) => item.status === '待发放').length;
+  const pendingSupply = supplyItems.value.filter((item) => item.statusCode === 'PENDING').length;
   return pendingExecute + pendingSupply;
 });
 
@@ -254,7 +270,7 @@ const canExecuteSelected = computed(() => {
 });
 
 const filteredActionRecords = computed(() => {
-  if (recordTypeFilter.value === '全部') {
+  if (!recordTypeFilter.value) {
     return mergedActionRecords.value;
   }
   return mergedActionRecords.value.filter((item) => item.type === recordTypeFilter.value);
@@ -308,7 +324,7 @@ function buildNursePrintContext() {
 const appendRecord = (payload: Omit<ActionRecord, 'id' | 'operator' | 'result' | 'time'>) => {
   const operatorLabel =
     String(payload.operatorLabel ?? '').trim() ||
-    (payload.action === '取消执行' ? '取消执行人' : '执行人');
+    (payload.actionCode === 'CANCEL_EXECUTE' ? '取消执行人' : '执行人');
   localClientRecords.value.unshift({
     id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     time: createTimeText(),
@@ -372,12 +388,16 @@ const debouncedReloadQueueByKeyword = useDebounceFn(() => {
 
 function defaultSelectableExecuteKeys(): string[] {
   return executeItems.value
-    .filter((row) => !isNurseExecuteMedicationRow(row) && row.status !== '已完成')
+    .filter(
+      (row) =>
+        !isNurseExecuteMedicationRow(row) &&
+        !(row.statusEnum && isNurseExecuteRowCompleted(row.statusEnum)),
+    )
     .map((r) => r.key);
 }
 
 function defaultSelectableSupplyIds(): string[] {
-  return supplyItems.value.filter((s) => s.status === '待发放').map((s) => s.id);
+  return supplyItems.value.filter((s) => s.statusCode === 'PENDING').map((s) => s.id);
 }
 
 /** 同步表格勾选状态（会触发子表 clear/toggle，期间忽略 selection-change） */
@@ -444,37 +464,71 @@ async function loadSupplyRoomOptions() {
   }
 }
 
+/** 归一化护士下拉，并补全当前登录护士（避免默认双签只显示 ID） */
+function buildPractitionerOptionsFromInit(
+  nurseOptions: LoadOutpatientSkinTestInitResponse['nurseOptions'],
+): { label: string; value: string }[] {
+  const options = (nurseOptions ?? [])
+    .map((opt) => {
+      const value = preserveApiIdForRequest(opt.value) ?? '';
+      return {
+        value,
+        label: (opt.label ?? '').trim() || value,
+      };
+    })
+    .filter((opt) => opt.value.length > 0);
+
+  const defaultId = resolveLoginPractitionerIdForRequest(userStore.userInfo) ?? '';
+  if (defaultId && !options.some((opt) => opt.value === defaultId)) {
+    const name = currentNurseName.value;
+    options.unshift({
+      value: defaultId,
+      label: name === '—' ? defaultId : name,
+    });
+  }
+  return options;
+}
+
 /** 加载皮试表单枚举与护士候选 */
 async function loadSkinTestPageInit() {
-  skinTestInitLoading.value = true;
-  try {
-    const initRes = await httpLoadOutpatientSkinTestInit();
-    clinicalStatusOptions.value = initRes.clinicalStatusOptions ?? [];
-    verificationStatusOptions.value = initRes.verificationStatusOptions ?? [];
-    criticalityOptions.value = initRes.criticalityOptions ?? [];
-    severityOptions.value = initRes.severityOptions ?? [];
-    practitionerOptions.value = (initRes.nurseOptions ?? [])
-      .map((opt) => {
-        const value = preserveApiIdForRequest(opt.value) ?? '';
-        return {
-          value,
-          label: (opt.label ?? '').trim() || value,
-        };
-      })
-      .filter((opt) => opt.value.length > 0);
-  } catch {
-    clinicalStatusOptions.value = [];
-    verificationStatusOptions.value = [];
-    criticalityOptions.value = [];
-    severityOptions.value = [];
-    practitionerOptions.value = [];
-  } finally {
-    skinTestInitLoading.value = false;
+  if (skinTestPageInitialized.value) {
+    return;
   }
+  if (skinTestInitInFlight) {
+    await skinTestInitInFlight;
+    return;
+  }
+
+  skinTestInitInFlight = (async () => {
+    skinTestInitLoading.value = true;
+    try {
+      const initRes = await httpLoadOutpatientSkinTestInit();
+      clinicalStatusOptions.value = initRes.clinicalStatusOptions ?? [];
+      verificationStatusOptions.value = initRes.verificationStatusOptions ?? [];
+      criticalityOptions.value = initRes.criticalityOptions ?? [];
+      severityOptions.value = initRes.severityOptions ?? [];
+      practitionerOptions.value = buildPractitionerOptionsFromInit(initRes.nurseOptions);
+    } catch {
+      clinicalStatusOptions.value = [];
+      verificationStatusOptions.value = [];
+      criticalityOptions.value = [];
+      severityOptions.value = [];
+      practitionerOptions.value = buildPractitionerOptionsFromInit([]);
+    } finally {
+      skinTestPageInitialized.value = true;
+      skinTestInitLoading.value = false;
+      skinTestInitInFlight = null;
+    }
+  })();
+
+  await skinTestInitInFlight;
 }
 
 /** 按就诊加载皮试待登记/已登记列表 */
 async function loadSkinTestRows(encounterId: string) {
+  if (!skinTestPageInitialized.value) {
+    await loadSkinTestPageInit();
+  }
   const normalizedEncounterId = resolveEncounterIdForApi(encounterId);
   if (!normalizedEncounterId) {
     skinTestRows.value = [];
@@ -524,8 +578,9 @@ async function handleSaveSkinTestRow(draft: NurseSkinTestRowDraft) {
     await httpSaveOutpatientSkinTestRecord(body);
     ElMessage.success('皮试结果已保存');
     appendRecord({
-      type: '执行',
-      action: '登记皮试',
+      type: 'EXECUTE',
+      actionCode: 'REGISTER_SKIN_TEST',
+      action: NURSE_ACTION_RECORD_ACTION_LABEL.REGISTER_SKIN_TEST,
       target: draft.medicationName || '皮试药品',
     });
     await loadSkinTestRows(encounterId);
@@ -555,8 +610,9 @@ async function handleDeleteSkinTestRow(allergyRecordId: string) {
     await httpDeleteOutpatientSkinTestRecord({ encounterId, allergyRecordId: recordId });
     ElMessage.success('皮试记录已删除');
     appendRecord({
-      type: '执行',
-      action: '删除皮试记录',
+      type: 'EXECUTE',
+      actionCode: 'DELETE_SKIN_TEST',
+      action: NURSE_ACTION_RECORD_ACTION_LABEL.DELETE_SKIN_TEST,
       target: recordId,
     });
     await loadSkinTestRows(encounterId);
@@ -681,7 +737,7 @@ const handleQueueListDateChange = (date: string | undefined) => {
 
 const toggleSupplySelection = (id: string, checked: boolean) => {
   const target = supplyItems.value.find((item) => item.id === id);
-  if (!target || target.status !== '待发放') {
+  if (!target || target.statusCode !== 'PENDING') {
     return;
   }
   if (checked) {
@@ -771,8 +827,21 @@ async function loadNetRemainingProcedureRecords(
   return res.records ?? [];
 }
 
+/** 打印动作 code → 操作记录 actionCode */
+const PRINT_ACTION_TO_RECORD_CODE: Record<NursePrintActionCode, NurseActionRecordActionCode> = {
+  [NURSE_PRINT_ACTION.INFUSION_LABEL]: 'PRINT_INFUSION_LABEL',
+  [NURSE_PRINT_ACTION.TREATMENT_SHEET]: 'PRINT_TREATMENT_SHEET',
+  [NURSE_PRINT_ACTION.PRESCRIPTION]: 'PRINT_PRESCRIPTION',
+  [NURSE_PRINT_ACTION.SPECIMEN_BARCODE]: 'PRINT_SPECIMEN_BARCODE',
+  [NURSE_PRINT_ACTION.SKIN_TEST_LABEL]: 'PRINT_SKIN_TEST_LABEL',
+  [NURSE_PRINT_ACTION.NEBULIZATION_LABEL]: 'PRINT_NEBULIZATION_LABEL',
+  [NURSE_PRINT_ACTION.PROCEDURE_APPLY]: 'PRINT_PROCEDURE_APPLY',
+};
+
 /** 侧栏打印按钮统一入口 */
-async function handlePrint(label: string) {
+async function handlePrint(actionCode: NursePrintActionCode) {
+  const actionLabel = NURSE_PRINT_ACTION_LABEL[actionCode];
+  const recordActionCode = PRINT_ACTION_TO_RECORD_CODE[actionCode];
   if (!currentPatient.value) {
     ElMessage.warning('请先选择患者');
     return;
@@ -790,7 +859,7 @@ async function handlePrint(label: string) {
       : `${patientName}（全部待执行项）`;
   const selectedKeys = selectedExecuteKeys.value.length > 0 ? selectedExecuteKeys.value : undefined;
 
-  if (label === '打印瓶贴') {
+  if (actionCode === NURSE_PRINT_ACTION.INFUSION_LABEL) {
     printSubmitting.value = true;
     try {
       const ctx = buildNursePrintContext();
@@ -808,8 +877,9 @@ async function handlePrint(label: string) {
       });
       if (result.ok) {
         appendRecord({
-          type: '打印',
-          action: label,
+          type: 'PRINT',
+          actionCode: recordActionCode,
+          action: actionLabel,
           target: `${targetText} · ${result.count} 张`,
         });
       }
@@ -819,7 +889,7 @@ async function handlePrint(label: string) {
     return;
   }
 
-  if (label === '打印处置单') {
+  if (actionCode === NURSE_PRINT_ACTION.TREATMENT_SHEET) {
     printSubmitting.value = true;
     try {
       const ctx = buildNursePrintContext();
@@ -833,8 +903,9 @@ async function handlePrint(label: string) {
       });
       if (result.ok) {
         appendRecord({
-          type: '打印',
-          action: label,
+          type: 'PRINT',
+          actionCode: recordActionCode,
+          action: actionLabel,
           target: targetText,
         });
       }
@@ -844,7 +915,7 @@ async function handlePrint(label: string) {
     return;
   }
 
-  if (label === '打印处方单') {
+  if (actionCode === NURSE_PRINT_ACTION.PRESCRIPTION) {
     const medicationRequestIds = groupMedicationExecuteRequestIds(executeItems.value, selectedKeys);
     if (!medicationRequestIds.length) {
       ElMessage.warning('没有可打印的药品医嘱');
@@ -859,8 +930,9 @@ async function handlePrint(label: string) {
       });
       if (result.ok) {
         appendRecord({
-          type: '打印',
-          action: label,
+          type: 'PRINT',
+          actionCode: recordActionCode,
+          action: actionLabel,
           target: `${targetText} · ${result.count} 张`,
         });
         ElMessage.success(`已发送 ${result.count} 张处方单`);
@@ -871,7 +943,7 @@ async function handlePrint(label: string) {
     return;
   }
 
-  if (label === '打印采血码') {
+  if (actionCode === NURSE_PRINT_ACTION.SPECIMEN_BARCODE) {
     const targets = groupSpecimenBarcodePrintTargets(executeItems.value, selectedKeys);
     if (!targets.length) {
       ElMessage.warning('没有可打印的采血/检验医嘱');
@@ -881,7 +953,7 @@ async function handlePrint(label: string) {
     return;
   }
 
-  if (label === '打印皮试标签') {
+  if (actionCode === NURSE_PRINT_ACTION.SKIN_TEST_LABEL) {
     const groups = groupMedicationLabelPrintTargets(executeItems.value, selectedKeys, 'skin_test');
     if (!groups.length) {
       ElMessage.warning('没有可打印的皮试医嘱');
@@ -891,7 +963,7 @@ async function handlePrint(label: string) {
     return;
   }
 
-  if (label === '打印雾化标签') {
+  if (actionCode === NURSE_PRINT_ACTION.NEBULIZATION_LABEL) {
     const groups = groupMedicationLabelPrintTargets(
       executeItems.value,
       selectedKeys,
@@ -905,7 +977,7 @@ async function handlePrint(label: string) {
     return;
   }
 
-  if (label === '打印处置申请单') {
+  if (actionCode === NURSE_PRINT_ACTION.PROCEDURE_APPLY) {
     const target = groupProcedureApplyPrintTargets(executeItems.value, selectedKeys);
     if (!target) {
       ElMessage.warning('没有可打印的治疗/处置医嘱');
@@ -994,6 +1066,7 @@ async function handleCancelProcedureDialogConfirm(procedureIds: string[]) {
         :severity-options="severityOptions"
         :practitioner-options="practitionerOptions"
         :default-practitioner-id="defaultPractitionerId"
+        :default-practitioner-name="currentNurseName"
         :saving-skin-test-service-request-id="savingSkinTestServiceRequestId"
         :deleting-skin-test-allergy-record-id="deletingSkinTestAllergyRecordId"
         @selection-change="handleExecuteSelectionChange"

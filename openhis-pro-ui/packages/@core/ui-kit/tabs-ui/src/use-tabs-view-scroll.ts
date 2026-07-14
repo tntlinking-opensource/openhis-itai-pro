@@ -4,7 +4,7 @@ import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { VbenScrollbar } from '@vben-core/shadcn-ui';
 
-import { useDebounceFn } from '@vueuse/core';
+import { useDebounceFn, useEventListener } from '@vueuse/core';
 
 type DomElement = Element | null | undefined;
 
@@ -170,6 +170,14 @@ export function useTabsViewScroll(props: TabsProps) {
   );
 
   onMounted(initScrollbar);
+
+  useEventListener(
+    window,
+    'resize',
+    useDebounceFn(() => {
+      void initScrollbar();
+    }, 100),
+  );
 
   onUnmounted(() => {
     resizeObserver?.disconnect();

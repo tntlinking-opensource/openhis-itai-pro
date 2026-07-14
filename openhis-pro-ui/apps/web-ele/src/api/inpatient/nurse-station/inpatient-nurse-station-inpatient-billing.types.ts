@@ -242,6 +242,7 @@ export interface NurseStationAutoRollConfigRowDto {
   activityName?: string;
   chargeDefinitionId?: string;
   chargeDefinitionName?: string;
+  unitPrice?: number | string;
   quantityValue?: number | string;
   performingOrgId?: string;
   priority?: number;
@@ -261,6 +262,7 @@ export interface NurseStationAutoRollNursingReadonlyDto {
   statusDictText?: string;
   chargeDefinitionId?: string;
   chargeDefinitionName?: string;
+  unitPrice?: number | string;
   billDate?: string;
 }
 

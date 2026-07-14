@@ -1,6 +1,7 @@
 <!-- 药库进货单：采购到货入库登记；工作站 + 侧栏卡片队列 + 右侧明细。 -->
 <script lang="ts" setup>
 import type { ApiOptionItem } from '#/types/api-response';
+import type { LinkablePurchaseOrderListRowDto } from '#/api/inventory/warehouse/inbound-receipt';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
@@ -16,7 +17,16 @@ import {
   pagePurchaseInboundListApi,
 } from '#/api/warehouse/purchase-inbound';
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
-import { isInboundReceiptDocumentEditableRaw } from '#/utils/inventory/inbound-receipt-status';
+import { calcWarehouseSplitLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
+import {
+  inboundReceiptStatusLabel,
+  isInboundReceiptDocumentEditableRaw,
+} from '#/utils/inventory/inbound-receipt-status';
+import {
+  INV_ALL_LOCATIONS_FILTER_ID,
+  pickWorkbenchOrderAfterSave,
+  resolveDefaultAllLocationsFilterValue,
+} from '#/utils/inventory/inventory-workbench-list';
 
 import PurchaseInboundAsidePane from './purchase-inbound-aside-pane.vue';
 import PurchaseInboundMainPane from './purchase-inbound-main-pane.vue';
@@ -68,7 +78,7 @@ const listKeywordModel = computed({
 });
 
 const tableForm = ref<Record<string, any>>({
-  locationId: undefined,
+  locationId: INV_ALL_LOCATIONS_FILTER_ID,
   busNo: undefined,
   applyTime: undefined,
   applicantId: undefined,
@@ -98,6 +108,9 @@ const orderList = ref<Record<string, any>[]>([]);
 const selectedOrder = ref<null | Record<string, any>>(null);
 
 const mainPaneResetKey = ref(0);
+const mainPaneRef = ref<InstanceType<typeof PurchaseInboundMainPane> | null>(null);
+
+const showWelcomeEmpty = computed(() => selectedOrder.value === null);
 
 function isDraftOrderRow(row?: null | Record<string, any>): boolean {
   return Boolean(row?._draft);
@@ -163,7 +176,7 @@ const activeInboundStatusEnum = computed(() => {
   return undefined;
 });
 
-/** 仅待审核、驳回可改单（本地草稿始终可编辑） */
+/** 待审核/驳回/已撤回可改单（本地草稿始终可编辑） */
 const inboundDocumentEditable = computed(() => {
   if (selectedOrder.value?._draft) return true;
   return isInboundReceiptDocumentEditableRaw(activeInboundStatusEnum.value);
@@ -179,9 +192,13 @@ async function init() {
     supplyTypeOptions.value = data.supplyTypeOptions ?? [];
     supplyCategoryOptions.value = data.supplyCategoryOptions ?? [];
     inboundItemTableTypeOptions.value = data.inboundItemTableTypeOptions ?? [];
-    if (tableForm.value.locationId === undefined && cabinetListOptions.value.length > 0) {
-      const first = cabinetListOptions.value[0] as Record<string, unknown>;
-      tableForm.value.locationId = (first.id ?? first.value) as number | string | undefined;
+    if (
+      tableForm.value.locationId === undefined ||
+      tableForm.value.locationId === null ||
+      String(tableForm.value.locationId).trim() === '' ||
+      tableForm.value.locationId === 0
+    ) {
+      tableForm.value.locationId = resolveDefaultAllLocationsFilterValue(cabinetListOptions.value);
     }
   } catch {
     cabinetListOptions.value = [];
@@ -208,6 +225,9 @@ async function getList() {
     const mapped = records.map((r) => ({
       ...r,
       supplyBusNo: resolvePurchaseOrderBusNo(r),
+      statusEnum_enumText: r.statusEnumText ?? inboundReceiptStatusLabel(r.statusEnum),
+      supplierId_dictText: r.supplierName ?? r.supplierId_dictText ?? '',
+      rejectReason: r.rejectReason ?? r.reason ?? '',
     }));
     orderList.value = [...draftRows, ...mapped];
   } catch {
@@ -216,6 +236,10 @@ async function getList() {
 }
 
 function handleAdd() {
+  mainPaneRef.value?.openUpstreamPicker();
+}
+
+async function handleCreateFromUpstream(row: LinkablePurchaseOrderListRowDto) {
   resetFormAndTableData();
   const draft = createDraftOrderRow();
   orderList.value = [draft, ...orderList.value.filter((r) => !r._draft)];
@@ -227,9 +251,9 @@ function handleAdd() {
     applyTime: formatDateTime(new Date()),
     locationId: tableForm.value.locationId,
   };
-  nextTick(() => {
-    isAddDisabled.value = true;
-  });
+  await nextTick();
+  isAddDisabled.value = true;
+  await mainPaneRef.value?.applyLinkablePurchaseOrderToDraft(row);
 }
 
 function resetFormAndTableData() {
@@ -274,12 +298,12 @@ function buildUnitList(item: Record<string, any>) {
     unit.retailPriceMask = isMaxUnit
       ? item.retailPrice
       : item.retailPrice / Number.parseInt(String(item.partPercent), 10);
-    unit.totalPriceMask = (
-      Number.parseFloat(item.price) * Number.parseFloat(item.itemQuantity)
-    ).toFixed(2);
-    unit.totalRetailPriceMask = (
-      Number.parseFloat(item.retailPrice) * Number.parseFloat(item.itemQuantity)
-    ).toFixed(2);
+    unit.totalPriceMask = formatMoneyDisplay(
+      calcWarehouseSplitLineTotal(item.itemQuantity, item.partPercent, item.price),
+    );
+    unit.totalRetailPriceMask = formatMoneyDisplay(
+      calcWarehouseSplitLineTotal(item.itemQuantity, item.partPercent, item.retailPrice),
+    );
     unit.specificationInventoryOriginal = item.specificationInventory;
 
     if (isMaxUnit) {
@@ -340,8 +364,7 @@ function buildEditForm(data: Record<string, any>[]) {
 function handleOrderClick(order: Record<string, any>) {
   selectedOrder.value = order;
   if (isDraftOrderRow(order)) {
-    resetFormAndTableData();
-    mainPaneResetKey.value += 1;
+    // 切回草稿由主区 sync 恢复缓存；勿 bump resetKey，否则会冲掉恢复内容
     return;
   }
   void handleEdit(order);
@@ -357,10 +380,12 @@ async function handleInboundDocumentSaved(payload: { busNo?: string }) {
   await getList();
   const busNo = payload.busNo?.trim();
   if (!busNo) return;
-  const row = orderList.value.find((item) => resolvePurchaseOrderBusNo(item) === busNo);
-  if (!row) return;
-  selectedOrder.value = row;
-  await handleEdit(row);
+  selectedOrder.value = pickWorkbenchOrderAfterSave(
+    orderList.value,
+    busNo,
+    resolvePurchaseOrderBusNo,
+  );
+  await handleEdit(selectedOrder.value);
 }
 
 async function handleInboundDocumentChanged(payload: { busNo?: string }) {
@@ -435,6 +460,7 @@ onMounted(async () => {
     </template>
 
     <PurchaseInboundMainPane
+      ref="mainPaneRef"
       class="min-h-0 flex-1"
       :apply-time="tableForm.applyTime"
       :bus-no="selectedBusNo"
@@ -443,11 +469,12 @@ onMounted(async () => {
       :inbound-detail-rows="tableData"
       :is-draft-order="isDraftOrder"
       :item-table-type-options="inboundItemTableTypeOptions"
-      :purpose-location-id="tableForm.locationId"
       :reset-key="mainPaneResetKey"
-      :source-location-id="tableForm.locationId"
+      :show-welcome-empty="showWelcomeEmpty"
+      :practitioner-options="practitionerOption"
       :supplier-options="supplierOption"
       :warehouse-options="cabinetListOptions"
+      @create-from-upstream="handleCreateFromUpstream"
       @document-changed="handleInboundDocumentChanged"
       @document-removed="handleInboundDocumentRemoved"
       @document-saved="handleInboundDocumentSaved"

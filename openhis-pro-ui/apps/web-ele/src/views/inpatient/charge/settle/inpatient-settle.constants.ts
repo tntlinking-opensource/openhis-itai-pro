@@ -15,10 +15,9 @@ export {
   FALLBACK_PAY_CHANNEL_OPTIONS,
 } from '#/utils/payment/payment-channel-options';
 
-/** 结算模式：出院全结 / 中途结算 */
+/** 结算模式：本期仅出院全结（无中途结算） */
 export const INPATIENT_SETTLE_MODE = {
   DISCHARGE_FULL: 'DISCHARGE_FULL',
-  MID_SETTLE: 'MID_SETTLE',
 } as const;
 
 export type InpatientSettleModeCode =
@@ -26,3 +25,12 @@ export type InpatientSettleModeCode =
 
 /** 就诊状态：待出院结算（全选待结算可走出院全结） */
 export const ENCOUNTER_STATUS_PENDING = 'PENDING';
+
+/** 就诊状态：待出院（校对出院医嘱后，禁止结算） */
+export const ENCOUNTER_STATUS_ON_HOLD = 'ON_HOLD';
+
+/** 就诊状态：已结算待清床 */
+export const ENCOUNTER_STATUS_COMPLETED = 'COMPLETED';
+
+/** 就诊状态：已清床离院（已结算页签队列仍可见，仅查阅） */
+export const ENCOUNTER_STATUS_DISCHARGED = 'DISCHARGED';

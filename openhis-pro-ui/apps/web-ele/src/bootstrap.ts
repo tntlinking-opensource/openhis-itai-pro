@@ -9,8 +9,11 @@ import App from './app.vue';
 
 // 全局主题样式必须在 mount 前同步加载；异步 import 会导致生产环境 CSS chunk 晚于首屏，样式爆炸
 import '@vben/styles';
-import '@vben/styles/ele';
 import 'element-plus/dist/index.css';
+import '@vben/styles/ele';
+import './styles/layout-viewport-compact.css';
+import './styles/doctor-station-viewport-compact.css';
+import './styles/inventory-viewport-compact.css';
 import './styles/persistent-error-messagebox.css';
 
 async function bootstrap(namespace: string) {

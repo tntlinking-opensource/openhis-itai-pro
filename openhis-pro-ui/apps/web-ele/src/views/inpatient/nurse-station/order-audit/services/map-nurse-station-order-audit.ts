@@ -17,7 +17,7 @@ export interface NurseStationOrderAuditTableRow {
   stopTime: string;
   doctorName: string;
   typeLabel: string;
-  /** 药/诊短文案 */
+  /** 类型列文案（后端 orderKindDisplay，与 Tab 无关） */
   orderKindLabel: string;
   /** 长临 code（LONG_TERM / TEMPORARY） */
   therapyTypeCode?: string;
@@ -35,11 +35,26 @@ export interface NurseStationOrderAuditTableRow {
   lineRequestIds?: string[];
 }
 
-function orderTypeToShortLabel(orderType: string): string {
-  const t = orderType.trim().toUpperCase();
-  if (t === 'MED_REQUEST') return '药品';
-  if (t === 'SERVICE_REQUEST') return '诊疗';
-  return orderType || '医嘱';
+/** 解析写操作锚点 orderType（禁止空值默认成药品） */
+function resolveAuditOrderType(orderTypeRaw: string): NurseStationOrderAuditOrderType | null {
+  const t = orderTypeRaw.trim().toUpperCase();
+  if (t === 'MED_REQUEST') return 'MED_REQUEST';
+  if (t === 'SERVICE_REQUEST') return 'SERVICE_REQUEST';
+  return null;
+}
+
+/** 类型列：优先读后端 orderKindDisplay，回落本地推导 */
+function resolveAuditOrderKindLabel(dto: NurseStationOrderAuditRowDto): string {
+  const fromApi = String(dto.orderKindDisplay ?? '').trim();
+  if (fromApi) return fromApi;
+  const category = String(dto.categoryEnum ?? '').trim();
+  if (category === '34') return '出院';
+  if (category === '32') return '转科';
+  if (category === '26') return '护理';
+  const orderType = resolveAuditOrderType(String(dto.orderType ?? ''));
+  if (orderType === 'MED_REQUEST') return '药品';
+  if (orderType === 'SERVICE_REQUEST') return '诊疗';
+  return '—';
 }
 
 /** 长临 code → 短文案 */
@@ -51,41 +66,25 @@ function therapyEnumToLabel(code: string): string {
   return '';
 }
 
-/** 长临文案反推 code（therapyEnum 缺失时供颜色 class 使用） */
-function resolveTherapyTypeCodeFromLabel(label: string): string {
-  const text = label.trim();
-  if (text.includes('长期')) return 'LONG_TERM';
-  if (text.includes('临时')) return 'TEMPORARY';
-  if (text.includes('出院')) return 'DISCHARGE_MEDICATION';
-  return '';
-}
-
 /** 列表长临 code */
 function resolveAuditTherapyTypeCode(dto: NurseStationOrderAuditRowDto): string {
-  const code = String(dto.therapyEnum ?? '')
+  return String(dto.therapyEnum ?? '')
     .trim()
     .toUpperCase();
-  if (code) return code;
-  return resolveTherapyTypeCodeFromLabel(resolveAuditTherapyLabel(dto));
 }
 
-/** 列表长临文案：优先后端 therapyDisplay，否则按 therapyEnum 推导 */
+/** 列表长临文案：优先 therapyDisplay，回落 therapyEnum */
 function resolveAuditTherapyLabel(dto: NurseStationOrderAuditRowDto): string {
-  const display = String(dto.therapyDisplay ?? '').trim();
-  if (display) {
-    if (display.includes('长期')) return '长期';
-    if (display.includes('临时')) return '临时';
-    if (display.includes('出院')) return '出院带药';
-    return display;
-  }
+  const fromApi = String(dto.therapyDisplay ?? '').trim();
+  if (fromApi) return fromApi;
   return therapyEnumToLabel(String(dto.therapyEnum ?? ''));
 }
 
-/** 组装列表「类型」列：长临 + 药/诊 */
+/** 组装列表「类型」列：长临 + 类型 */
 function buildAuditTypeLabel(dto: NurseStationOrderAuditRowDto): string {
   const therapy = resolveAuditTherapyLabel(dto);
-  const kind = orderTypeToShortLabel(String(dto.orderType ?? ''));
-  if (therapy && kind) return `${therapy}/${kind}`;
+  const kind = resolveAuditOrderKindLabel(dto);
+  if (therapy && kind && kind !== '—') return `${therapy}/${kind}`;
   return therapy || kind || '—';
 }
 
@@ -136,15 +135,12 @@ function buildAuditExtensionLine(dto: NurseStationOrderAuditRowDto): string {
 /** 列表行 DTO → 表格行 */
 export function mapAuditRowDtoToTableRow(
   dto: NurseStationOrderAuditRowDto,
-): NurseStationOrderAuditTableRow {
+): NurseStationOrderAuditTableRow | null {
   const requestId = preserveApiIdForRequest(dto.requestId) ?? '';
-  const orderTypeRaw = String(dto.orderType ?? '')
-    .trim()
-    .toUpperCase();
-  const orderType =
-    orderTypeRaw === 'MED_REQUEST' || orderTypeRaw === 'SERVICE_REQUEST'
-      ? orderTypeRaw
-      : 'MED_REQUEST';
+  const orderType = resolveAuditOrderType(String(dto.orderType ?? ''));
+  if (!orderType) {
+    return null;
+  }
   const listKey = String(dto.listRowKey ?? '').trim();
   const id =
     listKey ||
@@ -156,6 +152,7 @@ export function mapAuditRowDtoToTableRow(
   const statusEnum = String(dto.statusEnum ?? '')
     .trim()
     .toUpperCase();
+  const orderKindLabel = resolveAuditOrderKindLabel(dto);
 
   return {
     id,
@@ -165,7 +162,7 @@ export function mapAuditRowDtoToTableRow(
     stopTime: stopRaw ? formatDateTime(stopRaw) : '',
     doctorName: String(dto.requesterName ?? '').trim() || '—',
     typeLabel: buildAuditTypeLabel(dto),
-    orderKindLabel: orderTypeToShortLabel(String(dto.orderType ?? '')) || '—',
+    orderKindLabel,
     therapyTypeCode: resolveAuditTherapyTypeCode(dto) || undefined,
     therapyLabel: resolveAuditTherapyLabel(dto) || undefined,
     content: buildAuditContentTitle(dto),
@@ -205,7 +202,13 @@ export function indexAuditGroupsByEncounterId(
   for (const group of groups ?? []) {
     const encounterId = preserveApiIdForRequest(group.encounterId);
     if (!encounterId) continue;
-    const rows = (group.orders ?? []).map((dto) => mapAuditRowDtoToTableRow(dto));
+    const rows: NurseStationOrderAuditTableRow[] = [];
+    for (const dto of group.orders ?? []) {
+      const row = mapAuditRowDtoToTableRow(dto);
+      if (row) {
+        rows.push(row);
+      }
+    }
     map.set(encounterId, rows);
   }
   return map;

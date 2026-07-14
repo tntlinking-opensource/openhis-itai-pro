@@ -3,7 +3,6 @@
  */
 import { publicRequestClient } from '#/api/request';
 
-const QUERY_BASE = '/einvoiceBossQuery';
 const CASHIER_BASE = '/einvoiceBossCashier';
 
 export interface BossIssueStatusDto {
@@ -22,7 +21,7 @@ export interface BossCashierQrDto {
 }
 
 export function getIssueStatusApi(paymentId: string) {
-  return publicRequestClient.post<BossIssueStatusDto>(`${QUERY_BASE}/getIssueStatus`, {
+  return publicRequestClient.post<BossIssueStatusDto>(`${CASHIER_BASE}/getIssueStatus`, {
     paymentId,
   });
 }

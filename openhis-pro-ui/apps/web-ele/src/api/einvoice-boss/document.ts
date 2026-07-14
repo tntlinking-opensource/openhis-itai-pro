@@ -4,8 +4,8 @@
 import { publicRequestClient } from '#/api/request';
 
 const DOCUMENT_BASE = '/einvoiceBossDocument';
-const QUERY_BASE = '/einvoiceBossQuery';
-const ISSUE_BASE = '/einvoiceBossIssue';
+const LIST_BASE = '/einvoiceBossList';
+const COMPENSATION_BASE = '/einvoiceBossCompensation';
 
 export interface BossDocumentBriefDto {
   documentId?: string;
@@ -60,9 +60,18 @@ export interface BossDocumentDetailDto {
   pictureNetUrl?: string;
   billQrCode?: string;
   issuedAt?: string;
+  writeOffStatus?: string;
+  writeOffStatusLabel?: string;
+  writeOffBillNo?: string;
+  writeOffAt?: string;
+  writeOffMessage?: string;
   task?: BossTaskSummaryDto;
   lines?: BossLineDto[];
   adjustLogs?: BossAdjustLogDto[];
+  /** 非阻断警告码（如支付额与开票总额不一致）。 */
+  warningCode?: string;
+  /** 警告说明。 */
+  warningMessage?: string;
 }
 
 export interface BossAmountValidateResultDto {
@@ -102,6 +111,11 @@ export interface BossDocumentListItemDto {
   busNo?: string;
   issuedAt?: string;
   createdAt?: string;
+  writeOffStatus?: string;
+  writeOffStatusLabel?: string;
+  writeOffBillNo?: string;
+  writeOffAt?: string;
+  writeOffMessage?: string;
 }
 
 export interface PageDocumentsRequest {
@@ -118,6 +132,8 @@ export interface PageDocumentsRequest {
 export interface PageDocumentsResponse {
   rows?: BossDocumentListItemDto[];
   total?: number;
+  /** 关键词过滤命中上限，结果可能不完整。 */
+  keywordTruncated?: boolean;
 }
 
 export function getDocumentByIdApi(documentId: string) {
@@ -138,7 +154,7 @@ export interface AccountStatusResponse {
 }
 
 export function getAccountStatusApi(documentId: string) {
-  return publicRequestClient.post<AccountStatusResponse>(`${QUERY_BASE}/getAccountStatus`, {
+  return publicRequestClient.post<AccountStatusResponse>(`${LIST_BASE}/getAccountStatus`, {
     documentId,
   });
 }
@@ -163,12 +179,12 @@ export function saveDocumentAdjustmentApi(request: SaveDocumentAdjustmentRequest
 }
 
 export function pageDocumentsApi(request: PageDocumentsRequest) {
-  return publicRequestClient.post<PageDocumentsResponse>(`${QUERY_BASE}/pageDocuments`, request);
+  return publicRequestClient.post<PageDocumentsResponse>(`${LIST_BASE}/pageDocuments`, request);
 }
 
 export function issueNowApi(invoiceId: string) {
   return publicRequestClient.post<{ billNo?: string; success?: boolean; message?: string }>(
-    `${ISSUE_BASE}/issueNow`,
+    `${COMPENSATION_BASE}/issueNow`,
     { invoiceId },
   );
 }

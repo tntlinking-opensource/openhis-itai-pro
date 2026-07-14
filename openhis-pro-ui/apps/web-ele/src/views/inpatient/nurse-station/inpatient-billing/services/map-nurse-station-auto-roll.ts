@@ -20,6 +20,7 @@ export interface AutoRollConfigTableRow {
   statusText: string;
   activityName: string;
   chargeDefinitionName: string;
+  unitPrice?: number | string;
   quantityValue: number;
   performingOrgText: string;
   priority: number;
@@ -31,9 +32,7 @@ export interface AutoRollConfigTableRow {
 
 /** 新增/编辑弹窗表单模型 */
 export interface AutoRollConfigFormModel {
-  ruleName: string;
   quantityValue: number;
-  priority: number;
   remark: string;
 }
 
@@ -61,6 +60,7 @@ export function mapAutoRollConfigRowToTableRow(
     statusText: row.statusDictText?.trim() || (statusEnum === 'ACTIVE' ? '启用' : '停用'),
     activityName: row.activityName?.trim() || '—',
     chargeDefinitionName: row.chargeDefinitionName?.trim() || '—',
+    unitPrice: row.unitPrice,
     quantityValue: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
     performingOrgText: performingOrgId ? performingOrgId : '全院',
     priority: row.priority ?? 0,
@@ -99,9 +99,7 @@ export function buildAutoRollFormFromTableRow(
   row: AutoRollConfigTableRow,
 ): AutoRollConfigFormModel {
   return {
-    ruleName: row.ruleName === '—' ? '' : row.ruleName,
     quantityValue: row.quantityValue,
-    priority: row.priority,
     remark: row.remark,
   };
 }
@@ -118,6 +116,7 @@ export function buildAutoRollCatalogFromTableRow(
     productId: row.activityId,
     name: row.activityName === '—' ? undefined : row.activityName,
     chargeItemDefinitionId: row.chargeDefinitionId,
+    unitPrice: row.unitPrice,
   };
   return {
     rowKey: buildAutoRollCatalogRowKey(catalog),

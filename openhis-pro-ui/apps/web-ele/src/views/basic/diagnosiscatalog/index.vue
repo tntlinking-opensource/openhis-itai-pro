@@ -19,12 +19,13 @@ import {
   pageDiagnosisCatalogApi,
 } from '#/api';
 import StatusEnumTag from '#/components/status-enum-tag.vue';
+import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 import EditDialog from './edit-dialog.vue';
 
 const queryParams = ref({
   pageNo: 1,
-  pageSize: 50,
+  pageSize: 10,
   keyword: '',
   sourceEnum: undefined as string | undefined,
 });
@@ -102,29 +103,22 @@ const formItems: FormItemConfig[] = [
 ];
 
 const handleQuery = async (params: Record<string, unknown>) => {
+  queryParams.value = {
+    ...queryParams.value,
+    ...params,
+  };
   loading.value = true;
   try {
     const response = await pageDiagnosisCatalogApi({
-      pageNo: typeof params.pageNo === 'number' ? params.pageNo : queryParams.value.pageNo,
-      pageSize: typeof params.pageSize === 'number' ? params.pageSize : queryParams.value.pageSize,
-      keyword:
-        typeof params.keyword === 'string' && params.keyword
-          ? params.keyword
-          : queryParams.value.keyword || undefined,
-      sourceEnum:
-        typeof params.sourceEnum === 'string' && params.sourceEnum
-          ? params.sourceEnum
-          : queryParams.value.sourceEnum || undefined,
+      pageNo: queryParams.value.pageNo,
+      pageSize: queryParams.value.pageSize,
+      keyword: queryParams.value.keyword || undefined,
+      sourceEnum: queryParams.value.sourceEnum || undefined,
     });
 
-    const responseData = response.data;
-    if (responseData) {
-      tableData.value = responseData.content || [];
-      total.value = responseData.totalElements || 0;
-    } else {
-      tableData.value = [];
-      total.value = 0;
-    }
+    const parsed = parsePagedRowsFromApiData<DiagnosisCatalogItem>(response.data);
+    tableData.value = parsed.content;
+    total.value = parsed.totalCount;
   } catch (error) {
     console.error('查询失败:', error);
     ElMessage.error('查询失败，请稍后重试');
@@ -138,7 +132,7 @@ const handleQuery = async (params: Record<string, unknown>) => {
 const handleReset = () => {
   queryParams.value = {
     pageNo: 1,
-    pageSize: 50,
+    pageSize: 10,
     keyword: '',
     sourceEnum: undefined,
   };
@@ -154,10 +148,18 @@ const handlePagination = (pagination: { limit: number; page: number }) => {
 // 侧边树数据：疾病分类
 const treeData = ref<Array<{ id: number | string; label: string; value: number | string }>>([]);
 
+/** 侧栏树节点点击：按疾病来源分类（sourceEnum）筛选列表 */
 const handleSideQuery = (node: TreeNodeData) => {
-  const nodeValue = node.value as number | string | undefined;
-  queryParams.value.sourceEnum =
-    nodeValue !== undefined && nodeValue !== null ? String(nodeValue) : undefined;
+  const nodeKey = node?.id ?? node?.value;
+  if (!node || nodeKey === '__ALL__') {
+    queryParams.value.sourceEnum = undefined;
+  } else {
+    const nodeValue = node.value ?? node.id;
+    queryParams.value.sourceEnum =
+      nodeValue !== undefined && nodeValue !== null && String(nodeValue).trim() !== ''
+        ? String(nodeValue)
+        : undefined;
+  }
   queryParams.value.pageNo = 1;
   handleQuery(queryParams.value);
 };

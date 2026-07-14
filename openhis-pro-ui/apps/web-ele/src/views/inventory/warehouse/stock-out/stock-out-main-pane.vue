@@ -2,45 +2,47 @@
   药库出库单右侧主区：InvMainShell + InvDocActions + 单头表单 + useVbenVxeGrid；布局与进货主区同构。
 -->
 <script setup lang="ts">
-import type { VxeGridProps, VxeGridPropTypes } from '#/adapter/vxe-table';
-import type { ChargeType } from '#/api/core/common';
+import type { TableColumn, FormItemConfig } from '@vben-core/table-layout-ui';
+
+import type { VxeGridPropTypes } from '#/adapter/vxe-table';
 import type { PharmacyLocationOptionDto } from '#/api/inventory/pharmacy/requisition';
 import type { WarehouseOptionDto } from '#/api/inventory/warehouse/stock-out';
 import type { ApiOptionItem } from '#/types/api-response';
 import type { InboundProductUnitBand } from '#/utils/inventory/inbound-product-unit-bands';
 
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import type { FormInstance } from 'element-plus';
+
+import { computed, nextTick, ref, watch } from 'vue';
 
 import { Trash2 } from '@vben/icons';
 import { useUserStore } from '@vben/stores';
 import { formatDateTime } from '@vben/utils';
 
-import { Delete, Plus } from '@element-plus/icons-vue';
 import InvDocActions from '@inventory/components/inv-doc-actions.vue';
+import InvDocDetailGridShell from '@inventory/components/inv-doc-detail-grid-shell.vue';
+import InvDocGridToolbar from '@inventory/components/inv-doc-grid-toolbar.vue';
+import InvDocTraceScanBridge from '@inventory/components/inv-doc-trace-scan-bridge.vue';
+import InvDocLinkPickerDialog from '@inventory/components/inv-doc-link-picker-dialog.vue';
 import InvMainShell from '@inventory/components/inv-main-shell.vue';
 import {
   ElButton,
   ElDatePicker,
-  ElDialog,
   ElForm,
   ElFormItem,
   ElInput,
   ElMessage,
   ElMessageBox,
   ElOption,
-  ElPagination,
   ElSelect,
-  ElTable,
-  ElTableColumn,
-  ElTag,
 } from 'element-plus';
 
-import { useVbenVxeGrid } from '#/adapter/vxe-table';
-import { getChargeTypeListApi } from '#/api/core/common';
-import { getPharmacyRequisitionDetailApi } from '#/api/inventory/pharmacy/requisition';
+import { useInvDocDetailGrid } from '#/composables/use-inv-doc-detail-grid';
+import { useInvDocGridRowOps } from '#/composables/use-inv-doc-grid-row-ops';
+import { useInvDocParentSyncSession } from '#/composables/use-inv-doc-parent-sync-session';
 import {
   agreeStockOutApi,
   createStockOutApi,
+  getLinkablePharmacyRequisitionDetailApi,
   getStockOutDetailApi,
   pageLinkablePharmacyRequisitionsApi,
   rejectStockOutApi,
@@ -53,15 +55,29 @@ import {
   type StockOutListRowDto,
   type StockOutProductCatalogDto,
 } from '#/api/inventory/warehouse/stock-out';
-import {
-  filterInsuranceChargeTypes,
-  resolveDefaultInsuranceBusNo,
-} from '#/chs/constants/insurance-contract';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import StockOutBatchAddDialog from '#/views/inventory/warehouse/stock-out/stock-out-batch-add-dialog.vue';
-import { useInventoryDocGridEdit } from '#/composables/use-inventory-doc-grid-edit';
-import { decimalMul } from '#/utils/format/decimal-util';
+import {
+  formatInventoryLineTotal,
+  formatMoneyDisplay,
+  inventoryLineTotalNumber,
+} from '#/utils/format/money-scale';
 import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
+import {
+  INV_ALL_LOCATIONS_FILTER_ID,
+  INV_ALL_WAREHOUSES_LABEL,
+  isSpecificInventoryLocationId,
+  requireSpecificInventoryLocationId,
+  resolveFirstRealLocationIdFromInitOptions,
+  resolveSpecificInventoryLocationId,
+  warnInventoryLocationRequired,
+} from '#/utils/inventory/inventory-workbench-list';
+import {
+  buildInventoryLocationHeadFormRules,
+  clearInventoryHeadFormValidation,
+  validateInventoryHeadFormFields,
+} from '#/utils/inventory/inventory-doc-head-form-validation';
+import { withInvDocLinkPickerEnrichedColumns } from '#/utils/inventory/inv-doc-link-picker-display';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import {
   convertInboundQtyBetweenBandKinds,
@@ -70,13 +86,15 @@ import {
   canConvertDisplayQtyToSplitForBands,
   persistDisplayQtyAsSplitForBands,
   applyWarehouseNonInboundBandKindToRow,
-  hydrateWarehouseDetailQtyFromPersisted,
+  resolveInboundLinePersistUnitCodeForBands,
   warehouseNonInboundDefaultBandKind,
 } from '#/utils/inventory/inbound-product-unit-bands';
 import {
+  isStockOutDocumentEditableStatus,
+  isStockOutDocumentRemovableStatus,
   buildStockOutDocActionFlags,
-  normalizeStockOutStatusSort,
   stockOutStatusLabel,
+  normalizeStockOutStatusSort,
 } from '#/utils/inventory/stock-out-doc-actions';
 import {
   inventoryPickAvailableQtyAsStockDisplay,
@@ -84,6 +102,12 @@ import {
   inventoryPickNumberField,
   inventoryPickStringField,
 } from '#/utils/inventory/inventory-product-pick-list';
+import {
+  isPresentItemId,
+  scheduleInventoryProductPickFocus,
+  applyHydratedInventoryDetailQtyToRow,
+  hydrateInventoryDetailLineQtyForGrid,
+} from '#/utils/inventory/inventory-doc-grid-common';
 
 defineOptions({ name: 'InventoryWarehouseStockOutMainPane' });
 
@@ -116,6 +140,8 @@ interface StockOutboundPreviewRow {
   totalPrice: string;
   /** 与后端 {@code StockOutLineDto.lotNumber} 一致，由选品/详情带入，只读 */
   lotNumber: string;
+  /** 与后端 {@code StockOutLineDto.traceNo} 一致 */
+  traceNo: string;
   remark: string;
   /** 详情接口带回，列表不单独开列 */
   _occurrenceTime?: string;
@@ -152,11 +178,24 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const emit = defineEmits<{
+  createFromRequisition: [row: StockOutListRowDto];
   documentRemoved: [];
   documentSaved: [{ busNo?: string }];
+  draftHeadSynced: [
+    payload: {
+      originalBusNo?: string;
+      purposeLocationId?: number | string;
+      sourceLocationId?: number | string;
+    },
+  ];
 }>();
 
 const userStore = useUserStore();
+
+/** 选品门禁：init 首个真实源药库，与单头源药库解耦。 */
+const productPickGateLocationId = computed(() =>
+  resolveFirstRealLocationIdFromInitOptions(props.warehouseOptions),
+);
 
 function nowIsoLocal(): string {
   const d = new Date();
@@ -191,7 +230,7 @@ function resolveStockOutApplyClockForSubmit(): string {
 
 /** 库位 id：与后端 Long 字符串一致；仅对安全整数才收敛为 number，避免精度丢失。 */
 function normalizeLocationId(v?: number | string | null): number | string | undefined {
-  if (v === undefined || v === null || v === '') return undefined;
+  if (!isSpecificInventoryLocationId(v)) return undefined;
   if (typeof v === 'number') return Number.isFinite(v) ? v : undefined;
   const s = String(v).trim();
   if (s === '') return undefined;
@@ -228,6 +267,20 @@ const originalBusNo = ref<string | undefined>(undefined);
 const detailSourceLocationId = ref<number | string | undefined>(undefined);
 const purposeLocationId = ref<number | string | undefined>(undefined);
 
+const headFormRef = ref<FormInstance>();
+
+const headFormModel = computed(() => ({
+  detailSourceLocationId: detailSourceLocationId.value ?? '',
+  purposeLocationId: purposeLocationId.value ?? '',
+}));
+
+const headFormRules = computed(() =>
+  buildInventoryLocationHeadFormRules({
+    detailSourceLocationId: '源药库',
+    purposeLocationId: '目的药房',
+  }),
+);
+
 const detailStatusEnum = ref<number | undefined>(undefined);
 
 /** 出库选品 {@code productTableName}，与进货单「项目类型」一致 */
@@ -235,19 +288,97 @@ const headItemTableType = ref(firstItemTableTypeValue());
 
 const saving = ref(false);
 
-const insuranceContractBusNo = ref<string>();
-const insuranceChargeTypeOptions = ref<ChargeType[]>([]);
-
 const linkQlVisible = ref(false);
-const linkQlKeyword = ref('');
 const linkQlLoading = ref(false);
-const linkQlPage = ref({ pageNo: 1, pageSize: 10 });
+const linkQlQueryParams = ref<{
+  keyword: string;
+  pageNo: number;
+  pageSize: number;
+  sourceLocationId: number | string;
+}>({
+  pageNo: 1,
+  pageSize: 20,
+  keyword: '',
+  sourceLocationId: INV_ALL_LOCATIONS_FILTER_ID,
+});
 const linkQlTotal = ref(0);
 const linkQlRecords = ref<StockOutListRowDto[]>([]);
 
+const linkQlWarehouseOptions = computed(() => {
+  const rows = (props.warehouseOptions ?? [])
+    .filter((row) => isSpecificInventoryLocationId(row.locationId))
+    .map((row) => ({
+      label: String(row.displayName ?? row.locationId ?? ''),
+      value: row.locationId as number | string,
+    }));
+  return [{ label: INV_ALL_WAREHOUSES_LABEL, value: INV_ALL_LOCATIONS_FILTER_ID }, ...rows];
+});
+
+function normalizeLinkQlSourceLocationId(raw: unknown): number | string {
+  if (Array.isArray(raw)) {
+    const first = raw[0];
+    if (first === undefined || first === null) return INV_ALL_LOCATIONS_FILTER_ID;
+    return first as number | string;
+  }
+  if (raw === undefined || raw === null || raw === '') return INV_ALL_LOCATIONS_FILTER_ID;
+  return raw as number | string;
+}
+
+function resolveLinkQlSourceLocationIdForApi(): number | string {
+  const wh = resolveSpecificInventoryLocationId(linkQlQueryParams.value.sourceLocationId);
+  if (wh) return wh;
+  return INV_ALL_LOCATIONS_FILTER_ID;
+}
+
+function handleLinkQlSourceLocationChange(value: unknown) {
+  linkQlQueryParams.value.sourceLocationId = normalizeLinkQlSourceLocationId(value);
+  linkQlQueryParams.value.pageNo = 1;
+  void fetchLinkablePharmacyRequisitions();
+}
+
+const linkQlFormItems = computed<FormItemConfig[]>(() => [
+  {
+    label: '源药库',
+    prop: 'sourceLocationId',
+    type: 'select',
+    placeholder: '全部库房',
+    filterable: true,
+    clearable: false,
+    multiple: false,
+    options: linkQlWarehouseOptions.value,
+    onChange: handleLinkQlSourceLocationChange,
+  },
+  {
+    label: '关键字',
+    prop: 'keyword',
+    type: 'input',
+    placeholder: '请领单号/关键字',
+  },
+]);
+
+const linkQlTableColumns = computed<TableColumn[]>(() =>
+  withInvDocLinkPickerEnrichedColumns(
+    [
+      { type: 'index', label: '序号', width: 58, align: 'center' },
+      { prop: 'busNo', label: '请领单号', minWidth: 160, showOverflowTooltip: true },
+      { prop: 'statusEnum', label: '状态', width: 88, slot: 'statusEnum' },
+      { prop: 'applyTime', label: '申请时间', minWidth: 160, slot: 'applyTime' },
+      { label: '操作', width: 88, align: 'center', fixed: 'right', slot: 'rowActions' },
+    ],
+    { warehouseLabel: '库位' },
+  ),
+);
+
+const linkQlLocationOptions = computed(() => [
+  ...(props.warehouseOptions as Record<string, unknown>[]),
+  ...(props.pharmacyOptions as Record<string, unknown>[]),
+]);
+
 const isNewDraft = computed(() => !headerBusNo.value);
 
-const documentEditable = computed(() => isNewDraft.value || detailStatusEnum.value === 1);
+const documentEditable = computed(
+  () => isNewDraft.value || isStockOutDocumentEditableStatus(detailStatusEnum.value),
+);
 
 const headerStatusText = computed(() => {
   if (isNewDraft.value) return '编辑中';
@@ -255,35 +386,15 @@ const headerStatusText = computed(() => {
 });
 
 const docActionFlags = computed(() => {
-  const base = buildStockOutDocActionFlags({
+  return buildStockOutDocActionFlags({
     hasPersistedBusNo: Boolean(headerBusNo.value),
     isDraft: isNewDraft.value,
     status: detailStatusEnum.value,
+    busy: saving.value,
   });
-  const busy = saving.value;
-  return {
-    ...base,
-    saveDisabled: base.saveDisabled || busy,
-    saveAndSubmitDisabled: base.saveAndSubmitDisabled || busy,
-  };
 });
 
 const canEditOriginalBusNo = computed(() => documentEditable.value && isNewDraft.value);
-
-async function loadInsuranceContractBusNo() {
-  try {
-    const chargeTypes = await getChargeTypeListApi();
-    const eligible = filterInsuranceChargeTypes(chargeTypes);
-    insuranceChargeTypeOptions.value = eligible;
-    insuranceContractBusNo.value = resolveDefaultInsuranceBusNo(
-      eligible,
-      insuranceContractBusNo.value,
-    );
-  } catch {
-    insuranceContractBusNo.value = undefined;
-    insuranceChargeTypeOptions.value = [];
-  }
-}
 
 const paneFlashActive = ref(false);
 let paneFlashTimer: ReturnType<typeof setTimeout> | undefined;
@@ -302,7 +413,7 @@ function recalcStockOutboundLineTotal(row: StockOutboundPreviewRow) {
   const qty = Number(row.itemQuantity);
   const unit = Number(row.price);
   row.totalPrice =
-    Number.isFinite(qty) && Number.isFinite(unit) ? String(decimalMul(qty, unit, 2)) : '';
+    Number.isFinite(qty) && Number.isFinite(unit) ? formatInventoryLineTotal(qty, unit) : '';
 }
 
 /** 切换出库计量带：单位码 + 当前带单价（默认 STOCK） */
@@ -387,6 +498,7 @@ function createEmptyStockOutboundRow(): StockOutboundPreviewRow {
     price: 0,
     totalPrice: '',
     lotNumber: '',
+    traceNo: '',
     remark: '',
   };
 }
@@ -418,7 +530,7 @@ function stockOutDetailLineManufacturer(ln: StockOutDetailLineDto): string {
 
 function formatStockOutDetailTotalAmount(total: unknown): string {
   if (total === undefined || total === null || total === '') return '';
-  return typeof total === 'number' ? total.toFixed(2) : String(total);
+  return formatMoneyDisplay(total);
 }
 
 function mapStockOutDetailLineToGrid(
@@ -440,8 +552,8 @@ function mapStockOutDetailLineToGrid(
     itemIdRaw !== undefined &&
     itemIdRaw !== null &&
     !(typeof itemIdRaw === 'string' && itemIdRaw.trim() === '');
-  const bands = normalizeInboundProductUnitBands(catalog?.unitBands);
   const rawQty = qty === undefined || qty === null ? 0 : Number(qty);
+  const unitCodeDictText = String(ln.unitCodeDictText ?? ln.unitCode ?? '');
 
   const base: StockOutboundPreviewRow = {
     id: idStr,
@@ -464,25 +576,23 @@ function mapStockOutDetailLineToGrid(
     price: ln.price === undefined || ln.price === null ? 0 : Number(ln.price),
     totalPrice: formatStockOutDetailTotalAmount(ln.totalPrice),
     lotNumber: String(ln.lotNumber ?? '').trim(),
+    traceNo: String(ln.traceNo ?? '').trim(),
     remark: String(ln.remake ?? '').trim(),
     _occurrenceTime: ln.occurrenceTime ?? undefined,
     _reason: ln.reason,
   };
 
-  if (bands.length > 0) {
-    base.unitBands = bands;
-    // 回显：itemQuantity 为 SPLIT；unitCode 为保存时单位；price/totalPrice 原样
-    const hydrated = hydrateWarehouseDetailQtyFromPersisted({
-      bands,
-      persistedItemQuantity: rawQty,
-      persistedUnitCode: unitCodeStr,
-    });
-    base.itemQuantity = hydrated.displayQty;
-    base.unitCode = hydrated.unitCode;
-    base.selectedBandKind = hydrated.bandKind;
-    base.unitList = inboundUnitBandSelectOptions(bands);
-    base.__prevBandKind = hydrated.bandKind;
-  } else if (ln.unitCodeDictText) {
+  const hydrated = hydrateInventoryDetailLineQtyForGrid(
+    {
+      itemQuantity: rawQty,
+      unitCode: unitCodeStr,
+      unitCodeDictText,
+      productCatalog: catalog,
+    },
+    { useSupplyLineHydrate: true },
+  );
+  applyHydratedInventoryDetailQtyToRow(base, hydrated);
+  if (!base.unitBands?.length && ln.unitCodeDictText) {
     base.unitList = [
       {
         value: 'LEGACY',
@@ -498,14 +608,6 @@ function mapDetailLinesToGridRows(lines: StockOutDetailLineDto[]): StockOutbound
   return lines.map((ln, i) => mapStockOutDetailLineToGrid(ln, i));
 }
 
-function isPresentItemId(v: unknown): boolean {
-  if (v === undefined || v === null) return false;
-  if (typeof v === 'string') return v.trim() !== '';
-  if (typeof v === 'number') return Number.isFinite(v);
-  if (typeof v === 'bigint') return true;
-  return String(v).trim() !== '';
-}
-
 /** 明细行必填项是否已齐（与 validateBeforeSave 保存校验对齐） */
 function isStockOutRowComplete(row: StockOutboundPreviewRow): boolean {
   if (!String(row.itemTable ?? '').trim() || !isPresentItemId(row.itemId)) return false;
@@ -515,13 +617,9 @@ function isStockOutRowComplete(row: StockOutboundPreviewRow): boolean {
   return canConvertDisplayQtyToSplitForBands(row.unitBands ?? [], qty, row.selectedBandKind);
 }
 
-let stockOutGridEdit!: ReturnType<typeof useInventoryDocGridEdit<StockOutboundPreviewRow>>;
-
+/** 选品后进入整行表单并聚焦数量 */
 function handleStockOutProductPick(row: StockOutboundPreviewRow) {
-  void nextTick(async () => {
-    await nextTick();
-    await stockOutGridEdit.onProductSelected(row);
-  });
+  scheduleInventoryProductPickFocus(stockOutGridEdit, row);
 }
 
 const columns: VxeGridPropTypes.Column[] = [
@@ -538,7 +636,7 @@ const columns: VxeGridPropTypes.Column[] = [
         listSource: 'stock-out',
         query: async () => ({
           productTableName: headItemTableType.value || undefined,
-          sourceLocationId: detailSourceLocationId.value ?? props.sidebarSourceLocationId,
+          sourceLocationId: detailSourceLocationId.value ?? productPickGateLocationId.value,
         }),
         onSelected: (product: Record<string, unknown>, row: StockOutboundPreviewRow) => {
           syncRowFromStockOutboundMedicinePick(product, row);
@@ -611,6 +709,12 @@ const columns: VxeGridPropTypes.Column[] = [
     showOverflow: true,
   },
   {
+    field: 'traceNo',
+    title: '追溯码',
+    minWidth: 140,
+    editRender: { name: 'InventoryTraceNoCell', props: { maxlength: 512, clearable: true } },
+  },
+  {
     field: 'remark',
     title: '备注',
     minWidth: 120,
@@ -630,59 +734,26 @@ const columns: VxeGridPropTypes.Column[] = [
   },
 ];
 
-const gridOptions: VxeGridProps<StockOutboundPreviewRow> = reactive({
-  autoResize: true,
-  height: '100%',
-  border: true,
-  stripe: true,
-  showOverflow: true,
-  showFooter: false,
-  size: 'medium',
-  keepSource: true,
-  columnConfig: { resizable: true },
-  data: [],
-  editConfig: {
-    enabled: true,
-    trigger: 'click',
-    mode: 'row',
-    autoClear: false,
-    beforeEditMethod: () => documentEditable.value,
-  },
-  columns,
-  pagerConfig: { enabled: false },
-});
+const STOCK_OUT_EDITABLE_COLUMN_FIELDS = new Set(['_qtyUnit', 'medicinePick', 'remark', 'traceNo']);
 
-const STOCK_OUT_EDITABLE_COLUMN_FIELDS = new Set(['_qtyUnit', 'medicinePick', 'remark']);
-
-const STOCK_OUT_EDIT_FIELD_ORDER = ['medicinePick', '_qtyUnit', 'remark'] as const;
+const STOCK_OUT_EDIT_FIELD_ORDER = ['medicinePick', '_qtyUnit', 'traceNo', 'remark'] as const;
 
 type StockOutEditField = (typeof STOCK_OUT_EDIT_FIELD_ORDER)[number];
 
-const STOCK_OUT_VERTICAL_NAV_FIELDS = new Set<StockOutEditField>(['_qtyUnit', 'remark']);
+const STOCK_OUT_VERTICAL_NAV_FIELDS = new Set<StockOutEditField>(['_qtyUnit', 'remark', 'traceNo']);
 
-const stockOutGridKeyboardRef = ref<HTMLElement | null>(null);
-
-const [Grid, gridApi] = useVbenVxeGrid<StockOutboundPreviewRow>({
-  gridOptions,
-  gridEvents: {
-    cellClick: (params: {
-      column?: { field?: string; type?: string };
-      row: StockOutboundPreviewRow;
-    }) => stockOutGridEdit.onCellClick(params),
-    editClosed(params: { row: StockOutboundPreviewRow }) {
-      recalcStockOutboundLineTotal(params.row);
-      stockOutGridEdit.syncRowFormMode(params.row);
-    },
-  },
-  class: 'min-h-0 flex-1 !rounded-none !bg-transparent shadow-none',
-  gridClass: '!p-0',
-});
-
-stockOutGridEdit = useInventoryDocGridEdit<StockOutboundPreviewRow>({
-  getGridApi: () => gridApi ?? null,
-  gridWrapRef: stockOutGridKeyboardRef,
+const {
+  Grid,
+  gridApi,
+  bindGridWrap,
+  gridEdit: stockOutGridEdit,
+  collectGridRows,
+  patchGridEditConfig: patchStockOutGridEditConfig,
+} = useInvDocDetailGrid<StockOutboundPreviewRow>({
+  columns,
   documentEditable: () => documentEditable.value,
-  collectRows: collectGridRows,
+  beforeEditMethod: () => documentEditable.value,
+  onEditClosed: (row) => recalcStockOutboundLineTotal(row),
   config: {
     rowKey: (row) => row.id,
     productField: 'medicinePick',
@@ -695,30 +766,24 @@ stockOutGridEdit = useInventoryDocGridEdit<StockOutboundPreviewRow>({
   },
 });
 
-function patchStockOutGridEditConfig() {
-  const patched = stockOutGridEdit.patchGridOptions({
-    ...(gridOptions as Record<string, unknown>),
-    editConfig: {
-      ...(gridOptions.editConfig as Record<string, unknown>),
-      enabled: documentEditable.value,
-    },
-  });
-  Object.assign(gridOptions, patched);
-}
+const {
+  addItem: addStockOutRow,
+  deleteItem,
+  removeEmptyRows: removeEmptyStockOutRows,
+} = useInvDocGridRowOps({
+  documentEditable: () => documentEditable.value,
+  getGridApi: () => gridApi ?? null,
+  gridEdit: stockOutGridEdit,
+  createEmptyRow: createEmptyStockOutboundRow,
+  hasProduct: (row) => isPresentItemId(row.itemId),
+});
 
-watch(
-  () => documentEditable.value,
-  () => {
-    patchStockOutGridEditConfig();
-    void nextTick(() => {
-      if (!documentEditable.value) {
-        stockOutGridEdit.resetFormMode();
-        stockOutGridEdit.clearGridEdit();
-      }
-    });
-  },
-  { immediate: true },
-);
+const traceScanBridgeRef = ref<InstanceType<typeof InvDocTraceScanBridge> | null>(null);
+
+/** 打开批量追溯码扫码弹窗 */
+function handleOpenTraceScan(): void {
+  traceScanBridgeRef.value?.open(collectGridRows());
+}
 
 watch(
   () => props.itemTableTypeOptions,
@@ -733,26 +798,21 @@ watch(
 watch(
   () => props.resetKey,
   () => {
+    parentSync.discardDraftSession();
     stockOutGridEdit.resetFormMode();
     triggerPaneFlash();
   },
 );
-
-function collectGridRows(): StockOutboundPreviewRow[] {
-  const g = gridApi?.grid as null | { getFullData?: () => StockOutboundPreviewRow[] };
-  return g?.getFullData?.() ?? [];
-}
 
 /** 清空右侧编辑区，准备新建草稿。 */
 function resetDetailForCreate() {
   headerBusNo.value = undefined;
   originalBusNo.value = undefined;
   detailStatusEnum.value = undefined;
-  const sid = normalizeLocationId(props.sidebarSourceLocationId);
-  detailSourceLocationId.value = sid ?? props.warehouseOptions[0]?.locationId;
-  const pid = normalizeLocationId(props.sidebarPurposeLocationId);
-  purposeLocationId.value = pid ?? props.pharmacyOptions[0]?.locationId;
+  detailSourceLocationId.value = undefined;
+  purposeLocationId.value = undefined;
   initHeadApplyTimeFromContext();
+  clearInventoryHeadFormValidation(headFormRef.value);
   stockOutGridEdit.resetFormMode();
   void nextTick(() => {
     gridApi?.grid?.loadData([]);
@@ -761,11 +821,12 @@ function resetDetailForCreate() {
 }
 
 /** 按单号加载出库单详情并填充表单与明细。 */
-async function loadDetail(busNo: string) {
+async function loadDetail(busNo: string, loadGen?: number) {
   stockOutGridEdit.resetFormMode();
   stockOutGridEdit.clearGridEdit();
   try {
     const res = await getStockOutDetailApi({ busNo });
+    if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
     const data = res.data;
     if (!data?.busNo) {
       ElMessage.warning('未获取到出库单详情');
@@ -793,11 +854,14 @@ async function loadDetail(busNo: string) {
 
     const gridRows = mapDetailLinesToGridRows(data.lines ?? []);
     void nextTick(() => {
+      if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
       gridApi?.grid?.loadData(gridRows);
       patchStockOutGridEditConfig();
     });
   } catch {
+    if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
     void nextTick(() => {
+      if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
       gridApi?.grid?.loadData([]);
       patchStockOutGridEditConfig();
     });
@@ -819,21 +883,27 @@ function buildLinesPayload(rows: StockOutboundPreviewRow[]): StockOutLineDto[] {
       Number.isFinite(tpNum) && tpRaw !== ''
         ? tpNum
         : Number.isFinite(qty) && Number.isFinite(unit)
-          ? Number(decimalMul(qty, unit, 2))
+          ? inventoryLineTotalNumber(qty, unit)
           : undefined;
-    const { itemQuantity: persistedQty, unitCode: persistedUnit } =
-      persistDisplayQtyAsSplitForBands({
+    const persisted = persistDisplayQtyAsSplitForBands({
+      bands: r.unitBands ?? [],
+      displayQty: r.itemQuantity,
+      legacyUnitCode: r.unitCode,
+      selectedBandKind: r.selectedBandKind,
+    });
+    const unitCode =
+      resolveInboundLinePersistUnitCodeForBands({
         bands: r.unitBands ?? [],
-        displayQty: r.itemQuantity,
         legacyUnitCode: r.unitCode,
         selectedBandKind: r.selectedBandKind,
-      });
+      }) || String(r.unitCode ?? '').trim();
     return {
       itemTable: r.itemTable,
       itemId: r.itemId,
-      itemQuantity: persistedQty,
-      unitCode: persistedUnit,
+      itemQuantity: persisted.itemQuantity,
+      unitCode: unitCode || undefined,
       lotNumber: String(r.lotNumber ?? '').trim() || undefined,
+      traceNo: String(r.traceNo ?? '').trim() || undefined,
       inventoryItemId:
         r.inventoryItemId === undefined || r.inventoryItemId === null
           ? undefined
@@ -848,14 +918,12 @@ function buildLinesPayload(rows: StockOutboundPreviewRow[]): StockOutLineDto[] {
 }
 
 function validateBeforeSave(rows: StockOutboundPreviewRow[]): boolean {
-  const src = detailSourceLocationId.value;
-  const purpose = purposeLocationId.value;
-  if (src === undefined || src === null || src === '') {
-    ElMessage.warning('请选择源药库');
+  if (!isSpecificInventoryLocationId(detailSourceLocationId.value)) {
+    warnInventoryLocationRequired('sourceWarehouse');
     return false;
   }
-  if (purpose === undefined || purpose === null || purpose === '') {
-    ElMessage.warning('请选择目的药房');
+  if (!isSpecificInventoryLocationId(purposeLocationId.value)) {
+    warnInventoryLocationRequired('purposePharmacy');
     return false;
   }
   if (rows.length === 0) {
@@ -890,16 +958,17 @@ function validateBeforeSave(rows: StockOutboundPreviewRow[]): boolean {
 
 /** 保存：新建走 create，已存在走 update；返回当前单号。 */
 async function persistStockOut(): Promise<string | undefined> {
-  if (!documentEditable.value) {
-    ElMessage.warning('当前状态不允许修改');
-    return undefined;
-  }
-  stockOutGridEdit.clearGridEdit();
-  const rows = collectGridRows();
-  if (!validateBeforeSave(rows)) return undefined;
-
+  // 重入护栏：须在首行置 busy，避免双击在 await 前并发两次 create
+  if (saving.value) return undefined;
   saving.value = true;
   try {
+    if (!documentEditable.value) {
+      ElMessage.warning('当前状态不允许修改');
+      return undefined;
+    }
+    stockOutGridEdit.clearGridEdit();
+    const rows = collectGridRows();
+    if (!validateBeforeSave(rows)) return undefined;
     const lines = buildLinesPayload(rows);
     let practitionerId: number | string;
     try {
@@ -951,9 +1020,16 @@ async function handleSaveDoc() {
 }
 
 async function handleSaveAndSubmitDoc() {
+  // 在提交审批阶段继续置灰，避免保存结束后瞬间二次点击再跑一遍 save+submit
+  if (saving.value) return;
   const no = await persistStockOut();
   if (!no) return;
-  await handleSubmitApproval();
+  saving.value = true;
+  try {
+    await handleSubmitApproval();
+  } finally {
+    saving.value = false;
+  }
 }
 
 async function handleRemoveDoc() {
@@ -970,8 +1046,8 @@ async function handleRemoveDoc() {
 
   const no = headerBusNo.value;
   if (!no) return;
-  if (detailStatusEnum.value !== 1) {
-    ElMessage.warning('仅待审核单据可删除');
+  if (!isStockOutDocumentRemovableStatus(detailStatusEnum.value)) {
+    ElMessage.warning('仅待审核、驳回、已撤回单据可删除');
     return;
   }
   try {
@@ -1027,10 +1103,6 @@ async function handleWithdraw() {
 async function handleApprove() {
   const no = headerBusNo.value;
   if (!no) return;
-  if (!insuranceContractBusNo.value?.trim()) {
-    ElMessage.warning('请选择医保契约');
-    return;
-  }
   const approverId = resolveLoginPractitionerIdForRequest(
     userStore.userInfo as null | Record<string, unknown>,
   );
@@ -1039,7 +1111,6 @@ async function handleApprove() {
       busNo: no,
       approverId,
       approvalClock: nowIsoLocal(),
-      contractBusNo: insuranceContractBusNo.value,
     });
     ElMessage.success('审批同意');
     await loadDetail(no);
@@ -1075,51 +1146,12 @@ async function handleReject() {
   }
 }
 
-async function addItem() {
-  if (!documentEditable.value) return;
-  const $grid = gridApi?.grid;
-  if (!$grid) return;
-  const record = createEmptyStockOutboundRow();
-  const { row } = await $grid.insertAt(record, null);
-  await $grid.$nextTick();
-  if (row) {
-    await $grid.scrollToRow(row);
-    await stockOutGridEdit.enterRowFormMode(row as StockOutboundPreviewRow, 'medicinePick');
-  }
-}
-
-async function deleteItem(row: 'select' | StockOutboundPreviewRow) {
-  if (!documentEditable.value) return;
-  const $grid = gridApi?.grid;
-  if (!$grid) return;
-  const checked = $grid.getCheckboxRecords() as StockOutboundPreviewRow[];
-  if (row === 'select' && checked.length === 0) return;
-  await $grid.remove(row === 'select' ? checked : row);
-}
-
-/** 未选品的空行（批量回填前清理，避免多出一行） */
-function isStockOutRowWithoutProduct(row: StockOutboundPreviewRow): boolean {
-  return !isPresentItemId(row.itemId);
-}
-
-/** 移除明细表中未选品的空行 */
-async function removeEmptyStockOutRows() {
-  const $grid = gridApi?.grid;
-  if (!$grid) return;
-  const rows = ($grid.getFullData?.() ?? []) as StockOutboundPreviewRow[];
-  const emptyRows = rows.filter(isStockOutRowWithoutProduct);
-  if (!emptyRows.length) return;
-  await $grid.remove(emptyRows);
-}
-
 const batchDialogVisible = ref(false);
 
 /** 打开批量选品弹窗（与单行选品共用 sourceLocationId / productTableName） */
 function openBatchDialog() {
   if (!documentEditable.value) return;
-  const src = detailSourceLocationId.value;
-  if (src === undefined || src === null || String(src).trim() === '') {
-    ElMessage.warning('请先选择源药库');
+  if (!requireSpecificInventoryLocationId(detailSourceLocationId.value, 'sourceWarehouse')) {
     return;
   }
   const productTableName = String(headItemTableType.value ?? '').trim();
@@ -1162,31 +1194,56 @@ async function openLinkQlDialog() {
     ElMessage.warning('仅新建单据时可关联请领单，或请先点「新增」');
     return;
   }
-  const src = detailSourceLocationId.value ?? normalizeLocationId(props.sidebarSourceLocationId);
-  if (src === undefined || src === null) {
-    ElMessage.warning('请先选择源药库');
-    return;
-  }
+  linkQlQueryParams.value = {
+    pageNo: 1,
+    pageSize: 20,
+    keyword: '',
+    sourceLocationId: INV_ALL_LOCATIONS_FILTER_ID,
+  };
+  linkQlRecords.value = [];
+  linkQlTotal.value = 0;
   linkQlVisible.value = true;
-  linkQlKeyword.value = '';
-  linkQlPage.value.pageNo = 1;
-  await fetchLinkablePharmacyRequisitions();
+}
+
+/** 关联请领单弹窗：查询 */
+function handleLinkQlQuery(params: Record<string, unknown>) {
+  Object.assign(linkQlQueryParams.value, params);
+  linkQlQueryParams.value.sourceLocationId = normalizeLinkQlSourceLocationId(
+    linkQlQueryParams.value.sourceLocationId,
+  );
+  linkQlQueryParams.value.pageNo = 1;
+  void fetchLinkablePharmacyRequisitions();
+}
+
+/** 关联请领单弹窗：重置 */
+function handleLinkQlReset() {
+  linkQlQueryParams.value = {
+    pageNo: 1,
+    pageSize: 20,
+    keyword: '',
+    sourceLocationId: INV_ALL_LOCATIONS_FILTER_ID,
+  };
+  void fetchLinkablePharmacyRequisitions();
+}
+
+/** 关联请领单弹窗：分页 */
+function handleLinkQlPagination(pagination: { limit: number; page: number }) {
+  linkQlQueryParams.value.pageNo = pagination.page;
+  linkQlQueryParams.value.pageSize = pagination.limit;
+  void fetchLinkablePharmacyRequisitions();
 }
 
 async function fetchLinkablePharmacyRequisitions() {
-  const src = detailSourceLocationId.value ?? normalizeLocationId(props.sidebarSourceLocationId);
-  if (src === undefined || src === null) {
-    linkQlRecords.value = [];
-    linkQlTotal.value = 0;
-    return;
-  }
+  linkQlQueryParams.value.sourceLocationId = normalizeLinkQlSourceLocationId(
+    linkQlQueryParams.value.sourceLocationId,
+  );
   linkQlLoading.value = true;
   try {
     const res = await pageLinkablePharmacyRequisitionsApi({
-      sourceLocationId: src,
-      keyword: linkQlKeyword.value.trim() || undefined,
-      pageNo: linkQlPage.value.pageNo,
-      pageSize: linkQlPage.value.pageSize,
+      sourceLocationId: resolveLinkQlSourceLocationIdForApi(),
+      keyword: String(linkQlQueryParams.value.keyword ?? '').trim() || undefined,
+      pageNo: linkQlQueryParams.value.pageNo,
+      pageSize: linkQlQueryParams.value.pageSize,
     });
     const { content, totalCount } = parsePagedRowsFromApiData<StockOutListRowDto>(res.data);
     linkQlRecords.value = content;
@@ -1200,16 +1257,27 @@ async function fetchLinkablePharmacyRequisitions() {
 }
 
 async function applyLinkablePharmacyRequisition(row: StockOutListRowDto) {
+  if (!props.isDraftOrder) {
+    emit('createFromRequisition', row);
+    return;
+  }
+  await applyLinkablePharmacyRequisitionToDraft(row);
+}
+
+async function applyLinkablePharmacyRequisitionToDraft(row: StockOutListRowDto) {
   const qlNo = row.busNo?.trim();
   if (!qlNo) return;
   try {
-    const res = await getPharmacyRequisitionDetailApi({ busNo: qlNo });
+    const res = await getLinkablePharmacyRequisitionDetailApi({
+      busNo: qlNo,
+      excludeStockOutBusNo: headerBusNo.value?.trim() || undefined,
+    });
     const data = res.data;
-    if (!data?.busNo) {
-      ElMessage.warning('未获取到请领单详情');
+    if (!data?.lines?.length) {
+      ElMessage.warning('未获取到请领明细');
       return;
     }
-    originalBusNo.value = qlNo;
+    originalBusNo.value = data.originalBusNo ?? data.requisitionBusNo ?? qlNo;
     if (data.sourceLocationId !== undefined && data.sourceLocationId !== null) {
       detailSourceLocationId.value = data.sourceLocationId;
     }
@@ -1226,23 +1294,81 @@ async function applyLinkablePharmacyRequisition(row: StockOutListRowDto) {
       patchStockOutGridEditConfig();
     });
     linkQlVisible.value = false;
+    emit('draftHeadSynced', {
+      sourceLocationId: detailSourceLocationId.value,
+      purposeLocationId: purposeLocationId.value,
+      originalBusNo: originalBusNo.value,
+    });
     ElMessage.success('已带入请领明细，请核对数量后保存');
   } catch {
     /* handled */
   }
 }
 
-async function syncFromParentContext() {
-  if (props.isDraftOrder) {
-    resetDetailForCreate();
+defineExpose({
+  applyLinkablePharmacyRequisitionToDraft,
+  openLinkQlDialog,
+});
+
+async function addItem() {
+  if (!documentEditable.value) return;
+  if (
+    !(await validateInventoryHeadFormFields(headFormRef.value, [
+      'detailSourceLocationId',
+      'purposeLocationId',
+    ]))
+  ) {
     return;
   }
-  const bn = String(props.busNo ?? '').trim();
-  if (bn) {
-    await loadDetail(bn);
-  } else {
-    resetDetailForCreate();
-  }
+  await addStockOutRow();
+}
+
+interface StockOutDraftSnap {
+  detailSourceLocationId?: number | string;
+  purposeLocationId?: number | string;
+  originalBusNo?: string;
+  headApplyTime: string;
+  headItemTableType: string;
+  rows: StockOutboundPreviewRow[];
+}
+
+const parentSync = useInvDocParentSyncSession<StockOutDraftSnap>();
+
+/** 侧栏切单：缓存/恢复本地草稿，避免已落库明细污染新建单 */
+async function syncFromParentContext() {
+  await parentSync.syncFromParentContext(
+    { isDraftOrder: Boolean(props.isDraftOrder), parentBusNo: props.busNo },
+    {
+      getLocalPersistedBusNo: () => headerBusNo.value,
+      captureDraft: () => ({
+        detailSourceLocationId: detailSourceLocationId.value,
+        purposeLocationId: purposeLocationId.value,
+        originalBusNo: originalBusNo.value,
+        headApplyTime: headApplyTime.value,
+        headItemTableType: headItemTableType.value,
+        rows: collectGridRows().map((r) => ({ ...r })),
+      }),
+      restoreDraft: async (snap) => {
+        headerBusNo.value = undefined;
+        detailStatusEnum.value = undefined;
+        detailSourceLocationId.value = snap.detailSourceLocationId;
+        purposeLocationId.value = snap.purposeLocationId;
+        originalBusNo.value = snap.originalBusNo;
+        headApplyTime.value = snap.headApplyTime;
+        headItemTableType.value = snap.headItemTableType;
+        stockOutGridEdit.resetFormMode();
+        await nextTick();
+        gridApi?.grid?.loadData(snap.rows);
+        patchStockOutGridEditConfig();
+      },
+      resetForCreate: () => {
+        resetDetailForCreate();
+      },
+      loadByBusNo: async (busNo, gen) => {
+        await loadDetail(busNo, gen);
+      },
+    },
+  );
 }
 
 watch(
@@ -1254,54 +1380,6 @@ watch(
 );
 
 watch(
-  () => props.sidebarSourceLocationId,
-  () => {
-    if (props.isDraftOrder || !headerBusNo.value) {
-      const sid = normalizeLocationId(props.sidebarSourceLocationId);
-      if (sid !== undefined) {
-        detailSourceLocationId.value = sid;
-      }
-    }
-  },
-);
-
-watch(
-  () => props.sidebarPurposeLocationId,
-  () => {
-    if (props.isDraftOrder || !headerBusNo.value) {
-      const pid = normalizeLocationId(props.sidebarPurposeLocationId);
-      if (pid !== undefined) {
-        purposeLocationId.value = pid;
-      }
-    }
-  },
-);
-
-watch(
-  () => props.pharmacyOptions,
-  (list) => {
-    if (list.length === 0) return;
-    if (!purposeLocationId.value && (isNewDraft.value || !headerBusNo.value)) {
-      const pid = normalizeLocationId(props.sidebarPurposeLocationId);
-      purposeLocationId.value = pid ?? list[0]?.locationId;
-    }
-  },
-  { deep: true },
-);
-
-watch(
-  () => props.warehouseOptions,
-  (list) => {
-    if (list.length === 0) return;
-    if (!detailSourceLocationId.value && (isNewDraft.value || !headerBusNo.value)) {
-      const sid = normalizeLocationId(props.sidebarSourceLocationId);
-      detailSourceLocationId.value = sid ?? list[0]?.locationId;
-    }
-  },
-  { deep: true },
-);
-
-watch(
   () => props.applyTime,
   (v) => {
     if (!props.isDraftOrder && headerBusNo.value) return;
@@ -1310,10 +1388,6 @@ watch(
     headApplyTime.value = s.includes('T') ? s.replace('T', ' ') : s;
   },
 );
-
-onMounted(() => {
-  void loadInsuranceContractBusNo();
-});
 </script>
 
 <template>
@@ -1323,40 +1397,17 @@ onMounted(() => {
   >
     <InvMainShell>
       <template #actionBar>
-        <div class="flex w-full flex-col gap-2">
-          <div
-            v-if="insuranceChargeTypeOptions.length > 0"
-            class="flex flex-wrap items-center gap-2"
-          >
-            <span class="text-xs text-[var(--el-text-color-secondary)]">医保契约</span>
-            <ElSelect
-              v-model="insuranceContractBusNo"
-              class="!w-72"
-              placeholder="请选择医保契约"
-              filterable
-              clearable
-              :disabled="docActionFlags.approveDisabled"
-            >
-              <ElOption
-                v-for="item in insuranceChargeTypeOptions"
-                :key="item.busNo"
-                :label="item.busNo ? `${item.label}（${item.busNo}）` : item.label"
-                :value="item.busNo"
-              />
-            </ElSelect>
-          </div>
-          <div class="flex w-full flex-wrap items-center justify-end gap-2">
-            <InvDocActions
-              v-bind="docActionFlags"
-              @approve="handleApprove"
-              @reject="handleReject"
-              @remove-doc="handleRemoveDoc"
-              @save="handleSaveDoc"
-              @save-and-submit="handleSaveAndSubmitDoc"
-              @submit-approval="handleSubmitApproval"
-              @withdraw="handleWithdraw"
-            />
-          </div>
+        <div class="flex w-full flex-wrap items-center justify-end gap-2">
+          <InvDocActions
+            v-bind="docActionFlags"
+            @approve="handleApprove"
+            @reject="handleReject"
+            @remove-doc="handleRemoveDoc"
+            @save="handleSaveDoc"
+            @save-and-submit="handleSaveAndSubmitDoc"
+            @submit-approval="handleSubmitApproval"
+            @withdraw="handleWithdraw"
+          />
         </div>
       </template>
 
@@ -1364,24 +1415,28 @@ onMounted(() => {
         class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2"
         @mousedown="stockOutGridEdit.onSurfaceMouseDown"
       >
-        <div class="stock-out-head-panel shrink-0">
-          <div
-            class="stock-out-head-panel__bar flex flex-wrap items-center justify-between gap-x-4 gap-y-2"
-          >
-            <SectionTitle title="出库单信息" />
-            <div class="flex flex-wrap items-center gap-2">
-              <span class="text-xs text-[var(--el-text-color-secondary)]">状态</span>
-              <ElTag size="small" type="info" effect="plain">{{ headerStatusText || '—' }}</ElTag>
-            </div>
+        <div class="shrink-0">
+          <SectionTitle title="出库单信息" />
+          <div class="mt-1 flex flex-wrap items-center gap-2">
+            <span class="text-xs" style="color: var(--el-text-color-regular)">状态</span>
+            <span class="text-sm" style="color: var(--el-text-color-primary)">{{
+              headerStatusText || '—'
+            }}</span>
           </div>
-          <ElForm label-width="88px" class="compact-head-form stock-out-head-form">
+          <ElForm
+            ref="headFormRef"
+            :model="headFormModel"
+            :rules="headFormRules"
+            label-width="88px"
+            class="compact-head-form stock-out-head-form mt-1"
+          >
             <div
               class="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
             >
               <ElFormItem label="单据号">
                 <ElInput :model-value="headerBusNo ?? ''" disabled placeholder="保存后生成" />
               </ElFormItem>
-              <ElFormItem label="源药库">
+              <ElFormItem label="源药库" prop="detailSourceLocationId">
                 <ElSelect
                   v-model="detailSourceLocationId"
                   placeholder="出库源库房"
@@ -1398,7 +1453,7 @@ onMounted(() => {
                   />
                 </ElSelect>
               </ElFormItem>
-              <ElFormItem label="目的药房">
+              <ElFormItem label="目的药房" prop="purposeLocationId">
                 <ElSelect
                   v-model="purposeLocationId"
                   placeholder="调入药房"
@@ -1468,33 +1523,21 @@ onMounted(() => {
           </ElForm>
         </div>
 
-        <div
-          ref="stockOutGridKeyboardRef"
-          class="stock-out-main-pane__grid-wrap flex min-h-0 min-w-0 flex-1 flex-col"
-          @keydown.capture="stockOutGridEdit.onGridKeydown"
+        <InvDocDetailGridShell
+          :bind-grid-wrap="bindGridWrap"
+          :on-grid-keydown="stockOutGridEdit.onGridKeydown"
         >
           <Grid class="min-h-0 flex-1">
             <template #toolbar-actions>
-              <ElButton
-                class="mr-2"
-                type="primary"
-                :icon="Plus"
+              <InvDocGridToolbar
+                show-batch-add
+                show-trace-scan
                 :disabled="!documentEditable"
-                @click="addItem"
-              >
-                添加行
-              </ElButton>
-              <ElButton class="mr-2" :disabled="!documentEditable" @click="openBatchDialog">
-                批量添加
-              </ElButton>
-              <ElButton
-                type="danger"
-                :icon="Delete"
-                :disabled="!documentEditable"
-                @click="deleteItem('select')"
-              >
-                删除行
-              </ElButton>
+                @add="addItem"
+                @batch-add="openBatchDialog"
+                @delete-selected="deleteItem('select')"
+                @trace-scan="handleOpenTraceScan"
+              />
             </template>
             <template #action="{ row }">
               <ElButton
@@ -1508,7 +1551,7 @@ onMounted(() => {
               </ElButton>
             </template>
           </Grid>
-        </div>
+        </InvDocDetailGridShell>
       </div>
     </InvMainShell>
 
@@ -1519,91 +1562,51 @@ onMounted(() => {
       @confirm="handleBatchConfirm"
     />
 
-    <ElDialog
+    <InvDocLinkPickerDialog
       v-model="linkQlVisible"
-      destroy-on-close
       title="选择已同意的药房请领单"
-      width="720px"
+      :table-data="linkQlRecords"
+      :loading="linkQlLoading"
+      :total="linkQlTotal"
+      :query-params="linkQlQueryParams"
+      :form-items="linkQlFormItems"
+      :table-columns="linkQlTableColumns"
+      :location-options="linkQlLocationOptions"
       @opened="fetchLinkablePharmacyRequisitions"
+      @query="handleLinkQlQuery"
+      @reset="handleLinkQlReset"
+      @pagination="handleLinkQlPagination"
+      @select="(row) => applyLinkablePharmacyRequisition(row as StockOutListRowDto)"
     >
-      <div class="mb-2 flex gap-2">
-        <ElInput
-          v-model="linkQlKeyword"
-          clearable
-          placeholder="请领单号/关键字"
-          size="small"
-          style="max-width: 260px"
-          @keyup.enter="fetchLinkablePharmacyRequisitions"
-        />
-        <ElButton size="small" type="primary" @click="fetchLinkablePharmacyRequisitions">
-          查询
+      <template #statusEnum="{ row }">
+        {{ stockOutStatusLabel((row as StockOutListRowDto).statusEnum) }}
+      </template>
+      <template #applyTime="{ row }">
+        {{
+          (row as StockOutListRowDto).applyTime
+            ? formatDateTime((row as StockOutListRowDto).applyTime as string)
+            : ''
+        }}
+      </template>
+      <template #rowActions="{ row }">
+        <ElButton
+          link
+          type="primary"
+          @click.stop="applyLinkablePharmacyRequisition(row as StockOutListRowDto)"
+        >
+          选用
         </ElButton>
-      </div>
-      <ElTable
-        v-loading="linkQlLoading"
-        :data="linkQlRecords"
-        border
-        height="320"
-        size="small"
-        stripe
-        @row-dblclick="(r: unknown) => applyLinkablePharmacyRequisition(r as StockOutListRowDto)"
-      >
-        <ElTableColumn label="请领单号" min-width="140" prop="busNo" show-overflow-tooltip />
-        <ElTableColumn label="状态" width="72">
-          <template #default="{ row }">
-            {{ stockOutStatusLabel((row as StockOutListRowDto).statusEnum) }}
-          </template>
-        </ElTableColumn>
-        <ElTableColumn label="申请时间" min-width="132" show-overflow-tooltip>
-          <template #default="{ row }">
-            {{
-              (row as StockOutListRowDto).applyTime
-                ? formatDateTime((row as StockOutListRowDto).applyTime as string)
-                : ''
-            }}
-          </template>
-        </ElTableColumn>
-        <ElTableColumn fixed="right" label="操作" width="88">
-          <template #default="{ row }">
-            <ElButton
-              link
-              size="small"
-              type="primary"
-              @click="applyLinkablePharmacyRequisition(row as StockOutListRowDto)"
-            >
-              选用
-            </ElButton>
-          </template>
-        </ElTableColumn>
-      </ElTable>
-      <ElPagination
-        v-model:current-page="linkQlPage.pageNo"
-        v-model:page-size="linkQlPage.pageSize"
-        :page-sizes="[10, 20, 50]"
-        :total="linkQlTotal"
-        class="mt-2"
-        background
-        layout="total, sizes, prev, pager, next"
-        small
-        @current-change="fetchLinkablePharmacyRequisitions"
-        @size-change="fetchLinkablePharmacyRequisitions"
-      />
-    </ElDialog>
+      </template>
+    </InvDocLinkPickerDialog>
   </div>
+  <InvDocTraceScanBridge
+    ref="traceScanBridgeRef"
+    scene="inventoryOut"
+    :default-location-id="detailSourceLocationId"
+  />
 </template>
 
 <style scoped lang="scss">
-.stock-out-head-panel {
-  padding: 12px 14px;
-  background: var(--el-fill-color-blank);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-}
-
-.stock-out-head-form {
-  margin-top: 10px;
-}
-
 .stock-out-head-form__ql {
   margin-bottom: 0;
 }
@@ -1619,11 +1622,6 @@ onMounted(() => {
 
 .compact-head-form :deep(.el-form-item__label) {
   padding-right: 8px;
-}
-
-.stock-out-main-pane__grid-wrap :deep(.vxe-grid) {
-  flex: 1;
-  min-height: 0;
 }
 
 @keyframes stock-out-pane-flash {

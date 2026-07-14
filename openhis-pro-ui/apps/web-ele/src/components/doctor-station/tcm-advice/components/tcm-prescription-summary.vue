@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
+
 defineOptions({ name: 'TcmPrescriptionSummary' });
 
 withDefaults(defineProps<Props>(), {
@@ -6,7 +8,7 @@ withDefaults(defineProps<Props>(), {
 });
 
 interface Props {
-  chineseHerbsDoseQuantity: number;
+  chineseHerbsDoseQuantity?: number;
   herbCount: number;
   methodLabel?: string;
   singleDoseAmount: number;
@@ -20,13 +22,14 @@ interface Props {
     <span v-if="methodLabel" class="tcm-prescription-summary__sep">·</span>
     <span v-if="methodLabel">{{ methodLabel }}</span>
     <span class="tcm-prescription-summary__sep">·</span>
-    <span>单剂 {{ singleDoseAmount.toFixed(2) }} 元</span>
+    <span>单剂 {{ formatMoneyDisplay(singleDoseAmount) }} 元</span>
     <span class="tcm-prescription-summary__sep">·</span>
-    <span>
-      {{ chineseHerbsDoseQuantity || 1 }} 付合计
-      <strong class="tcm-prescription-summary__total">{{ totalAmount.toFixed(2) }}</strong>
+    <span v-if="chineseHerbsDoseQuantity != null && chineseHerbsDoseQuantity > 0">
+      {{ chineseHerbsDoseQuantity }} 付合计
+      <strong class="tcm-prescription-summary__total">{{ formatMoneyDisplay(totalAmount) }}</strong>
       元
     </span>
+    <span v-else>请先填写付数</span>
   </div>
 </template>
 

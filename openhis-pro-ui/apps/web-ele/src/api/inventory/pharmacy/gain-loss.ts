@@ -4,6 +4,16 @@
 import type { ApiOptionItem, ApiResponse } from '#/types/api-response';
 
 import { requestClient } from '#/api/request';
+import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import {
+  filterWorkbenchListRowsByDateRange,
+  filterWorkbenchListRowsByKeyword,
+  INV_ALL_PHARMACIES_LABEL,
+  mapLocationOptionsToCabinetRows,
+  prependAllLocationsCabinetOption,
+  resolveWorkbenchListPurposeLocationId,
+} from '#/utils/inventory/inventory-workbench-list';
+import { mapGainLossListRowToQueueCard } from '#/api/inventory/warehouse/gain-loss';
 
 const BASE = '/inventoryPharmacyGainLoss';
 
@@ -35,6 +45,7 @@ export interface PharmacyGainLossListRowDto {
   purposeLocationName?: string;
   itemCount?: number;
   gainLossQuantitySum?: number;
+  actualAmountSum?: number;
   applicantId?: number | string;
   applicantName?: string;
   applyTime?: string;
@@ -55,7 +66,9 @@ export interface PagePharmacyGainLosssRequest {
 
 export interface PagePharmacyGainLosssResponse {
   total?: number;
-  records: PharmacyGainLossListRowDto[];
+  totalCount?: number;
+  records?: PharmacyGainLossListRowDto[];
+  content?: PharmacyGainLossListRowDto[];
 }
 
 export interface GetPharmacyGainLossDetailRequest {
@@ -66,10 +79,12 @@ export interface PharmacyGainLossDetailLineDto {
   lineId?: number | string;
   itemTable?: string;
   itemId?: number | string;
+  inventoryItemId?: number | string;
   productName?: string;
   specification?: string;
   manufacturer?: string;
   lotNumber?: string;
+  traceNo?: string;
   unitCode?: string;
   bookQuantity?: number;
   gainLossQuantity?: number;
@@ -80,6 +95,7 @@ export interface PharmacyGainLossDetailLineDto {
   reason?: string;
   remake?: string;
   occurrenceTime?: string;
+  productCatalog?: { unitBands?: unknown };
 }
 
 export interface GetPharmacyGainLossDetailResponse {
@@ -98,11 +114,14 @@ export interface GetPharmacyGainLossDetailResponse {
 export interface PharmacyGainLossLineDto {
   itemTable?: string;
   itemId?: number | string;
+  inventoryItemId?: number | string;
   gainLossQuantity?: number;
   unitCode?: string;
   lotNumber?: string;
+  traceNo?: string;
   reason?: string;
   price?: number;
+  gainLossAmount?: number;
   occurrenceTime?: string;
 }
 
@@ -114,6 +133,19 @@ export interface CreatePharmacyGainLossRequest {
 }
 
 export interface CreatePharmacyGainLossResponse {
+  busNo?: string;
+  statusEnum?: string | number;
+}
+
+export interface UpdatePharmacyGainLossRequest {
+  busNo: string;
+  purposeLocationId: number | string;
+  practitionerId: number | string;
+  categoryEnum?: string;
+  lines: PharmacyGainLossLineDto[];
+}
+
+export interface UpdatePharmacyGainLossResponse {
   busNo?: string;
   statusEnum?: string | number;
 }
@@ -202,6 +234,13 @@ export async function createPharmacyGainLossApi(body: CreatePharmacyGainLossRequ
   );
 }
 
+export async function updatePharmacyGainLossApi(body: UpdatePharmacyGainLossRequest) {
+  return requestClient.post<ApiResponse<UpdatePharmacyGainLossResponse>>(
+    `${BASE}/updatePharmacyGainLoss`,
+    body,
+  );
+}
+
 export async function submitPharmacyGainLossApprovalApi(
   body: SubmitPharmacyGainLossApprovalRequest,
 ) {
@@ -257,4 +296,42 @@ export function mapPharmacyGainLossInitOptionsToApiItems(
     label: String(o.label ?? ''),
     value: String(o.value ?? ''),
   }));
+}
+
+export function mapPharmacyGainLossInitToCabinetRows(
+  list?: PharmacyGainLossOptionDto[],
+): Record<string, unknown>[] {
+  const rows = mapLocationOptionsToCabinetRows(
+    (list ?? []).map((o) => ({ value: o.value, label: o.label })),
+    INV_ALL_PHARMACIES_LABEL,
+  );
+  return prependAllLocationsCabinetOption(rows, INV_ALL_PHARMACIES_LABEL);
+}
+
+export async function pagePharmacyGainLossWorkbenchListApi(params?: {
+  purposeLocationId?: number | string;
+  keyword?: string;
+  applyTimeBegin?: string;
+  applyTimeEnd?: string;
+  pageNo?: number;
+  pageSize?: number;
+}): Promise<{ records: Record<string, unknown>[]; total: number }> {
+  const res = await pagePharmacyGainLosssApi({
+    purposeLocationId: resolveWorkbenchListPurposeLocationId(params?.purposeLocationId),
+    keyword: params?.keyword?.trim() || undefined,
+    pageNo: params?.pageNo ?? 1,
+    pageSize: params?.pageSize ?? 200,
+  });
+  const { content, totalCount } = parsePagedRowsFromApiData<PharmacyGainLossListRowDto>(res.data);
+  const dateFiltered = filterWorkbenchListRowsByDateRange(
+    content,
+    params?.applyTimeBegin,
+    params?.applyTimeEnd,
+  );
+  const records = filterWorkbenchListRowsByKeyword(
+    dateFiltered.map((r) => mapGainLossListRowToQueueCard(r)),
+    params?.keyword,
+  ) as Record<string, unknown>[];
+  const filtered = (params?.applyTimeBegin && params?.applyTimeEnd) || params?.keyword?.trim();
+  return { records, total: filtered ? records.length : totalCount };
 }

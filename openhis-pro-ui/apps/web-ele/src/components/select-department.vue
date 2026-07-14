@@ -227,12 +227,16 @@ onMounted(() => {
   >
     <template #reference>
       <span
-        class="inline-flex cursor-pointer select-none items-center text-sm text-inherit transition-colors duration-300 hover:text-blue-500"
+        class="select-department-trigger inline-flex cursor-pointer select-none items-center text-sm text-inherit transition-colors duration-300 hover:text-blue-500"
         :class="{ 'opacity-60': loading }"
       >
-        <span class="mr-[10px] inline-block h-4 w-px bg-current opacity-20"></span>
+        <span
+          class="select-department-trigger__divider mr-[10px] inline-block h-4 w-px bg-current opacity-20"
+        ></span>
         {{ currentOrgName }}
-        <span class="ml-[10px] inline-block h-4 w-px bg-current opacity-20"></span>
+        <span
+          class="select-department-trigger__divider ml-[10px] inline-block h-4 w-px bg-current opacity-20"
+        ></span>
       </span>
     </template>
     <div class="flex max-h-[300px] flex-col">

@@ -20,6 +20,18 @@ import {
   unblockSlotsApi,
 } from '#/api/booking/slot-manage';
 import {
+  isSlotBlocked,
+  matchesSlotStatusFilter,
+  resolveSlotStatusDisplayLabel,
+  resolveSlotStatusFilterServerCode,
+  resolveSlotStatusTagType,
+  SLOT_STATUS_FILTER_AVAILABLE,
+  SLOT_STATUS_FILTER_FULL,
+  SLOT_STATUS_FILTER_BUSY_UNAVAILABLE,
+  SLOT_STATUS_FILTER_OPTIONS,
+  type SlotStatusFilterCode,
+} from '#/api/booking/slot-status';
+import {
   loadScheduleFormInitApi,
   previewStopClinicImpactApi,
   releaseStopClinicPreviewFreezeApi,
@@ -70,7 +82,12 @@ const query = reactive({
   pageSize: 50,
   date: todayLocalDateIso(),
   practitionerId: undefined as BookingEntityId | undefined,
-  statusFilter: '' as '' | '可约' | '已满' | '停诊',
+  statusFilter: '' as SlotStatusFilterCode,
+});
+
+const statusFilterLabel = computed(() => {
+  const hit = SLOT_STATUS_FILTER_OPTIONS.find((item) => item.value === query.statusFilter);
+  return hit?.label ?? '';
 });
 
 const selectedSlotIds = computed(() =>
@@ -119,7 +136,7 @@ const summary = computed(() => {
     capacity += Number(row.capacity ?? 0);
     booked += Number(row.bookedCount ?? 0);
     remaining += Number(row.remainingCount ?? 0);
-    if (row.displayStatus === '停诊') {
+    if (isSlotBlocked(row)) {
       blocked += 1;
     }
   }
@@ -128,22 +145,22 @@ const summary = computed(() => {
 
 /** 停诊可走服务端 statusCode；可约/已满为展示态，仅本页前端收窄 */
 function resolveServerStatusCode(): string | undefined {
-  if (query.statusFilter === '停诊') {
-    return 'BUSY_UNAVAILABLE';
-  }
-  return undefined;
+  return resolveSlotStatusFilterServerCode(query.statusFilter);
 }
 
 const filteredList = computed(() => {
-  if (!query.statusFilter || query.statusFilter === '停诊') {
+  if (!query.statusFilter || query.statusFilter === SLOT_STATUS_FILTER_BUSY_UNAVAILABLE) {
     return list.value;
   }
-  return list.value.filter((row) => row.displayStatus === query.statusFilter);
+  return list.value.filter((row) => matchesSlotStatusFilter(row, query.statusFilter));
 });
 
 /** 分页总数：停诊/无筛选用服务端；可约/已满用本页筛选后条数 */
 const displayTotal = computed(() => {
-  if (query.statusFilter === '可约' || query.statusFilter === '已满') {
+  if (
+    query.statusFilter === SLOT_STATUS_FILTER_AVAILABLE ||
+    query.statusFilter === SLOT_STATUS_FILTER_FULL
+  ) {
     return filteredList.value.length;
   }
   return total.value;
@@ -336,7 +353,7 @@ function handleSearch() {
 /** 可约/已满仅前端筛：变更时清空勾选，避免与可见行不一致 */
 function handleStatusFilterChange() {
   selectedRows.value = [];
-  if (query.statusFilter === '停诊') {
+  if (query.statusFilter === SLOT_STATUS_FILTER_BUSY_UNAVAILABLE) {
     handleSearch();
   }
 }
@@ -432,14 +449,8 @@ function serviceTypeLabel(row: SlotListItemDto | SlotDetailDto) {
   return row.healthcareServiceName || '—';
 }
 
-function statusTagType(status?: string): 'danger' | 'info' | 'success' | 'warning' {
-  if (status === '停诊') return 'danger';
-  if (status === '已满') return 'info';
-  return 'success';
-}
-
 function rowClassName({ row }: { row: SlotListItemDto }) {
-  return row.displayStatus === '停诊' ? 'slot-calendar-page__row--blocked' : '';
+  return isSlotBlocked(row) ? 'slot-calendar-page__row--blocked' : '';
 }
 
 watch(loginOrganizationId, (organizationId) => {
@@ -529,9 +540,12 @@ void bootstrapPage();
           style="width: 120px"
           @change="handleStatusFilterChange"
         >
-          <ElOption label="可约" value="可约" />
-          <ElOption label="已满" value="已满" />
-          <ElOption label="停诊" value="停诊" />
+          <ElOption
+            v-for="item in SLOT_STATUS_FILTER_OPTIONS"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
+          />
         </ElSelect>
         <ElButton type="primary" :loading="loading" @click="handleSearch">查询</ElButton>
         <ElButton :icon="Refresh" circle :loading="loading" @click="loadData" />
@@ -549,7 +563,7 @@ void bootstrapPage();
         <span v-if="dateLabel" class="slot-calendar-page__date-label">{{ dateLabel }}</span>
         <span>本页 {{ summary.count }} 个时段</span>
         <span v-if="query.statusFilter" class="slot-calendar-page__filter-hint">
-          状态「{{ query.statusFilter }}」（本页筛选）
+          状态「{{ statusFilterLabel }}」（本页筛选）
         </span>
         <span>容量 {{ summary.capacity }}</span>
         <span>已约 {{ summary.booked }}</span>
@@ -585,8 +599,8 @@ void bootstrapPage();
         </ElTableColumn>
         <ElTableColumn label="状态" width="88" align="center">
           <template #default="{ row }">
-            <ElTag :type="statusTagType(row.displayStatus)" size="small" effect="light">
-              {{ row.displayStatus || '—' }}
+            <ElTag :type="resolveSlotStatusTagType(row)" size="small" effect="light">
+              {{ resolveSlotStatusDisplayLabel(row) }}
             </ElTag>
           </template>
         </ElTableColumn>
@@ -646,8 +660,8 @@ void bootstrapPage();
           <ElDescriptionsItem label="医师">{{ practitionerLabel(detail) }}</ElDescriptionsItem>
           <ElDescriptionsItem label="号源类型">{{ serviceTypeLabel(detail) }}</ElDescriptionsItem>
           <ElDescriptionsItem label="状态">
-            <ElTag :type="statusTagType(detail.displayStatus)" size="small">
-              {{ detail.displayStatus || detail.statusCode }}
+            <ElTag :type="resolveSlotStatusTagType(detail)" size="small">
+              {{ resolveSlotStatusDisplayLabel(detail) }}
             </ElTag>
           </ElDescriptionsItem>
           <ElDescriptionsItem label="时段">

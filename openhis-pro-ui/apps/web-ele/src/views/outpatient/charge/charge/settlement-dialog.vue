@@ -4,7 +4,7 @@ import type {
   PreSettleChargeLinePreviewDto,
 } from '#/api/outpatient-charge/outpatient-charge.types';
 
-import { computed, ref, watch } from 'vue';
+import { computed, watch } from 'vue';
 
 import { getPaymentTypeTagStyles } from '@vben/utils';
 
@@ -13,7 +13,6 @@ import {
   ElDescriptions,
   ElDescriptionsItem,
   ElInput,
-  ElInputNumber,
   ElRadioButton,
   ElRadioGroup,
   ElTable,
@@ -22,7 +21,7 @@ import {
 } from 'element-plus';
 
 import AppDialog from '#/components/app-dialog.vue';
-import { decimalAdd, decimalMul, decimalSub } from '#/utils/format/decimal-util';
+import { formatMoneyDisplay, scaleMoneySettle, sumMoneyThenCalc } from '#/utils/format/money-scale';
 
 import { OUTPATIENT_CHARGE_FEE_DETAIL_FIELD_DEFS } from './outpatient-charge.constants';
 
@@ -90,23 +89,18 @@ const visible = defineModel<boolean>({ required: true });
 const payChannelCode = defineModel<string>('payChannelCode', { required: true });
 const scanCode = defineModel<string>('scanCode', { default: '' });
 
-/** 弹窗内优惠金额（仅影响展示应收；正式结算金额仍以父组件传入的 displayAmount 为准） */
-const localDiscountAmount = ref(0);
-
 const showScanPaySection = computed(
   () => props.scanPayEnabled && payChannelCode.value === 'SCAN_PAY',
 );
 
 watch(visible, (open) => {
   if (open) {
-    localDiscountAmount.value = 0;
     scanCode.value = '';
   }
 });
 
 function formatMoney(value: null | number | string | undefined) {
-  const n = Number(value ?? 0);
-  return Number.isFinite(n) ? n.toFixed(2) : '0.00';
+  return formatMoneyDisplay(value);
 }
 
 /** 费用性质标签文案：与 IF-OPC-03 待收费列表 feeNatureDisplay 同口径 */
@@ -139,17 +133,11 @@ function formatQuantityWithUnit(row: PreSettleChargeLinePreviewDto) {
 
 const displayAmountNum = computed(() => Number(props.displayAmount ?? 0));
 
-const previewsTotal = computed(() => {
-  let sum = 0;
-  for (const row of props.previews) {
-    sum = decimalAdd(sum, Number(row.lineAmount ?? 0));
-  }
-  return sum;
-});
-
-const receivableAmount = computed(() =>
-  Math.max(decimalSub(displayAmountNum.value, localDiscountAmount.value), 0),
+const previewsTotal = computed(() =>
+  sumMoneyThenCalc(props.previews.map((row) => Number(row.lineAmount ?? 0))),
 );
+
+const receivableAmount = computed(() => scaleMoneySettle(displayAmountNum.value));
 
 const feeDetailDisplayRows = computed(() => {
   const map = new Map<string, number>();
@@ -168,19 +156,6 @@ const feeDetailDisplayRows = computed(() => {
 });
 
 const showInsuranceGroups = computed(() => (props.insuranceGroups?.length ?? 0) > 0);
-
-const quickDiscounts = [
-  { label: '95折', value: '95' },
-  { label: '9折', value: '90' },
-  { label: '85折', value: '85' },
-];
-
-const applyQuickDiscount = (type: string) => {
-  const base = displayAmountNum.value;
-  const ratio = Number(type) / 100;
-  const target = decimalMul(base, ratio);
-  localDiscountAmount.value = decimalSub(base, target);
-};
 
 const handleCancel = () => {
   visible.value = false;
@@ -233,32 +208,6 @@ const handleCancel = () => {
                 <span>{{ props.receivableAmountLabel }}</span>
                 <strong>¥{{ formatMoney(receivableAmount) }}</strong>
               </div>
-            </div>
-          </div>
-
-          <div class="copy-section">
-            <div class="copy-section-title">优惠设置</div>
-            <div class="copy-discount-row">
-              <span>优惠金额</span>
-              <ElInputNumber
-                v-model="localDiscountAmount"
-                class="copy-input-number"
-                :min="0"
-                :max="displayAmountNum"
-                controls-position="right"
-                :precision="2"
-                :step="0.01"
-              />
-            </div>
-            <div class="copy-quick-discounts">
-              <ElButton
-                v-for="item in quickDiscounts"
-                :key="item.value"
-                size="small"
-                @click="applyQuickDiscount(item.value)"
-              >
-                {{ item.label }}
-              </ElButton>
             </div>
           </div>
 
@@ -445,21 +394,6 @@ const handleCancel = () => {
 
 .copy-input-number {
   width: 100%;
-}
-
-.copy-quick-discounts {
-  display: flex;
-  flex-wrap: wrap;
-  margin-top: 8px;
-  gap: 6px;
-}
-
-.copy-quick-discounts :deep(.el-button--small) {
-  height: 28px;
-  min-width: 72px;
-  padding: 0 8px;
-  border-radius: 4px;
-  font-size: 13px;
 }
 
 .copy-pay-group {

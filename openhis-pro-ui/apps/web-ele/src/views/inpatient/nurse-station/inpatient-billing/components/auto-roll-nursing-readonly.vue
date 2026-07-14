@@ -3,6 +3,8 @@ import type { NurseStationAutoRollNursingReadonlyDto } from '#/api/inpatient/nur
 
 import { computed } from 'vue';
 
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
+
 import { hasAutoRollNursingReadonly } from '../services/map-nurse-station-auto-roll';
 
 defineOptions({
@@ -34,11 +36,16 @@ const billDateModel = computed({
 /** 护理只读区是否有有效医嘱解析结果。 */
 const hasNursing = computed(() => hasAutoRollNursingReadonly(props.nursing));
 
-/** 格式化数量展示文案。 */
-function formatQuantity(value: number | string | undefined, unitName: string | undefined) {
-  const qty = value ?? '—';
-  const unit = unitName?.trim();
-  return unit ? `${qty} ${unit}` : String(qty);
+/** 格式化护理费单价展示。 */
+function formatNursingUnitPrice(value: number | string | undefined): string {
+  if (value === undefined || value === null || value === '') {
+    return '—';
+  }
+  const num = Number(value);
+  if (!Number.isFinite(num)) {
+    return '—';
+  }
+  return `￥${formatMoneyDisplay(num)}`;
 }
 </script>
 
@@ -69,9 +76,9 @@ function formatQuantity(value: number | string | undefined, unitName: string | u
             <span class="auto-roll-nursing__item-value">{{ nursing.activityName ?? '—' }}</span>
           </div>
           <div class="auto-roll-nursing__item">
-            <span class="auto-roll-nursing__item-label">数量</span>
+            <span class="auto-roll-nursing__item-label">价格</span>
             <span class="auto-roll-nursing__item-value">
-              {{ formatQuantity(nursing.quantity, nursing.unitName) }}
+              {{ formatNursingUnitPrice(nursing.unitPrice) }}
             </span>
           </div>
           <div class="auto-roll-nursing__item">
@@ -82,12 +89,6 @@ function formatQuantity(value: number | string | undefined, unitName: string | u
             <span class="auto-roll-nursing__item-label">医嘱状态</span>
             <span class="auto-roll-nursing__item-value">
               <ElTag effect="light" size="small">{{ nursing.statusDictText ?? '—' }}</ElTag>
-            </span>
-          </div>
-          <div class="auto-roll-nursing__item auto-roll-nursing__item--wide">
-            <span class="auto-roll-nursing__item-label">解析定价</span>
-            <span class="auto-roll-nursing__item-value">
-              {{ nursing.chargeDefinitionName ?? '—' }}
             </span>
           </div>
         </div>

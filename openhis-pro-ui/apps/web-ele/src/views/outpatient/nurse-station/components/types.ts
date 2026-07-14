@@ -1,4 +1,10 @@
 import type { DrugGroupDisplayItem } from '#/utils/doctor-station/drug-group-table';
+import type {
+  NurseExecuteDisplayStatusCode,
+  SupplyDispenseStatusCode,
+} from '#/utils/nurse-station/nurse-execute-status';
+
+export type NurseExecuteRowTypeCode = 'DEVICE' | 'MEDICATION' | 'OTHER' | 'SERVICE';
 
 /** 护士站队列患者（演示字段，后续可对接接口） */
 export interface NursePatient {
@@ -31,6 +37,10 @@ export interface NursePatient {
 export interface NurseAdviceExecuteRow {
   key: string;
   status: string;
+  /** 展示态 code（逻辑判断用） */
+  statusEnum?: NurseExecuteDisplayStatusCode;
+  /** 行资源类型 code */
+  rowType?: NurseExecuteRowTypeCode;
   type: string;
   content: string;
   startTime: string;
@@ -89,9 +99,54 @@ export interface SupplyItem {
   usage: string;
   quantity: number;
   status: '已发放' | '已配药' | '待发放';
+  /** 发放展示态 code（逻辑判断用） */
+  statusCode: SupplyDispenseStatusCode;
   /** 护士执行后可取消（PREPARED / COMPLETED / PART_COMPLETED） */
   canCancelExecute?: boolean;
 }
+
+export type NurseActionRecordTypeCode = 'EXECUTE' | 'PRINT';
+
+export type NurseActionRecordTypeFilter = '' | NurseActionRecordTypeCode;
+
+export const NURSE_ACTION_RECORD_TYPE_LABEL: Record<NurseActionRecordTypeCode, string> = {
+  EXECUTE: '执行',
+  PRINT: '打印',
+};
+
+/** 护士站操作记录动作 code（逻辑判断用） */
+export type NurseActionRecordActionCode =
+  | 'CANCEL_EXECUTE'
+  | 'DELETE_SKIN_TEST'
+  | 'EXECUTE_AND_RECORD'
+  | 'PRINT_INFUSION_LABEL'
+  | 'PRINT_NEBULIZATION_LABEL'
+  | 'PRINT_PRESCRIPTION'
+  | 'PRINT_PROCEDURE_APPLY'
+  | 'PRINT_SKIN_TEST_LABEL'
+  | 'PRINT_SPECIMEN_BARCODE'
+  | 'PRINT_TREATMENT_SHEET'
+  | 'REGISTER_SKIN_TEST';
+
+export const NURSE_ACTION_RECORD_ACTION_LABEL: Record<NurseActionRecordActionCode, string> = {
+  EXECUTE_AND_RECORD: '执行并记录',
+  CANCEL_EXECUTE: '取消执行',
+  REGISTER_SKIN_TEST: '登记皮试',
+  DELETE_SKIN_TEST: '删除皮试记录',
+  PRINT_INFUSION_LABEL: '打印瓶贴',
+  PRINT_TREATMENT_SHEET: '打印处置单',
+  PRINT_PRESCRIPTION: '打印处方单',
+  PRINT_SPECIMEN_BARCODE: '打印采血码',
+  PRINT_SKIN_TEST_LABEL: '打印皮试标签',
+  PRINT_NEBULIZATION_LABEL: '打印雾化标签',
+  PRINT_PROCEDURE_APPLY: '打印处置申请单',
+};
+
+/** 与 IF-NUR-03 服务端记录重复、需过滤的本地汇总动作 */
+export const LOCAL_DEDUP_ACTION_CODES = new Set<NurseActionRecordActionCode>([
+  'EXECUTE_AND_RECORD',
+  'CANCEL_EXECUTE',
+]);
 
 export interface ActionRecord {
   id: string;
@@ -99,7 +154,10 @@ export interface ActionRecord {
   operator: string;
   /** 操作人列标题（执行人 / 取消执行人）；本地记录未传时由 appendRecord 回落 */
   operatorLabel?: string;
-  type: '打印' | '执行';
+  type: NurseActionRecordTypeCode;
+  /** 动作 code（逻辑判断用） */
+  actionCode?: NurseActionRecordActionCode;
+  /** 动作展示文案 */
   action: string;
   target: string;
   result: '成功';

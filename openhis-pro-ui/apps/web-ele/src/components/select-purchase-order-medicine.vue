@@ -1,16 +1,25 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
+import { pageProductsForDepartmentRequisitionApi } from '#/api/inventory/department/requisition';
+import { pageProductsForDeptIssueApi } from '#/api/inventory/department/dept-issue';
+import { pageProductsForDeptGainLossApi } from '#/api/inventory/department/gain-loss';
+import { pageProductsForDeptReturnApi } from '#/api/inventory/department/dept-return';
+import { pageProductsForDeptStocktakeApi } from '#/api/inventory/department/stocktake';
+import { pageProductsForTransferOutApi as pageProductsForDepartmentTransferOutApi } from '#/api/inventory/department/transfer-out';
+import { pageProductsForPharmacyGainLossApi } from '#/api/inventory/pharmacy/gain-loss';
+import { pageProductsForPharmacyRequisitionApi } from '#/api/inventory/pharmacy/requisition';
 import { pageProductsForPharmacyStockInApi } from '#/api/inventory/pharmacy/stock-in';
 import { pageProductsForPharmacyStocktakeApi } from '#/api/inventory/pharmacy/stocktake';
-import { pageProductsForDeptStocktakeApi } from '#/api/inventory/department/stocktake';
+import { pageProductsForTransferOutApi as pageProductsForPharmacyTransferOutApi } from '#/api/inventory/pharmacy/transfer-out';
+import { pageProductsForGainLossApi } from '#/api/inventory/warehouse/gain-loss';
+import { pageProductsForTransferOutApi } from '#/api/inventory/warehouse/transfer-out';
 import { pageProductsForInboundReceiptApi } from '#/api/inventory/warehouse/inbound-receipt';
 import { pageProductsForWarehouseStocktakeApi } from '#/api/inventory/warehouse/stocktake';
 import { pageProductsForPurchaseApi } from '#/api/inventory/warehouse/purchase-order';
 import { pageProductsForReturnToSupplierApi } from '#/api/inventory/warehouse/return-to-supplier';
-import { pageProductsForReturnUpstreamApi } from '#/api/inventory/pharmacy/return-upstream';
-import { pageProductsForReturnFromDownstreamApi } from '#/api/inventory/warehouse/return-from-downstream';
-import { pageProductsForDeptReturnApi } from '#/api/inventory/department/dept-return';
+import { pageProductsForReturnToWarehouseApi } from '#/api/inventory/pharmacy/return-to-warehouse';
+import { pageProductsForReturnStockInApi } from '#/api/inventory/warehouse/return-stock-in';
 import { pageProductsForStockOutApi } from '#/api/inventory/warehouse/stock-out';
 import { pageGainLossMedicationApi } from '#/api/warehouse/gain-loss';
 import { pagePurchaseOrderMedicationApi } from '#/api/warehouse/purchase-request';
@@ -25,6 +34,10 @@ import {
 } from '#/utils/inventory/inventory-product-pick-list';
 import { STOCK_OUT_PRODUCT_PICK_TABLE_COLUMNS } from '#/utils/inventory/stock-out-product-pick-list';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import {
+  isSpecificInventoryLocationId,
+  preserveLocationIdForRequest,
+} from '#/utils/inventory/inventory-workbench-list';
 
 type PurchaseOrderMedicationPickRow = Record<string, unknown> & {
   id?: number | string;
@@ -40,19 +53,29 @@ interface Props {
   query?: () => Promise<Record<string, unknown>>;
   inputHeight?: number | string;
   listSource?:
+    | 'dept-gain-loss'
+    | 'dept-issue'
+    | 'dept-return'
+    | 'dept-stocktake'
+    | 'dept-transfer-out'
+    | 'department-requisition'
     | 'gain-loss'
     | 'inbound-receipt'
     | 'inventory-products'
+    | 'pharmacy-gain-loss'
+    | 'pharmacy-requisition'
     | 'pharmacy-stock-in'
     | 'pharmacy-stocktake'
-    | 'dept-stocktake'
+    | 'pharmacy-transfer-out'
+    | 'purchase-order'
     | 'purchase-request'
+    | 'return-stock-in'
     | 'return-to-supplier'
-    | 'return-upstream'
-    | 'return-from-downstream'
-    | 'dept-return'
+    | 'return-to-warehouse'
     | 'stock-out'
-    | 'warehouse-stocktake';
+    | 'warehouse-gain-loss'
+    | 'warehouse-stocktake'
+    | 'warehouse-transfer-out';
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -72,7 +95,7 @@ const emit = defineEmits<{
 }>();
 
 const tableColumns = computed(() => {
-  if (props.listSource === 'inbound-receipt') {
+  if (props.listSource === 'inbound-receipt' || props.listSource === 'purchase-order') {
     return [...INBOUND_RECEIPT_PRODUCT_PICK_TABLE_COLUMNS];
   }
   if (props.listSource === 'stock-out') {
@@ -91,18 +114,14 @@ function mapInboundReceiptPickListResponse(data: unknown) {
 
 function resolvePurposeLocationId(q: Record<string, unknown>): number | string | undefined {
   const raw = q.purposeLocationId ?? q.locationId;
-  if (raw === undefined || raw === null) return undefined;
-  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
-  const s = String(raw).trim();
-  return s === '' ? undefined : s;
+  if (!isSpecificInventoryLocationId(raw)) return undefined;
+  return preserveLocationIdForRequest(raw) ?? String(raw).trim();
 }
 
 function resolveSourceLocationId(q: Record<string, unknown>): number | string | undefined {
   const raw = q.sourceLocationId;
-  if (raw === undefined || raw === null) return undefined;
-  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
-  const s = String(raw).trim();
-  return s === '' ? undefined : s;
+  if (!isSpecificInventoryLocationId(raw)) return undefined;
+  return preserveLocationIdForRequest(raw) ?? String(raw).trim();
 }
 
 function mapInventoryPickListResponse(data: unknown) {
@@ -116,25 +135,38 @@ function mapInventoryPickListResponse(data: unknown) {
 async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pageSize: number }) {
   const q = await props.query();
 
-  if (props.listSource === 'inventory-products') {
+  if (props.listSource === 'purchase-order' || props.listSource === 'inventory-products') {
+    const purposeLocationId = resolvePurposeLocationId(q);
+    const productTableName = (q.productTableName as string | undefined)?.trim();
+    if (purposeLocationId === undefined || !productTableName) {
+      return { content: [], totalElements: 0 };
+    }
     const res = await pageProductsForPurchaseApi({
+      purposeLocationId,
+      productTableName,
       keyword: params.keyword?.trim() || undefined,
-      supplierId: q.supplierId as number | undefined,
+      supplierId: q.supplierId as number | string | undefined,
       pageNo: params.pageNo,
       pageSize: params.pageSize,
       activeFlag: true,
     });
-    return mapInventoryPickListResponse(res.data);
+    return props.listSource === 'purchase-order'
+      ? mapInboundReceiptPickListResponse(res.data)
+      : mapInventoryPickListResponse(res.data);
   }
 
   if (props.listSource === 'inbound-receipt') {
+    const productTableName = (q.productTableName as string | undefined)?.trim();
+    if (!productTableName) {
+      return { content: [], totalElements: 0 };
+    }
     const purposeLocationId = resolvePurposeLocationId(q);
     if (purposeLocationId === undefined) {
       return { content: [], totalElements: 0 };
     }
     const res = await pageProductsForInboundReceiptApi({
       purposeLocationId,
-      productTableName: q.productTableName as string | undefined,
+      productTableName,
       keyword: params.keyword?.trim() || undefined,
       supplierId: q.supplierId as number | undefined,
       manufacturer: q.manufacturer as string | undefined,
@@ -181,8 +213,8 @@ async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pa
   }
 
   if (
-    props.listSource === 'return-upstream' ||
-    props.listSource === 'return-from-downstream' ||
+    props.listSource === 'return-to-warehouse' ||
+    props.listSource === 'return-stock-in' ||
     props.listSource === 'dept-return'
   ) {
     const productTableName = (q.productTableName as string | undefined)?.trim();
@@ -199,10 +231,10 @@ async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pa
       activeFlag: true,
     };
     const res =
-      props.listSource === 'return-upstream'
-        ? await pageProductsForReturnUpstreamApi(common)
-        : props.listSource === 'return-from-downstream'
-          ? await pageProductsForReturnFromDownstreamApi(common)
+      props.listSource === 'return-to-warehouse'
+        ? await pageProductsForReturnToWarehouseApi(common)
+        : props.listSource === 'return-stock-in'
+          ? await pageProductsForReturnStockInApi(common)
           : await pageProductsForDeptReturnApi(common);
     return mapInventoryPickListResponse(res.data);
   }
@@ -220,6 +252,97 @@ async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pa
       pageNo: params.pageNo,
       pageSize: params.pageSize,
     });
+    return mapInventoryPickListResponse(res.data);
+  }
+
+  if (
+    props.listSource === 'pharmacy-requisition' ||
+    props.listSource === 'department-requisition'
+  ) {
+    const productTableName = (q.productTableName as string | undefined)?.trim();
+    const sourceLocationId = resolveSourceLocationId(q);
+    if (sourceLocationId === undefined || !productTableName) {
+      return { content: [], totalElements: 0 };
+    }
+    const common = {
+      sourceLocationId,
+      productTableName,
+      keyword: params.keyword?.trim() || undefined,
+      pageNo: params.pageNo,
+      pageSize: params.pageSize,
+    };
+    const res =
+      props.listSource === 'pharmacy-requisition'
+        ? await pageProductsForPharmacyRequisitionApi(common)
+        : await pageProductsForDepartmentRequisitionApi(common);
+    return mapInventoryPickListResponse(res.data);
+  }
+
+  if (
+    props.listSource === 'pharmacy-transfer-out' ||
+    props.listSource === 'warehouse-transfer-out' ||
+    props.listSource === 'dept-transfer-out'
+  ) {
+    const productTableName = (q.productTableName as string | undefined)?.trim();
+    const sourceLocationId = resolveSourceLocationId(q);
+    if (sourceLocationId === undefined || !productTableName) {
+      return { content: [], totalElements: 0 };
+    }
+    const common = {
+      sourceLocationId,
+      productTableName,
+      keyword: params.keyword?.trim() || undefined,
+      pageNo: params.pageNo,
+      pageSize: params.pageSize,
+    };
+    const res =
+      props.listSource === 'pharmacy-transfer-out'
+        ? await pageProductsForPharmacyTransferOutApi(common)
+        : props.listSource === 'dept-transfer-out'
+          ? await pageProductsForDepartmentTransferOutApi(common)
+          : await pageProductsForTransferOutApi(common);
+    return mapInventoryPickListResponse(res.data);
+  }
+
+  if (props.listSource === 'dept-issue') {
+    const productTableName = (q.productTableName as string | undefined)?.trim();
+    const purposeLocationId = resolvePurposeLocationId(q);
+    if (purposeLocationId === undefined || !productTableName) {
+      return { content: [], totalElements: 0 };
+    }
+    const res = await pageProductsForDeptIssueApi({
+      purposeLocationId,
+      productTableName,
+      keyword: params.keyword?.trim() || undefined,
+      pageNo: params.pageNo,
+      pageSize: params.pageSize,
+    });
+    return mapInventoryPickListResponse(res.data);
+  }
+
+  if (
+    props.listSource === 'warehouse-gain-loss' ||
+    props.listSource === 'pharmacy-gain-loss' ||
+    props.listSource === 'dept-gain-loss'
+  ) {
+    const productTableName = (q.productTableName as string | undefined)?.trim();
+    const purposeLocationId = resolvePurposeLocationId(q);
+    if (purposeLocationId === undefined || !productTableName) {
+      return { content: [], totalElements: 0 };
+    }
+    const common = {
+      purposeLocationId,
+      productTableName,
+      keyword: params.keyword?.trim() || undefined,
+      pageNo: params.pageNo,
+      pageSize: params.pageSize,
+    };
+    const res =
+      props.listSource === 'pharmacy-gain-loss'
+        ? await pageProductsForPharmacyGainLossApi(common)
+        : props.listSource === 'dept-gain-loss'
+          ? await pageProductsForDeptGainLossApi(common)
+          : await pageProductsForGainLossApi(common);
     return mapInventoryPickListResponse(res.data);
   }
 
@@ -334,7 +457,7 @@ function selectedProductName(): string {
     :selected-label="selectedProductName()"
     :before-close="handleBeforeClose"
     :input-height="inputHeight"
-    :panel-width="900"
+    :panel-width="1200"
     @update:model-value="handleChange"
     @change="handleChange"
   />

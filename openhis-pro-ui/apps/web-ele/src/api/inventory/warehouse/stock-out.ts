@@ -282,17 +282,57 @@ export interface PageProductsForStockOutResponse {
   records: ProductDefinitionItemDto[];
 }
 
-export interface PageLinkablePharmacyRequisitionsRequest {
+export interface WarehouseDocumentDetailRowDto {
+  id?: number | string;
+  busNo?: string;
+  originalBusNo?: string;
+  typeEnum?: string;
+  statusEnum?: string;
+  categoryEnum?: string;
+  sourceLocationId?: number | string;
+  purposeLocationId?: number | string;
+  itemId?: number | string;
+  itemTable?: string;
+  itemQuantity?: number;
+  unitCode?: string;
+  lotNumber?: string;
+  applyTime?: string;
+  approvalTime?: string;
+}
+
+export interface PageLinkableRequisitionsRequest {
   sourceLocationId: number | string;
   keyword?: string;
   pageNo: number;
   pageSize: number;
 }
 
-export interface PageLinkablePharmacyRequisitionsResponse {
+export interface PageLinkableRequisitionsResponse {
   total?: number;
-  records: StockOutListRowDto[];
+  records: WarehouseDocumentDetailRowDto[];
 }
+
+export interface GetLinkablePharmacyRequisitionDetailRequest {
+  busNo: string;
+  sourceLocationId?: number | string;
+  excludeStockOutBusNo?: string;
+}
+
+export interface GetLinkablePharmacyRequisitionDetailResponse {
+  originalBusNo?: string;
+  requisitionBusNo?: string;
+  sourceLocationId?: number | string;
+  purposeLocationId?: number | string;
+  categoryEnum?: string;
+  practitionerId?: number | string;
+  lines?: StockOutLineDto[];
+}
+
+/** @deprecated 使用 {@link PageLinkableRequisitionsRequest} */
+export type PageLinkablePharmacyRequisitionsRequest = PageLinkableRequisitionsRequest;
+
+/** @deprecated 使用 {@link PageLinkableRequisitionsResponse} */
+export type PageLinkablePharmacyRequisitionsResponse = PageLinkableRequisitionsResponse;
 
 /** 药库出库单：与 SupplyOrderType.CABINET_STOCK_OUT 枚举第二字段（name）一致 */
 export const WHS_SO_TYPE_ENUM = 'CABINET_STOCK_OUT';
@@ -356,11 +396,38 @@ export async function pageProductsForStockOutApi(body: PageProductsForStockOutRe
   );
 }
 
-export async function pageLinkablePharmacyRequisitionsApi(
-  body: PageLinkablePharmacyRequisitionsRequest,
+/** 从已同意请领单拉取的出库预填明细（与 getStockOutDetail 行结构一致）。 */
+export interface GetLinkablePharmacyRequisitionDetailRequest {
+  busNo: string;
+  sourceLocationId?: number | string;
+  excludeStockOutBusNo?: string;
+}
+
+export interface GetLinkablePharmacyRequisitionDetailResponse {
+  originalBusNo?: string;
+  requisitionBusNo?: string;
+  sourceLocationId?: number | string;
+  purposeLocationId?: number | string;
+  categoryEnum?: string;
+  practitionerId?: number | string;
+  lines?: StockOutDetailLineDto[];
+}
+
+export async function pageLinkableRequisitionsApi(body: PageLinkableRequisitionsRequest) {
+  return requestClient.post<ApiResponse<PageLinkableRequisitionsResponse>>(
+    `${BASE}/pageLinkableRequisitions`,
+    body,
+  );
+}
+
+/** @deprecated 使用 {@link pageLinkableRequisitionsApi} */
+export const pageLinkablePharmacyRequisitionsApi = pageLinkableRequisitionsApi;
+
+export async function getLinkablePharmacyRequisitionDetailApi(
+  body: GetLinkablePharmacyRequisitionDetailRequest,
 ) {
-  return requestClient.post<ApiResponse<PageLinkablePharmacyRequisitionsResponse>>(
-    `${BASE}/pageLinkablePharmacyRequisitions`,
+  return requestClient.post<ApiResponse<GetLinkablePharmacyRequisitionDetailResponse>>(
+    `${BASE}/getLinkablePharmacyRequisitionDetail`,
     body,
   );
 }

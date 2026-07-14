@@ -1,11 +1,16 @@
 /** 费用明细展示模式 */
 export type NurseStationCostDetailPresentationMode = 'DETAIL' | 'SUMMARY';
 
+/** 费用明细状态筛选（与 ChargeItemStatus code 一致） */
+export type NurseStationCostDetailStatusFilter = 'PENDING_SETTLEMENT' | 'SETTLED';
+
 /** 费用明细页初始化响应 */
 export interface LoadNurseStationCostDetailPageInitResponse {
   dateFrom?: string;
   dateTo?: string;
+  defaultStatusEnum?: NurseStationCostDetailStatusFilter | string;
   presentationOptions?: NurseStationCostDetailPresentationOptionDto[];
+  statusFilterOptions?: NurseStationCostDetailPresentationOptionDto[];
   expenseBlockOrder?: string[];
 }
 
@@ -22,6 +27,7 @@ export interface QueryNurseStationInpatientCostDetailRequest {
   dateFrom: string;
   dateTo: string;
   presentationMode: NurseStationCostDetailPresentationMode;
+  statusEnum: NurseStationCostDetailStatusFilter;
 }
 
 /** 查询住院费用明细响应 */

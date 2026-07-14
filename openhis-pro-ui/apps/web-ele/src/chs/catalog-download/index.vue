@@ -136,14 +136,17 @@ const previewStartVer = computed(
 
 const versionPreviewHint = computed(() => {
   if (!versionPreview.value) {
-    return '可选：探测将模拟阶段一，展示预计 ZIP 包数量（需已签到）';
+    return '可选：探测仅预览阶段一 ZIP 数量，不入库；正式同步请点「开始下载」（需已签到）';
   }
   const n = pendingVersionCount.value;
   if (n === 0) {
-    return '探测未拉到新版本包（可能已是最新，或需勾选「从 0 开始」）';
+    if (!currentCursor.value) {
+      return '探测 0 包且尚无游标：尚未成功入库过。请点「开始下载」全量拉取；若仍为 0，查服务端 [catalog-dl][phase1] 日志或平台是否开通该目录';
+    }
+    return '探测未拉到新版本包（本地已有游标，平台可能已无增量；增量同步可取消「全量重拉」）';
   }
   const more = previewHasMore.value ? '；已达本次探测轮次上限，可加大轮次或无上限重探' : '';
-  return `预计 ${n} 个 ZIP 包，起点 ver=${previewStartVer.value}${more}`;
+  return `预计 ${n} 个 ZIP 包，起点 ver=${previewStartVer.value}${more}；探测不入库，请点「开始下载」`;
 });
 
 const startVerHint = computed(() => {

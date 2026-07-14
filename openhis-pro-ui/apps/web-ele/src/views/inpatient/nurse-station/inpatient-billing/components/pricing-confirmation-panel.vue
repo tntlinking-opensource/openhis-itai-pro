@@ -3,12 +3,17 @@ import type { PricingConfirmationTableRow } from '../services/map-nurse-station-
 
 import { computed } from 'vue';
 
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
+import { ENCOUNTER_CLINICAL_ORDER_MUTATION_BLOCKED_MESSAGE } from '#/utils/inpatient/encounter-clinical-order-gate';
+
 defineOptions({
   name: 'InpatientBillingPricingConfirmationPanel',
 });
 
 const props = withDefaults(defineProps<Props>(), {
+  canViewBilling: false,
   canOperateBilling: false,
+  chargeMutationBlocked: false,
   cancelLoading: false,
   loading: false,
   pricingRows: () => [],
@@ -26,7 +31,9 @@ const emit = defineEmits<{
 }>();
 
 interface Props {
+  canViewBilling?: boolean;
   canOperateBilling?: boolean;
+  chargeMutationBlocked?: boolean;
   cancelLoading?: boolean;
   loading?: boolean;
   pricingRows?: PricingConfirmationTableRow[];
@@ -55,7 +62,7 @@ const canCancelSelected = computed(
 
 /** 将金额格式化为两位小数金额文案。 */
 function formatCurrency(value: number) {
-  return `￥${value.toFixed(2)}`;
+  return `￥${formatMoneyDisplay(value)}`;
 }
 
 /** 仅待结算行允许勾选（用于取消划价） */
@@ -109,7 +116,13 @@ function handleSelectionChange(selection: PricingConfirmationTableRow[]) {
       </div>
     </div>
     <ElAlert
-      v-if="!canOperateBilling"
+      v-if="chargeMutationBlocked"
+      :title="`${ENCOUNTER_CLINICAL_ORDER_MUTATION_BLOCKED_MESSAGE}（仅可查看列表）`"
+      type="warning"
+      :closable="false"
+    />
+    <ElAlert
+      v-else-if="!canViewBilling"
       title="住院记账仅支持单选患者，请在左侧只勾选 1 位患者后查看划价列表"
       type="warning"
       :closable="false"

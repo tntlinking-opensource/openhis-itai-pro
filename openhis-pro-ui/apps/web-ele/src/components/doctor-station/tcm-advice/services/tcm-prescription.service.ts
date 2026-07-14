@@ -19,6 +19,7 @@ import {
   resolveTcmMethodLabel,
 } from '#/components/doctor-station/tcm-advice/services/tcm-method-code';
 import { decimalMul } from '#/utils/format/decimal-util';
+import { calcMoneyLineTotal, sumMoneyThenCalc } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
   convertProductUnitPriceBetweenBandKinds,
@@ -78,6 +79,10 @@ export interface TcmPrescriptionLineUi {
   dirty?: boolean;
   /** 新建尚未落库 */
   isNew?: boolean;
+  /** 特殊煎法术语 code（dosage_instruction） */
+  dosageInstructionCode?: string;
+  /** 特殊煎法展示名 */
+  dosageInstructionText?: string;
 }
 
 /** 处方方头 UI 态 */
@@ -87,13 +92,13 @@ export interface TcmPrescriptionUi {
   /** 住院方头长临 */
   therapyEnum?: string;
   tcmSyndromeGroup: string;
-  chineseHerbsDoseQuantity: number;
+  chineseHerbsDoseQuantity?: number;
   sufferingFlag: boolean;
   methodCode: string;
   methodName?: string;
   rateCode: string;
   rateName?: string;
-  days: number;
+  days?: number;
   remark: string;
   statusEnum: string;
   /** 方状态展示码（退费态优先于请求态） */
@@ -119,6 +124,14 @@ function toNum(value: unknown, fallback = 0): number {
   if (value === null || value === undefined || value === '') return fallback;
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+/** 读模型数量字段：无值时不落默认 1 */
+function toOptionalPositiveNum(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === '') return undefined;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  return n;
 }
 
 function toStr(value: unknown): string {
@@ -251,13 +264,13 @@ export function mapApiHeaderToUi(dto: TcmRxHeaderDto): TcmPrescriptionUi {
     prescriptionNo: toStr(dto.prescriptionNo) || undefined,
     therapyEnum: toStr(dto.therapyEnum) || undefined,
     tcmSyndromeGroup: toStr(dto.tcmSyndromeGroup),
-    chineseHerbsDoseQuantity: toNum(dto.chineseHerbsDoseQuantity, 1),
+    chineseHerbsDoseQuantity: toOptionalPositiveNum(dto.chineseHerbsDoseQuantity),
     sufferingFlag: Boolean(dto.sufferingFlag),
     methodCode: toStr(dto.methodCode),
     methodName: toStr(dto.methodName) || undefined,
-    rateCode: toStr(dto.rateCode) || DEFAULT_TCM_RATE_CODE,
+    rateCode: toStr(dto.rateCode),
     rateName: toStr(dto.rateName) || undefined,
-    days: toNum(dto.days, 1),
+    days: toOptionalPositiveNum(dto.days),
     remark: toStr(dto.remark),
     statusEnum: toStr(dto.statusEnum) || TCM_RX_STATUS_DRAFT,
     displayStatusEnum: toStr(dto.displayStatusEnum) || undefined,
@@ -292,6 +305,8 @@ export function mapApiLineToUi(dto: TcmRxLineDto, index: number): TcmPrescriptio
     pendingDelete: false,
     dirty: false,
     isNew: false,
+    dosageInstructionCode: toStr(dto.dosageInstructionCode) || undefined,
+    dosageInstructionText: toStr(dto.dosageInstructionText) || undefined,
   };
 }
 
@@ -314,9 +329,9 @@ export function mapHistoryRowToTreeItem(
 /** 空白处方 */
 export function createEmptyPrescription(
   tcmSyndromeGroup = '',
-  chineseHerbsDoseQuantity = 1,
-  defaultMethodCode = DEFAULT_TCM_METHOD_CODE,
-  defaultRateCode = DEFAULT_TCM_RATE_CODE,
+  chineseHerbsDoseQuantity?: number,
+  defaultMethodCode = '',
+  defaultRateCode = '',
   therapyEnum?: string,
 ): TcmPrescriptionUi {
   return {
@@ -327,11 +342,11 @@ export function createEmptyPrescription(
     sufferingFlag: false,
     methodCode: defaultMethodCode,
     rateCode: defaultRateCode,
-    days: 1,
+    days: undefined,
     remark: '',
     statusEnum: TCM_RX_STATUS_DRAFT,
     lines: [],
-    headerDirty: true,
+    headerDirty: false,
   };
 }
 
@@ -348,6 +363,7 @@ export function createEmptyLine(sortNumber: number): TcmPrescriptionLineUi {
     retailPrice: 0,
     isNew: true,
     dirty: true,
+    dosageInstructionCode: '',
   };
 }
 
@@ -422,11 +438,49 @@ export function applyCatalogProductToLine(
   line.dirty = true;
 }
 
-/** 单剂金额：各行 dose × retailPrice 累加 */
+/** 单剂金额：各行 dose × retailPrice 累加（6 位） */
 export function calcSingleDoseAmount(lines: TcmPrescriptionLineUi[]): number {
-  return lines
-    .filter((line) => !line.pendingDelete && line.medicationDefinitionId)
-    .reduce((sum, line) => sum + decimalMul(line.dose, line.retailPrice), 0);
+  return sumMoneyThenCalc(
+    lines
+      .filter((line) => !line.pendingDelete && line.medicationDefinitionId)
+      .map((line) => calcMoneyLineTotal(line.retailPrice, line.dose)),
+  );
+}
+
+/** 校验方头必填项（暂存/签发前共用） */
+export function validatePrescriptionHeaderFields(
+  rx: Pick<
+    TcmPrescriptionUi,
+    | 'chineseHerbsDoseQuantity'
+    | 'days'
+    | 'methodCode'
+    | 'rateCode'
+    | 'tcmSyndromeGroup'
+    | 'therapyEnum'
+  >,
+  options?: { requireTherapy?: boolean },
+): null | string {
+  if (!rx.tcmSyndromeGroup.trim()) {
+    return '请先选择绑定的病证组';
+  }
+  if (options?.requireTherapy && !String(rx.therapyEnum ?? '').trim()) {
+    return '请选择医嘱类型（长期/临时）';
+  }
+  if (!String(rx.methodCode ?? '').trim()) {
+    return '请选择用法';
+  }
+  if (!String(rx.rateCode ?? '').trim()) {
+    return '请选择用药频次';
+  }
+  const days = rx.days;
+  if (days == null || days <= 0) {
+    return '请填写天数';
+  }
+  const doseQty = rx.chineseHerbsDoseQuantity;
+  if (doseQty == null || doseQty <= 0) {
+    return '请填写付数';
+  }
+  return null;
 }
 
 /** 是否存在待提交的方头/明细变更 */
@@ -460,6 +514,7 @@ export function buildDraftSaveRequest(
           dose: line.dose,
           doseUnitCode: line.doseUnitCode || 'g',
           sortNumber: visibleSortSeq,
+          dosageInstructionCode: String(line.dosageInstructionCode ?? '').trim(),
         };
         if (line.medicationRequestId && !line.isNew) {
           base.medicationRequestId = line.medicationRequestId;
@@ -481,7 +536,7 @@ export function buildDraftSaveRequest(
         prescriptionGroupKey: rx.prescriptionGroupKey,
         therapyEnum: rx.therapyEnum || undefined,
         tcmSyndromeGroup: rx.tcmSyndromeGroup,
-        chineseHerbsDoseQuantity: rx.chineseHerbsDoseQuantity,
+        chineseHerbsDoseQuantity: rx.chineseHerbsDoseQuantity ?? 0,
         sufferingFlag: rx.sufferingFlag,
         methodCode: rx.methodCode || undefined,
         rateCode: rx.rateCode || undefined,
@@ -585,8 +640,8 @@ export function buildCancelStopLongTermTcmRequest(
 export function syncHeaderFormToPrescription(
   rx: TcmPrescriptionUi,
   form: {
-    chineseHerbsDoseQuantity: number;
-    days: number;
+    chineseHerbsDoseQuantity?: number;
+    days?: number;
     methodCode: string;
     rateCode: string;
     remark: string;
@@ -614,11 +669,11 @@ export function loadHeaderFormFromPrescription(rx: null | TcmPrescriptionUi) {
     return {
       tcmSyndromeGroup: '',
       therapyEnum: '',
-      chineseHerbsDoseQuantity: 1,
+      chineseHerbsDoseQuantity: undefined,
       sufferingFlag: false,
       methodCode: '',
-      rateCode: DEFAULT_TCM_RATE_CODE,
-      days: 1,
+      rateCode: '',
+      days: undefined,
       remark: '',
     };
   }
@@ -628,7 +683,7 @@ export function loadHeaderFormFromPrescription(rx: null | TcmPrescriptionUi) {
     chineseHerbsDoseQuantity: rx.chineseHerbsDoseQuantity,
     sufferingFlag: rx.sufferingFlag,
     methodCode: rx.methodCode,
-    rateCode: rx.rateCode || DEFAULT_TCM_RATE_CODE,
+    rateCode: rx.rateCode,
     days: rx.days,
     remark: rx.remark,
   };

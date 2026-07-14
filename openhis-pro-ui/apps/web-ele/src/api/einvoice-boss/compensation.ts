@@ -1,10 +1,9 @@
 /**
- * 博思电子票据 — 待补偿 API（POST /api/app/einvoiceBossQuery|einvoiceBossIssue/*）
+ * 博思电子票据 — 待补偿 API（POST /api/app/einvoiceBossCompensation/*）
  */
 import { publicRequestClient } from '#/api/request';
 
-const QUERY_BASE = '/einvoiceBossQuery';
-const ISSUE_BASE = '/einvoiceBossIssue';
+const COMPENSATION_BASE = '/einvoiceBossCompensation';
 
 export type CompensationExceptionType = 'LOST' | 'AMOUNT' | 'FAILED' | 'STALE';
 
@@ -14,6 +13,8 @@ export interface BossPendingCompensationStatsDto {
   amountCount?: number;
   failedCount?: number;
   staleCount?: number;
+  /** 扫描命中上限，统计/列表可能不完整。 */
+  scanTruncated?: boolean;
 }
 
 export interface BossCompensationRowDto {
@@ -66,35 +67,35 @@ function toInvoiceIdBody(invoiceId: string) {
 
 export function fetchPendingCompensationStatsApi() {
   return publicRequestClient.post<BossPendingCompensationStatsDto>(
-    `${QUERY_BASE}/getPendingCompensationStats`,
+    `${COMPENSATION_BASE}/getPendingCompensationStats`,
     {},
   );
 }
 
 export function listPendingCompensationApi(request: ListPendingCompensationRequest) {
   return publicRequestClient.post<ListPendingCompensationResponse>(
-    `${QUERY_BASE}/listPendingCompensation`,
+    `${COMPENSATION_BASE}/listPendingCompensation`,
     request,
   );
 }
 
 export function compensateRequeueApi(invoiceId: string) {
   return publicRequestClient.post<void>(
-    `${ISSUE_BASE}/compensateRequeue`,
+    `${COMPENSATION_BASE}/compensateRequeue`,
     toInvoiceIdBody(invoiceId),
   );
 }
 
 export function issueNowApi(invoiceId: string) {
   return publicRequestClient.post<BossInvoiceIssueResult>(
-    `${ISSUE_BASE}/issueNow`,
+    `${COMPENSATION_BASE}/issueNow`,
     toInvoiceIdBody(invoiceId),
   );
 }
 
 export function recoverByBusNoApi(invoiceId: string) {
   return publicRequestClient.post<BossInvoiceIssueResult | null>(
-    `${ISSUE_BASE}/recoverByBusNo`,
+    `${COMPENSATION_BASE}/recoverByBusNo`,
     toInvoiceIdBody(invoiceId),
   );
 }
@@ -114,7 +115,7 @@ export interface BatchCompensateResultDto {
 
 export function batchCompensateRequeueApi(invoiceIds: string[]) {
   return publicRequestClient.post<BatchCompensateResultDto>(
-    `/einvoiceBossBatchIssue/batchCompensateRequeue`,
+    `${COMPENSATION_BASE}/batchCompensateRequeue`,
     {
       invoiceIds,
     },
@@ -122,10 +123,7 @@ export function batchCompensateRequeueApi(invoiceIds: string[]) {
 }
 
 export function batchIssueNowApi(invoiceIds: string[]) {
-  return publicRequestClient.post<BatchCompensateResultDto>(
-    `/einvoiceBossBatchIssue/batchIssueNow`,
-    {
-      invoiceIds,
-    },
-  );
+  return publicRequestClient.post<BatchCompensateResultDto>(`${COMPENSATION_BASE}/batchIssueNow`, {
+    invoiceIds,
+  });
 }

@@ -10,7 +10,7 @@ import type {
 import type { TcmDiagnosisGroupRowDto } from '#/api/doctor-station/tcm.types';
 import type { AdviceProductOption } from '#/views/outpatient/doctor-station/advice';
 
-import { computed, onActivated, onDeactivated, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onActivated, onDeactivated, reactive, ref, watch } from 'vue';
 
 import {
   ElButton,
@@ -41,7 +41,7 @@ import { useEnsureClinicalReception } from '#/components/doctor-station/use-ensu
 import SectionTitle from '#/components/layouts/section-title.vue';
 import { useRequest } from '#/hooks/use-request';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import { decimalMul } from '#/utils/format/decimal-util';
+import { calcMoneyLineTotal } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { mapCatalogRowToOption } from '#/views/outpatient/doctor-station/advice/services/advice-list';
 import {
@@ -53,11 +53,11 @@ import TcmHerbAddCard from './components/tcm-herb-add-card.vue';
 import TcmHerbCard from './components/tcm-herb-card.vue';
 import TcmPrescriptionHeader from './components/tcm-prescription-header.vue';
 import TcmPrescriptionSummary from './components/tcm-prescription-summary.vue';
+import { buildTcmMethodSelectOptions, buildTcmRateSelectOptions } from './services/tcm-method-code';
 import {
-  buildTcmMethodSelectOptions,
-  buildTcmRateSelectOptions,
-  resolveDefaultTcmRateCodeForTherapy,
-} from './services/tcm-method-code';
+  buildTcmDosageInstructionSelectOptions,
+  resolveTcmDosageInstructionLabel,
+} from './services/tcm-dosage-instruction';
 import {
   applyTcmOrderTemplateToPrescription,
   TcmOrderTemplateApplyError,
@@ -82,13 +82,12 @@ import {
   loadHeaderFormFromPrescription,
   mapApiHeaderToUi,
   mapHistoryRowToTreeItem,
-  resolveDefaultTcmMethodCode,
-  resolveDefaultTcmRateCode,
   resolvePrescriptionTabLabel,
   resolveTcmMethodLabel,
   resolveTcmRxStatusLabel,
   resolveTcmRxStatusTagType,
   syncHeaderFormToPrescription,
+  validatePrescriptionHeaderFields,
   TCM_THERAPY_LONG_TERM,
   TCM_THERAPY_TEMPORARY,
 } from './services/tcm-prescription.service';
@@ -133,6 +132,7 @@ const templateApplyLoading = ref(false);
 const diagnosisGroups = ref<TcmDiagnosisGroupRowDto[]>([]);
 const tcmMethodCodeOptions = ref<TerminologyOptionDto[]>([]);
 const medicationRateOptions = ref<TerminologyOptionDto[]>([]);
+const dosageInstructionOptions = ref<TerminologyOptionDto[]>([]);
 const historyItems = ref<TcmHistoryTreeItem[]>([]);
 const templateGroups = ref<OrderTemplateBindingGroup>();
 const prescriptions = ref<TcmPrescriptionUi[]>([]);
@@ -170,6 +170,11 @@ const methodCodeOptions = computed(() =>
 /** 用药频次下拉选项 */
 const rateCodeOptions = computed(() =>
   buildTcmRateSelectOptions(medicationRateOptions.value, prescriptionForm.rateCode),
+);
+
+/** 单味特殊煎法下拉选项 */
+const dosageInstructionSelectOptions = computed(() =>
+  buildTcmDosageInstructionSelectOptions(dosageInstructionOptions.value),
 );
 
 /** 当前方用法展示名 */
@@ -217,9 +222,21 @@ const herbCount = computed(() => visibleLines.value.length);
 const singleDoseAmount = computed(() => calcSingleDoseAmount(visibleLines.value));
 
 const totalPrescriptionAmount = computed(() => {
-  const doseQty = prescriptionForm.chineseHerbsDoseQuantity || 1;
-  return decimalMul(singleDoseAmount.value, doseQty);
+  const doseQty = prescriptionForm.chineseHerbsDoseQuantity;
+  if (doseQty == null || doseQty <= 0) {
+    return singleDoseAmount.value;
+  }
+  return calcMoneyLineTotal(singleDoseAmount.value, doseQty);
 });
+
+const hasPersistableHerbLines = computed(() =>
+  (activePrescription.value?.lines ?? []).some(
+    (line) => !line.pendingDelete && line.medicationDefinitionId,
+  ),
+);
+
+/** 载入方头表单时抑制 watch 与自动暂存 */
+const headerFormLoadSuppressed = ref(false);
 
 const prescriptionForm = reactive(loadHeaderFormFromPrescription(null));
 
@@ -230,13 +247,7 @@ function resolveDefaultTherapyEnumForNewPrescription(): string {
 
 function createEmptyPrescriptionForScope(tcmSyndromeGroup = ''): TcmPrescriptionUi {
   const therapyEnum = resolveDefaultTherapyEnumForNewPrescription();
-  return createEmptyPrescription(
-    tcmSyndromeGroup,
-    1,
-    resolveDefaultTcmMethodCode(tcmMethodCodeOptions.value),
-    resolveDefaultTcmRateCodeForTherapy(therapyEnum, medicationRateOptions.value),
-    therapyEnum || undefined,
-  );
+  return createEmptyPrescription(tcmSyndromeGroup, undefined, '', '', therapyEnum || undefined);
 }
 
 const canStopLongTermActivePrescription = computed(() =>
@@ -290,6 +301,7 @@ const { loading: pageLoading, run: runLoadTcmTab } = useRequest(
     diagnosisGroups.value = groupRes.groups ?? [];
     tcmMethodCodeOptions.value = initRes.tcmMethodCodeOptions ?? [];
     medicationRateOptions.value = initRes.medicationRateOptions ?? [];
+    dosageInstructionOptions.value = initRes.dosageInstructionOptions ?? [];
     templateGroups.value = templateGroupRes;
     const mapped = (rxRes.prescriptions ?? []).map((dto) => mapApiHeaderToUi(dto));
     prescriptions.value = mapped;
@@ -425,6 +437,8 @@ async function reload() {
   if (!contextReady.value) {
     diagnosisGroups.value = [];
     tcmMethodCodeOptions.value = [];
+    medicationRateOptions.value = [];
+    dosageInstructionOptions.value = [];
     historyItems.value = [];
     templateGroups.value = undefined;
     prescriptions.value = [];
@@ -460,6 +474,7 @@ watch(
 watch(
   prescriptionForm,
   () => {
+    if (headerFormLoadSuppressed.value) return;
     if (!activePrescription.value || isPrescriptionReadonly.value) return;
     syncHeaderFormToPrescription(activePrescription.value, prescriptionForm);
   },
@@ -468,6 +483,7 @@ watch(
 
 /** 载入当前处方头部表单 */
 function loadActivePrescriptionForm() {
+  headerFormLoadSuppressed.value = true;
   const form = loadHeaderFormFromPrescription(activePrescription.value);
   prescriptionForm.tcmSyndromeGroup = form.tcmSyndromeGroup;
   prescriptionForm.therapyEnum = form.therapyEnum ?? resolveDefaultTherapyEnumForNewPrescription();
@@ -477,6 +493,12 @@ function loadActivePrescriptionForm() {
   prescriptionForm.rateCode = form.rateCode;
   prescriptionForm.days = form.days;
   prescriptionForm.remark = form.remark;
+  if (activePrescription.value) {
+    activePrescription.value.headerDirty = false;
+  }
+  void nextTick(() => {
+    headerFormLoadSuppressed.value = false;
+  });
 }
 
 /** 分页检索饮片目录 */
@@ -529,27 +551,50 @@ function handleAddPrescription() {
   loadActivePrescriptionForm();
 }
 
-/** 校验当前方可提交 */
+/** 住院临嘱切换时联动频次（非默认值填充） */
+function applyInpatientTherapyRateCoupling() {
+  if (!isInpatientScope.value) return;
+  const therapyCode = String(prescriptionForm.therapyEnum ?? '')
+    .trim()
+    .toUpperCase();
+  if (therapyCode === TCM_THERAPY_TEMPORARY) {
+    prescriptionForm.rateCode = INPATIENT_IMMEDIATE_RATE_CODE;
+    return;
+  }
+  if (therapyCode === TCM_THERAPY_LONG_TERM) {
+    const current = String(prescriptionForm.rateCode ?? '')
+      .trim()
+      .toUpperCase();
+    if (current === INPATIENT_IMMEDIATE_RATE_CODE) {
+      prescriptionForm.rateCode = '';
+    }
+  }
+}
+
+/** 方头字段变更/失焦后静默暂存 */
+async function handlePrescriptionHeaderCommit() {
+  if (headerFormLoadSuppressed.value) return;
+  if (!activePrescription.value || isPrescriptionReadonly.value) return;
+  applyInpatientTherapyRateCoupling();
+  syncHeaderFormToPrescription(activePrescription.value, prescriptionForm);
+  if (!activePrescription.value.headerDirty) return;
+  if (!hasPersistableHerbLines.value) return;
+  const headerError = validatePrescriptionHeaderFields(activePrescription.value, {
+    requireTherapy: isInpatientScope.value,
+  });
+  if (headerError) return;
+  await persistActivePrescriptionDraft({ silent: true });
+}
+
+/** 校验当前方可提交（含方头与至少一味药材） */
 function validateActivePrescriptionForSave(): boolean {
   const rx = activePrescription.value;
   if (!rx) return false;
-  if (!rx.tcmSyndromeGroup.trim()) {
-    ElMessage.warning('请先选择绑定的病证组');
-    return false;
-  }
-  if (isInpatientScope.value) {
-    const therapy = String(rx.therapyEnum ?? prescriptionForm.therapyEnum ?? '').trim();
-    if (!therapy) {
-      ElMessage.warning('请选择医嘱类型（长期/临时）');
-      return false;
-    }
-  }
-  if (!String(rx.methodCode ?? '').trim()) {
-    ElMessage.warning('请选择用法');
-    return false;
-  }
-  if (!String(rx.rateCode ?? '').trim()) {
-    ElMessage.warning('请选择用药频次');
+  const headerError = validatePrescriptionHeaderFields(rx, {
+    requireTherapy: isInpatientScope.value,
+  });
+  if (headerError) {
+    ElMessage.warning(headerError);
     return false;
   }
   const validLines = rx.lines.filter((line) => !line.pendingDelete && line.medicationDefinitionId);
@@ -813,6 +858,18 @@ function handleHerbDoseChange(lineKey: string, dose: number) {
   line.dirty = true;
 }
 
+/** 行内修改单味特殊煎法 */
+function handleHerbDosageInstructionChange(lineKey: string, code: string) {
+  if (!activePrescription.value || isPrescriptionReadonly.value) return;
+  const line = activePrescription.value.lines.find((row) => row.clientLineKey === lineKey);
+  if (!line) return;
+  line.dosageInstructionCode = String(code ?? '').trim();
+  line.dosageInstructionText =
+    resolveTcmDosageInstructionLabel(line.dosageInstructionCode, dosageInstructionOptions.value) ||
+    undefined;
+  line.dirty = true;
+}
+
 function handleRemoveHerb(lineKey: string) {
   if (!activePrescription.value || isPrescriptionReadonly.value) return;
   const line = activePrescription.value.lines.find((row) => row.clientLineKey === lineKey);
@@ -832,25 +889,8 @@ function ensurePrescriptionHeaderForTemplateApply(rx: TcmPrescriptionUi) {
       rx.headerDirty = true;
     }
   }
-  if (!String(rx.methodCode ?? '').trim()) {
-    rx.methodCode = resolveDefaultTcmMethodCode(tcmMethodCodeOptions.value);
-    rx.headerDirty = true;
-  }
-  if (!String(rx.rateCode ?? '').trim()) {
-    rx.rateCode = resolveDefaultTcmRateCode(medicationRateOptions.value);
-    rx.headerDirty = true;
-  }
-  if (!rx.chineseHerbsDoseQuantity || rx.chineseHerbsDoseQuantity <= 0) {
-    rx.chineseHerbsDoseQuantity = 1;
-    rx.headerDirty = true;
-  }
-  if (!rx.days || rx.days <= 0) {
-    rx.days = 1;
-    rx.headerDirty = true;
-  }
   if (isInpatientScope.value && !String(rx.therapyEnum ?? '').trim()) {
     rx.therapyEnum = resolveDefaultTherapyEnumForNewPrescription();
-    rx.rateCode = resolveDefaultTcmRateCodeForTherapy(rx.therapyEnum, medicationRateOptions.value);
     rx.headerDirty = true;
   }
 }
@@ -1009,35 +1049,13 @@ async function reloadSidebarSources() {
   templateGroups.value = templateGroupRes;
 }
 
-watch(
-  () => prescriptionForm.therapyEnum,
-  (therapy) => {
-    if (!isInpatientScope.value || !activePrescription.value || isPrescriptionReadonly.value) {
-      return;
-    }
-    const therapyCode = String(therapy ?? '')
-      .trim()
-      .toUpperCase();
-    if (therapyCode === TCM_THERAPY_TEMPORARY) {
-      prescriptionForm.rateCode = INPATIENT_IMMEDIATE_RATE_CODE;
-    } else if (therapyCode === TCM_THERAPY_LONG_TERM) {
-      const current = String(prescriptionForm.rateCode ?? '')
-        .trim()
-        .toUpperCase();
-      if (current === INPATIENT_IMMEDIATE_RATE_CODE) {
-        prescriptionForm.rateCode = resolveDefaultTcmRateCode(medicationRateOptions.value);
-      }
-    }
-  },
-);
-
 watch(sidebarKeyword, () => {
   scheduleSidebarSearchReload();
 });
 </script>
 
 <template>
-  <div class="tcm-advice-root grid h-full min-h-0 grid-cols-[240px_minmax(0,1fr)]">
+  <div class="tcm-advice-root grid h-full min-h-0">
     <aside
       class="tcm-advice-root__sidebar flex h-full min-h-0 flex-col border-r border-[var(--el-border-color-light)] p-1.5"
     >
@@ -1170,18 +1188,20 @@ watch(sidebarKeyword, () => {
               :rate-code-options="rateCodeOptions"
               :show-therapy-type="isInpatientScope"
               :disabled="isPrescriptionReadonly"
+              @commit="handlePrescriptionHeaderCommit"
             />
           </div>
 
           <div class="tcm-prescription-content__divider"></div>
 
           <ElScrollbar class="tcm-herb-panel__scroll min-h-0 flex-1">
-            <div class="tcm-herb-grid p-3" @click.self="handleClearHerbSelection">
+            <div class="tcm-herb-grid" @click.self="handleClearHerbSelection">
               <TcmHerbCard
                 v-for="line in visibleLines"
                 :key="line.clientLineKey"
                 :item="line"
-                :chinese-herbs-dose-quantity="prescriptionForm.chineseHerbsDoseQuantity || 1"
+                :chinese-herbs-dose-quantity="prescriptionForm.chineseHerbsDoseQuantity"
+                :dosage-instruction-options="dosageInstructionSelectOptions"
                 :selected="isHerbSelected(line.clientLineKey)"
                 :editing="editingLineKey === line.clientLineKey"
                 :autofocus-product="autofocusProductLineKey === line.clientLineKey"
@@ -1195,6 +1215,9 @@ watch(sidebarKeyword, () => {
                 @remove="handleRemoveHerb(line.clientLineKey)"
                 @product-select="handleUpdateHerbProduct(line.clientLineKey, $event)"
                 @update-dose="handleHerbDoseChange(line.clientLineKey, $event)"
+                @update-dosage-instruction="
+                  handleHerbDosageInstructionChange(line.clientLineKey, $event)
+                "
               />
               <TcmHerbAddCard :disabled="isPrescriptionReadonly" @add="handleAddHerbCard" />
             </div>
@@ -1204,7 +1227,7 @@ watch(sidebarKeyword, () => {
             :herb-count="herbCount"
             :method-label="activeMethodLabel"
             :single-dose-amount="singleDoseAmount"
-            :chinese-herbs-dose-quantity="prescriptionForm.chineseHerbsDoseQuantity || 1"
+            :chinese-herbs-dose-quantity="prescriptionForm.chineseHerbsDoseQuantity"
             :total-amount="totalPrescriptionAmount"
           />
         </div>
@@ -1214,6 +1237,12 @@ watch(sidebarKeyword, () => {
 </template>
 
 <style scoped>
+.tcm-advice-root {
+  /* default：DOCTOR_STATION_SIDEBAR_WIDTH_PX.tcmTemplate */
+  --tcm-sidebar-width: 240px;
+  grid-template-columns: var(--tcm-sidebar-width) minmax(0, 1fr);
+}
+
 .tcm-template-tree :deep(.el-tree-node__content) {
   height: 32px;
   border-radius: 4px;
@@ -1272,5 +1301,6 @@ watch(sidebarKeyword, () => {
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 12px;
   align-content: start;
+  padding: 12px;
 }
 </style>

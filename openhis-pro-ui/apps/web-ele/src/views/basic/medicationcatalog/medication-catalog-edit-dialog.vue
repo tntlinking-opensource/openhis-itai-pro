@@ -5,7 +5,7 @@ import type { NationalCatalogItem } from '#/chs/api';
 
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 
-import { ElButton, ElDialog, ElMessage, ElMessageBox } from 'element-plus';
+import { ElAlert, ElButton, ElDialog, ElMessage, ElMessageBox } from 'element-plus';
 
 import { useVbenForm } from '#/adapter/form';
 import {
@@ -28,6 +28,12 @@ import {
 } from '#/chs/constants/insurance-contract';
 import { getChargeTypeListApi } from '#/api/core/common';
 import { ensureInsuranceSignIn } from '#/chs/utils/ensure-insurance-sign-in';
+import {
+  applyCatalogEditabilityFromDetail,
+  buildCatalogEditabilitySchemaPatches,
+  CATALOG_EDITABILITY_OK,
+  isCatalogStructureLocked,
+} from '#/views/basic/catalog/catalog-editability';
 
 interface Props {
   modelValue: boolean;
@@ -55,6 +61,10 @@ const pickerVisible = ref(false);
 const defaultContractBusNo = ref<string>();
 const formData = ref<Partial<MedicationCatalogItem>>({});
 const initOptions = ref<MedicationCatalogInitResponse>({} as MedicationCatalogInitResponse);
+const editabilityCode = ref(CATALOG_EDITABILITY_OK);
+const editabilityMessage = ref('');
+
+const catalogStructureLocked = computed(() => isCatalogStructureLocked(editabilityCode.value));
 
 interface OptionItem {
   label?: string;
@@ -91,6 +101,7 @@ const domainFlagOptions = createOptionsComputed('domainFlagOptions');
 const medicationCategoryCodeOptions = createOptionsComputed('medicationCategoryCodeOptions');
 const unitCodeOptions = createOptionsComputed('unitCodeOptions');
 const chrgitmLvOptions = createOptionsComputed('chrgitmLvOptions');
+const mrSettlementTypeCodeOptions = createOptionsComputed('mrSettlementTypeCodeOptions');
 const doseFormCodeOptions = createOptionsComputed('doseFormCodeOptions');
 const methodCodeOptions = createOptionsComputed('methodCodeOptions');
 const rateCodeOptions = createOptionsComputed('rateCodeOptions');
@@ -98,12 +109,10 @@ const dosageInstructionOptions = createOptionsComputed('dosageInstructionOptions
 const finTypeCodeOptions = createOptionsComputed('finTypeCodeOptions');
 const medicinePropertiesOptions = createOptionsComputed('medicinePropertiesOptions');
 const medChrgitmTypeOptions = createOptionsComputed('medChrgitmTypeOptions');
-const rxFlagOptions = createOptionsComputed('rxFlagOptions');
 const partAttributeEnumOptions = createOptionsComputed('partAttributeEnumOptions');
 const tempOrderSplitPropertyEnumOptions = createOptionsComputed(
   'tempOrderSplitPropertyEnumOptions',
 );
-const locationOptions = createOptionsComputed('locationOptions');
 
 /** 库存段四类单位与对应拆零倍数字段 */
 const INVENTORY_UNIT_SLOTS = [
@@ -221,9 +230,17 @@ const dialogVisible = computed({
   },
 });
 
+const isNewMedication = computed(() => props.medicationDefId === 'new');
+
+const MEDICATION_CATALOG_PRICE_FIELD_NAMES = [
+  'purchasePrice',
+  'retailPrice',
+  'maximumRetailPrice',
+] as const;
+
 /** 弹窗标题：新增 / 编辑（带出药品名） */
 const dialogTitle = computed(() => {
-  if (props.medicationDefId === 'new') {
+  if (isNewMedication.value) {
     return '新增药品';
   }
   const name = formData.value?.name;
@@ -244,8 +261,18 @@ function finishSuccess() {
 /** 清空弹窗表单（setValues({}) 无法移除已填字段，须 resetForm） */
 async function resetFormState() {
   formData.value = {};
+  editabilityCode.value = CATALOG_EDITABILITY_OK;
+  editabilityMessage.value = '';
   await formApi.resetForm();
   await formApi.setFieldValue('__checkbox_inline_group', {});
+}
+
+/** 按 editabilityCode 同步表单字段 disabled */
+function syncMedicationEditabilitySchema() {
+  if (!formApi?.isMounted) {
+    return;
+  }
+  formApi.updateSchema(buildCatalogEditabilitySchemaPatches('medication', editabilityCode.value));
 }
 
 function handleDialogClosed() {
@@ -286,9 +313,9 @@ const BUSINESS_FLAG_FIELDS = [
   'injectFlag',
 ] as const;
 
-/** 后端 Boolean；兼容历史 0/1 */
+/** 后端 Boolean；兼容历史 0/1、字符串 true/false */
 function coerceLegacyBool(value: unknown): boolean {
-  return value === true || value === 1 || value === '1';
+  return value === true || value === 1 || value === '1' || value === 'true' || value === 'TRUE';
 }
 
 /** 历史表单字段 salesUnit* 与后端 packageUnit* 对齐（耗材页曾用 sales 命名） */
@@ -340,6 +367,7 @@ function normalizeFormSelectValues(data: Record<string, unknown>) {
   const selectFieldNames = [
     'supplyId',
     'chrgitmLv',
+    'mrSettlementTypeCode',
     'categoryCode',
     'purchaseUnitCode',
     'splitUnitCode',
@@ -353,10 +381,8 @@ function normalizeFormSelectValues(data: Record<string, unknown>) {
     'typeCode',
     'pharmacologyCategoryCode',
     'ybType',
-    'rxFlag',
     'partAttributeEnum',
     'thoPartAttributeEnum',
-    'locationId',
     'statusEnum',
     'domainEnum',
   ];
@@ -387,6 +413,10 @@ function normalizeNumericFormValues(data: Record<string, unknown>) {
 }
 
 async function applyDetailFormValues(raw: Record<string, unknown>) {
+  const editability = applyCatalogEditabilityFromDetail(raw);
+  editabilityCode.value = editability.code;
+  editabilityMessage.value = editability.message;
+
   const normalizedData = normalizeFormSelectValues({ ...raw });
   normalizeNumericFormValues(normalizedData);
   normalizedData.ybMatchFlag = coerceLegacyBool(normalizedData.ybMatchFlag);
@@ -410,6 +440,7 @@ async function applyDetailFormValues(raw: Record<string, unknown>) {
       await formApi.setFieldValue(field, v);
     }
   }
+  syncMedicationEditabilitySchema();
 }
 
 async function loadDetailData() {
@@ -651,6 +682,13 @@ const updateFormOptions = () => {
         },
       },
       {
+        fieldName: 'mrSettlementTypeCode',
+        componentProps: {
+          options: mrSettlementTypeCodeOptions.value,
+          filterable: true,
+        },
+      },
+      {
         fieldName: 'pharmacologyCategoryCode',
         componentProps: {
           options: medicinePropertiesOptions.value,
@@ -699,12 +737,6 @@ const updateFormOptions = () => {
         },
       },
       {
-        fieldName: 'rxFlag',
-        componentProps: {
-          options: rxFlagOptions.value,
-        },
-      },
-      {
         fieldName: 'partAttributeEnum',
         componentProps: {
           options: partAttributeEnumOptions.value,
@@ -714,12 +746,6 @@ const updateFormOptions = () => {
         fieldName: 'thoPartAttributeEnum',
         componentProps: {
           options: tempOrderSplitPropertyEnumOptions.value,
-        },
-      },
-      {
-        fieldName: 'locationId',
-        componentProps: {
-          data: locationOptions.value,
         },
       },
       {
@@ -744,6 +770,7 @@ const updateFormOptions = () => {
         },
       },
     ]);
+    syncMedicationEditabilitySchema();
   }
 };
 
@@ -803,9 +830,13 @@ async function handleSubmit() {
       ElMessage.success('创建成功');
       finishSuccess();
     } else {
+      MEDICATION_CATALOG_PRICE_FIELD_NAMES.forEach((field) => {
+        delete submitData[field];
+      });
       submitData.id = String(
         submitData.id ?? submitData.medicationDefId ?? props.medicationDefId ?? '',
       );
+      submitData.editabilityCode = editabilityCode.value;
       await updateMedicationCatalogApi(submitData);
       ElMessage.success('更新成功');
       formData.value = { ...submitData };
@@ -933,6 +964,17 @@ const [Form, formApi] = useVbenForm(
         label: '医保等级',
         componentProps: {
           options: chrgitmLvOptions.value,
+        },
+      },
+      {
+        component: 'Select',
+        fieldName: 'mrSettlementTypeCode',
+        label: '病案结算类型',
+        componentProps: {
+          options: mrSettlementTypeCodeOptions.value,
+          filterable: true,
+          clearable: true,
+          placeholder: '请选择病案结算类型',
         },
       },
       {
@@ -1079,16 +1121,6 @@ const [Form, formApi] = useVbenForm(
         fieldName: 'dddUnitCode',
         label: 'DDD单位',
       },
-      {
-        component: 'Input',
-        fieldName: 'minRateCode',
-        label: '最小用药频次',
-      },
-      {
-        component: 'Input',
-        fieldName: 'maxRateCode',
-        label: '最大用药频次',
-      },
       // ========== 库存信息 ==========
       {
         component: 'SectionTitle',
@@ -1100,7 +1132,7 @@ const [Form, formApi] = useVbenForm(
           title: '库存与单位信息',
         },
       },
-      // 库存与单位：四列四行 — 列4 第1–2 行：门诊/住院拆分；第3 行：默认入库库房；第4 行第3–4 列：警戒线高/低
+      // 库存与单位：四列四行 — 列4 第1–2 行：门诊/住院拆分；第4 行第3–4 列：警戒线高/低
       {
         component: 'Select',
         fieldName: 'purchaseUnitCode',
@@ -1119,10 +1151,11 @@ const [Form, formApi] = useVbenForm(
         component: 'InputNumber',
         fieldName: 'purchasePrice',
         label: '购入价（包装单位）',
-        rules: 'required',
+        rules: isNewMedication.value ? 'required' : undefined,
         componentProps: {
           precision: 2,
           min: 0,
+          disabled: !isNewMedication.value,
         },
       },
       {
@@ -1152,10 +1185,11 @@ const [Form, formApi] = useVbenForm(
         component: 'InputNumber',
         fieldName: 'retailPrice',
         label: '零售价（包装单位）',
-        rules: 'required',
+        rules: isNewMedication.value ? 'required' : undefined,
         componentProps: {
           precision: 2,
           min: 0,
+          disabled: !isNewMedication.value,
         },
       },
       {
@@ -1188,16 +1222,18 @@ const [Form, formApi] = useVbenForm(
         componentProps: {
           precision: 2,
           min: 0,
+          disabled: !isNewMedication.value,
         },
       },
       {
-        component: 'TreeSelect',
-        fieldName: 'locationId',
-        label: '默认采购入库库房',
+        component: 'Input',
+        fieldName: '__inv_grid_pad_r3c4',
+        hideLabel: true,
+        formItemClass: 'inv-grid-pad !mb-0',
         componentProps: {
-          data: locationOptions.value,
-          checkStrictly: true,
-          filterable: true,
+          disabled: true,
+          class: 'pointer-events-none opacity-0',
+          tabindex: -1,
         },
       },
       {
@@ -1455,6 +1491,14 @@ watch(
     @closed="handleDialogClosed"
   >
     <div v-loading="loading" class="min-h-0">
+      <ElAlert
+        v-if="catalogStructureLocked"
+        class="mx-4 mb-3 sm:mx-5"
+        type="warning"
+        :closable="false"
+        show-icon
+        :title="editabilityMessage || '该药品已产生业务引用，分类/单位/拆零倍数/价格等字段不可修改'"
+      />
       <div
         ref="formAreaRef"
         class="medication-catalog-form-dialog__form-wrap box-border px-4 pb-3 pt-2 sm:px-5"

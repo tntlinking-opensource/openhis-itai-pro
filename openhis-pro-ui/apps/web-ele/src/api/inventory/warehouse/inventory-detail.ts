@@ -28,7 +28,17 @@ export interface LoadInventoryDetailFormInitResponse {
   inventoryRangeOptions?: OptionDto[];
   warehouseOptions?: OptionDto[];
   supplierOptions?: OptionDto[];
+  /** 系统设置：效期预警天数 */
+  expireWarningDays?: number;
+  /** 系统设置：库存预警包装单位阈值 */
+  minPackageQuantityWarning?: number;
 }
+
+export const INVENTORY_WARNING_MODE_EXPIRE = 'expire' as const;
+export const INVENTORY_WARNING_MODE_LOW_STOCK = 'lowStock' as const;
+export type InventoryWarningMode =
+  | typeof INVENTORY_WARNING_MODE_EXPIRE
+  | typeof INVENTORY_WARNING_MODE_LOW_STOCK;
 
 /** IF-INV-DTL-02 分页入参。 */
 export interface PageInventoryDetailCurrentRequest {
@@ -43,6 +53,7 @@ export interface PageInventoryDetailCurrentRequest {
   zeroStockOnly?: boolean;
   expireWithinDays?: number;
   inventoryStatusEnums?: string[];
+  warningMode?: InventoryWarningMode;
 }
 
 /**
@@ -132,6 +143,7 @@ export interface SumInventoryDetailCurrentRequest {
   zeroStockOnly?: boolean;
   expireWithinDays?: number;
   inventoryStatusEnums?: string[];
+  warningMode?: InventoryWarningMode;
 }
 
 export interface SumInventoryDetailCurrentResponse {
@@ -189,9 +201,30 @@ export interface ListInventoryDetailBackupBusNoResponse {
   backupBusNoList?: string[];
 }
 
+/** IF-INV-DTL-12 工作台预警摘要 */
+export type LoadInventoryWarningWorkbenchSummaryRequest = Record<string, never>;
+
+export interface LoadInventoryWarningWorkbenchSummaryResponse {
+  visible?: boolean;
+  expireWarningCount?: number;
+  lowStockWarningCount?: number;
+  expireWarningDays?: number;
+  minPackageQuantityWarning?: number;
+}
+
 export async function loadInventoryDetailFormInitApi(body?: LoadInventoryDetailFormInitRequest) {
   const res = await requestClient.post<ApiResponse<LoadInventoryDetailFormInitResponse>>(
     `${BASE}/loadInventoryDetailFormInit`,
+    body ?? {},
+  );
+  return res.data;
+}
+
+export async function loadInventoryWarningWorkbenchSummaryApi(
+  body?: LoadInventoryWarningWorkbenchSummaryRequest,
+) {
+  const res = await requestClient.post<ApiResponse<LoadInventoryWarningWorkbenchSummaryResponse>>(
+    `${BASE}/loadInventoryWarningWorkbenchSummary`,
     body ?? {},
   );
   return res.data;
@@ -287,6 +320,40 @@ export async function listInventoryDetailBackupBusNoApi(
     body ?? {},
   );
   return res.data;
+}
+
+/** 现库行本库仍在库追溯码查询入参 */
+export interface ListInStockTraceNumbersByInventoryItemRequest {
+  locationId: string;
+  itemId: string;
+  lotNumber: string;
+  itemTable?: string;
+}
+
+export interface InventoryItemTraceNumberRowDto {
+  traceNo?: string;
+  locationNetSplitQuantity?: number | string;
+  traceUnitCode?: string;
+  inHospitalStatusEnum?: string;
+  inHospitalStatusLabel?: string;
+}
+
+export interface ListInStockTraceNumbersByInventoryItemResponse {
+  locationId?: string;
+  itemId?: string;
+  lotNumber?: string;
+  items?: InventoryItemTraceNumberRowDto[];
+}
+
+/** 查询指定库存行在本库仍在库的追溯码列表 */
+export async function listInStockTraceNumbersByInventoryItemApi(
+  body: ListInStockTraceNumbersByInventoryItemRequest,
+) {
+  const res = await requestClient.post<ApiResponse<ListInStockTraceNumbersByInventoryItemResponse>>(
+    `${BASE}/listInStockTraceNumbersByInventoryItem`,
+    body,
+  );
+  return res.data ?? { items: [] };
 }
 
 /** 单价 + 包装单位名展示 */

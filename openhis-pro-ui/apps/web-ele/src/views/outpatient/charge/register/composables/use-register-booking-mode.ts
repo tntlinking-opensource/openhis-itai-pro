@@ -2,26 +2,22 @@ import { ref } from 'vue';
 
 import { createSharedComposable } from '@vueuse/core';
 
-import { toBookingId } from '#/api/booking/booking-id';
+import type { BookingEntityId } from '#/api/booking/booking-id';
 import { getRegistrationModeApi } from '#/api/booking/booking-policy';
-import { useAuthStore } from '#/store/auth';
 
-/** 挂号台探测 booking 模块是否可用（与预约加载条共用）。 */
+/** 挂号台探测 booking 模块是否可用（与号源面板显隐共用）。 */
 export const useRegisterBookingMode = createSharedComposable(() => {
   const bookingEnabled = ref(false);
   const modeLoading = ref(true);
 
-  async function refreshBookingMode() {
+  /**
+   * 探测 booking 模块；organizationId 可选（无科室时仍探测模块级 bookingEnabled）。
+   */
+  async function refreshBookingMode(organizationId?: BookingEntityId) {
     modeLoading.value = true;
     try {
-      const authStore = useAuthStore();
-      const organizationId = toBookingId(authStore.getSelectedOrganization());
-      if (!organizationId) {
-        bookingEnabled.value = false;
-        return;
-      }
-      const res = await getRegistrationModeApi({ organizationId });
-      bookingEnabled.value = !!res?.bookingEnabled;
+      const res = await getRegistrationModeApi(organizationId ? { organizationId } : {});
+      bookingEnabled.value = res?.bookingEnabled !== false;
     } catch {
       bookingEnabled.value = false;
     } finally {

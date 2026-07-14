@@ -1,0 +1,98 @@
+/**
+ * 库房单据工作站窄屏（<1680）紧凑样式；1920 不受影响。
+ * 先订货单试点；批量铺开时把选择器扩到 .inv-doc-detail-grid-shell / 其它单据根 class。
+ * 根因：库房明细 createDefaultInvDocGridOptions 使用 size: medium，
+ * 全局仅压了 --vxe-ui-table-row-height-small，medium 表不生效。
+ */
+
+/* ========== 药库订货单：Vxe medium 表头 / 行高 ========== */
+html.layout-viewport-compact .purchase-order-main-pane {
+  --vxe-ui-font-size-medium: 13px;
+  --vxe-ui-table-row-height-medium: 34px;
+}
+
+html.layout-viewport-compact
+  .purchase-order-main-pane
+  .vxe-table--header-wrapper
+  .vxe-header--column {
+  height: var(--table-header-height) !important;
+  font-size: var(--table-font-size);
+}
+
+html.layout-viewport-compact .purchase-order-main-pane .vxe-header--column .vxe-cell {
+  height: var(--table-header-height) !important;
+  padding: var(--table-cell-padding-y) var(--table-cell-padding-x);
+  font-size: var(--table-font-size);
+  line-height: 1.35;
+}
+
+html.layout-viewport-compact .purchase-order-main-pane .vxe-body--column {
+  height: var(--table-row-min-height) !important;
+  font-size: var(--table-font-size);
+}
+
+html.layout-viewport-compact .purchase-order-main-pane .vxe-body--column .vxe-cell {
+  height: var(--table-row-min-height) !important;
+  padding: var(--table-cell-padding-y) var(--table-cell-padding-x);
+  font-size: var(--table-font-size);
+  line-height: 1.35;
+}
+
+/* ========== 药库订货单：左侧队列卡片略压高度 + 字号减一号 ========== */
+html.layout-viewport-compact .purchase-order-aside-pane .inv-queue-cards {
+  gap: 2px;
+}
+
+html.layout-viewport-compact .purchase-order-aside-pane .queue-card .el-card__body {
+  padding: 4px 8px;
+}
+
+html.layout-viewport-compact .purchase-order-aside-pane .queue-head-wrap {
+  margin-bottom: 3px;
+}
+
+html.layout-viewport-compact .purchase-order-aside-pane .queue-bus-no__icon {
+  font-size: 12px;
+}
+
+html.layout-viewport-compact .purchase-order-aside-pane .queue-bus-no__text {
+  font-size: 12px;
+}
+
+html.layout-viewport-compact .purchase-order-aside-pane .queue-status {
+  font-size: 10px;
+  line-height: 16px;
+  padding: 0 4px;
+}
+
+html.layout-viewport-compact .purchase-order-aside-pane .queue-body {
+  gap: 2px;
+}
+
+html.layout-viewport-compact .purchase-order-aside-pane .queue-line {
+  line-height: 1.25;
+}
+
+html.layout-viewport-compact .purchase-order-aside-pane .queue-line--plain,
+html.layout-viewport-compact .purchase-order-aside-pane .queue-line--people-times,
+html.layout-viewport-compact .purchase-order-aside-pane .queue-person-value,
+html.layout-viewport-compact .purchase-order-aside-pane .queue-time-row,
+html.layout-viewport-compact .purchase-order-aside-pane .queue-line--footer,
+html.layout-viewport-compact .purchase-order-aside-pane .queue-label,
+html.layout-viewport-compact .purchase-order-aside-pane .queue-amount-num,
+html.layout-viewport-compact .purchase-order-aside-pane .queue-warehouse-value {
+  font-size: 11px;
+}
+
+html.layout-viewport-compact .purchase-order-aside-pane .queue-line--supplier {
+  margin-bottom: 2px;
+}
+
+html.layout-viewport-compact .purchase-order-aside-pane .queue-people-col,
+html.layout-viewport-compact .purchase-order-aside-pane .queue-times-col {
+  gap: 1px;
+}
+
+html.layout-viewport-compact .purchase-order-aside-pane .queue-line--footer {
+  padding-top: 2px;
+}

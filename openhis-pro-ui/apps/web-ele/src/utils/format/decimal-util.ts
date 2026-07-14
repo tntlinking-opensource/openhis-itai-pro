@@ -1,6 +1,9 @@
 import Decimal from 'decimal.js';
 
-// 四舍五入 默认保留4位
+/**
+ * 通用十进制运算（默认 4 位）。
+ * **金额**请使用 `#/utils/format/money-scale.ts`（6 位计算 / 2 位结算展示）。
+ */
 Decimal.set({
   precision: 20,
   rounding: Decimal.ROUND_HALF_UP,

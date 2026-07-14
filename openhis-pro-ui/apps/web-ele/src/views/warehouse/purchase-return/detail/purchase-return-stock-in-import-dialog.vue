@@ -7,6 +7,8 @@ import {
   pageStockInOrderDetailApi,
   pageStockInOrderListApi,
 } from '#/api/warehouse/purchase-return';
+import { isPurchaseRequestApproved } from '#/utils/warehouse/purchase-request-order-detail';
+import { calcMoneyLineTotal, formatMoneyDisplay, scaleMoneyCalc } from '#/utils/format/money-scale';
 
 defineOptions({
   name: 'PurchaseReturnStockInImportDialog',
@@ -180,17 +182,17 @@ const buildPrice = (item) => {
     item.priceMinUnit = item.price / Number.parseInt(item.partPercent);
 
     item.retailPriceMaxUnit = item.retailPrice;
-    item.retailPriceMinUnit = (
-      Number.parseFloat(item.retailPrice) / Number.parseInt(item.partPercent)
-    ).toFixed(2);
+    item.retailPriceMinUnit = formatMoneyDisplay(
+      Number.parseFloat(item.retailPrice) / Number.parseInt(item.partPercent),
+    );
   } else {
-    item.priceMaxUnit = Number.parseFloat(
-      (item.price * Number.parseInt(item.partPercent)).toFixed(2),
+    item.priceMaxUnit = scaleMoneyCalc(
+      calcMoneyLineTotal(item.price, Number.parseInt(item.partPercent)),
     );
     item.priceMinUnit = item.price;
 
-    item.retailPriceMaxUnit = Number.parseFloat(
-      (item.retailPrice * Number.parseInt(item.partPercent)).toFixed(2),
+    item.retailPriceMaxUnit = scaleMoneyCalc(
+      calcMoneyLineTotal(item.retailPrice, Number.parseInt(item.partPercent)),
     );
     item.retailPriceMinUnit = item.retailPrice;
   }
@@ -210,14 +212,12 @@ const buildUnitList = (item) => {
     unit.retailPriceMask = item.retailPrice;
 
     // 进价金额（假）
-    unit.totalPriceMask = (
-      Number.parseFloat(item.price) * Number.parseFloat(item.itemQuantity)
-    ).toFixed(2);
+    unit.totalPriceMask = formatMoneyDisplay(calcMoneyLineTotal(item.price, item.itemQuantity));
 
     // 销售金额（假）
-    unit.totalRetailPriceMask = (
-      Number.parseFloat(item.retailPrice) * Number.parseFloat(item.itemQuantity)
-    ).toFixed(2);
+    unit.totalRetailPriceMask = formatMoneyDisplay(
+      calcMoneyLineTotal(item.retailPrice, item.itemQuantity),
+    );
 
     // 规格库存
     unit.specificationInventoryOriginal = item.specificationInventory;
@@ -304,7 +304,7 @@ defineExpose({
         <el-table-column label="供应商" prop="supplierId_dictText" width="220" align="center" />
         <el-table-column label="审核状态" prop="statusEnum_enumText" width="100" align="center">
           <template #default="scope">
-            <el-tag v-if="scope.row.statusEnum_enumText === '同意'" type="success">
+            <el-tag v-if="isPurchaseRequestApproved(scope.row)" type="success">
               {{ scope.row.statusEnum_enumText }}
             </el-tag>
             <el-tag v-else type="danger">{{ scope.row.statusEnum_enumText }}</el-tag>

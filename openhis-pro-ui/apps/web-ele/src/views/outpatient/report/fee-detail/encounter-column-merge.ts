@@ -14,15 +14,15 @@ const encounterMergeFieldSet = new Set<string>(FEE_DETAIL_ENCOUNTER_MERGE_FIELDS
 
 export interface FeeDetailSpanMethodParams {
   row: FeeDetailTableRow;
-  column: { field?: string };
+  column: { field?: string; property?: string };
 }
 
-/** VxeGrid spanMethod：明细行按就诊块合并头列，小计行不参与合并。 */
+/** ElTable / VxeGrid spanMethod：明细行按就诊块合并头列，小计行不参与合并。 */
 export function resolveFeeDetailEncounterSpanMethod({
   row,
   column,
 }: FeeDetailSpanMethodParams): undefined | { colspan: number; rowspan: number } {
-  const field = column.field;
+  const field = column.property ?? column.field;
   if (!field || !encounterMergeFieldSet.has(field)) {
     return undefined;
   }

@@ -19,6 +19,14 @@ import {
   type DrugGroupKey,
 } from '#/utils/doctor-station/drug-group-table';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { formatMoneyYuan } from '#/utils/format/money-scale';
+import {
+  canCancelSupplyDispense,
+  resolveNurseExecuteDisplayStatusCode,
+  resolveSupplyDispenseStatusCode,
+  type SupplyDispenseStatusCode,
+} from '#/utils/nurse-station/nurse-execute-status';
+import { HERBAL_MEDICATION_CATEGORY_CODE } from '#/views/outpatient/doctor-station/advice/services/advice-tab.constants';
 import { buildServiceApplyFormExtensionText } from '#/utils/service-apply-display';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -97,16 +105,16 @@ function isMedicationRequestTable(requestTable: string): boolean {
 
 /** 护士执行表行是否为药品医嘱（requestTable / MR: / 成组合并行主键，勿用 type 展示文案） */
 export function isNurseExecuteMedicationRow(
-  row: Pick<NurseAdviceExecuteRow, 'key' | 'requestTable' | 'type'>,
+  row: Pick<NurseAdviceExecuteRow, 'key' | 'requestTable' | 'rowType'>,
 ): boolean {
+  if (row.rowType === 'MEDICATION') {
+    return true;
+  }
   const table = String(row.requestTable ?? '').trim();
   if (table && isMedicationRequestTable(table)) {
     return true;
   }
-  if (row.key.startsWith('MR:') || row.key.startsWith('merged-med-')) {
-    return true;
-  }
-  return row.type === '药品';
+  return row.key.startsWith('MR:') || row.key.startsWith('merged-med-');
 }
 
 /** 判断处置行是否属于耗材请求表 */
@@ -224,6 +232,19 @@ function lineStatusLabel(row: NurseStationTreatmentLineDto): string {
   return '待执行';
 }
 
+function rowTypeFromRequestTable(requestTable: string): NurseAdviceExecuteRow['rowType'] {
+  if (isMedicationRequestTable(requestTable)) {
+    return 'MEDICATION';
+  }
+  if (isServiceRequestTable(requestTable)) {
+    return 'SERVICE';
+  }
+  if (isDeviceRequestTable(requestTable)) {
+    return 'DEVICE';
+  }
+  return 'OTHER';
+}
+
 function typeLabelFromRow(row: NurseStationTreatmentLineDto): string {
   const table = String(row.requestTable ?? '');
   if (isServiceRequestTable(table)) {
@@ -318,7 +339,7 @@ function formatDisplayTotalPriceYuan(
   if (!Number.isFinite(n)) {
     return '';
   }
-  return `${n.toFixed(2)}元`;
+  return formatMoneyYuan(n);
 }
 
 function buildChargeExtension(row: NurseStationTreatmentLineDto): string {
@@ -378,6 +399,7 @@ function buildExtension(row: NurseStationTreatmentLineDto): string {
 export function mapTreatmentLineToExecuteRow(
   row: NurseStationTreatmentLineDto,
 ): NurseAdviceExecuteRow {
+  const statusEnum = resolveNurseExecuteDisplayStatusCode(row);
   const status = lineStatusLabel(row);
   const table = String(row.requestTable ?? '');
   const performed = row.performCount ?? 0;
@@ -387,6 +409,8 @@ export function mapTreatmentLineToExecuteRow(
   return {
     key: treatmentLineToExecuteKey(row),
     status,
+    statusEnum,
+    rowType: rowTypeFromRequestTable(table),
     type: typeLabelFromRow(row),
     content: buildContent(row),
     startTime: '',
@@ -534,6 +558,23 @@ function resolveServiceLineApplyFormSortKey(prescriptionNo?: null | string): str
   return '2_';
 }
 
+/** 门诊护士站项目列表是否排除中药饮片（对齐 IF-DOR-10 BR-ORD-026 / 药房发药域） */
+export function isNurseStationTcmMedicationLine(row: NurseStationTreatmentLineDto): boolean {
+  if (row.tcmFlag === true) {
+    return true;
+  }
+  if (row.tcmFlag === false) {
+    return false;
+  }
+  return String(row.medCategoryCode ?? '').trim() === HERBAL_MEDICATION_CATEGORY_CODE;
+}
+
+function filterNurseStationExecuteMedicationLines(
+  medicationLines: NurseStationTreatmentLineDto[],
+): NurseStationTreatmentLineDto[] {
+  return medicationLines.filter((line) => !isNurseStationTcmMedicationLine(line));
+}
+
 /** 仅映射诊疗与药品行；耗材行在侧栏以发放维度展示 */
 export function mapTreatmentSheetToExecuteRows(
   serviceLines: NurseStationTreatmentLineDto[],
@@ -543,53 +584,31 @@ export function mapTreatmentSheetToExecuteRows(
   for (const line of sortNurseStationServiceLinesForApplyForm(serviceLines)) {
     rows.push(mapTreatmentLineToExecuteRow(line));
   }
-  rows.push(...mergeMedicationExecuteRowsForDisplay(medicationLines));
+  rows.push(
+    ...mergeMedicationExecuteRowsForDisplay(
+      filterNurseStationExecuteMedicationLines(medicationLines),
+    ),
+  );
   return rows;
 }
 
-const DISPENSE_PENDING_CODES = new Set(['DRAFT', 'IN_PROGRESS', 'PREPARATION']);
+const SUPPLY_STATUS_DISPLAY: Record<SupplyDispenseStatusCode, SupplyItem['status']> = {
+  PENDING: '待发放',
+  PREPARED: '已配药',
+  COMPLETED: '已发放',
+  PART_COMPLETED: '已发放',
+};
 
 /** 解析侧栏耗材发放展示态与是否可取消执行 */
 function resolveSupplyDisplayStatus(
   row: NurseStationTreatmentLineDto,
-): Pick<SupplyItem, 'canCancelExecute' | 'status'> {
-  const code = String(row.dispenseStatusEnum ?? '')
-    .trim()
-    .toUpperCase();
-  const statusText = (row.dispenseStatusEnumText ?? '').trim();
-  if (code === 'PREPARED' || statusText.includes('已配')) {
-    return { status: '已配药', canCancelExecute: true };
-  }
-  if (
-    code === 'COMPLETED' ||
-    code === 'PART_COMPLETED' ||
-    statusText.includes('已发') ||
-    statusText.includes('部分发')
-  ) {
-    return { status: '已发放', canCancelExecute: true };
-  }
-  if (
-    DISPENSE_PENDING_CODES.has(code) ||
-    statusText.includes('待配') ||
-    statusText.includes('待发')
-  ) {
-    return { status: '待发放', canCancelExecute: false };
-  }
-  if (isDispenseDoneCode(code)) {
-    return { status: '已发放', canCancelExecute: false };
-  }
-  return { status: '待发放', canCancelExecute: false };
-}
-
-const DISPENSE_DONE_HINTS = ['COMPLETED', 'DISPENSED', 'DONE', 'CLOSED', 'FINISHED', 'PREPARED'];
-
-/** 根据发放状态码推断是否为终态/已处理（非待执行勾选） */
-function isDispenseDoneCode(code: string): boolean {
-  const u = code.trim().toUpperCase();
-  if (!u) {
-    return false;
-  }
-  return DISPENSE_DONE_HINTS.some((h) => u.includes(h));
+): Pick<SupplyItem, 'canCancelExecute' | 'status' | 'statusCode'> {
+  const statusCode = resolveSupplyDispenseStatusCode(row);
+  return {
+    statusCode,
+    status: SUPPLY_STATUS_DISPLAY[statusCode] ?? '待发放',
+    canCancelExecute: canCancelSupplyDispense(statusCode),
+  };
 }
 
 /** 从侧栏耗材项解析 IF-NUR-05 所需发放单 id */
@@ -612,7 +631,7 @@ export function resolveSupplyDispenseIdForApi(item: SupplyItem): string {
 export function mapDeviceLineToSupplyItem(row: NurseStationTreatmentLineDto): SupplyItem {
   const dispenseId = String(row.dispenseId ?? '').trim();
   const id = dispenseId || `DR:${String(row.requestId)}`;
-  const { status, canCancelExecute } = resolveSupplyDisplayStatus(row);
+  const { status, statusCode, canCancelExecute } = resolveSupplyDisplayStatus(row);
   const qtyRaw = row.quantity;
   const quantity =
     typeof qtyRaw === 'number' ? qtyRaw : Number.parseFloat(String(qtyRaw ?? '0')) || 0;
@@ -624,6 +643,7 @@ export function mapDeviceLineToSupplyItem(row: NurseStationTreatmentLineDto): Su
     usage: (row.deviceCategoryCode ?? '').trim() || '耗材',
     quantity,
     status,
+    statusCode,
     canCancelExecute,
   };
 }
@@ -675,7 +695,7 @@ export function mapOrderExecutionToActionRecord(row: OrderExecutionSheetItemDto)
     time,
     operator,
     operatorLabel,
-    type: '执行',
+    type: 'EXECUTE',
     action,
     target,
     result: '成功',

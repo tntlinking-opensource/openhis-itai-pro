@@ -14,10 +14,11 @@ import { computed, nextTick, onMounted, provide, ref } from 'vue';
 
 import { useUserStore } from '@vben/stores';
 
-import { ElButton, ElMessage } from 'element-plus';
+import { ElButton, ElMessage, ElMessageBox } from 'element-plus';
 import { storeToRefs } from 'pinia';
 
 import {
+  httpCompleteOutpatientEncounter,
   httpPageOutpatientInfoForDoctorStation,
   httpStartOutpatientReception,
 } from '#/api/doctor-station/encounter.http';
@@ -34,6 +35,7 @@ import PatientInfoBar from '#/components/outpatient/patient-info-bar.vue';
 import { confirmEmrDiscardUnsaved } from '#/emrEditor';
 import { useAuthStore } from '#/store';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import { resolveRequestErrorMessage } from '#/utils/http/resolve-request-error-message';
 import {
   formatLocalDateYmd,
   getLocalDayRangeDateTimeStrings,
@@ -46,7 +48,9 @@ import DoctorPatientList from './doctor-patient-list.vue';
 import { useDoctorPatientStore } from './doctorPatientStore';
 import InpatientAdmissionDialog from './inpatient-admission/inpatient-admission-dialog.vue';
 import RefundApplicationDialog from './refund/refund-application-dialog.vue';
+import ServiceApplyTab from './service-apply/index.vue';
 import ServiceApplyDialog from './service-apply/service-apply-dialog.vue';
+import WorkInjuryDoctorApprovalAction from '#/chs/work-injury/work-injury-doctor-approval-action.vue';
 
 defineOptions({
   name: 'Doctor',
@@ -62,9 +66,16 @@ const IN_PROGRESS_STATUS_CODES = new Set(['IN_PROGRESS', 'ON_HOLD']);
 const COMPLETED_STATUS_CODES = new Set(['COMPLETED', 'DISCHARGED']);
 
 /**
- * 双击需调接诊写接口的状态（与后端契约对齐；计划队列分页行常见为 `PLANNED`，勿漏判导致只走前端无写库）。
+ * 双击需调接诊写接口的状态（与后端契约对齐）。
+ * 门诊诊毕为 `DISCHARGED`（非财务态 `COMPLETED`）；漏判会导致只切 UI 不写库、状态仍显示完诊。
  */
-const RECEPTION_WRITE_STATUSES = new Set(['COMPLETED', 'ON_HOLD', 'PLANNED', 'REGISTERED']);
+const RECEPTION_WRITE_STATUSES = new Set([
+  'DISCHARGED',
+  'ON_HOLD',
+  'PLANNED',
+  'REGISTERED',
+  'TRIAGED',
+]);
 
 /** 与 `QUEUE_IN_PROGRESS` 比较用，避免接口返回大小写或数字枚举。 */
 function normalizeQueueStatusEnum(value: DoctorStationPatient['statusEnum']): string {
@@ -93,17 +104,61 @@ function filterWaitingPatientsByStatus(
   return rows.filter((p) => matchDoctorQueueStatusFilter(p.statusEnum, filter));
 }
 
-/** 患者队列拉取后：当前为「待诊」筛选且无待诊行时，自动切到「在诊」（仅在有在诊行时切换）。 */
-function maybeAutoSwitchQueueStatusFilter(
+/**
+ * 「当前接诊」Tab 仅展示 0～1 名在诊/暂离患者：以当前选中就诊为准，从队列结果集中取最新行。
+ */
+function syncCurrentPatientsFromSelected(rows: DoctorStationPatient[]): void {
+  const sel = selectedPatient.value;
+  if (!sel) {
+    currentPatients.value = [];
+    return;
+  }
+  const id = String(sel.encounterId ?? '').trim();
+  const fresh = rows.find((p) => String(p.encounterId ?? '').trim() === id);
+  const row = fresh ?? sel;
+  if (IN_PROGRESS_STATUS_CODES.has(normalizeQueueStatusEnum(row.statusEnum))) {
+    currentPatients.value = [row];
+    return;
+  }
+  currentPatients.value = [];
+}
+
+/**
+ * 患者队列展示优先级：有待诊则「患者队列 + 待诊」；无待诊有在诊则「患者队列 + 在诊」筛选。
+ * 切换顶栏 Tab 与列表拉取后均须调用；「当前接诊」Tab 仅手动进入或由接诊流程切入，不在此批量填充。
+ */
+function applyPatientQueueDisplayPriority(
   rows: DoctorStationPatient[],
-  options?: { skip?: boolean },
+  options?: { requestedQueue?: 'current' | 'waiting'; skip?: boolean },
 ): void {
   if (options?.skip) return;
-  if (patientQueue.value !== 'waiting') return;
-  if (queueStatusFilter.value !== 'waiting') return;
-  if (filterWaitingPatientsByStatus(rows, 'waiting').length > 0) return;
-  if (filterWaitingPatientsByStatus(rows, 'in-progress').length === 0) return;
-  queueStatusFilter.value = 'in-progress';
+
+  const waitingRows = filterWaitingPatientsByStatus(rows, 'waiting');
+  const inProgressRows = filterWaitingPatientsByStatus(rows, 'in-progress');
+
+  if (waitingRows.length > 0) {
+    patientQueue.value = 'waiting';
+    queueStatusFilter.value = 'waiting';
+    return;
+  }
+
+  if (options?.requestedQueue === 'current') {
+    patientQueue.value = 'current';
+    return;
+  }
+
+  if (inProgressRows.length > 0) {
+    patientQueue.value = 'waiting';
+    queueStatusFilter.value = 'in-progress';
+    return;
+  }
+
+  if (options?.requestedQueue) {
+    patientQueue.value = options.requestedQueue;
+  }
+  if (patientQueue.value === 'waiting') {
+    queueStatusFilter.value = 'waiting';
+  }
 }
 
 const authStore = useAuthStore();
@@ -140,6 +195,7 @@ const DOCTOR_TABS = {
   MEDICAL_RECORD: '门诊病历',
   DIAGNOSIS: '诊断录入',
   ORDER: '开立医嘱',
+  SERVICE_APPLY: '申请单',
   TCM: '中医处方',
   PRESCRIPTION: '电子处方',
   REPORT_QUERY: '报告查询',
@@ -162,6 +218,8 @@ const currentPatients = ref<DoctorStationPatient[]>([]);
 const listLoading = ref(false);
 /** 正在提交接诊，避免双击等重复触发 */
 const acceptingEncounterId = ref<null | string>(null);
+/** 正在提交完诊，避免重复触发 */
+const completingEncounterId = ref<null | string>(null);
 
 const filteredPatients = computed(() => {
   if (patientQueue.value === 'current') return currentPatients.value;
@@ -226,6 +284,7 @@ const tabComponents = computed<Record<DoctorTab, Component>>(() => {
     [DOCTOR_TABS.MEDICAL_RECORD]: MedicalRecordForm,
     [DOCTOR_TABS.DIAGNOSIS]: DiagnosisList,
     [DOCTOR_TABS.ORDER]: AdviceList,
+    [DOCTOR_TABS.SERVICE_APPLY]: ServiceApplyTab,
     [DOCTOR_TABS.TCM]: TcmAdvice,
     [DOCTOR_TABS.PRESCRIPTION]: ElepAdvice,
     [DOCTOR_TABS.REPORT_QUERY]: DiagnosisForm,
@@ -242,6 +301,9 @@ const doctorStationContextBindings = computed(() => {
     activeTab.value === DOCTOR_TABS.TCM ||
     activeTab.value === DOCTOR_TABS.PRESCRIPTION
   ) {
+    return { encounterId, patientId };
+  }
+  if (activeTab.value === DOCTOR_TABS.SERVICE_APPLY) {
     return {
       encounterId,
       patientId,
@@ -295,31 +357,37 @@ async function loadDoctorStationLists(options?: {
     waitingPatients.value = waitingRows;
     currentPatients.value = [];
 
-    maybeAutoSwitchQueueStatusFilter(waitingRows, { skip: options?.skipDefaultSelection });
+    applyPatientQueueDisplayPriority(waitingRows, { skip: options?.skipDefaultSelection });
 
     if (options?.skipDefaultSelection) return waitingRows;
 
-    if (patientQueue.value === 'waiting') {
-      const selId = (selectedPatient.value?.encounterId ?? '').trim();
+    const selId = (selectedPatient.value?.encounterId ?? '').trim();
+
+    if (patientQueue.value === 'current') {
+      syncCurrentPatientsFromSelected(waitingRows);
       if (selId) {
-        const fresh = waitingRows.find((p) => String(p.encounterId ?? '').trim() === selId);
+        const fresh = currentPatients.value.find(
+          (p) => String(p.encounterId ?? '').trim() === selId,
+        );
         if (fresh) {
           await applySelectedPatientChange(fresh);
           return waitingRows;
         }
       }
-      const visible = filterWaitingPatientsByStatus(waitingRows, queueStatusFilter.value);
-      await applySelectedPatientChange(visible[0] ?? null);
+      await applySelectedPatientChange(currentPatients.value[0] ?? null);
       return waitingRows;
     }
 
-    const sel = selectedPatient.value;
-    if (sel?.statusEnum === QUEUE_IN_PROGRESS) {
-      currentPatients.value = [sel];
-      await applySelectedPatientChange(sel);
-    } else {
-      await applySelectedPatientChange(null);
+    if (selId) {
+      const visible = filterWaitingPatientsByStatus(waitingRows, queueStatusFilter.value);
+      const fresh = visible.find((p) => String(p.encounterId ?? '').trim() === selId);
+      if (fresh) {
+        await applySelectedPatientChange(fresh);
+        return waitingRows;
+      }
     }
+    const visible = filterWaitingPatientsByStatus(waitingRows, queueStatusFilter.value);
+    await applySelectedPatientChange(visible[0] ?? null);
     return waitingRows;
   } catch {
     waitingPatients.value = [];
@@ -361,19 +429,35 @@ const handlePatientSelect = async (patient: DoctorStationPatient) => {
   await applySelectedPatientChange(patient);
 };
 
-/** 切换侧栏「患者队列 / 在诊患者」仅改列表视图，不自动改右侧当前就诊（避免误触接诊写接口） */
+/** 切换侧栏「患者队列 / 当前接诊」：按待诊优先规则决定实际 Tab，并同步侧栏选中（不调接诊写接口）。 */
 const handleQueueChange = async (queue: 'away' | 'completed' | 'current' | 'waiting') => {
   if (queue !== 'current' && queue !== 'waiting') return;
-  if (queue === 'current') {
-    const selId = (selectedPatient.value?.encounterId ?? '').trim();
+
+  applyPatientQueueDisplayPriority(waitingPatients.value, { requestedQueue: queue });
+
+  const selId = (selectedPatient.value?.encounterId ?? '').trim();
+
+  if (patientQueue.value === 'current') {
+    syncCurrentPatientsFromSelected(waitingPatients.value);
     const stillSelected =
       selId && currentPatients.value.some((p) => String(p.encounterId ?? '').trim() === selId);
     if (!stillSelected && currentPatients.value.length > 0) {
       const applied = await applySelectedPatientChange(currentPatients.value[0] ?? null);
       if (!applied) return;
     }
+    return;
   }
-  patientQueue.value = queue;
+
+  if (selId) {
+    const visible = filterWaitingPatientsByStatus(waitingPatients.value, queueStatusFilter.value);
+    const stillSelected = visible.some((p) => String(p.encounterId ?? '').trim() === selId);
+    if (stillSelected) return;
+  }
+  const visible = filterWaitingPatientsByStatus(waitingPatients.value, queueStatusFilter.value);
+  if (visible.length > 0) {
+    const applied = await applySelectedPatientChange(visible[0] ?? null);
+    if (!applied) return;
+  }
 };
 
 // 将关键字写回后重新拉取待诊列表（在诊 Tab 不传搜索）。
@@ -429,9 +513,9 @@ function openServiceApplyDialog(kind: ServiceApplyKind) {
   serviceApplyDialogVisible.value = true;
 }
 
-/** 申请单签发成功后刷新当前「开立医嘱」列表 */
+/** 申请单签发成功后刷新当前「申请单」列表 */
 async function handleServiceApplySigned() {
-  if (activeTab.value !== DOCTOR_TABS.ORDER) return;
+  if (activeTab.value !== DOCTOR_TABS.SERVICE_APPLY) return;
   await nextTick();
   const inst = tabPanelRef.value as undefined | { reload?: () => Promise<void> };
   if (inst && typeof inst.reload === 'function') {
@@ -452,6 +536,7 @@ const handleQuickAction = async (
     return;
   }
   if (action === 'lab' || action === 'exam') {
+    activeTab.value = DOCTOR_TABS.SERVICE_APPLY;
     openServiceApplyDialog(action);
     return;
   }
@@ -476,7 +561,7 @@ async function ensureReceptionForPatient(patient: DoctorStationPatient): Promise
 
   const status = statusEnumForReceptionDecision(patient, currentPatientInfo.value);
 
-  // IN_PROGRESS 等不在写接口集合内的状态：不调接诊写接口，但仍须切「在诊患者」并选中（禁止在此处 return 掉切换）。
+  // IN_PROGRESS 等不在写接口集合内的状态：不调接诊写接口，但仍须切「当前接诊」并选中（禁止在此处 return 掉切换）。
   if (!RECEPTION_WRITE_STATUSES.has(status)) {
     patientQueue.value = 'current';
     currentPatients.value = [patient];
@@ -517,8 +602,8 @@ async function ensureReceptionForPatient(patient: DoctorStationPatient): Promise
     currentPatients.value = [inProgressPatient];
     doctorPatientStore.setSelectedPatient(inProgressPatient);
     return true;
-  } catch {
-    ElMessage.error('接诊失败，请稍后重试');
+  } catch (error) {
+    ElMessage.error(resolveRequestErrorMessage(error, '接诊失败，请稍后重试'));
     return false;
   } finally {
     acceptingEncounterId.value = null;
@@ -582,14 +667,83 @@ async function handleToolbarRefresh() {
   }
 }
 
-const handleCompleteVisit = () => {
+/** 完诊：校验状态、确认后调用 IF-DOR-04 并刷新患者队列 */
+async function handleCompleteVisit(): Promise<void> {
   if (!ensurePatientSelected()) return;
-  ElMessage.info('完诊功能待实现');
-};
+  if (completingEncounterId.value !== null) {
+    ElMessage.warning('完诊处理中，请稍候');
+    return;
+  }
+
+  const patient = selectedPatient.value;
+  if (!patient) return;
+
+  const status = statusEnumForReceptionDecision(patient, currentPatientInfo.value);
+  if (WAITING_STATUS_CODES.has(status)) {
+    ElMessage.warning('当前患者处于待诊状态，不能完诊');
+    return;
+  }
+  if (COMPLETED_STATUS_CODES.has(status)) {
+    ElMessage.warning('当前患者已完诊');
+    return;
+  }
+  if (!IN_PROGRESS_STATUS_CODES.has(status)) {
+    ElMessage.warning('当前状态不允许完诊');
+    return;
+  }
+
+  const ok = await guardEmrUnsavedBeforeLeaveMedicalRecord();
+  if (!ok) return;
+
+  const patientName = (patient.patientName ?? '').trim() || '当前患者';
+  try {
+    await ElMessageBox.confirm(
+      `完诊后患者将进入「完诊」列表，也可在完诊列表中重新接诊。确定完成患者【${patientName}】的就诊？`,
+      '完诊确认',
+      { type: 'warning', confirmButtonText: '确定完诊', cancelButtonText: '取消' },
+    );
+  } catch {
+    return;
+  }
+
+  const operatorId = resolveStaffPractitionerIdForInProgressQueue();
+  if (!operatorId) {
+    ElMessage.warning('当前账号未关联医师身份，无法完诊');
+    return;
+  }
+
+  const encounterId = (patient.encounterId ?? '').trim();
+  if (!encounterId) {
+    ElMessage.warning('缺少就诊标识，无法完诊');
+    return;
+  }
+
+  completingEncounterId.value = encounterId;
+  try {
+    await httpCompleteOutpatientEncounter({
+      encounterId,
+      operatorId,
+    });
+    ElMessage.success('完诊成功');
+    doctorPatientStore.setSelectedPatient(null);
+    currentPatients.value = [];
+    patientQueue.value = 'waiting';
+    await loadDoctorStationLists();
+  } catch (error) {
+    ElMessage.error(resolveRequestErrorMessage(error, '完诊失败，请稍后重试'));
+  } finally {
+    completingEncounterId.value = null;
+  }
+}
 
 const handleTemporaryLeave = () => {
   if (!ensurePatientSelected()) return;
   ElMessage.info('暂离功能待实现');
+};
+
+/** 工伤 2301 完成后刷新队列（更新审批角标）。 */
+const handleWorkInjuryApprovalCompleted = () => {
+  void loadDoctorStationLists({ skipDefaultSelection: true });
 };
 
 const refundDialogVisible = ref(false);
@@ -659,6 +813,10 @@ const handleAdmission = () => {
           @action="handleAction"
         >
           <template #actions>
+            <WorkInjuryDoctorApprovalAction
+              :patient="selectedPatient"
+              @completed="handleWorkInjuryApprovalCompleted"
+            />
             <ElButton type="primary" link @click="handleToolbarRefresh">刷新</ElButton>
             <ElButton type="primary" link @click="handleCompleteVisit">完诊</ElButton>
             <ElButton type="primary" link @click="handleTemporaryLeave"> 暂离 </ElButton>
@@ -682,6 +840,7 @@ const handleAdmission = () => {
                 :form-data="medicalRecordData"
                 v-bind="doctorStationContextBindings"
                 @update="handleFormUpdate"
+                @open-apply="openServiceApplyDialog"
               />
             </KeepAlive>
           </div>

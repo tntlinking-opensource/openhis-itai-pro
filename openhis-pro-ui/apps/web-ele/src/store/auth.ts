@@ -53,7 +53,7 @@ export const useAuthStore = defineStore('auth', () => {
   const userInfo = ref<AuthApi.LoginUser | null>(null);
   /** 当前用户是否为平台管理员（登录 configuration 写入） */
   const platformAdmin = ref(false);
-  /** 当前用户是否具备财务审批岗位（登录 configuration 写入） */
+  /** 当前用户是否具备财务审批登录角色（applicationConfiguration.canFinanceApprove） */
   const canFinanceApprove = ref(false);
   /** 平台管理员在无科室时是否已跳过选科 */
   const organizationUnitSkipped = ref(false);
@@ -123,7 +123,7 @@ export const useAuthStore = defineStore('auth', () => {
             username: user?.userName ?? configuration?.currentUser?.userName,
           }),
         );
-        setCanFinanceApprove(Boolean(configuration?.currentUser?.canFinanceApprove));
+        syncCanFinanceApproveFromConfiguration(configuration);
 
         if (accessStore.loginExpired) {
           accessStore.setLoginExpired(false);
@@ -226,18 +226,33 @@ export const useAuthStore = defineStore('auth', () => {
 
   function setCanFinanceApprove(value: boolean) {
     canFinanceApprove.value = value;
-    if (value) {
-      localStorage.setItem('canFinanceApprove', '1');
-    } else {
-      localStorage.removeItem('canFinanceApprove');
-    }
+    // 清理历史 localStorage 键，避免刷新后误读上一用户的审批权限
+    localStorage.removeItem('canFinanceApprove');
   }
 
   function getCanFinanceApprove(): boolean {
-    if (canFinanceApprove.value) {
-      return true;
+    return canFinanceApprove.value;
+  }
+
+  /** 从 applicationConfiguration 同步财务审批能力（登录 / 路由初始化时调用） */
+  function syncCanFinanceApproveFromConfiguration(
+    configuration: AuthApi.LoginConfiguration | null | undefined,
+  ) {
+    setCanFinanceApprove(configuration?.currentUser?.canFinanceApprove === true);
+  }
+
+  /**
+   * 科室/租户会话就绪后拉取 applicationConfiguration，刷新 canFinanceApprove。
+   * 登录初次的 configuration 往往在选科之前，须以选科后会话为准。
+   */
+  async function refreshApplicationConfiguration(): Promise<void> {
+    try {
+      const { getApplicationConfigurationApi } = await import('#/api/core/auth');
+      const configuration = await getApplicationConfigurationApi();
+      syncCanFinanceApproveFromConfiguration(configuration);
+    } catch (error) {
+      console.warn('[auth] refreshApplicationConfiguration failed', error);
     }
-    return localStorage.getItem('canFinanceApprove') === '1';
   }
 
   function setOrganizationUnitSkipped(skipped: boolean) {
@@ -371,6 +386,7 @@ export const useAuthStore = defineStore('auth', () => {
     getSelectedTenant,
     getTenantList,
     isOrganizationUnitSkipped,
+    canFinanceApprove,
     loginLoading,
     logout,
     platformAdmin,
@@ -380,6 +396,8 @@ export const useAuthStore = defineStore('auth', () => {
     selectedTenantId,
     setPlatformAdmin,
     setCanFinanceApprove,
+    syncCanFinanceApproveFromConfiguration,
+    refreshApplicationConfiguration,
     setOrganizationUnitSkipped,
     setSelectedHospital,
     setSelectedOrganization,

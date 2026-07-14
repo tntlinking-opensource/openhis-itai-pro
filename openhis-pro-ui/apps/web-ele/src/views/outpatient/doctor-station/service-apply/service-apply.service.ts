@@ -1,3 +1,4 @@
+import type { AdviceRowItem } from '../advice/services/advice.types';
 import type {
   ServiceApplyDiagnosisOption,
   ServiceApplyKind,
@@ -8,13 +9,13 @@ import type {
   DoctorStationAdviceCatalogRowDto,
   SaveDoctorStationServiceApplyFormRequest,
   ServiceApplyFormDetailItemRequest,
+  ServiceRequestDetailSummaryDto,
   TerminologyOptionDto,
 } from '#/api/doctor-station/advice.types';
 import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
 
 import {
   httpInitDoctorStationAdvice,
-  httpListActivityExecutionLocations,
   httpPageDoctorStationAdviceCatalog,
   httpSaveDoctorStationServiceApplyForm,
   httpSignDoctorStationAdviceBatch,
@@ -24,7 +25,8 @@ import { resolveEncounterDiagnosisDisplayRows } from '#/components/doctor-statio
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
-import { pickMainDiagnosisDisplayName } from '../advice/services/advice-edit';
+import { loadAllDepartmentPerformOrgOptions } from '#/views/doctor-station/advice-shared/perform-org-options.service';
+
 import {
   SERVICE_APPLY_ACTIVITY_TABLE,
   SERVICE_APPLY_BODY_STRUCTURE_TABLE,
@@ -81,9 +83,16 @@ export function pickDefaultServiceApplyEncounterDiagnosisId(
   options: ServiceApplyDiagnosisOption[],
 ): string {
   if (options.length === 0) return '';
-  const mainName = pickMainDiagnosisDisplayName(rows);
-  if (mainName) {
-    const hit = options.find((item) => item.label === mainName);
+  const displayRows = resolveEncounterDiagnosisDisplayRows(rows);
+  const named = displayRows.filter((row) => (row.conditionDefinitionName ?? '').trim());
+  if (named.length === 0) return options[0]?.value ?? '';
+  const mains = named.filter((row) => Number(row.mainDiagnosisFlag) === 1);
+  const pool = mains.length > 0 ? mains : named;
+  pool.sort((a, b) => Number(a.diagnosisSortNo ?? 0) - Number(b.diagnosisSortNo ?? 0));
+  const mainRow = pool[0];
+  const mainId = String(mainRow?.encounterDiagnosisId ?? mainRow?.conditionId ?? '').trim();
+  if (mainId) {
+    const hit = options.find((item) => item.value === mainId);
     if (hit) return hit.value;
   }
   return options[0]?.value ?? '';
@@ -214,31 +223,13 @@ export async function loadServiceApplyCatalog(params: {
   return { rows, totalCount };
 }
 
-/** 按诊疗定义拉取可执行科室（去重） */
-export async function loadServiceApplyOrgOptions(params: {
+/** 申请单执行科室为整单全局字段，下拉始终全院科室（不按单项目规则收窄） */
+export async function loadServiceApplyOrgOptions(_params?: {
   activityDefinitionId: string;
   encounterId: string;
   patientId: string;
 }): Promise<ServiceApplyOrgOption[]> {
-  const activityDefinitionId = preserveApiIdForRequest(params.activityDefinitionId);
-  if (!activityDefinitionId) return [];
-  const res = await httpListActivityExecutionLocations({
-    encounterId: params.encounterId,
-    patientId: params.patientId,
-    activityDefinitionId,
-  });
-  const map = new Map<string, string>();
-  for (const rule of res.rules ?? []) {
-    const orgId = String(rule.executionOrgId ?? '').trim();
-    if (!orgId) continue;
-    const orgName = String(rule.executionOrgName ?? '').trim();
-    if (orgName) {
-      map.set(orgId, orgName);
-    } else if (!map.has(orgId)) {
-      map.set(orgId, orgId);
-    }
-  }
-  return [...map.entries()].map(([value, label]) => ({ value, label }));
+  return loadAllDepartmentPerformOrgOptions();
 }
 
 /** 用目录 defaultPerformOrg* 补全/修正执行科室下拉 label */
@@ -264,30 +255,13 @@ export function mergeCatalogDefaultPerformOrgOptions(
   return merged;
 }
 
-/** 合并多个诊疗项的执行科室下拉 */
-export async function mergeServiceApplyOrgOptions(params: {
+/** 整单执行科室下拉：全局选一个，清单内全部项目共用该科室 */
+export async function mergeServiceApplyOrgOptions(_params?: {
   activityDefinitionIds: string[];
   encounterId: string;
   patientId: string;
 }): Promise<ServiceApplyOrgOption[]> {
-  const map = new Map<string, string>();
-  const ids = [
-    ...new Set(params.activityDefinitionIds.map((id) => String(id).trim()).filter(Boolean)),
-  ];
-  for (const activityDefinitionId of ids) {
-    const options = await loadServiceApplyOrgOptions({
-      encounterId: params.encounterId,
-      patientId: params.patientId,
-      activityDefinitionId,
-    });
-    for (const opt of options) {
-      const prev = map.get(opt.value);
-      if (!prev || (prev === opt.value && opt.label !== opt.value)) {
-        map.set(opt.value, opt.label);
-      }
-    }
-  }
-  return [...map.entries()].map(([value, label]) => ({ value, label }));
+  return loadAllDepartmentPerformOrgOptions();
 }
 
 /** 校验已选行是否满足保存前置条件 */
@@ -373,6 +347,72 @@ export async function saveServiceApplyForm(
     throw new Error('保存成功但未返回申请单号或医嘱标识');
   }
   return { prescriptionNo, requestIds };
+}
+
+/** 解析列表行金额文案为元数字 */
+function parseAdviceLineAmountYuan(text: string): number {
+  const normalized = String(text ?? '')
+    .trim()
+    .replace(/[^\d.-]/g, '');
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** 列表 serviceRequestDetails → 保存用 detailItems */
+export function mapServiceRequestDetailsToDetailItems(
+  details: readonly ServiceRequestDetailSummaryDto[] | undefined,
+  applyKind: ServiceApplyKind,
+): ServiceApplyFormDetailItemRequest[] {
+  const fallbackTable = resolveDetailTargetTable(applyKind);
+  return (details ?? [])
+    .map((detail) => ({
+      targetTable: String(detail.targetTable ?? fallbackTable).trim() || fallbackTable,
+      targetId: String(detail.targetId ?? '').trim(),
+      remark: String(detail.remark ?? '').trim() || undefined,
+    }))
+    .filter((item) => item.targetId);
+}
+
+/** 列表行 → 编辑抽屉已选项目（回显用） */
+export function buildServiceApplySelectedItemsFromAdviceRows(
+  lines: readonly AdviceRowItem[],
+  applyKind: ServiceApplyKind,
+): ServiceApplySelectedItem[] {
+  return lines
+    .map((line) => {
+      const activityDefinitionId = String(line.productDefinitionId ?? '').trim();
+      const activityName = String(line.content ?? '').trim();
+      const quantityRaw = line.listExecutionCount ?? line.listQuantity ?? 1;
+      const quantity = quantityRaw > 0 ? quantityRaw : 1;
+      const lineAmount = parseAdviceLineAmountYuan(line.lineTotalAmount);
+      const unitPrice = quantity > 0 ? lineAmount / quantity : 0;
+      const catalogRowKey = `${SERVICE_APPLY_ACTIVITY_TABLE}:${activityDefinitionId}`;
+      return {
+        rowKey: `${catalogRowKey}-${line.key}`,
+        catalogRowKey,
+        activityDefinitionId,
+        activityName,
+        quantity,
+        unitCode: String(line.listUnitCode ?? '').trim(),
+        unitPrice,
+        remark: String(line.remark ?? '').trim() || undefined,
+        detailItems: mapServiceRequestDetailsToDetailItems(line.serviceRequestDetails, applyKind),
+      };
+    })
+    .filter((item) => item.activityDefinitionId && item.activityName);
+}
+
+/** 由列表诊断摘要匹配就诊诊断下拉主键 */
+export function resolveServiceApplyDiagnosisIdFromAdviceRow(
+  diagnosisSummary: string,
+  options: ServiceApplyDiagnosisOption[],
+): string {
+  const label = String(diagnosisSummary ?? '').trim();
+  if (!label || label === '—') {
+    return '';
+  }
+  const hit = options.find((item) => item.label === label);
+  return hit?.value ?? '';
 }
 
 /** 签发申请单下全部 ServiceRequest 草稿 */

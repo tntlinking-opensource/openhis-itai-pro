@@ -22,22 +22,28 @@ import {
   httpUpdateAutoGenRule,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-inpatient-billing.http';
 import { useRequest } from '#/hooks/use-request';
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import AutoRollConfigDialog from './auto-roll-config-dialog.vue';
 import AutoRollNursingReadonly from './auto-roll-nursing-readonly.vue';
-import { mapAutoRollConfigRows } from '../services/map-nurse-station-auto-roll';
+import {
+  mapAutoRollConfigRows,
+  buildDefaultAutoRollRuleName,
+} from '../services/map-nurse-station-auto-roll';
 
 defineOptions({
   name: 'InpatientBillingAutoRollPanel',
 });
 
 const props = withDefaults(defineProps<Props>(), {
+  canViewBilling: false,
   canOperateBilling: false,
   patient: null,
 });
 
 interface Props {
+  canViewBilling?: boolean;
   canOperateBilling?: boolean;
   patient?: NurseStationModulePatient | null;
 }
@@ -80,7 +86,7 @@ function resolvePatientIds() {
 
 /** 加载自动计费配置与护理只读区。 */
 async function loadAutoRollConfigs() {
-  if (!props.canOperateBilling || !props.patient) {
+  if (!props.canViewBilling || !props.patient) {
     configRows.value = [];
     nursingReadonly.value = null;
     return;
@@ -151,14 +157,13 @@ async function handleConfigSaved(payload: ConfigSavedPayload) {
     await createRuleRequest.run({
       encounterId,
       patientId,
-      ruleName: payload.form.ruleName,
+      ruleName: buildDefaultAutoRollRuleName(payload.selectedCatalog.catalog),
       activityId,
       chargeDefinitionId,
       quantityValue: payload.form.quantityValue,
-      priority: payload.form.priority,
       remark: payload.form.remark || undefined,
     });
-    ElMessage.success('新增自动计费配置成功');
+    ElMessage.success('新增床位费配置成功');
   } else {
     const ruleId = preserveApiIdForRequest(payload.ruleId);
     if (!ruleId) {
@@ -168,14 +173,13 @@ async function handleConfigSaved(payload: ConfigSavedPayload) {
       ruleId,
       encounterId,
       patientId,
-      ruleName: payload.form.ruleName,
+      ruleName: buildDefaultAutoRollRuleName(payload.selectedCatalog.catalog),
       activityId,
       chargeDefinitionId,
       quantityValue: payload.form.quantityValue,
-      priority: payload.form.priority,
       remark: payload.form.remark,
     });
-    ElMessage.success('更新自动计费配置成功');
+    ElMessage.success('更新床位费配置成功');
   }
 
   closeConfigDialog();
@@ -214,7 +218,7 @@ async function handleSuspend(row: AutoRollConfigTableRow) {
   }
   try {
     await ElMessageBox.confirm(
-      `确认停用「${row.ruleName}」？停用后不再参与每日滚费，历史已滚费用不会回滚。`,
+      `确认停用「${row.activityName}」？停用后不再参与每日滚费，历史已滚费用不会回滚。`,
       '停用配置',
       { type: 'warning', confirmButtonText: '确定', cancelButtonText: '取消' },
     );
@@ -238,7 +242,7 @@ async function handleDelete(row: AutoRollConfigTableRow) {
   }
   try {
     await ElMessageBox.confirm(
-      `确认删除「${row.ruleName}」？删除后不再参与滚费，历史已滚费用不会回滚。`,
+      `确认删除「${row.activityName}」？删除后不再参与滚费，历史已滚费用不会回滚。`,
       '删除配置',
       { type: 'warning', confirmButtonText: '确定', cancelButtonText: '取消' },
     );
@@ -267,6 +271,18 @@ async function handleQuery() {
 /** 停用行表格样式 class。 */
 function resolveRowClassName({ row }: { row: AutoRollConfigTableRow }) {
   return row.isActive ? '' : 'auto-roll-row--inactive';
+}
+
+/** 格式化自动计费单价展示。 */
+function formatAutoRollUnitPrice(value: number | string | undefined): string {
+  if (value === undefined || value === null || value === '') {
+    return '—';
+  }
+  const num = Number(value);
+  if (!Number.isFinite(num)) {
+    return '—';
+  }
+  return `￥${formatMoneyDisplay(num)}`;
 }
 
 watch(
@@ -298,7 +314,7 @@ defineExpose({ reload });
 
     <div class="billing-list-card flex min-h-0 flex-1 flex-col">
       <div class="billing-list-card__toolbar">
-        <span class="auto-roll-panel__section-title">床位服务自动计费配置</span>
+        <span class="auto-roll-panel__section-title">床位费配置</span>
         <div class="billing-list-card__actions">
           <ElButton :loading="tableLoading" @click="handleQuery">刷新</ElButton>
           <ElButton type="primary" :disabled="!canOperateBilling" @click="openCreateDialog">
@@ -308,8 +324,14 @@ defineExpose({ reload });
       </div>
 
       <ElAlert
-        v-if="!canOperateBilling"
-        title="住院记账仅支持单选患者，请在左侧只勾选 1 位患者后维护自动计费配置"
+        v-if="!canViewBilling"
+        title="住院记账仅支持单选患者，请在左侧只勾选 1 位患者后查看自动计费"
+        type="warning"
+        :closable="false"
+      />
+      <ElAlert
+        v-else-if="!canOperateBilling"
+        title="患者已办理出院或已结算，仅可查看配置，不可新增或修改"
         type="warning"
         :closable="false"
       />
@@ -330,18 +352,20 @@ defineExpose({ reload });
             </ElTag>
           </template>
         </ElTableColumn>
-        <ElTableColumn prop="ruleName" label="规则名称" min-width="120" show-overflow-tooltip />
-        <ElTableColumn prop="activityName" label="床位服务" min-width="130" show-overflow-tooltip />
-        <ElTableColumn
-          prop="chargeDefinitionName"
-          label="收费定价"
-          min-width="130"
-          show-overflow-tooltip
-        />
+        <ElTableColumn prop="activityName" label="项目名称" min-width="160" show-overflow-tooltip />
         <ElTableColumn prop="quantityValue" label="数量" width="72" align="center" />
-        <ElTableColumn prop="performingOrgText" label="执行科室" min-width="96" />
-        <ElTableColumn prop="priority" label="优先级" width="72" align="center" />
-        <ElTableColumn prop="remark" label="备注" min-width="100" show-overflow-tooltip />
+        <ElTableColumn
+          prop="unitPrice"
+          label="价格"
+          min-width="96"
+          align="right"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
+            {{ formatAutoRollUnitPrice(row.unitPrice) }}
+          </template>
+        </ElTableColumn>
+        <ElTableColumn prop="remark" label="备注" min-width="120" show-overflow-tooltip />
         <ElTableColumn label="操作" width="196" align="center" fixed="right">
           <template #default="{ row }">
             <ElButton

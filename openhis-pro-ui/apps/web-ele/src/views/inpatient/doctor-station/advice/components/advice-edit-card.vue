@@ -36,6 +36,7 @@ import {
   buildWesternProductSelectPatch,
   createAdviceDrugItem,
   inferDoseBandConvertK,
+  parseOptionalNumberInput,
   pickMainDiagnosisDisplayName,
 } from '../services/advice-edit';
 import {
@@ -228,7 +229,13 @@ function mergeDrugRow(index: number, patch: Partial<AdviceDrugItem>) {
   drugItems.value = next;
 }
 
-const { autoCalcTotalAmount, debouncedRecalcFrequencyTotal } = useAdviceFrequencyTotal({
+const {
+  autoCalcTotalAmount,
+  debouncedRefreshFrequencyExecutionCount,
+  debouncedEnsureFrequencyCountAndRecalcTotal,
+  refreshRowFrequencyExecutionCount,
+  recalcRowTotalAmountForTargetUnit,
+} = useAdviceFrequencyTotal({
   drugItems,
   isTcm,
   setField,
@@ -313,6 +320,29 @@ function handleTotalAmountUnitSelect(index: number, value: unknown) {
   }
 }
 
+function markTotalAmountManualOverride(index: number) {
+  setField(index, 'totalAmountManualOverride', true);
+}
+
+function handleTotalAmountManualInput(index: number, value: unknown) {
+  markTotalAmountManualOverride(index);
+  setField(index, 'totalAmount', parseOptionalNumberInput(value) as AdviceDrugItem['totalAmount']);
+}
+
+function handleTotalAmountUnitManualSelect(index: number, value: unknown) {
+  const nu = String(value ?? '').trim();
+  const item = drugItems.value[index];
+  if (!item || nu === String(item.totalAmountUnit ?? '').trim()) return;
+
+  if (autoCalcTotalAmount.value && !item.totalAmountManualOverride) {
+    recalcRowTotalAmountForTargetUnit(index, nu);
+    return;
+  }
+
+  markTotalAmountManualOverride(index);
+  handleTotalAmountUnitSelect(index, value);
+}
+
 const clearMedicationOnlyFields = (): Partial<AdviceDrugItem> => ({
   singleDose: undefined,
   doseConvertRatio: undefined,
@@ -333,6 +363,9 @@ const clearMedicationOnlyFields = (): Partial<AdviceDrugItem> => ({
   totalUnitSalesCode: undefined,
   totalUnitSalesName: undefined,
   totalAmountSplitToSalesK: undefined,
+  partAttributeEnum: undefined,
+  frequencyExecutionCount: undefined,
+  totalAmountManualOverride: false,
   tcmSpecialDecoction: '',
   serviceQuantity: undefined,
 });
@@ -385,12 +418,16 @@ const handleProductSelect = (index: number, row: AdviceProductOption) => {
     ElMessage.warning('住院医生站不支持开立耗材医嘱');
     return;
   } else {
-    const totalUnitDefaultKind = therapyType.value === 'TEMPORARY' ? 'PACKAGE' : 'SALES';
     mergeDrugRow(index, {
       ...base,
-      ...buildWesternProductSelectPatch(prev, row, { totalUnitDefaultKind }),
+      totalAmountManualOverride: false,
+      ...buildWesternProductSelectPatch(prev, row, {
+        totalUnitDefaultKind: therapyType.value === 'TEMPORARY' ? undefined : 'SALES',
+      }),
     });
-    debouncedRecalcFrequencyTotal(index);
+    if (!isTcm.value && autoCalcTotalAmount.value && therapyType.value === 'TEMPORARY') {
+      void nextTick(() => refreshRowFrequencyExecutionCount(index));
+    }
   }
   drugItems.value = drugItems.value.map((item, itemIndex) => ({
     ...item,
@@ -595,8 +632,11 @@ function westernFormHandlers(index: number): WesternDrugFormHandlers {
     setField: (key, value) => setField(index, key, value),
     applySplitDoseToDoseSide: (v) => applySplitDoseToDoseSide(index, v),
     applyDoseQtyToSplitSide: (v) => applyDoseQtyToSplitSide(index, v),
-    debouncedRecalcFrequencyTotal: () => debouncedRecalcFrequencyTotal(index),
-    handleTotalAmountUnitSelect: (v) => handleTotalAmountUnitSelect(index, v),
+    debouncedRecalcFrequencyTotal: () => debouncedRefreshFrequencyExecutionCount(index),
+    debouncedEnsureFrequencyCountAndRecalcTotal: () =>
+      debouncedEnsureFrequencyCountAndRecalcTotal(index),
+    handleTotalAmountManualInput: (v) => handleTotalAmountManualInput(index, v),
+    handleTotalAmountUnitManualSelect: (v) => handleTotalAmountUnitManualSelect(index, v),
     handleDiagnosisFocus: () => handleDiagnosisFocus(index),
     openDiagnosisDialog: () => openDiagnosisDialog(index),
   };

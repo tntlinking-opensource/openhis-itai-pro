@@ -15,8 +15,12 @@ export {
   INSURANCE_CONTRACT_CATEGORIES,
   INSURANCE_CONTRACT_CATEGORY_PRIORITY,
   isInsuranceContractCategory,
+  isNonSelfPayContractCategory,
   isPublicChargeContractCategory,
+  isSelfPayContractCategory,
+  isWorkInjuryContractCategory,
   PUBLIC_CHARGE_CONTRACT_CATEGORIES,
+  requiresInsuranceBenefitFlow,
 } from './charge-type-category';
 
 export async function loadRegisterBenefitPreview(
@@ -65,14 +69,16 @@ export function enrichInsuranceBenefitPreview(
 }
 
 function normalizeYbGenderCode(gender?: string): string | undefined {
-  const text = String(gender ?? '').trim();
+  const text = String(gender ?? '')
+    .trim()
+    .toUpperCase();
   if (!text) {
     return undefined;
   }
-  if (text === '男' || text === '1') {
+  if (text === 'MALE' || text === '1') {
     return '1';
   }
-  if (text === '女' || text === '2') {
+  if (text === 'FEMALE' || text === '2') {
     return '2';
   }
   return text;

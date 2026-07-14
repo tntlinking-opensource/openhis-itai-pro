@@ -30,12 +30,24 @@ import InpatientPatientInfoHeader from '#/components/inpatient/patient-info-head
 import { useRequest } from '#/hooks/use-request';
 import { useAuthStore } from '#/store';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import { decimalMul } from '#/utils/format/decimal-util';
+import {
+  calcMoneyLineTotal,
+  formatMoneyDisplay,
+  sumMoneyThenSettle,
+} from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import {
+  ENCOUNTER_CLINICAL_ORDER_MUTATION_BLOCKED_MESSAGE,
+  isEncounterClinicalOrderMutationBlocked,
+} from '#/utils/inpatient/encounter-clinical-order-gate';
 
 import AutoRollPanel from './components/auto-roll-panel.vue';
 import OrderBillingPanel from './components/order-billing-panel.vue';
 import PricingConfirmationPanel from './components/pricing-confirmation-panel.vue';
+import {
+  buildNurseStationStickyPatientInfoFromModulePatient,
+  buildNurseStationStickyPatientInfoPlaceholder,
+} from '../components/build-nurse-station-sticky-patient-info';
 import {
   buildDirectPricingWriteItem,
   buildPricingCatalogRowKey,
@@ -142,11 +154,12 @@ const selectedQuantityTotal = computed(() =>
   selectedPricingItems.value.reduce((sum, item) => sum + item.quantity, 0),
 );
 
-/** 汇总已选项目总金额。 */
+/** 汇总已选项目总金额（6 位加总后 2 位展示）。 */
 const selectedAmountTotal = computed(() =>
-  selectedPricingItems.value.reduce(
-    (sum, item) => sum + decimalMul(item.catalog.unitPrice ?? 0, item.quantity, 2),
-    0,
+  sumMoneyThenSettle(
+    selectedPricingItems.value.map((item) =>
+      calcMoneyLineTotal(item.catalog.unitPrice ?? 0, item.quantity),
+    ),
   ),
 );
 /** 当前选中医嘱对应的费用明细行。 */
@@ -165,52 +178,54 @@ const isSupplementFeeDialog = computed(() => supplementFeeOrderRow.value !== nul
 const batchPricingDialogTitle = computed(() =>
   isSupplementFeeDialog.value ? '医嘱补费' : '批量划价',
 );
-/** 住院记账要求左侧患者单选，仅单选时才允许查询列表与打开弹窗。 */
-const canOperateBilling = computed(() => props.patients.length === 1);
-/** 当前用于划价操作的左侧患者。 */
-const selectedBillingPatient = computed(() => (canOperateBilling.value ? props.patients[0] : null));
+/** 住院记账要求左侧患者单选。 */
+const billingPatientSingleSelected = computed(() => props.patients.length === 1);
+/** 单选患者后可查看住院记账（不受出院结算轨限制）。 */
+const canViewBilling = computed(() => billingPatientSingleSelected.value);
+/** 选中患者处于出院结算轨：禁止划价/补费/取消划价等写操作。 */
+const isEncounterChargeMutationBlocked = computed(() =>
+  billingPatientSingleSelected.value
+    ? isEncounterClinicalOrderMutationBlocked(props.patients[0]?.statusEnum)
+    : false,
+);
+/** 单选患者且未处于出院结算轨时可操作住院记账写路径。 */
+const canOperateBilling = computed(
+  () => billingPatientSingleSelected.value && !isEncounterChargeMutationBlocked.value,
+);
+/** 当前选中患者。 */
+const selectedBillingPatient = computed(() =>
+  billingPatientSingleSelected.value ? (props.patients[0] ?? null) : null,
+);
 /** 页面顶部吸顶患者信息。 */
 const stickyPatientInfo = computed(() => {
-  if (props.patients.length === 0) {
-    return null;
-  }
-  if (!canOperateBilling.value) {
-    return {
-      diagnosis: `当前已选 ${props.patients.length} 位患者（请单选后执行计费相关操作）`,
+  if (!selectedBillingPatient.value) {
+    if (props.patients.length === 0) {
+      return null;
+    }
+    return buildNurseStationStickyPatientInfoPlaceholder({
+      diagnosis: `当前已选 ${props.patients.length} 位患者（请单选后查看计费）`,
       name: '请选择单一患者',
-    };
+    });
   }
-  const patient = props.patients[0];
-  if (!patient) {
-    return null;
-  }
-  return {
-    age: patient.age,
-    bedNo: patient.bedNo,
-    diagnosis: patient.diagnosis ?? '—',
-    gender: patient.gender,
-    inpatientNo: patient.id,
-    insuranceType: patient.feeType ?? '—',
-    name: patient.name,
-  };
+  return buildNurseStationStickyPatientInfoFromModulePatient(selectedBillingPatient.value);
 });
 
 /** 将金额格式化为两位小数金额文案。 */
 function formatCurrency(value: number) {
-  return `￥${value.toFixed(2)}`;
+  return `￥${formatMoneyDisplay(value)}`;
 }
 
 /** 打开批量划价弹窗并重置本次项目选择。 */
 function openBatchPricingDialog(orderRow?: OrderBillingTableRow) {
+  if (!canOperateBilling.value) {
+    ElMessage.warning('住院记账仅支持单选患者，请在左侧只勾选 1 位患者');
+    return;
+  }
   projectKeyword.value = '';
   projectType.value = 'device';
   clearSelectedPricingItems();
   supplementFeeOrderRow.value = orderRow ?? null;
   batchDialogVisible.value = true;
-  if (!canOperateBilling.value) {
-    ElMessage.warning('住院记账仅支持单选患者，请在左侧只勾选 1 位患者');
-    return;
-  }
   catalogPageNo.value = 1;
   void loadPricingCatalog();
 }
@@ -246,7 +261,7 @@ async function loadOrderBillingRows() {
 
 /** 按筛选条件查询医嘱计费列表。 */
 async function handleQueryOrderBillingRows() {
-  if (!canOperateBilling.value) {
+  if (!canViewBilling.value) {
     ElMessage.warning('住院记账仅支持单选患者，请在左侧只勾选 1 位患者');
     return;
   }
@@ -307,6 +322,10 @@ function openOrderSupplementFeeDialog(row: OrderBillingTableRow) {
     return;
   }
   if (!canOperateBilling.value) {
+    if (isEncounterChargeMutationBlocked.value) {
+      ElMessage.warning(ENCOUNTER_CLINICAL_ORDER_MUTATION_BLOCKED_MESSAGE);
+      return;
+    }
     ElMessage.warning('住院记账仅支持单选患者，请在左侧只勾选 1 位患者');
     return;
   }
@@ -371,7 +390,7 @@ async function loadPricedOrders() {
 
 /** 按时间区间查询已划价列表。 */
 async function handleQueryPricingRows() {
-  if (!canOperateBilling.value) {
+  if (!canViewBilling.value) {
     ElMessage.warning('住院记账仅支持单选患者，请在左侧只勾选 1 位患者');
     return;
   }
@@ -466,6 +485,10 @@ function handlePricingSelectionChange(ids: string[]) {
 /** 取消划价：勾选待结算行整行还原（IF-IP-PRC-06） */
 async function handleCancelPricing() {
   if (!canOperateBilling.value) {
+    if (isEncounterChargeMutationBlocked.value) {
+      ElMessage.warning(ENCOUNTER_CLINICAL_ORDER_MUTATION_BLOCKED_MESSAGE);
+      return;
+    }
     ElMessage.warning('住院记账仅支持单选患者，请在左侧只勾选 1 位患者');
     return;
   }
@@ -615,7 +638,7 @@ watch(
   () => props.patients,
   () => {
     pricingTimeRange.value = [];
-    if (canOperateBilling.value) {
+    if (canViewBilling.value) {
       void loadPricedOrders();
       if (activeTab.value === 'order-billing') {
         void loadOrderBillingRows();
@@ -633,10 +656,13 @@ watch(
 );
 
 watch(activeTab, (tab) => {
-  if (tab === 'order-billing' && canOperateBilling.value) {
+  if (tab === 'pricing-confirmation' && canViewBilling.value) {
+    void loadPricedOrders();
+  }
+  if (tab === 'order-billing' && canViewBilling.value) {
     void loadOrderBillingRows();
   }
-  if (tab === 'auto-roll' && canOperateBilling.value) {
+  if (tab === 'auto-roll' && canViewBilling.value) {
     void autoRollPanelRef.value?.reload();
   }
 });
@@ -645,6 +671,14 @@ watch(activeTab, (tab) => {
 <template>
   <div class="inpatient-billing-page flex min-h-0 flex-1 flex-col">
     <InpatientPatientInfoHeader :patient-info="stickyPatientInfo" />
+    <ElAlert
+      v-if="isEncounterChargeMutationBlocked"
+      class="mx-2 mt-2 shrink-0"
+      type="warning"
+      :closable="false"
+      show-icon
+      :title="`${ENCOUNTER_CLINICAL_ORDER_MUTATION_BLOCKED_MESSAGE}（仅可查看，不可划价、补费或取消划价）`"
+    />
     <ElTabs v-model="activeTab" class="billing-tabs">
       <ElTabPane label="医嘱计费" name="order-billing" />
       <ElTabPane label="非医嘱计费" name="pricing-confirmation" />
@@ -654,7 +688,9 @@ watch(activeTab, (tab) => {
     <PricingConfirmationPanel
       v-if="activeTab === 'pricing-confirmation'"
       v-model:pricing-time-range="pricingTimeRange"
+      :can-view-billing="canViewBilling"
       :can-operate-billing="canOperateBilling"
+      :charge-mutation-blocked="isEncounterChargeMutationBlocked"
       :cancel-loading="cancelPricingRequest.loading.value"
       :loading="listPricedOrdersRequest.loading.value"
       :pricing-rows="pricingRows"
@@ -669,6 +705,7 @@ watch(activeTab, (tab) => {
     <AutoRollPanel
       v-else-if="activeTab === 'auto-roll'"
       ref="autoRollPanelRef"
+      :can-view-billing="canViewBilling"
       :can-operate-billing="canOperateBilling"
       :patient="selectedBillingPatient"
     />
@@ -834,7 +871,7 @@ watch(activeTab, (tab) => {
               </ElTableColumn>
               <ElTableColumn label="金额" min-width="80" align="right">
                 <template #default="{ row }">
-                  {{ formatCurrency(decimalMul(row.catalog.unitPrice ?? 0, row.quantity, 2)) }}
+                  {{ formatCurrency(calcMoneyLineTotal(row.catalog.unitPrice ?? 0, row.quantity)) }}
                 </template>
               </ElTableColumn>
               <ElTableColumn label="操作" width="70" align="center">

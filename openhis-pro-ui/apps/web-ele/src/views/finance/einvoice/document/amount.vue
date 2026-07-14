@@ -12,6 +12,7 @@ import {
   ElInput,
   ElInputNumber,
   ElMessage,
+  ElAlert,
   ElTable,
   ElTableColumn,
   ElTag,
@@ -25,7 +26,12 @@ import {
 } from '#/api/einvoice-boss/document';
 import EinvoiceConfirmDialog from '#/components/einvoice/EinvoiceConfirmDialog.vue';
 import { useRequest } from '#/hooks/use-request';
-import { decimalAdd } from '#/utils/format/decimal-util';
+import {
+  formatMoneyDisplay,
+  moneyDiffAtSettle,
+  moneyEqualsAtSettle,
+  sumMoneyThenCalc,
+} from '#/utils/format/money-scale';
 
 defineOptions({
   name: 'EinvoiceDocumentAmount',
@@ -56,16 +62,12 @@ const { run: runSave, loading: saveLoading } = useRequest(saveDocumentAdjustment
 });
 const { run: runIssueNow, loading: issueLoading } = useRequest(issueNowApi, { manual: true });
 
-const lineSum = computed(() => {
-  let sum = 0;
-  for (const line of editableLines.value) {
-    sum = decimalAdd(sum, Number(line.amount ?? 0));
-  }
-  return sum;
-});
+const lineSum = computed(() =>
+  sumMoneyThenCalc(editableLines.value.map((line) => Number(line.amount ?? 0))),
+);
 
-const diff = computed(() => Number((lineSum.value - totalAmt.value).toFixed(2)));
-const amountMatched = computed(() => Math.abs(diff.value) < 0.005);
+const diff = computed(() => moneyDiffAtSettle(lineSum.value, totalAmt.value));
+const amountMatched = computed(() => moneyEqualsAtSettle(lineSum.value, totalAmt.value));
 
 const amountStatusTag = computed(() => {
   const status = detail.value?.amountStatus ?? '';
@@ -77,6 +79,8 @@ const amountStatusTag = computed(() => {
   }
   return { label: '金额不一致', type: 'warning' as const };
 });
+
+const adjustable = computed(() => detail.value?.invoiceStatus === 'DRAFT');
 
 function syncFromDetail(data: BossDocumentDetailDto) {
   detail.value = data;
@@ -93,6 +97,12 @@ async function loadDetail() {
   const data = await runLoad(documentId.value);
   if (data) {
     syncFromDetail(data);
+    if (data.warningMessage) {
+      ElMessage.warning(data.warningMessage);
+    }
+    if (data.invoiceStatus !== 'DRAFT') {
+      ElMessage.warning('仅草稿状态票据允许调额');
+    }
   }
 }
 
@@ -111,7 +121,7 @@ async function handleValidate() {
     ElMessage.success('金额校验通过');
     return;
   }
-  validateError.value = `明细合计 ${result?.lineSum?.toFixed(2) ?? lineSum.value.toFixed(2)} 与开票总额 ${result?.totalAmt?.toFixed(2) ?? totalAmt.value.toFixed(2)} 相差 ${result?.diff?.toFixed(2) ?? diff.value.toFixed(2)} 元`;
+  validateError.value = `明细合计 ${formatMoneyDisplay(result?.lineSum ?? lineSum.value)} 与开票总额 ${formatMoneyDisplay(result?.totalAmt ?? totalAmt.value)} 相差 ${formatMoneyDisplay(result?.diff ?? diff.value)} 元`;
 }
 
 async function handleSave() {
@@ -123,7 +133,7 @@ async function handleSave() {
     return;
   }
   if (!amountMatched.value) {
-    validateError.value = `明细合计 ${lineSum.value.toFixed(2)} 与开票总额 ${totalAmt.value.toFixed(2)} 相差 ${diff.value.toFixed(2)} 元`;
+    validateError.value = `明细合计 ${formatMoneyDisplay(lineSum.value)} 与开票总额 ${formatMoneyDisplay(totalAmt.value)} 相差 ${formatMoneyDisplay(diff.value)} 元`;
     return;
   }
   const data = await runSave({
@@ -142,12 +152,15 @@ async function handleSave() {
   if (data) {
     syncFromDetail(data);
     ElMessage.success('调整已保存');
+    if (data.warningMessage) {
+      ElMessage.warning(data.warningMessage);
+    }
   }
 }
 
 function addBalanceLine() {
-  const gap = Number((totalAmt.value - lineSum.value).toFixed(2));
-  if (Math.abs(gap) < 0.005) {
+  const gap = moneyDiffAtSettle(totalAmt.value, lineSum.value);
+  if (moneyEqualsAtSettle(lineSum.value, totalAmt.value)) {
     ElMessage.info('当前金额已平衡');
     return;
   }
@@ -211,17 +224,29 @@ onMounted(() => {
       v-loading="loadLoading"
       class="rounded border border-solid border-[var(--el-border-color-lighter)] p-4"
     >
+      <div v-if="detail?.warningMessage" class="mb-4">
+        <ElAlert :title="detail.warningMessage" type="warning" show-icon :closable="false" />
+      </div>
+      <div v-if="detail && !adjustable" class="mb-4 text-sm text-[var(--el-color-warning)]">
+        当前票据状态为「{{
+          detail.invoiceStatus === 'ISSUED'
+            ? '已开具'
+            : detail.invoiceStatus === 'CANCELLED'
+              ? '已作废'
+              : detail.invoiceStatus
+        }}」，不允许调额。
+      </div>
       <div v-if="detail" class="mb-4 grid gap-2 text-sm md:grid-cols-2">
         <div>患者：{{ detail.patientName }}（{{ detail.genderDisplay }}，{{ detail.age }}）</div>
         <div>就诊号：{{ detail.encounterBusNo }}</div>
         <div>业务线：{{ detail.issueKindLabel }}</div>
         <div>业务流水号：{{ detail.busNo }}</div>
-        <div>支付金额（只读）：{{ Number(detail.paymentAmt ?? 0).toFixed(2) }}</div>
+        <div>支付金额（只读）：{{ formatMoneyDisplay(detail.paymentAmt ?? 0) }}</div>
         <div class="flex items-center gap-2">
           开票总额
           <ElInputNumber
             v-model="totalAmt"
-            :disabled="!canAdjust"
+            :disabled="!canAdjust || !adjustable"
             :precision="2"
             :step="0.01"
             controls-position="right"
@@ -232,7 +257,7 @@ onMounted(() => {
               amountMatched ? 'text-[var(--el-color-success)]' : 'text-[var(--el-color-danger)]'
             "
           >
-            差额：{{ diff.toFixed(2) }} {{ amountMatched ? '✓' : '' }}
+            差额：{{ formatMoneyDisplay(diff) }} {{ amountMatched ? '✓' : '' }}
           </span>
         </div>
       </div>
@@ -241,7 +266,7 @@ onMounted(() => {
         <span class="font-medium">明细</span>
         <div class="flex gap-2">
           <ElButton :loading="validateLoading" @click="handleValidate">校验金额</ElButton>
-          <ElButton v-if="canAdjust" @click="addBalanceLine">+ 调平行</ElButton>
+          <ElButton v-if="canAdjust && adjustable" @click="addBalanceLine">+ 调平行</ElButton>
         </div>
       </div>
 
@@ -251,7 +276,7 @@ onMounted(() => {
         <ElTableColumn label="标准金额" width="110">
           <template #default="{ row }">
             <span class="text-[var(--el-text-color-secondary)]">
-              {{ Number(row.stdAmount ?? 0).toFixed(2) }}
+              {{ formatMoneyDisplay(row.stdAmount ?? 0) }}
             </span>
           </template>
         </ElTableColumn>
@@ -259,7 +284,7 @@ onMounted(() => {
           <template #default="{ row }">
             <ElInputNumber
               v-model="row.amount"
-              :disabled="!canAdjust"
+              :disabled="!canAdjust || !adjustable"
               :precision="2"
               :step="0.01"
               controls-position="right"
@@ -279,7 +304,7 @@ onMounted(() => {
         class="mt-2 text-right text-sm"
         :class="amountMatched ? '' : 'text-[var(--el-color-danger)]'"
       >
-        合计 {{ lineSum.toFixed(2) }}
+        合计 {{ formatMoneyDisplay(lineSum) }}
         <span v-if="!amountMatched">（与开票总额不等）</span>
       </div>
       <p v-if="validateError" class="mt-2 text-sm text-[var(--el-color-danger)]">
@@ -290,7 +315,7 @@ onMounted(() => {
         <div class="mb-2 text-sm">调整原因（必填）</div>
         <ElInput
           v-model="reason"
-          :disabled="!canAdjust"
+          :disabled="!canAdjust || !adjustable"
           type="textarea"
           :rows="2"
           placeholder="至少 5 个字"
@@ -299,11 +324,16 @@ onMounted(() => {
 
       <div class="mt-4 flex justify-end gap-2">
         <ElButton @click="goBack">取消</ElButton>
-        <ElButton v-if="canAdjust" type="primary" :loading="saveLoading" @click="handleSave">
+        <ElButton
+          v-if="canAdjust && adjustable"
+          type="primary"
+          :loading="saveLoading"
+          @click="handleSave"
+        >
           保存调整
         </ElButton>
         <ElButton
-          v-if="canOperate"
+          v-if="canOperate && adjustable"
           type="warning"
           :loading="issueLoading"
           @click="handleIssueNowClick"

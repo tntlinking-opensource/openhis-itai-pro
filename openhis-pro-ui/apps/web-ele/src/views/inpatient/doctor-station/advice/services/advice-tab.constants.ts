@@ -16,6 +16,12 @@ export const INPATIENT_ADVICE_CATALOG_TABLE_NAMES = [
   'wkf_activity_definition',
 ] as const;
 
+/** 护理级别诊疗类目（ServiceRequest.category_enum / 活动定义 category_code，AS-IP-DOR-003 BR-IP-ORD-026） */
+export const INPATIENT_NURSING_LEVEL_CATEGORY_CODE = '26';
+
+/** 护理级别目录检索：仅 wkf_activity_definition + categoryEnum=26 */
+export const INPATIENT_NURSING_LEVEL_CATALOG_TABLE_NAMES = ['wkf_activity_definition'] as const;
+
 /** 列表未返回 `productTableName` 时，按 `resourceType` 回退（与域表名对齐） */
 export const ADVICE_ROW_PRODUCT_TABLE_FALLBACK: Record<string, string> = {
   MEDICATION: MEDICATION_DEFINITION_TABLE,

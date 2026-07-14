@@ -26,6 +26,7 @@ import {
   nextTick,
   onActivated,
   onDeactivated,
+  onMounted,
   onUnmounted,
   ref,
   watch,
@@ -47,6 +48,7 @@ import {
 import { useAuthStore } from '#/store';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
+import { isEncounterClinicalOrderMutationBlocked } from '#/utils/inpatient/encounter-clinical-order-gate';
 
 import { ENSURE_CLINICAL_RECEPTION_KEY } from '#/components/doctor-station/clinical-reception-context';
 import { defaultContractSelection, firstTerminologyCode } from '../services/advice-format';
@@ -86,6 +88,8 @@ import {
 } from '../services/advice-row';
 import { calcAdviceTotalFee } from './use-advice-drug-list';
 
+import { useInpatientDoctorPatientStore } from '../../doctorPatientStore';
+
 export interface UseInpatientAdviceTabProps {
   encounterId?: string;
   patientId?: string;
@@ -94,7 +98,13 @@ export interface UseInpatientAdviceTabProps {
 /** 住院医生站「开立医嘱」页签：与门诊同构的独立实现，对接住院医嘱开立应用服务 */
 export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
   const authStore = useAuthStore();
+  const doctorPatientStore = useInpatientDoctorPatientStore();
   const ensureClinicalReception = inject(ENSURE_CLINICAL_RECEPTION_KEY, undefined);
+
+  /** 待结算/已结算/已离院：仅禁用开立医嘱写按钮（列表照常加载，写拦截由后端 EX-IP-ORD-107） */
+  const adviceWriteDisabled = computed(() =>
+    isEncounterClinicalOrderMutationBlocked(doctorPatientStore.selectedPatient?.statusEnum),
+  );
 
   const medicationRateOptions = ref<TerminologyOptionDto[]>([]);
   const medicationRouteOptions = ref<TerminologyOptionDto[]>([]);
@@ -988,6 +998,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
 
   /** 双击草稿行进入编辑 */
   const handleRowDblclick = async (row: AdviceRowItem) => {
+    if (adviceWriteDisabled.value) return;
     if (row.isEditor) return;
     if (!rowLooksDraft(row)) {
       ElMessage.warning('仅草稿/待签发类医嘱允许编辑');
@@ -1059,6 +1070,10 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     },
   );
 
+  onMounted(() => {
+    attachAdviceEscKeydown();
+  });
+
   onActivated(() => {
     isTabActive.value = true;
     attachAdviceEscKeydown();
@@ -1085,6 +1100,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     adviceMutationLoading,
     adviceTableRef,
     adviceWorkspaceTableLoading,
+    adviceWriteDisabled,
     addDrugGuardWestern,
     bumpOrderSelectExpand,
     bumpOrderSelectFocusTrigger,

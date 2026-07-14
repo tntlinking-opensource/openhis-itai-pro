@@ -1,7 +1,7 @@
 /**
  * 药库出库单底部操作条禁用态。
  * 后端 `statusEnum` 可能为 SupplyStatus 排序号或 {@code getCode()} 字符串（如 PENDING_APPROVAL），须先规范化。
- * 可编辑明细/单头：新建草稿、或待审核(1)。
+ * 可编辑明细/单头：新建草稿、或待审核(1)/驳回(4)/已撤回(9)。
  */
 
 import type { InboundReceiptDocActionFlags } from '#/utils/inventory/inbound-receipt-status';
@@ -62,6 +62,17 @@ export function stockOutStatusLabel(statusRaw?: unknown): string {
   return String(statusRaw);
 }
 
+/** 已落库出库类单据是否允许改明细（待审核/驳回/已撤回） */
+export function isStockOutDocumentEditableStatus(status?: null | number | string): boolean {
+  const s = normalizeStockOutStatusSort(status);
+  return s === 1 || s === 4 || s === 9;
+}
+
+/** 已落库单据是否允许整单删除（与后端 BR-SR-011 一致：待审核/驳回/已撤回） */
+export function isStockOutDocumentRemovableStatus(status?: null | number | string): boolean {
+  return isStockOutDocumentEditableStatus(status);
+}
+
 /**
  * 与 `InvDocActions` 对齐的禁用组合；草稿态与进货单一致。
  */
@@ -71,31 +82,32 @@ export function buildStockOutDocActionFlags(p: {
   hasPersistedBusNo: boolean;
   /** 排序号或 SupplyStatus code */
   status?: null | number | string;
+  /** 保存/提交进行中 */
+  busy?: boolean;
 }): InboundReceiptDocActionFlags {
+  if (p.busy) {
+    return {
+      saveDisabled: true,
+      saveAndSubmitDisabled: true,
+      removeDisabled: true,
+    };
+  }
+
   if (p.isDraft) {
     return {
       saveDisabled: false,
       saveAndSubmitDisabled: false,
       removeDisabled: false,
-      submitApprovalDisabled: true,
-      withdrawDisabled: true,
-      approveDisabled: true,
-      rejectDisabled: true,
     };
   }
 
   const s = normalizeStockOutStatusSort(p.status);
   const has = p.hasPersistedBusNo;
-  const lineEditable = s === 1;
-  const submitOk = has && (s === 1 || s === 9);
+  const lineEditable = isStockOutDocumentEditableStatus(p.status);
 
   return {
     saveDisabled: !lineEditable,
     saveAndSubmitDisabled: !lineEditable,
-    removeDisabled: !(has && s === 1),
-    submitApprovalDisabled: !submitOk,
-    withdrawDisabled: !(has && s === 2),
-    approveDisabled: !(has && s === 2),
-    rejectDisabled: !(has && s === 2),
+    removeDisabled: !(has && (s === 1 || s === 4 || s === 9)),
   };
 }

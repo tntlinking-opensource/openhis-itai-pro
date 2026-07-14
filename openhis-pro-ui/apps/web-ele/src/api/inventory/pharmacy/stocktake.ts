@@ -7,6 +7,14 @@ import type { ApiOptionItem, ApiResponse } from '#/types/api-response';
 import { requestClient } from '#/api/request';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import {
+  filterWorkbenchListRowsByDateRange,
+  INV_ALL_PHARMACIES_LABEL,
+  mapInitOptionDtoToLocationSelectOptions,
+  mapLocationOptionsToCabinetRows,
+  pickInitOptionDtoList,
+  prependAllLocationsCabinetOption,
+} from '#/utils/inventory/inventory-workbench-list';
+import {
   stocktakeStatusLabel,
   normalizeStocktakeStatusSort,
 } from '#/utils/inventory/stocktake-doc-actions';
@@ -77,6 +85,7 @@ export interface PharmacyStocktakeDetailLineDto {
   specification?: string;
   manufacturer?: string;
   lotNumber?: string;
+  traceNo?: string;
   expirationDate?: string;
   unitCode?: string;
   bookQuantity?: number;
@@ -112,6 +121,7 @@ export interface PharmacyStocktakeLineDto {
   profitLossAmount?: number;
   unitCode?: string;
   lotNumber?: string;
+  traceNo?: string;
   inventoryItemId?: number | string;
   price?: number;
   remake?: string;
@@ -193,6 +203,7 @@ export interface StocktakeProductItemDto {
   specification?: string;
   manufacturer?: string;
   lotNumber?: string;
+  traceNo?: string;
   expirationDate?: string;
   availableQuantity?: number | string;
   unitBands?: StocktakeProductUnitBandDto[];
@@ -243,10 +254,7 @@ export function mapPharmacyStocktakeInitItemTableTypes(
 export function mapPharmacyStocktakeInitToLocationOptions(
   list?: StocktakeOptionDto[],
 ): PharmacyStocktakeLocationOption[] {
-  return (list ?? []).map((o) => ({
-    locationId: o.value,
-    displayName: o.label,
-  }));
+  return mapInitOptionDtoToLocationSelectOptions(list);
 }
 
 function mapPharmacyStocktakeListRowToQueueCard(
@@ -361,21 +369,25 @@ export async function pagePharmacyStocktakeWorkbenchListApi(params?: {
 
   const res = await pagePharmacyStocktakesApi({
     purposeLocationId,
-    applyTimeFrom: params?.applyTimeBegin ? `${params.applyTimeBegin}T00:00:00` : undefined,
-    applyTimeTo: params?.applyTimeEnd ? `${params.applyTimeEnd}T23:59:59` : undefined,
     pageNo: 1,
-    pageSize: 100,
+    pageSize: 200,
   });
   const { content, totalCount } = parsePagedRowsFromApiData<PharmacyStocktakeListRowDto>(res.data);
+  const dateFiltered = filterWorkbenchListRowsByDateRange(
+    content,
+    params?.applyTimeBegin,
+    params?.applyTimeEnd,
+  );
   const kw = params?.keyword?.trim().toLowerCase();
-  let records = content.map((r) => mapPharmacyStocktakeListRowToQueueCard(r));
+  let records = dateFiltered.map((r) => mapPharmacyStocktakeListRowToQueueCard(r));
   if (kw) {
     records = records.filter((r) => {
       const no = String(r.busNo ?? r.supplyBusNo ?? '').toLowerCase();
       return no.includes(kw);
     });
   }
-  return { records, total: kw ? records.length : totalCount };
+  const filtered = params?.applyTimeBegin && params?.applyTimeEnd;
+  return { records, total: kw || filtered ? records.length : totalCount };
 }
 
 /** 进入页面：药房盘点 init。 */
@@ -386,10 +398,17 @@ export async function initPharmacyStocktakeWorkbenchApi(): Promise<{
 }> {
   const res = await loadPharmacyStocktakeFormInitApi({});
   const d = res.data;
-  const rows = (d?.pharmacyLocationOptions ?? []).map(optionDtoToCabinetRow);
+  const locationOpts = pickInitOptionDtoList(
+    d as Record<string, unknown> | undefined,
+    'pharmacyLocationOptions',
+  );
+  const rows = mapLocationOptionsToCabinetRows(
+    locationOpts.map((o) => ({ value: o.value, label: o.label })),
+    INV_ALL_PHARMACIES_LABEL,
+  );
   return {
-    cabinetListOptions: rows,
-    locationRawOptions: mapPharmacyStocktakeInitToLocationOptions(d?.pharmacyLocationOptions),
+    cabinetListOptions: prependAllLocationsCabinetOption(rows, INV_ALL_PHARMACIES_LABEL),
+    locationRawOptions: mapPharmacyStocktakeInitToLocationOptions(locationOpts),
     itemTableTypeOptions: mapPharmacyStocktakeInitItemTableTypes(d?.inboundItemTableTypeOptions),
   };
 }

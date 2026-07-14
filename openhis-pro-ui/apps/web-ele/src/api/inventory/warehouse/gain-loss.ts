@@ -4,6 +4,19 @@
 import type { ApiOptionItem, ApiResponse } from '#/types/api-response';
 
 import { requestClient } from '#/api/request';
+import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import {
+  filterWorkbenchListRowsByDateRange,
+  filterWorkbenchListRowsByKeyword,
+  INV_ALL_WAREHOUSES_LABEL,
+  mapLocationOptionsToCabinetRows,
+  prependAllLocationsCabinetOption,
+  resolveWorkbenchListPurposeLocationId,
+} from '#/utils/inventory/inventory-workbench-list';
+import {
+  normalizeStocktakeStatusSort,
+  stocktakeStatusLabel,
+} from '#/utils/inventory/stocktake-doc-actions';
 
 const BASE = '/inventoryWarehouseGainLoss';
 
@@ -35,6 +48,7 @@ export interface GainLossListRowDto {
   purposeLocationName?: string;
   itemCount?: number;
   gainLossQuantitySum?: number;
+  actualAmountSum?: number;
   applicantId?: number | string;
   applicantName?: string;
   applyTime?: string;
@@ -55,7 +69,9 @@ export interface PageGainLosssRequest {
 
 export interface PageGainLosssResponse {
   total?: number;
-  records: GainLossListRowDto[];
+  totalCount?: number;
+  records?: GainLossListRowDto[];
+  content?: GainLossListRowDto[];
 }
 
 export interface GetGainLossDetailRequest {
@@ -66,10 +82,12 @@ export interface GainLossDetailLineDto {
   lineId?: number | string;
   itemTable?: string;
   itemId?: number | string;
+  inventoryItemId?: number | string;
   productName?: string;
   specification?: string;
   manufacturer?: string;
   lotNumber?: string;
+  traceNo?: string;
   unitCode?: string;
   bookQuantity?: number;
   gainLossQuantity?: number;
@@ -80,6 +98,7 @@ export interface GainLossDetailLineDto {
   reason?: string;
   remake?: string;
   occurrenceTime?: string;
+  productCatalog?: { unitBands?: unknown };
 }
 
 export interface GetGainLossDetailResponse {
@@ -98,11 +117,14 @@ export interface GetGainLossDetailResponse {
 export interface GainLossLineDto {
   itemTable?: string;
   itemId?: number | string;
+  inventoryItemId?: number | string;
   gainLossQuantity?: number;
   unitCode?: string;
   lotNumber?: string;
+  traceNo?: string;
   reason?: string;
   price?: number;
+  gainLossAmount?: number;
   occurrenceTime?: string;
 }
 
@@ -114,6 +136,19 @@ export interface CreateGainLossRequest {
 }
 
 export interface CreateGainLossResponse {
+  busNo?: string;
+  statusEnum?: string | number;
+}
+
+export interface UpdateGainLossRequest {
+  busNo: string;
+  purposeLocationId: number | string;
+  practitionerId: number | string;
+  categoryEnum?: string;
+  lines: GainLossLineDto[];
+}
+
+export interface UpdateGainLossResponse {
   busNo?: string;
   statusEnum?: string | number;
 }
@@ -196,6 +231,10 @@ export async function createGainLossApi(body: CreateGainLossRequest) {
   return requestClient.post<ApiResponse<CreateGainLossResponse>>(`${BASE}/createGainLoss`, body);
 }
 
+export async function updateGainLossApi(body: UpdateGainLossRequest) {
+  return requestClient.post<ApiResponse<UpdateGainLossResponse>>(`${BASE}/updateGainLoss`, body);
+}
+
 export async function submitGainLossApprovalApi(body: SubmitGainLossApprovalRequest) {
   return requestClient.post<ApiResponse<SubmitGainLossApprovalResponse>>(
     `${BASE}/submitGainLossApproval`,
@@ -234,4 +273,67 @@ export function mapGainLossInitOptionsToApiItems(list?: GainLossOptionDto[]): Ap
     label: String(o.label ?? ''),
     value: String(o.value ?? ''),
   }));
+}
+
+/** init 药库下拉 → 侧栏 cabinet 行（含「全部库房」）。 */
+export function mapGainLossInitToCabinetRows(
+  list?: GainLossOptionDto[],
+): Record<string, unknown>[] {
+  const rows = mapLocationOptionsToCabinetRows(
+    (list ?? []).map((o) => ({ value: o.value, label: o.label })),
+    INV_ALL_WAREHOUSES_LABEL,
+  );
+  return prependAllLocationsCabinetOption(rows, INV_ALL_WAREHOUSES_LABEL);
+}
+
+/** 列表行 → 侧栏卡片队列字段（对齐盘点单 mapStocktakeListRowToQueueCard）。 */
+export function mapGainLossListRowToQueueCard(r: {
+  actualAmountSum?: number;
+  applicantName?: string;
+  approverName?: string;
+  busNo?: string;
+  purposeLocationName?: string;
+  statusEnum?: number | string;
+  statusEnumText?: string;
+  [key: string]: unknown;
+}): Record<string, unknown> {
+  const st = normalizeStocktakeStatusSort(r.statusEnum);
+  return {
+    ...r,
+    supplyBusNo: r.busNo,
+    statusEnum_enumText: r.statusEnumText ?? stocktakeStatusLabel(st),
+    applicantId_dictText: r.applicantName ?? '',
+    approverId_dictText: r.approverName ?? '',
+    purposeLocationId_dictText: r.purposeLocationName ?? '',
+    totalPrice: r.actualAmountSum,
+  };
+}
+
+/** 工作站左侧列表：purposeLocationId=0 表示全部；日期在前端筛。 */
+export async function pageWarehouseGainLossWorkbenchListApi(params?: {
+  purposeLocationId?: number | string;
+  keyword?: string;
+  applyTimeBegin?: string;
+  applyTimeEnd?: string;
+  pageNo?: number;
+  pageSize?: number;
+}): Promise<{ records: Record<string, unknown>[]; total: number }> {
+  const res = await pageGainLosssApi({
+    purposeLocationId: resolveWorkbenchListPurposeLocationId(params?.purposeLocationId),
+    keyword: params?.keyword?.trim() || undefined,
+    pageNo: params?.pageNo ?? 1,
+    pageSize: params?.pageSize ?? 200,
+  });
+  const { content, totalCount } = parsePagedRowsFromApiData<GainLossListRowDto>(res.data);
+  const dateFiltered = filterWorkbenchListRowsByDateRange(
+    content,
+    params?.applyTimeBegin,
+    params?.applyTimeEnd,
+  );
+  const records = filterWorkbenchListRowsByKeyword(
+    dateFiltered.map((r) => mapGainLossListRowToQueueCard(r)),
+    params?.keyword,
+  ) as Record<string, unknown>[];
+  const filtered = (params?.applyTimeBegin && params?.applyTimeEnd) || params?.keyword?.trim();
+  return { records, total: filtered ? records.length : totalCount };
 }

@@ -58,6 +58,7 @@ export interface InpatientPharmacyDispenseRecordRow {
   orderingDepartmentId?: string;
   orderingDepartmentName?: string;
   usageText?: string;
+  manufacturerText?: string;
   summaryNo?: string;
   medReqId?: string;
 }

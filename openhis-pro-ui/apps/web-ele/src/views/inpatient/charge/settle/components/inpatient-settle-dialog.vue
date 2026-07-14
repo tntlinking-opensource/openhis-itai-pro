@@ -16,6 +16,7 @@ import {
 } from 'element-plus';
 
 import AppDialog from '#/components/app-dialog.vue';
+import { formatMoneyDisplay, formatMoneyYuan } from '#/utils/format/money-scale';
 
 type PayChannelOption = { label: string; value: string };
 
@@ -70,7 +71,7 @@ const scanCode = defineModel<string>('scanCode', { default: '' });
 
 function formatMoney(value: null | number | string | undefined) {
   const n = Number(value ?? 0);
-  return Number.isFinite(n) ? n.toFixed(2) : '0.00';
+  return Number.isFinite(n) ? formatMoneyDisplay(n) : '0.00';
 }
 
 const payableDisplay = computed(() => {
@@ -78,6 +79,24 @@ const payableDisplay = computed(() => {
     return formatMoney(props.displayAmount);
   }
   return formatMoney(props.receivableTotal);
+});
+
+/** 预结算说明文案：后端 previewText 可能带 6 位小数，展示统一为 2 位 */
+const formattedPreviewText = computed(() => {
+  const text = props.previewText?.trim() ?? '';
+  if (!text) {
+    return '';
+  }
+  if (text.startsWith('预交金冲抵')) {
+    return `预交金冲抵，应收合计：${formatMoneyYuan(props.receivableTotal)}`;
+  }
+  if (text.startsWith('患者实付')) {
+    return `患者实付：${formatMoneyYuan(props.displayAmount)}`;
+  }
+  if (text.startsWith('应收合计')) {
+    return `应收合计：${formatMoneyYuan(props.receivableTotal)}`;
+  }
+  return text;
 });
 
 const payableAmountNum = computed(() => {
@@ -104,10 +123,10 @@ function handleCancel() {
         <ElTag v-if="insurancePreSettled" type="success" effect="plain">医保预结算</ElTag>
       </div>
       <p
-        v-if="previewText"
+        v-if="formattedPreviewText"
         class="settle-dialog-preview text-sm text-[var(--el-text-color-regular)]"
       >
-        {{ previewText }}
+        {{ formattedPreviewText }}
       </p>
       <div class="settle-dialog-amount">
         <span class="text-[var(--el-text-color-regular)]">患者实付</span>

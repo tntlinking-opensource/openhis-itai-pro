@@ -86,6 +86,12 @@
   /* 基本圆角大小 */
   --radius: 0.5rem;
 
+  /* Form control border radius (input / select / textarea) */
+  --form-control-radius: 6px;
+
+  /* Form control height (input / select / date-picker) */
+  --form-control-height: 30px;
+
   /* ============= Custom ============= */
 
   /* 遮罩颜色 */

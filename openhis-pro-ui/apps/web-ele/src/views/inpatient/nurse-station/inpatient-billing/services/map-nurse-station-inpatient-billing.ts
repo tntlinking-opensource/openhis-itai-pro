@@ -11,7 +11,7 @@ import type {
 
 import { formatDateTime } from '@vben/utils';
 
-import { decimalMul } from '#/utils/format/decimal-util';
+import { calcMoneyLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 /** 划价确费列表行（表格展示） */
@@ -62,6 +62,7 @@ export interface OrderBillingTableRow {
   content: string;
   dosage: string;
   executionCount: string;
+  chargeStatusEnum?: string;
   startStopAt: string;
   children?: OrderBillingTableRow[];
 }
@@ -340,6 +341,7 @@ function mapSupplementChildOrderToTableRow(
     content: String(dto.productDisplayName ?? dto.adviceDisplayName ?? '').trim() || '—',
     dosage: buildSupplementChildDosage(dto),
     executionCount: String(dto.chargeStatusDisplay ?? dto.statusDisplay ?? '').trim() || '—',
+    chargeStatusEnum: String(dto.chargeStatusEnum ?? '').trim() || undefined,
     startStopAt: pricedRaw ? formatDateTime(pricedRaw) : '—',
   };
 }
@@ -533,6 +535,7 @@ export function mapPricedOrderRowToOrderBillingChildRow(
     content: String(dto.productDisplayName ?? '').trim() || '—',
     dosage,
     executionCount: statusText,
+    chargeStatusEnum: String(dto.chargeStatusEnum ?? '').trim() || undefined,
     startStopAt: pricedRaw ? formatDateTime(pricedRaw) : '—',
   };
 }
@@ -580,7 +583,8 @@ export function mapPricedOrderRowToChargeDetailRow(
   const unitDisplay = String(dto.unitDisplay ?? '').trim();
   const quantity = dto.quantity;
   const unitPriceNum = Number(dto.unitPrice ?? 0) || 0;
-  const unitPriceText = unitDisplay ? `${unitPriceNum} / ${unitDisplay}` : String(unitPriceNum);
+  const unitPriceDisplay = formatMoneyDisplay(unitPriceNum);
+  const unitPriceText = unitDisplay ? `${unitPriceDisplay} / ${unitDisplay}` : unitPriceDisplay;
   let usageCount = '—';
   if (quantity !== null && quantity !== undefined && quantity !== '') {
     usageCount = unitDisplay ? `${quantity} ${unitDisplay}` : String(quantity);
@@ -623,8 +627,7 @@ export function resolvePricingRowCanCancel(dto: NurseStationPricedOrderRowDto): 
   if (chargeCode === 'PENDING_SETTLEMENT') {
     return true;
   }
-  const display = String(dto.chargeStatusDisplay ?? '').trim();
-  return display.includes('待结算');
+  return false;
 }
 
 /** 单条已划价 DTO → 表格行 */
@@ -822,7 +825,7 @@ export function buildDirectPricingWriteItem(
     return null;
   }
 
-  const totalPrice = decimalMul(unitPriceRaw, quantity, 2);
+  const totalPrice = calcMoneyLineTotal(unitPriceRaw, quantity);
 
   return {
     encounterId,

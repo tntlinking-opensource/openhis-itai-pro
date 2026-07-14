@@ -40,6 +40,7 @@ import {
   httpRejectSummaryDispense,
 } from '#/api/inpatient-pharmacy-dispense/inpatient-pharmacy-summary-dispense.http';
 import { useRequest } from '#/hooks/use-request';
+import { fetchEncounterTcmDiagnosisDisplayText } from '#/components/doctor-station/diagnosis/services/fetch-encounter-tcm-diagnosis-text';
 import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
@@ -58,11 +59,16 @@ import {
   mapInpatientSlipRowsToPrescriptionBlocks,
 } from './services/map-api-to-inpatient-dispense-ui';
 import {
+  isAlreadyPreparedDispenseStatus,
+  isBatchDispenseActionableStatus,
+  PENDING_DISPENSE_STATUS_FILTER,
+} from '#/views/outpatient/dispense/services/dispense-batch-workflow';
+import {
   buildSummaryDispenseTraceLines,
   buildSummaryMergedLineDisplayRows,
   buildSummarySlipListDateRange,
   groupSummaryDispenseItemsByPatient,
-  mapSummaryDispenseItemsToTraceLines,
+  mapSummaryMergedLinesToTraceLines,
   normalizeSummaryDispenseItems,
   type SummaryMergedLineDisplayRow,
 } from './services/map-summary-dispense-ui';
@@ -90,6 +96,7 @@ const selectedWardId = ref<string | undefined>(undefined);
 const rxCenterRef = ref<InstanceType<typeof DispenseRxCenter> | null>(null);
 
 const sheetViewBlocks = ref<DispensePrescriptionBlock[]>([]);
+const sheetTcmDiagnosisText = ref('');
 
 const traceScanVisible = ref(false);
 const traceCodeByLineId = ref<Record<string, string>>({});
@@ -99,6 +106,7 @@ const insuranceContractBusNo = ref<string>();
 const insuranceChargeTypeOptions = ref<ChargeType[]>([]);
 
 const dispenserOptions = ref<{ label: string; value: string }[]>([]);
+const receiverCandidateOptions = ref<{ label: string; value: string }[]>([]);
 const wardOptions = ref<{ label: string; value: string }[]>([]);
 
 const queueScope = ref<'completed' | 'pending'>('pending');
@@ -115,6 +123,7 @@ const selectedSummaryNo = ref<null | string>(null);
 const summaryDetailHeader = ref<InpatientPharmacySummarySlipHeaderDto | null>(null);
 const summaryMergedLines = ref<SummaryMergedLineDisplayRow[]>([]);
 const summaryDispenseItems = ref<InpatientPharmacySummaryDispenseItemDto[]>([]);
+const summaryDispenseCompleted = ref(false);
 const summaryTraceCodeByLineId = ref<Record<string, string>>({});
 
 const queueLoading = ref(false);
@@ -142,6 +151,7 @@ const selectedPatientForRxCenter = computed<DispenseQueuePatient | null>(() => {
   if (!p) return null;
   return {
     id: p.id,
+    patientId: p.patientId,
     patientName: p.patientName,
     genderLabel: p.genderText,
     ageLabel: p.ageLabel,
@@ -158,24 +168,31 @@ const summaryPatientGroups = computed(() =>
   groupSummaryDispenseItemsByPatient(summaryDispenseItems.value),
 );
 
-/** 追溯码弹窗数据源（当前查看汇总单的发放行） */
+/** 追溯码弹窗数据源（当前汇总单合并 Supply 行，不关联患者发放行） */
 const summaryTraceDialogLines = computed(() =>
-  mapSummaryDispenseItemsToTraceLines(summaryDispenseItems.value),
+  mapSummaryMergedLinesToTraceLines(summaryMergedLines.value),
 );
 
-/** 领药人候选（调配药师列表；申请人不在列表时补入选项以便回显） */
+/** 领药人候选（护士列表；申请人不在列表时补入选项以便回显） */
 const receiverOptions = computed(() => {
-  const options = [...dispenserOptions.value];
+  const options = [...receiverCandidateOptions.value];
+  const mergeReceiverOption = (id?: null | string, name?: null | string) => {
+    const value = String(id ?? '').trim();
+    if (!value || options.some((opt) => opt.value === value)) {
+      return;
+    }
+    const label = String(name ?? '').trim();
+    options.push({ value, label: label || value });
+  };
   const header = summaryDetailHeader.value;
-  const applicantId = String(header?.applicantId ?? '').trim();
-  if (!applicantId || options.some((opt) => opt.value === applicantId)) {
-    return options;
+  mergeReceiverOption(header?.applicantId, header?.applicantName);
+  const summaryNo = selectedSummaryNo.value;
+  if (summaryNo) {
+    const slipRow = summarySlipRows.value.find(
+      (row) => String(row.busNo ?? '').trim() === summaryNo,
+    );
+    mergeReceiverOption(slipRow?.applicantId, slipRow?.applicantName);
   }
-  const applicantName = String(header?.applicantName ?? '').trim();
-  options.push({
-    value: applicantId,
-    label: applicantName || applicantId,
-  });
   return options;
 });
 
@@ -222,6 +239,14 @@ async function loadPageInit() {
       value: String(p.practitionerId),
       label: p.displayName?.trim() || String(p.practitionerId),
     }));
+    const receiverPage = res.receiverCandidatePage;
+    const { content: receiverList } = parsePagedRowsFromApiData<PractitionerOptionDto>(
+      receiverPage ?? {},
+    );
+    receiverCandidateOptions.value = receiverList.map((p) => ({
+      value: String(p.practitionerId),
+      label: p.displayName?.trim() || String(p.practitionerId),
+    }));
     if (!selectedDispenserId.value && dispenserOptions.value[0]) {
       selectedDispenserId.value = dispenserOptions.value[0].value;
     }
@@ -231,6 +256,7 @@ async function loadPageInit() {
     }));
   } catch {
     dispenserOptions.value = [];
+    receiverCandidateOptions.value = [];
     wardOptions.value = [];
   } finally {
     initLoading.value = false;
@@ -248,7 +274,7 @@ async function reloadQueue() {
     }
     const [startDay, endDay] = range;
     const dispenseStatusEnumIn =
-      queueScope.value === 'pending' ? ['PREPARATION', 'IN_PROGRESS'] : ['COMPLETED'];
+      queueScope.value === 'pending' ? [...PENDING_DISPENSE_STATUS_FILTER] : ['COMPLETED'];
     const res = await httpPagePendingDispenseInpatientEncounterQueue({
       startDate: `${startDay} 00:00:00`,
       endDate: `${endDay} 23:59:59`,
@@ -282,7 +308,7 @@ async function reloadSlips() {
   slipLoading.value = true;
   try {
     const dispenseStatusEnumIn =
-      queueScope.value === 'pending' ? ['PREPARATION', 'IN_PROGRESS'] : ['COMPLETED'];
+      queueScope.value === 'pending' ? [...PENDING_DISPENSE_STATUS_FILTER] : ['COMPLETED'];
     const res = await httpPageEncounterMedicationDispenseSlips({
       encounterId: enc,
       tcmOnly: activeRxKind.value === 'herbal' ? true : undefined,
@@ -369,6 +395,7 @@ watch(summaryScope, () => {
   summaryDetailHeader.value = null;
   summaryMergedLines.value = [];
   summaryDispenseItems.value = [];
+  summaryDispenseCompleted.value = false;
   void reloadSummarySlips(true);
 });
 
@@ -393,6 +420,7 @@ watch(dispenseMode, (mode) => {
     summaryDetailHeader.value = null;
     summaryMergedLines.value = [];
     summaryDispenseItems.value = [];
+    summaryDispenseCompleted.value = false;
     summaryTraceCodeByLineId.value = {};
     return;
   }
@@ -407,20 +435,20 @@ watch(selectedSummaryNo, (summaryNo) => {
     summaryDetailHeader.value = null;
     summaryMergedLines.value = [];
     summaryDispenseItems.value = [];
+    summaryDispenseCompleted.value = false;
     return;
   }
   void loadSummaryDetail(summaryNo);
 });
 
-/** 加载汇总单列表（IF-IPS-01）：待发 APPROVAL / 已发 AGREE */
+/** 加载汇总单列表（IF-IPS-01）：待发 SUMMARIZED / 已发 COMPLETED（发放表） */
 async function reloadSummarySlips(clearSelection = false) {
   const prevSelected = clearSelection ? null : selectedSummaryNo.value;
-  const supplyStatusEnumIn = summaryScope.value === 'pending' ? ['APPROVAL'] : ['AGREE'];
   const res = await summaryListRequest.run({
     pageNo: 1,
     pageSize: SUMMARY_PAGE_SIZE,
     keyword: summaryKeyword.value.trim() || undefined,
-    supplyStatusEnumIn,
+    summaryDispenseCompletedOnly: summaryScope.value === 'completed',
     ...buildSummarySlipListDateRange(summaryDateRange.value),
   });
   const { content: rows, totalCount } =
@@ -433,6 +461,7 @@ async function reloadSummarySlips(clearSelection = false) {
     summaryDetailHeader.value = null;
     summaryMergedLines.value = [];
     summaryDispenseItems.value = [];
+    summaryDispenseCompleted.value = false;
     return;
   }
 
@@ -458,6 +487,7 @@ async function loadSummaryDetail(summaryNo: string) {
   summaryDetailHeader.value = res.header ?? null;
   const dispenseItems = normalizeSummaryDispenseItems(res.dispenseItems);
   summaryDispenseItems.value = dispenseItems;
+  summaryDispenseCompleted.value = res.summaryDispenseCompleted === true;
   // 合并行批号由底层发放行聚合展示（合并 DTO 本身不含 lotNumber）
   summaryMergedLines.value = buildSummaryMergedLineDisplayRows(res.mergedLines, dispenseItems);
   applyReceiverDefaultFromApplicant(summaryDetailHeader.value);
@@ -596,21 +626,29 @@ function handleBatchTraceScan() {
 async function loadAllPrescriptionBlocksForSheet(): Promise<boolean> {
   const enc = selectedPatientId.value;
   if (!enc) return false;
+  const patientId = selectedPatientForRxCenter.value?.patientId ?? '';
   const dispenseStatusEnumIn =
-    queueScope.value === 'pending' ? ['PREPARATION', 'IN_PROGRESS'] : ['COMPLETED'];
+    queueScope.value === 'pending' ? [...PENDING_DISPENSE_STATUS_FILTER] : ['COMPLETED'];
   try {
-    const res = await httpPageEncounterMedicationDispenseSlips({
-      encounterId: enc,
-      dispenseStatusEnumIn,
-      pageNo: 1,
-      pageSize: 200,
-    });
+    const [slipRes, tcmDiagnosisText] = await Promise.all([
+      httpPageEncounterMedicationDispenseSlips({
+        encounterId: enc,
+        dispenseStatusEnumIn,
+        pageNo: 1,
+        pageSize: 200,
+      }),
+      patientId
+        ? fetchEncounterTcmDiagnosisDisplayText(enc, patientId, 'inpatient')
+        : Promise.resolve(''),
+    ]);
     const { content: slipList } =
-      parsePagedRowsFromApiData<EncounterMedicationDispenseSlipRowDto>(res);
+      parsePagedRowsFromApiData<EncounterMedicationDispenseSlipRowDto>(slipRes);
     sheetViewBlocks.value = mapInpatientSlipRowsToPrescriptionBlocks(slipList);
+    sheetTcmDiagnosisText.value = tcmDiagnosisText;
     return sheetViewBlocks.value.length > 0;
   } catch {
     sheetViewBlocks.value = [];
+    sheetTcmDiagnosisText.value = '';
     ElMessage.error('加载处方单失败');
     return false;
   }
@@ -643,10 +681,9 @@ async function handleBatchDispense() {
     return;
   }
   const slipById = new Map(slipRows.value.map((r) => [r.dispenseId, r]));
-  const actionable = selectedIds.filter((id) => {
-    const s = slipById.get(id)?.statusEnum;
-    return s === 'PREPARATION' || s === 'IN_PROGRESS';
-  });
+  const actionable = selectedIds.filter((id) =>
+    isBatchDispenseActionableStatus(slipById.get(id)?.statusEnum),
+  );
   if (actionable.length === 0) {
     ElMessage.warning('所选处方无可发药明细');
     return;
@@ -665,12 +702,12 @@ async function handleBatchDispense() {
       return;
     }
     const prepLines: { dispenseId: string; traceNo?: string }[] = [];
-    const alreadyProgressIds: string[] = [];
+    const alreadyPreparedIds: string[] = [];
     for (const id of actionable) {
       const row = slipById.get(id);
       if (!row) continue;
-      if (row.statusEnum === 'IN_PROGRESS') {
-        alreadyProgressIds.push(id);
+      if (isAlreadyPreparedDispenseStatus(row.statusEnum)) {
+        alreadyPreparedIds.push(id);
         continue;
       }
       prepLines.push({
@@ -684,9 +721,10 @@ async function handleBatchDispense() {
         preparerPractitionerId: preserveApiIdForRequest(preparerId) ?? preparerId,
         lines: prepLines,
       });
+      await reloadSlips();
     }
     const dispenseIds = [
-      ...new Set([...alreadyProgressIds, ...prepLines.map((l) => l.dispenseId)]),
+      ...new Set([...alreadyPreparedIds, ...prepLines.map((l) => l.dispenseId)]),
     ];
     const res = await httpDispenseInpatientMedications({
       encounterId: enc,
@@ -706,7 +744,8 @@ async function handleBatchDispense() {
       rxCenterRef.value?.clearRxTableSelection();
     });
   } catch {
-    /* 错误提示由请求拦截器处理 */
+    await reloadSlips();
+    await reloadQueue();
   } finally {
     batchSubmitting.value = false;
   }
@@ -812,6 +851,7 @@ onMounted(async () => {
           :selected-patient="selectedPatientForRxCenter"
           :prescription-blocks="prescriptionBlocks"
           :prescription-sheet-blocks="sheetViewBlocks"
+          :sheet-tcm-diagnosis-text="sheetTcmDiagnosisText"
           :display-table-rows="displayTableRows"
           :prescription-row-count="prescriptionList.length"
           :dispenser-options="dispenserOptions"
@@ -826,7 +866,7 @@ onMounted(async () => {
           :batch-submitting="summaryBatchSubmitting"
           :detail-loading="summaryDetailRequest.loading.value"
           :dispenser-options="dispenserOptions"
-          :read-only="summaryScope === 'completed'"
+          :read-only="summaryDispenseCompleted"
           :receiver-options="receiverOptions"
           :header="summaryDetailHeader"
           :merged-lines="summaryMergedLines"
@@ -845,6 +885,7 @@ onMounted(async () => {
       v-model="traceScanVisible"
       v-model:trace-by-line-id="traceCodeByLineId"
       :lines="prescriptionList"
+      :inventory-pick-by-line-id="inventoryPickByLineId"
       :patient-name="selectedPatientForRxCenter?.patientName ?? ''"
     />
     <TraceScanDialog
@@ -852,6 +893,7 @@ onMounted(async () => {
       v-model="traceScanVisible"
       v-model:trace-by-line-id="summaryTraceCodeByLineId"
       :lines="summaryTraceDialogLines"
+      :default-location-id="summaryDetailHeader?.purposeLocationId ?? ''"
       :patient-name="summaryDetailHeader?.applicantName ?? ''"
     />
   </div>

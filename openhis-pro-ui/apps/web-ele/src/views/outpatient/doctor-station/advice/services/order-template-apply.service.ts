@@ -31,19 +31,14 @@ import {
   convertInboundQtyBetweenBandKinds,
   normalizeInboundProductUnitBands,
 } from '#/utils/inventory/inbound-product-unit-bands';
+
+import { saveAdviceDraftBatchDirect } from './advice-draft-save.service';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
   applyLineDoseFieldsFromBands,
   hydrateDraftLineDoseFromDosageText,
 } from '#/views/basic/ordertemplate/order-template-medication-units';
 
-import {
-  buildBindSourceGroupsFromDialogRows,
-  filterResolvableDialogRowCandidates,
-  resolveAdviceDraftBindDialogRows,
-  saveAdviceDraftBatchWithBindResolution,
-} from './advice-draft-bind.service';
-import type { AdviceDraftBindDialogRow } from './advice-draft-bind.types';
 import {
   buildWesternProductSelectPatch,
   createAdviceDrugItem,
@@ -84,10 +79,6 @@ export interface ApplyOrderTemplateParams {
   preparedDraftLines?: DoctorStationAdviceDraftLineRequest[];
   /** 已在合并弹窗确认后的组套行（删行 / 改数量） */
   preConfirmedTemplateRows?: OrderTemplateApplyConfirmTemplateRow[];
-  /** 已在合并弹窗确认后的带出行 */
-  preConfirmedBindDialogRows?: AdviceDraftBindDialogRow[];
-  /** 与 preConfirmedBindDialogRows 配合：写入「不再提示」缓存的来源键 */
-  preConfirmedBindSkipSourceKeys?: string[];
 }
 
 /** 组套套用结果 */
@@ -574,9 +565,7 @@ function buildAdviceDrugItemFromTemplateLine(
     };
   }
 
-  const catalogPatch = buildWesternProductSelectPatch(seed, catalog, {
-    totalUnitDefaultKind: 'PACKAGE',
-  });
+  const catalogPatch = buildWesternProductSelectPatch(seed, catalog);
   const item: AdviceDrugItem = {
     ...seed,
     ...catalogPatch,
@@ -611,19 +600,6 @@ async function loadEncounterDiagnosisRows(
 
 /** 组套行 → 展示类型 */
 function resolveTemplateLineKindLabel(line: OrderTemplateLineRowItem): string {
-  const text = String(line.lineKindEnumText ?? '').trim();
-  if (text === '药品行') {
-    return '药品';
-  }
-  if (text === '耗材行') {
-    return '耗材';
-  }
-  if (text === '诊疗行') {
-    return '诊疗';
-  }
-  if (text) {
-    return text;
-  }
   switch (line.lineKindEnum) {
     case ORDER_TEMPLATE_LINE_KIND_MEDICATION: {
       return '药品';
@@ -881,43 +857,6 @@ export function buildDraftLinesFromConfirmedTemplateRows(
     .filter((line): line is DoctorStationAdviceDraftLineRequest => line !== undefined);
 }
 
-/** 确认弹窗：组套删行后重映射带出行触发行下标 */
-export function remapBindRowsForConfirmedTemplateRows(
-  bindRows: AdviceDraftBindDialogRow[],
-  templateRows: OrderTemplateApplyConfirmTemplateRow[],
-): AdviceDraftBindDialogRow[] {
-  const keptIndices = [...templateRows]
-    .map((row) => row.lineIndex)
-    .sort((left, right) => left - right);
-  const indexRemap = new Map<number, number>();
-  keptIndices.forEach((oldIndex, newIndex) => {
-    indexRemap.set(oldIndex, newIndex);
-  });
-
-  return bindRows
-    .filter((row) => {
-      const triggerIndex = row.bindItem.triggerLineIndex;
-      if (triggerIndex === undefined || triggerIndex === null) {
-        return true;
-      }
-      return indexRemap.has(triggerIndex);
-    })
-    .map((row) => {
-      const triggerIndex = row.bindItem.triggerLineIndex;
-      if (triggerIndex === undefined || triggerIndex === null) {
-        return row;
-      }
-      const newIndex = indexRemap.get(triggerIndex);
-      if (newIndex === undefined) {
-        return row;
-      }
-      return {
-        ...row,
-        bindItem: { ...row.bindItem, triggerLineIndex: newIndex },
-      };
-    });
-}
-
 interface OrderTemplateApplyDraftPack {
   draftLines: DoctorStationAdviceDraftLineRequest[];
   normalizedLines: OrderTemplateLineRowItem[];
@@ -1029,34 +968,20 @@ async function buildOrderTemplateApplyDraftPack(
   return { draftLines, normalizedLines, templateRows };
 }
 
-/** 组套套用前：组装确认弹窗所需组套行与带出行 */
+/** 组套套用前：组装确认弹窗所需组套行 */
 export async function prepareOrderTemplateApplyConfirm(
   params: ApplyOrderTemplateParams & { templateName?: string },
 ): Promise<OrderTemplateApplyConfirmPreview> {
   const { draftLines, templateRows } = await buildOrderTemplateApplyDraftPack(params);
 
-  const dialogRowCandidates = await resolveAdviceDraftBindDialogRows({
-    encounterId: params.encounterId.trim(),
-    patientId: params.patientId.trim(),
-    lines: draftLines,
-  });
-  const bindRows = filterResolvableDialogRowCandidates(
-    dialogRowCandidates,
-    draftLines,
-    params.existingAdviceRows ?? [],
-  );
-  const bindSourceGroups = buildBindSourceGroupsFromDialogRows(bindRows);
-
   return {
     templateName: String(params.templateName ?? '').trim(),
     templateRows,
-    bindRows,
-    bindSourceGroups,
     draftLines,
   };
 }
 
-/** 组套套用至当前就诊草稿（静默保存） */
+/** 组套套用至当前就诊草稿（DIRECT_ONLY：不解析用法绑定，避免二次带出） */
 export async function applyOrderTemplateToAdviceDraft(
   params: ApplyOrderTemplateParams,
 ): Promise<ApplyOrderTemplateResult> {
@@ -1076,27 +1001,15 @@ export async function applyOrderTemplateToAdviceDraft(
     );
   }
 
-  let preConfirmedBindDialogRows = params.preConfirmedBindDialogRows;
-  if (preConfirmedBindDialogRows && params.preConfirmedTemplateRows !== undefined) {
-    preConfirmedBindDialogRows = remapBindRowsForConfirmedTemplateRows(
-      preConfirmedBindDialogRows,
-      params.preConfirmedTemplateRows,
-    );
-  }
-
-  const saveRes = await saveAdviceDraftBatchWithBindResolution({
+  const saveRes = await saveAdviceDraftBatchDirect({
     encounterId,
     patientId,
     pricingSourceCode: ADVICE_PRICING_SOURCE_CODE,
     lines: draftLines,
-    existingAdviceRows: params.existingAdviceRows ?? [],
-    preConfirmedBindDialogRows,
-    preConfirmedBindSkipSourceKeys: params.preConfirmedBindSkipSourceKeys,
   });
   if (saveRes.success === false) {
     throw new OrderTemplateApplyError(String(saveRes.message ?? '').trim() || '保存医嘱草稿失败');
   }
 
-  const bindCount = preConfirmedBindDialogRows?.length ?? 0;
-  return { appliedLineCount: draftLines.length + bindCount };
+  return { appliedLineCount: draftLines.length };
 }

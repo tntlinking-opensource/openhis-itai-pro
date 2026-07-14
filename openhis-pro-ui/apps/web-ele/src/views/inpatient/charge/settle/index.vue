@@ -10,7 +10,7 @@ import type {
   SettledPaymentBriefDto,
 } from '#/api/inpatient-settle';
 
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
@@ -47,6 +47,8 @@ import EinvoiceIssueStatusPanel from '#/components/einvoice/EinvoiceIssueStatusP
 import SectionTitle from '#/components/layouts/section-title.vue';
 import SelectTable from '#/components/select-table.vue';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import { isExpectedEmptyResponseError } from '#/utils/http/expected-empty-response-errors';
+import { formatMoneyDisplay, formatMoneyYuan } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { optionDtosToPayChannelOptions } from '#/utils/payment/payment-channel-options';
 import { isScanPayChannel, useUnionPayScanPay } from '#/composables/payment/useUnionPayScanPay';
@@ -62,12 +64,24 @@ import {
 } from './inpatient-settle.constants';
 import InpatientSettleDialog from './components/inpatient-settle-dialog.vue';
 import {
+  loadInpatientRegisterContractMeta,
+  type InpatientRegisterContractMeta,
+} from '../register/services/inpatient-register-contract-meta';
+import {
   isInpatientInsuranceRegistration,
   isZeroAmountDischargeFullSettle,
+  inpatientSettleBlockedMessage,
   resolveInpatientSettleInsuranceContext,
   resolveInpatientSettleMode,
   verifyInpatientInsuranceCard,
 } from './use-inpatient-settle-insurance';
+import {
+  INPATIENT_SETTLE_FOOTER_ACTION,
+  INPATIENT_SETTLE_TOOLBAR_ACTION,
+  INPATIENT_SETTLE_TOOLBAR_ACTION_LABEL,
+  type InpatientSettleFooterActionCode,
+  type InpatientSettleToolbarActionCode,
+} from './settle-toolbar-action';
 
 defineOptions({
   name: 'ChargeIpSettle',
@@ -121,9 +135,18 @@ interface SettlementHistoryRow {
   settleType: string;
   settlementNo: string;
   status: string;
+  statusCode: SettlementHistoryStatusCode;
   ticketNo: string;
   totalAmount: string;
 }
+
+type SettlementHistoryStatusCode = 'REVERSED' | 'REVERSE_RECORD' | 'SETTLED';
+
+const SETTLEMENT_HISTORY_STATUS_LABEL: Record<SettlementHistoryStatusCode, string> = {
+  SETTLED: '已结清',
+  REVERSED: '已反结',
+  REVERSE_RECORD: '反结',
+};
 
 /** 展示用患者快照（字段名与原原型一致，数据来自接口） */
 interface SettlePatientView {
@@ -153,19 +176,18 @@ interface SettlePatientView {
   settlementHistoryRows: SettlementHistoryRow[];
   settlementNo: string;
   settlementStatus: string;
+  settlementStatusCode: 'PENDING' | 'SETTLED';
   settleDate: string;
   selfPayAmount: string;
   totalFee: string;
   wardName: string;
 }
 
-const PAY_LABEL_TO_CODE: Record<string, string> = {
-  现金: 'CASH',
-  微信: 'WECHAT',
-  银行卡: 'BANK_CARD',
-};
-
-const activeTab = ref('category-summary');
+const paymentChannelCode = ref(FALLBACK_DEFAULT_PAY_CHANNEL);
+const contractMeta = ref<InpatientRegisterContractMeta>({
+  contractCategoryById: {},
+  contractInsuranceProfileById: {},
+});
 const selectedEncounterId = ref('');
 const selectedPatientLabel = ref('');
 const settleQueueTab = ref<string>(SETTLE_QUEUE_TAB.PENDING_SETTLE);
@@ -209,14 +231,15 @@ const settlePatientSelectColumns = computed(() => {
   ];
 });
 
-const paymentMethod = ref<'微信' | '现金' | '银行卡'>('微信');
-const payChannelCodeByLabel = ref<Record<string, string>>({ ...PAY_LABEL_TO_CODE });
-
+const activeTab = ref('category-summary');
 const queueRecords = ref<InpatientSettleQueueItemDto[]>([]);
 const queueRowByEncounterId = ref<Record<string, InpatientSettleQueueItemDto>>({});
 const summary = ref<LoadInpatientSettleSummaryResponse | null>(null);
 const chargeLines = ref<InpatientSettleChargeLineDto[]>([]);
 const settlementHistoryRows = ref<SettlementHistoryRow[]>([]);
+/** 已结算页签：当前选中历史结算单 paymentId（驱动左侧费用快照回显） */
+const selectedSettledPaymentId = ref('');
+const settlementHistoryTableRef = ref<InstanceType<typeof ElTable> | null>(null);
 /** 历史结算净额（待结算页签亦展示；与 settledPaymentView 解耦） */
 const settlementHistoryNetTotal = ref<number | null>(null);
 
@@ -267,6 +290,7 @@ const emptyPatientView = (): SettlePatientView => ({
   settlementHistoryRows: [],
   settlementNo: '—',
   settlementStatus: '—',
+  settlementStatusCode: 'PENDING',
   settleDate: '—',
   selfPayAmount: '—',
   totalFee: '—',
@@ -319,7 +343,7 @@ function formatCurrencyDisplay(value: null | number | string | undefined) {
   if (!Number.isFinite(n)) {
     return '—';
   }
-  return `¥ ${n.toFixed(2)}`;
+  return `¥ ${formatMoneyDisplay(n)}`;
 }
 
 /** 历史结算表格金额：数值后拼「元」 */
@@ -328,7 +352,7 @@ function formatHistoryAmountDisplay(value: null | number | string | undefined) {
   if (!Number.isFinite(n)) {
     return '—';
   }
-  return `${n.toFixed(2)}元`;
+  return formatMoneyYuan(n);
 }
 
 /** 历史结算表格时间：居中展示，精确到分钟 */
@@ -350,9 +374,9 @@ function formatBalanceHintDisplay(hint: null | number | string | undefined) {
     return '—';
   }
   if (n > 0) {
-    return `应退 ¥ ${n.toFixed(2)}`;
+    return `应退 ¥ ${formatMoneyDisplay(n)}`;
   }
-  return `应补 ¥ ${Math.abs(n).toFixed(2)}`;
+  return `应补 ¥ ${formatMoneyDisplay(Math.abs(n))}`;
 }
 
 /** 费用明细行转表格展示结构 */
@@ -372,6 +396,16 @@ function mapChargeLineToFeeDetailRow(line: InpatientSettleChargeLineDto): FeeDet
     insuranceFlag: '—',
     selected: Boolean(line.selected),
   };
+}
+
+function resolveActiveSettledPaymentBrief(
+  view: LoadSettledInpatientPaymentViewResponse | null | undefined,
+) {
+  if (!view?.activePaymentId) {
+    return undefined;
+  }
+  const activeId = String(view.activePaymentId);
+  return view.payments?.find((payment) => String(payment.paymentId) === activeId);
 }
 
 /** 大类汇总转表格展示结构 */
@@ -415,14 +449,23 @@ const currentSettleModeLabel = computed(() => {
   if (currentSettleMode.value === INPATIENT_SETTLE_MODE.DISCHARGE_FULL) {
     return '出院全结';
   }
-  if (currentSettleMode.value === INPATIENT_SETTLE_MODE.MID_SETTLE) {
-    return '中途结算';
-  }
   return '—';
 });
 
+/** 结算按钮禁用原因（待出院 / 未护士出院 / 未全选） */
+const settleActionBlockedMessage = computed(() => {
+  const status = summary.value?.statusEnum ?? currentQueueRow.value?.statusEnum;
+  return inpatientSettleBlockedMessage(
+    status,
+    selectedChargeItemIds.value,
+    allPendingChargeItemIds.value,
+  );
+});
+
+const settleActionDisabled = computed(() => Boolean(settleActionBlockedMessage.value));
+
 const isInsuranceRegistration = computed(() =>
-  isInpatientInsuranceRegistration(currentQueueRow.value),
+  isInpatientInsuranceRegistration(currentQueueRow.value, contractMeta.value.contractCategoryById),
 );
 
 /** 解析本次渠道实付（少补/医保现金）；预交金充足时为 0。 */
@@ -579,9 +622,12 @@ const currentPatientDisplay = computed<SettlePatientView>(() => {
     insuranceInFee: '—',
     insuranceOutFee: '—',
     settlementNo: settledMode
-      ? (settled.activePaymentId ?? '—')
+      ? (resolveActiveSettledPaymentBrief(settled)?.paymentNo ??
+        resolveActiveSettledPaymentBrief(settled)?.paymentId ??
+        '—')
       : (preSettleSnapshot.value?.paymentDraftId ?? '—'),
     settlementStatus: settledMode ? '已结清' : '待结算',
+    settlementStatusCode: settledMode ? 'SETTLED' : 'PENDING',
     paymentTime: settleTimeText,
     settleDate:
       settledMode && settled.settleTime
@@ -636,13 +682,9 @@ const insuranceKeyInfoRows = computed<InsuranceInfoRow[]>(() => {
   ];
 });
 
-/** 解析底部支付方式对应的渠道 code */
+/** 解析底部支付方式渠道 code */
 function resolvePayChannelCode() {
-  const fromLabel = payChannelCodeByLabel.value[paymentMethod.value];
-  if (fromLabel) {
-    return fromLabel;
-  }
-  return PAY_LABEL_TO_CODE[paymentMethod.value] ?? FALLBACK_DEFAULT_PAY_CHANNEL;
+  return paymentChannelCode.value || FALLBACK_DEFAULT_PAY_CHANNEL;
 }
 
 /** 加载页初始化（支付渠道、队列页签等） */
@@ -652,11 +694,10 @@ async function loadPageInit() {
     settleQueueTabOptions.value = init.settleQueueTabOptions ?? [];
     settleQueueTab.value = init.defaultSettleQueueTab || SETTLE_QUEUE_TAB.PENDING_SETTLE;
     paymentChannelSelectOptions.value = optionDtosToPayChannelOptions(init.paymentChannelOptions);
-    const map: Record<string, string> = { ...PAY_LABEL_TO_CODE };
-    for (const opt of paymentChannelSelectOptions.value) {
-      map[opt.label] = opt.value;
+    if (paymentChannelSelectOptions.value.length > 0) {
+      paymentChannelCode.value =
+        paymentChannelSelectOptions.value[0]?.value ?? FALLBACK_DEFAULT_PAY_CHANNEL;
     }
-    payChannelCodeByLabel.value = map;
   } catch {
     ElMessage.error('结算页初始化失败');
   }
@@ -671,7 +712,34 @@ function resetSettleWorkspace() {
   categoryDisplayRows.value = [];
   settlementHistoryRows.value = [];
   settlementHistoryNetTotal.value = null;
+  selectedSettledPaymentId.value = '';
   preSettleSnapshot.value = null;
+}
+
+/** 已结算队列按住院号去重（保留最近结算时间较新的一行） */
+function dedupeSettledQueueByEncounterBusNo(rows: InpatientSettleQueueItemDto[]) {
+  const byBusNo = new Map<string, InpatientSettleQueueItemDto>();
+  for (const row of rows) {
+    const key = (row.encounterBusNo ?? row.encounterId ?? '').trim();
+    if (!key) {
+      continue;
+    }
+    const existing = byBusNo.get(key);
+    if (!existing) {
+      byBusNo.set(key, row);
+      continue;
+    }
+    const candidateTime = row.lastSettleTime ? dayjs(row.lastSettleTime).valueOf() : 0;
+    const incumbentTime = existing.lastSettleTime ? dayjs(existing.lastSettleTime).valueOf() : 0;
+    if (candidateTime > incumbentTime) {
+      byBusNo.set(key, row);
+      continue;
+    }
+    if (candidateTime === incumbentTime && String(row.encounterId) > String(existing.encounterId)) {
+      byBusNo.set(key, row);
+    }
+  }
+  return [...byBusNo.values()];
 }
 
 /** 住院结算搜索患者列表（队列分页） */
@@ -692,7 +760,10 @@ async function querySettlePatientOptions({
     pageSize,
   });
   const parsed = parsePagedRowsFromApiData<InpatientSettleQueueItemDto>(queueRes);
-  const content = parsed.content;
+  let content = parsed.content;
+  if (isSettledQueueTab.value) {
+    content = dedupeSettledQueueByEncounterBusNo(content);
+  }
   const totalCount = parsed.totalCount;
 
   const next = { ...queueRowByEncounterId.value };
@@ -794,13 +865,18 @@ async function loadPendingCharges() {
   await loadSummary();
 }
 
+/** 清空历史结算区（尚无流水时的正常空态） */
+function clearSettlementHistoryDisplay() {
+  settlementHistoryRows.value = [];
+  settlementHistoryNetTotal.value = null;
+}
+
 /** 加载住院结算/反结历史（IF-IP-STL-07；待结算与已结算页签共用） */
 async function loadSettlementHistory(ids?: { encounterId: string; patientId: string }) {
   const encounterId = preserveApiIdForRequest(ids?.encounterId ?? selectedEncounterId.value);
   const patientId = preserveApiIdForRequest(ids?.patientId ?? currentQueueRow.value?.patientId);
   if (!encounterId || !patientId) {
-    settlementHistoryRows.value = [];
-    settlementHistoryNetTotal.value = null;
+    clearSettlementHistoryDisplay();
     return;
   }
   try {
@@ -813,15 +889,20 @@ async function loadSettlementHistory(ids?: { encounterId: string; patientId: str
       mapPaymentToHistoryRow(p, historyRes),
     );
     settlementHistoryNetTotal.value = historyRes.netSettleTotal ?? null;
-  } catch {
-    // 首次待结算、尚无流水时静默为空，不打断主工作区
-    settlementHistoryRows.value = [];
-    settlementHistoryNetTotal.value = null;
+  } catch (error) {
+    if (isExpectedEmptyResponseError(error)) {
+      clearSettlementHistoryDisplay();
+      return;
+    }
+    throw error;
   }
 }
 
 /** 加载已结算单查阅（IF-IP-STL-07；仅已结算页签） */
-async function loadSettledWorkspace(ids?: { encounterId: string; patientId: string }) {
+async function loadSettledWorkspace(
+  ids?: { encounterId: string; patientId: string },
+  paymentId?: string,
+) {
   const encounterId = preserveApiIdForRequest(ids?.encounterId ?? selectedEncounterId.value);
   const patientId = preserveApiIdForRequest(ids?.patientId ?? currentQueueRow.value?.patientId);
   if (!encounterId || !patientId) {
@@ -829,29 +910,82 @@ async function loadSettledWorkspace(ids?: { encounterId: string; patientId: stri
     chargeLines.value = [];
     categoryDisplayRows.value = [];
     settlementHistoryRows.value = [];
+    selectedSettledPaymentId.value = '';
     return;
   }
-  const detailRes = await httpLoadSettledInpatientPaymentView({
+  const resolvedPaymentId = preserveApiIdForRequest(paymentId ?? selectedSettledPaymentId.value);
+  const requestBase = {
     encounterId,
     patientId,
-    presentationMode: SETTLE_PRESENTATION_MODE.DETAIL,
-  });
-  settledPaymentView.value = detailRes;
-  summary.value = null;
-  chargeLines.value = detailRes.lines ?? [];
-  const summaryRes = await httpLoadSettledInpatientPaymentView({
-    encounterId,
-    patientId,
-    presentationMode: SETTLE_PRESENTATION_MODE.SUMMARY,
-  });
-  categoryDisplayRows.value = mapCategoryRows(
-    summaryRes.categories ?? [],
-    detailRes.receivableTotal ?? summaryRes.receivableTotal ?? 0,
+    ...(resolvedPaymentId ? { paymentId: resolvedPaymentId } : {}),
+  };
+  try {
+    const detailRes = await httpLoadSettledInpatientPaymentView({
+      ...requestBase,
+      presentationMode: SETTLE_PRESENTATION_MODE.DETAIL,
+    });
+    settledPaymentView.value = detailRes;
+    selectedSettledPaymentId.value = detailRes.activePaymentId
+      ? String(detailRes.activePaymentId)
+      : '';
+    summary.value = null;
+    chargeLines.value = detailRes.lines ?? [];
+    const summaryRes = await httpLoadSettledInpatientPaymentView({
+      ...requestBase,
+      presentationMode: SETTLE_PRESENTATION_MODE.SUMMARY,
+    });
+    categoryDisplayRows.value = mapCategoryRows(
+      summaryRes.categories ?? [],
+      detailRes.receivableTotal ?? summaryRes.receivableTotal ?? 0,
+    );
+    settlementHistoryRows.value = (detailRes.payments ?? []).map((p) =>
+      mapPaymentToHistoryRow(p, detailRes),
+    );
+    settlementHistoryNetTotal.value = detailRes.netSettleTotal ?? null;
+    await syncSettlementHistoryTableCurrentRow();
+  } catch (error) {
+    if (isExpectedEmptyResponseError(error)) {
+      settledPaymentView.value = null;
+      chargeLines.value = [];
+      categoryDisplayRows.value = [];
+      selectedSettledPaymentId.value = '';
+      clearSettlementHistoryDisplay();
+      return;
+    }
+    throw error;
+  }
+}
+
+/** 历史表高亮行与 activePaymentId 对齐 */
+async function syncSettlementHistoryTableCurrentRow() {
+  await nextTick();
+  const table = settlementHistoryTableRef.value;
+  if (!table || !selectedSettledPaymentId.value) {
+    return;
+  }
+  const currentRow = settlementHistoryRows.value.find(
+    (row) => String(row.paymentId) === selectedSettledPaymentId.value,
   );
-  settlementHistoryRows.value = (detailRes.payments ?? []).map((p) =>
-    mapPaymentToHistoryRow(p, detailRes),
-  );
-  settlementHistoryNetTotal.value = detailRes.netSettleTotal ?? null;
+  if (currentRow) {
+    table.setCurrentRow(currentRow);
+  }
+}
+
+/** 选中历史结算行：按该笔 paymentId 回显左侧费用快照 */
+async function handleSettlementHistoryRowSelect(row: SettlementHistoryRow | null | undefined) {
+  if (!isSettledQueueTab.value || !row?.paymentId) {
+    return;
+  }
+  const paymentId = preserveApiIdForRequest(row.paymentId);
+  if (!paymentId || paymentId === selectedSettledPaymentId.value) {
+    return;
+  }
+  workspaceLoading.value = true;
+  try {
+    await loadSettledWorkspace(undefined, paymentId);
+  } finally {
+    workspaceLoading.value = false;
+  }
 }
 
 /** 待结算页签工作区：费用 + 摘要 + 历史流水只读 */
@@ -861,6 +995,16 @@ async function loadPendingWorkspace() {
   await loadSettlementHistory();
 }
 
+function resolveSettlementHistoryStatusCode(
+  payment: SettledPaymentBriefDto,
+): SettlementHistoryStatusCode {
+  const isReverse = payment.recordType === 'REVERSE';
+  if (payment.statusEnum === 'REFUNDED') {
+    return isReverse ? 'REVERSE_RECORD' : 'REVERSED';
+  }
+  return 'SETTLED';
+}
+
 /** 支付流水转历史结算表格行 */
 function mapPaymentToHistoryRow(
   payment: SettledPaymentBriefDto,
@@ -868,17 +1012,10 @@ function mapPaymentToHistoryRow(
 ): SettlementHistoryRow {
   const signedAmount = payment.signedAmount ?? payment.receivableTotal;
   const isReverse = payment.recordType === 'REVERSE';
-  let status = '已结清';
-  if (payment.statusEnum === 'REFUNDED') {
-    if (isReverse) {
-      status = '反结';
-    } else {
-      status = '已反结';
-    }
-  }
+  const statusCode = resolveSettlementHistoryStatusCode(payment);
   return {
     paymentId: payment.paymentId,
-    settlementNo: payment.paymentId,
+    settlementNo: payment.paymentNo ?? payment.paymentId,
     settleTime: payment.settleTime ? formatHistorySettleTimeDisplay(payment.settleTime) : '—',
     settleType: isReverse ? '反结' : '结算',
     totalAmount: formatHistoryAmountDisplay(signedAmount),
@@ -887,7 +1024,8 @@ function mapPaymentToHistoryRow(
     paymentMethod: payment.payMethodText ?? '—',
     operatorName: view.operatorName ?? '—',
     ticketNo: '—',
-    status,
+    status: SETTLEMENT_HISTORY_STATUS_LABEL[statusCode],
+    statusCode,
     recordType: payment.recordType,
     reverseEnabled: payment.reverseEnabled,
     reverseDisabledReason: payment.reverseDisabledReason,
@@ -925,12 +1063,12 @@ async function reloadWorkspace() {
 }
 
 /** 顶部工具栏占位动作 */
-function handleToolbarAction(actionLabel: string) {
-  if (actionLabel === '刷新费用') {
+function handleToolbarAction(actionCode: InpatientSettleToolbarActionCode) {
+  if (actionCode === INPATIENT_SETTLE_TOOLBAR_ACTION.REFRESH_FEES) {
     void reloadWorkspace().then(() => ElMessage.success('费用已刷新'));
     return;
   }
-  if (actionLabel === '医保校验') {
+  if (actionCode === INPATIENT_SETTLE_TOOLBAR_ACTION.VERIFY_INSURANCE) {
     const contractId = preserveApiIdForRequest(currentQueueRow.value?.contractId);
     if (!contractId) {
       ElMessage.warning('当前患者非医保登记或缺少合同信息');
@@ -939,12 +1077,12 @@ function handleToolbarAction(actionLabel: string) {
     void verifyInpatientInsuranceCard(contractId);
     return;
   }
-  ElMessage.success(`${actionLabel}已触发`);
+  ElMessage.success(`${INPATIENT_SETTLE_TOOLBAR_ACTION_LABEL[actionCode] ?? actionCode}已触发`);
 }
 
 /** 底部结算 */
-async function handleFooterAction(actionLabel: string) {
-  if (actionLabel === '确认结算') {
+async function handleFooterAction(actionCode: InpatientSettleFooterActionCode) {
+  if (actionCode === INPATIENT_SETTLE_FOOTER_ACTION.CONFIRM_SETTLE) {
     await handleOpenSettleDialog();
   }
 }
@@ -970,7 +1108,7 @@ async function handleReverseInpatientSettle(row: SettlementHistoryRow) {
   }
   try {
     await ElMessageBox.confirm(
-      '反结后将生成一条负向记录，本批费用恢复待结算。是否继续？',
+      '反结后将生成一条负向支付记录，本批费用将复制为新的待结算明细（原已结算记录保留可查）。是否继续？',
       '住院反结',
       { type: 'warning', confirmButtonText: '确认反结', cancelButtonText: '返回' },
     );
@@ -1017,6 +1155,15 @@ async function handleOpenSettleDialog() {
   }
   const chargeItemIds = selectedChargeItemIds.value;
   const encounterStatus = summary.value?.statusEnum ?? currentQueueRow.value?.statusEnum;
+  const blockedMessage = inpatientSettleBlockedMessage(
+    encounterStatus,
+    chargeItemIds,
+    allPendingChargeItemIds.value,
+  );
+  if (blockedMessage) {
+    ElMessage.warning(blockedMessage);
+    return;
+  }
   const zeroAmountDischargeFull = isZeroAmountDischargeFullSettle(
     encounterStatus,
     chargeItemIds,
@@ -1032,7 +1179,7 @@ async function handleOpenSettleDialog() {
     allPendingChargeItemIds.value,
   );
   if (!settleMode) {
-    ElMessage.warning('请先完成护士出院或改为中途结算');
+    ElMessage.warning('请先完成护士出院后再结算');
     return;
   }
   preSettleLoading.value = true;
@@ -1205,14 +1352,14 @@ async function handleConfirmSettleFromDialog() {
   }
 }
 
-function settlementHistoryStatusTagType(status: string) {
-  if (status === '已结清') {
+function settlementHistoryStatusTagType(statusCode: SettlementHistoryStatusCode) {
+  if (statusCode === 'SETTLED') {
     return 'success';
   }
-  if (status === '待补缴') {
-    return 'warning';
+  if (statusCode === 'REVERSE_RECORD') {
+    return 'info';
   }
-  if (status === '反结' || status === '已反结') {
+  if (statusCode === 'REVERSED') {
     return 'info';
   }
   return 'info';
@@ -1244,6 +1391,11 @@ function handleCloseSettlementDetail() {
 }
 
 onMounted(async () => {
+  try {
+    contractMeta.value = await loadInpatientRegisterContractMeta();
+  } catch {
+    contractMeta.value = { contractCategoryById: {}, contractInsuranceProfileById: {} };
+  }
   await loadPageInit();
 });
 
@@ -1294,8 +1446,18 @@ watch(settleQueueTab, () => {
             />
           </div>
           <div class="flex flex-shrink-0 items-center gap-2">
-            <ElButton plain @click="handleToolbarAction('刷新费用')">刷新费用</ElButton>
-            <ElButton type="primary" @click="handleToolbarAction('医保校验')">医保校验</ElButton>
+            <ElButton
+              plain
+              @click="handleToolbarAction(INPATIENT_SETTLE_TOOLBAR_ACTION.REFRESH_FEES)"
+            >
+              {{ INPATIENT_SETTLE_TOOLBAR_ACTION_LABEL.REFRESH_FEES }}
+            </ElButton>
+            <ElButton
+              type="primary"
+              @click="handleToolbarAction(INPATIENT_SETTLE_TOOLBAR_ACTION.VERIFY_INSURANCE)"
+            >
+              {{ INPATIENT_SETTLE_TOOLBAR_ACTION_LABEL.VERIFY_INSURANCE }}
+            </ElButton>
           </div>
         </div>
 
@@ -1494,16 +1656,23 @@ watch(settleQueueTab, () => {
             </div>
             <div class="settle-history-table-wrap p-3 pt-2">
               <ElTable
+                ref="settlementHistoryTableRef"
                 :data="currentPatientDisplay.settlementHistoryRows"
+                row-key="paymentId"
                 stripe
                 border
                 height="100%"
                 highlight-current-row
+                @current-change="handleSettlementHistoryRowSelect"
               >
                 <ElTableColumn type="index" label="序号" width="56" align="center" />
-                <ElTableColumn label="单据号" min-width="130" align="center">
-                  <template #default>—</template>
-                </ElTableColumn>
+                <ElTableColumn
+                  prop="settlementNo"
+                  label="单据号"
+                  min-width="130"
+                  align="center"
+                  show-overflow-tooltip
+                />
                 <ElTableColumn prop="settleTime" label="结算时间" min-width="140" align="center" />
                 <ElTableColumn prop="settleType" label="结算类型" width="90" align="center" />
                 <ElTableColumn prop="totalAmount" label="结算金额" width="88" align="right" />
@@ -1519,7 +1688,7 @@ watch(settleQueueTab, () => {
                 <ElTableColumn prop="status" label="状态" width="90" align="center">
                   <template #default="{ row }">
                     <ElTag
-                      :type="settlementHistoryStatusTagType(row.status)"
+                      :type="settlementHistoryStatusTagType(row.statusCode)"
                       effect="plain"
                       size="small"
                     >
@@ -1562,7 +1731,7 @@ watch(settleQueueTab, () => {
             <div class="payment-footer-amount-line">
               <span class="payment-footer-amount-label">本次患者实付：</span>
               <strong class="settle-payable-amount">
-                ¥{{ Number.isFinite(payableAmount) ? payableAmount.toFixed(2) : '0.00' }}
+                ¥{{ Number.isFinite(payableAmount) ? formatMoneyDisplay(payableAmount) : '0.00' }}
               </strong>
             </div>
             <p
@@ -1576,10 +1745,14 @@ watch(settleQueueTab, () => {
           <div class="payment-footer-meta">
             <div class="payment-footer-meta-line">
               <span class="payment-footer-meta-label">实际支付方式：</span>
-              <ElRadioGroup v-model="paymentMethod" class="payment-footer-pay-method">
-                <ElRadio label="现金" value="现金" />
-                <ElRadio label="微信" value="微信" />
-                <ElRadio label="银行卡" value="银行卡" />
+              <ElRadioGroup v-model="paymentChannelCode" class="payment-footer-pay-method">
+                <ElRadio
+                  v-for="opt in paymentChannelSelectOptions"
+                  :key="opt.value"
+                  :label="opt.value"
+                >
+                  {{ opt.label }}
+                </ElRadio>
               </ElRadioGroup>
             </div>
             <div class="payment-footer-meta-line">
@@ -1589,7 +1762,9 @@ watch(settleQueueTab, () => {
                 >结算状态：</span
               >
               <ElTag
-                :type="currentPatientDisplay.settlementStatus === '已结清' ? 'success' : 'warning'"
+                :type="
+                  currentPatientDisplay.settlementStatusCode === 'SETTLED' ? 'success' : 'warning'
+                "
                 effect="plain"
                 size="small"
               >
@@ -1602,8 +1777,10 @@ watch(settleQueueTab, () => {
             <ElButton
               v-if="!isSettledQueueTab"
               type="primary"
+              :disabled="settleActionDisabled"
+              :title="settleActionBlockedMessage ?? undefined"
               :loading="preSettleLoading || confirmSettleLoading"
-              @click="handleFooterAction('确认结算')"
+              @click="handleFooterAction(INPATIENT_SETTLE_FOOTER_ACTION.CONFIRM_SETTLE)"
             >
               结算
             </ElButton>
@@ -1658,7 +1835,7 @@ watch(settleQueueTab, () => {
           <div>
             <span class="text-[var(--el-text-color-secondary)]">状态：</span>
             <ElTag
-              :type="settlementHistoryStatusTagType(selectedSettlementHistory.status)"
+              :type="settlementHistoryStatusTagType(selectedSettlementHistory.statusCode)"
               effect="plain"
               size="small"
             >

@@ -267,12 +267,14 @@ export async function stopImpersonatingApi(refreshToken: string) {
 
 /**
  * 获取应用配置（权限、currentUser 等）
+ * requestClient 使用 responseReturn: 'body'，此处解包 data 供业务直接使用。
  */
-export async function getApplicationConfigurationApi() {
-  return requestClient.post<ApiResponse<AuthApi.LoginConfiguration>>(
+export async function getApplicationConfigurationApi(): Promise<AuthApi.LoginConfiguration> {
+  const res = await requestClient.post<ApiResponse<AuthApi.LoginConfiguration>>(
     '/applicationConfiguration/get',
     {},
   );
+  return res.data;
 }
 /**
  * 用户关联的全部组织单元（展示用，不用于登录选科室）

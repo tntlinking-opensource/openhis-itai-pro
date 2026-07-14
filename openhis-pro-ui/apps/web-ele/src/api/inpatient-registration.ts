@@ -105,6 +105,8 @@ export interface RegistrationEncounterDto {
 /** 登记上下文加载响应 */
 export interface LoadRegistrationContextResult {
   admitSourceCodeOptions?: OptionDto[];
+  /** 患者病情下拉（术语 adm_cond_code） */
+  admCondCodeOptions?: OptionDto[];
   contractOptions: OptionDto[];
   /** 入院科室下拉（类别=住院） */
   organizationOptions?: OptionDto[];
@@ -127,6 +129,10 @@ export interface AdmissionDiagnosisSubmitDto {
   conditionId?: string;
   description?: string;
   primaryFlag: boolean;
+  /** 是否中医诊断；中医一病一症须两条均为 true */
+  tcmFlag?: boolean;
+  /** 中医病证组号（同组病+证共用；可空由后端分配） */
+  tcmSyndromeGroup?: string;
 }
 
 /** 提交住院登记请求 */

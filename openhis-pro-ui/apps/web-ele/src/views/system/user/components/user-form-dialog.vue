@@ -27,7 +27,7 @@ import {
 import { getWardListApi, WARD_BED_FORM_CODE } from '#/api/basic/ward-bed';
 import {
   getWarehouseListApi,
-  isPharmacyFormEnum,
+  isManagedPharmacyLocationFormEnum,
   isWarehouseFormEnum,
 } from '#/api/basic/warehouse';
 import { getTreeForResponsibilityDeptApi } from '#/api/core/common';
@@ -228,6 +228,18 @@ function buildExtraProperties(formValues: Record<string, unknown>): string | und
   return hasValue ? JSON.stringify(payload) : undefined;
 }
 
+/** 解析平台 admin 账号须拥有的全部角色 id */
+function resolveAllRoleIds(): string[] {
+  const ids = new Set<string>();
+  for (const role of allRoles.value) {
+    const id = roleIdFromRole(role);
+    if (id) {
+      ids.add(id);
+    }
+  }
+  return [...ids];
+}
+
 /** 解析平台管理员角色 id（admin 账号须始终保留） */
 function resolveAdminRoleId(): string | undefined {
   const role = allRoles.value.find(
@@ -236,6 +248,15 @@ function resolveAdminRoleId(): string | undefined {
       item.name?.trim().toLowerCase() === 'admin',
   );
   return role ? roleIdFromRole(role) : undefined;
+}
+
+/** admin 账号自动拥有全部角色，不可手动裁剪 */
+function ensureAllRolesIncluded(roleIds: string[]): string[] {
+  const allIds = resolveAllRoleIds();
+  if (allIds.length > 0) {
+    return allIds;
+  }
+  return ensureAdminRoleIncluded(roleIds);
 }
 
 /** 确保 admin 账号的角色列表始终包含管理员角色 */
@@ -302,15 +323,19 @@ function scopeWritable(scope: StaffScopeCode): boolean {
   return editableScopes.value.includes(scope);
 }
 
+/** 保序去重 id 数组（岗位多选提交前统一归一） */
+function dedupeIds(ids: string[]): string[] {
+  return [...new Set(ids)];
+}
+
 /** 将 orgId 数组转为岗位维护列表项 */
 function orgListFromIds(ids: unknown): { orgId?: string }[] {
   if (!Array.isArray(ids)) {
     return [];
   }
-  return ids
-    .map((id) => preserveApiIdForRequest(id))
-    .filter((id): id is string => !!id)
-    .map((orgId) => ({ orgId }));
+  return dedupeIds(
+    ids.map((id) => preserveApiIdForRequest(id)).filter((id): id is string => !!id),
+  ).map((orgId) => ({ orgId }));
 }
 
 /** 将 locationId 多选转为岗位维护列表项 */
@@ -318,10 +343,9 @@ function locationListFromIds(ids: unknown): { locationId?: string }[] {
   if (!Array.isArray(ids)) {
     return [];
   }
-  return ids
-    .map((id) => preserveApiIdForRequest(id))
-    .filter((id): id is string => !!id)
-    .map((locationId) => ({ locationId }));
+  return dedupeIds(
+    ids.map((id) => preserveApiIdForRequest(id)).filter((id): id is string => !!id),
+  ).map((locationId) => ({ locationId }));
 }
 
 /** 将接口返回的 id 列表规范为 string[]（回显/提交一致） */
@@ -713,7 +737,7 @@ async function loadWarehouseOptions() {
       .filter((item) => isWarehouseFormEnum(item.formEnum))
       .map((item) => ({ label: item.name, value: String(item.id) }));
     pharmacyOptions.value = rows
-      .filter((item) => isPharmacyFormEnum(item.formEnum))
+      .filter((item) => isManagedPharmacyLocationFormEnum(item.formEnum))
       .map((item) => ({ label: item.name, value: String(item.id) }));
   } catch (error) {
     console.error('加载药库/药房选项失败:', error);
@@ -904,8 +928,11 @@ async function handleSubmit() {
     };
 
     let roleIds = normalizeIdArray(mergedData.roleIds);
+    if (roleIds.length === 0 && selectedRoleIds.value.length > 0) {
+      roleIds = [...selectedRoleIds.value];
+    }
     if (isAdminAccount.value) {
-      roleIds = ensureAdminRoleIncluded(roleIds);
+      roleIds = ensureAllRolesIncluded(roleIds);
       mergedData.roleIds = roleIds;
     }
     selectedRoleIds.value = roleIds;
@@ -914,6 +941,9 @@ async function handleSubmit() {
       mergedData,
       isEdit.value ? preserveApiIdForRequest(props.user?.id) : undefined,
     );
+    if (isEdit.value && (!saveParams.roleIds || saveParams.roleIds.length === 0)) {
+      delete saveParams.roleIds;
+    }
     await saveStaffApi(saveParams);
 
     ElMessage.success(isEdit.value ? '编辑用户成功' : '新增用户成功');
@@ -992,7 +1022,9 @@ async function loadFormData() {
         assignedRoles = await loadUserAssignedRoles(userId);
       }
       mergeAssignedRolesIntoOptions([...detailRoles, ...assignedRoles]);
-      const roleIds = resolveRoleIds(detailRoles, assignedRoles);
+      const roleIds = isAdminAccount.value
+        ? ensureAllRolesIncluded(resolveRoleIds(detailRoles, assignedRoles))
+        : resolveRoleIds(detailRoles, assignedRoles);
 
       if (staffDetailResult) {
         const formData = mergeStaffDetailIntoForm(staffDetailResult, extra, roleIds);
@@ -1098,15 +1130,19 @@ const formConfig = reactive({
       fieldName: 'roleIds',
       label: '角色',
       formItemClass: 'col-span-2',
+      disabled: isAdminAccount.value,
       componentProps: {
-        placeholder: '请选择角色',
+        placeholder: isAdminAccount.value
+          ? '平台管理员自动拥有全部角色，新增角色会自动同步'
+          : '请选择角色',
         options: roleOptions.value,
         multiple: true,
+        disabled: isAdminAccount.value,
         ...USER_FORM_MULTI_SELECT_COLLAPSE_PROPS,
         style: fullWidthStyle,
         onChange: async (value: string[]) => {
           const nextRoleIds = isAdminAccount.value
-            ? ensureAdminRoleIncluded(value)
+            ? ensureAllRolesIncluded(value)
             : normalizeIdArray(value);
           selectedRoleIds.value = nextRoleIds;
           if (pendingStaffFormEcho.value) {

@@ -4,7 +4,14 @@ import {
   convertProductUnitPriceBetweenBandKinds,
   PRODUCT_CATALOG_PRICE_SOURCE_BAND_KIND,
 } from '#/utils/doctor-station/product-unit-band-price';
-import { decimalDiv, decimalMul } from '#/utils/format/decimal-util';
+import {
+  convertQtyBetweenUnitCodes,
+  defaultTotalAmountUnitCode,
+  findBandByUnitCode,
+  resolveBandKindByUnitCode,
+  roundMedicationQty,
+  unitCodeByBandKind,
+} from '#/utils/doctor-station/medication-unit-band-query';
 
 /** 解析目录行上的多计量带（数组或 JSON 字符串） */
 export function normalizeCatalogUnitBands(
@@ -41,25 +48,14 @@ export function unitNameByBandKind(
   return String(hit?.unitName ?? '').trim();
 }
 
-export function unitCodeByBandKind(
-  bands: DoctorStationMedicationUnitBandDto[] | undefined,
-  kind: string,
-): string {
-  const k = kind.trim().toUpperCase();
-  const hit = (bands ?? []).find(
-    (b) =>
-      String(b.bandKind ?? '')
-        .trim()
-        .toUpperCase() === k,
-  );
-  return String(hit?.unitCode ?? '').trim();
-}
-
-/** 单次用量/总量等小数位：保留 6 位小数 */
-export function roundMedicationQty(n: number): number {
-  if (!Number.isFinite(n)) return 0;
-  return Math.round(n * 1_000_000) / 1_000_000;
-}
+export {
+  convertQtyBetweenUnitCodes,
+  defaultTotalAmountUnitCode,
+  findBandByUnitCode,
+  resolveBandKindByUnitCode,
+  roundMedicationQty,
+  unitCodeByBandKind,
+};
 
 export interface TotalUnitSelectOption {
   value: string;
@@ -70,77 +66,6 @@ function bandKindKeyOf(b: DoctorStationMedicationUnitBandDto): string {
   return String(b.bandKind ?? '')
     .trim()
     .toUpperCase();
-}
-
-function ratioToSplitOf(b: DoctorStationMedicationUnitBandDto | undefined): number | undefined {
-  if (!b) return undefined;
-  const r = Number(b.ratioToSplit);
-  return Number.isFinite(r) && r > 0 ? r : undefined;
-}
-
-/** 同 unitCode 多带时优先 PACKAGE → SALES → SPLIT → STOCK。 */
-export function findBandByUnitCode(
-  bands: DoctorStationMedicationUnitBandDto[] | undefined,
-  unitCode: string,
-): DoctorStationMedicationUnitBandDto | undefined {
-  const code = String(unitCode ?? '').trim();
-  if (!code || !bands?.length) return undefined;
-  const kindsOrder = ['PACKAGE', 'SALES', 'SPLIT', 'STOCK', 'PURCHASE'] as const;
-  for (const kk of kindsOrder) {
-    const b = bands.find(
-      (x) => bandKindKeyOf(x) === kk && String(x.unitCode ?? '').trim() === code,
-    );
-    if (b) return b;
-  }
-  return bands.find((x) => String(x.unitCode ?? '').trim() === code);
-}
-
-/** 两 unitCode 间换算数量（基于 ratioToSplit）。 */
-export function convertQtyBetweenUnitCodes(
-  qtyFrom: number,
-  fromUnitCode: string,
-  toUnitCode: string,
-  bands: DoctorStationMedicationUnitBandDto[] | undefined,
-): number | undefined {
-  const fk = String(fromUnitCode ?? '').trim();
-  const tk = String(toUnitCode ?? '').trim();
-  if (!fk || !tk || fk === tk) {
-    const q = Number(qtyFrom);
-    return Number.isFinite(q) ? q : undefined;
-  }
-  const fb = findBandByUnitCode(bands, fk);
-  const tb = findBandByUnitCode(bands, tk);
-  const rf = ratioToSplitOf(fb);
-  const rt = ratioToSplitOf(tb);
-  if (rf === undefined || rt === undefined) return undefined;
-  const q = Number(qtyFrom);
-  if (!Number.isFinite(q) || q < 0) return undefined;
-  return roundMedicationQty(decimalDiv(decimalMul(q, rf, 8), rt, 6));
-}
-
-/** 总量默认单位编码：优先指定 bandKind（PACKAGE / SALES），否则 SPLIT。 */
-export function defaultTotalAmountUnitCode(
-  bands: DoctorStationMedicationUnitBandDto[] | undefined,
-  preferredKind: 'PACKAGE' | 'SALES' = 'SALES',
-): string {
-  const pkg = unitCodeByBandKind(bands, 'PACKAGE');
-  const sales = unitCodeByBandKind(bands, 'SALES');
-  const split = unitCodeByBandKind(bands, 'SPLIT');
-  if (preferredKind === 'PACKAGE' && pkg) return pkg;
-  if (preferredKind === 'SALES' && sales) return sales;
-  return pkg || sales || split || '';
-}
-
-/** 拆零基准数量 → 当前总量 unitCode 下数量（自动推算总量用）。 */
-export function convertSplitQtyToTotalUnitCode(
-  splitQty: number,
-  targetUnitCode: string,
-  bands: DoctorStationMedicationUnitBandDto[] | undefined,
-): number {
-  const splitCode = unitCodeByBandKind(bands, 'SPLIT');
-  if (!splitCode) return roundMedicationQty(splitQty);
-  const converted = convertQtyBetweenUnitCodes(splitQty, splitCode, targetUnitCode, bands);
-  return converted !== undefined ? converted : roundMedicationQty(splitQty);
 }
 
 /**
@@ -372,7 +297,7 @@ export function totalAmountSplitToSalesFactor(
   return sr / br;
 }
 
-/** 切换总量单位时换算数量；优先 unitBands，回落 SPLIT↔SALES 系数。 */
+/** 切换总量单位时换算数量；优先经拆零基准中转，避免盒↔片往返丢精度。 */
 export function convertTotalAmountWhenUnitChanges(params: {
   oldUnit: string;
   newUnit: string;
@@ -389,6 +314,19 @@ export function convertTotalAmountWhenUnitChanges(params: {
   if (!Number.isFinite(amt) || amt < 0) return undefined;
 
   if (params.bands?.length) {
+    const splitCode =
+      String(params.splitCode ?? '').trim() || unitCodeByBandKind(params.bands, 'SPLIT');
+    if (splitCode && ou !== nu) {
+      const viaSplit =
+        ou === splitCode ? amt : convertQtyBetweenUnitCodes(amt, ou, splitCode, params.bands);
+      if (viaSplit !== undefined) {
+        const toTarget =
+          nu === splitCode
+            ? viaSplit
+            : convertQtyBetweenUnitCodes(viaSplit, splitCode, nu, params.bands);
+        if (toTarget !== undefined) return toTarget;
+      }
+    }
     const fromBands = convertQtyBetweenUnitCodes(amt, ou, nu, params.bands);
     if (fromBands !== undefined) return fromBands;
   }

@@ -102,6 +102,7 @@ async function syncLoginScopeReady(): Promise<void> {
   if (departments.length === 0) {
     if (shouldSkipLoginDepartmentSelection()) {
       await confirmPlatformAdminBootstrapSkip();
+      await authStore.refreshApplicationConfiguration();
       return;
     }
     authStore.setSelectedOrganization('');
@@ -129,6 +130,7 @@ async function syncLoginScopeReady(): Promise<void> {
 
   await loginByOrgApi({ organizationUnitId: targetOrgId });
   authStore.setSelectedOrganization(targetOrgId);
+  await authStore.refreshApplicationConfiguration();
 }
 
 export async function requireLoginScopeReady(): Promise<void> {

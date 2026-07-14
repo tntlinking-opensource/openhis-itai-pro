@@ -464,6 +464,8 @@ async function proceedToSystemWithoutOrganization() {
 
 /** 登录范围就绪后拉菜单、注册路由并跳转首页 */
 async function finishLoginAndNavigate() {
+  await authStore.refreshApplicationConfiguration();
+
   const menus = await getMenuTreeByLoginUserApi();
   const menuData = menus || [];
 

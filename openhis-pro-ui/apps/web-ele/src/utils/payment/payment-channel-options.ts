@@ -33,6 +33,8 @@ export function optionDtosToPayChannelOptions(
   return merged;
 }
 
+/** @deprecated 业务逻辑勿用 label→code；请直接使用 payChannelCode */
+/** @deprecated 结算/收费应直接绑定 payChannelCode，勿用 label 反查 code */
 export function buildPayChannelLabelMap(options: PayChannelOption[]): Record<string, string> {
   const map: Record<string, string> = {};
   for (const opt of options) {

@@ -1,4 +1,6 @@
 import type {
+  BatchResolveTraceIdentityRequest,
+  BatchResolveTraceIdentityResponse,
   CancelOutpatientMedicationDispenseRequest,
   CancelOutpatientMedicationDispenseResponse,
   DispenseOutpatientMedicationsRequest,
@@ -73,6 +75,16 @@ export async function httpCancelOutpatientMedicationDispense(
 ): Promise<CancelOutpatientMedicationDispenseResponse> {
   return publicRequestClient.post<CancelOutpatientMedicationDispenseResponse>(
     `${BASE}/cancelOutpatientMedicationDispense`,
+    body,
+  );
+}
+
+/** 批量扫码身份反查（只读，供发药/库房等前端行级匹配） */
+export async function httpBatchResolveTraceIdentityForDispense(
+  body: BatchResolveTraceIdentityRequest,
+): Promise<BatchResolveTraceIdentityResponse> {
+  return publicRequestClient.post<BatchResolveTraceIdentityResponse>(
+    `${BASE}/batchResolveTraceIdentity`,
     body,
   );
 }

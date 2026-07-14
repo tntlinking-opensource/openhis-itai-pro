@@ -12,6 +12,10 @@ import InpatientPatientInfoHeader from '#/components/inpatient/patient-info-head
 import { useRequest } from '#/hooks/use-request';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
+  buildNurseStationStickyPatientInfoFromModulePatient,
+  buildNurseStationStickyPatientInfoPlaceholder,
+} from '../components/build-nurse-station-sticky-patient-info';
+import {
   CASE_RECORD_STATUS_LABEL,
   CASE_RECORD_STATUS_TAG,
 } from '#/views/mrms/case-record/case-record.constants';
@@ -50,24 +54,16 @@ const stickyPatientInfo = computed(() => {
     return null;
   }
   if (!canOperate.value) {
-    return {
+    return buildNurseStationStickyPatientInfoPlaceholder({
       diagnosis: `当前已选 ${props.patients.length} 位患者（请单选后调阅病历）`,
       name: '请选择单一患者',
-    };
+    });
   }
   const patient = props.patients[0];
   if (!patient) {
     return null;
   }
-  return {
-    age: patient.age,
-    bedNo: patient.bedNo,
-    diagnosis: patient.diagnosis ?? '—',
-    gender: patient.gender,
-    inpatientNo: patient.id,
-    insuranceType: patient.feeType ?? '—',
-    name: patient.name,
-  };
+  return buildNurseStationStickyPatientInfoFromModulePatient(patient);
 });
 
 const statusLabel = computed(() => {
@@ -163,7 +159,7 @@ watch(
           </div>
           <div class="review-summary-item">
             <dt>住院号</dt>
-            <dd>{{ selectedPatient?.id || '—' }}</dd>
+            <dd>{{ selectedPatient?.encounterBusNo || '—' }}</dd>
           </div>
           <div class="review-summary-item">
             <dt>患者姓名</dt>

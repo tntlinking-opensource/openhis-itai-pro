@@ -17,10 +17,12 @@ import { TableLayout } from '@vben-core/table-layout-ui';
 
 import {
   ElButton,
+  ElAlert,
   ElDescriptions,
   ElDescriptionsItem,
   ElDrawer,
   ElImage,
+  ElMessage,
   ElTag,
   ElTimeline,
   ElTimelineItem,
@@ -32,6 +34,7 @@ import {
   pageDocumentsApi,
 } from '#/api/einvoice-boss/document';
 import { useRequest } from '#/hooks/use-request';
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
 
 defineOptions({
   name: 'EinvoiceList',
@@ -44,6 +47,7 @@ const canAccount = computed(() => hasAccessByCodes(['einvoice-boss.account.view'
 
 const tableData = ref<BossDocumentListItemDto[]>([]);
 const total = ref(0);
+const keywordTruncated = ref(false);
 const drawerOpen = ref(false);
 const drawerDetail = ref<BossDocumentDetailDto | null>(null);
 const accountStatus = ref<Awaited<ReturnType<typeof getAccountStatusApi>> | null>(null);
@@ -100,8 +104,9 @@ const tableColumns: TableColumn[] = [
   { prop: 'paymentAmt', label: '支付金额', width: 100, slot: 'paymentAmt' },
   { prop: 'bossBillNo', label: '票号', minWidth: 120, showOverflowTooltip: true },
   { prop: 'invoiceStatus', label: '发票状态', width: 100, slot: 'invoiceStatus' },
+  { prop: 'writeOffStatus', label: '冲红状态', width: 110, slot: 'writeOffStatus' },
   { prop: 'issuedAt', label: '开票时间', minWidth: 150, slot: 'issuedAt' },
-  { prop: 'action', label: '操作', fixed: 'right', width: 180, align: 'center', slot: 'action' },
+  { prop: 'action', label: '操作', fixed: 'right', width: 220, align: 'center', slot: 'action' },
 ];
 
 function invoiceStatusLabel(status?: string) {
@@ -112,6 +117,26 @@ function invoiceStatusLabel(status?: string) {
       return '已作废';
     default:
       return '草稿';
+  }
+}
+
+function writeOffStatusLabel(row: BossDocumentListItemDto) {
+  if (row.invoiceStatus !== 'CANCELLED') {
+    return '-';
+  }
+  return row.writeOffStatusLabel || '待确认';
+}
+
+function writeOffStatusType(row: { invoiceStatus?: string; writeOffStatus?: string }) {
+  switch (row.writeOffStatus) {
+    case 'SUCCESS':
+      return 'success';
+    case 'FAILED':
+      return 'danger';
+    case 'SKIPPED':
+      return 'info';
+    default:
+      return row.invoiceStatus === 'CANCELLED' ? 'warning' : 'info';
   }
 }
 
@@ -147,6 +172,7 @@ async function getList(params?: PageDocumentsRequest & { dateRange?: string[] })
   });
   tableData.value = result?.rows ?? [];
   total.value = Number(result?.total ?? 0);
+  keywordTruncated.value = Boolean(result?.keywordTruncated);
 }
 
 function handleQuery(params: PageDocumentsRequest & { dateRange?: string[] }) {
@@ -173,7 +199,22 @@ function handlePagination(pagination: { pageNo?: number; pageSize?: number }) {
   void getList();
 }
 
-async function openDetail(row: BossDocumentListItemDto) {
+async function openIntranetDetail(row: BossDocumentListItemDto) {
+  if (!row.documentId) {
+    return;
+  }
+  const data = await runDetail(row.documentId);
+  const url = data?.pictureUrl?.trim();
+  if (!url) {
+    ElMessage.warning(
+      data?.invoiceStatus === 'ISSUED' ? '暂无内网票面链接，请稍后在补偿页查票' : '票据尚未开具',
+    );
+    return;
+  }
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+async function openQrDrawer(row: BossDocumentListItemDto) {
   if (!row.documentId) {
     return;
   }
@@ -215,6 +256,14 @@ onMounted(() => {
 
 <template>
   <Page auto-content-height>
+    <ElAlert
+      v-if="keywordTruncated"
+      class="mb-3"
+      title="关键词匹配结果过多，仅展示部分记录，请缩小筛选范围"
+      type="warning"
+      show-icon
+      :closable="false"
+    />
     <TableLayout
       v-model:query-params="queryParams"
       :table-columns="tableColumns"
@@ -228,31 +277,67 @@ onMounted(() => {
       @pagination="handlePagination"
     >
       <template #paymentAmt="{ row }">
-        {{ row.paymentAmt != null ? Number(row.paymentAmt).toFixed(2) : '-' }}
+        {{ row.paymentAmt != null ? formatMoneyDisplay(row.paymentAmt) : '-' }}
       </template>
       <template #invoiceStatus="{ row }">
         <ElTag :type="invoiceStatusType(row.invoiceStatus)" size="small">
           {{ invoiceStatusLabel(row.invoiceStatus) }}
         </ElTag>
       </template>
+      <template #writeOffStatus="{ row }">
+        <ElTag
+          v-if="row.invoiceStatus === 'CANCELLED'"
+          :type="writeOffStatusType(row)"
+          size="small"
+        >
+          {{ writeOffStatusLabel(row) }}
+        </ElTag>
+        <span v-else class="text-[var(--el-text-color-placeholder)]">-</span>
+      </template>
       <template #issuedAt="{ row }">
         {{ formatDateTime(row.issuedAt) }}
       </template>
       <template #action="{ row }">
-        <ElButton link type="primary" @click="openDetail(row)">详情</ElButton>
         <ElButton
           v-if="row.invoiceStatus === 'ISSUED'"
           link
           type="primary"
-          @click="openDetail(row)"
+          @click="openIntranetDetail(row)"
+        >
+          详情
+        </ElButton>
+        <ElButton
+          v-if="row.invoiceStatus === 'ISSUED'"
+          link
+          type="primary"
+          @click="openQrDrawer(row)"
         >
           QR
         </ElButton>
-        <ElButton v-if="canAdjust" link type="warning" @click="goAdjust(row)">调额</ElButton>
+        <ElButton
+          v-if="row.invoiceStatus === 'CANCELLED'"
+          link
+          type="primary"
+          @click="openQrDrawer(row)"
+        >
+          冲红详情
+        </ElButton>
+        <ElButton
+          v-if="canAdjust && row.invoiceStatus === 'DRAFT'"
+          link
+          type="warning"
+          @click="goAdjust(row)"
+        >
+          调额
+        </ElButton>
       </template>
     </TableLayout>
 
-    <ElDrawer v-model="drawerOpen" title="电子发票详情" size="480px">
+    <ElDrawer
+      v-model="drawerOpen"
+      :title="drawerDetail?.invoiceStatus === 'CANCELLED' ? '冲红详情' : '电子发票二维码'"
+      size="480px"
+    >
       <div v-loading="detailLoading">
         <template v-if="drawerDetail">
           <ElDescriptions :column="1" border size="small" class="mb-4">
@@ -270,11 +355,37 @@ onMounted(() => {
             <ElDescriptionsItem label="开具时间">
               {{ formatDateTime(drawerDetail.issuedAt) }}
             </ElDescriptionsItem>
+            <ElDescriptionsItem v-if="drawerDetail.invoiceStatus === 'CANCELLED'" label="冲红状态">
+              <ElTag :type="writeOffStatusType(drawerDetail)" size="small">
+                {{ drawerDetail.writeOffStatusLabel || '待确认' }}
+              </ElTag>
+            </ElDescriptionsItem>
+            <ElDescriptionsItem v-if="drawerDetail.writeOffBillNo" label="红票号">
+              {{ drawerDetail.writeOffBillNo }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem v-if="drawerDetail.writeOffAt" label="冲红时间">
+              {{ formatDateTime(drawerDetail.writeOffAt) }}
+            </ElDescriptionsItem>
           </ElDescriptions>
 
+          <div
+            v-if="drawerDetail.invoiceStatus === 'CANCELLED' && drawerDetail.writeOffMessage"
+            class="mb-4 text-sm text-[var(--el-color-danger)]"
+          >
+            冲红说明：{{ drawerDetail.writeOffMessage }}
+          </div>
+
           <div v-if="drawerDetail.pictureUrl || drawerDetail.pictureNetUrl" class="mb-4 text-sm">
-            <div v-if="drawerDetail.pictureUrl">内网：{{ drawerDetail.pictureUrl }}</div>
-            <div v-if="drawerDetail.pictureNetUrl">外网：{{ drawerDetail.pictureNetUrl }}</div>
+            <div v-if="drawerDetail.pictureUrl">
+              内网：<a :href="drawerDetail.pictureUrl" target="_blank" rel="noopener">{{
+                drawerDetail.pictureUrl
+              }}</a>
+            </div>
+            <div v-if="drawerDetail.pictureNetUrl">
+              外网：<a :href="drawerDetail.pictureNetUrl" target="_blank" rel="noopener">{{
+                drawerDetail.pictureNetUrl
+              }}</a>
+            </div>
           </div>
 
           <div class="mb-4">
@@ -319,9 +430,8 @@ onMounted(() => {
                 :key="log.id"
                 :timestamp="formatDateTime(log.createdAt)"
               >
-                {{ log.beforeTotal?.toFixed(2) }} → {{ log.afterTotal?.toFixed(2) }}：{{
-                  log.reason
-                }}
+                {{ formatMoneyDisplay(log.beforeTotal) }} →
+                {{ formatMoneyDisplay(log.afterTotal) }}：{{ log.reason }}
               </ElTimelineItem>
             </ElTimeline>
           </div>

@@ -1,5 +1,5 @@
 <!--
-  调拨单左侧：历史单据检索 + 卡片队列 + 新增。
+  调拨单左侧：历史单据检索 + 卡片队列；调出可新增，调入壳单传 showAdd=false。
 -->
 <script setup lang="ts">
 import { ref } from 'vue';
@@ -25,11 +25,14 @@ withDefaults(
     orders: Record<string, unknown>[];
     queueTitle?: string;
     selectedOrder?: null | Record<string, unknown>;
+    /** 是否展示底栏/空态「新增」；只读调入壳单应为 false */
+    showAdd?: boolean;
   }>(),
   {
     addDisabled: false,
     filterLocationLabel: '库房',
     queueTitle: '历史调拨单',
+    showAdd: true,
   },
 );
 
@@ -155,13 +158,14 @@ function handleRefreshClick() {
         :location-context-id="filterLocationId"
         :orders="orders"
         :selected-order="selectedOrder"
+        :show-empty-add="showAdd"
         :show-supplier="false"
         @add="emit('add')"
         @select="emit('select', $event)"
       />
     </template>
 
-    <template #footer>
+    <template v-if="showAdd" #footer>
       <InvPrimaryBtn label="新增调拨单" :disabled="addDisabled" @click="emit('add')" />
     </template>
   </InvAsideShell>

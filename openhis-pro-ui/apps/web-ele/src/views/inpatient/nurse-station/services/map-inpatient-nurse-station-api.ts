@@ -6,6 +6,8 @@ import type {
 import { NURSE_STATION_STATUS_FILTER_SETTLED_DISCHARGED } from '#/api/inpatient/nurse-station/inpatient-nurse-station.types';
 
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { resolveAdministrativeGenderLabel } from '#/utils/gender/resolve-administrative-gender-label';
+import { normalizeAdmCondTermCode } from '#/utils/terminology/resolve-adm-cond-code-label';
 
 import type {
   PatientItem,
@@ -138,12 +140,14 @@ export function mapQueueItemToPatientItem(
     id: String(dto.encounterId),
     patientId: preserveApiIdForRequest(dto.patientId),
     encounterBusNo: (dto.encounterBusNo ?? '').trim() || undefined,
-    startTime: (dto.startTime ?? dto.admissionTime ?? '').trim() || undefined,
+    startTime: (dto.startTime ?? '').trim() || undefined,
+    admissionTime: (dto.admissionTime ?? dto.startTime ?? '').trim() || undefined,
     endTime: (dto.endTime ?? '').trim() || undefined,
     name: (dto.patientName ?? '').trim() || '—',
-    gender: (dto.genderEnumText ?? '').trim() || '—',
+    gender: resolveAdministrativeGenderLabel(dto.genderEnumText, dto.genderEnum),
     age: parseAgeTextToNumber(dto.ageText),
-    level: (dto.priorityEnum ?? '').trim() || '—',
+    level: (dto.nursingLevelName ?? '').trim(),
+    priorityEnum: normalizeAdmCondTermCode(dto.priorityEnum) || undefined,
     feeType: (dto.organizationName ?? '').trim() || '—',
     diagnosis: (dto.diagnosisSummary ?? '').trim() || '—',
     accountId: preserveApiIdForRequest(dto.accountId),

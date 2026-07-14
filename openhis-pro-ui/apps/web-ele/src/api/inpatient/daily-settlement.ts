@@ -1,9 +1,21 @@
 /**
  * 住院日结交账 — POST /api/app/inpatientDailySettlement/<method>
  */
+import type {
+  DailySettlementHandoverChannelRowDto,
+  DailySettlementHandoverPaymentItemDto,
+  DailySettlementHandoverSummaryDto,
+} from '#/api/charge/daily-settlement-handover';
 import type { ApiOptionItem } from '#/types/api-response';
 
 import { publicRequestClient } from '#/api/request';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+
+export type {
+  DailySettlementHandoverChannelRowDto,
+  DailySettlementHandoverPaymentItemDto,
+  DailySettlementHandoverSummaryDto,
+} from '#/api/charge/daily-settlement-handover';
 
 const BASE = '/inpatientDailySettlement';
 
@@ -57,7 +69,6 @@ export interface InpatientDailySettlementSummaryDto {
   municipalInsuranceFundTotal?: string;
   municipalInsuranceTotal?: string;
   totalCashIncome?: string;
-  physicalExamCount?: number;
   insuranceCount?: number;
   refundTotal?: string;
 }
@@ -65,8 +76,14 @@ export interface InpatientDailySettlementSummaryDto {
 export interface PreviewInpatientDailySettlementResponse {
   /** 待归档 payment 流水条数（含 0 元与收支抵净，不因净额排除）。 */
   paymentCount?: number;
+  /** 待交账候选 payment 明细（弹窗勾选）。 */
+  items?: DailySettlementHandoverPaymentItemDto[];
   rows?: InpatientDailySettlementChannelRowDto[];
   summary?: InpatientDailySettlementSummaryDto;
+  /** 本次待交账合计上半区（仅未交账）。 */
+  handoverRows?: DailySettlementHandoverChannelRowDto[];
+  /** 本次待交账合计下半区（仅未交账）。 */
+  handoverSummary?: DailySettlementHandoverSummaryDto;
 }
 
 /** 下半区固定展示项（对齐老日结单 + 住院特有预交金，顺序不可删减）。 */
@@ -91,7 +108,6 @@ export const INPATIENT_DAILY_SETTLEMENT_SUMMARY_DISPLAY = [
   { key: 'provincialInsuranceTotal', label: '省医保总额', unit: '元' },
   { key: 'municipalInsuranceTotal', label: '市医保总额', unit: '元' },
   { key: 'totalCashIncome', label: '现金收入总额', unit: '元' },
-  { key: 'physicalExamCount', label: '体检人次', unit: '人' },
 ] as const satisfies ReadonlyArray<{
   key: keyof Omit<
     InpatientDailySettlementSummaryDto,
@@ -107,6 +123,32 @@ export const INPATIENT_DAILY_SETTLEMENT_SUMMARY_DISPLAY = [
   unit: string;
 }>;
 
+/**
+ * 从页初始化数据解析默认收款人 ID（OptionDto.value 为权威 string，避免 currentCashierId 经 JSON number 丢精度）。
+ */
+export function resolveDefaultCashierIdFromPageInit(
+  data: LoadInpatientDailySettlementPageInitResponse,
+  sessionPractitionerId?: string,
+): string | undefined {
+  const options = data.cashierOptions ?? [];
+  const optionValues = options
+    .map((item) => preserveApiIdForRequest(item.value))
+    .filter((value): value is string => Boolean(value));
+  // 非代交账仅本人：唯一下拉项 value 即正确 Practitioner 主键
+  if (optionValues.length === 1) {
+    return optionValues[0];
+  }
+  const sessionId = preserveApiIdForRequest(sessionPractitionerId);
+  if (sessionId && optionValues.includes(sessionId)) {
+    return sessionId;
+  }
+  const currentId = preserveApiIdForRequest(data.currentCashierId);
+  if (currentId && optionValues.includes(currentId)) {
+    return currentId;
+  }
+  return optionValues[0] ?? currentId;
+}
+
 /** 兼容 summary 嵌套或平铺在响应根上的两种形态。 */
 export function normalizePreviewInpatientDailySettlementResponse(
   raw: PreviewInpatientDailySettlementResponse & InpatientDailySettlementSummaryDto,
@@ -114,8 +156,11 @@ export function normalizePreviewInpatientDailySettlementResponse(
   if (raw.summary) {
     return {
       paymentCount: raw.paymentCount,
+      items: raw.items,
       rows: raw.rows,
       summary: raw.summary,
+      handoverRows: raw.handoverRows,
+      handoverSummary: raw.handoverSummary,
     };
   }
   const summary: InpatientDailySettlementSummaryDto = {
@@ -144,7 +189,6 @@ export function normalizePreviewInpatientDailySettlementResponse(
     municipalInsuranceFundTotal: raw.municipalInsuranceFundTotal,
     municipalInsuranceTotal: raw.municipalInsuranceTotal,
     totalCashIncome: raw.totalCashIncome,
-    physicalExamCount: raw.physicalExamCount,
     insuranceCount: raw.insuranceCount,
     refundTotal: raw.refundTotal,
   };
@@ -154,13 +198,19 @@ export function normalizePreviewInpatientDailySettlementResponse(
   if (!hasSummaryField && summary.dateRange === undefined) {
     return {
       paymentCount: raw.paymentCount,
+      items: raw.items,
       rows: raw.rows,
+      handoverRows: raw.handoverRows,
+      handoverSummary: raw.handoverSummary,
     };
   }
   return {
     paymentCount: raw.paymentCount,
+    items: raw.items,
     rows: raw.rows,
     summary,
+    handoverRows: raw.handoverRows,
+    handoverSummary: raw.handoverSummary,
   };
 }
 
@@ -170,6 +220,8 @@ export interface SubmitInpatientDailySettlementRequest {
   cashierId?: string;
   orgId: string;
   locationId?: string;
+  /** 勾选挂载的 payment 主键（string 保精度）。 */
+  paymentIds: string[];
 }
 
 export interface SubmitInpatientDailySettlementResponse {
@@ -186,7 +238,7 @@ export async function loadInpatientDailySettlementPageInitApi() {
   );
 }
 
-/** 按日期窗与经办人预览未交账汇总。 */
+/** 按日期窗与经办人查询日结汇总（含已交账）；paymentCount 仅统计未交账流水。 */
 export async function previewInpatientDailySettlementApi(
   body: PreviewInpatientDailySettlementRequest,
 ) {

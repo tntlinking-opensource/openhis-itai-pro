@@ -17,13 +17,17 @@ import type {
 import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
 import type { DiagnosisItem } from '#/components/doctor-station/diagnosis';
 import type { DrugGroupDisplayItem } from '#/utils/doctor-station/drug-group-table';
-import type { ServiceApplyPrintMeta } from '#/utils/print/print-service-apply';
-import type {
-  ServiceApplyKind,
-  ServiceApplyPatientSummary,
-} from '#/views/outpatient/doctor-station/service-apply/service-apply.types';
 
-import { computed, nextTick, onActivated, onDeactivated, onUnmounted, ref, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onDeactivated,
+  onMounted,
+  onUnmounted,
+  ref,
+  watch,
+} from 'vue';
 
 import { ElMessage, ElTable } from 'element-plus';
 
@@ -31,7 +35,6 @@ import {
   httpInitDoctorStationAdvice,
   httpListDoctorStationAdvice,
   httpPageDoctorStationAdviceCatalog,
-  httpSaveDoctorStationAdviceDraftBatch,
   httpSignDoctorStationAdviceBatch,
   httpUpdateDoctorStationMedicationAdviceGroups,
   httpWithdrawDoctorStationAdviceBatch,
@@ -40,9 +43,11 @@ import { useEnsureClinicalReception } from '#/components/doctor-station/use-ensu
 import { useAuthStore } from '#/store';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
-import { printServiceApplyFromAdviceRows } from '#/utils/print/print-service-apply';
 
-import { saveAdviceDraftBatchWithBindResolution } from '../services/advice-draft-bind.service';
+import {
+  saveAdviceDraftBatchDirect,
+  saveAdviceDraftBatchWithManualUsageBind,
+} from '../services/advice-draft-save.service';
 import { createAdviceDrugItem, inferDoseBandConvertK } from '../services/advice-edit';
 import {
   buildAdviceDrugItemSeedFromListRow,
@@ -56,7 +61,11 @@ import {
   mapCatalogRowToOption,
   mergeMedicationAdviceRowsForListDisplay,
 } from '../services/advice-list';
-import { buildAdviceDraftLines } from '../services/advice-medication-draft';
+import {
+  buildAdviceDraftDeleteLineFromDrugItem,
+  buildAdviceDraftLines,
+  collectRemovedAdviceDraftDeleteLines,
+} from '../services/advice-medication-draft';
 import {
   inferAdviceLineEditorKind,
   productTableNameForAdviceRow,
@@ -77,8 +86,6 @@ import { calcAdviceTotalFee } from './use-advice-drug-list';
 export interface UseAdviceTabProps {
   encounterId?: string;
   patientId?: string;
-  serviceApplyPatient?: ServiceApplyPatientSummary;
-  serviceApplyPrintMeta?: ServiceApplyPrintMeta;
 }
 
 /**
@@ -100,7 +107,6 @@ export function useAdviceTab(props: UseAdviceTabProps) {
   const adviceListLoading = ref(false);
   /** 保存 / 签发 / 撤回 / 删除 / 刷新 等写操作进行中（含紧随的列表刷新） */
   const adviceMutationLoading = ref(false);
-  const serviceApplyPrintLoading = ref(false);
   const showEditor = ref(false);
   const editorDirty = ref(false);
   const editorInitialGroup = ref<AdviceDrugItem[]>([]);
@@ -136,7 +142,7 @@ export function useAdviceTab(props: UseAdviceTabProps) {
       feeNature: def.feeNature,
       pharmacy: '',
       singleDose: undefined,
-      frequency: terminologyDefaults().frequency,
+      frequency: '',
       usage: terminologyDefaults().usage,
       medicationDays: undefined,
       totalAmount: undefined,
@@ -165,7 +171,7 @@ export function useAdviceTab(props: UseAdviceTabProps) {
       skinTest: false,
       pharmacy: '',
       singleDose: undefined,
-      frequency: t.frequency,
+      frequency: '',
       usage: t.usage,
       medicationDays: undefined,
       totalAmount: undefined,
@@ -382,49 +388,6 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     });
   };
 
-  /** 打印已勾选的检验/检查申请单（签发后手动触发，非静默） */
-  const handlePrintServiceApply = async () => {
-    const encounterId = props.encounterId?.trim() || '';
-    const patientId = props.patientId?.trim() || '';
-    if (!encounterId || !patientId) {
-      ElMessage.warning('请先选择患者与就诊');
-      return;
-    }
-    const patient = props.serviceApplyPatient;
-    if (!patient) {
-      ElMessage.warning('缺少患者信息，无法打印申请单');
-      return;
-    }
-    const flatSel = flattenAdviceRowsForResourceOps(tableSelection.value);
-    const printable = flatSel.filter(
-      (row) => row.applyFormNo?.trim() && !rowLooksDraftForSign(row),
-    );
-    if (printable.length === 0) {
-      ElMessage.warning('请勾选已签发的检验/检查申请单医嘱行');
-      return;
-    }
-    serviceApplyPrintLoading.value = true;
-    try {
-      const results = await printServiceApplyFromAdviceRows({
-        encounterId,
-        patientId,
-        patient,
-        rows: printable,
-        printMeta: props.serviceApplyPrintMeta,
-      });
-      if (results.length === 0) {
-        ElMessage.warning('所选行无法识别为检验/检查申请单');
-        return;
-      }
-      const successCount = results.filter((item) => item.ok).length;
-      if (successCount > 0) {
-        ElMessage.success(`已提交 ${successCount} 张申请单打印`);
-      }
-    } finally {
-      serviceApplyPrintLoading.value = false;
-    }
-  };
-
   /** 将勾选草稿行以 DELETE 行方式提交暂存批次 */
   const handleDelete = async () => {
     if (showEditor.value && editorDirty.value) {
@@ -454,7 +417,7 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     }
     await withAdviceMutationLoading(async () => {
       try {
-        const res = await httpSaveDoctorStationAdviceDraftBatch({
+        const res = await saveAdviceDraftBatchDirect({
           encounterId,
           patientId,
           lines,
@@ -600,7 +563,8 @@ export function useAdviceTab(props: UseAdviceTabProps) {
         onlyMine: false,
       });
       const { content: list } = parsePagedRowsFromApiData<DoctorStationAdviceRowDto>(res);
-      rows.value = mergeMedicationAdviceRowsForListDisplay(list);
+      const merged = mergeMedicationAdviceRowsForListDisplay(list);
+      rows.value = merged;
     } catch {
       rows.value = [];
     } finally {
@@ -771,7 +735,7 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     adviceEscKeydownAttached = false;
   }
 
-  /** 编辑卡「保存」 */
+  /** 编辑卡「保存」：新建药品走用法绑定；纯编辑 UPDATE 不二次带出 */
   const handleSaveGroup = async (
     groupItems: AdviceDrugItem[],
     encounterDiagnosisRows: EncounterDiagnosisRowDto[] = [],
@@ -793,7 +757,9 @@ export function useAdviceTab(props: UseAdviceTabProps) {
         ? inferAdviceLineEditorKind(item)
         : 'MEDICATION';
       if (kind === 'SERVICE') {
-        ElMessage.warning(`第${n}条诊疗医嘱：请完善数量、执行次数与执行科室`);
+        ElMessage.warning(
+          `第${n}条诊疗医嘱：请完善数量、单位、执行次数与执行科室（单位须来自目录包装单位）`,
+        );
       } else if (kind === 'DEVICE') {
         ElMessage.warning(`第${n}条耗材医嘱：数量须大于 0，并须填写单位`);
       } else {
@@ -805,17 +771,24 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     }
     let lines: DoctorStationAdviceDraftLineRequest[];
     try {
-      lines = buildAdviceDraftLines(groupItems, editorPatientDiagnoses.value, {
-        encounterDiagnosisRows,
-        existingAdviceRows: rows.value,
-      });
+      const removedDeleteLines = collectRemovedAdviceDraftDeleteLines(
+        editorInitialGroup.value,
+        groupItems,
+      );
+      lines = [
+        ...removedDeleteLines,
+        ...buildAdviceDraftLines(groupItems, editorPatientDiagnoses.value, {
+          encounterDiagnosisRows,
+          existingAdviceRows: rows.value,
+        }),
+      ];
     } catch (error) {
       ElMessage.error(error instanceof Error ? error.message : '请求组包失败');
       return;
     }
     await withAdviceMutationLoading(async () => {
       try {
-        const res = await saveAdviceDraftBatchWithBindResolution({
+        const res = await saveAdviceDraftBatchWithManualUsageBind({
           encounterId,
           patientId,
           lines,
@@ -849,9 +822,65 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     editorDirty.value = dirty;
   };
 
+  /** 编辑卡删除已保存行：立即以 DELETE 行提交暂存批次 */
+  const handleDeleteDrugInEditor = async (index: number, item: AdviceDrugItem) => {
+    const line = buildAdviceDraftDeleteLineFromDrugItem(item);
+    if (!line) {
+      return;
+    }
+    const encounterId = props.encounterId?.trim() || '';
+    const patientId = props.patientId?.trim() || '';
+    if (!encounterId || !patientId) {
+      ElMessage.warning('缺少就诊或患者信息，无法删除');
+      return;
+    }
+    const deletedRequestId = String(item.medicationRequestId ?? '').trim();
+    await withAdviceMutationLoading(async () => {
+      try {
+        const res = await saveAdviceDraftBatchDirect({
+          encounterId,
+          patientId,
+          lines: [line],
+        });
+        if (res.success === false) {
+          ElMessage.error(String(res.message || '').trim() || '删除失败');
+          return;
+        }
+        ElMessage.success('删除成功');
+        const nextGroup = editorInitialGroup.value.filter(
+          (row) => String(row.medicationRequestId ?? '').trim() !== deletedRequestId,
+        );
+        if (nextGroup.length === 0) {
+          showEditor.value = false;
+          editorDirty.value = false;
+          editingAdviceResourceType.value = '';
+          editorInitialGroup.value = [];
+          editorPatientDiagnoses.value = [];
+        } else {
+          editorInitialGroup.value = nextGroup.map((row, rowIndex) => ({
+            ...row,
+            expanded: rowIndex === Math.min(index, nextGroup.length - 1),
+          }));
+          editorDirty.value = nextGroup.some((row) => Boolean(row.selectedId));
+        }
+        await loadAdviceList();
+      } catch (error: unknown) {
+        const msg =
+          error && typeof error === 'object' && 'message' in error
+            ? String((error as { message?: unknown }).message)
+            : '删除失败';
+        ElMessage.error(msg);
+      }
+    });
+  };
+
   /** 双击草稿行进入编辑 */
   const handleRowDblclick = async (row: AdviceRowItem) => {
     if (row.isEditor) return;
+    if (row.applyFormNo?.trim()) {
+      ElMessage.info('检验/检查申请单请前往「申请单」页签修改');
+      return;
+    }
     if (!rowLooksDraft(row)) {
       ElMessage.warning('仅草稿/待签发类医嘱允许编辑');
       return;
@@ -921,6 +950,10 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     },
   );
 
+  onMounted(() => {
+    attachAdviceEscKeydown();
+  });
+
   onActivated(() => {
     isTabActive.value = true;
     attachAdviceEscKeydown();
@@ -966,10 +999,10 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     handleAdd,
     handleCloseEditor,
     handleDelete,
+    handleDeleteDrugInEditor,
     handleEditorDirtyChange,
     handleMedicationAssignGroup,
     handleMedicationUngroup,
-    handlePrintServiceApply,
     handleRowDblclick,
     handleSaveGroup,
     handleSign,
@@ -987,7 +1020,6 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     productColumns,
     queryProductOptions,
     reload,
-    serviceApplyPrintLoading,
     showEditor,
     validateWesternRow,
   };

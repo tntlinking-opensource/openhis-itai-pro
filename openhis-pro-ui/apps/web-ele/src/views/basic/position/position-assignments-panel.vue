@@ -28,7 +28,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 
 import {
   getWarehouseListApi,
-  isPharmacyFormEnum,
+  isManagedPharmacyLocationFormEnum,
   isWarehouseFormEnum,
   WAREHOUSE_STATUS_ENUM,
 } from '#/api/basic/warehouse';
@@ -183,7 +183,8 @@ async function loadInventoryLocationOptions() {
     inventoryLocationOptions.value = rows
       .filter(
         (item: Warehouse) =>
-          (isWarehouseFormEnum(item.formEnum) || isPharmacyFormEnum(item.formEnum)) &&
+          (isWarehouseFormEnum(item.formEnum) ||
+            isManagedPharmacyLocationFormEnum(item.formEnum)) &&
           item.statusEnum === WAREHOUSE_STATUS_ENUM.ACTIVE,
       )
       .map((item) => ({ label: item.name, value: String(item.id) }));

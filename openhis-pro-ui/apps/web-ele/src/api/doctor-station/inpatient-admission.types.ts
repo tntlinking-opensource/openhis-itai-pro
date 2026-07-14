@@ -4,6 +4,10 @@ export interface AdmissionDiagnosisSubmitDto {
   conditionId?: string;
   description?: string;
   primaryFlag: boolean;
+  /** 是否中医诊断；中医一病一症须两条均为 true */
+  tcmFlag?: boolean;
+  /** 中医病证组号（同组病+证共用；可空由后端分配） */
+  tcmSyndromeGroup?: string;
 }
 
 /** 查询是否已存在住院申请 */

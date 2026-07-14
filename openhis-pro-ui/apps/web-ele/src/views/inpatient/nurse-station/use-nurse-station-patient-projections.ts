@@ -29,8 +29,9 @@ export function useNurseStationPatientProjections(
     return {
       id: item.id,
       patientId: item.patientId,
-      busNo: item.encounterBusNo,
-      admissionAt: item.startTime,
+      encounterBusNo: item.encounterBusNo,
+      admissionAt: item.admissionTime ?? item.startTime,
+      inWardAt: item.startTime,
       dischargeAt: item.endTime,
       bedNo: item.bedNo,
       name: item.name,
@@ -52,6 +53,7 @@ export function useNurseStationPatientProjections(
       pendingSettlementTotal: item.pendingSettlementTotal,
       lowBalanceWarning: item.lowBalanceWarning,
       riskTags: item.riskText ? [item.riskText] : [],
+      statusEnum: item.statusEnum,
     };
   }
 

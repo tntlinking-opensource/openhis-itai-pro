@@ -27,6 +27,10 @@ import {
 } from '#/views/inpatient/doctor-station/advice/services/advice-list';
 import { useRequest } from '#/hooks/use-request';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import {
+  ENCOUNTER_CLINICAL_ORDER_MUTATION_BLOCKED_MESSAGE,
+  isEncounterClinicalOrderMutationBlocked,
+} from '#/utils/inpatient/encounter-clinical-order-gate';
 
 import NurseStationPatientOrderCollapseTitle from '../components/nurse-station-patient-order-collapse-title.vue';
 import { nurseStationPatientListPanelContextKey } from '../components/patient-list-panel.context';
@@ -43,6 +47,9 @@ import {
 
 type ExecuteTab = NurseStationOrderExecuteTab;
 type TimeTypeFilter = 'all' | 'long' | 'temp';
+
+/** 取消执行写路径默认原因（与门诊护士站一致，前端不弹窗收集） */
+const DEFAULT_CANCEL_STATUS_REASON = '护士站取消执行';
 
 interface ExecutePatientCard {
   patient: NurseStationModulePatient;
@@ -119,16 +126,27 @@ const accountIdByEncounterId = computed(() => {
   return map;
 });
 
+/** 选中患者处于出院结算轨（待结算/已结算/已离院）：禁止执行/不执行/取消执行 */
+const hasEncounterClinicalOrderBlocked = computed(() =>
+  props.patients.some((p) => isEncounterClinicalOrderMutationBlocked(p.statusEnum)),
+);
+
 /** 待执行 / 取消执行 Tab：批量正向执行 */
 const executeActionsEnabled = computed(
-  () => activeStatus.value === 'pending' || activeStatus.value === 'cancelled',
+  () =>
+    !hasEncounterClinicalOrderBlocked.value &&
+    (activeStatus.value === 'pending' || activeStatus.value === 'cancelled'),
 );
 
 /** 待执行 Tab：批量不执行 */
-const skipActionsEnabled = computed(() => activeStatus.value === 'pending');
+const skipActionsEnabled = computed(
+  () => !hasEncounterClinicalOrderBlocked.value && activeStatus.value === 'pending',
+);
 
 /** 已执行 Tab：批量取消执行 */
-const cancelActionsEnabled = computed(() => activeStatus.value === 'executed');
+const cancelActionsEnabled = computed(
+  () => !hasEncounterClinicalOrderBlocked.value && activeStatus.value === 'executed',
+);
 
 /** 待执行 / 已执行 / 取消执行 Tab 允许勾选槽位 */
 const slotSelectionEnabled = computed(
@@ -386,28 +404,37 @@ async function handleExecuteOrders() {
   await afterWriteSuccess(`已成功执行 ${n} 个计划点`);
 }
 
-/** 批量登记不执行 */
+/** 批量登记不执行（需填写不执行原因） */
 async function handleSkipOrders() {
   if (!skipActionsEnabled.value) return;
   const items = mapSelectedSlotsToSkipItems(collectAllTableRows(), buildSelectedSlotKeySet());
   if (!assertBatchWithinLimit(items.length)) return;
 
+  let statusReasonText: string | undefined;
   try {
-    await ElMessageBox.confirm(`确认将已选 ${items.length} 个计划点登记为不执行？`, '不执行', {
-      type: 'warning',
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-    });
+    const { value } = await ElMessageBox.prompt(
+      `确认将已选 ${items.length} 个计划点登记为不执行？请填写不执行原因：`,
+      '不执行',
+      {
+        type: 'warning',
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        inputType: 'textarea',
+        inputPlaceholder: '不执行原因',
+        inputValidator: (val) => (val?.trim() ? true : '请填写不执行原因'),
+      },
+    );
+    statusReasonText = value.trim();
   } catch {
     return;
   }
 
-  const res = await skipRequest.run({ items });
+  const res = await skipRequest.run({ items, statusReasonText: statusReasonText ?? '' });
   const n = res.processedCount ?? items.length;
   await afterWriteSuccess(`已登记不执行 ${n} 个计划点`);
 }
 
-/** 批量取消已执行计划点（需填写取消原因） */
+/** 批量取消已执行计划点（确认提示，不弹窗填写原因） */
 async function handleCancelExecute() {
   if (!cancelActionsEnabled.value) return;
   const selectedKeys = buildSelectedSlotKeySet();
@@ -426,20 +453,16 @@ async function handleCancelExecute() {
     return;
   }
 
-  let statusReasonText: string | undefined;
   try {
-    const { value } = await ElMessageBox.prompt(
-      `将取消已选 ${procedureIds.length} 个计划点；已发药将生成待退单。请填写取消原因：`,
+    await ElMessageBox.confirm(
+      `将取消已选 ${procedureIds.length} 个计划点；已发药将生成待退单，是否继续？`,
       '取消执行',
       {
+        type: 'warning',
         confirmButtonText: '确定',
         cancelButtonText: '取消',
-        inputType: 'textarea',
-        inputPlaceholder: '取消原因',
-        inputValidator: (val) => (val?.trim() ? true : '请填写取消原因'),
       },
     );
-    statusReasonText = value.trim();
   } catch {
     return;
   }
@@ -447,7 +470,7 @@ async function handleCancelExecute() {
   const res = await cancelExecuteRequest.run({
     encounterIds: encounterIds.value,
     procedureIds,
-    statusReasonText: statusReasonText ?? '',
+    statusReasonText: DEFAULT_CANCEL_STATUS_REASON,
   });
   const n = res.cancelledProcedureIds?.length ?? procedureIds.length;
   const summaryHint = (res.rebuiltSummaryNos?.length ?? 0) > 0 ? '，已自动重建汇总单' : '';
@@ -462,6 +485,14 @@ async function handleCancelExecute() {
     "
     class="execute-module flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden rounded-md bg-[#eef9fd]"
   >
+    <ElAlert
+      v-if="hasEncounterClinicalOrderBlocked"
+      class="mx-2 mt-2 shrink-0"
+      type="warning"
+      :closable="false"
+      show-icon
+      :title="`${ENCOUNTER_CLINICAL_ORDER_MUTATION_BLOCKED_MESSAGE}（不可执行、不执行或取消执行）`"
+    />
     <section
       class="flex w-full flex-wrap items-center justify-between gap-2 border-b border-solid border-[var(--el-border-color-lighter)] bg-[var(--el-bg-color)] px-2 py-1.5"
     >

@@ -24,6 +24,7 @@ import {
   ElInput,
   ElInputNumber,
   ElMessage,
+  ElMessageBox,
   ElOption,
   ElRow,
   ElSelect,
@@ -129,6 +130,7 @@ const showHourMinute = computed(
 );
 const showWeekDay = computed(() => formModel.cronPresetType === 'WEEKLY');
 const showMonthDay = computed(() => formModel.cronPresetType === 'MONTHLY');
+const showCustomCron = computed(() => formModel.cronPresetType === 'CUSTOM');
 const nextFirePreviewShort = computed(() => {
   if (!nextFirePreview.value.length) {
     return '';
@@ -169,6 +171,49 @@ async function loadMetaOptions() {
   }
 }
 
+/** 从已有 Cron 反推可视化预设，便于编辑时回显小时/分钟 */
+function inferCronPresetFromExpression(cron: string) {
+  const trimmed = cron.trim();
+  let matched = /^0 0\/(\d+) \* \* \* \?$/.exec(trimmed);
+  if (matched) {
+    return {
+      presetType: 'EVERY_N_MINUTES',
+      intervalMinutes: Number(matched[1]),
+    };
+  }
+  matched = /^0 (\d+) \* \* \* \?$/.exec(trimmed);
+  if (matched) {
+    return { presetType: 'HOURLY', minute: Number(matched[1]) };
+  }
+  matched = /^0 (\d+) (\d+) \* \* \?$/.exec(trimmed);
+  if (matched) {
+    return {
+      presetType: 'DAILY',
+      minute: Number(matched[1]),
+      hour: Number(matched[2]),
+    };
+  }
+  matched = /^0 (\d+) (\d+) \? \* (\d+)$/.exec(trimmed);
+  if (matched) {
+    return {
+      presetType: 'WEEKLY',
+      minute: Number(matched[1]),
+      hour: Number(matched[2]),
+      dayOfWeek: Number(matched[3]),
+    };
+  }
+  matched = /^0 (\d+) (\d+) (\d+) \* \?$/.exec(trimmed);
+  if (matched) {
+    return {
+      presetType: 'MONTHLY',
+      minute: Number(matched[1]),
+      hour: Number(matched[2]),
+      dayOfMonth: Number(matched[3]),
+    };
+  }
+  return null;
+}
+
 /** 将父组件传入的数据灌入表单 */
 function fillFormFromProps() {
   const data = props.formData || {};
@@ -193,8 +238,30 @@ function fillFormFromProps() {
   formModel.status = data.status || 'PAUSE';
   formModel.tenantId = data.tenantId ? String(data.tenantId) : '';
   formModel.parameters = data.parameters ? data.parameters.map((item) => ({ ...item })) : [];
-  formModel.cronPresetType = 'CUSTOM';
-  cronPreview.value = data.cronExpression || '';
+  const cron = data.cronExpression || '';
+  formModel.cronExpression = cron;
+  const inferred = cron ? inferCronPresetFromExpression(cron) : null;
+  if (inferred) {
+    formModel.cronPresetType = inferred.presetType;
+    if (inferred.intervalMinutes != null) {
+      formModel.intervalMinutes = inferred.intervalMinutes;
+    }
+    if (inferred.minute != null) {
+      formModel.minute = inferred.minute;
+    }
+    if (inferred.hour != null) {
+      formModel.hour = inferred.hour;
+    }
+    if (inferred.dayOfWeek != null) {
+      formModel.dayOfWeek = inferred.dayOfWeek;
+    }
+    if (inferred.dayOfMonth != null) {
+      formModel.dayOfMonth = inferred.dayOfMonth;
+    }
+  } else {
+    formModel.cronPresetType = 'CUSTOM';
+  }
+  cronPreview.value = cron;
   cronDescription.value = data.cronDescription || '';
   nextFirePreview.value = [];
 }
@@ -278,7 +345,7 @@ function buildParametersPayload(): ScheduledJobParameter[] {
   return result;
 }
 
-/** 提交新建或更新 */
+/** 提交新建或更新；同名任务已存在时提示覆盖更新 */
 async function handleSubmit() {
   if (!formRef.value) {
     return;
@@ -341,6 +408,46 @@ async function handleSubmit() {
       (error as { msg?: string; message?: string })?.msg ||
       (error as { message?: string })?.message ||
       '保存失败，请稍后重试';
+    if (!isEditMode.value && message.includes('任务已存在')) {
+      try {
+        await ElMessageBox.confirm(
+          `任务「${formModel.jobName}」已存在（可能未在列表中显示）。是否用当前表单配置覆盖更新？`,
+          '任务已存在',
+          { type: 'warning', confirmButtonText: '覆盖更新', cancelButtonText: '取消' },
+        );
+        const parameters = buildParametersPayload();
+        const tenantId = buildTenantIdForRequest(formModel.tenantId);
+        const updatePayload: UpdateScheduledJobParams = {
+          jobName: formModel.jobName.trim(),
+          jobGroup: formModel.jobGroup.trim() || 'DEFAULT',
+          displayName: formModel.displayName.trim() || undefined,
+          description: formModel.description.trim() || undefined,
+          remark: formModel.remark.trim() || undefined,
+          jobBeanName: formModel.jobBeanName,
+          cronExpression: cronPreview.value,
+          misfirePolicy: formModel.misfirePolicy,
+          concurrentPolicy: formModel.concurrentPolicy,
+          status: formModel.status,
+          tenantId,
+          parameters,
+        };
+        await updateScheduledJobApi(updatePayload);
+        ElMessage.success('已覆盖更新现有任务');
+        emit('success');
+        dialogVisible.value = false;
+        emit('update:visible', false);
+        return;
+      } catch (confirmError: unknown) {
+        if (confirmError !== 'cancel') {
+          const confirmMessage =
+            (confirmError as { msg?: string; message?: string })?.msg ||
+            (confirmError as { message?: string })?.message ||
+            '覆盖更新失败，请稍后重试';
+          ElMessage.error(confirmMessage);
+        }
+        return;
+      }
+    }
     ElMessage.error(message);
   } finally {
     submitting.value = false;

@@ -3,8 +3,6 @@
   状态分层 — 业务：生效时间窗、项目类型筛选、列表行；视图：分页、展开行。
 -->
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
-
 import type {
   InitPriceAdjustmentDetailResponse,
   PagePriceAdjustmentApprovedLineParams,
@@ -12,11 +10,20 @@ import type {
 } from '#/api/finance/price-adjustment-detail';
 import type { ApiOptionItem } from '#/types/api-response';
 
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { Refresh, Search } from '@element-plus/icons-vue';
+import {
+  ElButton,
+  ElDatePicker,
+  ElFormItem,
+  ElInput,
+  ElOption,
+  ElSelect,
+  ElTableColumn,
+} from 'element-plus';
 
 import {
   initPriceAdjustmentDetailApi,
@@ -24,6 +31,17 @@ import {
 } from '#/api/finance/price-adjustment-detail';
 import { useRequest } from '#/hooks/use-request';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import {
+  REPORT_QUERY_CONTROL,
+  REPORT_QUERY_CONTROL_DATERANGE,
+  REPORT_TABLE_NUM_CELL,
+  ReportElTable,
+  ReportListPageLayout,
+  ReportListToolbar,
+  ReportPageFooter,
+  ReportQueryBar,
+  ReportTableScroll,
+} from '#/views/report/shared';
 
 import PriceAdjustmentApprovedLineExpandPanel from './components/price-adjustment-approved-line-expand-panel.vue';
 import PriceAdjustmentImpactAmount from './components/price-adjustment-impact-amount.vue';
@@ -31,6 +49,7 @@ import PriceAdjustmentImpactAmount from './components/price-adjustment-impact-am
 defineOptions({ name: 'FinancePriceAdjustmentDetail' });
 
 const ALL_ITEM_TABLE_TAB = '';
+const PAGE_TITLE = '调价明细';
 
 interface QueryFormState {
   pageNo: number;
@@ -45,6 +64,7 @@ interface QueryFormState {
 const pageInit = ref<InitPriceAdjustmentDetailResponse | null>(null);
 const tableData = ref<PriceAdjustmentApprovedLineListRowDto[]>([]);
 const total = ref(0);
+const tableScrollRef = ref<InstanceType<typeof ReportTableScroll> | null>(null);
 
 const queryParams = reactive<QueryFormState>({
   pageNo: 1,
@@ -84,7 +104,7 @@ const { run: runPage, loading: pageLoading } = useRequest(pagePriceAdjustmentApp
   },
 });
 
-const loading = computed(() => initLoading.value || pageLoading.value);
+const tableLoading = computed(() => initLoading.value || pageLoading.value);
 
 const itemTableTabOptions = computed<ApiOptionItem[]>(() => {
   const fromInit = (pageInit.value?.itemTableTabOptions ?? []).map((o) => ({
@@ -94,138 +114,29 @@ const itemTableTabOptions = computed<ApiOptionItem[]>(() => {
   return [{ label: '全部', value: ALL_ITEM_TABLE_TAB }, ...fromInit];
 });
 
-// 输入框回车触发查询。
-function handleKeywordEnter(event: KeyboardEvent) {
-  if (event.key !== 'Enter') {
-    return;
-  }
-  queryParams.pageNo = 1;
-  void getList();
+/** 下拉选项转为 ElSelect 可用结构。 */
+function toSelectOptions(items: ApiOptionItem[]) {
+  return items.map((item) => ({
+    label: String(item.label ?? ''),
+    value: String(item.value ?? ''),
+  }));
 }
 
-const keywordInputProps = {
-  onKeyup: handleKeywordEnter,
-};
+/** 生效时间与 daterange 双向绑定。 */
+const approveTimeRange = computed({
+  get() {
+    const [from, to] = queryParams.approveTimeRange;
+    if (from && to) {
+      return [from, to] as [string, string];
+    }
+    return null;
+  },
+  set(value: [string, string] | null) {
+    queryParams.approveTimeRange = value ? [value[0], value[1]] : ['', ''];
+  },
+});
 
-const formItems = computed<FormItemConfig[]>(() => [
-  {
-    label: '生效时间',
-    prop: 'approveTimeRange',
-    type: 'datetimerange',
-    valueFormat: 'YYYY-MM-DD HH:mm:ss',
-  },
-  {
-    label: '项目类型',
-    prop: 'itemTable',
-    type: 'select',
-    multiple: false,
-    clearable: true,
-    options: itemTableTabOptions.value,
-  },
-  {
-    label: '项目名称',
-    prop: 'itemNameKeyword',
-    type: 'input',
-    placeholder: '模糊匹配',
-    inputProps: keywordInputProps,
-  },
-  {
-    label: '院内编码',
-    prop: 'itemCodeKeyword',
-    type: 'input',
-    placeholder: '模糊匹配',
-    inputProps: keywordInputProps,
-  },
-  {
-    label: '调价单号',
-    prop: 'busNo',
-    type: 'input',
-    placeholder: '模糊匹配',
-    inputProps: keywordInputProps,
-  },
-]);
-
-const tableColumns: TableColumn[] = [
-  { type: 'expand', width: 48, slot: 'rowExpand', align: 'center', headerAlign: 'center' },
-  { type: 'index', label: '序号', width: 60, align: 'center', headerAlign: 'center' },
-  {
-    prop: 'busNo',
-    label: '调价单号',
-    minWidth: 140,
-    align: 'center',
-    headerAlign: 'center',
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'approveTime',
-    label: '生效时间',
-    width: 170,
-    align: 'center',
-    headerAlign: 'center',
-  },
-  {
-    prop: 'itemTableText',
-    label: '项目类型',
-    width: 100,
-    align: 'center',
-    headerAlign: 'center',
-  },
-  {
-    prop: 'itemName',
-    label: '项目名称',
-    minWidth: 160,
-    align: 'left',
-    headerAlign: 'center',
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'itemCode',
-    label: '院内编码',
-    width: 120,
-    align: 'center',
-    headerAlign: 'center',
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'adjustmentStyleText',
-    label: '展示口径',
-    width: 100,
-    align: 'center',
-    headerAlign: 'center',
-  },
-  {
-    prop: 'adjustmentReasonText',
-    label: '调价原因',
-    width: 120,
-    align: 'center',
-    headerAlign: 'center',
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'totalImpact',
-    label: '盈亏合计',
-    width: 130,
-    align: 'right',
-    headerAlign: 'center',
-    slot: 'totalImpact',
-  },
-  {
-    prop: 'operatorName',
-    label: '制单人',
-    width: 100,
-    align: 'center',
-    headerAlign: 'center',
-  },
-  {
-    prop: 'approverName',
-    label: '审批人',
-    width: 100,
-    align: 'center',
-    headerAlign: 'center',
-  },
-];
-
-// 组装分页查询请求体。
+/** 组装分页查询请求体。 */
 function buildPageRequest(): PagePriceAdjustmentApprovedLineParams | null {
   const [from, to] = queryParams.approveTimeRange ?? [];
   if (!from?.trim() || !to?.trim()) {
@@ -243,22 +154,24 @@ function buildPageRequest(): PagePriceAdjustmentApprovedLineParams | null {
   };
 }
 
-// 按当前筛选与分页拉取已生效调价明细。
+/** 按当前筛选与分页拉取已生效调价明细。 */
 async function getList() {
   const body = buildPageRequest();
   if (!body) {
     return;
   }
   await runPage(body);
+  await nextTick();
+  tableScrollRef.value?.updateTableHeight();
 }
 
-// 顶部查询：回到第一页。
+/** 顶部查询：回到第一页。 */
 function handleQuery() {
   queryParams.pageNo = 1;
   void getList();
 }
 
-// 重置筛选为 init 默认时间窗，保留分页大小。
+/** 重置筛选为 init 默认时间窗，保留分页大小。 */
 function handleReset() {
   const init = pageInit.value;
   queryParams.approveTimeRange =
@@ -273,10 +186,16 @@ function handleReset() {
   void getList();
 }
 
-// 分页变更后重新查询。
-function handlePagination(pagination: { page: number; limit: number }) {
-  queryParams.pageNo = pagination.page;
-  queryParams.pageSize = pagination.limit;
+/** 切换每页条数。 */
+function handlePageSizeChange(size: number) {
+  queryParams.pageSize = size;
+  queryParams.pageNo = 1;
+  void getList();
+}
+
+/** 切换页码。 */
+function handleCurrentPageChange(page: number) {
+  queryParams.pageNo = page;
   void getList();
 }
 
@@ -287,50 +206,170 @@ onMounted(async () => {
 </script>
 
 <template>
-  <Page auto-content-height>
-    <div class="box-border flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2">
-      <TableLayout
-        class="price-adjustment-detail-table"
-        :table-data="tableData"
-        :loading="loading"
-        :total="total"
-        :query-params="queryParams as Record<string, unknown>"
-        :form-items="formItems"
-        :table-columns="tableColumns"
-        :show-top-query="true"
-        :show-pagination="true"
-        row-key="id"
-        border
-        stripe
-        @query="handleQuery"
-        @reset="handleReset"
-        @pagination="handlePagination"
-      >
-        <template #rowExpand="{ row }">
-          <PriceAdjustmentApprovedLineExpandPanel :line-id="row.id" />
-        </template>
+  <Page auto-content-height content-class="!overflow-hidden flex h-full min-h-0 flex-col">
+    <ReportListPageLayout>
+      <template #query>
+        <ReportQueryBar :model="queryParams as Record<string, unknown>">
+          <template #fields>
+            <ElFormItem label="生效时间">
+              <ElDatePicker
+                v-model="approveTimeRange"
+                type="datetimerange"
+                value-format="YYYY-MM-DD HH:mm:ss"
+                range-separator="至"
+                start-placeholder="开始"
+                end-placeholder="结束"
+                :class="[REPORT_QUERY_CONTROL, REPORT_QUERY_CONTROL_DATERANGE]"
+              />
+            </ElFormItem>
+            <ElFormItem label="项目类型">
+              <ElSelect
+                v-model="queryParams.itemTable"
+                clearable
+                placeholder="全部"
+                :class="REPORT_QUERY_CONTROL"
+              >
+                <ElOption
+                  v-for="item in toSelectOptions(itemTableTabOptions)"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="项目名称">
+              <ElInput
+                v-model="queryParams.itemNameKeyword"
+                clearable
+                placeholder="模糊匹配"
+                :class="REPORT_QUERY_CONTROL"
+                @keyup.enter="handleQuery"
+              />
+            </ElFormItem>
+            <ElFormItem label="院内编码">
+              <ElInput
+                v-model="queryParams.itemCodeKeyword"
+                clearable
+                placeholder="模糊匹配"
+                :class="REPORT_QUERY_CONTROL"
+                @keyup.enter="handleQuery"
+              />
+            </ElFormItem>
+            <ElFormItem label="调价单号">
+              <ElInput
+                v-model="queryParams.busNo"
+                clearable
+                placeholder="模糊匹配"
+                :class="REPORT_QUERY_CONTROL"
+                @keyup.enter="handleQuery"
+              />
+            </ElFormItem>
+          </template>
+          <template #actions>
+            <ElButton type="primary" :icon="Search" :loading="tableLoading" @click="handleQuery">
+              搜索
+            </ElButton>
+            <ElButton :icon="Refresh" :loading="tableLoading" @click="handleReset">重置</ElButton>
+          </template>
+        </ReportQueryBar>
+      </template>
 
-        <template #totalImpact="{ row }">
-          <PriceAdjustmentImpactAmount :value="row.totalImpact" />
-        </template>
-      </TableLayout>
-    </div>
+      <template #toolbar>
+        <ReportListToolbar :title="`${PAGE_TITLE} · 明细列表`" :total="total" />
+      </template>
+
+      <template #table>
+        <ReportTableScroll ref="tableScrollRef">
+          <template #default="{ tableHeight }">
+            <ReportElTable
+              class="price-adjustment-detail-table"
+              :loading="tableLoading"
+              :data="tableData"
+              :height="tableHeight"
+              row-key="id"
+            >
+              <ElTableColumn type="expand" width="48" align="center">
+                <template #default="{ row }">
+                  <PriceAdjustmentApprovedLineExpandPanel :line-id="row.id" />
+                </template>
+              </ElTableColumn>
+              <ElTableColumn type="index" label="序号" width="60" align="center" />
+              <ElTableColumn
+                prop="busNo"
+                label="调价单号"
+                min-width="140"
+                align="center"
+                show-overflow-tooltip
+              />
+              <ElTableColumn prop="approveTime" label="生效时间" width="170" align="center" />
+              <ElTableColumn prop="itemTableText" label="项目类型" width="100" align="center" />
+              <ElTableColumn
+                prop="itemName"
+                label="项目名称"
+                min-width="160"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
+                prop="itemCode"
+                label="院内编码"
+                width="120"
+                align="center"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
+                prop="adjustmentStyleText"
+                label="展示口径"
+                width="100"
+                align="center"
+              />
+              <ElTableColumn
+                prop="adjustmentReasonText"
+                label="调价原因"
+                width="120"
+                align="center"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
+                label="盈亏合计"
+                prop="totalImpact"
+                width="130"
+                align="right"
+                header-align="right"
+                :class-name="REPORT_TABLE_NUM_CELL"
+              >
+                <template #default="{ row }">
+                  <PriceAdjustmentImpactAmount :value="row.totalImpact" />
+                </template>
+              </ElTableColumn>
+              <ElTableColumn prop="operatorName" label="制单人" width="100" align="center" />
+              <ElTableColumn prop="approverName" label="审批人" width="100" align="center" />
+            </ReportElTable>
+          </template>
+        </ReportTableScroll>
+      </template>
+
+      <template #footer>
+        <ReportPageFooter
+          :current-page="queryParams.pageNo"
+          :page-size="queryParams.pageSize"
+          :total="total"
+          @size-change="handlePageSizeChange"
+          @current-change="handleCurrentPageChange"
+        />
+      </template>
+    </ReportListPageLayout>
   </Page>
 </template>
 
 <style scoped lang="scss">
 .price-adjustment-detail-table {
-  :deep(.vxe-body--expanded-cell) {
+  :deep(.el-table__expanded-cell) {
     padding: 0;
     background: var(--el-bg-color);
   }
 
-  :deep(.vxe-body--expanded-column) {
-    border-bottom: 1px solid var(--el-border-color-lighter);
-  }
-
-  :deep(.row--stripe .vxe-body--expanded-cell) {
-    background: var(--el-bg-color);
+  :deep(.el-table__expanded-cell:hover) {
+    background: var(--el-bg-color) !important;
   }
 }
 </style>

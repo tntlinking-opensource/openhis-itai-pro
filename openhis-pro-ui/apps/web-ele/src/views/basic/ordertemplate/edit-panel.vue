@@ -43,7 +43,7 @@ import TcmHerbAddCard from '#/components/doctor-station/tcm-advice/components/tc
 import TcmHerbCard from '#/components/doctor-station/tcm-advice/components/tcm-herb-card.vue';
 import TcmPrescriptionSummary from '#/components/doctor-station/tcm-advice/components/tcm-prescription-summary.vue';
 import SelectTable from '#/components/select-table.vue';
-import { decimalMul } from '#/utils/format/decimal-util';
+import { calcMoneyLineTotal } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import { getProductSelectColumns, useOrderTemplateLines } from './order-template-lines';
@@ -237,7 +237,7 @@ const tcmSingleDoseAmount = computed(() => calcTcmTemplateSingleDoseAmount(tcmVi
 
 const tcmTotalAmount = computed(() => {
   const doseQty = formModel.defaultChineseHerbsDoseQuantity || 1;
-  return decimalMul(tcmSingleDoseAmount.value, doseQty);
+  return calcMoneyLineTotal(tcmSingleDoseAmount.value, doseQty);
 });
 
 /** 按 clientKey 查找草稿行 */

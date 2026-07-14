@@ -14,34 +14,13 @@ import {
   WHS_IN_SUPPLY_TYPE_CODE,
 } from '#/api/inventory/warehouse/inbound-receipt';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-
-/** 库房/位置选项：与后端 OptionDto.value 一致；禁止对长整型 string 做 Number()，避免精度丢失导致 ElSelect value 与 v-model 错位 */
-function optionDtoToCabinetRow(o: OptionDto): Record<string, unknown> {
-  const raw = o.value;
-  if (raw === undefined || raw === null) {
-    return { id: '', value: '', name: o.label ?? '', label: o.label ?? '' };
-  }
-  if (typeof raw === 'string') {
-    const s = raw.trim();
-    return {
-      id: s,
-      value: s,
-      name: o.label ?? '',
-      label: o.label ?? '',
-    };
-  }
-  if (typeof raw === 'number') {
-    const id = Number.isSafeInteger(raw) ? raw : String(raw);
-    return {
-      id,
-      value: raw,
-      name: o.label ?? '',
-      label: o.label ?? '',
-    };
-  }
-  const s = String(raw).trim();
-  return { id: s, value: s, name: o.label ?? '', label: o.label ?? '' };
-}
+import {
+  filterWorkbenchListRowsByDateRange,
+  filterWorkbenchListRowsByKeyword,
+  INV_ALL_WAREHOUSES_LABEL,
+  coerceWorkbenchListLocationIdForApi,
+  mapInitOptionsToCabinetRowsWithAll,
+} from '#/utils/inventory/inventory-workbench-list';
 
 function optionDtosToSupplierItems(list?: OptionDto[]): ApiOptionItem[] {
   return (list ?? []).map((o) => ({
@@ -75,7 +54,10 @@ function mapInitFromInboundReceipt(
   data?: LoadInboundReceiptFormInitResponse,
 ): PurchaseInboundInitResponse {
   const warehouses = data?.warehouseLocationOptions ?? [];
-  const cabinetListOptions = warehouses.map(optionDtoToCabinetRow);
+  const cabinetListOptions = mapInitOptionsToCabinetRowsWithAll(
+    warehouses.map((o) => ({ value: o.value, label: o.label })),
+    INV_ALL_WAREHOUSES_LABEL,
+  );
   return {
     cabinetListOptions,
     practitionerOption: mergePractitionerOptions(
@@ -187,26 +169,27 @@ export async function initPurchaseInboundApi() {
 }
 
 export async function pagePurchaseInboundListApi(params?: PurchaseInboundPageQuery) {
-  const sid = params?.locationId;
-  if (sid === undefined || sid === null || sid === '') {
-    return { records: [], total: 0 };
-  }
-  const sourceLocationId: number | string = typeof sid === 'number' ? sid : String(sid).trim();
-  if (sourceLocationId === '') {
-    return { records: [], total: 0 };
-  }
+  const sid = coerceWorkbenchListLocationIdForApi(params?.locationId);
   const res = await pageInboundReceiptsApi({
-    sourceLocationId,
+    sourceLocationId: sid,
     keyword: params?.keyword?.trim() || undefined,
-    applyTimeFrom: params?.applyTimeBegin ? `${params.applyTimeBegin}T00:00:00` : undefined,
-    applyTimeTo: params?.applyTimeEnd ? `${params.applyTimeEnd}T23:59:59` : undefined,
     pageNo: 1,
-    pageSize: 100,
+    pageSize: 200,
     typeEnum: WHS_IN_SUPPLY_TYPE_CODE,
   });
   const { content, totalCount } = parsePagedRowsFromApiData<InboundReceiptListRowDto>(res.data);
-  const records = content.map((r) => mapInboundListRow(r));
-  return { records, total: totalCount };
+  const dateFiltered = filterWorkbenchListRowsByDateRange(
+    content,
+    params?.applyTimeBegin,
+    params?.applyTimeEnd,
+  );
+  const keywordFiltered = filterWorkbenchListRowsByKeyword(
+    dateFiltered as Record<string, unknown>[],
+    params?.keyword,
+  );
+  const records = keywordFiltered.map((r) => mapInboundListRow(r as InboundReceiptListRowDto));
+  const filtered = (params?.applyTimeBegin && params?.applyTimeEnd) || params?.keyword?.trim();
+  return { records, total: filtered ? records.length : totalCount };
 }
 
 export async function pagePurchaseInboundDetailApi(params?: PurchaseInboundDetailQuery) {

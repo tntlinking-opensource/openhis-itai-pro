@@ -3,7 +3,7 @@ import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
 
 import type { UserInfo, UserListParams } from '#/api/user/user';
 
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
@@ -39,10 +39,15 @@ interface UserTableRow extends UserInfo {
   roleNames?: string;
 }
 
-const queryParams = ref<UserListParams>({
+const initQueryParams: UserListParams = {
   pageNo: 1,
-  pageSize: 50,
-});
+  pageSize: 20,
+  keyword: '',
+  isActive: undefined,
+  isLockedOut: undefined,
+};
+
+const queryParams = reactive<UserListParams>({ ...initQueryParams });
 
 const tableData = ref<UserTableRow[]>([]);
 const loading = ref(false);
@@ -197,13 +202,14 @@ const loadData = async () => {
   loading.value = true;
   try {
     const response = await getUserListApi({
-      pageNo: queryParams.value.pageNo,
-      pageSize: queryParams.value.pageSize,
-      keyword: queryParams.value.keyword,
-      isActive: queryParams.value.isActive,
+      pageNo: queryParams.pageNo,
+      pageSize: queryParams.pageSize,
+      keyword: queryParams.keyword,
+      isActive: queryParams.isActive,
+      isLockedOut: queryParams.isLockedOut,
     });
     tableData.value = await enrichUsersWithRoles(response.content ?? []);
-    total.value = response.totalCount;
+    total.value = response.totalCount ?? 0;
   } catch {
     ElMessage.error('加载数据失败，请稍后重试');
     tableData.value = [];
@@ -214,26 +220,28 @@ const loadData = async () => {
 };
 
 const handleQuery = (params: { isActive?: string; isLockedOut?: string; keyword?: string }) => {
+  queryParams.pageNo = 1;
   if (params.keyword !== undefined) {
-    queryParams.value.keyword = params.keyword || '';
+    queryParams.keyword = params.keyword || '';
   }
   if (params.isActive !== undefined) {
-    queryParams.value.isActive = params.isActive;
+    queryParams.isActive = params.isActive;
   }
   if (params.isLockedOut !== undefined) {
-    queryParams.value.isLockedOut = params.isLockedOut;
+    queryParams.isLockedOut = params.isLockedOut;
   }
-  loadData();
+  void loadData();
+};
+
+const handlePagination = (pagination: { limit: number; page: number }) => {
+  queryParams.pageSize = pagination.limit;
+  queryParams.pageNo = pagination.page;
+  void loadData();
 };
 
 const handleReset = () => {
-  queryParams.value = {
-    pageNo: 1,
-    pageSize: 50,
-    keyword: '',
-    isActive: undefined,
-  };
-  loadData();
+  Object.assign(queryParams, initQueryParams);
+  void loadData();
 };
 
 const selectedRows = ref<UserInfo[]>([]);
@@ -389,8 +397,9 @@ onMounted(() => {
 </script>
 
 <template>
-  <Page>
+  <Page auto-content-height content-class="!overflow-hidden flex h-full min-h-0 flex-col">
     <TableLayout
+      class="h-full min-h-0 flex-1"
       :table-data="tableData"
       :loading="loading"
       :total="total"
@@ -399,9 +408,10 @@ onMounted(() => {
       :table-columns="tableColumns"
       :show-side-query="false"
       :show-pagination="true"
-      :is-all-data="true"
+      row-key="id"
       @query="handleQuery"
       @reset="handleReset"
+      @pagination="handlePagination"
       @selection-change="handleSelectionChange"
     >
       <template #toolbar-actions>

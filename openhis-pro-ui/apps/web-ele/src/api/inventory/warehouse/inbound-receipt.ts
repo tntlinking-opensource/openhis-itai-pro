@@ -359,3 +359,102 @@ export async function removeInboundReceiptApi(body: RemoveInboundReceiptRequestB
 
 /** 列表筛选固定进货类型（SupplyType#getCode()） */
 export const WHS_IN_SUPPLY_TYPE_CODE = 'CABINET_INBOUND_RECEIPT';
+
+export interface PageLinkablePurchaseOrdersRequest {
+  /** 目的药库；`0` 表示当前用户可见的全部药库 */
+  purposeLocationId: number | string;
+  keyword?: string;
+  pageNo: number;
+  pageSize: number;
+}
+
+export interface LinkablePurchaseOrderListRowDto {
+  busNo?: string;
+  originalBusNo?: string;
+  purposeLocationId?: number | string;
+  purposeLocationName?: string;
+  supplierId?: number | string;
+  supplierName?: string;
+  creatorName?: string;
+  applicantId?: number | string;
+  practitionerId?: number | string;
+  totalAmount?: number;
+  totalPrice?: number;
+  applyTime?: string;
+  approvalTime?: string;
+}
+
+export interface PageLinkablePurchaseOrdersResponse {
+  total?: number;
+  totalCount?: number;
+  records?: LinkablePurchaseOrderListRowDto[];
+  content?: LinkablePurchaseOrderListRowDto[];
+}
+
+export interface GetLinkablePurchaseOrderDetailRequest {
+  busNo: string;
+  purposeLocationId?: number | string;
+}
+
+export interface GetLinkablePurchaseOrderDetailResponse {
+  originalBusNo?: string;
+  purchaseOrderBusNo?: string;
+  sourceLocationId?: number | string;
+  purposeLocationId?: number | string;
+  supplierId?: number | string;
+  categoryEnum?: string;
+  practitionerId?: number | string;
+  lines: InboundReceiptDetailLineDto[];
+}
+
+export async function pageLinkablePurchaseOrdersApi(body: PageLinkablePurchaseOrdersRequest) {
+  return requestClient.post<ApiResponse<PageLinkablePurchaseOrdersResponse>>(
+    `${BASE}/pageLinkablePurchaseOrders`,
+    body,
+  );
+}
+
+export async function getLinkablePurchaseOrderDetailApi(
+  body: GetLinkablePurchaseOrderDetailRequest,
+) {
+  return requestClient.post<ApiResponse<GetLinkablePurchaseOrderDetailResponse>>(
+    `${BASE}/getLinkablePurchaseOrderDetail`,
+    body,
+  );
+}
+
+/** 进货场景批量扫码身份反查（只读） */
+export interface BatchResolveTraceIdentityInboundRequest {
+  traceNos: string[];
+}
+
+export interface TraceIdentityResolveItemDto {
+  traceNo?: string;
+  resolveStatusEnum?: string;
+  itemTable?: string;
+  itemId?: string;
+  lotNumber?: string;
+  traceUnitCode?: string;
+  remainingSplitQuantity?: number | string;
+  inHospitalStatusEnum?: string;
+}
+
+export interface TraceIdentityResolveFailItemDto {
+  traceNo?: string;
+  resolveStatusEnum?: string;
+}
+
+export interface BatchResolveTraceIdentityInboundResponse {
+  items?: TraceIdentityResolveItemDto[];
+  failItems?: TraceIdentityResolveFailItemDto[];
+}
+
+export async function batchResolveTraceIdentityForInboundApi(
+  body: BatchResolveTraceIdentityInboundRequest,
+) {
+  const res = await requestClient.post<ApiResponse<BatchResolveTraceIdentityInboundResponse>>(
+    `${BASE}/batchResolveTraceIdentity`,
+    body,
+  );
+  return res.data ?? { items: [], failItems: [] };
+}

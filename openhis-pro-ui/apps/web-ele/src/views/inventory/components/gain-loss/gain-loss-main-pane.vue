@@ -1,19 +1,22 @@
 <!--
-  损益单右侧主区：InvMainShell + InvDocActions + 单头 + 明细表格（含 inv_chg_type reason 下拉）。
+  损益单右侧主区：InvMainShell + InvDocActions + 单头 + 明细表格（变更原因手写）。
 -->
 <script setup lang="ts">
 import type { VxeGridProps, VxeGridPropTypes } from '#/adapter/vxe-table';
-import type { ChargeType } from '#/api/core/common';
 import type { ApiOptionItem } from '#/types/api-response';
 
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 
 import { Trash2 } from '@vben/icons';
 import { formatDateTime } from '@vben/utils';
 
-import { Delete, Plus } from '@element-plus/icons-vue';
+import { QuestionFilled } from '@element-plus/icons-vue';
 import InvDocActions from '@inventory/components/inv-doc-actions.vue';
+import InvDocGridToolbar from '@inventory/components/inv-doc-grid-toolbar.vue';
+import InvDocTraceScanBridge from '@inventory/components/inv-doc-trace-scan-bridge.vue';
 import InvMainShell from '@inventory/components/inv-main-shell.vue';
+import type { FormInstance } from 'element-plus';
+
 import {
   ElButton,
   ElDatePicker,
@@ -24,12 +27,20 @@ import {
   ElMessageBox,
   ElOption,
   ElSelect,
-  ElTag,
+  ElTooltip,
 } from 'element-plus';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
+import {
+  applyInventoryRowQtyUnitList,
+  applyWarehouseNonInboundProductPickUnitsToRow,
+  createInventoryQtyUnitColumn,
+  hydrateInventoryDetailLineQtyForGrid,
+  INV_DOC_HEAD_FORM_GRID_CLASS,
+  INV_DOC_HEAD_SECTION_CLASS,
+} from '#/utils/inventory/inventory-doc-grid-common';
 import { useInventoryDocGridEdit } from '#/composables/use-inventory-doc-grid-edit';
-import { useFinanceApprovalAccess } from '#/composables/use-finance-approval-access';
+import { useInvDocParentSyncSession } from '#/composables/use-inv-doc-parent-sync-session';
 import {
   agreeDeptGainLossApi,
   createDeptGainLossApi,
@@ -38,6 +49,7 @@ import {
   rejectDeptGainLossApi,
   removeDeptGainLossApi,
   submitDeptGainLossApprovalApi,
+  updateDeptGainLossApi,
   withdrawDeptGainLossApprovalApi,
   type DeptGainLossDetailLineDto,
   type DeptGainLossLineDto,
@@ -50,6 +62,7 @@ import {
   rejectPharmacyGainLossApi,
   removePharmacyGainLossApi,
   submitPharmacyGainLossApprovalApi,
+  updatePharmacyGainLossApi,
   withdrawPharmacyGainLossApprovalApi,
   type PharmacyGainLossDetailLineDto,
   type PharmacyGainLossLineDto,
@@ -61,28 +74,56 @@ import {
   rejectGainLossApi,
   removeGainLossApi,
   submitGainLossApprovalApi,
+  updateGainLossApi,
   WHS_GAIN_LOSS_CATEGORY_ENUM,
   withdrawGainLossApprovalApi,
   type GainLossDetailLineDto,
   type GainLossLineDto,
 } from '#/api/inventory/warehouse/gain-loss';
-import { getChargeTypeListApi } from '#/api/core/common';
-import {
-  filterInsuranceChargeTypes,
-  resolveDefaultInsuranceBusNo,
-} from '#/chs/constants/insurance-contract';
-import { GAIN_LOSS_INV_CHG_TYPE_OPTIONS } from '#/constants/inventory/inv-chg-type-options';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import {
   inventoryPickMedicineCell,
+  inventoryPickNumberField,
   inventoryPickStringField,
 } from '#/utils/inventory/inventory-product-pick-list';
+import {
+  formatInventoryLineTotal,
+  formatMoneyDisplay,
+  inventoryLineTotalNumber,
+} from '#/utils/format/money-scale';
+import {
+  applyWarehouseNonInboundBandKindToRow,
+  canConvertDisplayQtyToSplitForBands,
+  convertInboundQtyBetweenBandKinds,
+  persistDisplayQtyAsSplitForBands,
+  resolveInboundLinePersistUnitCodeForBands,
+} from '#/utils/inventory/inbound-product-unit-bands';
 import {
   buildStocktakeDocActionFlags,
   normalizeStocktakeStatusSort,
   stocktakeStatusLabel,
 } from '#/utils/inventory/stocktake-doc-actions';
-import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
+import {
+  isStockOutDocumentEditableStatus,
+  isStockOutDocumentRemovableStatus,
+} from '#/utils/inventory/stock-out-doc-actions';
+import {
+  buildInventoryLocationHeadFormRules,
+  clearInventoryHeadFormValidation,
+  validateInventoryHeadFormFields,
+} from '#/utils/inventory/inventory-doc-head-form-validation';
+import {
+  buildInventoryDocPractitionerSelectOptions,
+  coercePractitionerIdForSelect,
+  INV_ITEM_TABLE_TYPE_DEVICE,
+  INV_ITEM_TABLE_TYPE_MEDICATION,
+  isSpecificInventoryLocationId,
+  normalizeInventoryItemTableTypeOptions,
+  resolveDefaultInventoryItemTableType,
+  resolveDefaultPractitionerIdForSelect,
+  resolveDocHeadProductPickLocationId,
+  warnInventoryLocationRequiredByLabel,
+} from '#/utils/inventory/inventory-workbench-list';
 import { useUserStore } from '@vben/stores';
 
 defineOptions({ name: 'InventoryGainLossMainPane' });
@@ -99,12 +140,23 @@ interface GainLossPreviewRow {
   medicinePick?: MedicinePickCell | Record<string, unknown>;
   itemTable?: string;
   itemId?: number | string;
+  inventoryItemId?: number | string;
   productName: string;
+  spec: string;
+  manufacturer: string;
   gainLossQuantity?: number;
   unitCode: string;
+  unitCodeDictText?: string;
+  selectedBandKind?: string;
+  __prevBandKind?: string;
+  unitList?: { label?: string; value: string; value_dictText?: string }[];
+  unitBands?: import('#/utils/inventory/inbound-product-unit-bands').InboundProductUnitBand[];
   lotNumber: string;
+  traceNo: string;
   reason: string;
   price?: number;
+  /** 损益金额 = 损益数量 × 单价（编辑态计算，详情回显以后端为准） */
+  gainLossAmount: string;
 }
 
 interface Props {
@@ -112,7 +164,6 @@ interface Props {
   busNo?: string;
   isDraftOrder?: boolean;
   resetKey?: number;
-  sidebarPurposeLocationId?: number | string;
   locationOptions: ApiOptionItem[];
   practitionerOptions?: ApiOptionItem[];
   itemTableTypeOptions?: ApiOptionItem[];
@@ -124,7 +175,6 @@ const props = withDefaults(defineProps<Props>(), {
   busNo: '',
   isDraftOrder: false,
   resetKey: 0,
-  sidebarPurposeLocationId: undefined,
   locationOptions: () => [],
   practitionerOptions: () => [],
   itemTableTypeOptions: () => [],
@@ -136,8 +186,6 @@ const emit = defineEmits<{
   documentRemoved: [];
   documentSaved: [{ busNo?: string }];
 }>();
-
-const { canFinanceApprove } = useFinanceApprovalAccess();
 
 const userStore = useUserStore();
 
@@ -153,21 +201,45 @@ const listSource = computed(() => {
   return 'warehouse-gain-loss';
 });
 
-function firstItemTableTypeValue(): string {
-  const o = props.itemTableTypeOptions?.[0];
-  return o?.value !== undefined && o?.value !== null && String(o.value) !== ''
-    ? String(o.value)
-    : 'med_medication_definition';
+/** 选品门禁：优先单头库位，与侧栏「全部」筛选解耦。 */
+const productPickGateLocationId = computed(() =>
+  resolveDocHeadProductPickLocationId(purposeLocationId.value, props.locationOptions),
+);
+
+const normalizedItemTableTypeOptions = computed(() =>
+  normalizeInventoryItemTableTypeOptions(props.itemTableTypeOptions),
+);
+
+const pinnedPractitionerOptions = ref<ApiOptionItem[]>([]);
+
+const effectivePractitionerOptions = computed(() =>
+  buildInventoryDocPractitionerSelectOptions(props.practitionerOptions, {
+    pinned: pinnedPractitionerOptions.value,
+    userInfo: userStore.userInfo as null | Record<string, unknown>,
+  }),
+);
+
+function preferredItemTableType(): string {
+  return props.variant === 'department'
+    ? INV_ITEM_TABLE_TYPE_DEVICE
+    : INV_ITEM_TABLE_TYPE_MEDICATION;
 }
 
-function normalizeLocationId(v?: number | string | null): number | string | undefined {
-  if (v === undefined || v === null || v === '') return undefined;
-  if (typeof v === 'number') return Number.isFinite(v) ? v : undefined;
-  const s = String(v).trim();
-  if (s === '') return undefined;
-  if (!/^\d+$/.test(s)) return s;
-  const n = Number(s);
-  return Number.isSafeInteger(n) ? n : s;
+function firstItemTableTypeValue(): string {
+  return resolveDefaultInventoryItemTableType(
+    normalizedItemTableTypeOptions.value,
+    preferredItemTableType(),
+  );
+}
+
+function pinPractitionerOption(id: unknown, label?: string) {
+  const v = String(id ?? '').trim();
+  if (v === '') return;
+  const lbl = String(label ?? '').trim();
+  if (effectivePractitionerOptions.value.some((o) => o.value === v)) return;
+  if (lbl !== '' && lbl !== v) {
+    pinnedPractitionerOptions.value = [{ label: lbl, value: v }];
+  }
 }
 
 function isPresentItemId(v: unknown): boolean {
@@ -178,16 +250,28 @@ function isPresentItemId(v: unknown): boolean {
 const headerBusNo = ref<string | undefined>(undefined);
 const detailStatusEnum = ref<number | undefined>(undefined);
 const purposeLocationId = ref<number | string | undefined>(undefined);
+const headFormRef = ref<FormInstance>();
+
+const headFormModel = computed(() => ({
+  purposeLocationId: purposeLocationId.value ?? '',
+}));
+
+const headFormRules = computed(() =>
+  buildInventoryLocationHeadFormRules({
+    purposeLocationId: props.locationFieldLabel,
+  }),
+);
+
 const practitionerId = ref<number | string | undefined>(undefined);
 const headItemTableType = ref(firstItemTableTypeValue());
 const headApplyTime = ref(formatDateTime(new Date()));
 const saving = ref(false);
 
-const insuranceContractBusNo = ref<string>();
-const insuranceChargeTypeOptions = ref<ChargeType[]>([]);
-
 const isNewDraft = computed(() => !headerBusNo.value);
-const documentEditable = computed(() => isNewDraft.value && (props.isDraftOrder || !props.busNo));
+/** 新建草稿或待审核/驳回/已撤回可改明细后重提 */
+const documentEditable = computed(
+  () => isNewDraft.value || isStockOutDocumentEditableStatus(detailStatusEnum.value),
+);
 
 const headerStatusText = computed(() => {
   if (isNewDraft.value) return '编辑中';
@@ -208,21 +292,6 @@ const docActionFlags = computed(() => {
   };
 });
 
-async function loadInsuranceContractBusNo() {
-  try {
-    const chargeTypes = await getChargeTypeListApi();
-    const eligible = filterInsuranceChargeTypes(chargeTypes);
-    insuranceChargeTypeOptions.value = eligible;
-    insuranceContractBusNo.value = resolveDefaultInsuranceBusNo(
-      eligible,
-      insuranceContractBusNo.value,
-    );
-  } catch {
-    insuranceContractBusNo.value = undefined;
-    insuranceChargeTypeOptions.value = [];
-  }
-}
-
 function resolveOccurrenceTimeForApi(): string {
   const t = String(headApplyTime.value ?? '').trim();
   if (t === '') return formatDateTime(new Date());
@@ -238,12 +307,52 @@ function syncRowFromProductPick(pick: Record<string, unknown>, row: GainLossPrev
     defId === undefined || defId === null || String(defId).trim() === ''
       ? undefined
       : (defId as number | string);
+  const invId = pick.inventoryItemId;
+  row.inventoryItemId =
+    invId === undefined || invId === null || String(invId).trim() === ''
+      ? undefined
+      : (invId as number | string);
   row.productName =
     inventoryPickStringField(pick, 'merchandiseName') ||
     inventoryPickStringField(pick, 'productName');
-  row.unitCode =
-    inventoryPickStringField(pick, 'minUnitCode') || inventoryPickStringField(pick, 'unitCode');
+  row.spec = inventoryPickStringField(pick, 'specification');
+  row.manufacturer = inventoryPickStringField(pick, 'manufacturer');
   row.lotNumber = inventoryPickStringField(pick, 'lotNumber');
+  applyWarehouseNonInboundProductPickUnitsToRow(pick, row, {
+    legacyUnitPrice: inventoryPickNumberField(pick, 'purchaseUnitPrice'),
+  });
+  recalcGainLossLine(row);
+}
+
+/** 编辑态：按损益数量 × 单价刷新金额（支持负数数量）。 */
+function recalcGainLossLine(row: GainLossPreviewRow) {
+  const qty = Number(row.gainLossQuantity);
+  const price = Number(row.price);
+  row.gainLossAmount =
+    Number.isFinite(qty) && Number.isFinite(price) ? formatInventoryLineTotal(qty, price) : '';
+}
+
+function handleGainLossUnitBandChanged(row: GainLossPreviewRow) {
+  const newK = String(row.selectedBandKind ?? '')
+    .trim()
+    .toUpperCase();
+  const oldK = String(row.__prevBandKind ?? '')
+    .trim()
+    .toUpperCase();
+  const bands = row.unitBands ?? [];
+  if (oldK && newK && oldK !== newK && oldK !== 'LEGACY' && newK !== 'LEGACY' && bands.length > 0) {
+    const qty = Number(row.gainLossQuantity);
+    if (Number.isFinite(qty) && qty !== 0) {
+      const sign = qty < 0 ? -1 : 1;
+      const nq = convertInboundQtyBetweenBandKinds(Math.abs(qty), oldK, newK, bands);
+      if (nq !== undefined) {
+        row.gainLossQuantity = nq * sign;
+      }
+    }
+  }
+  applyWarehouseNonInboundBandKindToRow(row, newK, row.price);
+  row.__prevBandKind = newK;
+  recalcGainLossLine(row);
 }
 
 function createEmptyRow(): GainLossPreviewRow {
@@ -253,12 +362,24 @@ function createEmptyRow(): GainLossPreviewRow {
     itemTable: undefined,
     itemId: undefined,
     productName: '',
+    spec: '',
+    manufacturer: '',
     gainLossQuantity: undefined,
     unitCode: '',
+    selectedBandKind: 'LEGACY',
+    __prevBandKind: 'LEGACY',
+    unitList: [{ value: 'LEGACY', label: '单位' }],
     lotNumber: '',
+    traceNo: '',
     reason: '',
     price: undefined,
+    gainLossAmount: '',
   };
+}
+
+function formatGainLossDetailAmount(value: unknown): string {
+  if (value === undefined || value === null || value === '') return '';
+  return formatMoneyDisplay(value);
 }
 
 function mapDetailLineToGrid(
@@ -273,18 +394,61 @@ function mapDetailLineToGrid(
         ? `ln-item-${String(itemIdRaw)}-${rowIdx}`
         : `ln-x-${rowIdx}`;
   const name = String(ln.productName ?? '').trim();
-  return {
+  const unitCodeStr = String(ln.unitCode ?? '');
+  const rawQty = ln.gainLossQuantity === undefined ? undefined : Number(ln.gainLossQuantity);
+  const catalog = (ln as { productCatalog?: { unitBands?: unknown } }).productCatalog;
+  const unitCodeDictText = String(
+    ('unitCodeDictText' in ln ? ln.unitCodeDictText : undefined) ?? ln.unitCode ?? '',
+  );
+  const row: GainLossPreviewRow = {
     id: idStr,
     medicinePick: name ? { id: itemIdRaw as number | string | undefined, name } : undefined,
     itemTable: ln.itemTable,
     itemId: itemIdRaw,
+    inventoryItemId:
+      'inventoryItemId' in ln && ln.inventoryItemId !== undefined && ln.inventoryItemId !== null
+        ? ln.inventoryItemId
+        : undefined,
     productName: name,
-    gainLossQuantity: ln.gainLossQuantity === undefined ? undefined : Number(ln.gainLossQuantity),
-    unitCode: String(ln.unitCode ?? ''),
+    spec: String(ln.specification ?? ''),
+    manufacturer: String(ln.manufacturer ?? ''),
+    gainLossQuantity: rawQty,
+    unitCode: unitCodeStr,
+    unitCodeDictText,
     lotNumber: String(ln.lotNumber ?? ''),
+    traceNo: String(ln.traceNo ?? '').trim(),
     reason: String(ln.reason ?? ''),
     price: ln.price === undefined ? undefined : Number(ln.price),
+    gainLossAmount: formatGainLossDetailAmount(
+      'gainLossAmount' in ln ? ln.gainLossAmount : undefined,
+    ),
   };
+
+  const sign = rawQty !== undefined && Number.isFinite(rawQty) && rawQty < 0 ? -1 : 1;
+  const absPersisted = rawQty === undefined || !Number.isFinite(rawQty) ? 0 : Math.abs(rawQty);
+  const hydrated = hydrateInventoryDetailLineQtyForGrid(
+    {
+      itemQuantity: absPersisted,
+      unitCode: unitCodeStr,
+      unitCodeDictText,
+      productCatalog: catalog,
+    },
+    { useSupplyLineHydrate: true },
+  );
+  row.gainLossQuantity = hydrated.displayQty * sign;
+  row.unitCode = hydrated.unitCode;
+  if (hydrated.unitCodeDictText) {
+    row.unitCodeDictText = hydrated.unitCodeDictText;
+  }
+  if (hydrated.unitBands?.length) {
+    row.unitBands = hydrated.unitBands;
+    row.unitList = hydrated.unitList;
+    row.selectedBandKind = hydrated.bandKind;
+    row.__prevBandKind = hydrated.bandKind;
+  } else {
+    applyInventoryRowQtyUnitList(row);
+  }
+  return row;
 }
 
 function isGainLossRowComplete(row: GainLossPreviewRow): boolean {
@@ -293,7 +457,7 @@ function isGainLossRowComplete(row: GainLossPreviewRow): boolean {
   if (!Number.isFinite(qty) || qty === 0) return false;
   if (!String(row.unitCode ?? '').trim()) return false;
   if (!String(row.lotNumber ?? '').trim()) return false;
-  return !!String(row.reason ?? '').trim();
+  return true;
 }
 
 let gainLossGridEdit!: ReturnType<typeof useInventoryDocGridEdit<GainLossPreviewRow>>;
@@ -319,7 +483,7 @@ const columns: VxeGridPropTypes.Column[] = [
         listSource: listSource,
         query: async () => ({
           productTableName: headItemTableType.value,
-          purposeLocationId: purposeLocationId.value ?? props.sidebarPurposeLocationId,
+          purposeLocationId: productPickGateLocationId.value,
         }),
         onSelected: (product: Record<string, unknown>, row: GainLossPreviewRow) => {
           syncRowFromProductPick(product, row);
@@ -329,38 +493,59 @@ const columns: VxeGridPropTypes.Column[] = [
     },
     showOverflow: true,
   },
-  {
-    field: 'gainLossQuantity',
+  { field: 'spec', title: '规格', width: 110, showOverflow: true },
+  { field: 'manufacturer', title: '厂家', minWidth: 100, showOverflow: true },
+  createInventoryQtyUnitColumn({
+    qtyField: 'gainLossQuantity',
     title: '损益数量',
+    allowNegative: true,
+    headerSlot: 'gainLossQtyHeader',
+    onUnitChange: (row) => handleGainLossUnitBandChanged(row as GainLossPreviewRow),
+  }),
+  {
+    field: 'price',
+    title: '单价',
     width: 120,
-    align: 'center',
-    editRender: { name: 'InventoryPersistElInputNumber', props: { controlsPosition: 'right' } },
+    align: 'right',
+    headerAlign: 'center',
+    cellRender: {
+      name: 'InventoryUnitPriceCell',
+      props: {
+        priceField: 'price',
+        unitField: 'selectedBandKind',
+      },
+    },
   },
   {
-    field: 'unitCode',
-    title: '单位',
-    width: 88,
-    showOverflow: true,
+    field: 'gainLossAmount',
+    title: '金额',
+    width: 112,
+    align: 'right',
+    headerAlign: 'center',
+    cellRender: {
+      name: 'InventoryTotalAmountCell',
+      props: {
+        amountField: 'gainLossAmount',
+      },
+    },
   },
   {
     field: 'lotNumber',
     title: '批号',
     width: 120,
-    editRender: { name: 'InventoryPersistElInput', props: { maxlength: 64, clearable: true } },
     showOverflow: true,
+  },
+  {
+    field: 'traceNo',
+    title: '追溯码',
+    minWidth: 140,
+    editRender: { name: 'InventoryTraceNoCell', props: { maxlength: 512, clearable: true } },
   },
   {
     field: 'reason',
     title: '变更原因',
     minWidth: 160,
-    editRender: {
-      name: 'InventoryPersistElSelect',
-      options: GAIN_LOSS_INV_CHG_TYPE_OPTIONS.map((o) => ({
-        label: o.label,
-        value: o.value,
-      })),
-      props: { filterable: true, clearable: true },
-    },
+    editRender: { name: 'InventoryPersistElInput', props: { maxlength: 200, clearable: true } },
     showOverflow: true,
   },
   {
@@ -394,27 +579,13 @@ const gridOptions: VxeGridProps<GainLossPreviewRow> = reactive({
   pagerConfig: { enabled: false },
 });
 
-const GAIN_LOSS_EDITABLE_COLUMN_FIELDS = new Set([
-  'gainLossQuantity',
-  'lotNumber',
-  'medicinePick',
-  'reason',
-]);
+const GAIN_LOSS_EDITABLE_COLUMN_FIELDS = new Set(['_qtyUnit', 'medicinePick', 'reason', 'traceNo']);
 
-const GAIN_LOSS_EDIT_FIELD_ORDER = [
-  'medicinePick',
-  'gainLossQuantity',
-  'lotNumber',
-  'reason',
-] as const;
+const GAIN_LOSS_EDIT_FIELD_ORDER = ['medicinePick', '_qtyUnit', 'traceNo', 'reason'] as const;
 
 type GainLossEditField = (typeof GAIN_LOSS_EDIT_FIELD_ORDER)[number];
 
-const GAIN_LOSS_VERTICAL_NAV_FIELDS = new Set<GainLossEditField>([
-  'gainLossQuantity',
-  'lotNumber',
-  'reason',
-]);
+const GAIN_LOSS_VERTICAL_NAV_FIELDS = new Set<GainLossEditField>(['_qtyUnit', 'reason', 'traceNo']);
 
 const gainLossGridKeyboardRef = ref<HTMLElement | null>(null);
 
@@ -424,6 +595,7 @@ const [Grid, gridApi] = useVbenVxeGrid<GainLossPreviewRow>({
     cellClick: (params: { column?: { field?: string; type?: string }; row: GainLossPreviewRow }) =>
       gainLossGridEdit.onCellClick(params),
     editClosed(params: { row: GainLossPreviewRow }) {
+      recalcGainLossLine(params.row);
       gainLossGridEdit.syncRowFormMode(params.row);
     },
   },
@@ -442,7 +614,7 @@ gainLossGridEdit = useInventoryDocGridEdit<GainLossPreviewRow>({
     editFieldOrder: GAIN_LOSS_EDIT_FIELD_ORDER,
     editableFields: GAIN_LOSS_EDITABLE_COLUMN_FIELDS,
     verticalNavFields: GAIN_LOSS_VERTICAL_NAV_FIELDS,
-    firstFillFieldAfterPick: 'gainLossQuantity',
+    firstFillFieldAfterPick: '_qtyUnit',
     hasProduct: (row) => isPresentItemId(row.itemId),
     isRowComplete: isGainLossRowComplete,
   },
@@ -478,15 +650,25 @@ function collectGridRows(): GainLossPreviewRow[] {
   return g?.getFullData?.() ?? [];
 }
 
+const traceScanBridgeRef = ref<InstanceType<typeof InvDocTraceScanBridge> | null>(null);
+
+/** 打开批量追溯码扫码弹窗 */
+function handleOpenTraceScan(): void {
+  traceScanBridgeRef.value?.open(collectGridRows());
+}
+
 function resetDetailForCreate() {
   headerBusNo.value = undefined;
   detailStatusEnum.value = undefined;
-  const sid = normalizeLocationId(props.sidebarPurposeLocationId);
-  purposeLocationId.value = sid ?? props.locationOptions[0]?.value;
-  practitionerId.value =
-    resolveLoginPractitionerIdForRequest(userStore.userInfo as null | Record<string, unknown>) ??
-    props.practitionerOptions[0]?.value;
+  pinnedPractitionerOptions.value = [];
+  purposeLocationId.value = undefined;
+  headItemTableType.value = firstItemTableTypeValue();
+  practitionerId.value = resolveDefaultPractitionerIdForSelect(
+    effectivePractitionerOptions.value,
+    userStore.userInfo as null | Record<string, unknown>,
+  );
   headApplyTime.value = formatDateTime(new Date());
+  clearInventoryHeadFormValidation(headFormRef.value);
   gainLossGridEdit.resetFormMode();
   void nextTick(() => {
     gridApi?.grid?.loadData([]);
@@ -494,7 +676,7 @@ function resetDetailForCreate() {
   });
 }
 
-async function loadDetail(busNo: string) {
+async function loadDetail(busNo: string, loadGen?: number) {
   gainLossGridEdit.resetFormMode();
   gainLossGridEdit.clearGridEdit();
   try {
@@ -504,6 +686,7 @@ async function loadDetail(busNo: string) {
         : props.variant === 'department'
           ? await getDeptGainLossDetailApi({ busNo })
           : await getGainLossDetailApi({ busNo });
+    if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
     const data = res.data;
     if (!data?.busNo) {
       ElMessage.warning('未获取到损益单详情');
@@ -512,7 +695,15 @@ async function loadDetail(busNo: string) {
     headerBusNo.value = data.busNo;
     detailStatusEnum.value = normalizeStocktakeStatusSort(data.statusEnum);
     purposeLocationId.value = data.purposeLocationId ?? undefined;
-    practitionerId.value = data.practitionerId ?? undefined;
+    pinnedPractitionerOptions.value = [];
+    const detailPractitionerId = data.practitionerId ?? data.applicantId;
+    const detailPractitionerLabel =
+      'applicantName' in data && data.applicantName ? String(data.applicantName) : undefined;
+    pinPractitionerOption(detailPractitionerId, detailPractitionerLabel);
+    practitionerId.value = coercePractitionerIdForSelect(
+      detailPractitionerId,
+      effectivePractitionerOptions.value,
+    );
     headApplyTime.value = data.applyTime
       ? String(data.applyTime).includes('T')
         ? String(data.applyTime).replace('T', ' ')
@@ -521,11 +712,14 @@ async function loadDetail(busNo: string) {
 
     const gridRows = (data.lines ?? []).map((ln, i) => mapDetailLineToGrid(ln, i));
     void nextTick(() => {
+      if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
       gridApi?.grid?.loadData(gridRows);
       patchGainLossGridEditConfig();
     });
   } catch {
+    if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
     void nextTick(() => {
+      if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
       gridApi?.grid?.loadData([]);
       patchGainLossGridEditConfig();
     });
@@ -535,25 +729,56 @@ async function loadDetail(busNo: string) {
 function buildLinesPayload(
   rows: GainLossPreviewRow[],
 ): DeptGainLossLineDto[] | GainLossLineDto[] | PharmacyGainLossLineDto[] {
-  return rows.map((r) => ({
-    itemTable: r.itemTable,
-    itemId:
-      typeof r.itemId === 'string' && /^\d+$/.test(r.itemId)
-        ? Number(r.itemId)
-        : (r.itemId as number | undefined),
-    gainLossQuantity: r.gainLossQuantity,
-    unitCode: String(r.unitCode ?? '').trim() || undefined,
-    lotNumber: String(r.lotNumber ?? '').trim() || undefined,
-    reason: String(r.reason ?? '').trim() || undefined,
-    price: r.price,
-    occurrenceTime: resolveOccurrenceTimeForApi(),
-  }));
+  const occurrenceTime = resolveOccurrenceTimeForApi();
+  return rows.map((r) => {
+    recalcGainLossLine(r);
+    const qty = Number(r.gainLossQuantity);
+    const sign = Number.isFinite(qty) && qty < 0 ? -1 : 1;
+    const absQty = Number.isFinite(qty) ? Math.abs(qty) : 0;
+    const persisted = persistDisplayQtyAsSplitForBands({
+      bands: r.unitBands ?? [],
+      displayQty: absQty,
+      legacyUnitCode: r.unitCode,
+      selectedBandKind: r.selectedBandKind,
+    });
+    const unitCode =
+      resolveInboundLinePersistUnitCodeForBands({
+        bands: r.unitBands ?? [],
+        legacyUnitCode: r.unitCode,
+        selectedBandKind: r.selectedBandKind,
+      }) || String(r.unitCode ?? '').trim();
+    const splitQty = persisted.itemQuantity * sign;
+    const price = Number(r.price);
+    const amountRaw = String(r.gainLossAmount ?? '').trim();
+    const amountNum = Number(amountRaw);
+    const gainLossAmount =
+      Number.isFinite(amountNum) && amountRaw !== ''
+        ? amountNum
+        : Number.isFinite(qty) && Number.isFinite(price)
+          ? inventoryLineTotalNumber(qty, price)
+          : undefined;
+    return {
+      itemTable: r.itemTable,
+      itemId: r.itemId,
+      inventoryItemId:
+        r.inventoryItemId === undefined || r.inventoryItemId === null
+          ? undefined
+          : r.inventoryItemId,
+      gainLossQuantity: splitQty,
+      unitCode: unitCode || undefined,
+      lotNumber: String(r.lotNumber ?? '').trim() || undefined,
+      traceNo: String(r.traceNo ?? '').trim() || undefined,
+      reason: String(r.reason ?? '').trim() || undefined,
+      price: Number.isFinite(price) && price > 0 ? price : undefined,
+      gainLossAmount,
+      occurrenceTime,
+    };
+  });
 }
 
 function validateBeforeSave(rows: GainLossPreviewRow[]): boolean {
-  const loc = purposeLocationId.value;
-  if (loc === undefined || loc === null || String(loc).trim() === '') {
-    ElMessage.warning(`请选择${props.locationFieldLabel}`);
+  if (!isSpecificInventoryLocationId(purposeLocationId.value)) {
+    warnInventoryLocationRequiredByLabel(props.locationFieldLabel);
     return false;
   }
   const pid = practitionerId.value;
@@ -566,6 +791,7 @@ function validateBeforeSave(rows: GainLossPreviewRow[]): boolean {
     return false;
   }
   for (const [i, r] of rows.entries()) {
+    recalcGainLossLine(r);
     if (!String(r.itemTable ?? '').trim() || !isPresentItemId(r.itemId)) {
       ElMessage.warning(`第 ${i + 1} 行请选择项目`);
       return false;
@@ -583,24 +809,29 @@ function validateBeforeSave(rows: GainLossPreviewRow[]): boolean {
       ElMessage.warning(`第 ${i + 1} 行批号不能为空`);
       return false;
     }
-    if (!String(r.reason ?? '').trim()) {
-      ElMessage.warning(`第 ${i + 1} 行请选择变更原因`);
+    if (
+      !canConvertDisplayQtyToSplitForBands(r.unitBands ?? [], Math.abs(qty), r.selectedBandKind)
+    ) {
+      ElMessage.warning(`第 ${i + 1} 行无法将数量换算为拆零单位，请检查计量带`);
       return false;
     }
   }
   return true;
 }
 
+/** 保存：新建走 create，已存在走 update；返回当前单号。 */
 async function persistGainLoss(): Promise<string | undefined> {
-  if (!documentEditable.value) {
-    ElMessage.warning('当前状态不允许修改');
-    return undefined;
-  }
-  const rows = collectGridRows();
-  if (!validateBeforeSave(rows)) return undefined;
-
+  // 重入护栏：须在首行置 busy，避免双击在 await 前并发两次 create
+  if (saving.value) return undefined;
   saving.value = true;
   try {
+    if (!documentEditable.value) {
+      ElMessage.warning('当前状态不允许修改');
+      return undefined;
+    }
+    const rows = collectGridRows();
+    if (!validateBeforeSave(rows)) return undefined;
+
     const lines = buildLinesPayload(rows);
     const common = {
       purposeLocationId: purposeLocationId.value as number | string,
@@ -608,6 +839,21 @@ async function persistGainLoss(): Promise<string | undefined> {
       categoryEnum: categoryEnum.value,
       lines,
     };
+
+    const existingBusNo = String(headerBusNo.value ?? '').trim();
+    if (existingBusNo) {
+      if (props.variant === 'pharmacy') {
+        await updatePharmacyGainLossApi({ busNo: existingBusNo, ...common });
+      } else if (props.variant === 'department') {
+        await updateDeptGainLossApi({ busNo: existingBusNo, ...common });
+      } else {
+        await updateGainLossApi({ busNo: existingBusNo, ...common });
+      }
+      ElMessage.success('保存成功');
+      await loadDetail(existingBusNo);
+      emit('documentSaved', { busNo: existingBusNo });
+      return existingBusNo;
+    }
 
     const res =
       props.variant === 'pharmacy'
@@ -637,9 +883,16 @@ async function handleSaveDoc() {
 }
 
 async function handleSaveAndSubmitDoc() {
+  // 在提交审批阶段继续置灰，避免保存结束后瞬间二次点击再跑一遍 save+submit
+  if (saving.value) return;
   const no = await persistGainLoss();
   if (!no) return;
-  await handleSubmitApproval();
+  saving.value = true;
+  try {
+    await handleSubmitApproval();
+  } finally {
+    saving.value = false;
+  }
 }
 
 async function handleRemoveDoc() {
@@ -655,8 +908,8 @@ async function handleRemoveDoc() {
   }
   const no = headerBusNo.value;
   if (!no) return;
-  if (detailStatusEnum.value !== 1) {
-    ElMessage.warning('仅待审核单据可删除');
+  if (!isStockOutDocumentRemovableStatus(detailStatusEnum.value)) {
+    ElMessage.warning('仅待审核、驳回、已撤回单据可删除');
     return;
   }
   try {
@@ -725,12 +978,8 @@ async function handleWithdraw() {
 async function handleApprove() {
   const no = headerBusNo.value;
   if (!no) return;
-  if (!insuranceContractBusNo.value?.trim()) {
-    ElMessage.warning('请选择医保契约');
-    return;
-  }
   try {
-    const body = { busNo: no, contractBusNo: insuranceContractBusNo.value };
+    const body = { busNo: no };
     if (props.variant === 'pharmacy') {
       await agreePharmacyGainLossApi(body);
     } else if (props.variant === 'department') {
@@ -774,6 +1023,9 @@ async function handleReject() {
 
 async function addItem() {
   if (!documentEditable.value) return;
+  if (!(await validateInventoryHeadFormFields(headFormRef.value, 'purposeLocationId'))) {
+    return;
+  }
   const $grid = gridApi?.grid;
   if (!$grid) return;
   const record = createEmptyRow();
@@ -794,18 +1046,57 @@ async function deleteItem(row: 'select' | GainLossPreviewRow) {
   await $grid.remove(row === 'select' ? checked : row);
 }
 
-async function syncFromParentContext() {
-  if (props.isDraftOrder) {
-    resetDetailForCreate();
-    return;
-  }
-  const bn = String(props.busNo ?? '').trim();
-  if (bn) {
-    await loadDetail(bn);
-  } else {
-    resetDetailForCreate();
-  }
+interface GainLossDraftSnap {
+  purposeLocationId?: number | string;
+  practitionerId?: number | string;
+  headItemTableType: string;
+  headApplyTime: string;
+  rows: GainLossPreviewRow[];
 }
+
+const parentSync = useInvDocParentSyncSession<GainLossDraftSnap>();
+
+/** 侧栏切单：缓存/恢复本地草稿，避免已落库明细污染新建单 */
+async function syncFromParentContext() {
+  await parentSync.syncFromParentContext(
+    { isDraftOrder: Boolean(props.isDraftOrder), parentBusNo: props.busNo },
+    {
+      getLocalPersistedBusNo: () => headerBusNo.value,
+      captureDraft: () => ({
+        purposeLocationId: purposeLocationId.value,
+        practitionerId: practitionerId.value,
+        headItemTableType: headItemTableType.value,
+        headApplyTime: headApplyTime.value,
+        rows: collectGridRows().map((r) => ({ ...r })),
+      }),
+      restoreDraft: async (snap) => {
+        headerBusNo.value = undefined;
+        detailStatusEnum.value = undefined;
+        purposeLocationId.value = snap.purposeLocationId;
+        practitionerId.value = snap.practitionerId;
+        headItemTableType.value = snap.headItemTableType;
+        headApplyTime.value = snap.headApplyTime;
+        gainLossGridEdit.resetFormMode();
+        await nextTick();
+        gridApi?.grid?.loadData(snap.rows);
+        patchGainLossGridEditConfig();
+      },
+      resetForCreate: () => {
+        resetDetailForCreate();
+      },
+      loadByBusNo: async (busNo, gen) => {
+        await loadDetail(busNo, gen);
+      },
+    },
+  );
+}
+
+watch(
+  () => props.resetKey,
+  () => {
+    parentSync.discardDraftSession();
+  },
+);
 
 watch(
   () => [props.busNo, props.isDraftOrder, props.resetKey] as const,
@@ -816,73 +1107,51 @@ watch(
 );
 
 watch(
-  () => props.sidebarPurposeLocationId,
-  () => {
-    if (props.isDraftOrder || !headerBusNo.value) {
-      const sid = normalizeLocationId(props.sidebarPurposeLocationId);
-      if (sid !== undefined) {
-        purposeLocationId.value = sid;
-      }
+  normalizedItemTableTypeOptions,
+  (opts) => {
+    if (opts.length === 0) return;
+    const current = String(headItemTableType.value ?? '').trim();
+    if (!current || !opts.some((o) => o.value === current)) {
+      headItemTableType.value = resolveDefaultInventoryItemTableType(
+        opts,
+        preferredItemTableType(),
+      );
     }
   },
+  { immediate: true },
 );
 
 watch(
-  () => props.locationOptions,
-  (list) => {
-    if (list.length === 0) return;
-    if (!purposeLocationId.value && (isNewDraft.value || !headerBusNo.value)) {
-      const sid = normalizeLocationId(props.sidebarPurposeLocationId);
-      purposeLocationId.value = sid ?? list[0]?.value;
+  effectivePractitionerOptions,
+  (opts) => {
+    if (opts.length === 0) return;
+    const current = String(practitionerId.value ?? '').trim();
+    if (!current || !opts.some((o) => o.value === current)) {
+      practitionerId.value = resolveDefaultPractitionerIdForSelect(
+        opts,
+        userStore.userInfo as null | Record<string, unknown>,
+      );
     }
   },
   { deep: true },
 );
-
-onMounted(() => {
-  void loadInsuranceContractBusNo();
-});
 </script>
 
 <template>
   <div class="gain-loss-main-pane flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     <InvMainShell>
       <template #actionBar>
-        <div class="flex w-full flex-col gap-2">
-          <div
-            v-if="insuranceChargeTypeOptions.length > 0"
-            class="flex flex-wrap items-center gap-2"
-          >
-            <span class="text-xs text-[var(--el-text-color-secondary)]">医保契约</span>
-            <ElSelect
-              v-model="insuranceContractBusNo"
-              class="!w-72"
-              placeholder="请选择医保契约"
-              filterable
-              clearable
-              :disabled="docActionFlags.approveDisabled"
-            >
-              <ElOption
-                v-for="item in insuranceChargeTypeOptions"
-                :key="item.busNo"
-                :label="item.busNo ? `${item.label}（${item.busNo}）` : item.label"
-                :value="item.busNo"
-              />
-            </ElSelect>
-          </div>
-          <div class="flex w-full flex-wrap items-center justify-end gap-2">
-            <InvDocActions
-              v-bind="docActionFlags"
-              :show-approval-actions="canFinanceApprove"
-              @approve="handleApprove"
-              @reject="handleReject"
-              @remove-doc="handleRemoveDoc"
-              @save="handleSaveDoc"
-              @save-and-submit="handleSaveAndSubmitDoc"
-              @submit-approval="handleSubmitApproval"
-              @withdraw="handleWithdraw"
-            />
-          </div>
+        <div class="flex w-full flex-wrap items-center justify-end gap-2">
+          <InvDocActions
+            v-bind="docActionFlags"
+            @approve="handleApprove"
+            @reject="handleReject"
+            @remove-doc="handleRemoveDoc"
+            @save="handleSaveDoc"
+            @save-and-submit="handleSaveAndSubmitDoc"
+            @submit-approval="handleSubmitApproval"
+            @withdraw="handleWithdraw"
+          />
         </div>
       </template>
 
@@ -890,29 +1159,32 @@ onMounted(() => {
         class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2"
         @mousedown="gainLossGridEdit.onSurfaceMouseDown"
       >
-        <div class="gain-loss-head-panel shrink-0">
-          <div
-            class="gain-loss-head-panel__bar flex flex-wrap items-center justify-between gap-x-4 gap-y-2"
-          >
-            <SectionTitle :title="headSectionTitle" />
-            <div class="flex flex-wrap items-center gap-2">
-              <span class="text-xs text-[var(--el-text-color-secondary)]">状态</span>
-              <ElTag size="small" type="info" effect="plain">{{ headerStatusText || '—' }}</ElTag>
-            </div>
+        <div :class="INV_DOC_HEAD_SECTION_CLASS">
+          <SectionTitle :title="headSectionTitle" />
+          <div class="mt-1 flex flex-wrap items-center gap-2">
+            <span class="text-xs" style="color: var(--el-text-color-regular)">状态</span>
+            <span class="text-sm" style="color: var(--el-text-color-primary)">{{
+              headerStatusText || '—'
+            }}</span>
           </div>
-          <ElForm label-width="96px" class="compact-head-form gain-loss-head-form">
-            <div
-              class="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-            >
+          <ElForm
+            ref="headFormRef"
+            :model="headFormModel"
+            :rules="headFormRules"
+            label-width="96px"
+            class="compact-head-form gain-loss-head-form mt-1"
+          >
+            <div :class="INV_DOC_HEAD_FORM_GRID_CLASS">
               <ElFormItem label="单据号">
                 <ElInput :model-value="headerBusNo ?? ''" disabled placeholder="保存后生成" />
               </ElFormItem>
-              <ElFormItem :label="locationFieldLabel">
+              <ElFormItem :label="locationFieldLabel" prop="purposeLocationId">
                 <ElSelect
                   v-model="purposeLocationId"
                   class="w-full"
                   filterable
                   clearable
+                  placeholder="请选择"
                   :disabled="!documentEditable"
                 >
                   <ElOption
@@ -929,13 +1201,30 @@ onMounted(() => {
                   class="w-full"
                   filterable
                   clearable
+                  placeholder="请选择经手人"
                   :disabled="!documentEditable"
                 >
                   <ElOption
-                    v-for="p in practitionerOptions"
+                    v-for="p in effectivePractitionerOptions"
                     :key="String(p.value)"
                     :label="p.label"
                     :value="p.value"
+                  />
+                </ElSelect>
+              </ElFormItem>
+              <ElFormItem label="项目类型">
+                <ElSelect
+                  v-model="headItemTableType"
+                  class="w-full"
+                  filterable
+                  placeholder="请选择"
+                  :disabled="!documentEditable"
+                >
+                  <ElOption
+                    v-for="t in normalizedItemTableTypeOptions"
+                    :key="String(t.value)"
+                    :label="t.label"
+                    :value="String(t.value)"
                   />
                 </ElSelect>
               </ElFormItem>
@@ -956,28 +1245,28 @@ onMounted(() => {
 
         <div
           ref="gainLossGridKeyboardRef"
-          class="gain-loss-main-pane__grid-wrap flex min-h-0 min-w-0 flex-1 flex-col"
+          class="gain-loss-main-pane__grid-wrap mt-2 flex min-h-0 min-w-0 flex-1 flex-col"
           @keydown.capture="gainLossGridEdit.onGridKeydown"
         >
           <Grid class="min-h-0 flex-1">
             <template #toolbar-actions>
-              <ElButton
-                class="mr-2"
-                type="primary"
-                :icon="Plus"
+              <InvDocGridToolbar
                 :disabled="!documentEditable"
-                @click="addItem"
-              >
-                添加行
-              </ElButton>
-              <ElButton
-                type="danger"
-                :icon="Delete"
-                :disabled="!documentEditable"
-                @click="deleteItem('select')"
-              >
-                删除行
-              </ElButton>
+                show-trace-scan
+                @add="addItem"
+                @delete-selected="deleteItem('select')"
+                @trace-scan="handleOpenTraceScan"
+              />
+            </template>
+            <template #gainLossQtyHeader>
+              <span class="inline-flex items-center justify-center gap-1">
+                损益数量
+                <ElTooltip content="可填负数：负数表示报损，正数表示报溢" placement="top">
+                  <QuestionFilled
+                    class="size-3.5 cursor-help text-[var(--el-text-color-secondary)]"
+                  />
+                </ElTooltip>
+              </span>
             </template>
             <template #action="{ row }">
               <ElButton
@@ -995,14 +1284,20 @@ onMounted(() => {
       </div>
     </InvMainShell>
   </div>
+  <InvDocTraceScanBridge ref="traceScanBridgeRef" scene="stocktake" />
 </template>
 
 <style scoped lang="scss">
-.gain-loss-head-panel {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-  padding: 8px 12px 4px;
-  background: var(--el-bg-color);
+.compact-head-form :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+.compact-head-form :deep(.el-form-item__label) {
+  padding-right: 8px;
+}
+
+.inv-doc-head-section {
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
 .gain-loss-main-pane__grid-wrap :deep(.vxe-grid) {

@@ -2,17 +2,20 @@
   调拨入库/出库右侧主区：InvMainShell + InvDocActions + 单头 + 明细表格。
 -->
 <script setup lang="ts">
-import type { VxeGridProps, VxeGridPropTypes } from '#/adapter/vxe-table';
-import type { ChargeType } from '#/api/core/common';
+import type { VxeGridPropTypes } from '#/adapter/vxe-table';
 import type { ApiOptionItem } from '#/types/api-response';
 
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import type { FormInstance } from 'element-plus';
+
+import { computed, nextTick, ref, watch } from 'vue';
 
 import { Trash2 } from '@vben/icons';
 import { formatDateTime } from '@vben/utils';
 
-import { Delete, Plus } from '@element-plus/icons-vue';
 import InvDocActions from '@inventory/components/inv-doc-actions.vue';
+import InvDocDetailGridShell from '@inventory/components/inv-doc-detail-grid-shell.vue';
+import InvDocGridToolbar from '@inventory/components/inv-doc-grid-toolbar.vue';
+import InvDocTraceScanBridge from '@inventory/components/inv-doc-trace-scan-bridge.vue';
 import InvMainShell from '@inventory/components/inv-main-shell.vue';
 import {
   ElButton,
@@ -24,12 +27,11 @@ import {
   ElMessageBox,
   ElOption,
   ElSelect,
-  ElTag,
 } from 'element-plus';
 
-import { useVbenVxeGrid } from '#/adapter/vxe-table';
-import { useInventoryDocGridEdit } from '#/composables/use-inventory-doc-grid-edit';
-import { getChargeTypeListApi } from '#/api/core/common';
+import { useInvDocDetailGrid } from '#/composables/use-inv-doc-detail-grid';
+import { useInvDocGridRowOps } from '#/composables/use-inv-doc-grid-row-ops';
+import { useInvDocParentSyncSession } from '#/composables/use-inv-doc-parent-sync-session';
 import {
   agreeTransferInApi,
   createTransferInApi,
@@ -56,26 +58,99 @@ import {
   type TransferOutDetailLineDto,
   type TransferOutLineDto,
 } from '#/api/inventory/warehouse/transfer-out';
+import { getTransferInDetailApi as getDeptTransferInDetailApi } from '#/api/inventory/department/transfer-in';
 import {
-  filterInsuranceChargeTypes,
-  resolveDefaultInsuranceBusNo,
-} from '#/chs/constants/insurance-contract';
+  agreeTransferOutApi as agreeDeptTransferOutApi,
+  createTransferOutApi as createDeptTransferOutApi,
+  DEPT_TRANSFER_OUT_CATEGORY_ENUM,
+  getTransferOutDetailApi as getDeptTransferOutDetailApi,
+  rejectTransferOutApi as rejectDeptTransferOutApi,
+  removeTransferOutApi as removeDeptTransferOutApi,
+  submitTransferOutApprovalApi as submitDeptTransferOutApprovalApi,
+  updateTransferOutApi as updateDeptTransferOutApi,
+  withdrawTransferOutApprovalApi as withdrawDeptTransferOutApprovalApi,
+} from '#/api/inventory/department/transfer-out';
+import {
+  agreeTransferInApi as agreePharmacyTransferInApi,
+  createTransferInApi as createPharmacyTransferInApi,
+  getTransferInDetailApi as getPharmacyTransferInDetailApi,
+  rejectTransferInApi as rejectPharmacyTransferInApi,
+  removeTransferInApi as removePharmacyTransferInApi,
+  submitTransferInApprovalApi as submitPharmacyTransferInApprovalApi,
+  updateTransferInApi as updatePharmacyTransferInApi,
+  withdrawTransferInApprovalApi as withdrawPharmacyTransferInApprovalApi,
+  WHS_TRANSFER_IN_CATEGORY_ENUM as PHA_TRANSFER_IN_CATEGORY_ENUM,
+} from '#/api/inventory/pharmacy/transfer-in';
+import {
+  agreeTransferOutApi as agreePharmacyTransferOutApi,
+  createTransferOutApi as createPharmacyTransferOutApi,
+  getTransferOutDetailApi as getPharmacyTransferOutDetailApi,
+  rejectTransferOutApi as rejectPharmacyTransferOutApi,
+  removeTransferOutApi as removePharmacyTransferOutApi,
+  submitTransferOutApprovalApi as submitPharmacyTransferOutApprovalApi,
+  updateTransferOutApi as updatePharmacyTransferOutApi,
+  withdrawTransferOutApprovalApi as withdrawPharmacyTransferOutApprovalApi,
+  WHS_TRANSFER_OUT_CATEGORY_ENUM as PHA_TRANSFER_OUT_CATEGORY_ENUM,
+} from '#/api/inventory/pharmacy/transfer-out';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import {
+  formatInventoryLineTotal,
+  formatMoneyDisplay,
+  inventoryLineTotalNumber,
+} from '#/utils/format/money-scale';
+import {
+  inventoryPickAvailableQtyAsStockDisplay,
   inventoryPickMedicineCell,
+  inventoryPickNumberField,
   inventoryPickStringField,
 } from '#/utils/inventory/inventory-product-pick-list';
 import {
+  canConvertDisplayQtyToSplitForBands,
+  convertInboundQtyBetweenBandKinds,
+  persistDisplayQtyAsSplitForBands,
+  resolveInboundLinePersistUnitCodeForBands,
+} from '#/utils/inventory/inbound-product-unit-bands';
+import {
+  applyHydratedInventoryDetailQtyToRow,
+  applyWarehouseNonInboundProductPickUnitsToRow,
+  createInventoryQtyUnitColumn,
+  handleWarehouseNonInboundUnitBandChanged,
+  hydrateInventoryDetailLineQtyForGrid,
+  INV_DOC_HEAD_FORM_GRID_CLASS,
+  INV_DOC_HEAD_SECTION_CLASS,
+  isPresentItemId,
+  scheduleInventoryProductPickFocus,
+} from '#/utils/inventory/inventory-doc-grid-common';
+import {
+  isStockOutDocumentEditableStatus,
+  isStockOutDocumentRemovableStatus,
   buildStockOutDocActionFlags,
-  normalizeStockOutStatusSort,
   stockOutStatusLabel,
+  normalizeStockOutStatusSort,
 } from '#/utils/inventory/stock-out-doc-actions';
-import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
+import { INV_DOC_READONLY_SHELL_HINT } from '#/utils/inventory/inventory-doc-restrictions';
+import {
+  buildInventoryDocPractitionerSelectOptions,
+  INV_ITEM_TABLE_TYPE_DEVICE,
+  INV_ITEM_TABLE_TYPE_MEDICATION,
+  coercePractitionerIdForSelect,
+  normalizeInventoryItemTableTypeOptions,
+  resolveDefaultInventoryItemTableType,
+  resolveDefaultPractitionerIdForSelect,
+  resolveDocHeadProductPickLocationId,
+  resolveFirstRealLocationIdFromInitOptions,
+} from '#/utils/inventory/inventory-workbench-list';
+import {
+  buildInventoryLocationHeadFormRules,
+  clearInventoryHeadFormValidation,
+  validateInventoryHeadFormFields,
+} from '#/utils/inventory/inventory-doc-head-form-validation';
 import { useUserStore } from '@vben/stores';
 
 defineOptions({ name: 'InventoryTransferMainPane' });
 
 type TransferVariant = 'in' | 'out';
+type TransferDomain = 'department' | 'pharmacy' | 'warehouse';
 
 interface MedicinePickCell {
   id?: number | string;
@@ -87,9 +162,20 @@ interface TransferPreviewRow {
   medicinePick?: MedicinePickCell | Record<string, unknown>;
   itemTable?: string;
   itemId?: number | string;
+  inventoryItemId?: number | string;
   productName: string;
+  spec: string;
+  manufacturer: string;
   itemQuantity?: number;
   unitCode: string;
+  unitCodeDictText?: string;
+  selectedBandKind?: string;
+  __prevBandKind?: string;
+  unitList?: { label?: string; value: string; value_dictText?: string }[];
+  unitBands?: import('#/utils/inventory/inbound-product-unit-bands').InboundProductUnitBand[];
+  price: number;
+  totalPrice: string;
+  sourceStockQuantity: number;
   lotNumber: string;
   traceNo: string;
   remake: string;
@@ -97,24 +183,26 @@ interface TransferPreviewRow {
 
 interface Props {
   variant: TransferVariant;
+  domain?: TransferDomain;
   busNo?: string;
   isDraftOrder?: boolean;
   resetKey?: number;
-  sidebarFilterLocationId?: number | string;
   warehouseOptions: ApiOptionItem[];
   pharmacyOptions: ApiOptionItem[];
   practitionerOptions?: ApiOptionItem[];
+  itemTableTypeOptions?: ApiOptionItem[];
   headSectionTitle?: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  domain: 'warehouse',
   busNo: '',
   isDraftOrder: false,
   resetKey: 0,
-  sidebarFilterLocationId: undefined,
   warehouseOptions: () => [],
   pharmacyOptions: () => [],
   practitionerOptions: () => [],
+  itemTableTypeOptions: () => [],
   headSectionTitle: '调拨单信息',
 });
 
@@ -124,38 +212,202 @@ const emit = defineEmits<{
 }>();
 
 const userStore = useUserStore();
-const HEAD_ITEM_TABLE_TYPE = 'med_medication_definition';
-const SOURCE_TYPE_ENUM = 'CABINET';
-const PURPOSE_TYPE_ENUM = 'PHARMACY';
 
-const listSource = computed(() =>
-  props.variant === 'in' ? 'warehouse-transfer-in' : 'warehouse-transfer-out',
+const isPharmacyDomain = computed(() => props.domain === 'pharmacy');
+const isDepartmentDomain = computed(() => props.domain === 'department');
+const isReadOnlyShell = computed(() => props.variant === 'in');
+
+/** 选品源库位选项池（调出侧）。 */
+const productPickSourceLocationOptions = computed((): ApiOptionItem[] => {
+  if (isDepartmentDomain.value && props.variant === 'out') {
+    return props.pharmacyOptions;
+  }
+  if (isPharmacyDomain.value) return props.pharmacyOptions;
+  return props.warehouseOptions;
+});
+
+const transferCategoryEnum = computed(() => {
+  if (isDepartmentDomain.value) {
+    return DEPT_TRANSFER_OUT_CATEGORY_ENUM;
+  }
+  if (props.variant === 'in') {
+    return isPharmacyDomain.value ? PHA_TRANSFER_IN_CATEGORY_ENUM : WHS_TRANSFER_IN_CATEGORY_ENUM;
+  }
+  return isPharmacyDomain.value ? PHA_TRANSFER_OUT_CATEGORY_ENUM : WHS_TRANSFER_OUT_CATEGORY_ENUM;
+});
+
+const sourceTypeEnum = computed(() => {
+  if (isDepartmentDomain.value) return 'PHARMACY';
+  return isPharmacyDomain.value ? 'PHARMACY' : 'CABINET';
+});
+
+const purposeTypeEnum = computed(() => {
+  if (isDepartmentDomain.value) {
+    return props.variant === 'out' ? 'CABINET' : 'PHARMACY';
+  }
+  return isPharmacyDomain.value ? 'PHARMACY' : 'CABINET';
+});
+
+const listSource = computed(() => {
+  if (isDepartmentDomain.value) {
+    return props.variant === 'in' ? 'dept-transfer-in' : 'dept-transfer-out';
+  }
+  const prefix = isPharmacyDomain.value ? 'pharmacy' : 'warehouse';
+  return props.variant === 'in' ? `${prefix}-transfer-in` : `${prefix}-transfer-out`;
+});
+
+const normalizedItemTableTypeOptions = computed(() =>
+  normalizeInventoryItemTableTypeOptions(props.itemTableTypeOptions),
 );
 
-function normalizeLocationId(v?: number | string | null): number | string | undefined {
-  if (v === undefined || v === null || v === '') return undefined;
-  if (typeof v === 'number') return Number.isFinite(v) ? v : undefined;
-  const s = String(v).trim();
-  if (s === '') return undefined;
-  if (!/^\d+$/.test(s)) return s;
-  const n = Number(s);
-  return Number.isSafeInteger(n) ? n : s;
+const HEAD_ITEM_TABLE_TYPE = computed(() =>
+  resolveDefaultInventoryItemTableType(
+    normalizedItemTableTypeOptions.value,
+    isDepartmentDomain.value ? INV_ITEM_TABLE_TYPE_DEVICE : INV_ITEM_TABLE_TYPE_MEDICATION,
+  ),
+);
+
+const pinnedPractitionerOptions = ref<ApiOptionItem[]>([]);
+
+const effectivePractitionerOptions = computed(() =>
+  buildInventoryDocPractitionerSelectOptions(props.practitionerOptions, {
+    pinned: pinnedPractitionerOptions.value,
+    userInfo: userStore.userInfo as null | Record<string, unknown>,
+  }),
+);
+
+function pinPractitionerOption(id: unknown, label?: string) {
+  const v = String(id ?? '').trim();
+  if (v === '') return;
+  const lbl = String(label ?? '').trim();
+  if (effectivePractitionerOptions.value.some((o) => o.value === v)) return;
+  if (lbl !== '' && lbl !== v) {
+    pinnedPractitionerOptions.value = [{ label: lbl, value: v }];
+  }
+}
+
+const sourceLocationLabel = computed(() => {
+  if (isDepartmentDomain.value) {
+    return props.variant === 'out' ? '调出科室药房' : '源药库';
+  }
+  if (isPharmacyDomain.value) return '调出药房';
+  return '调出药库';
+});
+
+const purposeLocationLabel = computed(() => {
+  if (isDepartmentDomain.value) {
+    return props.variant === 'out' ? '调入药库' : '目的科室药房';
+  }
+  if (isPharmacyDomain.value) return '调入药房';
+  return '调入药库';
+});
+
+/** 单头调出库位：药房域/科室出库为药房，药库域为药库（同级调拨，禁止药房↔药库互调）。 */
+const sourceLocationOptions = computed(() => {
+  let base: ApiOptionItem[];
+  if (isDepartmentDomain.value) {
+    base = props.variant === 'in' ? props.warehouseOptions : props.pharmacyOptions;
+  } else if (isPharmacyDomain.value) {
+    base = props.pharmacyOptions;
+  } else {
+    base = props.warehouseOptions;
+  }
+  return filterTransferLocationOptionsExcluding(base, purposeLocationId.value);
+});
+
+/** 单头调入库位：与调出同级（药房↔药房、药库↔药库）；排除已选调出库位。 */
+const purposeLocationOptions = computed(() => {
+  let base: ApiOptionItem[];
+  if (isDepartmentDomain.value) {
+    base = props.variant === 'in' ? props.pharmacyOptions : props.warehouseOptions;
+  } else if (isPharmacyDomain.value) {
+    base = props.pharmacyOptions;
+  } else {
+    base = props.warehouseOptions;
+  }
+  return filterTransferLocationOptionsExcluding(base, sourceLocationId.value);
+});
+
+const transferSameLocationWarning = computed(() => {
+  if (isDepartmentDomain.value) {
+    return props.variant === 'out'
+      ? '调出科室药房与调入药库不能相同'
+      : '源药库与目的科室药房不能相同';
+  }
+  if (isPharmacyDomain.value) return '调出药房与调入药房不能相同';
+  return '调出药库与调入药库不能相同';
+});
+
+function isSameTransferLocationId(a?: null | number | string, b?: null | number | string): boolean {
+  if (a === undefined || a === null || b === undefined || b === null) return false;
+  const sa = String(a).trim();
+  const sb = String(b).trim();
+  return sa !== '' && sa === sb;
+}
+
+function filterTransferLocationOptionsExcluding(
+  options: ApiOptionItem[],
+  excludeId?: null | number | string,
+): ApiOptionItem[] {
+  if (excludeId === undefined || excludeId === null || String(excludeId).trim() === '') {
+    return options;
+  }
+  return options.filter((o) => !isSameTransferLocationId(o.value, excludeId));
+}
+
+function resolveDistinctLocationIdFromOptions(
+  options: ApiOptionItem[],
+  excludeId?: null | number | string,
+): number | string | undefined {
+  const filtered = filterTransferLocationOptionsExcluding(options, excludeId);
+  const id = resolveFirstRealLocationIdFromInitOptions(filtered);
+  return id === undefined ? undefined : id;
+}
+
+function transferLocationPoolOptions(): ApiOptionItem[] {
+  if (isDepartmentDomain.value) {
+    return props.variant === 'in' ? props.pharmacyOptions : props.warehouseOptions;
+  }
+  if (isPharmacyDomain.value) return props.pharmacyOptions;
+  return props.warehouseOptions;
 }
 
 const headerBusNo = ref<string | undefined>(undefined);
 const originalBusNo = ref<string | undefined>(undefined);
 const sourceLocationId = ref<number | string | undefined>(undefined);
 const purposeLocationId = ref<number | string | undefined>(undefined);
+const headFormRef = ref<FormInstance>();
+
+const headFormModel = computed(() => ({
+  sourceLocationId: sourceLocationId.value ?? '',
+  purposeLocationId: purposeLocationId.value ?? '',
+}));
+
+const headFormRules = computed(() =>
+  buildInventoryLocationHeadFormRules({
+    sourceLocationId: sourceLocationLabel.value,
+    purposeLocationId: purposeLocationLabel.value,
+  }),
+);
+
+/** 选品门禁：跟单头「调出库位」，不用 init 首项（与出库/盘点同构）。 */
+const productPickGateLocationId = computed(() =>
+  resolveDocHeadProductPickLocationId(
+    sourceLocationId.value,
+    productPickSourceLocationOptions.value,
+  ),
+);
+
 const practitionerId = ref<number | string | undefined>(undefined);
 const detailStatusEnum = ref<number | undefined>(undefined);
 const headApplyTime = ref(formatDateTime(new Date()));
 const saving = ref(false);
 
-const insuranceContractBusNo = ref<string>();
-const insuranceChargeTypeOptions = ref<ChargeType[]>([]);
-
 const isNewDraft = computed(() => !headerBusNo.value);
-const documentEditable = computed(() => isNewDraft.value || detailStatusEnum.value === 1);
+const documentEditable = computed(() => {
+  if (isReadOnlyShell.value) return false;
+  return isNewDraft.value || isStockOutDocumentEditableStatus(detailStatusEnum.value);
+});
 
 const headerStatusText = computed(() => {
   if (isNewDraft.value) return '编辑中';
@@ -176,25 +428,53 @@ const docActionFlags = computed(() => {
   };
 });
 
-async function loadInsuranceContractBusNo() {
-  try {
-    const chargeTypes = await getChargeTypeListApi();
-    const eligible = filterInsuranceChargeTypes(chargeTypes);
-    insuranceChargeTypeOptions.value = eligible;
-    insuranceContractBusNo.value = resolveDefaultInsuranceBusNo(
-      eligible,
-      insuranceContractBusNo.value,
-    );
-  } catch {
-    insuranceContractBusNo.value = undefined;
-    insuranceChargeTypeOptions.value = [];
-  }
-}
-
 function resolveOccurrenceTimeForApi(): string {
   const t = String(headApplyTime.value ?? '').trim();
   if (t === '') return formatDateTime(new Date());
   return t.includes('T') ? t.replace('T', ' ') : t;
+}
+
+function formatTransferDetailTotalAmount(total: unknown): string {
+  if (total === undefined || total === null || total === '') return '';
+  return formatMoneyDisplay(total);
+}
+
+/** 编辑态：按数量 × 单价刷新金额（详情 load 不重算 totalPrice）。 */
+function recalcTransferLineTotal(row: TransferPreviewRow) {
+  const qty = Number(row.itemQuantity);
+  const unit = Number(row.price);
+  row.totalPrice =
+    Number.isFinite(qty) && Number.isFinite(unit) ? formatInventoryLineTotal(qty, unit) : '';
+}
+
+function transferDetailLineProductName(
+  ln: TransferInDetailLineDto | TransferOutDetailLineDto,
+  catalog?: { merchandiseName?: string } | null,
+): string {
+  const top = String(ln.productName ?? '').trim();
+  if (top) return top;
+  return String(catalog?.merchandiseName ?? '').trim();
+}
+
+function transferDetailLineSpecification(
+  ln: TransferInDetailLineDto | TransferOutDetailLineDto,
+  catalog?: { totalVolume?: string } | null,
+): string {
+  const top = String(ln.specification ?? '').trim();
+  if (top) return top;
+  return String(catalog?.totalVolume ?? '').trim();
+}
+
+/** 选品回填源库存：与下拉「库存数量」列同源。 */
+function resolveTransferSourceStockQtyFromPick(pick: Record<string, unknown>): number {
+  if (
+    Object.prototype.hasOwnProperty.call(pick, 'stockAvailableQty') &&
+    pick.stockAvailableQty !== undefined &&
+    pick.stockAvailableQty !== null
+  ) {
+    return inventoryPickNumberField(pick, 'stockAvailableQty');
+  }
+  return inventoryPickAvailableQtyAsStockDisplay(pick);
 }
 
 function syncRowFromProductPick(pick: Record<string, unknown>, row: TransferPreviewRow) {
@@ -205,13 +485,44 @@ function syncRowFromProductPick(pick: Record<string, unknown>, row: TransferPrev
   row.itemId =
     defId === undefined || defId === null || String(defId).trim() === ''
       ? undefined
-      : (defId as number | string);
+      : String(defId).trim();
+  const invId = pick.inventoryItemId;
+  row.inventoryItemId =
+    invId === undefined || invId === null || String(invId).trim() === ''
+      ? undefined
+      : String(invId).trim();
   row.productName =
     inventoryPickStringField(pick, 'merchandiseName') ||
     inventoryPickStringField(pick, 'productName');
-  row.unitCode =
-    inventoryPickStringField(pick, 'minUnitCode') || inventoryPickStringField(pick, 'unitCode');
+  row.spec = inventoryPickStringField(pick, 'specification');
+  row.manufacturer = inventoryPickStringField(pick, 'manufacturer');
   row.lotNumber = inventoryPickStringField(pick, 'lotNumber');
+  applyWarehouseNonInboundProductPickUnitsToRow(pick, row);
+  row.sourceStockQuantity = resolveTransferSourceStockQtyFromPick(pick);
+  recalcTransferLineTotal(row);
+}
+
+function handleTransferUnitBandChanged(row: TransferPreviewRow) {
+  const newK = String(row.selectedBandKind ?? '')
+    .trim()
+    .toUpperCase();
+  const oldK = String(row.__prevBandKind ?? '')
+    .trim()
+    .toUpperCase();
+  const bands = row.unitBands ?? [];
+  if (oldK && newK && oldK !== newK && oldK !== 'LEGACY' && newK !== 'LEGACY' && bands.length > 0) {
+    const nSource = convertInboundQtyBetweenBandKinds(row.sourceStockQuantity, oldK, newK, bands);
+    if (nSource !== undefined) {
+      row.sourceStockQuantity = nSource;
+    }
+  }
+  handleWarehouseNonInboundUnitBandChanged(row, {
+    getQty: () => Number(row.itemQuantity),
+    setQty: (qty) => {
+      row.itemQuantity = qty;
+    },
+    onAfterChanged: () => recalcTransferLineTotal(row),
+  });
 }
 
 function createEmptyRow(): TransferPreviewRow {
@@ -220,9 +531,18 @@ function createEmptyRow(): TransferPreviewRow {
     medicinePick: undefined,
     itemTable: undefined,
     itemId: undefined,
+    inventoryItemId: undefined,
     productName: '',
+    spec: '',
+    manufacturer: '',
     itemQuantity: undefined,
     unitCode: '',
+    selectedBandKind: 'LEGACY',
+    __prevBandKind: 'LEGACY',
+    unitList: [{ value: 'LEGACY', label: '单位' }],
+    price: 0,
+    totalPrice: '',
+    sourceStockQuantity: 0,
     lotNumber: '',
     traceNo: '',
     remake: '',
@@ -234,28 +554,50 @@ function mapDetailLineToGrid(
   rowIdx: number,
 ): TransferPreviewRow {
   const itemIdRaw = ln.itemId;
+  const catalog = ln.productCatalog ?? undefined;
   const idStr = ln.id !== undefined && ln.id !== null ? `ln-${String(ln.id)}` : `ln-x-${rowIdx}`;
-  const name = String(ln.productName ?? '').trim();
-  return {
+  const name = transferDetailLineProductName(ln, catalog);
+  const unitCodeStr = String(ln.unitCode ?? '');
+  const rawQty = ln.itemQuantity === undefined ? undefined : Number(ln.itemQuantity);
+  const unitCodeDictText = String(ln.unitCodeDictText ?? ln.unitCode ?? '');
+
+  const row: TransferPreviewRow = {
     id: idStr,
     medicinePick: name ? { id: itemIdRaw as number | string | undefined, name } : undefined,
     itemTable: ln.itemTable,
     itemId: itemIdRaw,
-    productName: name,
-    itemQuantity: ln.itemQuantity === undefined ? undefined : Number(ln.itemQuantity),
-    unitCode: String(ln.unitCode ?? ''),
+    spec: transferDetailLineSpecification(ln, catalog),
+    manufacturer: String(ln.manufacturer ?? '').trim(),
+    itemQuantity: rawQty,
+    unitCode: unitCodeStr,
+    unitCodeDictText,
+    selectedBandKind: 'LEGACY',
+    unitList: [{ value: 'LEGACY', label: unitCodeStr.trim() === '' ? '单位' : unitCodeStr }],
+    __prevBandKind: 'LEGACY',
+    price: ln.price === undefined || ln.price === null ? 0 : Number(ln.price),
+    totalPrice: formatTransferDetailTotalAmount(ln.totalPrice),
+    sourceStockQuantity: 0,
     lotNumber: String(ln.lotNumber ?? ''),
     traceNo: String(ln.traceNo ?? ''),
     remake: String(ln.remake ?? ''),
   };
-}
 
-function isPresentItemId(v: unknown): boolean {
-  if (v === undefined || v === null) return false;
-  if (typeof v === 'string') return v.trim() !== '';
-  if (typeof v === 'number') return Number.isFinite(v);
-  if (typeof v === 'bigint') return true;
-  return String(v).trim() !== '';
+  const hydrated = hydrateInventoryDetailLineQtyForGrid({
+    itemQuantity: rawQty,
+    unitCode: unitCodeStr,
+    unitCodeDictText,
+    productCatalog: catalog,
+  });
+  applyHydratedInventoryDetailQtyToRow(row, hydrated);
+  if (!row.unitBands?.length && ln.unitCodeDictText) {
+    row.unitList = [
+      {
+        value: 'LEGACY',
+        label: String(ln.unitCodeDictText).trim() || unitCodeStr || '单位',
+      },
+    ];
+  }
+  return row;
 }
 
 function isTransferRowComplete(row: TransferPreviewRow): boolean {
@@ -265,13 +607,9 @@ function isTransferRowComplete(row: TransferPreviewRow): boolean {
   return !!String(row.unitCode ?? '').trim();
 }
 
-let transferGridEdit!: ReturnType<typeof useInventoryDocGridEdit<TransferPreviewRow>>;
-
+/** 选品后进入整行表单并聚焦数量 */
 function handleTransferProductPick(row: TransferPreviewRow) {
-  void nextTick(async () => {
-    await nextTick();
-    await transferGridEdit.onProductSelected(row);
-  });
+  scheduleInventoryProductPickFocus(transferGridEdit, row);
 }
 
 const columns: VxeGridPropTypes.Column[] = [
@@ -287,8 +625,8 @@ const columns: VxeGridPropTypes.Column[] = [
       props: {
         listSource: listSource,
         query: async () => ({
-          productTableName: HEAD_ITEM_TABLE_TYPE,
-          sourceLocationId: sourceLocationId.value,
+          productTableName: HEAD_ITEM_TABLE_TYPE.value,
+          sourceLocationId: productPickGateLocationId.value,
         }),
         onSelected: (product: Record<string, unknown>, row: TransferPreviewRow) => {
           syncRowFromProductPick(product, row);
@@ -298,17 +636,53 @@ const columns: VxeGridPropTypes.Column[] = [
     },
     showOverflow: true,
   },
+  { field: 'spec', title: '规格', width: 110, showOverflow: true },
+  { field: 'manufacturer', title: '厂家', minWidth: 100, showOverflow: true },
   {
-    field: 'itemQuantity',
-    title: '数量',
+    field: '_sourceStockQtyUnit',
+    title: '源库存数量',
     width: 120,
     align: 'center',
-    editRender: {
-      name: 'InventoryPersistElInputNumber',
-      props: { min: 0, controlsPosition: 'right' },
+    headerAlign: 'center',
+    cellRender: {
+      name: 'InventoryQtyUnitReadonlyCell',
+      props: {
+        qtyField: 'sourceStockQuantity',
+        unitField: 'selectedBandKind',
+      },
     },
   },
-  { field: 'unitCode', title: '单位', width: 88, showOverflow: true },
+  createInventoryQtyUnitColumn({
+    title: '调拨数量',
+    onUnitChange: (row) => handleTransferUnitBandChanged(row as TransferPreviewRow),
+  }),
+  {
+    field: 'price',
+    title: '单价',
+    width: 110,
+    align: 'right',
+    headerAlign: 'center',
+    cellRender: {
+      name: 'InventoryUnitPriceCell',
+      props: {
+        priceField: 'price',
+        unitField: 'selectedBandKind',
+      },
+    },
+  },
+  {
+    field: 'totalPrice',
+    title: '金额',
+    width: 102,
+    align: 'right',
+    headerAlign: 'center',
+    cellRender: {
+      name: 'InventoryTotalAmountCell',
+      props: {
+        amountField: 'totalPrice',
+      },
+    },
+  },
   {
     field: 'lotNumber',
     title: '批号',
@@ -320,8 +694,7 @@ const columns: VxeGridPropTypes.Column[] = [
     field: 'traceNo',
     title: '追溯码',
     minWidth: 140,
-    editRender: { name: 'InventoryPersistElInput', props: { maxlength: 512, clearable: true } },
-    showOverflow: true,
+    editRender: { name: 'InventoryTraceNoCell', props: { maxlength: 512, clearable: true } },
   },
   {
     field: 'remake',
@@ -340,29 +713,8 @@ const columns: VxeGridPropTypes.Column[] = [
   },
 ];
 
-const gridOptions: VxeGridProps<TransferPreviewRow> = reactive({
-  autoResize: true,
-  height: '100%',
-  border: true,
-  stripe: true,
-  showOverflow: true,
-  size: 'medium',
-  keepSource: true,
-  columnConfig: { resizable: true },
-  data: [],
-  editConfig: {
-    enabled: true,
-    trigger: 'click',
-    mode: 'row',
-    autoClear: false,
-    beforeEditMethod: () => documentEditable.value,
-  },
-  columns,
-  pagerConfig: { enabled: false },
-});
-
 const TRANSFER_EDITABLE_COLUMN_FIELDS = new Set([
-  'itemQuantity',
+  '_qtyUnit',
   'lotNumber',
   'medicinePick',
   'remake',
@@ -371,7 +723,7 @@ const TRANSFER_EDITABLE_COLUMN_FIELDS = new Set([
 
 const TRANSFER_EDIT_FIELD_ORDER = [
   'medicinePick',
-  'itemQuantity',
+  '_qtyUnit',
   'lotNumber',
   'traceNo',
   'remake',
@@ -380,90 +732,64 @@ const TRANSFER_EDIT_FIELD_ORDER = [
 type TransferEditField = (typeof TRANSFER_EDIT_FIELD_ORDER)[number];
 
 const TRANSFER_VERTICAL_NAV_FIELDS = new Set<TransferEditField>([
-  'itemQuantity',
+  '_qtyUnit',
   'lotNumber',
   'remake',
   'traceNo',
 ]);
 
-const transferGridKeyboardRef = ref<HTMLElement | null>(null);
-
-const [Grid, gridApi] = useVbenVxeGrid<TransferPreviewRow>({
-  gridOptions,
-  gridEvents: {
-    cellClick: (params: { column?: { field?: string; type?: string }; row: TransferPreviewRow }) =>
-      transferGridEdit.onCellClick(params),
-    editClosed(params: { row: TransferPreviewRow }) {
-      transferGridEdit.syncRowFormMode(params.row);
-    },
-  },
-  class: 'min-h-0 flex-1 !rounded-none !bg-transparent shadow-none',
-  gridClass: '!p-0',
-});
-
-transferGridEdit = useInventoryDocGridEdit<TransferPreviewRow>({
-  getGridApi: () => gridApi ?? null,
-  gridWrapRef: transferGridKeyboardRef,
+const {
+  Grid,
+  gridApi,
+  bindGridWrap,
+  gridEdit: transferGridEdit,
+  collectGridRows,
+  patchGridEditConfig: patchTransferGridEditConfig,
+} = useInvDocDetailGrid<TransferPreviewRow>({
+  columns,
   documentEditable: () => documentEditable.value,
-  collectRows: collectGridRows,
+  beforeEditMethod: () => documentEditable.value,
+  onEditClosed: (row) => recalcTransferLineTotal(row),
   config: {
     rowKey: (row) => row.id,
     productField: 'medicinePick',
     editFieldOrder: TRANSFER_EDIT_FIELD_ORDER,
     editableFields: TRANSFER_EDITABLE_COLUMN_FIELDS,
     verticalNavFields: TRANSFER_VERTICAL_NAV_FIELDS,
-    firstFillFieldAfterPick: 'itemQuantity',
+    firstFillFieldAfterPick: '_qtyUnit',
     hasProduct: (row) => isPresentItemId(row.itemId),
     isRowComplete: isTransferRowComplete,
   },
 });
 
-function patchTransferGridEditConfig() {
-  const patched = transferGridEdit.patchGridOptions({
-    ...(gridOptions as Record<string, unknown>),
-    editConfig: {
-      ...(gridOptions.editConfig as Record<string, unknown>),
-      enabled: documentEditable.value,
-    },
-  });
-  Object.assign(gridOptions, patched);
-}
+const { addItem: addTransferRow, deleteItem } = useInvDocGridRowOps({
+  documentEditable: () => documentEditable.value,
+  getGridApi: () => gridApi ?? null,
+  gridEdit: transferGridEdit,
+  createEmptyRow: createEmptyRow,
+  hasProduct: (row) => isPresentItemId(row.itemId),
+});
 
-watch(
-  () => documentEditable.value,
-  (editable) => {
-    patchTransferGridEditConfig();
-    void nextTick(() => {
-      if (!editable) {
-        transferGridEdit.resetFormMode();
-        transferGridEdit.clearGridEdit();
-      }
-    });
-  },
-  { immediate: true },
-);
+const traceScanBridgeRef = ref<InstanceType<typeof InvDocTraceScanBridge> | null>(null);
 
-function collectGridRows(): TransferPreviewRow[] {
-  const g = gridApi?.grid as null | { getFullData?: () => TransferPreviewRow[] };
-  return g?.getFullData?.() ?? [];
+/** 打开批量追溯码扫码弹窗 */
+function handleOpenTraceScan(): void {
+  traceScanBridgeRef.value?.open(collectGridRows());
 }
 
 function resetDetailForCreate() {
   headerBusNo.value = undefined;
   originalBusNo.value = undefined;
   detailStatusEnum.value = undefined;
-  const filterLoc = normalizeLocationId(props.sidebarFilterLocationId);
-  if (props.variant === 'in') {
-    purposeLocationId.value = filterLoc ?? props.pharmacyOptions[0]?.value;
-    sourceLocationId.value = props.warehouseOptions[0]?.value;
-  } else {
-    sourceLocationId.value = filterLoc ?? props.warehouseOptions[0]?.value;
-    purposeLocationId.value = props.pharmacyOptions[0]?.value;
-  }
-  practitionerId.value =
-    resolveLoginPractitionerIdForRequest(userStore.userInfo as null | Record<string, unknown>) ??
-    props.practitionerOptions[0]?.value;
+  pinnedPractitionerOptions.value = [];
+  sourceLocationId.value = undefined;
+  purposeLocationId.value = undefined;
+  practitionerId.value = resolveDefaultPractitionerIdForSelect(
+    effectivePractitionerOptions.value,
+    userStore.userInfo as null | Record<string, unknown>,
+  );
   headApplyTime.value = formatDateTime(new Date());
+  clearInventoryHeadFormValidation(headFormRef.value);
   transferGridEdit.resetFormMode();
   void nextTick(() => {
     gridApi?.grid?.loadData([]);
@@ -471,14 +797,39 @@ function resetDetailForCreate() {
   });
 }
 
-async function loadDetail(busNo: string) {
+async function addItem() {
+  if (!documentEditable.value) return;
+  if (
+    !(await validateInventoryHeadFormFields(headFormRef.value, [
+      'sourceLocationId',
+      'purposeLocationId',
+    ]))
+  ) {
+    return;
+  }
+  await addTransferRow();
+}
+
+async function loadDetail(busNo: string, loadGen?: number) {
   transferGridEdit.resetFormMode();
   transferGridEdit.clearGridEdit();
   try {
-    const res =
-      props.variant === 'in'
-        ? await getTransferInDetailApi({ busNo })
+    let res;
+    if (isDepartmentDomain.value) {
+      res =
+        props.variant === 'in'
+          ? await getDeptTransferInDetailApi({ busNo })
+          : await getDeptTransferOutDetailApi({ busNo });
+    } else if (props.variant === 'in') {
+      res = isPharmacyDomain.value
+        ? await getPharmacyTransferInDetailApi({ busNo })
+        : await getTransferInDetailApi({ busNo });
+    } else {
+      res = isPharmacyDomain.value
+        ? await getPharmacyTransferOutDetailApi({ busNo })
         : await getTransferOutDetailApi({ busNo });
+    }
+    if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
     const data = res.data;
     if (!data?.busNo) {
       ElMessage.warning('未获取到调拨单详情');
@@ -489,15 +840,23 @@ async function loadDetail(busNo: string) {
     detailStatusEnum.value = normalizeStockOutStatusSort(data.statusEnum);
     sourceLocationId.value = data.sourceLocationId ?? undefined;
     purposeLocationId.value = data.purposeLocationId ?? undefined;
-    practitionerId.value = data.practitionerId ?? undefined;
+    pinnedPractitionerOptions.value = [];
+    pinPractitionerOption(data.practitionerId);
+    practitionerId.value = coercePractitionerIdForSelect(
+      data.practitionerId,
+      effectivePractitionerOptions.value,
+    );
     headApplyTime.value = formatDateTime(new Date());
     const gridRows = (data.lines ?? []).map((ln, i) => mapDetailLineToGrid(ln, i));
     void nextTick(() => {
+      if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
       gridApi?.grid?.loadData(gridRows);
       patchTransferGridEditConfig();
     });
   } catch {
+    if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
     void nextTick(() => {
+      if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
       gridApi?.grid?.loadData([]);
       patchTransferGridEditConfig();
     });
@@ -505,24 +864,61 @@ async function loadDetail(busNo: string) {
 }
 
 function buildLinesPayload(rows: TransferPreviewRow[]): TransferInLineDto[] | TransferOutLineDto[] {
-  return rows.map((r) => ({
-    itemTable: r.itemTable,
-    itemId:
-      typeof r.itemId === 'string' && /^\d+$/.test(r.itemId)
-        ? Number(r.itemId)
-        : (r.itemId as number | undefined),
-    itemQuantity: r.itemQuantity,
-    unitCode: String(r.unitCode ?? '').trim() || undefined,
-    lotNumber: String(r.lotNumber ?? '').trim() || undefined,
-    traceNo: String(r.traceNo ?? '').trim() || undefined,
-    remake: String(r.remake ?? '').trim() || undefined,
-    occurrenceTime: resolveOccurrenceTimeForApi(),
-  }));
+  return rows.map((r) => {
+    recalcTransferLineTotal(r);
+    const qty = Number(r.itemQuantity);
+    const unit = Number(r.price);
+    const tpRaw = String(r.totalPrice ?? '').trim();
+    const tpNum = Number(tpRaw);
+    const totalPrice =
+      Number.isFinite(tpNum) && tpRaw !== ''
+        ? tpNum
+        : Number.isFinite(qty) && Number.isFinite(unit)
+          ? inventoryLineTotalNumber(qty, unit)
+          : undefined;
+    const persisted = persistDisplayQtyAsSplitForBands({
+      bands: r.unitBands ?? [],
+      displayQty: r.itemQuantity,
+      legacyUnitCode: r.unitCode,
+      selectedBandKind: r.selectedBandKind,
+    });
+    const unitCode =
+      resolveInboundLinePersistUnitCodeForBands({
+        bands: r.unitBands ?? [],
+        legacyUnitCode: r.unitCode,
+        selectedBandKind: r.selectedBandKind,
+      }) || String(r.unitCode ?? '').trim();
+    return {
+      itemTable: r.itemTable,
+      itemId: isPresentItemId(r.itemId) ? String(r.itemId) : undefined,
+      inventoryItemId: isPresentItemId(r.inventoryItemId) ? String(r.inventoryItemId) : undefined,
+      itemQuantity: persisted.itemQuantity,
+      unitCode: unitCode || undefined,
+      lotNumber: String(r.lotNumber ?? '').trim() || undefined,
+      traceNo: String(r.traceNo ?? '').trim() || undefined,
+      price: Number.isFinite(unit) ? unit : undefined,
+      totalPrice,
+      remake: String(r.remake ?? '').trim() || undefined,
+      occurrenceTime: resolveOccurrenceTimeForApi(),
+    };
+  });
 }
 
 function validateBeforeSave(rows: TransferPreviewRow[]): boolean {
   if (!sourceLocationId.value || !purposeLocationId.value) {
-    ElMessage.warning('请选择调出药库与调入药房');
+    ElMessage.warning(
+      isDepartmentDomain.value
+        ? props.variant === 'out'
+          ? '请选择调出科室药房与调入药库'
+          : '请选择源药库与目的科室药房'
+        : isPharmacyDomain.value
+          ? '请选择调出药房与调入药房'
+          : '请选择调出药库与调入药库',
+    );
+    return false;
+  }
+  if (isSameTransferLocationId(sourceLocationId.value, purposeLocationId.value)) {
+    ElMessage.warning(transferSameLocationWarning.value);
     return false;
   }
   if (!practitionerId.value) {
@@ -534,6 +930,7 @@ function validateBeforeSave(rows: TransferPreviewRow[]): boolean {
     return false;
   }
   for (const [i, r] of rows.entries()) {
+    recalcTransferLineTotal(r);
     if (!r.itemTable || !r.itemId) {
       ElMessage.warning(`第 ${i + 1} 行请选择项目`);
       return false;
@@ -545,6 +942,10 @@ function validateBeforeSave(rows: TransferPreviewRow[]): boolean {
     }
     if (!String(r.unitCode ?? '').trim()) {
       ElMessage.warning(`第 ${i + 1} 行单位不能为空`);
+      return false;
+    }
+    if (!canConvertDisplayQtyToSplitForBands(r.unitBands ?? [], qty, r.selectedBandKind)) {
+      ElMessage.warning(`第 ${i + 1} 行无法将数量换算为拆零单位，请检查计量带`);
       return false;
     }
   }
@@ -565,18 +966,25 @@ async function persistTransfer(): Promise<string | undefined> {
     const common = {
       sourceLocationId: sourceLocationId.value as number | string,
       purposeLocationId: purposeLocationId.value as number | string,
-      sourceTypeEnum: SOURCE_TYPE_ENUM,
-      purposeTypeEnum: PURPOSE_TYPE_ENUM,
-      categoryEnum:
-        props.variant === 'in' ? WHS_TRANSFER_IN_CATEGORY_ENUM : WHS_TRANSFER_OUT_CATEGORY_ENUM,
+      sourceTypeEnum: sourceTypeEnum.value,
+      purposeTypeEnum: purposeTypeEnum.value,
+      categoryEnum: transferCategoryEnum.value,
       practitionerId: practitionerId.value as number | string,
       originalBusNo: originalBusNo.value?.trim() || undefined,
       lines,
     };
 
     if (headerBusNo.value) {
-      if (props.variant === 'in') {
-        await updateTransferInApi({ busNo: headerBusNo.value, ...common });
+      if (isDepartmentDomain.value) {
+        await updateDeptTransferOutApi({ busNo: headerBusNo.value, ...common });
+      } else if (props.variant === 'in') {
+        if (isPharmacyDomain.value) {
+          await updatePharmacyTransferInApi({ busNo: headerBusNo.value, ...common });
+        } else {
+          await updateTransferInApi({ busNo: headerBusNo.value, ...common });
+        }
+      } else if (isPharmacyDomain.value) {
+        await updatePharmacyTransferOutApi({ busNo: headerBusNo.value, ...common });
       } else {
         await updateTransferOutApi({ busNo: headerBusNo.value, ...common });
       }
@@ -586,10 +994,18 @@ async function persistTransfer(): Promise<string | undefined> {
       return headerBusNo.value;
     }
 
-    const res =
-      props.variant === 'in'
-        ? await createTransferInApi(common)
+    let res;
+    if (isDepartmentDomain.value) {
+      res = await createDeptTransferOutApi(common);
+    } else if (props.variant === 'in') {
+      res = isPharmacyDomain.value
+        ? await createPharmacyTransferInApi(common)
+        : await createTransferInApi(common);
+    } else {
+      res = isPharmacyDomain.value
+        ? await createPharmacyTransferOutApi(common)
         : await createTransferOutApi(common);
+    }
     const no = res.data?.busNo;
     ElMessage.success('新建成功');
     if (no) {
@@ -628,8 +1044,8 @@ async function handleRemoveDoc() {
     return;
   }
   const no = headerBusNo.value;
-  if (!no || detailStatusEnum.value !== 1) {
-    ElMessage.warning('仅待审核单据可删除');
+  if (!no || !isStockOutDocumentRemovableStatus(detailStatusEnum.value)) {
+    ElMessage.warning('仅待审核、驳回、已撤回单据可删除');
     return;
   }
   try {
@@ -638,8 +1054,16 @@ async function handleRemoveDoc() {
     return;
   }
   try {
-    if (props.variant === 'in') {
-      await removeTransferInApi({ busNo: no });
+    if (isDepartmentDomain.value) {
+      await removeDeptTransferOutApi({ busNo: no });
+    } else if (props.variant === 'in') {
+      if (isPharmacyDomain.value) {
+        await removePharmacyTransferInApi({ busNo: no });
+      } else {
+        await removeTransferInApi({ busNo: no });
+      }
+    } else if (isPharmacyDomain.value) {
+      await removePharmacyTransferOutApi({ busNo: no });
     } else {
       await removeTransferOutApi({ busNo: no });
     }
@@ -655,10 +1079,15 @@ async function handleSubmitApproval() {
   const no = headerBusNo.value;
   if (!no) return;
   try {
-    const res =
-      props.variant === 'in'
-        ? await submitTransferInApprovalApi({ busNo: no })
-        : await submitTransferOutApprovalApi({ busNo: no });
+    const res = isDepartmentDomain.value
+      ? await submitDeptTransferOutApprovalApi({ busNo: no })
+      : props.variant === 'in'
+        ? isPharmacyDomain.value
+          ? await submitPharmacyTransferInApprovalApi({ busNo: no })
+          : await submitTransferInApprovalApi({ busNo: no })
+        : isPharmacyDomain.value
+          ? await submitPharmacyTransferOutApprovalApi({ busNo: no })
+          : await submitTransferOutApprovalApi({ busNo: no });
     if (res.data?.statusEnum !== undefined && res.data.statusEnum !== null) {
       detailStatusEnum.value = normalizeStockOutStatusSort(res.data.statusEnum);
     }
@@ -674,10 +1103,15 @@ async function handleWithdraw() {
   const no = headerBusNo.value;
   if (!no) return;
   try {
-    const res =
-      props.variant === 'in'
-        ? await withdrawTransferInApprovalApi({ busNo: no })
-        : await withdrawTransferOutApprovalApi({ busNo: no });
+    const res = isDepartmentDomain.value
+      ? await withdrawDeptTransferOutApprovalApi({ busNo: no })
+      : props.variant === 'in'
+        ? isPharmacyDomain.value
+          ? await withdrawPharmacyTransferInApprovalApi({ busNo: no })
+          : await withdrawTransferInApprovalApi({ busNo: no })
+        : isPharmacyDomain.value
+          ? await withdrawPharmacyTransferOutApprovalApi({ busNo: no })
+          : await withdrawTransferOutApprovalApi({ busNo: no });
     if (res.data?.statusEnum !== undefined && res.data.statusEnum !== null) {
       detailStatusEnum.value = normalizeStockOutStatusSort(res.data.statusEnum);
     }
@@ -692,14 +1126,22 @@ async function handleWithdraw() {
 async function handleApprove() {
   const no = headerBusNo.value;
   if (!no) return;
-  if (!insuranceContractBusNo.value?.trim()) {
-    ElMessage.warning('请选择医保契约');
-    return;
-  }
   try {
-    const body = { busNo: no, contractBusNo: insuranceContractBusNo.value };
-    if (props.variant === 'in') {
-      await agreeTransferInApi(body);
+    const body = { busNo: no };
+    if (isDepartmentDomain.value) {
+      if (props.variant === 'in') {
+        ElMessage.warning('调入壳单为只读台账，不可审批');
+        return;
+      }
+      await agreeDeptTransferOutApi(body);
+    } else if (props.variant === 'in') {
+      if (isPharmacyDomain.value) {
+        await agreePharmacyTransferInApi(body);
+      } else {
+        await agreeTransferInApi(body);
+      }
+    } else if (isPharmacyDomain.value) {
+      await agreePharmacyTransferOutApi(body);
     } else {
       await agreeTransferOutApi(body);
     }
@@ -722,8 +1164,16 @@ async function handleReject() {
       inputErrorMessage: '原因不能为空',
     });
     const body = { busNo: no, rejectReason: value };
-    if (props.variant === 'in') {
-      await rejectTransferInApi(body);
+    if (isDepartmentDomain.value) {
+      await rejectDeptTransferOutApi(body);
+    } else if (props.variant === 'in') {
+      if (isPharmacyDomain.value) {
+        await rejectPharmacyTransferInApi(body);
+      } else {
+        await rejectTransferInApi(body);
+      }
+    } else if (isPharmacyDomain.value) {
+      await rejectPharmacyTransferOutApi(body);
     } else {
       await rejectTransferOutApi(body);
     }
@@ -735,40 +1185,60 @@ async function handleReject() {
   }
 }
 
-async function addItem() {
-  if (!documentEditable.value) return;
-  const $grid = gridApi?.grid;
-  if (!$grid) return;
-  const record = createEmptyRow();
-  const { row } = await $grid.insertAt(record, null);
-  await $grid.$nextTick();
-  if (row) {
-    await $grid.scrollToRow(row);
-    await transferGridEdit.enterRowFormMode(row as TransferPreviewRow, 'medicinePick');
-  }
+interface TransferDraftSnap {
+  sourceLocationId?: number | string;
+  purposeLocationId?: number | string;
+  practitionerId?: number | string;
+  originalBusNo?: string;
+  headApplyTime: string;
+  rows: TransferPreviewRow[];
 }
 
-async function deleteItem(row: 'select' | TransferPreviewRow) {
-  if (!documentEditable.value) return;
-  const $grid = gridApi?.grid;
-  if (!$grid) return;
-  const checked = $grid.getCheckboxRecords() as TransferPreviewRow[];
-  if (row === 'select' && checked.length === 0) return;
-  await $grid.remove(row === 'select' ? checked : row);
-}
+const parentSync = useInvDocParentSyncSession<TransferDraftSnap>();
 
+/** 侧栏切单：缓存/恢复本地草稿，避免已落库明细污染新建单 */
 async function syncFromParentContext() {
-  if (props.isDraftOrder) {
-    resetDetailForCreate();
-    return;
-  }
-  const bn = String(props.busNo ?? '').trim();
-  if (bn) {
-    await loadDetail(bn);
-  } else {
-    resetDetailForCreate();
-  }
+  await parentSync.syncFromParentContext(
+    { isDraftOrder: Boolean(props.isDraftOrder), parentBusNo: props.busNo },
+    {
+      getLocalPersistedBusNo: () => headerBusNo.value,
+      captureDraft: () => ({
+        sourceLocationId: sourceLocationId.value,
+        purposeLocationId: purposeLocationId.value,
+        practitionerId: practitionerId.value,
+        originalBusNo: originalBusNo.value,
+        headApplyTime: headApplyTime.value,
+        rows: collectGridRows().map((r) => ({ ...r })),
+      }),
+      restoreDraft: async (snap) => {
+        headerBusNo.value = undefined;
+        detailStatusEnum.value = undefined;
+        sourceLocationId.value = snap.sourceLocationId;
+        purposeLocationId.value = snap.purposeLocationId;
+        practitionerId.value = snap.practitionerId;
+        originalBusNo.value = snap.originalBusNo;
+        headApplyTime.value = snap.headApplyTime;
+        transferGridEdit.resetFormMode();
+        await nextTick();
+        gridApi?.grid?.loadData(snap.rows);
+        patchTransferGridEditConfig();
+      },
+      resetForCreate: () => {
+        resetDetailForCreate();
+      },
+      loadByBusNo: async (busNo, gen) => {
+        await loadDetail(busNo, gen);
+      },
+    },
+  );
 }
+
+watch(
+  () => props.resetKey,
+  () => {
+    parentSync.discardDraftSession();
+  },
+);
 
 watch(
   () => [props.busNo, props.isDraftOrder, props.resetKey] as const,
@@ -778,8 +1248,19 @@ watch(
   { immediate: true },
 );
 
-onMounted(() => {
-  void loadInsuranceContractBusNo();
+watch(sourceLocationId, (src) => {
+  if (!documentEditable.value) return;
+  if (!isSameTransferLocationId(src, purposeLocationId.value)) return;
+  const next = resolveDistinctLocationIdFromOptions(transferLocationPoolOptions(), src);
+  purposeLocationId.value = next;
+  ElMessage.warning(transferSameLocationWarning.value);
+});
+
+watch(purposeLocationId, (purpose, oldPurpose) => {
+  if (!documentEditable.value) return;
+  if (!isSameTransferLocationId(purpose, sourceLocationId.value)) return;
+  purposeLocationId.value = oldPurpose;
+  ElMessage.warning(transferSameLocationWarning.value);
 });
 </script>
 
@@ -787,40 +1268,17 @@ onMounted(() => {
   <div class="transfer-main-pane flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     <InvMainShell>
       <template #actionBar>
-        <div class="flex w-full flex-col gap-2">
-          <div
-            v-if="insuranceChargeTypeOptions.length > 0"
-            class="flex flex-wrap items-center gap-2"
-          >
-            <span class="text-xs text-[var(--el-text-color-secondary)]">医保契约</span>
-            <ElSelect
-              v-model="insuranceContractBusNo"
-              class="!w-72"
-              placeholder="请选择医保契约"
-              filterable
-              clearable
-              :disabled="docActionFlags.approveDisabled"
-            >
-              <ElOption
-                v-for="item in insuranceChargeTypeOptions"
-                :key="item.busNo"
-                :label="item.busNo ? `${item.label}（${item.busNo}）` : item.label"
-                :value="item.busNo"
-              />
-            </ElSelect>
-          </div>
-          <div class="flex w-full flex-wrap items-center justify-end gap-2">
-            <InvDocActions
-              v-bind="docActionFlags"
-              @approve="handleApprove"
-              @reject="handleReject"
-              @remove-doc="handleRemoveDoc"
-              @save="handleSaveDoc"
-              @save-and-submit="handleSaveAndSubmitDoc"
-              @submit-approval="handleSubmitApproval"
-              @withdraw="handleWithdraw"
-            />
-          </div>
+        <div v-if="!isReadOnlyShell" class="flex w-full flex-wrap items-center justify-end gap-2">
+          <InvDocActions
+            v-bind="docActionFlags"
+            @approve="handleApprove"
+            @reject="handleReject"
+            @remove-doc="handleRemoveDoc"
+            @save="handleSaveDoc"
+            @save-and-submit="handleSaveAndSubmitDoc"
+            @submit-approval="handleSubmitApproval"
+            @withdraw="handleWithdraw"
+          />
         </div>
       </template>
 
@@ -828,38 +1286,50 @@ onMounted(() => {
         class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2"
         @mousedown="transferGridEdit.onSurfaceMouseDown"
       >
-        <div class="transfer-head-panel shrink-0">
-          <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <SectionTitle :title="headSectionTitle" />
-            <div class="flex flex-wrap items-center gap-2">
-              <span class="text-xs text-[var(--el-text-color-secondary)]">状态</span>
-              <ElTag size="small" type="info" effect="plain">{{ headerStatusText || '—' }}</ElTag>
-            </div>
+        <div :class="INV_DOC_HEAD_SECTION_CLASS">
+          <SectionTitle :title="headSectionTitle" />
+          <div class="mt-1 flex flex-wrap items-center gap-2">
+            <span class="text-xs" style="color: var(--el-text-color-regular)">状态</span>
+            <span class="text-sm" style="color: var(--el-text-color-primary)">{{
+              headerStatusText || '—'
+            }}</span>
           </div>
-          <ElForm label-width="96px" class="compact-head-form">
-            <div
-              class="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-            >
+          <p
+            v-if="isReadOnlyShell"
+            class="mt-1 text-xs"
+            style="color: var(--el-text-color-secondary)"
+          >
+            {{ INV_DOC_READONLY_SHELL_HINT.transferIn }}
+          </p>
+          <ElForm
+            ref="headFormRef"
+            :model="headFormModel"
+            :rules="headFormRules"
+            label-width="96px"
+            class="compact-head-form mt-1"
+          >
+            <div :class="INV_DOC_HEAD_FORM_GRID_CLASS">
               <ElFormItem label="单据号">
                 <ElInput :model-value="headerBusNo ?? ''" disabled placeholder="保存后生成" />
               </ElFormItem>
-              <ElFormItem label="调出药库">
+              <ElFormItem :label="sourceLocationLabel" prop="sourceLocationId">
                 <ElSelect
                   v-model="sourceLocationId"
                   class="w-full"
                   filterable
                   clearable
+                  placeholder="请选择"
                   :disabled="!documentEditable"
                 >
                   <ElOption
-                    v-for="w in warehouseOptions"
+                    v-for="w in sourceLocationOptions"
                     :key="String(w.value)"
                     :label="w.label"
                     :value="w.value"
                   />
                 </ElSelect>
               </ElFormItem>
-              <ElFormItem label="调入药房">
+              <ElFormItem :label="purposeLocationLabel" prop="purposeLocationId">
                 <ElSelect
                   v-model="purposeLocationId"
                   class="w-full"
@@ -868,7 +1338,7 @@ onMounted(() => {
                   :disabled="!documentEditable"
                 >
                   <ElOption
-                    v-for="p in pharmacyOptions"
+                    v-for="p in purposeLocationOptions"
                     :key="String(p.value)"
                     :label="p.label"
                     :value="p.value"
@@ -881,13 +1351,24 @@ onMounted(() => {
                   class="w-full"
                   filterable
                   clearable
+                  placeholder="请选择经手人"
                   :disabled="!documentEditable"
                 >
                   <ElOption
-                    v-for="p in practitionerOptions"
+                    v-for="p in effectivePractitionerOptions"
                     :key="String(p.value)"
                     :label="p.label"
                     :value="p.value"
+                  />
+                </ElSelect>
+              </ElFormItem>
+              <ElFormItem v-if="!isReadOnlyShell" label="项目类型">
+                <ElSelect :model-value="HEAD_ITEM_TABLE_TYPE" class="w-full" filterable disabled>
+                  <ElOption
+                    v-for="t in normalizedItemTableTypeOptions"
+                    :key="String(t.value)"
+                    :label="t.label"
+                    :value="String(t.value)"
                   />
                 </ElSelect>
               </ElFormItem>
@@ -914,30 +1395,20 @@ onMounted(() => {
           </ElForm>
         </div>
 
-        <div
-          ref="transferGridKeyboardRef"
-          class="transfer-main-pane__grid-wrap flex min-h-0 min-w-0 flex-1 flex-col"
-          @keydown.capture="transferGridEdit.onGridKeydown"
+        <InvDocDetailGridShell
+          :bind-grid-wrap="bindGridWrap"
+          :on-grid-keydown="transferGridEdit.onGridKeydown"
         >
           <Grid class="min-h-0 flex-1">
             <template #toolbar-actions>
-              <ElButton
-                class="mr-2"
-                type="primary"
-                :icon="Plus"
+              <InvDocGridToolbar
+                v-if="!isReadOnlyShell"
                 :disabled="!documentEditable"
-                @click="addItem"
-              >
-                添加行
-              </ElButton>
-              <ElButton
-                type="danger"
-                :icon="Delete"
-                :disabled="!documentEditable"
-                @click="deleteItem('select')"
-              >
-                删除行
-              </ElButton>
+                show-trace-scan
+                @add="addItem"
+                @delete-selected="deleteItem('select')"
+                @trace-scan="handleOpenTraceScan"
+              />
             </template>
             <template #action="{ row }">
               <ElButton
@@ -951,21 +1422,23 @@ onMounted(() => {
               </ElButton>
             </template>
           </Grid>
-        </div>
+        </InvDocDetailGridShell>
       </div>
     </InvMainShell>
   </div>
+  <InvDocTraceScanBridge ref="traceScanBridgeRef" scene="inventoryOut" />
 </template>
 
 <style scoped lang="scss">
-.transfer-head-panel {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-  padding: 8px 12px 4px;
-  background: var(--el-bg-color);
+.compact-head-form :deep(.el-form-item) {
+  margin-bottom: 0;
 }
 
-.transfer-main-pane__grid-wrap :deep(.vxe-grid) {
-  min-height: 200px;
+.compact-head-form :deep(.el-form-item__label) {
+  padding-right: 8px;
+}
+
+.inv-doc-head-section {
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 </style>

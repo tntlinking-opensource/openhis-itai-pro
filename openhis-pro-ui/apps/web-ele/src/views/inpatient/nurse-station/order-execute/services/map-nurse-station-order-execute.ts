@@ -11,6 +11,7 @@ import { formatDateTime } from '@vben/utils';
 import dayjs from 'dayjs';
 
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { formatMoneyYuanWithSymbol } from '#/utils/format/money-scale';
 
 /** 表格行：医嘱展示 + 当前 Tab 对应槽位分组 */
 export interface NurseStationOrderExecuteTableRow {
@@ -81,34 +82,15 @@ function therapyEnumToLabel(code: string): string {
   return '';
 }
 
-/** 长临文案反推 code（therapyEnum 缺失时供颜色 class 使用） */
-function resolveTherapyTypeCodeFromLabel(label: string): string {
-  const text = label.trim();
-  if (text.includes('长期')) return 'LONG_TERM';
-  if (text.includes('临时')) return 'TEMPORARY';
-  if (text.includes('出院')) return 'DISCHARGE_MEDICATION';
-  return '';
-}
-
 /** 列表长临 code */
 function resolveExecuteTherapyTypeCode(dto: NurseStationOrderExecuteRowDto): string {
-  const code = String(dto.therapyEnum ?? '')
+  return String(dto.therapyEnum ?? '')
     .trim()
     .toUpperCase();
-  if (code) return code;
-  const label = resolveExecuteTherapyLabel(dto);
-  return label === '—' ? '' : resolveTherapyTypeCodeFromLabel(label);
 }
 
-/** 列表「长临」列：优先后端 therapyEnumText，否则按 therapyEnum 推导 */
+/** 列表「长临」列：按 therapyEnum 推导 */
 export function resolveExecuteTherapyLabel(dto: NurseStationOrderExecuteRowDto): string {
-  const text = String(dto.therapyEnumText ?? '').trim();
-  if (text) {
-    if (text.includes('长期')) return '长期';
-    if (text.includes('临时')) return '临时';
-    if (text.includes('出院')) return '出院带药';
-    return text;
-  }
   return therapyEnumToLabel(String(dto.therapyEnum ?? '')) || '—';
 }
 
@@ -283,7 +265,7 @@ export function formatExecuteBindItemUnitPrice(unitPrice?: number): string {
   if (unitPrice == null || Number.isNaN(unitPrice)) {
     return '—';
   }
-  return `¥${unitPrice.toFixed(2)}`;
+  return formatMoneyYuanWithSymbol(unitPrice);
 }
 
 /** 绑定项稳定 key（展开列表渲染） */

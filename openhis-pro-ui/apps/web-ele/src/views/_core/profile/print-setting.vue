@@ -17,6 +17,7 @@ import {
   probeHiprintClient,
   schedulePrintClientWarmup,
 } from '#/utils/print/runtime/hiprint-client';
+import { triggerOpenHisWinDownload } from '#/utils/print/openhis-win-download';
 
 defineOptions({ name: 'ProfilePrintSetting' });
 
@@ -90,6 +91,15 @@ function handleClear(scenarioCode: string): void {
   refreshRows();
 }
 
+/** 下载服务器上的 OpenHIS.Win 安装包 */
+async function handleDownloadOpenHisWin(): Promise<void> {
+  try {
+    await triggerOpenHisWinDownload();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '下载失败，请稍后重试');
+  }
+}
+
 onMounted(() => {
   refreshRows();
   schedulePrintClientWarmup();
@@ -111,6 +121,14 @@ onMounted(() => {
     >
       {{ clientStatusText }}
     </p>
+    <div class="mb-4 flex flex-wrap items-center gap-2">
+      <ElButton type="primary" plain @click="handleDownloadOpenHisWin">
+        下载 OpenHIS.Win 客户端
+      </ElButton>
+      <span class="text-xs text-[var(--el-text-color-secondary)]">
+        从服务器下载安装包，安装后托盘启动即可连接打印服务
+      </span>
+    </div>
     <div v-if="showTroubleshootingGuide" class="mb-4">
       <p
         class="whitespace-pre-line rounded border border-[var(--el-color-warning-light-5)] bg-[var(--el-color-warning-light-9)] px-3 py-2 text-sm leading-relaxed text-[var(--el-text-color-regular)]"

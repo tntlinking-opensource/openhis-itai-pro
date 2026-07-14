@@ -22,6 +22,7 @@ import WarehouseDocOrderQueue from '#/components/warehouse/warehouse-doc-order-q
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
 import WarehouseOrderDetailEdit from '#/components/warehouse/warehouse-order-detail-edit.vue';
 import { isPurchaseRequestApproved } from '#/utils/warehouse/purchase-request-order-detail';
+import { calcMoneyLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
 
 defineOptions({
   name: 'WarehouseReturnInbound',
@@ -258,12 +259,10 @@ function buildUnitList(item: Record<string, any>) {
     unit.retailPriceMask = isMaxUnit
       ? item.retailPrice
       : item.retailPrice / Number.parseInt(String(item.partPercent), 10);
-    unit.totalPriceMask = (
-      Number.parseFloat(item.price) * Number.parseFloat(item.itemQuantity)
-    ).toFixed(2);
-    unit.totalRetailPriceMask = (
-      Number.parseFloat(item.retailPrice) * Number.parseFloat(item.itemQuantity)
-    ).toFixed(2);
+    unit.totalPriceMask = formatMoneyDisplay(calcMoneyLineTotal(item.price, item.itemQuantity));
+    unit.totalRetailPriceMask = formatMoneyDisplay(
+      calcMoneyLineTotal(item.retailPrice, item.itemQuantity),
+    );
     unit.specificationInventoryOriginal = item.specificationInventory;
 
     if (isMaxUnit) {

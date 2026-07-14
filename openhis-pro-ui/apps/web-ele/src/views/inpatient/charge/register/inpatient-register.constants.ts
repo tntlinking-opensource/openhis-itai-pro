@@ -74,10 +74,3 @@ export const DEFAULT_DIAGNOSIS_CATEGORY = 'GENERAL';
 
 /** 门诊转住院默认入院方式码（与后端 in_way_code 术语 code=1 对齐） */
 export const DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER = '1';
-
-/** 患者病情（联调前静态选项） */
-export const PATIENT_CONDITION_OPTIONS = [
-  { label: '一般', value: 'GENERAL' },
-  { label: '急', value: 'URGENT' },
-  { label: '危', value: 'CRITICAL' },
-] as const;

@@ -91,32 +91,32 @@ type FinTypePrintField = keyof Pick<
   | 'westernMedicineAmountText'
 >;
 
-/** fin_type 展示名 → 模板 field（与 PrintJson 静态标签一致） */
-const FIN_TYPE_CATEGORY_TO_FIELD: Record<string, FinTypePrintField> = {
-  西药: 'westernMedicineAmountText',
-  外购药品: 'outsourcedDrugAmountText',
-  中草药: 'herbalMedicineAmountText',
-  化验: 'labTestAmountText',
-  手术: 'surgeryAmountText',
-  诊断: 'diagnosisAmountText',
-  治疗: 'treatmentAmountText',
-  护理: 'nursingAmountText',
-  床位: 'bedAmountText',
-  挂号费: 'registrationFeeAmountText',
-  诊察费: 'consultationFeeAmountText',
-  其他费: 'otherFeeAmountText',
-  麻醉: 'anesthesiaAmountText',
-  膳食: 'dietAmountText',
-  输血费: 'bloodTransfusionAmountText',
-  自备医嘱: 'selfPreparedOrderAmountText',
-  医用耗材: 'medicalConsumablesAmountText',
-  循环物质: 'circulatingMaterialAmountText',
-  物资: 'materialAmountText',
-  办公用品: 'officeSuppliesAmountText',
-  检查: 'examinationAmountText',
-  中成药: 'proprietaryChineseMedicineAmountText',
-  CT: 'ctAmountText',
-  电诊: 'electrodiagnosisAmountText',
+/** fin_type_code → 模板 field（与 PrintJson 静态标签一致） */
+const FIN_TYPE_CODE_TO_FIELD: Record<string, FinTypePrintField> = {
+  '1001': 'westernMedicineAmountText',
+  '1002': 'outsourcedDrugAmountText',
+  '1003': 'herbalMedicineAmountText',
+  '1004': 'labTestAmountText',
+  '1005': 'surgeryAmountText',
+  '1007': 'diagnosisAmountText',
+  '1008': 'treatmentAmountText',
+  '1009': 'nursingAmountText',
+  '1010': 'bedAmountText',
+  '1011': 'registrationFeeAmountText',
+  '1012': 'consultationFeeAmountText',
+  '1013': 'otherFeeAmountText',
+  '2001': 'anesthesiaAmountText',
+  '2002': 'dietAmountText',
+  '2003': 'bloodTransfusionAmountText',
+  '2004': 'selfPreparedOrderAmountText',
+  '2005': 'medicalConsumablesAmountText',
+  '2006': 'circulatingMaterialAmountText',
+  '2007': 'materialAmountText',
+  '2008': 'officeSuppliesAmountText',
+  '2009': 'examinationAmountText',
+  '2010': 'proprietaryChineseMedicineAmountText',
+  '2011': 'ctAmountText',
+  '2012': 'electrodiagnosisAmountText',
 };
 
 function str(value: null | number | string | undefined): string {
@@ -182,8 +182,8 @@ function mapFinTypeRows(
 ): Record<FinTypePrintField, string> {
   const amounts = createEmptyFinTypeAmounts();
   for (const row of rows ?? []) {
-    const label = str(row.category);
-    const field = FIN_TYPE_CATEGORY_TO_FIELD[label];
+    const code = str(row.categoryCode);
+    const field = FIN_TYPE_CODE_TO_FIELD[code];
     if (!field) {
       continue;
     }

@@ -1,16 +1,27 @@
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
-
 import type { ApiOptionItem } from '#/types/api-response';
 
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import dayjs from 'dayjs';
-import { TableLayout } from '@vben-core/table-layout-ui';
+import { Download, Refresh, Search } from '@element-plus/icons-vue';
+import {
+  ElButton,
+  ElDatePicker,
+  ElFormItem,
+  ElInput,
+  ElMessage,
+  ElOption,
+  ElRadioButton,
+  ElRadioGroup,
+  ElSelect,
+  ElTableColumn,
+  ElTag,
+  ElTooltip,
+} from 'element-plus';
 
-import { ElButton, ElMessage, ElRadioButton, ElRadioGroup, ElTag, ElTooltip } from 'element-plus';
+import dayjs from 'dayjs';
 
 import {
   enrichDispenseRecordRowsForDisplay,
@@ -31,9 +42,22 @@ import {
   loadOutpatientPharmacyDispenseRecordPageInitApi,
   pageOutpatientPharmacyDispenseRecordsApi,
 } from '#/api/pharmacy/outpatient-dispense-record';
+import TraceCodeTooltip from '#/components/trace/trace-code-tooltip.vue';
 import { useRequest } from '#/hooks/use-request';
 import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
+import { formatMoneyDisplay, formatMoneyYuan } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import {
+  REPORT_QUERY_CONTROL,
+  REPORT_QUERY_CONTROL_DATERANGE,
+  REPORT_TABLE_NUM_CELL,
+  ReportElTable,
+  ReportListPageLayout,
+  ReportListToolbar,
+  ReportPageFooter,
+  ReportQueryBar,
+  ReportTableScroll,
+} from '#/views/report/shared';
 
 defineOptions({ name: 'PharmacyDispenseRecordPage' });
 
@@ -56,7 +80,7 @@ interface QueryFormState {
   patientKeyword?: string;
 }
 
-// 默认发药日期：当月 1 日～月末（yyyy-MM-dd）。
+/** 默认发药日期：当月 1 日～月末（yyyy-MM-dd）。 */
 function buildThisMonthDateRange(): [string, string] {
   return [
     dayjs().startOf('month').format('YYYY-MM-DD'),
@@ -64,7 +88,7 @@ function buildThisMonthDateRange(): [string, string] {
   ];
 }
 
-// 写回默认发药日期区间（进入页、重置时共用）。
+/** 写回默认发药日期区间（进入页、重置时共用）。 */
 function applyDefaultDispenseDateRange() {
   const range = buildThisMonthDateRange();
   defaultDispenseDateRange.value = range;
@@ -75,18 +99,23 @@ const pharmacyOptions = ref<ApiOptionItem[]>([]);
 const medicationCategoryOptions = ref<ApiOptionItem[]>([]);
 const dispenserOptions = ref<ApiOptionItem[]>([]);
 const recordTypeOptions = ref<ApiOptionItem[]>([]);
-// 页初始化默认发药日期（本月），重置时恢复。
 const defaultDispenseDateRange = ref<[string, string]>(buildThisMonthDateRange());
 
 const rawTableData = ref<DispenseRecordSourceRow[]>([]);
 const total = ref(0);
-const loading = ref(false);
-// 默认按处方合并：处方号在组头完整展示，同方药品明细纵向合并公共列。
-const displayMode = ref<DispenseRecordDisplayMode>('BY_PRESCRIPTION');
+const inpatientDisplayMode = ref<DispenseRecordDisplayMode>('BY_PRESCRIPTION');
+const tableScrollRef = ref<InstanceType<typeof ReportTableScroll> | null>(null);
+
+/** 门诊固定按就诊+处方合并；住院保留展示模式切换。 */
+const effectiveDisplayMode = computed<DispenseRecordDisplayMode>(() =>
+  props.scope === 'outpatient' ? 'BY_PRESCRIPTION' : inpatientDisplayMode.value,
+);
 
 const tableData = computed<DispenseRecordTableRow[]>(() =>
-  enrichDispenseRecordRowsForDisplay(rawTableData.value, displayMode.value),
+  enrichDispenseRecordRowsForDisplay(rawTableData.value, effectiveDisplayMode.value),
 );
+
+const tableStripe = computed(() => effectiveDisplayMode.value === 'FLAT');
 
 const queryParams = reactive<QueryFormState>({
   pageNo: 1,
@@ -145,174 +174,55 @@ const { run: runExport, loading: exportLoading } = useRequest(
   },
 );
 
-watch(pageLoading, (value) => {
-  loading.value = value ?? false;
+const tableLoading = computed(() => initLoading.value || pageLoading.value);
+
+/** 发药日期与 daterange 双向绑定。 */
+const dispenseDateRange = computed({
+  get() {
+    return queryParams.dispenseDateRange;
+  },
+  set(value: [string, string] | null) {
+    if (value) {
+      queryParams.dispenseDateRange = value;
+    }
+  },
 });
 
-// 筛选区非 input 变更：回到第一页并查询。
-function handleFilterFieldChange() {
-  queryParams.pageNo = 1;
-  void getList();
+/** 下拉选项转为 ElSelect 可用结构。 */
+function toSelectOptions(items: ApiOptionItem[]) {
+  return items.map((item) => ({
+    label: String(item.label ?? ''),
+    value: String(item.value ?? ''),
+  }));
 }
 
-// 输入框回车触发查询。
-function handleKeywordEnter(event: KeyboardEvent) {
-  if (event.key !== 'Enter') {
-    return;
-  }
-  queryParams.pageNo = 1;
-  void getList();
-}
-
-const keywordInputProps = {
-  onKeyup: handleKeywordEnter,
-};
-
-const formItems = computed<FormItemConfig[]>(() => [
-  {
-    label: '发药日期',
-    prop: 'dispenseDateRange',
-    type: 'daterange',
-    valueFormat: 'YYYY-MM-DD',
-    onChange: () => {
-      handleFilterFieldChange();
-    },
-  },
-  {
-    label: '记录类型',
-    prop: 'recordTypeCode',
-    type: 'select',
-    options: recordTypeOptions.value,
-    multiple: false,
-    clearable: true,
-    onChange: () => {
-      handleFilterFieldChange();
-    },
-  },
-  {
-    label: '药房',
-    prop: 'pharmacyLocationId',
-    type: 'select',
-    options: pharmacyOptions.value,
-    multiple: false,
-    clearable: true,
-    onChange: () => {
-      handleFilterFieldChange();
-    },
-  },
-  {
-    label: '项目类型',
-    prop: 'medicationCategoryCodes',
-    type: 'select',
-    options: medicationCategoryOptions.value,
-    multiple: true,
-    clearable: true,
-    onChange: () => {
-      handleFilterFieldChange();
-    },
-  },
-  {
-    label: '发药人',
-    prop: 'dispenserPractitionerId',
-    type: 'select',
-    options: dispenserOptions.value,
-    multiple: false,
-    clearable: true,
-    onChange: () => {
-      handleFilterFieldChange();
-    },
-  },
-  {
-    label: '药品',
-    prop: 'drugKeyword',
-    type: 'input',
-    placeholder: '名称/编码/拼音',
-    extraprops: keywordInputProps,
-  },
-  {
-    label: '患者',
-    prop: 'patientKeyword',
-    type: 'input',
-    placeholder: '姓名等',
-    extraprops: keywordInputProps,
-  },
-]);
-
-const tableColumns = computed<TableColumn[]>(() => {
-  const baseColumns: TableColumn[] = [
-    { type: 'index', label: '序号', width: 56, align: 'center' },
-    {
-      prop: 'prescriptionNo',
-      label: '处方号',
-      minWidth: 200,
-      showOverflowTooltip: true,
-      slot: 'prescriptionNo',
-    },
-    {
-      prop: 'recordTypeText',
-      label: '类型',
-      width: 72,
-      align: 'center',
-      slot: 'recordType',
-    },
-    { prop: 'patientName', label: '患者', width: 90, showOverflowTooltip: true },
-  ];
-  if (props.scope === 'outpatient') {
-    baseColumns.push({
-      prop: 'encounterBusNo',
-      label: '门诊号',
-      width: 130,
-      showOverflowTooltip: true,
-    });
-  } else {
-    baseColumns.push(
-      { prop: 'inpatientNo', label: '住院号', width: 130, showOverflowTooltip: true },
-      { prop: 'wardName', label: '病区', width: 100, showOverflowTooltip: true },
-      { prop: 'bedName', label: '床号', width: 72, align: 'center' },
-    );
-  }
-  baseColumns.push(
-    {
-      prop: 'orderingDepartmentName',
-      label: '开单科室',
-      width: 110,
-      showOverflowTooltip: true,
-    },
-    { prop: 'dispenseTime', label: '发药时间', width: 168, showOverflowTooltip: true },
-    { prop: 'pharmacyLocationName', label: '药房', width: 120, showOverflowTooltip: true },
-    { prop: 'dispenserName', label: '发药人', width: 90, showOverflowTooltip: true },
-    { prop: 'medicationName', label: '药品名称', minWidth: 140, showOverflowTooltip: true },
-    { prop: 'medicationSpec', label: '规格', width: 100, showOverflowTooltip: true },
-    { prop: 'quantity', label: '数量', width: 72, align: 'right', slot: 'quantity' },
-    { prop: 'unitText', label: '单位', width: 56, align: 'center' },
-    { prop: 'unitPrice', label: '单价', width: 88, align: 'right', slot: 'unitPrice' },
-    { prop: 'totalAmount', label: '金额', width: 88, align: 'right', slot: 'totalAmount' },
-    { prop: 'lotNumber', label: '批号', width: 100, showOverflowTooltip: true },
-    { prop: 'traceNo', label: '追溯码', width: 120, showOverflowTooltip: true },
-    { prop: 'usageText', label: '用法用量', width: 120, showOverflowTooltip: true },
-    { prop: 'summaryNo', label: '汇总单号', width: 130, showOverflowTooltip: true },
-  );
-  return baseColumns;
-});
-
-// 单元格合并：按就诊或按处方号纵向合并组头列。
+/** 单元格合并：按就诊或按处方号纵向合并组头列。 */
 function handleDispenseRecordSpanMethod(params: {
-  column: Record<string, unknown>;
-  row: Record<string, unknown>;
+  column: { property?: string };
+  row: DispenseRecordTableRow;
 }) {
   return resolveDispenseRecordSpanMethod({
-    row: params.row as DispenseRecordTableRow,
-    column: params.column as { field?: string },
-    displayMode: displayMode.value,
+    row: params.row,
+    column: params.column,
+    displayMode: effectiveDisplayMode.value,
   });
 }
 
-// 处方号列展示（退药行去 T 前缀，Tooltip 保留存库号）。
+/** 行样式：合并模式下按处方块统一底色，避免合并列与斑马纹错位。 */
+function resolveRowClassName({ row }: { row: DispenseRecordTableRow }): string {
+  if (effectiveDisplayMode.value === 'FLAT') {
+    return '';
+  }
+  const blockIndex = row.displayGroupBlockIndex ?? 0;
+  return blockIndex % 2 === 0 ? 'dispense-record-block--even' : 'dispense-record-block--odd';
+}
+
+/** 处方号列展示（退药行去 T 前缀，Tooltip 保留存库号）。 */
 function resolvePrescriptionNoDisplay(row: DispenseRecordTableRow) {
   return formatDispenseRecordPrescriptionNoDisplay(row);
 }
 
-// 记录类型标签样式。
+/** 记录类型标签样式。 */
 function resolveRecordTypeTagType(recordTypeCode?: string): 'danger' | 'info' | 'success' {
   if (recordTypeCode === 'REFUND') {
     return 'danger';
@@ -323,15 +233,66 @@ function resolveRecordTypeTagType(recordTypeCode?: string): 'danger' | 'info' | 
   return 'info';
 }
 
-// 金额/数量展示：空值显示占位符。
-function formatAmount(value: unknown): string {
+/** 数量展示：空值显示占位符。 */
+function formatQuantity(value: unknown): string {
   if (value === undefined || value === null || value === '') {
     return '—';
   }
   return String(value);
 }
 
-// 将日期规范为 yyyy-MM-dd（后端 LocalDate 不接受时间部分）。
+/** 数量 + 单位合并，如「1盒」。 */
+function formatQuantityWithUnit(quantity: unknown, unit: unknown): string {
+  const qty = formatQuantity(quantity);
+  const unitText = unit === undefined || unit === null ? '' : String(unit).trim();
+  if (qty === '—' && !unitText) {
+    return '—';
+  }
+  if (qty === '—') {
+    return unitText || '—';
+  }
+  return unitText ? `${qty}${unitText}` : qty;
+}
+
+/** 数量 + 单位合并，如「1盒」；退药行展示为负数。 */
+function formatDispenseQuantityWithUnit(row: DispenseRecordTableRow): string {
+  const isRefund = row.recordTypeCode === 'REFUND';
+  let quantity: unknown = row.quantity;
+  if (isRefund && quantity !== undefined && quantity !== null && quantity !== '') {
+    const num = Number(quantity);
+    if (Number.isFinite(num)) {
+      quantity = -Math.abs(num);
+    }
+  }
+  return formatQuantityWithUnit(quantity, row.unitText);
+}
+
+/** 退药数量标红（与金额列一致）。 */
+function resolveQuantityClass(row: DispenseRecordTableRow): string {
+  if (row.recordTypeCode === 'REFUND') {
+    return 'text-[var(--el-color-danger)]';
+  }
+  const num = Number(row.quantity);
+  return Number.isFinite(num) && num < 0 ? 'text-[var(--el-color-danger)]' : '';
+}
+
+/** 金额展示：6 位 API 值 format 为 2 位（BR-MON-001）。 */
+function formatMoneyCell(value: unknown): string {
+  if (value === undefined || value === null || value === '') {
+    return '—';
+  }
+  return formatMoneyDisplay(value);
+}
+
+/** 金额展示：2 位小数 + 元。 */
+function formatMoneyYuanCell(value: unknown): string {
+  if (value === undefined || value === null || value === '') {
+    return '—';
+  }
+  return formatMoneyYuan(value);
+}
+
+/** 将日期规范为 yyyy-MM-dd（后端 LocalDate 不接受时间部分）。 */
 function normalizeDispenseDate(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -344,7 +305,7 @@ function normalizeDispenseDate(value: string): string {
   return trimmed;
 }
 
-// 校验发药日期区间并组装查询/导出请求体。
+/** 校验发药日期区间并组装查询/导出请求体。 */
 function buildFilterPayload() {
   const [rawFrom, rawTo] = queryParams.dispenseDateRange;
   const dispenseDateFrom = normalizeDispenseDate(rawFrom ?? '');
@@ -367,7 +328,7 @@ function buildFilterPayload() {
   };
 }
 
-// 拉取分页列表（搜索按钮 / 回车 / 筛选项 change 共用）。
+/** 拉取分页列表（搜索按钮 / 回车 / 筛选项 change 共用）。 */
 async function getList() {
   const filters = buildFilterPayload();
   if (!filters) {
@@ -378,15 +339,17 @@ async function getList() {
     pageNo: queryParams.pageNo,
     pageSize: queryParams.pageSize,
   });
+  await nextTick();
+  tableScrollRef.value?.updateTableHeight();
 }
 
-// 搜索按钮：回到第一页再查。
+/** 搜索按钮：回到第一页再查。 */
 function handleQuery() {
   queryParams.pageNo = 1;
   void getList();
 }
 
-// 导出当前筛选条件下的全部记录。
+/** 导出当前筛选条件下的全部记录。 */
 async function handleExport() {
   const filters = buildFilterPayload();
   if (!filters) {
@@ -395,7 +358,7 @@ async function handleExport() {
   await runExport(filters);
 }
 
-// 重置筛选项为初始化默认值。
+/** 重置筛选项为初始化默认值。 */
 function handleReset() {
   applyDefaultDispenseDateRange();
   queryParams.recordTypeCode = undefined;
@@ -405,17 +368,23 @@ function handleReset() {
   queryParams.drugKeyword = undefined;
   queryParams.patientKeyword = undefined;
   queryParams.pageNo = 1;
-  getList();
+  void getList();
 }
 
-// 分页变更后重新查询。
-function handlePagination({ page, limit }: { page: number; limit: number }) {
+/** 切换每页条数。 */
+function handlePageSizeChange(size: number) {
+  queryParams.pageSize = size;
+  queryParams.pageNo = 1;
+  void getList();
+}
+
+/** 切换页码。 */
+function handleCurrentPageChange(page: number) {
   queryParams.pageNo = page;
-  queryParams.pageSize = limit;
-  getList();
+  void getList();
 }
 
-// 加载页初始化下拉与默认日期。
+/** 加载页初始化下拉与默认日期。 */
 async function loadPageInit() {
   const data = await runInit();
   pharmacyOptions.value = data.pharmacyOptions ?? [];
@@ -436,81 +405,356 @@ onMounted(async () => {
 </script>
 
 <template>
-  <Page auto-content-height>
-    <TableLayout
-      :table-data="tableData"
-      :loading="loading || initLoading"
-      :total="total"
-      :query-params="queryParams as Record<string, unknown>"
-      :form-items="formItems"
-      :table-columns="tableColumns"
-      row-key="rowKey"
-      :span-method="handleDispenseRecordSpanMethod"
-      :show-top-query="true"
-      :show-pagination="true"
-      border
-      stripe
-      @query="handleQuery"
-      @reset="handleReset"
-      @pagination="handlePagination"
-    >
-      <template #toolbar-actions>
-        <span class="text-sm font-medium text-[var(--el-text-color-primary)]">{{ pageTitle }}</span>
-      </template>
-      <template #toolbar-tools>
-        <div class="flex flex-wrap items-center gap-3">
-          <ElRadioGroup v-model="displayMode" size="small">
-            <ElRadioButton value="BY_PRESCRIPTION">按处方</ElRadioButton>
-            <ElRadioButton value="BY_ENCOUNTER">按就诊</ElRadioButton>
-            <ElRadioButton value="FLAT">平铺</ElRadioButton>
-          </ElRadioGroup>
-          <ElButton plain :loading="exportLoading" @click="handleExport">导出</ElButton>
-        </div>
+  <Page auto-content-height content-class="!overflow-hidden flex h-full min-h-0 flex-col">
+    <ReportListPageLayout>
+      <template #query>
+        <ReportQueryBar :model="queryParams as Record<string, unknown>">
+          <template #fields>
+            <ElFormItem label="药品名称">
+              <ElInput
+                v-model="queryParams.drugKeyword"
+                clearable
+                placeholder="名称/编码/拼音"
+                :class="REPORT_QUERY_CONTROL"
+                @keyup.enter="handleQuery"
+              />
+            </ElFormItem>
+            <ElFormItem label="记录类型">
+              <ElSelect
+                v-model="queryParams.recordTypeCode"
+                clearable
+                placeholder="全部"
+                :class="REPORT_QUERY_CONTROL"
+              >
+                <ElOption
+                  v-for="item in toSelectOptions(recordTypeOptions)"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="药房">
+              <ElSelect
+                v-model="queryParams.pharmacyLocationId"
+                clearable
+                filterable
+                placeholder="全部"
+                :class="REPORT_QUERY_CONTROL"
+              >
+                <ElOption
+                  v-for="item in toSelectOptions(pharmacyOptions)"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="项目类型">
+              <ElSelect
+                v-model="queryParams.medicationCategoryCodes"
+                clearable
+                filterable
+                multiple
+                collapse-tags
+                placeholder="全部"
+                :class="REPORT_QUERY_CONTROL"
+              >
+                <ElOption
+                  v-for="item in toSelectOptions(medicationCategoryOptions)"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="发药人">
+              <ElSelect
+                v-model="queryParams.dispenserPractitionerId"
+                clearable
+                filterable
+                placeholder="全部"
+                :class="REPORT_QUERY_CONTROL"
+              >
+                <ElOption
+                  v-for="item in toSelectOptions(dispenserOptions)"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="患者">
+              <ElInput
+                v-model="queryParams.patientKeyword"
+                clearable
+                placeholder="姓名等"
+                :class="REPORT_QUERY_CONTROL"
+                @keyup.enter="handleQuery"
+              />
+            </ElFormItem>
+            <ElFormItem label="发药日期">
+              <ElDatePicker
+                v-model="dispenseDateRange"
+                type="daterange"
+                value-format="YYYY-MM-DD"
+                range-separator="至"
+                start-placeholder="开始"
+                end-placeholder="结束"
+                :class="[REPORT_QUERY_CONTROL, REPORT_QUERY_CONTROL_DATERANGE]"
+              />
+            </ElFormItem>
+          </template>
+          <template #actions>
+            <ElButton type="primary" :icon="Search" :loading="tableLoading" @click="handleQuery">
+              搜索
+            </ElButton>
+            <ElButton :icon="Refresh" :loading="tableLoading" @click="handleReset">重置</ElButton>
+          </template>
+        </ReportQueryBar>
       </template>
 
-      <template #prescriptionNo="{ row }">
-        <ElTooltip
-          v-if="resolvePrescriptionNoDisplay(row).tooltip"
-          :content="resolvePrescriptionNoDisplay(row).tooltip"
-          placement="top"
-        >
-          <span class="dispense-record-rx-no">
-            {{ resolvePrescriptionNoDisplay(row).text }}
-          </span>
-        </ElTooltip>
-        <span v-else class="dispense-record-rx-no">
-          {{ resolvePrescriptionNoDisplay(row).text }}
-        </span>
+      <template #toolbar>
+        <ReportListToolbar :title="`${pageTitle} · 明细列表`" :total="total">
+          <template #actions>
+            <ElRadioGroup v-if="scope === 'inpatient'" v-model="inpatientDisplayMode">
+              <ElRadioButton value="BY_PRESCRIPTION">按处方</ElRadioButton>
+              <ElRadioButton value="BY_ENCOUNTER">按就诊</ElRadioButton>
+              <ElRadioButton value="FLAT">平铺</ElRadioButton>
+            </ElRadioGroup>
+            <ElButton plain :icon="Download" :loading="exportLoading" @click="handleExport">
+              导出
+            </ElButton>
+          </template>
+        </ReportListToolbar>
       </template>
-      <template #recordType="{ row }">
-        <ElTag
-          :type="resolveRecordTypeTagType(row.recordTypeCode as string)"
-          size="small"
-          effect="light"
-        >
-          {{ row.recordTypeText || '—' }}
-        </ElTag>
+
+      <template #table>
+        <ReportTableScroll ref="tableScrollRef">
+          <template #default="{ tableHeight }">
+            <ReportElTable
+              class="dispense-record-table"
+              :stripe="tableStripe"
+              :loading="tableLoading"
+              :data="tableData"
+              :height="tableHeight"
+              row-key="rowKey"
+              :row-class-name="resolveRowClassName"
+              :span-method="handleDispenseRecordSpanMethod"
+            >
+              <ElTableColumn
+                prop="prescriptionNo"
+                label="处方号"
+                width="150"
+                align="center"
+                show-overflow-tooltip
+              >
+                <template #default="{ row }">
+                  <ElTooltip
+                    v-if="resolvePrescriptionNoDisplay(row).tooltip"
+                    :content="resolvePrescriptionNoDisplay(row).tooltip"
+                    placement="top"
+                  >
+                    <span class="dispense-record-rx-no">
+                      {{ resolvePrescriptionNoDisplay(row).text }}
+                    </span>
+                  </ElTooltip>
+                  <span v-else class="dispense-record-rx-no">
+                    {{ resolvePrescriptionNoDisplay(row).text }}
+                  </span>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn prop="recordTypeText" label="类型" width="72" align="center">
+                <template #default="{ row }">
+                  <ElTag
+                    :type="resolveRecordTypeTagType(row.recordTypeCode as string)"
+                    effect="light"
+                  >
+                    {{ row.recordTypeText || '—' }}
+                  </ElTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="patientName"
+                label="患者"
+                width="90"
+                align="center"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
+                v-if="scope === 'outpatient'"
+                prop="encounterBusNo"
+                label="门诊号"
+                width="130"
+                align="center"
+                show-overflow-tooltip
+              />
+              <template v-else>
+                <ElTableColumn
+                  prop="inpatientNo"
+                  label="住院号"
+                  width="130"
+                  align="center"
+                  show-overflow-tooltip
+                />
+                <ElTableColumn
+                  prop="wardName"
+                  label="病区"
+                  width="100"
+                  align="center"
+                  show-overflow-tooltip
+                />
+                <ElTableColumn prop="bedName" label="床号" width="72" align="center" />
+              </template>
+              <ElTableColumn
+                prop="medicationName"
+                label="药品名称"
+                min-width="140"
+                align="center"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
+                prop="medicationSpec"
+                label="规格"
+                width="100"
+                align="center"
+                show-overflow-tooltip
+              />
+              <ElTableColumn label="数量" width="88" align="center" header-align="center">
+                <template #default="{ row }">
+                  <span :class="resolveQuantityClass(row)">
+                    {{ formatDispenseQuantityWithUnit(row) }}
+                  </span>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                label="单价"
+                prop="unitPrice"
+                width="88"
+                align="right"
+                header-align="right"
+                :class-name="REPORT_TABLE_NUM_CELL"
+              >
+                <template #default="{ row }">{{ formatMoneyCell(row.unitPrice) }}</template>
+              </ElTableColumn>
+              <ElTableColumn
+                label="金额"
+                prop="totalAmount"
+                width="88"
+                align="right"
+                header-align="right"
+                :class-name="REPORT_TABLE_NUM_CELL"
+              >
+                <template #default="{ row }">
+                  <span :class="Number(row.totalAmount) < 0 ? 'text-[var(--el-color-danger)]' : ''">
+                    {{ formatMoneyYuanCell(row.totalAmount) }}
+                  </span>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="lotNumber"
+                label="批号"
+                width="100"
+                align="center"
+                show-overflow-tooltip
+              />
+              <ElTableColumn prop="traceNo" label="追溯码" width="120" align="center">
+                <template #default="{ row }">
+                  <TraceCodeTooltip :value="row.traceNo" />
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="manufacturerText"
+                label="厂家"
+                width="120"
+                align="center"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
+                v-if="scope === 'inpatient'"
+                prop="summaryNo"
+                label="汇总单号"
+                width="130"
+                align="center"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
+                prop="orderingDepartmentName"
+                label="开单科室"
+                width="110"
+                align="center"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
+                prop="dispenseTime"
+                label="发药时间"
+                width="168"
+                align="center"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
+                prop="pharmacyLocationName"
+                label="药房"
+                width="120"
+                align="center"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
+                prop="dispenserName"
+                label="发药人"
+                width="90"
+                align="center"
+                show-overflow-tooltip
+              />
+            </ReportElTable>
+          </template>
+        </ReportTableScroll>
       </template>
-      <template #quantity="{ row }">
-        <span>{{ formatAmount(row.quantity) }}</span>
+
+      <template #footer>
+        <ReportPageFooter
+          :current-page="queryParams.pageNo"
+          :page-size="queryParams.pageSize"
+          :total="total"
+          @size-change="handlePageSizeChange"
+          @current-change="handleCurrentPageChange"
+        />
       </template>
-      <template #unitPrice="{ row }">
-        <span>{{ formatAmount(row.unitPrice) }}</span>
-      </template>
-      <template #totalAmount="{ row }">
-        <span :class="Number(row.totalAmount) < 0 ? 'text-[var(--el-color-danger)]' : ''">
-          {{ formatAmount(row.totalAmount) }}
-        </span>
-      </template>
-    </TableLayout>
+    </ReportListPageLayout>
   </Page>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .dispense-record-rx-no {
   display: inline-block;
   max-width: 100%;
   line-height: 1.4;
   word-break: break-all;
+}
+
+.dispense-record-table {
+  :deep(.el-table__body tr.dispense-record-block--even > td.el-table__cell),
+  :deep(.el-table__body tr.dispense-record-block--even > td.el-table-fixed-column--left),
+  :deep(.el-table__body tr.dispense-record-block--even > td.el-table-fixed-column--right) {
+    background-color: var(--el-bg-color);
+  }
+
+  :deep(.el-table__body tr.dispense-record-block--odd > td.el-table__cell),
+  :deep(.el-table__body tr.dispense-record-block--odd > td.el-table-fixed-column--left),
+  :deep(.el-table__body tr.dispense-record-block--odd > td.el-table-fixed-column--right) {
+    background-color: var(--el-fill-color-lighter);
+  }
+
+  :deep(.el-table__body tr.dispense-record-block--even:hover > td.el-table__cell),
+  :deep(.el-table__body tr.dispense-record-block--even:hover > td.el-table-fixed-column--left),
+  :deep(.el-table__body tr.dispense-record-block--even:hover > td.el-table-fixed-column--right) {
+    background-color: var(--el-bg-color) !important;
+  }
+
+  :deep(.el-table__body tr.dispense-record-block--odd:hover > td.el-table__cell),
+  :deep(.el-table__body tr.dispense-record-block--odd:hover > td.el-table-fixed-column--left),
+  :deep(.el-table__body tr.dispense-record-block--odd:hover > td.el-table-fixed-column--right) {
+    background-color: var(--el-fill-color-lighter) !important;
+  }
 }
 </style>

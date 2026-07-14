@@ -11,6 +11,7 @@ import {
   createScheduleApi,
   deactivateScheduleApi,
   generateFromTemplateApi,
+  loadScheduleFormInitApi,
   previewPublishScheduleConflictsApi,
   previewStopClinicImpactApi,
   publishScheduleApi,
@@ -21,21 +22,22 @@ import {
 } from '#/api/booking/outpatient-schedule';
 import type { SlotListItemDto } from '#/api/booking/slot-manage';
 import { pageSlotsByDateApi } from '#/api/booking/slot-manage';
+import { listSlotProvisionTemplateOptionsApi } from '#/api/booking/schedule-template';
 import ProvisionSlotDialog from '#/views/booking/components/provision-slot-dialog.vue';
 import ScheduleDraftForm from '#/views/booking/components/schedule-draft-form.vue';
 import {
   assertDraftFormValid,
   applyHorizonToForm,
   buildDraftActors,
-  buildPlanningHorizon,
   createEmptyDraftForm,
   extractPlanningDate,
   fillDraftFormFromActors,
   resetDraftFormForDate,
+  resolveDraftPlanningHorizon,
 } from '#/views/booking/components/schedule-draft-form.utils';
 import StopClinicWizard from '#/views/booking/components/stop-clinic-wizard.vue';
 import {
-  scheduleLocationLabel,
+  scheduleDepartmentLabel,
   schedulePractitionerLabel,
   scheduleServiceTypeLabel,
 } from '#/views/booking/components/schedule-actor-labels';
@@ -64,7 +66,7 @@ const props = defineProps<{
   selectedDate?: string;
   schedule?: ScheduleCalendarCellDto | null;
   practitioners?: BookingOptionDto[];
-  clinicLocations?: BookingOptionDto[];
+  departments?: BookingOptionDto[];
   healthcareServices?: BookingOptionDto[];
   slotProvisionTemplateOptions?: BookingOptionDto[];
 }>();
@@ -75,6 +77,36 @@ const emit = defineEmits<{
 }>();
 
 const draftForm = reactive(createEmptyDraftForm());
+
+/** 与排班设置日排班弹窗同源的下拉数据 */
+const draftFormInitData = ref<{
+  practitioners?: BookingOptionDto[];
+  healthcareServices?: BookingOptionDto[];
+}>({});
+const draftT1Options = ref<BookingOptionDto[]>([]);
+
+/** 按科室刷新医师、号源、放号时段（医师号时传 practitionerId 收窄号源） */
+async function loadDraftFormContext(orgId?: BookingEntityId, practitionerId?: BookingEntityId) {
+  const resolvedOrgId = toBookingId(orgId);
+  if (!resolvedOrgId) {
+    draftFormInitData.value = {};
+    draftT1Options.value = [];
+    return;
+  }
+  const resolvedPractitionerId = toBookingId(practitionerId);
+  const [init, t1Opts] = await Promise.all([
+    loadScheduleFormInitApi({
+      organizationId: resolvedOrgId,
+      practitionerId: resolvedPractitionerId,
+    }),
+    listSlotProvisionTemplateOptionsApi({ organizationId: resolvedOrgId }),
+  ]);
+  draftFormInitData.value = {
+    practitioners: init?.practitioners ?? [],
+    healthcareServices: init?.healthcareServices ?? [],
+  };
+  draftT1Options.value = t1Opts?.options ?? [];
+}
 
 const provisionVisible = ref(false);
 const stopWizardVisible = ref(false);
@@ -146,30 +178,40 @@ const originalPractitionerId = computed(() => {
   return practitioner?.actorId ?? props.schedule?.originalPractitionerId;
 });
 
+/** 是否绑定了出诊医师（科室号无医师，不可替诊） */
+const hasPractitionerActor = computed(() => Boolean(toBookingId(originalPractitionerId.value)));
+
+const canSubstitutePractitioner = computed(() => hasPractitionerActor.value);
+
 const practitionerDisplay = computed(() => {
   const label = schedulePractitionerLabel(props.schedule, props.practitioners);
   return label || '未指定';
 });
 
-const locationDisplay = computed(
-  () => scheduleLocationLabel(props.schedule, props.clinicLocations) || '—',
+const departmentDisplay = computed(
+  () => scheduleDepartmentLabel(props.organizationId, props.departments) || '—',
 );
 
 const serviceTypeDisplay = computed(
   () => scheduleServiceTypeLabel(props.schedule, props.healthcareServices) || '—',
 );
 
-const missingPractitionerHint = computed(
-  () => !schedulePractitionerLabel(props.schedule, props.practitioners),
-);
+const missingPractitionerHint = computed(() => {
+  if (!props.schedule || showDraftForm.value || hasPractitionerActor.value) {
+    return false;
+  }
+  // 科室号发布后可无医师；仅草稿仍提示补医师后发布
+  return props.schedule.statusEnum === 'draft';
+});
 
-function resetCreateForm() {
+async function resetCreateForm() {
   Object.assign(draftForm, createEmptyDraftForm());
   const date = props.selectedDate ?? new Date().toISOString().slice(0, 10);
   resetDraftFormForDate(draftForm, date);
+  await loadDraftFormContext(props.organizationId);
 }
 
-function fillDraftFormFromSchedule() {
+async function fillDraftFormFromSchedule() {
   draftForm.name = props.schedule?.name ?? '';
   fillDraftFormFromActors(draftForm, props.schedule?.actors);
   if (!draftForm.healthcareServiceId) {
@@ -182,18 +224,22 @@ function fillDraftFormFromSchedule() {
     props.schedule?.planningHorizonEnd,
     props.selectedDate,
   );
+  await loadDraftFormContext(
+    props.organizationId,
+    draftForm.scheduleMode === 'MODE-A' ? draftForm.practitionerId : undefined,
+  );
 }
 
-function resolvePublishHorizon() {
-  if (draftForm.planningDate && draftForm.startTime && draftForm.endTime) {
-    return buildPlanningHorizon(draftForm);
+async function resolvePublishHorizon() {
+  if (showDraftForm.value) {
+    return resolveDraftPlanningHorizon(draftForm);
   }
   const start = props.schedule?.planningHorizonStart;
   const end = props.schedule?.planningHorizonEnd;
   if (start && end) {
     return { planningHorizonStart: start, planningHorizonEnd: end };
   }
-  throw new Error('请填写出诊日期与时间');
+  throw new Error('日程规划时间不完整');
 }
 
 function assertPublishReady() {
@@ -211,8 +257,7 @@ async function createDraftSchedule() {
   if (!props.organizationId) {
     throw new Error('请先选择排班科室');
   }
-  assertDraftFormValid(draftForm);
-  const horizon = buildPlanningHorizon(draftForm);
+  const horizon = await resolveDraftPlanningHorizon(draftForm);
   const res = await createScheduleApi({
     organizationId: props.organizationId,
     name: draftForm.name.trim() || undefined,
@@ -228,7 +273,6 @@ async function createDraftSchedule() {
 }
 
 async function saveDraftSchedule() {
-  assertDraftFormValid(draftForm);
   if (isCreateMode.value) {
     await createDraftSchedule();
     return;
@@ -236,7 +280,7 @@ async function saveDraftSchedule() {
   if (!props.schedule?.scheduleId) {
     return;
   }
-  const horizon = buildPlanningHorizon(draftForm);
+  const horizon = await resolveDraftPlanningHorizon(draftForm);
   await updateScheduleDraftApi({
     scheduleId: props.schedule.scheduleId,
     name: draftForm.name.trim() || undefined,
@@ -268,7 +312,7 @@ async function publishScheduleById(
   scheduleId: BookingEntityId,
   horizon?: { planningHorizonStart: string; planningHorizonEnd: string },
 ) {
-  const resolved = horizon ?? resolvePublishHorizon();
+  const resolved = horizon ?? (await resolvePublishHorizon());
   const preview = await previewPublishScheduleConflictsApi({
     scheduleId,
     planningHorizonStart: resolved.planningHorizonStart,
@@ -353,7 +397,7 @@ async function handlePublishGeneratedDraft() {
 
 function enterDraftEditMode() {
   draftEditMode.value = true;
-  fillDraftFormFromSchedule();
+  void fillDraftFormFromSchedule();
 }
 
 async function handleRetireSchedule() {
@@ -408,17 +452,17 @@ async function handleMaterializeFromTemplate() {
   }
 }
 
-function initDrawerForm() {
+async function initDrawerForm() {
   draftEditMode.value = false;
   if (isCreateMode.value) {
-    resetCreateForm();
+    await resetCreateForm();
     return;
   }
   if (isExistingDraft.value) {
     return;
   }
   if (props.schedule?.statusEnum === 'draft') {
-    fillDraftFormFromSchedule();
+    await fillDraftFormFromSchedule();
   }
 }
 
@@ -426,7 +470,7 @@ watch(
   () => props.visible,
   (open) => {
     if (!open) return;
-    initDrawerForm();
+    void initDrawerForm();
     substitutePractitionerId.value = props.schedule?.substitutePractitionerId;
     substituteReason.value = '';
     partialSlotIds.value = [];
@@ -447,10 +491,15 @@ watch(
   ],
   () => {
     if (props.visible) {
-      initDrawerForm();
+      void initDrawerForm();
     }
   },
 );
+
+/** 表单内切换号别/医师时重载下拉 */
+async function handleDraftFormReloadContext(payload: { practitionerId?: BookingEntityId }) {
+  await loadDraftFormContext(props.organizationId, payload.practitionerId);
+}
 
 async function loadScheduleSlots() {
   if (!props.organizationId || !props.selectedDate || !props.schedule?.scheduleId) return;
@@ -602,7 +651,7 @@ async function handleDeactivate() {
       <ElDescriptions :column="1" border>
         <ElDescriptionsItem label="名称">{{ schedule?.name || '—' }}</ElDescriptionsItem>
         <ElDescriptionsItem label="出诊医师">{{ practitionerDisplay || '—' }}</ElDescriptionsItem>
-        <ElDescriptionsItem label="诊室">{{ locationDisplay || '—' }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="科室">{{ departmentDisplay }}</ElDescriptionsItem>
         <ElDescriptionsItem label="号源类型">{{ serviceTypeDisplay || '—' }}</ElDescriptionsItem>
         <ElDescriptionsItem label="出诊时间">{{ planningHorizonDisplay }}</ElDescriptionsItem>
       </ElDescriptions>
@@ -620,10 +669,11 @@ async function handleDeactivate() {
     <div v-else-if="showDraftForm" class="schedule-action__section">
       <ScheduleDraftForm
         v-model="draftForm"
-        :practitioners="practitioners"
-        :clinic-locations="clinicLocations"
-        :healthcare-services="healthcareServices"
-        :slot-provision-template-options="slotProvisionTemplateOptions"
+        :organization-id="organizationId"
+        :practitioners="draftFormInitData.practitioners"
+        :healthcare-services="draftFormInitData.healthcareServices"
+        :slot-provision-template-options="draftT1Options"
+        @reload-context="handleDraftFormReloadContext"
       />
       <div class="schedule-action__row">
         <ElButton :loading="saveDraftLoading" @click="handleSaveDraft">保存草稿</ElButton>
@@ -645,7 +695,7 @@ async function handleDeactivate() {
     <ElDescriptions v-else-if="schedule" :column="1" border>
       <ElDescriptionsItem label="名称">{{ schedule.name || '-' }}</ElDescriptionsItem>
       <ElDescriptionsItem label="出诊医师">{{ practitionerDisplay }}</ElDescriptionsItem>
-      <ElDescriptionsItem label="诊室">{{ locationDisplay }}</ElDescriptionsItem>
+      <ElDescriptionsItem label="科室">{{ departmentDisplay }}</ElDescriptionsItem>
       <ElDescriptionsItem label="号源类型">{{ serviceTypeDisplay }}</ElDescriptionsItem>
       <ElDescriptionsItem label="状态">{{
         formatScheduleStatus(schedule.statusEnum)
@@ -683,38 +733,40 @@ async function handleDeactivate() {
     </div>
 
     <div v-if="schedule?.statusEnum === 'active'" class="schedule-action__section">
-      <h4>替诊</h4>
-      <p class="schedule-action__hint">
-        预约仍挂原医师号源，队列/大屏显示「B替A」；不触发停诊转交流程。
-      </p>
-      <ElForm label-width="88px">
-        <ElFormItem label="替诊医师">
-          <ElSelect
-            v-model="substitutePractitionerId"
-            clearable
-            filterable
-            placeholder="选择顶班医师"
-            style="width: 100%"
-          >
-            <ElOption
-              v-for="item in practitioners || []"
-              :key="item.value"
-              :label="item.label"
-              :value="bookingOptionValue(item.value)"
-              :disabled="isSameBookingId(item.value, originalPractitionerId)"
-            />
-          </ElSelect>
-        </ElFormItem>
-        <ElFormItem label="原因">
-          <ElInput v-model="substituteReason" placeholder="可选" />
-        </ElFormItem>
-      </ElForm>
-      <div class="schedule-action__row">
-        <ElButton type="primary" @click="handleSubstitute">确认替诊</ElButton>
-        <ElButton v-if="schedule.substitutePractitionerId" @click="handleClearSubstitute">
-          撤销替诊
-        </ElButton>
-      </div>
+      <template v-if="canSubstitutePractitioner">
+        <h4>替诊</h4>
+        <p class="schedule-action__hint">
+          预约仍挂原医师号源，队列/大屏显示「B替A」；不触发停诊转交流程。
+        </p>
+        <ElForm label-width="88px">
+          <ElFormItem label="替诊医师">
+            <ElSelect
+              v-model="substitutePractitionerId"
+              clearable
+              filterable
+              placeholder="选择顶班医师"
+              style="width: 100%"
+            >
+              <ElOption
+                v-for="item in practitioners || []"
+                :key="item.value"
+                :label="item.label"
+                :value="bookingOptionValue(item.value)"
+                :disabled="isSameBookingId(item.value, originalPractitionerId)"
+              />
+            </ElSelect>
+          </ElFormItem>
+          <ElFormItem label="原因">
+            <ElInput v-model="substituteReason" placeholder="可选" />
+          </ElFormItem>
+        </ElForm>
+        <div class="schedule-action__row">
+          <ElButton type="primary" @click="handleSubstitute">确认替诊</ElButton>
+          <ElButton v-if="schedule.substitutePractitionerId" @click="handleClearSubstitute">
+            撤销替诊
+          </ElButton>
+        </div>
+      </template>
       <ElButton type="primary" @click="provisionVisible = true">批量放号</ElButton>
       <div v-loading="slotsLoading" class="schedule-action__partial">
         <h4>部分停诊</h4>
@@ -761,6 +813,7 @@ async function handleDeactivate() {
       :organization-id="organizationId"
       :schedule-id="schedule?.scheduleId"
       :slot-provision-template-id="schedule?.slotProvisionTemplateId"
+      :slot-provision-template-options="slotProvisionTemplateOptions"
       :selected-date="selectedDate"
       @done="handleProvisionDone"
     />

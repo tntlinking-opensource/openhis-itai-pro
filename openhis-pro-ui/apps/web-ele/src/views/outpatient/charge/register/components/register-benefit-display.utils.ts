@@ -1,6 +1,7 @@
 /** 待遇确认展示区通用格式化 */
 
 import { formatPsnInsuStas, formatPsnType } from '#/chs/constants/benefit-display';
+import { formatMoneyYuanWithSymbol } from '#/utils/format/money-scale';
 
 export {
   formatCumTypeCode,
@@ -20,7 +21,7 @@ export function formatBenefitBalc(value: null | number | string | undefined): st
   }
   const n = Number(value);
   if (Number.isFinite(n)) {
-    return `¥${n.toFixed(2)}`;
+    return formatMoneyYuanWithSymbol(n);
   }
   const text = String(value).trim();
   return text ? `¥${text}` : '—';

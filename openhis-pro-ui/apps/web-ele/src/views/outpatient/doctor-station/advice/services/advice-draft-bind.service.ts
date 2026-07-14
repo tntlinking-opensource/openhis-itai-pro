@@ -1,3 +1,9 @@
+/**
+ * IF-DOR-23 用法/诊疗绑定解析与落库。
+ *
+ * 仅供 advice-draft-save.service 中 MANUAL_USAGE_BIND 策略调用；
+ * 仅新建药品（CREATE）触发用法绑定弹窗；UPDATE 编辑保存不二次带出。
+ */
 import type {
   AdviceDraftBindDialogRow,
   AdviceDraftBindDialogSourceGroup,
@@ -43,10 +49,6 @@ export interface SaveAdviceDraftBatchWithBindOptions {
   /** 当前就诊已有医嘱行，用于去重与 CREATE 后锚点解析 */
   existingAdviceRows?: AdviceRowItem[] | DoctorStationAdviceRowDto[];
   pricingSourceCode?: string;
-  /** 组套套用等场景：已在合并弹窗确认带出行，跳过二次绑定弹窗 */
-  preConfirmedBindDialogRows?: AdviceDraftBindDialogRow[];
-  /** 与 preConfirmedBindDialogRows 配合：写入「不再提示」缓存的来源键 */
-  preConfirmedBindSkipSourceKeys?: string[];
 }
 
 type AdviceRowLike = AdviceRowItem | DoctorStationAdviceRowDto;
@@ -249,8 +251,38 @@ function buildBindDedupeKey(
   return `${targetTable}|${targetId}|${basedOnTable}|${basedOnId}`;
 }
 
+/** 变更行是否为新建药品（仅 CREATE 药品触发用法绑定带出） */
+function isMedicationCreateDraftLine(line: DoctorStationAdviceDraftLineRequest): boolean {
+  if (line.lineOp !== 'CREATE') {
+    return false;
+  }
+  const productTableName = String(line.productTableName ?? '').trim();
+  return productTableName === MEDICATION_DEFINITION_TABLE;
+}
+
+/** 批次内是否含新建药品行 */
+function hasMedicationCreateLine(lines: readonly DoctorStationAdviceDraftLineRequest[]): boolean {
+  return lines.some(isMedicationCreateDraftLine);
+}
+
+/** 绑定项是否由新建药品行触发（UPDATE 编辑保存不参与二次带出） */
+function isBindItemTriggeredByMedicationCreate(
+  item: DoctorStationAdviceDraftBindItemDto,
+  lines: readonly DoctorStationAdviceDraftLineRequest[],
+): boolean {
+  const lineIndex = item.triggerLineIndex;
+  if (lineIndex === undefined || lineIndex === null) {
+    return false;
+  }
+  const triggerLine = lines[lineIndex];
+  if (!triggerLine) {
+    return false;
+  }
+  return isMedicationCreateDraftLine(triggerLine);
+}
+
 /** 服务端不去重，前端仅合并：① 同组药品同用法同目标；② 目标+锚点完全相同的重复项 */
-export function dedupeAdviceDraftBindItems(
+function dedupeAdviceDraftBindItems(
   bindItems: DoctorStationAdviceDraftBindItemDto[],
   lines: DoctorStationAdviceDraftLineRequest[] = [],
 ): DoctorStationAdviceDraftBindItemDto[] {
@@ -284,7 +316,7 @@ function resolveTargetKindLabel(targetProductTableName: string): string {
 }
 
 /** IF-DOR-23 响应 → 弹窗可编辑行 */
-export function toAdviceDraftBindDialogRows(
+function toAdviceDraftBindDialogRows(
   bindItems: DoctorStationAdviceDraftBindItemDto[],
   lines: DoctorStationAdviceDraftLineRequest[] = [],
 ): AdviceDraftBindDialogRow[] {
@@ -462,7 +494,7 @@ function bindItemAlreadyExists(
 }
 
 /** 过滤掉已有同锚点派生行或无效 active 的绑定候选 */
-export function filterResolvableDialogRowCandidates(
+function filterResolvableDialogRowCandidates(
   dialogRowCandidates: AdviceDraftBindDialogRow[],
   lines: DoctorStationAdviceDraftLineRequest[],
   existingAdviceRows: AdviceRowLike[],
@@ -475,7 +507,7 @@ export function filterResolvableDialogRowCandidates(
 }
 
 /** 按来源缓存拆分：已缓存来源自动带出，未缓存来源进入弹窗 */
-export function splitDialogRowsBySourceSkipCache(
+function splitDialogRowsBySourceSkipCache(
   dialogRows: AdviceDraftBindDialogRow[],
   userId: string,
 ): {
@@ -605,17 +637,19 @@ function bindItemNeedsDeferredSave(
   );
 }
 
-/** 组装单条派生暂存行（诊疗 / 耗材） */
+/** 组装单条派生暂存行（诊疗 / 耗材）；sortNumber 继承锚定药品，与主医嘱聚邻展示 */
 function buildBindDerivedDraftLine(
   item: DoctorStationAdviceDraftBindItemDto,
   basedOnRequestId: string,
   quantity: number,
+  sortNumber?: number,
 ): DoctorStationAdviceDraftLineRequest | undefined {
   const targetTable = String(item.targetProductTableName ?? '').trim();
   const targetId = String(item.targetItemId ?? '').trim();
   const basedOnTable = String(item.basedOnTable ?? '').trim();
   const unitCode = String(item.unitCode ?? '').trim() || 'U';
   const safeQty = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+  const sortNumberField = sortNumber !== undefined ? { sortNumber } : {};
 
   if (targetTable === ACTIVITY_DEFINITION_TABLE) {
     return {
@@ -623,6 +657,7 @@ function buildBindDerivedDraftLine(
       productTableName: ACTIVITY_DEFINITION_TABLE,
       basedOnTable: basedOnTable || undefined,
       basedOnId: basedOnRequestId,
+      ...sortNumberField,
       servicePayload: {
         activityDefinitionId: targetId,
         quantity: safeQty,
@@ -638,6 +673,7 @@ function buildBindDerivedDraftLine(
       productTableName: DEVICE_DEFINITION_TABLE,
       basedOnTable: basedOnTable || undefined,
       basedOnId: basedOnRequestId,
+      ...sortNumberField,
       devicePayload: {
         deviceDefinitionId: targetId,
         quantity: safeQty,
@@ -649,8 +685,29 @@ function buildBindDerivedDraftLine(
   return undefined;
 }
 
+/** 从触发行读取 sortNumber，供派生诊疗/耗材与锚定药品聚邻 */
+function resolveBindTriggerLineSortNumber(
+  item: DoctorStationAdviceDraftBindItemDto,
+  lines: DoctorStationAdviceDraftLineRequest[],
+): number | undefined {
+  const lineIndex = item.triggerLineIndex;
+  if (lineIndex === undefined || lineIndex === null) {
+    return undefined;
+  }
+  const triggerLine = lines[lineIndex];
+  if (!triggerLine) {
+    return undefined;
+  }
+  const raw = triggerLine.sortNumber;
+  if (raw === null || raw === undefined) {
+    return undefined;
+  }
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : undefined;
+}
+
 /** 将弹窗确认后的绑定行转为 IF-DOR-14 CREATE 行 */
-export function buildBindDerivedDraftLinesFromDialogRows(
+function buildBindDerivedDraftLinesFromDialogRows(
   dialogRows: AdviceDraftBindDialogRow[],
   lines: DoctorStationAdviceDraftLineRequest[],
   triggerRequestIdByLineIndex: Map<number, string>,
@@ -667,7 +724,8 @@ export function buildBindDerivedDraftLinesFromDialogRows(
     if (bindItemAlreadyExists(item, basedOnRequestId, existingRows, lines)) {
       continue;
     }
-    const line = buildBindDerivedDraftLine(item, basedOnRequestId, dialogRow.quantity);
+    const sortNumber = resolveBindTriggerLineSortNumber(item, lines);
+    const line = buildBindDerivedDraftLine(item, basedOnRequestId, dialogRow.quantity, sortNumber);
     if (line) {
       derived.push(line);
     }
@@ -750,7 +808,7 @@ async function buildTriggerRequestIdMapAfterPrimarySave(
 }
 
 /** 调用 IF-DOR-23 解析绑定并过滤无效项 */
-export async function resolveAdviceDraftBindDialogRows(
+async function resolveAdviceDraftBindDialogRows(
   options: Pick<SaveAdviceDraftBatchWithBindOptions, 'encounterId' | 'lines' | 'patientId'>,
 ): Promise<AdviceDraftBindDialogRow[]> {
   const resolveRes = await httpResolveDoctorStationAdviceDraftBinds({
@@ -761,27 +819,6 @@ export async function resolveAdviceDraftBindDialogRows(
   let bindItems = dedupeAdviceDraftBindItems(resolveRes.bindItems ?? [], options.lines);
   bindItems = bindItems.filter((item) => item.activeFlag !== false);
   return toAdviceDraftBindDialogRows(bindItems, options.lines);
-}
-
-/** 从带出行构建「不再提示」来源分组 */
-export function buildBindSourceGroupsFromDialogRows(
-  dialogRows: AdviceDraftBindDialogRow[],
-): AdviceDraftBindDialogSourceGroup[] {
-  const groupMetaByKey = new Map<string, { sourceKindLabel: string; sourceLabel: string }>();
-  for (const row of dialogRows) {
-    const sourceCacheKey = String(row.sourceCacheKey ?? '').trim();
-    if (sourceCacheKey && !groupMetaByKey.has(sourceCacheKey)) {
-      groupMetaByKey.set(sourceCacheKey, {
-        sourceLabel: row.sourceItemName,
-        sourceKindLabel: row.sourceKindLabel,
-      });
-    }
-  }
-  return [...groupMetaByKey.entries()].map(([sourceCacheKey, meta]) => ({
-    sourceCacheKey,
-    sourceLabel: meta.sourceLabel,
-    sourceKindLabel: meta.sourceKindLabel,
-  }));
 }
 
 /** 已确认的带出行落库（含延迟锚点解析） */
@@ -866,19 +903,11 @@ async function saveAdviceDraftBatchWithConfirmedBindRows(
   };
 }
 
-/** IF-DOR-23 + 来源缓存 / 弹窗确认 + IF-DOR-14：手动医嘱与带出项一并暂存 */
+/** IF-DOR-23 + 来源缓存 / 弹窗确认：仅新建药品触发带出；纯 UPDATE 编辑保存不二次弹窗 */
 export async function saveAdviceDraftBatchWithBindResolution(
   options: SaveAdviceDraftBatchWithBindOptions,
 ): Promise<SaveDoctorStationAdviceDraftBatchResponse> {
-  const {
-    encounterId,
-    patientId,
-    lines,
-    existingAdviceRows = [],
-    pricingSourceCode,
-    preConfirmedBindDialogRows,
-    preConfirmedBindSkipSourceKeys = [],
-  } = options;
+  const { encounterId, patientId, lines, existingAdviceRows = [], pricingSourceCode } = options;
   const batchBody = {
     encounterId,
     patientId,
@@ -886,25 +915,18 @@ export async function saveAdviceDraftBatchWithBindResolution(
     ...(pricingSourceCode ? { pricingSourceCode } : {}),
   };
 
-  const hasResolvableLine = lines.some(
-    (line) => line.lineOp === 'CREATE' || line.lineOp === 'UPDATE',
-  );
-  if (!hasResolvableLine) {
+  if (!hasMedicationCreateLine(lines)) {
     return httpSaveDoctorStationAdviceDraftBatch(batchBody);
   }
 
-  if (preConfirmedBindDialogRows !== undefined) {
-    if (preConfirmedBindSkipSourceKeys.length > 0) {
-      addAdviceBindSkipSources(preConfirmedBindSkipSourceKeys, resolveAdviceBindSkipCacheUserId());
-    }
-    return saveAdviceDraftBatchWithConfirmedBindRows(options, preConfirmedBindDialogRows);
-  }
-
-  const dialogRowCandidates = await resolveAdviceDraftBindDialogRows({
+  let dialogRowCandidates = await resolveAdviceDraftBindDialogRows({
     encounterId,
     patientId,
     lines,
   });
+  dialogRowCandidates = dialogRowCandidates.filter((row) =>
+    isBindItemTriggeredByMedicationCreate(row.bindItem, lines),
+  );
 
   if (dialogRowCandidates.length === 0) {
     return httpSaveDoctorStationAdviceDraftBatch(batchBody);

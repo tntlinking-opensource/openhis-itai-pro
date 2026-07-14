@@ -8,7 +8,14 @@ import type {
 
 import { formatDateTime } from '@vben/utils';
 
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
+
 import { encodeInventoryPick } from './inventory-pick-codec';
+import { HERBAL_MEDICATION_CATEGORY_CODE } from '#/views/outpatient/doctor-station/advice/services/advice-tab.constants';
+import {
+  buildTcmHerbGridRowsFromSlipRows,
+  buildTcmPrescriptionUsageTextFromSlipHead,
+} from '#/utils/tcm-prescription-display';
 
 /** 接口 number/string 统一为展示用字符串 */
 function scalarToTrimmedString(value: null | number | string | undefined): string {
@@ -16,12 +23,11 @@ function scalarToTrimmedString(value: null | number | string | undefined): strin
   return String(value).trim();
 }
 
-/** 是否按中药分组/展示（tcmFlag 为空时退回文案） */
+/** 是否按中药分组/展示（仅认 tcmFlag / medicationCategoryCode） */
 export function isHerbalSlipRow(row: EncounterMedicationDispenseSlipRowDto): boolean {
   if (row.tcmFlag === true) return true;
   if (row.tcmFlag === false) return false;
-  const text = `${row.tcmFlagText ?? ''}${row.medicationCategoryText ?? ''}`;
-  return text.includes('中药');
+  return String(row.medicationCategoryCode ?? '').trim() === HERBAL_MEDICATION_CATEGORY_CODE;
 }
 
 /** 队列行 DTO → 左侧列表患者模型 */
@@ -37,6 +43,7 @@ export function mapPendingQueueRowToPatient(
   const start = row.startTime ? formatDateTime(row.startTime) : '';
   return {
     id: row.encounterId,
+    patientId: row.patientId?.trim() || undefined,
     patientName: row.patientName?.trim() || '—',
     genderLabel: '',
     genderEnum,
@@ -50,10 +57,13 @@ export function mapPendingQueueRowToPatient(
 /** 同一处方组内根据发放状态推导组状态标签 */
 function blockStatusFromRows(
   rows: EncounterMedicationDispenseSlipRowDto[],
-): 'blocking' | 'completed' | 'partial' | 'pending' {
+): 'blocking' | 'completed' | 'partial' | 'pending' | 'prepared' {
   const set = new Set(rows.map((r) => r.statusEnum));
   if (set.has('PREPARATION')) return 'pending';
-  if (set.has('IN_PROGRESS')) return 'partial';
+  // 部分已发 + 部分已配未发（PART_COMPLETED 等混合态）
+  if (set.has('COMPLETED') && (set.has('IN_PROGRESS') || set.has('PREPARED'))) return 'partial';
+  // 保存配药后后端为 IN_PROGRESS（待发药），与 PREPARED（已配药）同属可核发态
+  if (set.has('IN_PROGRESS') || set.has('PREPARED')) return 'prepared';
   if (set.has('COMPLETED')) return 'completed';
   return 'blocking';
 }
@@ -112,6 +122,7 @@ export function mapSlipRowsToPrescriptionBlocks(
           : undefined;
       return {
         id: line.dispenseId,
+        medicationId: String(line.medicationId ?? '').trim() || undefined,
         itemName: line.medicationName?.trim() || line.merchandiseName?.trim() || '—',
         quantity: formatDispenseQuantityLabel(line),
         spec: line.specificationText?.trim() || '—',
@@ -121,15 +132,18 @@ export function mapSlipRowsToPrescriptionBlocks(
           line.totalPrice !== null &&
           line.totalPrice !== undefined &&
           scalarToTrimmedString(line.totalPrice) !== ''
-            ? String(line.totalPrice)
+            ? formatMoneyDisplay(line.totalPrice)
             : '—',
         pharmacy:
           line.dispenseLocationName?.trim() ||
           (line.dispenseLocationId ? `库房 ${line.dispenseLocationId}` : '—'),
+        dispenseLocationId: String(line.dispenseLocationId ?? '').trim() || undefined,
         inventoryPickOptions,
         factory: line.manufacturerName?.trim() || '—',
         diagnosis: line.conditionSummaryText?.trim() || '—',
         freq: line.frequencyText?.trim() || line.frequencyCode?.trim() || '—',
+        dosageInstructionText:
+          line.dosageInstructionText?.trim() || line.dosageInstructionCode?.trim() || '—',
       };
     });
     blocks.push({
@@ -141,6 +155,12 @@ export function mapSlipRowsToPrescriptionBlocks(
       issuedAt: issued,
       status: blockStatusFromRows(groupRows),
       items,
+      ...(tcm
+        ? {
+            tcmHerbGridRows: buildTcmHerbGridRowsFromSlipRows(groupRows),
+            tcmUsageText: buildTcmPrescriptionUsageTextFromSlipHead(head),
+          }
+        : {}),
     });
   }
   blocks.sort((a, b) => a.issuedAt.localeCompare(b.issuedAt));

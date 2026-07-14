@@ -113,6 +113,14 @@ const headerWrapperHeight = computed(() => {
   return height;
 });
 
+/** 主内容区顶开高度：只算页签，不算菜单行 */
+const tabbarContentOffset = computed(() => {
+  if (!props.tabbarEnable || isFullContent.value) {
+    return 0;
+  }
+  return props.tabbarHeight;
+});
+
 const getSideCollapseWidth = computed(() => {
   const { sidebarCollapseShowTitle, sidebarMixedWidth, sideCollapseWidth } = props;
 
@@ -279,20 +287,50 @@ const tabbarStyle = computed((): CSSProperties => {
   };
 });
 
-const headerContentOffset = computed(() => {
-  const fixed = headerFixed.value;
+/**
+ * header-nav / sidebar-nav 等常规布局：顶栏+页签留在文档流（sticky），
+ * 不给主内容区加 margin-top / padding-top，避免 50+38=88px 双扣留白。
+ */
+const useInFlowHeader = computed(() => {
+  if (isFullContent.value) {
+    return false;
+  }
   if (
+    isMixedNav.value ||
+    isHeaderMixedNav.value ||
+    isSidebarMixedNav.value ||
+    currentLayout.value === 'header-mixed-nav' ||
+    currentLayout.value === 'header-sidebar-nav'
+  ) {
+    return false;
+  }
+  return props.headerMode === 'fixed';
+});
+
+const shouldReserveHeaderSpace = computed(() => {
+  if (useInFlowHeader.value) {
+    return false;
+  }
+  const fixed = headerFixed.value;
+  return (
     fixed &&
     !isFullContent.value &&
     !headerIsHidden.value &&
     (!isHeaderAutoMode.value || scrollY.value < headerWrapperHeight.value)
-  ) {
-    return headerWrapperHeight.value;
-  }
-  return 0;
+  );
 });
 
-/** 顶栏 fixed 脱离文档流时，用占位块顶开主内容（不用 padding-top，避免 DevTools 绿色空白区与高度双扣） */
+const headerContentOffset = computed(() => {
+  if (!shouldReserveHeaderSpace.value) {
+    return 0;
+  }
+  // 混合导航顶栏横跨侧栏，仍需整块高度；header-nav 等只顶开页签
+  if (isMixedNav.value || isHeaderMixedNav.value || isSidebarMixedNav.value) {
+    return headerWrapperHeight.value;
+  }
+  return tabbarContentOffset.value;
+});
+
 const showHeaderPlaceholder = computed(() => headerContentOffset.value > 0);
 
 const contentStyle = computed((): CSSProperties => {
@@ -309,12 +347,23 @@ const headerZIndex = computed(() => {
 });
 
 const headerWrapperStyle = computed((): CSSProperties => {
+  const height = headerWrapperHeight.value;
+
+  if (useInFlowHeader.value) {
+    return {
+      position: 'sticky',
+      top: 0,
+      width: '100%',
+      'z-index': headerZIndex.value,
+    };
+  }
+
   const fixed = headerFixed.value;
   return {
-    height: isFullContent.value ? '0' : `${headerWrapperHeight.value}px`,
+    height: isFullContent.value ? '0' : `${height}px`,
     left: isMixedNav.value ? 0 : mainStyle.value.sidebarAndExtraWidth,
     position: fixed ? 'fixed' : 'static',
-    top: headerIsHidden.value || isFullContent.value ? `-${headerWrapperHeight.value}px` : 0,
+    top: headerIsHidden.value || isFullContent.value ? `-${height}px` : 0,
     width: mainStyle.value.width,
     'z-index': headerZIndex.value,
   };
@@ -374,9 +423,19 @@ watch(
 );
 
 watch(
-  [() => headerWrapperHeight.value, () => isFullContent.value],
-  ([height]) => {
-    setLayoutHeaderHeight(isFullContent.value ? 0 : height);
+  [
+    () => headerWrapperHeight.value,
+    () => isFullContent.value,
+    useInFlowHeader,
+    tabbarContentOffset,
+  ],
+  () => {
+    if (isFullContent.value || useInFlowHeader.value) {
+      // 菜单+页签在文档流内，由容器自然撑开，CSS 变量不再扣减菜单行高度
+      setLayoutHeaderHeight(0);
+      return;
+    }
+    setLayoutHeaderHeight(tabbarContentOffset.value);
   },
   {
     immediate: true,
@@ -464,7 +523,7 @@ const idMainContent = ELEMENT_ID_MAIN_CONTENT;
 </script>
 
 <template>
-  <div class="relative flex h-full min-h-0 w-full">
+  <div class="relative flex h-[100vh] min-h-0 w-full">
     <LayoutSidebar
       v-if="sidebarEnableState"
       v-model:collapse="sidebarCollapse"
@@ -507,10 +566,7 @@ const idMainContent = ELEMENT_ID_MAIN_CONTENT;
       </template>
     </LayoutSidebar>
 
-    <div
-      ref="contentRef"
-      class="flex flex-1 flex-col overflow-hidden transition-all duration-300 ease-in"
-    >
+    <div ref="contentRef" class="flex flex-1 flex-col overflow-hidden">
       <div
         :class="[
           {
@@ -519,7 +575,7 @@ const idMainContent = ELEMENT_ID_MAIN_CONTENT;
           SCROLL_FIXED_CLASS,
         ]"
         :style="headerWrapperStyle"
-        class="overflow-hidden transition-all duration-200"
+        class="flex shrink-0 flex-col overflow-hidden transition-[width,left,top,box-shadow] duration-200"
       >
         <LayoutHeader
           v-if="headerVisible"
@@ -561,7 +617,6 @@ const idMainContent = ELEMENT_ID_MAIN_CONTENT;
         aria-hidden="true"
       />
 
-      <!-- </div> -->
       <LayoutContent
         :id="idMainContent"
         :content-compact="contentCompact"

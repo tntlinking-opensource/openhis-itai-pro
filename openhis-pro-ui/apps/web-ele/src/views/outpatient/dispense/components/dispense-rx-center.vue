@@ -26,6 +26,7 @@ import {
 } from 'element-plus';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
+import TraceCodeTooltip from '#/components/trace/trace-code-tooltip.vue';
 
 import { buildPrescriptionSheetData } from './build-prescription-sheet-data';
 import PrescriptionSheetView from './prescription-sheet-view.vue';
@@ -45,6 +46,8 @@ const props = withDefaults(
     prescriptionRowCount: number;
     /** 处方单弹窗：就诊下全部处方块（由父级单独拉全量 slip 后传入） */
     prescriptionSheetBlocks?: DispensePrescriptionBlock[];
+    /** 处方单弹窗：中医主诊断（病证合并） */
+    sheetTcmDiagnosisText?: string;
     printPrescriptionsDisabled?: boolean;
     /** 中西药 tab 角标（处方块数） */
     rxKindBadgeCounts?: DispenseRxKindBadgeCounts;
@@ -79,10 +82,15 @@ const inventoryPickByLineId = defineModel<Record<string, string>>('inventoryPick
 
 /** 左侧合并列数：仅前三列（多选、处方号、状态） */
 const RX_TABLE_META_COLS = 3;
-/** 与模板列数一致，供间隔行 colspan */
-const RX_TABLE_TOTAL_COLS = 13;
+/** 西药 tab 列数（与模板列数一致，供间隔行 colspan） */
+const RX_TABLE_WESTERN_COLS = 13;
 
 const rxTableRef = ref<null | TableInstance>(null);
+
+/** 当前 tab 下列数：中药 tab 多一列「特殊煎法」 */
+const rxTableTotalCols = computed(() =>
+  activeRxKind.value === 'herbal' ? RX_TABLE_WESTERN_COLS + 1 : RX_TABLE_WESTERN_COLS,
+);
 
 /** 发放库房：双击后进入下拉编辑；下拉曾展开再收起则退出编辑 */
 const inventoryPickEditLineId = ref<null | string>(null);
@@ -107,15 +115,15 @@ watch(activeRxKind, () => {
   prescriptionSheetDialogVisible.value = false;
 });
 
-/** 处方组首行且可批量发药：待发 / 部分可发（已发、拦截不默认勾选） */
+/** 处方组首行且可批量发药：待发 / 已配药 / 部分可发（已发、拦截不默认勾选） */
 function isDefaultSelectableRxGroupHead(
   row: DispenseRxTableRow,
 ): row is DispensePrescriptionItemRow {
   if (isSpacerRow(row) || !row.isFirstInRx) return false;
-  return row.status === 'pending' || row.status === 'partial';
+  return row.status === 'pending' || row.status === 'prepared' || row.status === 'partial';
 }
 
-/** 选中患者且明细加载后：默认勾选所有待发/部分可发处方组（每组仅首行可选） */
+/** 选中患者且明细加载后：默认勾选所有待发/已配药/部分可发处方组（每组仅首行可选） */
 watch(
   () => {
     const pid = props.selectedPatient?.id ?? '';
@@ -151,7 +159,10 @@ const prescriptionSheetViewItems = computed(() => {
   )?.label;
   return blocks.map((block) => ({
     key: block.id,
-    data: buildPrescriptionSheetData(patient, block, { dispensingName: dispensingLabel }),
+    data: buildPrescriptionSheetData(patient, block, {
+      dispensingName: dispensingLabel,
+      tcmDiagnosisText: props.sheetTcmDiagnosisText,
+    }),
   }));
 });
 
@@ -228,7 +239,7 @@ function rxTableSpanMethod({
   row: DispenseRxTableRow;
 }): [number, number] | undefined {
   if (isSpacerRow(row)) {
-    if (columnIndex === 0) return [1, RX_TABLE_TOTAL_COLS];
+    if (columnIndex === 0) return [1, rxTableTotalCols.value];
     return [0, 0];
   }
   if (columnIndex < RX_TABLE_META_COLS) {
@@ -248,6 +259,7 @@ function rxRowSelectable(row: DispenseRxTableRow) {
 function rxStatusTagRow(row: DispensePrescriptionItemRow) {
   if (row.status === 'blocking') return { text: '拦截', type: 'danger' as const };
   if (row.status === 'partial') return { text: '部分可发', type: 'warning' as const };
+  if (row.status === 'prepared') return { text: '已配药', type: 'warning' as const };
   if (row.status === 'completed') return { text: '已发', type: 'info' as const };
   return { text: '待发', type: 'success' as const };
 }
@@ -432,6 +444,15 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
             show-overflow-tooltip
           />
           <ElTableColumn
+            v-if="activeRxKind === 'herbal'"
+            prop="dosageInstructionText"
+            label="特殊煎法"
+            width="110"
+            align="center"
+            header-align="center"
+            show-overflow-tooltip
+          />
+          <ElTableColumn
             prop="batchNo"
             label="批次号"
             width="150"
@@ -485,13 +506,11 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
               </template>
             </template>
           </ElTableColumn>
-          <ElTableColumn
-            prop="traceCode"
-            label="追溯码"
-            align="center"
-            header-align="center"
-            show-overflow-tooltip
-          />
+          <ElTableColumn prop="traceCode" label="追溯码" align="center" header-align="center">
+            <template #default="{ row }">
+              <TraceCodeTooltip :value="row.traceCode" />
+            </template>
+          </ElTableColumn>
           <ElTableColumn
             prop="factory"
             label="厂家"

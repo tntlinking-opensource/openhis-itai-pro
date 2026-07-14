@@ -232,9 +232,25 @@ function isFocusInGridCell<TRow extends object>(
 ): boolean {
   const active = document.activeElement as HTMLElement | null;
   if (!active) return false;
-  if (resolveEditFieldFromTarget(active, gridVm, editableFields) !== field) return false;
   const rowEl = findGridRowElement(gridVm, row, gridWrap);
-  return !!rowEl?.contains(active);
+  if (!rowEl?.contains(active)) return false;
+  if (resolveEditFieldFromTarget(active, gridVm, editableFields) === field) {
+    return true;
+  }
+  // 数量+单位合并列：单位 ElSelect 获焦时 active 可能落在 select 内部 input
+  if (field === '_qtyUnit' && active.closest('.el-select, .el-tree-select')) {
+    const scope = findGridCellScope(gridVm, row, rowEl, field);
+    return !!scope?.contains(active);
+  }
+  return false;
+}
+
+function isQtyUnitSelectClickTarget(
+  field: string | undefined,
+  eventTarget: EventTarget | null | undefined,
+): boolean {
+  if (field !== '_qtyUnit' || !eventTarget) return false;
+  return !!(eventTarget as HTMLElement).closest?.('.el-select, .el-tree-select');
 }
 
 /** 未完成行 ID 集合：失焦后仍保持表单展示 */
@@ -406,6 +422,7 @@ export function handleInventoryDocGridCellClick<TRow extends object>(
   params: {
     column?: { field?: string; type?: string };
     row: TRow;
+    $event?: Event;
   },
 ): void {
   if (!session.documentEditable()) return;
@@ -416,6 +433,13 @@ export function handleInventoryDocGridCellClick<TRow extends object>(
   if (!column || column.type === 'checkbox' || column.type === 'seq') return;
   const field = column.field;
   if (!field || !session.config.editableFields.has(field)) return;
+
+  // 点击单位下拉时不抢焦点回数量框（避免 cellClick 与 select mousedown 竞态）
+  if (isQtyUnitSelectClickTarget(field, params.$event?.target)) {
+    session.lastEditField.value = field;
+    session.formModeRegistry.enter(params.row, session.config.rowKey);
+    return;
+  }
 
   session.lastEditField.value = field;
   session.formModeRegistry.enter(params.row, session.config.rowKey);

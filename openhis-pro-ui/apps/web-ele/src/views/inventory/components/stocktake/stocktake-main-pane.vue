@@ -5,15 +5,17 @@
 import type { VxeGridProps, VxeGridPropTypes } from '#/adapter/vxe-table';
 import type { ApiOptionItem } from '#/types/api-response';
 import type { InboundProductUnitBand } from '#/utils/inventory/inbound-product-unit-bands';
+import type { FormInstance } from 'element-plus';
 
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 
 import { Trash2 } from '@vben/icons';
 import { useUserStore } from '@vben/stores';
 import { formatDateTime } from '@vben/utils';
 
-import { Delete, Plus } from '@element-plus/icons-vue';
 import InvDocActions from '@inventory/components/inv-doc-actions.vue';
+import InvDocGridToolbar from '@inventory/components/inv-doc-grid-toolbar.vue';
+import InvDocTraceScanBridge from '@inventory/components/inv-doc-trace-scan-bridge.vue';
 import InvMainShell from '@inventory/components/inv-main-shell.vue';
 import {
   ElButton,
@@ -28,6 +30,7 @@ import {
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import { useInventoryDocGridEdit } from '#/composables/use-inventory-doc-grid-edit';
+import { useInvDocParentSyncSession } from '#/composables/use-inv-doc-parent-sync-session';
 import {
   agreePharmacyStocktakeApi,
   createPharmacyStocktakeApi,
@@ -67,19 +70,18 @@ import {
   type StocktakeLineDto,
   type WarehouseStocktakeLocationOption,
 } from '#/api/inventory/warehouse/stocktake';
-import { getChargeTypeListApi } from '#/api/core/common';
-import {
-  filterInsuranceChargeTypes,
-  resolveDefaultInsuranceBusNo,
-  type ChargeType,
-} from '#/chs/constants/insurance-contract';
 import SectionTitle from '#/components/layouts/section-title.vue';
-import { decimalMul, decimalSub } from '#/utils/format/decimal-util';
+import { decimalAdd, decimalSub } from '#/utils/format/decimal-util';
+import { formatInventoryLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
 import {
   buildStocktakeDocActionFlags,
   normalizeStocktakeStatusSort,
   stocktakeStatusLabel,
 } from '#/utils/inventory/stocktake-doc-actions';
+import {
+  isStockOutDocumentEditableStatus,
+  isStockOutDocumentRemovableStatus,
+} from '#/utils/inventory/stock-out-doc-actions';
 import {
   applyWarehouseNonInboundBandKindToRow,
   canConvertDisplayQtyToSplitForBands,
@@ -88,7 +90,7 @@ import {
   normalizeInboundProductUnitBands,
   persistDisplayQtyAsSplitForBands,
   warehouseNonInboundDefaultBandKind,
-  warehouseNonInboundLoadPersistedSplitAsStockDisplay,
+  hydrateWarehouseDetailQtyFromPersisted,
 } from '#/utils/inventory/inbound-product-unit-bands';
 import {
   inventoryPickAvailableQtyAsStockDisplay,
@@ -97,6 +99,25 @@ import {
   inventoryPickStringField,
 } from '#/utils/inventory/inventory-product-pick-list';
 import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
+import {
+  INV_ITEM_TABLE_TYPE_DEVICE,
+  INV_ITEM_TABLE_TYPE_MEDICATION,
+  isSpecificInventoryLocationId,
+  normalizeInventoryItemTableTypeOptions,
+  resolveDefaultInventoryItemTableType,
+  resolveDocHeadProductPickLocationId,
+  warnInventoryLocationRequiredByLabel,
+} from '#/utils/inventory/inventory-workbench-list';
+import {
+  buildInventoryLocationHeadFormRules,
+  clearInventoryHeadFormValidation,
+  validateInventoryHeadFormFields,
+} from '#/utils/inventory/inventory-doc-head-form-validation';
+import {
+  INV_DOC_HEAD_FORM_GRID_CLASS,
+  INV_DOC_HEAD_SECTION_CLASS,
+} from '#/utils/inventory/inventory-doc-grid-common';
+import { refreshInventoryDocGridRow } from '#/utils/inventory/inventory-doc-grid-edit';
 
 defineOptions({ name: 'InventoryStocktakeMainPane' });
 
@@ -114,6 +135,7 @@ interface StocktakePreviewRow {
   spec: string;
   manufacturer: string;
   lotNumber: string;
+  traceNo: string;
   bookQuantity: number;
   actualQuantity: number;
   profitLossQuantity: number;
@@ -164,39 +186,60 @@ const emit = defineEmits<{
 
 const userStore = useUserStore();
 
+/** 选品门禁：优先单头「盘点药库」，与侧栏「全部」筛选解耦。 */
+const productPickGateLocationId = computed(() =>
+  resolveDocHeadProductPickLocationId(
+    purposeLocationId.value,
+    props.locationOptions as { locationId?: unknown; value?: unknown }[],
+  ),
+);
+
 const categoryEnum = computed(() => {
   if (props.variant === 'pharmacy') return PHA_STOCKTAKE_CATEGORY_ENUM;
   if (props.variant === 'department') return DEP_STOCKTAKE_CATEGORY_ENUM;
   return WHS_STOCKTAKE_CATEGORY_ENUM;
 });
 
-function firstItemTableTypeValue(): string {
-  const o = props.itemTableTypeOptions?.[0];
-  return o?.value !== undefined && o?.value !== null && String(o.value) !== ''
-    ? String(o.value)
-    : 'med_medication_definition';
+const normalizedItemTableTypeOptions = computed(() =>
+  normalizeInventoryItemTableTypeOptions(props.itemTableTypeOptions),
+);
+
+function preferredItemTableType(): string {
+  return props.variant === 'department'
+    ? INV_ITEM_TABLE_TYPE_DEVICE
+    : INV_ITEM_TABLE_TYPE_MEDICATION;
 }
 
-function normalizeLocationId(v?: number | string | null): number | string | undefined {
-  if (v === undefined || v === null || v === '') return undefined;
-  if (typeof v === 'number') return Number.isFinite(v) ? v : undefined;
-  const s = String(v).trim();
-  if (s === '') return undefined;
-  if (!/^\d+$/.test(s)) return s;
-  const n = Number(s);
-  if (Number.isSafeInteger(n)) return n;
-  return s;
+function firstItemTableTypeValue(): string {
+  return resolveDefaultInventoryItemTableType(
+    normalizedItemTableTypeOptions.value,
+    preferredItemTableType(),
+  );
 }
 
 const headerBusNo = ref<string | undefined>(undefined);
 const detailStatusEnum = ref<number | undefined>(undefined);
 const purposeLocationId = ref<number | string | undefined>(undefined);
+const headFormRef = ref<FormInstance>();
+
+const headFormModel = computed(() => ({
+  purposeLocationId: purposeLocationId.value ?? '',
+}));
+
+const headFormRules = computed(() =>
+  buildInventoryLocationHeadFormRules({
+    purposeLocationId: props.locationFieldLabel,
+  }),
+);
+
 const headItemTableType = ref(firstItemTableTypeValue());
 const saving = ref(false);
 
 const isNewDraft = computed(() => !headerBusNo.value);
 
-const documentEditable = computed(() => isNewDraft.value || detailStatusEnum.value === 1);
+const documentEditable = computed(
+  () => isNewDraft.value || isStockOutDocumentEditableStatus(detailStatusEnum.value),
+);
 
 const headerStatusText = computed(() => {
   if (isNewDraft.value) return '编辑中';
@@ -217,24 +260,6 @@ const docActionFlags = computed(() => {
   };
 });
 
-const insuranceContractBusNo = ref<string>();
-const insuranceChargeTypeOptions = ref<ChargeType[]>([]);
-
-async function loadInsuranceContractBusNo() {
-  try {
-    const chargeTypes = await getChargeTypeListApi();
-    const eligible = filterInsuranceChargeTypes(chargeTypes);
-    insuranceChargeTypeOptions.value = eligible;
-    insuranceContractBusNo.value = resolveDefaultInsuranceBusNo(
-      eligible,
-      insuranceContractBusNo.value,
-    );
-  } catch {
-    insuranceContractBusNo.value = undefined;
-    insuranceChargeTypeOptions.value = [];
-  }
-}
-
 const paneFlashActive = ref(false);
 let paneFlashTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -254,13 +279,7 @@ function toStocktakeQty(value: unknown): number {
   return Math.round(n);
 }
 
-function formatStocktakeQtyCell({ cellValue }: { cellValue?: unknown }) {
-  const n = Number(cellValue);
-  return Number.isFinite(n) ? String(toStocktakeQty(n)) : '';
-}
-
-/** 按账面/实盘重算盈亏数量与金额。 */
-/** 切换盘点计量带：数量与单价随带换算（默认 STOCK，保存转 SPLIT）。 */
+/** 切换盘点计量带：当前库存/实盘/盈亏数量与单价随带换算（默认 STOCK，保存转 SPLIT）。 */
 function handleStocktakeUnitBandChanged(row: StocktakePreviewRow) {
   const newK = String(row.selectedBandKind ?? '')
     .trim()
@@ -278,36 +297,112 @@ function handleStocktakeUnitBandChanged(row: StocktakePreviewRow) {
     if (nBook !== undefined) {
       row.bookQuantity = toStocktakeQty(nBook);
     }
+    const nPl = convertInboundQtyBetweenBandKinds(row.profitLossQuantity, oldK, newK, bands);
+    if (nPl !== undefined) {
+      row.profitLossQuantity = toStocktakeQty(nPl);
+    }
   }
   applyWarehouseNonInboundBandKindToRow(row, newK);
   row.__prevBandKind = newK;
-  recalcStocktakeLine(row);
+  recalcStocktakeLineFromActual(row);
 }
 
 /** 详情回显：持久化金额原样格式化，禁止 load 时用单价×数量重算覆盖后端 total_price。 */
 function formatStocktakeDetailPersistedAmount(total: unknown): string {
   if (total === undefined || total === null || total === '') return '';
-  return typeof total === 'number' ? total.toFixed(2) : String(total);
+  return formatMoneyDisplay(total);
 }
 
-/** 编辑态：按数量 × 单价刷新实盘/盈亏金额（详情 load 不调用）。 */
-function recalcStocktakeLine(row: StocktakePreviewRow) {
-  const book = toStocktakeQty(row.bookQuantity);
+function refreshStocktakeLineAmounts(row: StocktakePreviewRow) {
   const actual = toStocktakeQty(row.actualQuantity);
+  const pl = toStocktakeQty(row.profitLossQuantity);
   const price = Number(row.price);
-  const bookOk = Number.isFinite(book);
   const actualOk = Number.isFinite(actual);
+  const plOk = Number.isFinite(pl);
   const priceOk = Number.isFinite(price);
+  row.actualAmount = actualOk && priceOk ? formatInventoryLineTotal(actual, price) : '';
+  row.profitLossAmount = plOk && priceOk ? formatInventoryLineTotal(pl, price) : '';
+}
 
+/** 编辑实盘：盈亏 = 实盘 − 当前库存；实盘 < 0 时钳制为 0。返回是否发生钳制。 */
+function recalcStocktakeLineFromActual(row: StocktakePreviewRow): boolean {
+  const book = toStocktakeQty(row.bookQuantity);
+  const rawActual = toStocktakeQty(row.actualQuantity);
+  const bookOk = Number.isFinite(book);
+  const actualOk = Number.isFinite(rawActual);
+  let clamped = false;
   if (bookOk && actualOk) {
+    const actual = rawActual < 0 ? 0 : rawActual;
+    if (actual !== rawActual) {
+      row.actualQuantity = actual;
+      clamped = true;
+    }
     row.profitLossQuantity = Number(decimalSub(actual, book, 0));
   } else {
     row.profitLossQuantity = 0;
   }
+  refreshStocktakeLineAmounts(row);
+  return clamped;
+}
 
-  row.actualAmount = actualOk && priceOk ? String(decimalMul(actual, price, 2)) : '';
-  row.profitLossAmount =
-    bookOk && actualOk && priceOk ? String(decimalMul(row.profitLossQuantity, price, 2)) : '';
+/** 编辑盈亏：实盘 = 当前库存 + 盈亏；盘亏超过当前库存时钳制盈亏为 −当前库存。返回是否发生钳制。 */
+function recalcStocktakeLineFromProfitLoss(row: StocktakePreviewRow): boolean {
+  const book = toStocktakeQty(row.bookQuantity);
+  const rawPl = toStocktakeQty(row.profitLossQuantity);
+  const bookOk = Number.isFinite(book);
+  const plOk = Number.isFinite(rawPl);
+  let clamped = false;
+  if (bookOk && plOk) {
+    const minPl = -book;
+    const pl = rawPl < minPl ? minPl : rawPl;
+    if (pl !== rawPl) {
+      row.profitLossQuantity = pl;
+      clamped = true;
+    }
+    row.actualQuantity = Number(decimalAdd(book, pl, 0));
+  }
+  refreshStocktakeLineAmounts(row);
+  return clamped;
+}
+
+function stocktakeRowIndex(row: StocktakePreviewRow): number {
+  const rows = collectGridRows();
+  const idx = rows.findIndex((r) => r.id === row.id);
+  return idx >= 0 ? idx : 0;
+}
+
+function warnStocktakeQtyClamped(rowIndex: number): void {
+  ElMessage.warning(`第 ${rowIndex + 1} 行盘亏不能超过当前库存`);
+}
+
+/** 实盘数量变更（常驻表单无 editClosed，须即时钳制并刷新输入框）。 */
+async function applyStocktakeActualQtyChange(row: StocktakePreviewRow): Promise<void> {
+  const clamped = recalcStocktakeLineFromActual(row);
+  if (clamped) {
+    warnStocktakeQtyClamped(stocktakeRowIndex(row));
+    await refreshInventoryDocGridRow(gridApi, row);
+  }
+}
+
+/** 盈亏数量变更：盘亏超过当前库存时钳制为 −当前库存并刷新展示。 */
+async function applyStocktakePlQtyChange(row: StocktakePreviewRow): Promise<void> {
+  const clamped = recalcStocktakeLineFromProfitLoss(row);
+  if (clamped) {
+    warnStocktakeQtyClamped(stocktakeRowIndex(row));
+    await refreshInventoryDocGridRow(gridApi, row);
+  }
+}
+
+/** 选品回填当前库存：与下拉「库存数量」列同源（stockAvailableQty），避免 availableQuantity 缺失时赋 0。 */
+function resolveStocktakeBookQtyFromPick(pick: Record<string, unknown>): number {
+  if (
+    Object.prototype.hasOwnProperty.call(pick, 'stockAvailableQty') &&
+    pick.stockAvailableQty !== undefined &&
+    pick.stockAvailableQty !== null
+  ) {
+    return toStocktakeQty(inventoryPickNumberField(pick, 'stockAvailableQty'));
+  }
+  return toStocktakeQty(inventoryPickAvailableQtyAsStockDisplay(pick));
 }
 
 function syncRowFromStocktakePick(pick: Record<string, unknown>, row: StocktakePreviewRow) {
@@ -328,8 +423,9 @@ function syncRowFromStocktakePick(pick: Record<string, unknown>, row: StocktakeP
   row.manufacturer = inventoryPickStringField(pick, 'manufacturer');
   row.lotNumber = inventoryPickStringField(pick, 'lotNumber');
 
-  row.bookQuantity = toStocktakeQty(inventoryPickAvailableQtyAsStockDisplay(pick));
-  row.actualQuantity = row.bookQuantity;
+  const bookQty = resolveStocktakeBookQtyFromPick(pick);
+  row.bookQuantity = bookQty;
+  row.actualQuantity = bookQty;
 
   const bands = normalizeInboundProductUnitBands(pick.unitBands);
   row.unitBands = bands.length > 0 ? bands : undefined;
@@ -350,7 +446,7 @@ function syncRowFromStocktakePick(pick: Record<string, unknown>, row: StocktakeP
     row.unitCode = '';
     row.price = inventoryPickNumberField(pick, 'purchaseUnitPrice');
   }
-  recalcStocktakeLine(row);
+  recalcStocktakeLineFromActual(row);
 }
 
 function createEmptyStocktakeRow(): StocktakePreviewRow {
@@ -363,6 +459,7 @@ function createEmptyStocktakeRow(): StocktakePreviewRow {
     spec: '',
     manufacturer: '',
     lotNumber: '',
+    traceNo: '',
     bookQuantity: 0,
     actualQuantity: 0,
     profitLossQuantity: 0,
@@ -385,6 +482,7 @@ function mapDetailLineToGrid(
     specification?: string;
     manufacturer?: string;
     lotNumber?: string;
+    traceNo?: string;
     unitCode?: string;
     bookQuantity?: number;
     profitLossQuantity?: number;
@@ -420,6 +518,7 @@ function mapDetailLineToGrid(
     spec: String(ln.specification ?? ''),
     manufacturer: String(ln.manufacturer ?? ''),
     lotNumber: String(ln.lotNumber ?? '').trim(),
+    traceNo: String(ln.traceNo ?? '').trim(),
     bookQuantity: toStocktakeQty(ln.bookQuantity),
     actualQuantity: toStocktakeQty(ln.actualQuantity),
     profitLossQuantity: toStocktakeQty(ln.profitLossQuantity),
@@ -435,22 +534,23 @@ function mapDetailLineToGrid(
 
   if (bands.length > 0) {
     base.unitBands = bands;
-    const actualLoaded = warehouseNonInboundLoadPersistedSplitAsStockDisplay({
-      bands,
-      persistedItemQuantity: ln.actualQuantity ?? 0,
-      persistedUnitCode: unitCodeStr,
-    });
+    const hydrateQty = (splitQty: unknown) =>
+      hydrateWarehouseDetailQtyFromPersisted({
+        bands,
+        persistedItemQuantity: Number(splitQty ?? 0),
+        persistedUnitCode: unitCodeStr,
+      });
+    const actualLoaded = hydrateQty(ln.actualQuantity);
     base.actualQuantity = toStocktakeQty(actualLoaded.displayQty);
     base.selectedBandKind = actualLoaded.bandKind;
     base.unitCode = actualLoaded.unitCode;
     base.__prevBandKind = actualLoaded.bandKind;
 
-    const bookLoaded = warehouseNonInboundLoadPersistedSplitAsStockDisplay({
-      bands,
-      persistedItemQuantity: ln.bookQuantity ?? 0,
-      persistedUnitCode: unitCodeStr,
-    });
+    const bookLoaded = hydrateQty(ln.bookQuantity);
     base.bookQuantity = toStocktakeQty(bookLoaded.displayQty);
+
+    const plLoaded = hydrateQty(ln.profitLossQuantity);
+    base.profitLossQuantity = toStocktakeQty(plLoaded.displayQty);
 
     base.unitList = inboundUnitBandSelectOptions(bands);
     applyWarehouseNonInboundBandKindToRow(base, actualLoaded.bandKind, ln.price);
@@ -476,8 +576,11 @@ function isStocktakeRowComplete(row: StocktakePreviewRow): boolean {
   if (!String(row.itemTable ?? '').trim() || !isPresentItemId(row.itemId)) return false;
   if (!String(row.unitCode ?? '').trim()) return false;
   const actual = Number(row.actualQuantity);
-  if (!Number.isFinite(actual) || actual < 0) return false;
-  return canConvertDisplayQtyToSplitForBands(row.unitBands ?? [], actual, row.selectedBandKind);
+  const pl = Number(row.profitLossQuantity);
+  if (!Number.isFinite(actual) || !Number.isFinite(pl)) return false;
+  const bands = row.unitBands ?? [];
+  if (!canConvertDisplayQtyToSplitForBands(bands, actual, row.selectedBandKind)) return false;
+  return canConvertDisplayQtyToSplitForBands(bands, pl, row.selectedBandKind);
 }
 
 let stocktakeGridEdit!: ReturnType<typeof useInventoryDocGridEdit<StocktakePreviewRow>>;
@@ -486,6 +589,7 @@ function handleStocktakeProductPick(row: StocktakePreviewRow) {
   void nextTick(async () => {
     await nextTick();
     await stocktakeGridEdit.onProductSelected(row);
+    await refreshInventoryDocGridRow(gridApi, row);
   });
 }
 
@@ -507,11 +611,20 @@ const columns: VxeGridPropTypes.Column[] = [
               ? 'dept-stocktake'
               : 'warehouse-stocktake',
         query: async () => ({
-          productTableName: headItemTableType.value || undefined,
-          purposeLocationId: purposeLocationId.value ?? props.sidebarPurposeLocationId,
+          productTableName: headItemTableType.value || firstItemTableTypeValue(),
+          purposeLocationId: productPickGateLocationId.value,
         }),
         onSelected: (product: Record<string, unknown>, row: StocktakePreviewRow) => {
-          syncRowFromStocktakePick(product, row);
+          const mergedPick =
+            product?.stockAvailableQty !== undefined ||
+            product?.availableQuantity !== undefined ||
+            product?.unitBands
+              ? product
+              : ({
+                  ...(row.medicinePick as Record<string, unknown> | undefined),
+                  ...product,
+                } as Record<string, unknown>);
+          syncRowFromStocktakePick(mergedPick, row);
           handleStocktakeProductPick(row);
         },
       },
@@ -522,12 +635,24 @@ const columns: VxeGridPropTypes.Column[] = [
   { field: 'manufacturer', title: '厂家', minWidth: 100, showOverflow: true },
   { field: 'lotNumber', title: '批号', width: 100, showOverflow: true },
   {
-    field: 'bookQuantity',
-    title: '账面数量',
-    width: 96,
-    align: 'right',
+    field: 'traceNo',
+    title: '追溯码',
+    minWidth: 140,
+    editRender: { name: 'InventoryTraceNoCell', props: { maxlength: 512, clearable: true } },
+  },
+  {
+    field: '_bookQtyUnit',
+    title: '当前库存',
+    width: 158,
+    align: 'center',
     headerAlign: 'center',
-    formatter: formatStocktakeQtyCell,
+    cellRender: {
+      name: 'InventoryQtyUnitReadonlyCell',
+      props: {
+        qtyField: 'bookQuantity',
+        unitField: 'selectedBandKind',
+      },
+    },
   },
   {
     field: '_actualQtyUnit',
@@ -543,21 +668,37 @@ const columns: VxeGridPropTypes.Column[] = [
         onUnitChange: (row: StocktakePreviewRow) => {
           handleStocktakeUnitBandChanged(row);
         },
+        onQtyChange: (row: StocktakePreviewRow) => {
+          void applyStocktakeActualQtyChange(row);
+        },
       },
     },
   },
   {
-    field: 'profitLossQuantity',
+    field: '_plQtyUnit',
     title: '盈亏数量',
-    width: 108,
-    align: 'right',
+    width: 168,
+    align: 'center',
     headerAlign: 'center',
-    formatter: formatStocktakeQtyCell,
+    editRender: {
+      name: 'InventoryQtyUnitCell',
+      props: {
+        qtyField: 'profitLossQuantity',
+        unitField: 'selectedBandKind',
+        allowNegative: true,
+        onUnitChange: (row: StocktakePreviewRow) => {
+          handleStocktakeUnitBandChanged(row);
+        },
+        onQtyChange: (row: StocktakePreviewRow) => {
+          void applyStocktakePlQtyChange(row);
+        },
+      },
+    },
   },
   {
     field: 'price',
     title: '单价',
-    width: 120,
+    width: 110,
     align: 'right',
     headerAlign: 'center',
     cellRender: {
@@ -571,7 +712,7 @@ const columns: VxeGridPropTypes.Column[] = [
   {
     field: 'actualAmount',
     title: '实盘金额',
-    width: 112,
+    width: 102,
     align: 'right',
     headerAlign: 'center',
     cellRender: {
@@ -584,7 +725,7 @@ const columns: VxeGridPropTypes.Column[] = [
   {
     field: 'profitLossAmount',
     title: '盈亏金额',
-    width: 112,
+    width: 102,
     align: 'right',
     headerAlign: 'center',
     cellRender: {
@@ -636,13 +777,30 @@ const gridOptions: VxeGridProps<StocktakePreviewRow> = reactive({
   pagerConfig: { enabled: false },
 });
 
-const STOCKTAKE_EDITABLE_COLUMN_FIELDS = new Set(['_actualQtyUnit', 'medicinePick', 'remark']);
+const STOCKTAKE_EDITABLE_COLUMN_FIELDS = new Set([
+  '_actualQtyUnit',
+  '_plQtyUnit',
+  'medicinePick',
+  'remark',
+  'traceNo',
+]);
 
-const STOCKTAKE_EDIT_FIELD_ORDER = ['medicinePick', '_actualQtyUnit', 'remark'] as const;
+const STOCKTAKE_EDIT_FIELD_ORDER = [
+  'medicinePick',
+  '_actualQtyUnit',
+  '_plQtyUnit',
+  'traceNo',
+  'remark',
+] as const;
 
 type StocktakeEditField = (typeof STOCKTAKE_EDIT_FIELD_ORDER)[number];
 
-const STOCKTAKE_VERTICAL_NAV_FIELDS = new Set<StocktakeEditField>(['_actualQtyUnit', 'remark']);
+const STOCKTAKE_VERTICAL_NAV_FIELDS = new Set<StocktakeEditField>([
+  '_actualQtyUnit',
+  '_plQtyUnit',
+  'remark',
+  'traceNo',
+]);
 
 const stocktakeGridKeyboardRef = ref<HTMLElement | null>(null);
 
@@ -654,7 +812,9 @@ const [Grid, gridApi] = useVbenVxeGrid<StocktakePreviewRow>({
     editClosed(params: { row: StocktakePreviewRow; column?: { field?: string } }) {
       const f = params.column?.field;
       if (f === 'actualQuantity' || f === '_actualQtyUnit') {
-        recalcStocktakeLine(params.row);
+        void applyStocktakeActualQtyChange(params.row);
+      } else if (f === 'profitLossQuantity' || f === '_plQtyUnit') {
+        void applyStocktakePlQtyChange(params.row);
       }
       stocktakeGridEdit.syncRowFormMode(params.row);
     },
@@ -706,13 +866,18 @@ watch(
 );
 
 watch(
-  () => props.itemTableTypeOptions,
+  normalizedItemTableTypeOptions,
   (opts) => {
-    if (opts?.length && !String(headItemTableType.value ?? '').trim()) {
-      headItemTableType.value = String(opts[0]?.value ?? '');
+    if (opts.length === 0) return;
+    const current = String(headItemTableType.value ?? '').trim();
+    if (!current || !opts.some((o) => o.value === current)) {
+      headItemTableType.value = resolveDefaultInventoryItemTableType(
+        opts,
+        preferredItemTableType(),
+      );
     }
   },
-  { deep: true },
+  { immediate: true },
 );
 
 watch(
@@ -727,11 +892,18 @@ function collectGridRows(): StocktakePreviewRow[] {
   return g?.getFullData?.() ?? [];
 }
 
+const traceScanBridgeRef = ref<InstanceType<typeof InvDocTraceScanBridge> | null>(null);
+
+/** 打开批量追溯码扫码弹窗 */
+function handleOpenTraceScan(): void {
+  traceScanBridgeRef.value?.open(collectGridRows());
+}
+
 function resetDetailForCreate() {
   headerBusNo.value = undefined;
   detailStatusEnum.value = undefined;
-  const pid = normalizeLocationId(props.sidebarPurposeLocationId);
-  purposeLocationId.value = pid ?? props.locationOptions[0]?.locationId;
+  purposeLocationId.value = undefined;
+  clearInventoryHeadFormValidation(headFormRef.value);
   stocktakeGridEdit.resetFormMode();
   void nextTick(() => {
     gridApi?.grid?.loadData([]);
@@ -739,7 +911,7 @@ function resetDetailForCreate() {
   });
 }
 
-async function loadDetail(busNo: string) {
+async function loadDetail(busNo: string, loadGen?: number) {
   stocktakeGridEdit.resetFormMode();
   stocktakeGridEdit.clearGridEdit();
   try {
@@ -749,6 +921,7 @@ async function loadDetail(busNo: string) {
         : props.variant === 'department'
           ? await getDeptStocktakeDetailApi({ busNo })
           : await getWarehouseStocktakeDetailApi({ busNo });
+    if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
     const data = res.data;
     if (!data?.busNo) {
       ElMessage.warning('未获取到盘点单详情');
@@ -761,11 +934,14 @@ async function loadDetail(busNo: string) {
     const gridRows = (data.lines ?? []).map((ln, i) => mapDetailLineToGrid(ln, i));
     // 详情回显：单价/实盘金额/盈亏金额以后端 SupplyRequest 落库为准，不在 load 时重算
     void nextTick(() => {
+      if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
       gridApi?.grid?.loadData(gridRows);
       patchStocktakeGridEditConfig();
     });
   } catch {
+    if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
     void nextTick(() => {
+      if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
       gridApi?.grid?.loadData([]);
       patchStocktakeGridEditConfig();
     });
@@ -777,7 +953,7 @@ function buildLinesPayload(
 ): StocktakeLineDto[] | PharmacyStocktakeLineDto[] | DeptStocktakeLineDto[] {
   const now = formatDateTime(new Date());
   return rows.map((r) => {
-    recalcStocktakeLine(r);
+    recalcStocktakeLineFromActual(r);
     const displayActual = toStocktakeQty(r.actualQuantity);
     const displayPl = toStocktakeQty(r.profitLossQuantity);
     const persistedActual = persistDisplayQtyAsSplitForBands({
@@ -805,6 +981,7 @@ function buildLinesPayload(
       profitLossAmount: Number.isFinite(plAmt) ? plAmt : undefined,
       unitCode: String(persistedActual.unitCode ?? r.unitCode ?? '').trim() || undefined,
       lotNumber: String(r.lotNumber ?? '').trim() || undefined,
+      traceNo: String(r.traceNo ?? '').trim() || undefined,
       inventoryItemId: r.inventoryItemId,
       price: Number.isFinite(Number(r.price)) ? Number(r.price) : undefined,
       remake: String(r.remark ?? '').trim() || undefined,
@@ -814,9 +991,8 @@ function buildLinesPayload(
 }
 
 function validateBeforeSave(rows: StocktakePreviewRow[]): boolean {
-  const loc = purposeLocationId.value;
-  if (loc === undefined || loc === null || loc === '') {
-    ElMessage.warning(`请选择${props.locationFieldLabel}`);
+  if (!isSpecificInventoryLocationId(purposeLocationId.value)) {
+    warnInventoryLocationRequiredByLabel(props.locationFieldLabel);
     return false;
   }
   if (rows.length === 0) {
@@ -824,7 +1000,7 @@ function validateBeforeSave(rows: StocktakePreviewRow[]): boolean {
     return false;
   }
   for (const [i, r] of rows.entries()) {
-    recalcStocktakeLine(r);
+    recalcStocktakeLineFromActual(r);
     const itemTable = String(r.itemTable ?? '').trim();
     if (
       !itemTable ||
@@ -841,13 +1017,22 @@ function validateBeforeSave(rows: StocktakePreviewRow[]): boolean {
       return false;
     }
     const actual = Number(r.actualQuantity);
-    if (!Number.isFinite(actual) || actual < 0) {
-      ElMessage.warning(`第 ${i + 1} 行实盘数量须 ≥ 0`);
+    const pl = Number(r.profitLossQuantity);
+    if (!Number.isFinite(actual)) {
+      ElMessage.warning(`第 ${i + 1} 行实盘数量无效`);
+      return false;
+    }
+    if (!Number.isFinite(pl)) {
+      ElMessage.warning(`第 ${i + 1} 行盈亏数量无效`);
       return false;
     }
     const bands = r.unitBands ?? [];
     if (!canConvertDisplayQtyToSplitForBands(bands, actual, r.selectedBandKind)) {
-      ElMessage.warning(`第 ${i + 1} 行无法将数量换算为拆零单位，请检查计量带`);
+      ElMessage.warning(`第 ${i + 1} 行实盘数量无法换算为拆零单位，请检查计量带`);
+      return false;
+    }
+    if (!canConvertDisplayQtyToSplitForBands(bands, pl, r.selectedBandKind)) {
+      ElMessage.warning(`第 ${i + 1} 行盈亏数量无法换算为拆零单位，请检查计量带`);
       return false;
     }
   }
@@ -940,8 +1125,8 @@ async function handleRemoveDoc() {
 
   const no = headerBusNo.value;
   if (!no) return;
-  if (detailStatusEnum.value !== 1) {
-    ElMessage.warning('仅待审核单据可删除');
+  if (!isStockOutDocumentRemovableStatus(detailStatusEnum.value)) {
+    ElMessage.warning('仅待审核、驳回、已撤回单据可删除');
     return;
   }
   try {
@@ -1010,26 +1195,13 @@ async function handleWithdraw() {
 async function handleApprove() {
   const no = headerBusNo.value;
   if (!no) return;
-  if (!insuranceContractBusNo.value?.trim()) {
-    ElMessage.warning('请先选择医保契约');
-    return;
-  }
   try {
     if (props.variant === 'pharmacy') {
-      await agreePharmacyStocktakeApi({
-        busNo: no,
-        contractBusNo: insuranceContractBusNo.value,
-      });
+      await agreePharmacyStocktakeApi({ busNo: no });
     } else if (props.variant === 'department') {
-      await agreeDeptStocktakeApi({
-        busNo: no,
-        contractBusNo: insuranceContractBusNo.value,
-      });
+      await agreeDeptStocktakeApi({ busNo: no });
     } else {
-      await agreeWarehouseStocktakeApi({
-        busNo: no,
-        contractBusNo: insuranceContractBusNo.value,
-      });
+      await agreeWarehouseStocktakeApi({ busNo: no });
     }
     ElMessage.success('审批同意');
     await loadDetail(no);
@@ -1066,6 +1238,9 @@ async function handleReject() {
 
 async function addItem() {
   if (!documentEditable.value) return;
+  if (!(await validateInventoryHeadFormFields(headFormRef.value, 'purposeLocationId'))) {
+    return;
+  }
   const $grid = gridApi?.grid;
   if (!$grid) return;
   const record = createEmptyStocktakeRow();
@@ -1086,18 +1261,48 @@ async function deleteItem(row: 'select' | StocktakePreviewRow) {
   await $grid.remove(row === 'select' ? checked : row);
 }
 
-async function syncFromParentContext() {
-  if (props.isDraftOrder) {
-    resetDetailForCreate();
-    return;
-  }
-  const bn = String(props.busNo ?? '').trim();
-  if (bn) {
-    await loadDetail(bn);
-  } else {
-    resetDetailForCreate();
-  }
+interface StocktakeDraftSnap {
+  purposeLocationId?: number | string;
+  rows: StocktakePreviewRow[];
 }
+
+const parentSync = useInvDocParentSyncSession<StocktakeDraftSnap>();
+
+/** 侧栏切单：缓存/恢复本地草稿，避免已落库明细污染新建单 */
+async function syncFromParentContext() {
+  await parentSync.syncFromParentContext(
+    { isDraftOrder: Boolean(props.isDraftOrder), parentBusNo: props.busNo },
+    {
+      getLocalPersistedBusNo: () => headerBusNo.value,
+      captureDraft: () => ({
+        purposeLocationId: purposeLocationId.value,
+        rows: collectGridRows().map((r) => ({ ...r })),
+      }),
+      restoreDraft: async (snap) => {
+        headerBusNo.value = undefined;
+        detailStatusEnum.value = undefined;
+        purposeLocationId.value = snap.purposeLocationId;
+        stocktakeGridEdit.resetFormMode();
+        await nextTick();
+        gridApi?.grid?.loadData(snap.rows);
+        patchStocktakeGridEditConfig();
+      },
+      resetForCreate: () => {
+        resetDetailForCreate();
+      },
+      loadByBusNo: async (busNo, gen) => {
+        await loadDetail(busNo, gen);
+      },
+    },
+  );
+}
+
+watch(
+  () => props.resetKey,
+  () => {
+    parentSync.discardDraftSession();
+  },
+);
 
 watch(
   () => [props.busNo, props.isDraftOrder, props.resetKey] as const,
@@ -1106,34 +1311,6 @@ watch(
   },
   { immediate: true },
 );
-
-watch(
-  () => props.sidebarPurposeLocationId,
-  () => {
-    if (props.isDraftOrder || !headerBusNo.value) {
-      const pid = normalizeLocationId(props.sidebarPurposeLocationId);
-      if (pid !== undefined) {
-        purposeLocationId.value = pid;
-      }
-    }
-  },
-);
-
-watch(
-  () => props.locationOptions,
-  (list) => {
-    if (list.length === 0) return;
-    if (!purposeLocationId.value && (isNewDraft.value || !headerBusNo.value)) {
-      const pid = normalizeLocationId(props.sidebarPurposeLocationId);
-      purposeLocationId.value = pid ?? list[0]?.locationId;
-    }
-  },
-  { deep: true },
-);
-
-onMounted(() => {
-  void loadInsuranceContractBusNo();
-});
 </script>
 
 <template>
@@ -1143,40 +1320,17 @@ onMounted(() => {
   >
     <InvMainShell>
       <template #actionBar>
-        <div class="flex w-full flex-col gap-2">
-          <div
-            v-if="insuranceChargeTypeOptions.length > 0"
-            class="flex flex-wrap items-center gap-2"
-          >
-            <span class="text-xs text-[var(--el-text-color-secondary)]">医保契约</span>
-            <ElSelect
-              v-model="insuranceContractBusNo"
-              class="!w-72"
-              placeholder="请选择医保契约"
-              filterable
-              clearable
-              :disabled="docActionFlags.approveDisabled"
-            >
-              <ElOption
-                v-for="item in insuranceChargeTypeOptions"
-                :key="item.busNo"
-                :label="item.busNo ? `${item.label}（${item.busNo}）` : item.label"
-                :value="item.busNo"
-              />
-            </ElSelect>
-          </div>
-          <div class="flex w-full flex-wrap items-center justify-end gap-2">
-            <InvDocActions
-              v-bind="docActionFlags"
-              @approve="handleApprove"
-              @reject="handleReject"
-              @remove-doc="handleRemoveDoc"
-              @save="handleSaveDoc"
-              @save-and-submit="handleSaveAndSubmitDoc"
-              @submit-approval="handleSubmitApproval"
-              @withdraw="handleWithdraw"
-            />
-          </div>
+        <div class="flex w-full flex-wrap items-center justify-end gap-2">
+          <InvDocActions
+            v-bind="docActionFlags"
+            @approve="handleApprove"
+            @reject="handleReject"
+            @remove-doc="handleRemoveDoc"
+            @save="handleSaveDoc"
+            @save-and-submit="handleSaveAndSubmitDoc"
+            @submit-approval="handleSubmitApproval"
+            @withdraw="handleWithdraw"
+          />
         </div>
       </template>
 
@@ -1184,7 +1338,7 @@ onMounted(() => {
         class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2"
         @mousedown="stocktakeGridEdit.onSurfaceMouseDown"
       >
-        <div class="shrink-0">
+        <div :class="INV_DOC_HEAD_SECTION_CLASS">
           <SectionTitle :title="headSectionTitle" />
           <div class="mt-1 flex flex-wrap items-center gap-2">
             <span class="text-xs" style="color: var(--el-text-color-regular)">状态</span>
@@ -1195,14 +1349,18 @@ onMounted(() => {
               单号 {{ headerBusNo }}
             </span>
           </div>
-          <ElForm label-width="80px" class="compact-head-form mt-1">
-            <div
-              class="grid grid-cols-1 gap-x-2 gap-y-0 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
-            >
+          <ElForm
+            ref="headFormRef"
+            :model="headFormModel"
+            :rules="headFormRules"
+            label-width="96px"
+            class="compact-head-form mt-1"
+          >
+            <div :class="INV_DOC_HEAD_FORM_GRID_CLASS">
               <ElFormItem label="单据号">
                 <ElInput :model-value="headerBusNo ?? ''" disabled placeholder="保存后生成" />
               </ElFormItem>
-              <ElFormItem :label="locationFieldLabel">
+              <ElFormItem :label="locationFieldLabel" prop="purposeLocationId">
                 <ElSelect
                   v-model="purposeLocationId"
                   class="w-full"
@@ -1226,7 +1384,7 @@ onMounted(() => {
                   :disabled="!documentEditable"
                 >
                   <ElOption
-                    v-for="t in itemTableTypeOptions"
+                    v-for="t in normalizedItemTableTypeOptions"
                     :key="String(t.value)"
                     :label="t.label"
                     :value="String(t.value)"
@@ -1239,28 +1397,18 @@ onMounted(() => {
 
         <div
           ref="stocktakeGridKeyboardRef"
-          class="stocktake-main-pane__grid-wrap flex min-h-0 min-w-0 flex-1 flex-col"
+          class="stocktake-main-pane__grid-wrap mt-2 flex min-h-0 min-w-0 flex-1 flex-col"
           @keydown.capture="stocktakeGridEdit.onGridKeydown"
         >
           <Grid class="min-h-0 flex-1">
             <template #toolbar-actions>
-              <ElButton
-                class="mr-2"
-                type="primary"
-                :icon="Plus"
+              <InvDocGridToolbar
                 :disabled="!documentEditable"
-                @click="addItem"
-              >
-                添加行
-              </ElButton>
-              <ElButton
-                type="danger"
-                :icon="Delete"
-                :disabled="!documentEditable"
-                @click="deleteItem('select')"
-              >
-                删除行
-              </ElButton>
+                show-trace-scan
+                @add="addItem"
+                @delete-selected="deleteItem('select')"
+                @trace-scan="handleOpenTraceScan"
+              />
             </template>
             <template #action="{ row }">
               <ElButton
@@ -1278,9 +1426,22 @@ onMounted(() => {
       </div>
     </InvMainShell>
   </div>
+  <InvDocTraceScanBridge ref="traceScanBridgeRef" scene="stocktake" />
 </template>
 
-<style scoped>
+<style scoped lang="scss">
+.compact-head-form :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+.compact-head-form :deep(.el-form-item__label) {
+  padding-right: 8px;
+}
+
+.inv-doc-head-section {
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
 .stocktake-main-pane__grid-wrap :deep(.vxe-grid) {
   min-height: 200px;
 }

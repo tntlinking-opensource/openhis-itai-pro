@@ -1,18 +1,23 @@
-<!-- 药库调拨入库（药房入库）：工作站 + 侧栏 + 右侧明细。 -->
+<!-- 药库调拨入库：工作站 + 侧栏 + 右侧明细（只读壳单）。 -->
 <script lang="ts" setup>
 import type { ApiOptionItem } from '#/types/api-response';
 
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-
-import { formatDateTime } from '@vben/utils';
 
 import {
   loadTransferInFormInitApi,
-  pageTransferInsApi,
+  mapTransferInInitToCabinetRows,
+  pageTransferInWorkbenchListApi,
   WHS_TRANSFER_IN_TYPE_ENUM,
 } from '#/api/inventory/warehouse/transfer-in';
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
+import {
+  INV_ALL_LOCATIONS_FILTER_ID,
+  mapInitOptionDtoToApiItems,
+  normalizeSidebarLocationFilterValue,
+  resolveDefaultAllLocationsFilterValue,
+} from '#/utils/inventory/inventory-workbench-list';
 import TransferAsidePane from './transfer-in-aside-pane.vue';
 import TransferMainPane from './transfer-in-main-pane.vue';
 
@@ -29,11 +34,7 @@ function createDefaultMonthRange(): [string, string] {
 }
 
 function mapOptions(list?: { label?: string; value?: string }[]): ApiOptionItem[] {
-  return (list ?? []).map((o) => ({ label: String(o.label ?? ''), value: String(o.value ?? '') }));
-}
-
-function optionsToCabinetRows(list: ApiOptionItem[]): Record<string, unknown>[] {
-  return list.map((w) => ({ id: w.value, value: w.value, name: w.label, label: w.label }));
+  return mapInitOptionDtoToApiItems(list);
 }
 
 const queryParams = ref<{ keyword?: string }>({ keyword: '' });
@@ -45,7 +46,9 @@ const listKeywordModel = computed({
   },
 });
 
-const tableForm = ref<{ purposeLocationId?: number | string }>({ purposeLocationId: undefined });
+const tableForm = ref<{ purposeLocationId?: number | string }>({
+  purposeLocationId: INV_ALL_LOCATIONS_FILTER_ID,
+});
 const cabinetListOptions = ref<Record<string, unknown>[]>([]);
 const warehouseOptions = ref<ApiOptionItem[]>([]);
 const pharmacyOptions = ref<ApiOptionItem[]>([]);
@@ -53,7 +56,6 @@ const practitionerOptions = ref<ApiOptionItem[]>([]);
 const orderList = ref<Record<string, unknown>[]>([]);
 const selectedOrder = ref<null | Record<string, unknown>>(null);
 const mainPaneResetKey = ref(0);
-const isAddDisabled = ref(false);
 
 function resolveBusNo(row?: null | Record<string, unknown>): string | undefined {
   if (!row) return undefined;
@@ -67,7 +69,7 @@ function resolveBusNo(row?: null | Record<string, unknown>): string | undefined 
 }
 
 const selectedBusNo = computed(() => resolveBusNo(selectedOrder.value) ?? '');
-const isDraftOrder = computed(() => Boolean(selectedOrder.value?._draft));
+const isDraftOrder = computed(() => false);
 
 async function init() {
   try {
@@ -76,10 +78,16 @@ async function init() {
     pharmacyOptions.value = mapOptions(data?.pharmacyLocationOptions);
     warehouseOptions.value = mapOptions(data?.warehouseLocationOptions);
     practitionerOptions.value = mapOptions(data?.pharmacistOptions ?? data?.warehouseKeeperOptions);
-    cabinetListOptions.value = optionsToCabinetRows(pharmacyOptions.value);
-    if (tableForm.value.purposeLocationId === undefined && cabinetListOptions.value.length > 0) {
-      const first = cabinetListOptions.value[0] as Record<string, unknown>;
-      tableForm.value.purposeLocationId = (first.id ?? first.value) as number | string | undefined;
+    cabinetListOptions.value = mapTransferInInitToCabinetRows(data?.warehouseLocationOptions);
+    if (
+      tableForm.value.purposeLocationId === undefined ||
+      tableForm.value.purposeLocationId === null ||
+      String(tableForm.value.purposeLocationId).trim() === '' ||
+      tableForm.value.purposeLocationId === 0
+    ) {
+      tableForm.value.purposeLocationId = resolveDefaultAllLocationsFilterValue(
+        cabinetListOptions.value,
+      );
     }
   } catch {
     pharmacyOptions.value = [];
@@ -90,74 +98,28 @@ async function init() {
 }
 
 async function getList() {
-  const pid = tableForm.value.purposeLocationId;
-  const draftRows = orderList.value.filter((r) => r._draft);
-  if (pid === undefined || pid === null || String(pid).trim() === '') {
-    orderList.value = [...draftRows];
-    return;
-  }
   const dr = listDateRange.value;
   try {
-    const res = await pageTransferInsApi({
-      purposeLocationId: pid,
+    const { records } = await pageTransferInWorkbenchListApi({
+      purposeLocationId: normalizeSidebarLocationFilterValue(tableForm.value.purposeLocationId),
       typeEnum: WHS_TRANSFER_IN_TYPE_ENUM,
       keyword: queryParams.value.keyword?.trim() || undefined,
-      pageNo: 1,
-      pageSize: 200,
-      ...(dr?.[0] ? { applyTimeFrom: dr[0] } : {}),
-      ...(dr?.[1] ? { applyTimeTo: dr[1] } : {}),
+      applyTimeBegin: dr?.[0],
+      applyTimeEnd: dr?.[1],
     });
-    orderList.value = [...draftRows, ...(res.data?.records ?? [])];
+    orderList.value = records as Record<string, unknown>[];
   } catch {
-    orderList.value = [...draftRows];
+    orderList.value = [];
   }
-}
-
-function handleAdd() {
-  const draft = {
-    _draft: true,
-    statusEnum_enumText: '编辑中',
-    applyTime: formatDateTime(new Date()),
-    purposeLocationId: tableForm.value.purposeLocationId,
-  };
-  orderList.value = [draft, ...orderList.value.filter((r) => !r._draft)];
-  selectedOrder.value = draft;
-  mainPaneResetKey.value += 1;
-  nextTick(() => {
-    isAddDisabled.value = true;
-  });
 }
 
 function handleOrderClick(order: Record<string, unknown>) {
   selectedOrder.value = order;
-  if (order._draft) {
-    mainPaneResetKey.value += 1;
-    return;
-  }
-  isAddDisabled.value = false;
-}
-
-async function handleDocumentSaved(payload: { busNo?: string }) {
-  orderList.value = orderList.value.filter((r) => !r._draft);
-  await getList();
-  const busNo = payload.busNo?.trim();
-  if (!busNo) return;
-  const row = orderList.value.find((item) => resolveBusNo(item) === busNo);
-  if (row) selectedOrder.value = row;
-  isAddDisabled.value = false;
 }
 
 async function handleDocumentRemoved() {
-  if (selectedOrder.value?._draft) {
-    orderList.value = orderList.value.filter((r) => r !== selectedOrder.value);
-    selectedOrder.value = null;
-    mainPaneResetKey.value += 1;
-    isAddDisabled.value = false;
-    return;
-  }
   selectedOrder.value = null;
   mainPaneResetKey.value += 1;
-  isAddDisabled.value = false;
   await getList();
 }
 
@@ -193,13 +155,12 @@ onMounted(async () => {
         v-model:date-range="listDateRange"
         v-model:keyword="listKeywordModel"
         v-model:filter-location-id="tableForm.purposeLocationId"
-        :add-disabled="isAddDisabled"
         :cabinet-list-options="cabinetListOptions"
         :orders="orderList"
         :selected-order="selectedOrder"
-        filter-location-label="调入药房"
+        :show-add="false"
+        filter-location-label="调入药库"
         queue-title="历史调拨入库单"
-        @add="handleAdd"
         @search="getList"
         @select="handleOrderClick"
       />
@@ -210,13 +171,11 @@ onMounted(async () => {
       :bus-no="selectedBusNo"
       :is-draft-order="isDraftOrder"
       :reset-key="mainPaneResetKey"
-      :sidebar-filter-location-id="tableForm.purposeLocationId"
       :warehouse-options="warehouseOptions"
       :pharmacy-options="pharmacyOptions"
       :practitioner-options="practitionerOptions"
-      head-section-title="调拨入库单"
+      head-section-title="药库调拨入库单"
       @document-removed="handleDocumentRemoved"
-      @document-saved="handleDocumentSaved"
     />
   </WarehouseDocWorkstation>
 </template>

@@ -118,4 +118,8 @@ function handleNodeClick(data: TreeNode) {
   min-width: 0;
   overflow: auto;
 }
+
+.quick-tree :deep(.el-tree-node__content) {
+  height: 32px;
+}
 </style>

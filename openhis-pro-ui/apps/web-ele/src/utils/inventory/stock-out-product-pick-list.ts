@@ -1,6 +1,6 @@
 /**
- * 出库单（IF-WHS-SO-11）选品下拉：列与 {@link ProductDefinitionItemDto} 字段 1:1。
- * 批号级一行；不展示零售价、最小单位、批准文号。
+ * 出库单（IF-WHS-SO-11）选品下拉：列与接口批号级选品字段 1:1。
+ * 批号级一行（`inventoryItemId`）；**须含 `lotNumber`（批号）**；不展示零售价、最小单位、批准文号。
  */
 
 export const STOCK_OUT_PRODUCT_PICK_TABLE_COLUMNS = [

@@ -167,7 +167,7 @@ function handleAdd() {
           <ElSelect
             v-model="sourceLocationId"
             class="min-w-0 flex-1"
-            placeholder="请选择源药库"
+            placeholder="全部库房"
             clearable
             filterable
             @change="handleLocationFiltersChange"
@@ -186,7 +186,7 @@ function handleAdd() {
         <ElSelect
           v-model="purposeLocationId"
           class="w-full"
-          placeholder="请选择目的药房"
+          placeholder="全部药房"
           clearable
           filterable
           @change="handleLocationFiltersChange"

@@ -5,7 +5,7 @@ import type { AdviceProductOption } from '#/views/outpatient/doctor-station/advi
 
 import { ORDER_TEMPLATE_LINE_KIND_MEDICATION } from '#/api/basic/order-template';
 import { resolveTcmDoseUnitFromProduct } from '#/components/doctor-station/tcm-advice/services/tcm-prescription.service';
-import { decimalMul } from '#/utils/format/decimal-util';
+import { calcMoneyLineTotal, sumMoneyThenCalc } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import {
@@ -127,16 +127,16 @@ export function updateTcmTemplateLineDose(line: TcmTemplateDraftLine, dose: numb
   line.dosageText = buildDosageText(line);
 }
 
-/** 单剂金额：各行 dose × retailPrice 累加 */
+/** 单剂金额：各行 dose × retailPrice 累加（6 位） */
 export function calcTcmTemplateSingleDoseAmount(lines: TcmTemplateDraftLine[]): number {
-  let sum = 0;
+  const lineTotals: number[] = [];
   for (const line of lines) {
     if (!String(line.medicationDefinitionId ?? '').trim()) {
       continue;
     }
     const dose = resolveTcmTemplateLineDose(line);
     const price = Number(line._retailPrice ?? 0);
-    sum += decimalMul(dose, price);
+    lineTotals.push(calcMoneyLineTotal(price, dose));
   }
-  return sum;
+  return sumMoneyThenCalc(lineTotals);
 }

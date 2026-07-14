@@ -7,6 +7,14 @@ import type { ApiOptionItem, ApiResponse } from '#/types/api-response';
 import { requestClient } from '#/api/request';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import {
+  filterWorkbenchListRowsByDateRange,
+  INV_ALL_DEPT_PHARMACIES_LABEL,
+  mapInitOptionDtoToLocationSelectOptions,
+  mapLocationOptionsToCabinetRows,
+  pickInitOptionDtoList,
+  prependAllLocationsCabinetOption,
+} from '#/utils/inventory/inventory-workbench-list';
+import {
   stocktakeStatusLabel,
   normalizeStocktakeStatusSort,
 } from '#/utils/inventory/stocktake-doc-actions';
@@ -27,6 +35,8 @@ export interface LoadDeptStocktakeFormInitRequest {
 
 export interface LoadDeptStocktakeFormInitResponse {
   deptLocationOptions?: StocktakeOptionDto[];
+  /** 后端 IF-DEP-ST-01 实际字段名。 */
+  pharmacyLocationOptions?: StocktakeOptionDto[];
   inboundItemTableTypeOptions?: StocktakeOptionDto[];
   statusOptions?: StocktakeOptionDto[];
   nurseOptions?: StocktakeOptionDto[];
@@ -77,6 +87,7 @@ export interface DeptStocktakeDetailLineDto {
   specification?: string;
   manufacturer?: string;
   lotNumber?: string;
+  traceNo?: string;
   expirationDate?: string;
   unitCode?: string;
   bookQuantity?: number;
@@ -112,6 +123,7 @@ export interface DeptStocktakeLineDto {
   profitLossAmount?: number;
   unitCode?: string;
   lotNumber?: string;
+  traceNo?: string;
   inventoryItemId?: number | string;
   price?: number;
   remake?: string;
@@ -193,6 +205,7 @@ export interface StocktakeProductItemDto {
   specification?: string;
   manufacturer?: string;
   lotNumber?: string;
+  traceNo?: string;
   expirationDate?: string;
   availableQuantity?: number | string;
   unitBands?: StocktakeProductUnitBandDto[];
@@ -241,10 +254,7 @@ export function mapDeptStocktakeInitItemTableTypes(opts?: StocktakeOptionDto[]):
 export function mapDeptStocktakeInitToLocationOptions(
   list?: StocktakeOptionDto[],
 ): DeptStocktakeLocationOption[] {
-  return (list ?? []).map((o) => ({
-    locationId: o.value,
-    displayName: o.label,
-  }));
+  return mapInitOptionDtoToLocationSelectOptions(list);
 }
 
 function mapDeptStocktakeListRowToQueueCard(r: DeptStocktakeListRowDto): Record<string, unknown> {
@@ -328,7 +338,7 @@ export async function removeDeptStocktakeApi(body: RemoveDeptStocktakeRequest) {
 
 export async function pageProductsForDeptStocktakeApi(body: PageProductsForDeptStocktakeRequest) {
   return requestClient.post<ApiResponse<PageProductsForDeptStocktakeResponse>>(
-    `${BASE}/pageProductsForDeptStocktake`,
+    `${BASE}/pageProductsForStocktake`,
     body,
   );
 }
@@ -346,21 +356,25 @@ export async function pageDeptStocktakeWorkbenchListApi(params?: {
 
   const res = await pageDeptStocktakesApi({
     purposeLocationId,
-    applyTimeFrom: params?.applyTimeBegin ? `${params.applyTimeBegin}T00:00:00` : undefined,
-    applyTimeTo: params?.applyTimeEnd ? `${params.applyTimeEnd}T23:59:59` : undefined,
     pageNo: 1,
-    pageSize: 100,
+    pageSize: 200,
   });
   const { content, totalCount } = parsePagedRowsFromApiData<DeptStocktakeListRowDto>(res.data);
+  const dateFiltered = filterWorkbenchListRowsByDateRange(
+    content,
+    params?.applyTimeBegin,
+    params?.applyTimeEnd,
+  );
   const kw = params?.keyword?.trim().toLowerCase();
-  let records = content.map((r) => mapDeptStocktakeListRowToQueueCard(r));
+  let records = dateFiltered.map((r) => mapDeptStocktakeListRowToQueueCard(r));
   if (kw) {
     records = records.filter((r) => {
       const no = String(r.busNo ?? r.supplyBusNo ?? '').toLowerCase();
       return no.includes(kw);
     });
   }
-  return { records, total: kw ? records.length : totalCount };
+  const filtered = params?.applyTimeBegin && params?.applyTimeEnd;
+  return { records, total: kw || filtered ? records.length : totalCount };
 }
 
 /** 进入页面：科室盘点 init。 */
@@ -371,10 +385,18 @@ export async function initDeptStocktakeWorkbenchApi(): Promise<{
 }> {
   const res = await loadDeptStocktakeFormInitApi({});
   const d = res.data;
-  const rows = (d?.deptLocationOptions ?? []).map(optionDtoToCabinetRow);
+  const locationOpts = pickInitOptionDtoList(
+    d as Record<string, unknown> | undefined,
+    'deptLocationOptions',
+    'pharmacyLocationOptions',
+  );
+  const rows = mapLocationOptionsToCabinetRows(
+    locationOpts.map((o) => ({ value: o.value, label: o.label })),
+    INV_ALL_DEPT_PHARMACIES_LABEL,
+  );
   return {
-    cabinetListOptions: rows,
-    locationRawOptions: mapDeptStocktakeInitToLocationOptions(d?.deptLocationOptions),
+    cabinetListOptions: prependAllLocationsCabinetOption(rows, INV_ALL_DEPT_PHARMACIES_LABEL),
+    locationRawOptions: mapDeptStocktakeInitToLocationOptions(locationOpts),
     itemTableTypeOptions: mapDeptStocktakeInitItemTableTypes(d?.inboundItemTableTypeOptions),
   };
 }

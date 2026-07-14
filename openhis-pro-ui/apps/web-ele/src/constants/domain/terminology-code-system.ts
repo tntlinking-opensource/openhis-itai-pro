@@ -35,6 +35,8 @@ export const TerminologyCodeSystemName = {
   /** 耗材种类/类型 → 实体 type_code */
   IN_WAY_CODE: 'in_way_code',
   ADMIT_SOURCE_CODE: 'admit_source_code',
+  /** 入院时情况/患者病情（对应 adm_encounter.priority_enum） */
+  ADM_COND_CODE: 'adm_cond_code',
   /** 生命体征项编码（护士站/体温单，对应 dia_vital_sign.vital_signs_code） */
   VITAL_SIGNS_CODE: 'vital_signs_code',
   /** 体温单特殊事件（对应 dia_vital_sign_detail term_code=special_event_code） */

@@ -4,12 +4,14 @@ import { buildOutpatientChargeReceiptPrintData } from './outpatient-charge-recei
 import { buildOutpatientDailySettlementPrintData } from './outpatient-daily-settlement';
 import { buildOutpatientInfusionLabelPrintData } from './outpatient-infusion-label';
 import { buildOutpatientPrescriptionPrintData } from './outpatient-prescription';
+import { buildOutpatientTcmPrescriptionPrintData } from './outpatient-tcm-prescription';
 import { buildOutpatientRegisterReceiptPrintData } from './outpatient-register-receipt';
 import { buildOutpatientTreatmentSheetPrintData } from './outpatient-treatment-sheet';
 import { buildTestPrintData } from './test-print';
 import { registerPrintMapper } from './registry';
 
 registerPrintMapper(PRINT_SCENARIO.outpatientRx, buildOutpatientPrescriptionPrintData);
+registerPrintMapper(PRINT_SCENARIO.outpatientTcmRx, buildOutpatientTcmPrescriptionPrintData);
 registerPrintMapper(PRINT_SCENARIO.examinationPrint, buildExaminationPrintData);
 registerPrintMapper(PRINT_SCENARIO.testPrint, buildTestPrintData);
 registerPrintMapper(PRINT_SCENARIO.opRegPrint, buildOutpatientRegisterReceiptPrintData);
@@ -52,6 +54,14 @@ export type {
   OutpatientPrescriptionMedicationLine,
   OutpatientPrescriptionPrintData,
 } from './outpatient-prescription';
+export {
+  buildOutpatientTcmPrescriptionPrintData,
+  isTcmPrescriptionSlipGroup,
+} from './outpatient-tcm-prescription';
+export type {
+  OutpatientTcmPrescriptionHerbGridRow,
+  OutpatientTcmPrescriptionPrintData,
+} from './outpatient-tcm-prescription';
 export { buildOutpatientRegisterReceiptPrintData } from './outpatient-register-receipt';
 export type {
   OutpatientRegisterReceiptChargeLine,

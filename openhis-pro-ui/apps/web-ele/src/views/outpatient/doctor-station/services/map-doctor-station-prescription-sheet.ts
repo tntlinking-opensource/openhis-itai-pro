@@ -11,11 +11,14 @@ import type {
 import { formatDateTime } from '@vben/utils';
 
 import { buildPrescriptionSheetData } from '#/views/outpatient/dispense/components/build-prescription-sheet-data';
+import { HERBAL_MEDICATION_CATEGORY_CODE } from '#/views/outpatient/doctor-station/advice/services/advice-tab.constants';
 
 /** 是否中药医嘱行 */
 function isTcmAdviceRow(row: DoctorStationAdviceRowDto): boolean {
-  const cat = String(row.catalogCategoryName ?? '').trim();
-  return cat.includes('中药');
+  if (row.tcmFlag === true) return true;
+  if (row.tcmFlag === false) return false;
+  const categoryCode = String(row.catalogCategoryCode ?? row.categoryCode ?? '').trim();
+  return categoryCode === HERBAL_MEDICATION_CATEGORY_CODE;
 }
 
 function scalarToTrimmedString(value: null | number | string | undefined): string {

@@ -13,6 +13,8 @@ import {
   resolveSlipStatusText,
 } from '../services/map-nurse-station-dispense-summary';
 
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
+
 defineOptions({
   name: 'DispenseSummaryDetailDialog',
 });
@@ -50,6 +52,14 @@ const headerInfoItems = computed(() => {
     { label: '领药人', value: header.receiverName?.trim() || '—' },
   ];
 });
+
+/** 金额展示：6 位 API 值 format 为 2 位。 */
+function formatMoneyCell(value: unknown): string {
+  if (value === undefined || value === null || value === '') {
+    return '—';
+  }
+  return formatMoneyDisplay(value);
+}
 
 /** 关闭弹窗 */
 function handleClose() {
@@ -125,12 +135,12 @@ function handleClose() {
             </ElTableColumn>
             <ElTableColumn prop="unitPrice" label="单价" min-width="88" align="right">
               <template #default="{ row }">
-                {{ row.unitPrice ?? '—' }}
+                {{ formatMoneyCell(row.unitPrice) }}
               </template>
             </ElTableColumn>
             <ElTableColumn prop="totalPrice" label="总价" min-width="88" align="right">
               <template #default="{ row }">
-                {{ row.totalPrice ?? '—' }}
+                {{ formatMoneyCell(row.totalPrice) }}
               </template>
             </ElTableColumn>
           </ElTable>

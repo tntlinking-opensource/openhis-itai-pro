@@ -23,8 +23,16 @@ import {
   preserveApiIdForRequest,
   resolveLoginPractitionerIdForRequest,
 } from '#/utils/format/preserve-api-id';
+import {
+  ENCOUNTER_CLINICAL_ORDER_MUTATION_BLOCKED_MESSAGE,
+  isEncounterClinicalOrderMutationBlocked,
+} from '#/utils/inpatient/encounter-clinical-order-gate';
 
 import SkinTestPanel from './components/skin-test-panel.vue';
+import {
+  buildNurseStationStickyPatientInfoFromModulePatient,
+  buildNurseStationStickyPatientInfoPlaceholder,
+} from '../components/build-nurse-station-sticky-patient-info';
 import {
   mapInpatientSkinTestDraftToSaveRequest,
   type InpatientSkinTestRowDraft,
@@ -59,6 +67,15 @@ const listRequest = useRequest(httpListNurseStationSkinTestRows, { manual: true 
 
 /** 皮试仅支持左侧单选患者 */
 const canOperateSkinTest = computed(() => props.patients.length === 1);
+/** 就诊已出院/待结算/已结算：禁止皮试划价写操作 */
+const isEncounterChargeMutationBlocked = computed(() =>
+  canOperateSkinTest.value
+    ? isEncounterClinicalOrderMutationBlocked(props.patients[0]?.statusEnum)
+    : false,
+);
+const canWriteSkinTest = computed(
+  () => canOperateSkinTest.value && !isEncounterChargeMutationBlocked.value,
+);
 
 /** 当前选中就诊上下文 */
 const selectedPatientContext = computed(() => {
@@ -88,24 +105,16 @@ const stickyPatientInfo = computed(() => {
     return null;
   }
   if (!canOperateSkinTest.value) {
-    return {
+    return buildNurseStationStickyPatientInfoPlaceholder({
       diagnosis: `当前已选 ${props.patients.length} 位患者（请单选后登记皮试）`,
       name: '请选择单一患者',
-    };
+    });
   }
   const patient = props.patients[0];
   if (!patient) {
     return null;
   }
-  return {
-    age: patient.age,
-    bedNo: patient.bedNo,
-    diagnosis: patient.diagnosis ?? '—',
-    gender: patient.gender,
-    inpatientNo: patient.id,
-    insuranceType: patient.feeType ?? '—',
-    name: patient.name,
-  };
+  return buildNurseStationStickyPatientInfoFromModulePatient(patient);
 });
 
 /** 加载皮试枚举与护士候选 */
@@ -146,6 +155,10 @@ async function handleSaveSkinTestRow(draft: InpatientSkinTestRowDraft) {
   const context = selectedPatientContext.value;
   if (!context) {
     ElMessage.warning('皮试登记仅支持单选患者，请在左侧只勾选 1 位患者');
+    return;
+  }
+  if (!canWriteSkinTest.value) {
+    ElMessage.warning(ENCOUNTER_CLINICAL_ORDER_MUTATION_BLOCKED_MESSAGE);
     return;
   }
   if (!context.accountId) {

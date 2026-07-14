@@ -46,9 +46,17 @@ import {
 import { httpLoadAdmissionParticipantInit } from '#/api/inpatient/nurse-station/inpatient-nurse-station.http';
 import { httpPagePatientsForSelect } from '#/api/outpatient-registration';
 import AppDialog from '#/components/app-dialog.vue';
+import AdmissionDiagnosisField from '#/components/admission/admission-diagnosis-field.vue';
+import type { AdmissionDiagnosisFormState } from '#/components/admission/admission-diagnosis.types';
+import { createEmptyAdmissionDiagnosisFormState } from '#/components/admission/admission-diagnosis.types';
+import {
+  buildAdmissionDiagnosesFromFormState,
+  validateAdmissionDiagnosisFormState,
+} from '#/components/admission/services/build-admission-diagnoses';
 import SelectTable from '#/components/select-table.vue';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { normalizeAdmCondTermCode } from '#/utils/terminology/resolve-adm-cond-code-label';
 import {
   optionDtosToPayChannelOptions,
   type PayChannelOption,
@@ -60,6 +68,7 @@ import {
   isInsuranceContractCategory,
   CHARGE_TYPE_CATEGORY,
 } from '#/views/outpatient/charge/register/services/register-benefit.service';
+import { requiresInsuranceBenefitFlow } from '#/views/outpatient/charge/register/services/charge-type-category';
 import { useRegisterBenefit } from '#/views/outpatient/charge/register/services/use-register-benefit';
 import { buildFormRecordFromSnapshot } from '#/views/outpatient/charge/register/services/register-patient-identity.service';
 
@@ -82,7 +91,6 @@ import {
   ENCOUNTER_STATUS,
   GENDER_OPTIONS,
   INPATIENT_MED_TYPE,
-  PATIENT_CONDITION_OPTIONS,
   PAY_CHANNEL_OPTIONS,
 } from './inpatient-register.constants';
 
@@ -116,7 +124,9 @@ const organizationOptions = ref<OptionDto[]>([]);
 const contractOptions = ref<OptionDto[]>([]);
 const inWayCodeOptions = ref<OptionDto[]>([]);
 const admitSourceCodeOptions = ref<OptionDto[]>([]);
-const admissionDiagnosisOptions = ref<OptionDto[]>([]);
+const admCondCodeOptions = ref<OptionDto[]>([]);
+const westernAdmissionDiagnosisOptions = ref<OptionDto[]>([]);
+const admissionDiagnosisReadonly = ref(false);
 /** 入院病区下拉（与入院科室同为 label/value 结构） */
 const wardOptions = ref<OptionDto[]>([]);
 /** 主治医生下拉（科室下角色为医生的参与者） */
@@ -186,8 +196,7 @@ const registerForm = reactive({
   assignedBedDisplay: '',
   outpatientDoctor: '',
   attendingDoctorId: '',
-  conditionDefinitionId: '',
-  diagnosisDescription: '',
+  admissionDiagnosis: createEmptyAdmissionDiagnosisFormState(),
   contractId: '',
   startTime: '',
   admitSourceCode: '',
@@ -199,23 +208,13 @@ const registerForm = reactive({
 
 const payChannelOptions = ref<PayChannelOption[]>([...PAY_CHANNEL_OPTIONS]);
 
-function resolveContractLabel(contractId: string | undefined): string {
-  if (!contractId) {
-    return '';
-  }
-  const opt = contractOptions.value.find((item) => String(item.value) === String(contractId));
-  return String(opt?.label ?? '');
-}
-
 const isInsuranceContractSelected = computed(() => {
-  const label = resolveContractLabel(registerForm.contractId);
-  if (!label) {
+  const contractId = String(registerForm.contractId ?? '').trim();
+  if (!contractId) {
     return false;
   }
-  if (label.includes('自费') || label.includes('现金')) {
-    return false;
-  }
-  return label.includes('医保');
+  const category = getInpatientContractCategory(contractId, contractMeta.value);
+  return requiresInsuranceBenefitFlow(category);
 });
 
 function clearInsuranceCardState() {
@@ -753,15 +752,10 @@ const [InpatientInfoForm, inpatientInfoFormApi] = useVbenForm(
       },
       {
         component: 'Input',
-        fieldName: 'assignedBedDisplay',
-        label: '入科床位',
-        dependencies: {
-          triggerFields: ['assignedBedDisplay'],
-          if(values) {
-            return Boolean(String(values.assignedBedDisplay ?? '').trim());
-          },
-        },
-        componentProps: { disabled: true, placeholder: '-' },
+        fieldName: 'admissionDiagnosisSlot',
+        label: '入院诊断',
+        required: true,
+        formItemClass: 'register-form-item--admission-diagnosis',
       },
       {
         component: 'Input',
@@ -782,27 +776,12 @@ const [InpatientInfoForm, inpatientInfoFormApi] = useVbenForm(
       },
       {
         component: 'Select',
-        fieldName: 'conditionDefinitionId',
-        label: '入院诊断',
-        required: true,
-        componentProps: {
-          filterable: true,
-          options: [],
-          placeholder: '请选择入院诊断',
-        },
-      },
-      { component: 'Input', fieldName: 'diagnosisDescription', label: '诊断描述' },
-      {
-        component: 'Select',
         fieldName: 'priorityEnum',
         label: '患者病情',
         componentProps: {
           clearable: true,
           placeholder: '请选择',
-          options: PATIENT_CONDITION_OPTIONS.map((item) => ({
-            label: item.label,
-            value: item.value,
-          })),
+          options: [],
         },
       },
       {
@@ -835,13 +814,26 @@ const [InpatientInfoForm, inpatientInfoFormApi] = useVbenForm(
       {
         component: 'DatePicker',
         fieldName: 'startTime',
-        label: '入院日期',
+        label: '入院时间',
         required: true,
         componentProps: {
-          type: 'date',
-          valueFormat: 'YYYY-MM-DD',
-          placeholder: '请选择日期',
+          type: 'datetime',
+          valueFormat: 'YYYY-MM-DD HH:mm:ss',
+          format: 'YYYY-MM-DD HH:mm:ss',
+          placeholder: '请选择入院时间',
         },
+      },
+      {
+        component: 'Input',
+        fieldName: 'assignedBedDisplay',
+        label: '入科床位',
+        dependencies: {
+          triggerFields: ['assignedBedDisplay'],
+          if(values) {
+            return Boolean(String(values.assignedBedDisplay ?? '').trim());
+          },
+        },
+        componentProps: { disabled: true, placeholder: '-' },
       },
     ],
     showDefaultActions: false,
@@ -874,6 +866,13 @@ function applyAdmissionTerminologyOptionsFromContext(context: LoadRegistrationCo
   }
   if (context.admitSourceCodeOptions?.length) {
     admitSourceCodeOptions.value = context.admitSourceCodeOptions.map((item) => ({
+      label: item.label,
+      value: String(item.value),
+      disabled: item.disabled,
+    }));
+  }
+  if (context.admCondCodeOptions?.length) {
+    admCondCodeOptions.value = context.admCondCodeOptions.map((item) => ({
       label: item.label,
       value: String(item.value),
       disabled: item.disabled,
@@ -929,34 +928,10 @@ function restoreContractIdAfterOrganizationReload(previousContractId: string) {
   applyDefaultContractIdIfEmpty();
 }
 
-/** 解析入院诊断说明：优先自定义描述，否则用目录项名称。 */
-function resolveAdmissionDiagnosisDescription(
-  conditionDefinitionId: string,
-  customDescription: string,
-): string {
-  const custom = customDescription.trim();
-  if (custom) return custom;
-  const hit = admissionDiagnosisOptions.value.find(
-    (item) => String(item.value) === conditionDefinitionId,
-  );
-  return hit?.label ?? '';
-}
-
-/** 组装登记提交的入院诊断行（须含 conditionDefinitionId 或 conditionId）。 */
+/** 组装登记提交的入院诊断行（西医单条 / 中医一病一症）。 */
 function buildAdmissionDiagnosesForSubmit(): AdmissionDiagnosisSubmitDto[] | undefined {
-  const conditionDefinitionId = preserveApiIdForRequest(registerForm.conditionDefinitionId);
-  if (!conditionDefinitionId) return undefined;
-  const description = resolveAdmissionDiagnosisDescription(
-    conditionDefinitionId,
-    registerForm.diagnosisDescription,
-  );
-  return [
-    {
-      primaryFlag: true,
-      conditionDefinitionId,
-      ...(description ? { description } : {}),
-    },
-  ];
+  const rows = buildAdmissionDiagnosesFromFormState(registerForm.admissionDiagnosis);
+  return rows.length > 0 ? rows : undefined;
 }
 
 /** 护士分床后拼接「病区 / 床位」展示文案；未分床返回空串以隐藏表单项。 */
@@ -984,8 +959,7 @@ function resetInpatientInfoExtendedFields() {
   registerForm.admissionCount = '';
   registerForm.assignedBedDisplay = '';
   registerForm.attendingDoctorId = '';
-  registerForm.conditionDefinitionId = '';
-  registerForm.diagnosisDescription = '';
+  registerForm.admissionDiagnosis = createEmptyAdmissionDiagnosisFormState();
   attendingDoctorOptions.value = [];
 }
 
@@ -1005,14 +979,32 @@ function ageToFormValue(age: number | undefined): number | null {
   return Number(age);
 }
 
-/** 入院日期提交前补齐时分秒 */
+/** 入院时间表单回显：保留完整时刻，缺省为当前时间 */
+function normalizeStartTimeForForm(raw: string | undefined | null): string {
+  const trimmed = String(raw ?? '').trim();
+  if (!trimmed) {
+    return dayjs().format('YYYY-MM-DD HH:mm:ss');
+  }
+  const parsed = dayjs(trimmed);
+  return parsed.isValid()
+    ? parsed.format('YYYY-MM-DD HH:mm:ss')
+    : dayjs().format('YYYY-MM-DD HH:mm:ss');
+}
+
+/** 入院时间提交前补齐时分秒（仅日期时取当前时刻，避免落库 00:00:00） */
 function normalizeStartTimeForSubmit(startTime: string) {
   const raw = startTime.trim();
   if (!raw) return '';
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-    return `${raw} 00:00:00`;
+    const now = dayjs();
+    return dayjs(raw)
+      .hour(now.hour())
+      .minute(now.minute())
+      .second(now.second())
+      .format('YYYY-MM-DD HH:mm:ss');
   }
-  return raw;
+  const parsed = dayjs(raw);
+  return parsed.isValid() ? parsed.format('YYYY-MM-DD HH:mm:ss') : raw;
 }
 
 /** 出生日期提交前补齐时分秒（与后端 LocalDateTime 契约一致） */
@@ -1088,23 +1080,29 @@ async function applyContextToDialog(context: LoadRegistrationContextResult) {
   registerForm.wardId = preserveApiIdForRequest(encounter?.wardId) ?? '';
   registerForm.contractId = '';
   applyDefaultContractIdIfEmpty();
-  registerForm.startTime = encounter?.startTime?.slice(0, 10) ?? dayjs().format('YYYY-MM-DD');
+  registerForm.startTime = normalizeStartTimeForForm(encounter?.startTime);
   registerForm.admitSourceCode = encounter?.admitSourceCode ?? '';
   registerForm.inWayCode = encounter?.inWayCode ?? '';
-  registerForm.priorityEnum = encounter?.priorityEnum ?? '';
+  registerForm.priorityEnum = normalizeAdmCondTermCode(encounter?.priorityEnum);
   resetInpatientInfoExtendedFields();
   registerForm.outpatientDoctor = encounter?.outpatientDoctorName?.trim() ?? '';
   registerForm.attendingDoctorId = preserveApiIdForRequest(encounter?.attendingDoctorId) ?? '';
   registerForm.assignedBedDisplay = resolveAssignedBedDisplay(encounter);
-  registerForm.conditionDefinitionId =
-    preserveApiIdForRequest(encounter?.primaryConditionDefinitionId) ?? '';
-  registerForm.diagnosisDescription = encounter?.primaryConditionDefinitionName?.trim() ?? '';
+  registerForm.admissionDiagnosis = {
+    ...createEmptyAdmissionDiagnosisFormState(),
+    readonlyDisplay:
+      encounter?.primaryConditionDefinitionName?.trim() ||
+      encounter?.primaryConditionDefinitionId?.trim() ||
+      '',
+  };
+  // 已有住院线（医生申请/已登记）或弹窗只读查看时，入院诊断不可编辑
+  admissionDiagnosisReadonly.value = dialogReadOnly.value || Boolean(encounter?.encounterId);
   registerForm.admissionCount = '-';
   registerForm.advanceDepositAmount = 0;
   registerForm.payChannelCode = DEFAULT_PAY_CHANNEL_CODE;
   clearInsuranceCardState();
   await refreshContractOptionsSchema();
-  await refreshAdmissionDiagnosisOptionsSchema();
+  await refreshWesternAdmissionDiagnosisOptionsSchema();
   await refreshAdmissionTerminologyOptionsSchema();
   await refreshOrganizationOptionsSchema();
   await loadWardSelectOptions();
@@ -1113,9 +1111,6 @@ async function applyContextToDialog(context: LoadRegistrationContextResult) {
   await syncDialogFormsFromModel();
   await applyWardIdEcho(registerForm.wardId);
   await setDialogFormsDisabled(dialogReadOnly.value);
-  await setAdmissionDiagnosisFieldsReadonly(
-    Boolean(encounter?.encounterId) && !dialogReadOnly.value,
-  );
 }
 
 /** 重置无档登记空白弹窗。 */
@@ -1124,14 +1119,14 @@ async function resetDialogForNoRecord() {
   applyDefaultContractIdIfEmpty();
   clearInsuranceCardState();
   await refreshContractOptionsSchema();
-  await refreshAdmissionDiagnosisOptionsSchema();
+  await refreshWesternAdmissionDiagnosisOptionsSchema();
   await refreshAdmissionTerminologyOptionsSchema();
   await loadWardSelectOptions();
   await loadAttendingDoctorOptions();
   await refreshAttendingDoctorOptionsSchema();
   await syncDialogFormsFromModel();
   await setDialogFormsDisabled(false);
-  await setAdmissionDiagnosisFieldsReadonly(false);
+  admissionDiagnosisReadonly.value = false;
 }
 
 /** 清空登记弹窗 reactive model（不含 vben 控件）。 */
@@ -1149,7 +1144,7 @@ function resetRegisterFormModel() {
   registerForm.organizationId = '';
   registerForm.wardId = '';
   registerForm.contractId = '';
-  registerForm.startTime = dayjs().format('YYYY-MM-DD');
+  registerForm.startTime = dayjs().format('YYYY-MM-DD HH:mm:ss');
   registerForm.admitSourceCode = '';
   registerForm.inWayCode = '';
   registerForm.priorityEnum = '';
@@ -1181,24 +1176,14 @@ async function handleRegisterDialogClosed() {
 }
 
 /** 有医生申请时入院诊断只读（登记不重写主诊） */
-async function setAdmissionDiagnosisFieldsReadonly(readonly: boolean) {
+async function refreshAdmissionDiagnosisFieldSchema() {
   await inpatientInfoFormApi.updateSchema([
     {
-      fieldName: 'conditionDefinitionId',
-      rules: readonly ? null : 'selectRequired',
-      componentProps: {
-        disabled: readonly,
-        filterable: true,
-        options: admissionDiagnosisOptions.value,
-        placeholder: readonly ? '由医生申请带入' : '请选择入院诊断',
-      },
-    },
-    {
-      fieldName: 'diagnosisDescription',
-      componentProps: {
-        disabled: readonly,
-        placeholder: readonly ? '由医生申请带入' : undefined,
-      },
+      fieldName: 'admissionDiagnosisSlot',
+      rules: admissionDiagnosisReadonly.value ? null : 'selectRequired',
+      formItemClass: admissionDiagnosisReadonly.value
+        ? 'register-form-item--admission-diagnosis register-form-item--admission-diagnosis-readonly'
+        : 'register-form-item--admission-diagnosis',
     },
   ]);
 }
@@ -1221,8 +1206,7 @@ async function syncDialogFormsFromModel() {
     assignedBedDisplay: registerForm.assignedBedDisplay,
     outpatientDoctor: registerForm.outpatientDoctor,
     attendingDoctorId: registerForm.attendingDoctorId,
-    conditionDefinitionId: registerForm.conditionDefinitionId,
-    diagnosisDescription: registerForm.diagnosisDescription,
+    admissionDiagnosisSlot: ' ',
     contractId: registerForm.contractId,
     startTime: registerForm.startTime,
     admitSourceCode: registerForm.admitSourceCode,
@@ -1246,13 +1230,13 @@ async function syncModelFromDialogForms() {
   registerForm.organizationId = String(inpatientInfoValues.organizationId ?? '');
   registerForm.wardId = String(inpatientInfoValues.wardId ?? '');
   registerForm.attendingDoctorId = String(inpatientInfoValues.attendingDoctorId ?? '');
-  registerForm.conditionDefinitionId = String(inpatientInfoValues.conditionDefinitionId ?? '');
-  registerForm.diagnosisDescription = String(inpatientInfoValues.diagnosisDescription ?? '');
   registerForm.contractId = String(inpatientInfoValues.contractId ?? '');
   registerForm.startTime = String(inpatientInfoValues.startTime ?? '');
   registerForm.admitSourceCode = String(inpatientInfoValues.admitSourceCode ?? '');
   registerForm.inWayCode = String(inpatientInfoValues.inWayCode ?? '');
-  registerForm.priorityEnum = String(inpatientInfoValues.priorityEnum ?? '');
+  registerForm.priorityEnum = normalizeAdmCondTermCode(
+    String(inpatientInfoValues.priorityEnum ?? ''),
+  );
 }
 
 /** 页面级登记字典：费用性质（无就诊时拉取上下文）。 */
@@ -1265,23 +1249,24 @@ async function loadRegistrationFormBootstrap() {
   }
 }
 
-/** 加载入院诊断目录（诊断定义元数据分页）。 */
-async function loadAdmissionDiagnosisOptions() {
+/** 加载西医入院诊断目录（诊断定义元数据分页，仅 diagnosisKindCode=1）。 */
+async function loadWesternAdmissionDiagnosisOptions() {
   try {
     const res = await httpGetConditionDefinitionMetadata({
+      diagnosisKindCode: '1',
       pageNo: 1,
       pageSize: 500,
     });
-    admissionDiagnosisOptions.value = (res.records ?? [])
+    westernAdmissionDiagnosisOptions.value = (res.records ?? [])
       .filter((row) => row.conditionDefinitionId && row.conditionName)
       .map((row) => ({
         label: String(row.conditionName),
         value: String(row.conditionDefinitionId),
       }));
-    await refreshAdmissionDiagnosisOptionsSchema();
+    await refreshWesternAdmissionDiagnosisOptionsSchema();
   } catch {
-    admissionDiagnosisOptions.value = [];
-    await refreshAdmissionDiagnosisOptionsSchema();
+    westernAdmissionDiagnosisOptions.value = [];
+    await refreshWesternAdmissionDiagnosisOptionsSchema();
   }
 }
 
@@ -1301,7 +1286,7 @@ async function loadRegistrationPageInit() {
   await Promise.all([
     loadOrganizationOptions(),
     loadRegistrationFormBootstrap(),
-    loadAdmissionDiagnosisOptions(),
+    loadWesternAdmissionDiagnosisOptions(),
     handleQuery(),
   ]);
 }
@@ -1343,8 +1328,6 @@ async function setDialogFormsDisabled(disabled: boolean) {
     'organizationId',
     'wardId',
     'attendingDoctorId',
-    'conditionDefinitionId',
-    'diagnosisDescription',
     'contractId',
     'startTime',
     'admitSourceCode',
@@ -1430,23 +1413,22 @@ async function refreshContractOptionsSchema() {
   ]);
 }
 
-/** 刷新入院诊断目录下拉 schema。 */
-async function refreshAdmissionDiagnosisOptionsSchema() {
-  await inpatientInfoFormApi.updateSchema([
-    {
-      fieldName: 'conditionDefinitionId',
-      componentProps: {
-        filterable: true,
-        options: admissionDiagnosisOptions.value,
-        placeholder: '请选择入院诊断',
-      },
-    },
-  ]);
+/** 刷新西医入院诊断下拉（供 AdmissionDiagnosisField 使用）。 */
+async function refreshWesternAdmissionDiagnosisOptionsSchema() {
+  await refreshAdmissionDiagnosisFieldSchema();
 }
 
-/** 刷新入院方式/入院类型下拉 schema。 */
+/** 刷新入院方式/入院类型/患者病情下拉 schema。 */
 async function refreshAdmissionTerminologyOptionsSchema() {
   await inpatientInfoFormApi.updateSchema([
+    {
+      fieldName: 'priorityEnum',
+      componentProps: {
+        clearable: true,
+        placeholder: '请选择',
+        options: admCondCodeOptions.value,
+      },
+    },
     {
       fieldName: 'admitSourceCode',
       componentProps: {
@@ -1701,7 +1683,17 @@ async function validateRegisterDialogForms(): Promise<boolean> {
     return false;
   }
   const inpatientResult = await inpatientInfoFormApi.validate();
-  return inpatientResult.valid;
+  if (!inpatientResult.valid) {
+    return false;
+  }
+  if (!hasDoctorAdmission) {
+    const diagnosisError = validateAdmissionDiagnosisFormState(registerForm.admissionDiagnosis);
+    if (diagnosisError) {
+      ElMessage.warning(diagnosisError);
+      return false;
+    }
+  }
+  return true;
 }
 
 /** 提交住院登记。 */
@@ -1732,7 +1724,7 @@ async function handleSubmitRegister() {
   const normalizedStartTime = normalizeStartTimeForSubmit(registerForm.startTime);
   const hasDoctorAdmission = Boolean(preserveApiIdForRequest(dialogContext.encounterId));
   if (!organizationId || !wardId || !contractId || !normalizedStartTime) {
-    ElMessage.warning('请完善入院科室、入院病区、费用性质和入院日期');
+    ElMessage.warning('请完善入院科室、入院病区、费用性质和入院时间');
     return;
   }
   if (
@@ -2062,7 +2054,16 @@ onBeforeUnmount(() => {
                 <div v-if="wardCapacityHint" class="register-tab-panel__hint">
                   {{ wardCapacityHint }}
                 </div>
-                <InpatientInfoForm />
+                <InpatientInfoForm>
+                  <template #admissionDiagnosisSlot>
+                    <AdmissionDiagnosisField
+                      v-model="registerForm.admissionDiagnosis"
+                      :western-options="westernAdmissionDiagnosisOptions"
+                      :readonly="admissionDiagnosisReadonly || dialogReadOnly"
+                      :disabled="dialogReadOnly"
+                    />
+                  </template>
+                </InpatientInfoForm>
               </div>
             </ElTabPane>
             <ElTabPane label="待遇信息" name="benefit">
@@ -2187,18 +2188,55 @@ onBeforeUnmount(() => {
 :deep(.register-grid-form) {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px 10px;
+  gap: 10px 12px;
   padding: 12px;
 }
 
 :deep(.register-grid-form .el-form-item) {
   margin-bottom: 0;
+  align-items: center;
+}
+
+:deep(.register-grid-form .el-form-item__label) {
+  line-height: 32px;
+  padding-right: 8px;
 }
 
 :deep(.register-grid-form .el-select),
 :deep(.register-grid-form .el-date-editor),
 :deep(.register-grid-form .el-input-number) {
   width: 100%;
+}
+
+:deep(.register-form-item--admission-diagnosis) {
+  grid-column: 1 / -1;
+  align-items: flex-start;
+}
+
+:deep(.register-form-item--admission-diagnosis .el-form-item__label) {
+  line-height: 32px;
+  padding-top: 0;
+}
+
+:deep(.register-form-item--admission-diagnosis .el-form-item__content) {
+  width: 100%;
+  max-width: none;
+}
+
+:deep(.register-form-item--admission-diagnosis-readonly) {
+  grid-column: 1 / -1;
+  align-items: center;
+}
+
+@media (max-width: 960px) {
+  :deep(.register-grid-form) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  :deep(.register-form-item--admission-diagnosis),
+  :deep(.register-form-item--admission-diagnosis-readonly) {
+    grid-column: 1 / -1;
+  }
 }
 
 .register-footer {

@@ -7,7 +7,7 @@ import { useAccess } from '@vben/access';
 import { ElAlert, ElButton, ElMessage } from 'element-plus';
 
 import { getDocumentBriefByPaymentIdApi } from '#/api/einvoice-boss/document';
-import { decimalAdd } from '#/utils/format/decimal-util';
+import { formatMoneyDisplay, sumMoneyThenSettle } from '#/utils/format/money-scale';
 
 const props = defineProps<{
   lineAmounts?: Array<number | string | null | undefined>;
@@ -26,13 +26,7 @@ const canViewEinvoice = computed(() =>
   hasAccessByCodes(['einvoice-boss.document.view', 'einvoice-boss.document.adjust']),
 );
 
-const itemSum = computed(() => {
-  let sum = 0;
-  for (const amount of props.lineAmounts ?? []) {
-    sum = decimalAdd(sum, Number(amount ?? 0));
-  }
-  return sum;
-});
+const itemSum = computed(() => sumMoneyThenSettle(props.lineAmounts ?? []));
 
 const payAmt = computed(() => Number(props.paymentAmount ?? 0));
 
@@ -86,7 +80,7 @@ function handleViewEinvoice() {
     type="warning"
     show-icon
     :closable="false"
-    :title="`账单明细合计 ${itemSum.toFixed(2)} 元，与支付金额 ${payAmt.toFixed(2)} 元不一致，请微调后再开票。`"
+    :title="`账单明细合计 ${formatMoneyDisplay(itemSum)} 元，与支付金额 ${formatMoneyDisplay(payAmt)} 元不一致，请微调后再开票。`"
   >
     <div class="mt-2 flex flex-wrap gap-2">
       <ElButton size="small" @click="handleFocusAdjust">去微调账单</ElButton>

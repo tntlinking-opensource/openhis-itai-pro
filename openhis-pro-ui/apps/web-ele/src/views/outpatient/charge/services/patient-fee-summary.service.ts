@@ -1,7 +1,11 @@
 import type { PendingChargeItemRowDto } from '#/api/outpatient-charge/outpatient-charge.types';
 import type { OutpatientRefundPaymentGroupDto } from '#/api/outpatient-refund/outpatient-refund.types';
 
-import { decimalAdd } from '#/utils/format/decimal-util';
+import {
+  formatMoneyDisplay,
+  sumMoneyThenCalc,
+  sumMoneyThenSettle,
+} from '#/utils/format/money-scale';
 
 /** 患者信息栏费用摘要：待收 + 已收 */
 export interface OutpatientChargePatientFeeSummary {
@@ -15,17 +19,14 @@ export interface OutpatientRefundPatientFeeSummary {
   refundedAmount: number;
 }
 
-/** 将金额格式化为两位小数字符串（展示用） */
+/** 将金额格式化为两位小数字符串（展示用；权威应收以后端预结算为准） */
 export function formatPatientFeeMoney(value: null | number | string | undefined): string {
-  const n = Number(value ?? 0);
-  if (Number.isNaN(n)) {
-    return '0.00';
-  }
-  return n.toFixed(2);
+  return formatMoneyDisplay(value);
 }
 
 /**
  * 收费工作站：从待收明细汇总「待收」「已收」，与下方明细表同源。
+ * 行金额按 6 位加总，摘要展示按 2 位 settle（非支付权威）。
  */
 export function summarizeOutpatientChargeFeeAmounts(
   items: PendingChargeItemRowDto[],
@@ -34,17 +35,20 @@ export function summarizeOutpatientChargeFeeAmounts(
   if (items.length === 0) {
     return null;
   }
-  let pendingCollectionAmount = 0;
-  let collectedAmount = 0;
+  const pendingAmounts: number[] = [];
+  const collectedAmounts: number[] = [];
   for (const row of items) {
     const amount = row.totalPrice ?? 0;
     if (isSettled(row)) {
-      collectedAmount = decimalAdd(collectedAmount, amount, 4);
+      collectedAmounts.push(amount);
     } else {
-      pendingCollectionAmount = decimalAdd(pendingCollectionAmount, amount, 4);
+      pendingAmounts.push(amount);
     }
   }
-  return { pendingCollectionAmount, collectedAmount };
+  return {
+    pendingCollectionAmount: sumMoneyThenSettle(pendingAmounts),
+    collectedAmount: sumMoneyThenSettle(collectedAmounts),
+  };
 }
 
 /**
@@ -57,18 +61,26 @@ export function summarizeOutpatientRefundFeeAmounts(
   if (groups.length === 0) {
     return null;
   }
-  let pendingRefundAmount = 0;
-  let refundedAmount = 0;
+  const pendingAmounts: number[] = [];
+  const refundedAmounts: number[] = [];
   for (const group of groups) {
     for (const line of group.refundingLines ?? []) {
       const status = (line.chargeItemStatusEnum ?? '').trim().toUpperCase();
       const amount = line.lineTotalAmount ?? 0;
       if (status === 'REFUNDING') {
-        pendingRefundAmount = decimalAdd(pendingRefundAmount, amount, 4);
+        pendingAmounts.push(amount);
       } else if (status === 'REFUNDED') {
-        refundedAmount = decimalAdd(refundedAmount, amount, 4);
+        refundedAmounts.push(amount);
       }
     }
   }
-  return { pendingRefundAmount, refundedAmount };
+  return {
+    pendingRefundAmount: sumMoneyThenSettle(pendingAmounts),
+    refundedAmount: sumMoneyThenSettle(refundedAmounts),
+  };
+}
+
+/** 块内行金额 6 位加总（非支付场景） */
+export function sumChargeLineAmountsCalc(values: number[]): number {
+  return sumMoneyThenCalc(values);
 }

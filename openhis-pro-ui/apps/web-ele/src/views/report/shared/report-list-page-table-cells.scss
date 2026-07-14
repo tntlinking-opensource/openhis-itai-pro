@@ -1,0 +1,9 @@
+.report-list-page__busno {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--el-text-color-primary);
+}
+
+.report-list-page__empty-value {
+  color: var(--el-text-color-placeholder);
+}

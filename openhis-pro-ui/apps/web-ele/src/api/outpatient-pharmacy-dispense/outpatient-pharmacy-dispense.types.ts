@@ -161,6 +161,10 @@ export interface EncounterMedicationDispenseSlipRowDto {
   medicationDisplayLeft?: null | string;
   medicationDisplayRight?: null | string;
   medicationUsageDisplayText?: null | string;
+  /** 单味特殊煎法术语码（dosage_instruction） */
+  dosageInstructionCode?: null | string;
+  /** 单味特殊煎法展示名 */
+  dosageInstructionText?: null | string;
 }
 
 export interface PageEncounterMedicationDispenseSlipsResponse {
@@ -220,4 +224,31 @@ export interface CancelOutpatientMedicationDispenseResponse {
   success?: boolean;
   message?: null | string;
   processedDispenseIds?: string[];
+}
+
+/** 批量扫码身份反查（只读预览） */
+export interface BatchResolveTraceIdentityRequest {
+  traceCodes: string[];
+  sceneContext?: 'DISPENSE' | 'INBOUND' | 'INVENTORY' | 'RETURN' | 'STOCKTAKE';
+}
+
+export interface TraceIdentityResolveItemDto {
+  traceNo?: string;
+  resolveStatusEnum?: string;
+  itemTable?: string;
+  itemId?: string;
+  lotNumber?: string;
+  traceUnitCode?: string;
+  remainingSplitQuantity?: number | string;
+  inHospitalStatusEnum?: string;
+}
+
+export interface TraceIdentityResolveFailItemDto {
+  traceNo?: string;
+  resolveStatusEnum?: string;
+}
+
+export interface BatchResolveTraceIdentityResponse {
+  items?: TraceIdentityResolveItemDto[];
+  failItems?: TraceIdentityResolveFailItemDto[];
 }

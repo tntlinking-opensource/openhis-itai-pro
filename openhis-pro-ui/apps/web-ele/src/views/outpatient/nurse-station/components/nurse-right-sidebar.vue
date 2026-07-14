@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { ActionRecord, SupplyItem, SupplyRoomOption } from './types';
+import { NURSE_ACTION_RECORD_TYPE_LABEL } from './types';
 
 import { ElButton, ElEmpty, ElOption, ElSelect, ElTag } from 'element-plus';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
 import SupplyItemCard from '#/components/outpatient/supply-item-card.vue';
+import { NURSE_PRINT_ACTION, type NursePrintActionCode } from '../constants/nurse-print-action';
 
 defineOptions({
   name: 'NurseRightSidebar',
@@ -16,7 +18,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   cancelSupply: [id: string];
-  print: [label: string];
+  print: [actionCode: NursePrintActionCode];
   showAllRecords: [];
   supplyChange: [id: string, checked: boolean];
 }>();
@@ -38,8 +40,8 @@ const onSupplyChange = (id: string, checked: boolean) => {
   emit('supplyChange', id, checked);
 };
 
-const onPrint = (label: string) => {
-  emit('print', label);
+const onPrint = (actionCode: NursePrintActionCode) => {
+  emit('print', actionCode);
 };
 </script>
 
@@ -106,25 +108,54 @@ const onPrint = (label: string) => {
       <SectionTitle title="打印" />
     </div>
     <div class="print-action-grid bg-background min-w-0 px-2 py-1.5">
-      <ElButton type="primary" size="small" :disabled="!canPrint" @click="onPrint('打印瓶贴')">
+      <ElButton
+        type="primary"
+        size="small"
+        :disabled="!canPrint"
+        @click="onPrint(NURSE_PRINT_ACTION.INFUSION_LABEL)"
+      >
         打印瓶贴
       </ElButton>
-      <ElButton size="small" :disabled="!canPrint" @click="onPrint('打印处置单')">
+      <ElButton
+        size="small"
+        :disabled="!canPrint"
+        @click="onPrint(NURSE_PRINT_ACTION.TREATMENT_SHEET)"
+      >
         打印处置单
       </ElButton>
-      <ElButton size="small" :disabled="!canPrint" @click="onPrint('打印采血码')">
+      <ElButton
+        size="small"
+        :disabled="!canPrint"
+        @click="onPrint(NURSE_PRINT_ACTION.SPECIMEN_BARCODE)"
+      >
         打印采血码
       </ElButton>
-      <ElButton size="small" :disabled="!canPrint" @click="onPrint('打印处方单')">
+      <ElButton
+        size="small"
+        :disabled="!canPrint"
+        @click="onPrint(NURSE_PRINT_ACTION.PRESCRIPTION)"
+      >
         打印处方单
       </ElButton>
-      <ElButton size="small" :disabled="!canPrint" @click="onPrint('打印皮试标签')">
+      <ElButton
+        size="small"
+        :disabled="!canPrint"
+        @click="onPrint(NURSE_PRINT_ACTION.SKIN_TEST_LABEL)"
+      >
         皮试标签
       </ElButton>
-      <ElButton size="small" :disabled="!canPrint" @click="onPrint('打印雾化标签')">
+      <ElButton
+        size="small"
+        :disabled="!canPrint"
+        @click="onPrint(NURSE_PRINT_ACTION.NEBULIZATION_LABEL)"
+      >
         雾化标签
       </ElButton>
-      <ElButton size="small" :disabled="!canPrint" @click="onPrint('打印处置申请单')">
+      <ElButton
+        size="small"
+        :disabled="!canPrint"
+        @click="onPrint(NURSE_PRINT_ACTION.PROCEDURE_APPLY)"
+      >
         处置申请单
       </ElButton>
     </div>
@@ -144,8 +175,8 @@ const onPrint = (label: string) => {
         >
           <div class="flex items-center justify-between gap-1 text-gray-500">
             <span class="truncate">{{ record.time }}</span>
-            <ElTag size="small" :type="record.type === '执行' ? 'warning' : 'info'">
-              {{ record.type }}
+            <ElTag size="small" :type="record.type === 'EXECUTE' ? 'warning' : 'info'">
+              {{ NURSE_ACTION_RECORD_TYPE_LABEL[record.type] }}
             </ElTag>
           </div>
           <div class="mt-0.5 truncate font-medium">{{ record.action }}</div>

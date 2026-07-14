@@ -23,14 +23,13 @@ http {
         listen       {{LISTEN_PORT}};
         server_name  localhost;
 
-        root   html;
+        root   {{HTML_ROOT}};
         index  index.html;
 
         location / {
             try_files $uri $uri/ /index.html;
         }
 
-        # 前端 baseURL=/api，后端实际路径 /api/app/*
         location /api/ {
             proxy_pass http://{{BACKEND_HOST}}:{{BACKEND_PORT}}/api/app/;
             proxy_set_header Host $host;

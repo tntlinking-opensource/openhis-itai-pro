@@ -11,8 +11,11 @@ import {
   resolveSocialCard1101Credential,
   YB_PLUGIN_FUNCTION_ID,
 } from '#/chs/utils/yb-plugin';
-
-const SELF_PAY_HINTS = ['自费', '现金', '个人'];
+import {
+  isInsuranceContractCategory,
+  isSelfPayContractCategory,
+  isWorkInjuryContractCategory,
+} from '#/views/outpatient/charge/register/services/charge-type-category';
 
 export interface OutpatientChargeInsuranceContext {
   contractId: string;
@@ -32,20 +35,20 @@ export function hasMultipleChargeAccounts(rows: PendingChargeItemRowDto[]): bool
   return accountIds.size > 1;
 }
 
-/** 是否包含医保记账项。 */
+/** 是否包含医保/工伤记账项（按 chargeCategoryCode / contractId 判断，不用展示文案）。 */
 export function selectionIncludesInsuranceItems(rows: PendingChargeItemRowDto[]): boolean {
   for (const row of rows) {
+    const categoryCode = String(row.chargeCategoryCode ?? '').trim();
+    if (categoryCode) {
+      if (isSelfPayContractCategory(categoryCode)) {
+        continue;
+      }
+      if (isInsuranceContractCategory(categoryCode) || isWorkInjuryContractCategory(categoryCode)) {
+        return true;
+      }
+      continue;
+    }
     if (row.contractId) {
-      return true;
-    }
-    const nature = String(row.feeNatureDisplay ?? '').trim();
-    if (!nature) {
-      continue;
-    }
-    if (SELF_PAY_HINTS.some((hint) => nature.includes(hint))) {
-      continue;
-    }
-    if (nature.includes('医保')) {
       return true;
     }
   }

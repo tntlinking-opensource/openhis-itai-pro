@@ -3,6 +3,15 @@ import type { AdviceDrugItem, AdviceRowItem } from './advice.types';
 import { flattenAdviceRowsForResourceOps } from './advice-list';
 import { inferAdviceLineEditorKind } from './advice-row';
 
+/**
+ * 门诊医嘱 sortNumber（BR-ORD-018）
+ *
+ * **写入（暂存前）**：仅药品行分配 sortNumber，步长 10，同组成组共用一号；诊疗/耗材不写。
+ * **读取（列表）**：见 advice-list.sortDoctorStationAdviceRowsStable（继承锚定药品 sortNumber）。
+ *
+ * 调用方：buildAdviceDraftLines → assignMedicationSortNumbersBeforeSave。
+ */
+
 /** 药品展示排序号步长（留空档便于以后拖序插入） */
 export const ADVICE_MEDICATION_SORT_STEP = 10;
 
@@ -98,9 +107,10 @@ export function assignMedicationSortNumbersBeforeSave(
     const rid = String(item.medicationRequestId ?? '').trim();
     if (rid) {
       const preserved = resolveUpdateMedicationSortNumber(item, flatExisting);
-      return preserved === undefined
-        ? { ...item, sortNumber: undefined }
-        : { ...item, sortNumber: preserved };
+      if (preserved !== undefined) {
+        return { ...item, sortNumber: preserved };
+      }
+      // 历史药品缺 sortNumber：按新建追加，避免 UPDATE 保存失败
     }
 
     const gid = String(item.groupId ?? '').trim();

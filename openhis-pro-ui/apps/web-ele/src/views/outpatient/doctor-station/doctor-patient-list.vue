@@ -24,6 +24,8 @@ import {
 import PatientCard from '#/components/outpatient/patient-card.vue';
 import { encounterQueueStatusDisplayText } from '#/utils/outpatient/encounter-queue-status-text';
 
+import PatientAllergySkinTestSection from './components/patient-allergy-skin-test-section.vue';
+
 /* eslint-disable vue/define-macros-order -- defineModel 未列入团队 eslint 顺序表，与 defineEmits 交叉时误报 */
 
 defineOptions({
@@ -209,9 +211,9 @@ const handleRefresh = () => {
 
 <template>
   <div
-    class="bg-background-card flex h-full w-[260px] flex-shrink-0 flex-col rounded-none transition-all duration-300"
+    class="doctor-patient-list bg-background-card flex h-full flex-shrink-0 flex-col rounded-none transition-all duration-300"
   >
-    <div class="mb-2 flex flex-col gap-2 px-3 pt-2">
+    <div class="doctor-patient-list__header mb-2 flex flex-col gap-2 px-3 pt-2">
       <ElRadioGroup
         class="doctor-queue-radio flex w-full gap-2"
         :model-value="currentQueue"
@@ -228,7 +230,7 @@ const handleRefresh = () => {
             <span class="block h-full w-full" aria-hidden="true"></span>
           </ElBadge>
         </div>
-        <ElRadioButton value="current" class="min-w-0 flex-1">在诊患者</ElRadioButton>
+        <ElRadioButton value="current" class="min-w-0 flex-1">当前接诊</ElRadioButton>
       </ElRadioGroup>
       <div class="flex items-center gap-2">
         <ElDatePicker
@@ -259,12 +261,16 @@ const handleRefresh = () => {
       </ElInput>
     </div>
 
-    <div class="min-h-0 flex-1 overflow-y-auto px-3">
+    <div class="doctor-patient-list__scroll min-h-0 flex-1 overflow-y-auto px-3">
       <div v-if="loading" class="text-text-sub py-8 text-center text-sm">加载中...</div>
       <div v-else-if="patients.length === 0" class="text-text-sub py-8 text-center text-sm">
-        {{ currentQueue === 'waiting' ? waitingQueueEmptyHint : '双击左侧患者卡片接诊' }}
+        {{
+          currentQueue === 'waiting'
+            ? waitingQueueEmptyHint
+            : '暂无当前接诊患者，请从患者队列双击接诊'
+        }}
       </div>
-      <div v-else-if="currentQueue === 'current'" class="space-y-2">
+      <div v-else-if="currentQueue === 'current'" class="doctor-patient-list__card-list space-y-2">
         <div
           v-for="patient in patients"
           :key="patient.encounterId"
@@ -311,6 +317,17 @@ const handleRefresh = () => {
                 >
                   自费
                 </span>
+                <span
+                  v-if="patient.workInjuryEncounter"
+                  class="ml-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800"
+                  :title="patient.workInjuryApprovalStatusLabel ?? '工伤'"
+                >
+                  工伤{{
+                    patient.workInjuryApprovalStatusLabel
+                      ? `·${patient.workInjuryApprovalStatusLabel}`
+                      : ''
+                  }}
+                </span>
               </span>
             </div>
             <div class="patient-item__row">
@@ -325,14 +342,14 @@ const handleRefresh = () => {
               <span class="patient-item__label">电话号</span>
               <span class="patient-item__value">{{ formatField(patient.phone) }}</span>
             </div>
-            <div class="patient-item__row patient-item__row--stack patient-item__row--last">
-              <span class="patient-item__label">过敏史</span>
-              <span class="patient-item__value patient-item__value--wrap">-</span>
-            </div>
+            <PatientAllergySkinTestSection
+              :patient-id="patient.patientId ?? ''"
+              :encounter-id="patient.encounterId"
+            />
           </div>
         </div>
       </div>
-      <div v-else class="space-y-2">
+      <div v-else class="doctor-patient-list__card-list space-y-2">
         <div
           v-for="patient in patients"
           :key="patient.encounterId"
@@ -447,6 +464,12 @@ const handleRefresh = () => {
 </template>
 
 <style scoped>
+.doctor-patient-list {
+  /* default：DOCTOR_STATION_SIDEBAR_WIDTH_PX.patientQueue */
+  --doctor-queue-width: 260px;
+  width: var(--doctor-queue-width);
+}
+
 .doctor-queue-radio :deep(.el-radio-button) {
   flex: 1;
 }

@@ -1,6 +1,7 @@
 /**
- * 库房/药房库存选品下拉：表格列与接口字段 1:1，禁止「A 为空取 B」式回退。
- * 库存数量列：接口 `availableQuantity` 为 SPLIT 基准，展示换算为 STOCK（见 mapInventoryProductPickListRow）。
+ * 库房/药房/科室「库存批号行」选品下拉：表格列与接口字段 1:1，禁止「A 为空取 B」式回退。
+ * 行键为 `inventoryItemId`（批号级展开，非订货/进货的产品定义展开）；**须展示 `lotNumber`（批号）**。
+ * 库存数量列：接口 `availableQuantity` 为 SPLIT 基准，展示按包装倍数换算（同码多带冲突时优先 PACKAGE，见 inbound-product-unit-bands）。
  */
 
 import {
@@ -12,13 +13,13 @@ import {
 export const INVENTORY_PRODUCT_PICK_TABLE_COLUMNS = [
   { prop: 'productBusNo', label: '项目编码', width: 140 },
   { prop: 'productName', label: '项目名称', width: 180 },
+  { prop: 'specification', label: '规格', width: 120 },
+  { prop: 'lotNumber', label: '批号', width: 120 },
+  { prop: 'stockAvailableDisplay', label: '库存数量', width: 112 },
   { prop: 'manufacturer', label: '厂家/产地', width: 180 },
   { prop: 'purchaseUnitPrice', label: '进货价', width: 96 },
   { prop: 'retailPrice', label: '零售价', width: 96 },
-  { prop: 'packageUnitName', label: '包装单位', width: 96 },
-  { prop: 'splitUnitName', label: '最小单位', width: 96 },
-  { prop: 'specification', label: '规格', width: 120 },
-  { prop: 'stockAvailableDisplay', label: '库存数量', width: 112 },
+  { prop: 'stockUnitName', label: '单位', width: 96 },
   { prop: 'approvalNumber', label: '批准文号', width: 140 },
 ] as const;
 

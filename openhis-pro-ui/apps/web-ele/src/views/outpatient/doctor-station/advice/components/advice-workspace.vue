@@ -16,6 +16,8 @@ import {
   previewOrderTemplateApplyApi,
 } from '#/api/basic/order-template';
 import AdviceOrderDisplayCell from '#/components/outpatient/advice-order-display-cell.vue';
+import { useCompactViewport } from '#/composables/use-compact-viewport';
+import { ADVICE_TABLE_COL_WIDTH } from '#/constants/layout/doctor-station-compact-presets';
 import { useAuthStore } from '#/store';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
@@ -25,7 +27,7 @@ import {
 } from '#/utils/service-apply-form-group-display';
 
 import { useAdviceTab } from '../composables/use-advice-tab';
-import { getSkinTestDisplayTagType } from '../services/advice-list';
+import { getSkinTestDisplayTagType, sumAdviceListTotalAmount } from '../services/advice-list';
 import {
   applyHistoryAdviceToAdviceDraft,
   HistoryAdviceApplyError,
@@ -65,15 +67,15 @@ const {
   editorPatientDiagnoses,
   encounterId,
   getAdviceStatusTagType,
-  getCellClassName: getBaseCellClassName,
+  getCellClassName,
   getTableRows,
   handleAdd,
   handleCloseEditor,
   handleDelete,
+  handleDeleteDrugInEditor,
   handleEditorDirtyChange,
   handleMedicationAssignGroup,
   handleMedicationUngroup,
-  handlePrintServiceApply,
   handleRowDblclick,
   handleSaveGroup,
   handleSign,
@@ -89,9 +91,13 @@ const {
   productColumns,
   queryProductOptions,
   reload,
-  serviceApplyPrintLoading,
   validateWesternRow,
 } = useAdviceTab(props);
+
+const { pickPreset } = useCompactViewport();
+
+/** 表格列宽：<1680 使用 compact，≥1680（含 1920）与现网 default 一致 */
+const adviceTableColWidth = pickPreset(ADVICE_TABLE_COL_WIDTH);
 
 /** 医嘱表最右列索引（申请单聚组右边框） */
 const ADVICE_APPLY_FORM_TABLE_EDGE_RIGHT_INDEX = 9;
@@ -103,7 +109,7 @@ const resolveAdviceRowClassName = ({ row, rowIndex }: { row: AdviceRowItem; rowI
 };
 
 /** 合并编辑行与申请单聚组的 cell-class-name */
-const getCellClassName = ({
+const resolveCellClassName = ({
   columnIndex,
   row,
   rowIndex,
@@ -114,7 +120,7 @@ const getCellClassName = ({
   rowIndex: number;
   column?: { fixed?: boolean | string };
 }) => {
-  const base = getBaseCellClassName({ columnIndex, row });
+  const base = getCellClassName({ columnIndex, row });
   const applyForm = buildServiceApplyFormCellClassName({
     row,
     rowIndex,
@@ -137,7 +143,10 @@ const orderTemplateApplyLoading = ref(false);
 /** 另存组套：当前列表非编辑行快照 */
 const saveOrderTemplateAdviceRows = computed(() => getTableRows().filter((row) => !row.isEditor));
 
-/** 侧栏点击组套：预览明细与带出行，确认后套用至当前就诊草稿 */
+/** 列表各明细行总金额合计（6 位加总后 2 位展示；入账以后端为准） */
+const adviceListTotalAmountText = computed(() => sumAdviceListTotalAmount(getTableRows()));
+
+/** 侧栏点击组套：预览明细，确认后套用至当前就诊草稿 */
 async function handleOrderTemplateSelect(header: null | OrderTemplateHeaderItem) {
   if (!header || orderTemplateApplyLoading.value) {
     return;
@@ -189,8 +198,6 @@ async function handleOrderTemplateSelect(header: null | OrderTemplateHeaderItem)
     const dialogResult = await openOrderTemplateApplyConfirmDialog({
       templateName: confirmPreview.templateName || templateName,
       templateRows: confirmPreview.templateRows,
-      bindRows: confirmPreview.bindRows,
-      bindSourceGroups: confirmPreview.bindSourceGroups,
     });
     if (!dialogResult) {
       orderTemplateSidePanelRef.value?.clearSelection();
@@ -201,10 +208,8 @@ async function handleOrderTemplateSelect(header: null | OrderTemplateHeaderItem)
       ...applyParams,
       preparedDraftLines: confirmPreview.draftLines,
       preConfirmedTemplateRows: dialogResult.templateRows,
-      preConfirmedBindDialogRows: dialogResult.bindRows,
-      preConfirmedBindSkipSourceKeys: dialogResult.skipSourceKeys,
     });
-    const appliedLineCount = dialogResult.templateRows.length + dialogResult.bindRows.length;
+    const appliedLineCount = dialogResult.templateRows.length;
     ElMessage.success(`已套用组套「${templateName}」（${appliedLineCount} 项）`);
     orderTemplateSidePanelRef.value?.clearSelection();
     await reload();
@@ -311,24 +316,29 @@ defineExpose({
     />
 
     <div class="advice-workspace-root__main flex min-h-0 flex-col p-2">
-      <div class="mb-2 flex w-full flex-wrap items-center gap-1">
-        <ElButton type="primary" @click="handleAdd()">新增</ElButton>
-        <ElButton type="primary" :loading="adviceMutationLoading" @click="handleSign()">
-          签发
-        </ElButton>
-        <ElButton type="warning" plain :loading="adviceMutationLoading" @click="handleWithdraw()">
-          撤回
-        </ElButton>
-        <ElButton type="danger" plain :loading="adviceMutationLoading" @click="handleDelete()">
-          删除
-        </ElButton>
-        <ElButton plain @click="handleMedicationUngroup">拆组</ElButton>
-        <ElButton plain @click="handleMedicationAssignGroup">并组</ElButton>
-        <ElButton plain @click="handleOpenHistoryAdviceDrawer">历史医嘱</ElButton>
-        <ElButton plain :loading="serviceApplyPrintLoading" @click="handlePrintServiceApply">
-          打印申请单
-        </ElButton>
-        <ElButton plain @click="handleOpenSaveAsOrderTemplateDialog">另存为组套</ElButton>
+      <div
+        class="advice-workspace-toolbar mb-2 flex w-full flex-wrap items-center justify-between gap-2"
+      >
+        <div class="flex flex-wrap items-center gap-1">
+          <ElButton type="primary" @click="handleAdd()">新增</ElButton>
+          <ElButton type="primary" :loading="adviceMutationLoading" @click="handleSign()">
+            签发
+          </ElButton>
+          <ElButton type="warning" plain :loading="adviceMutationLoading" @click="handleWithdraw()">
+            撤回
+          </ElButton>
+          <ElButton type="danger" plain :loading="adviceMutationLoading" @click="handleDelete()">
+            删除
+          </ElButton>
+          <ElButton plain @click="handleMedicationUngroup">拆组</ElButton>
+          <ElButton plain @click="handleMedicationAssignGroup">并组</ElButton>
+          <ElButton plain @click="handleOpenHistoryAdviceDrawer">历史医嘱</ElButton>
+          <ElButton plain @click="handleOpenSaveAsOrderTemplateDialog">另存为组套</ElButton>
+        </div>
+        <div class="advice-list-total shrink-0">
+          <span class="advice-list-total__label">合计金额</span>
+          <strong class="advice-list-total__value">{{ adviceListTotalAmountText }}</strong>
+        </div>
       </div>
 
       <div
@@ -340,7 +350,7 @@ defineExpose({
           :data="getTableRows()"
           :span-method="handleSpanMethod"
           :row-class-name="resolveAdviceRowClassName"
-          :cell-class-name="getCellClassName"
+          :cell-class-name="resolveCellClassName"
           border
           stripe
           class="advice-table"
@@ -381,6 +391,7 @@ defineExpose({
                 :save-loading="adviceMutationLoading"
                 :add-drug-guard="addDrugGuardWestern"
                 @close="handleCloseEditor"
+                @delete-drug="handleDeleteDrugInEditor"
                 @editor-dirty-change="handleEditorDirtyChange"
                 @save-group="handleSaveGroup"
               >
@@ -407,15 +418,29 @@ defineExpose({
               </AdviceEditCard>
             </template>
           </ElTableColumn>
-          <ElTableColumn prop="status" label="状态" width="80" align="center">
+          <ElTableColumn
+            prop="status"
+            label="状态"
+            :width="adviceTableColWidth.status"
+            align="center"
+          >
             <template #default="{ row }">
               <ElTag :type="getAdviceStatusTagType(row)" size="small" effect="light">
                 {{ row.status }}
               </ElTag>
             </template>
           </ElTableColumn>
-          <ElTableColumn prop="type" label="类型" width="108" align="center" />
-          <ElTableColumn prop="content" label="医嘱内容" min-width="350">
+          <ElTableColumn
+            prop="type"
+            label="类型"
+            :width="adviceTableColWidth.type"
+            align="center"
+          />
+          <ElTableColumn
+            prop="content"
+            label="医嘱内容"
+            :min-width="adviceTableColWidth.contentMin"
+          >
             <template #default="{ row, $index }">
               <div
                 class="advice-order-content-wrap"
@@ -439,11 +464,38 @@ defineExpose({
               </div>
             </template>
           </ElTableColumn>
-          <ElTableColumn prop="startTime" label="开立时间" width="170" align="center" />
-          <ElTableColumn prop="lineTotalAmount" label="总金额" width="100" align="center" />
-          <ElTableColumn prop="diagnosisSummary" label="诊断" min-width="140" align="center" />
-          <ElTableColumn prop="orderingDoctor" label="开立医生" width="100" align="center" />
-          <ElTableColumn prop="skinTestText" label="皮试" width="80" align="center">
+          <ElTableColumn
+            prop="startTime"
+            label="开立时间"
+            :width="adviceTableColWidth.startTime"
+            align="center"
+          />
+          <ElTableColumn
+            prop="lineTotalAmount"
+            label="总金额"
+            :width="adviceTableColWidth.amount"
+            align="center"
+          />
+          <ElTableColumn
+            prop="diagnosisSummary"
+            label="诊断"
+            :min-width="adviceTableColWidth.diagnosisMin"
+            align="center"
+            show-overflow-tooltip
+          />
+          <ElTableColumn
+            prop="orderingDoctor"
+            label="开立医生"
+            :width="adviceTableColWidth.doctor"
+            align="center"
+            show-overflow-tooltip
+          />
+          <ElTableColumn
+            prop="skinTestText"
+            label="皮试"
+            :width="adviceTableColWidth.skinTest"
+            align="center"
+          >
             <template #default="{ row }">
               <ElTag
                 v-if="getSkinTestDisplayTagType(row)"
@@ -475,6 +527,7 @@ defineExpose({
       @saved="handleSaveAsOrderTemplateSaved"
     />
 
+    <!-- MANUAL_USAGE_BIND 策略依赖：编辑卡保存时弹出用法绑定确认 -->
     <AdviceDraftBindDialog />
 
     <OrderTemplateApplyConfirmDialog />
@@ -483,8 +536,10 @@ defineExpose({
 
 <style scoped>
 .advice-workspace-root {
+  /* default：DOCTOR_STATION_SIDEBAR_WIDTH_PX.orderTemplate */
+  --advice-template-panel-width: 240px;
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: var(--advice-template-panel-width) minmax(0, 1fr);
   min-height: 0;
 }
 
@@ -495,6 +550,24 @@ defineExpose({
 .advice-workspace-root__main {
   min-width: 0;
   min-height: 0;
+}
+
+.advice-list-total {
+  display: inline-flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.advice-list-total__label {
+  color: var(--el-text-color-regular);
+}
+
+.advice-list-total__value {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
 }
 
 .advice-table :deep(.el-table__header-wrapper th.el-table__cell) {
@@ -524,7 +597,6 @@ defineExpose({
   overflow-y: auto;
 }
 
-/* 同一申请单多行：浅底 + 四边框成一组；组间顶部分隔；组内无横线 */
 .advice-table :deep(td.doctor-apply-form-cell) {
   background-color: var(--el-color-primary-light-9) !important;
 }

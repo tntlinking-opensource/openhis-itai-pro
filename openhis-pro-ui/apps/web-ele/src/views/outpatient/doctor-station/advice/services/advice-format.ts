@@ -1,28 +1,38 @@
 import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
 
+import {
+  isInsuranceContractCategory,
+  isPublicChargeContractCategory,
+  isSelfPayContractCategory,
+} from '#/views/outpatient/charge/register/services/charge-type-category';
+
+import { formatMoneyYuan } from '#/utils/format/money-scale';
+
 /** 金额、术语、费用性质等展示/默认值 */
 
 export function formatUnitPriceYuan(value: null | number | string | undefined): string {
   if (value === null || value === undefined || String(value).trim() === '') return '—';
-  const n = typeof value === 'number' ? value : Number(String(value).trim());
-  if (!Number.isFinite(n)) return '—';
-  return `${n.toFixed(2)}元`;
+  return formatMoneyYuan(value);
 }
 
 export function formatMoneyStrYuan(amountTwoDecimals: string): string {
   const t = String(amountTwoDecimals ?? '').trim();
   if (t === '' || t === '—') return '—';
-  const n = Number(t);
-  if (!Number.isFinite(n)) return `${t}元`;
-  return `${n.toFixed(2)}元`;
+  return formatMoneyYuan(t);
 }
 
-export function mapPatientServiceTypeToFeeNature(label: string): string {
-  const s = String(label || '').trim();
-  if (!s) return '';
-  if (s.includes('自费')) return '自费';
-  if (/医保|医疗保险|社保|公费/.test(s)) return '医保';
-  return '医保';
+/** 费用性质 contract category code → 费用性质 code（逻辑判断用） */
+export function mapPatientServiceTypeToFeeNature(categoryCode: string): string {
+  const code = String(categoryCode ?? '').trim();
+  if (!code) return '';
+  if (
+    isSelfPayContractCategory(code) ||
+    isInsuranceContractCategory(code) ||
+    isPublicChargeContractCategory(code)
+  ) {
+    return code;
+  }
+  return code;
 }
 
 export function firstTerminologyCode(options: TerminologyOptionDto[] | undefined): string {

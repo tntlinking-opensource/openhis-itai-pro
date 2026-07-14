@@ -1,9 +1,20 @@
 /**
  * 门诊日结交账 — 对接 {@code POST /api/app/outpatientDailySettlement/<method>}
  */
+import type {
+  DailySettlementHandoverChannelRowDto,
+  DailySettlementHandoverPaymentItemDto,
+  DailySettlementHandoverSummaryDto,
+} from '#/api/charge/daily-settlement-handover';
 import type { ApiOptionItem } from '#/types/api-response';
 
 import { publicRequestClient } from '#/api/request';
+
+export type {
+  DailySettlementHandoverChannelRowDto,
+  DailySettlementHandoverPaymentItemDto,
+  DailySettlementHandoverSummaryDto,
+} from '#/api/charge/daily-settlement-handover';
 
 const BASE = '/outpatientDailySettlement';
 
@@ -64,8 +75,14 @@ export interface DailySettlementSummaryDto {
 export interface PreviewOutpatientDailySettlementResponse {
   /** 待归档 payment 流水条数（含 0 元与收支抵净，不因净额排除）。 */
   paymentCount?: number;
+  /** 待交账候选 payment 明细（弹窗勾选）。 */
+  items?: DailySettlementHandoverPaymentItemDto[];
   rows?: DailySettlementChannelRowDto[];
   summary?: DailySettlementSummaryDto;
+  /** 本次待交账合计上半区（仅未交账；全选时弹窗底部与之对齐）。 */
+  handoverRows?: DailySettlementHandoverChannelRowDto[];
+  /** 本次待交账合计下半区（仅未交账）。 */
+  handoverSummary?: DailySettlementHandoverSummaryDto;
 }
 
 /** 下半区固定展示项（对齐老门诊日结单，顺序不可删减）。 */
@@ -74,7 +91,7 @@ export const DAILY_SETTLEMENT_SUMMARY_DISPLAY = [
   { key: 'wechatAmount', label: '微信', unit: '元' },
   { key: 'alipayAmount', label: '支付宝', unit: '元' },
   { key: 'onlineBankAmount', label: '网银', unit: '元' },
-  { key: 'selfPayCashTotal', label: '自费现金总额', unit: '元' },
+  { key: 'selfPayCashTotal', label: '现金', unit: '元' },
   { key: 'selfPayCount', label: '自费人次', unit: '人' },
   { key: 'provincialInsuranceCount', label: '省医保人次', unit: '人' },
   { key: 'municipalInsuranceCount', label: '市医保人次', unit: '人' },
@@ -88,7 +105,7 @@ export const DAILY_SETTLEMENT_SUMMARY_DISPLAY = [
   { key: 'municipalInsuranceFundTotal', label: '市医保基金', unit: '元' },
   { key: 'provincialInsuranceTotal', label: '省医保总额', unit: '元' },
   { key: 'municipalInsuranceTotal', label: '市医保总额', unit: '元' },
-  { key: 'totalCashIncome', label: '现金收入总额', unit: '元' },
+  { key: 'totalCashIncome', label: '自费总额', unit: '元' },
   { key: 'physicalExamCount', label: '体检人次', unit: '人' },
 ] as const satisfies ReadonlyArray<{
   key: keyof Omit<
@@ -112,8 +129,11 @@ export function normalizePreviewOutpatientDailySettlementResponse(
   if (raw.summary) {
     return {
       paymentCount: raw.paymentCount,
+      items: raw.items,
       rows: raw.rows,
       summary: raw.summary,
+      handoverRows: raw.handoverRows,
+      handoverSummary: raw.handoverSummary,
     };
   }
   const summary: DailySettlementSummaryDto = {
@@ -151,13 +171,19 @@ export function normalizePreviewOutpatientDailySettlementResponse(
   if (!hasSummaryField && summary.dateRange === undefined) {
     return {
       paymentCount: raw.paymentCount,
+      items: raw.items,
       rows: raw.rows,
+      handoverRows: raw.handoverRows,
+      handoverSummary: raw.handoverSummary,
     };
   }
   return {
     paymentCount: raw.paymentCount,
+    items: raw.items,
     rows: raw.rows,
     summary,
+    handoverRows: raw.handoverRows,
+    handoverSummary: raw.handoverSummary,
   };
 }
 
@@ -167,6 +193,8 @@ export interface SubmitOutpatientDailySettlementRequest {
   cashierId?: string;
   orgId: string;
   locationId?: string;
+  /** 勾选挂载的 payment 主键（string 保精度）。 */
+  paymentIds: string[];
 }
 
 export interface SubmitOutpatientDailySettlementResponse {
@@ -183,7 +211,7 @@ export async function loadOutpatientDailySettlementPageInitApi() {
   );
 }
 
-/** 按日期窗与经办人预览未交账汇总。 */
+/** 按日期窗与经办人查询日结汇总（含已交账）；paymentCount 仅统计未交账流水。 */
 export async function previewOutpatientDailySettlementApi(
   body: PreviewOutpatientDailySettlementRequest,
 ) {

@@ -6,6 +6,8 @@ import AutoImport from 'unplugin-auto-import/vite';
 import ElementPlus from 'unplugin-element-plus/vite';
 
 import { devPerformanceConfig } from './vite.dev-performance';
+import { openHisWinDownloadsDevPlugin } from './vite.openhis-win-downloads';
+import { createOpenHisProjectOverridePlugin } from './vite.project-override-plugin';
 import { createWebEleResolveAliases } from './vite.resolve-aliases';
 
 const extraPlugins = [
@@ -41,6 +43,8 @@ const extraPlugins = [
 
 /** 本地后台联调：proxy 全部指向 127.0.0.1:8081，与 vite.config.mts 互不影响 */
 export default defineConfig(async () => {
+  const projectOverridePlugin = createOpenHisProjectOverridePlugin(import.meta.dirname);
+
   return {
     application: {},
     vite: {
@@ -50,7 +54,11 @@ export default defineConfig(async () => {
           scss: {},
         },
       },
-      plugins: extraPlugins,
+      plugins: [
+        ...(projectOverridePlugin ? [projectOverridePlugin] : []),
+        openHisWinDownloadsDevPlugin(),
+        ...extraPlugins,
+      ],
       optimizeDeps: devPerformanceConfig.optimizeDeps,
       define: {
         global: 'globalThis',

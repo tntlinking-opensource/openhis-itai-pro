@@ -8,6 +8,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 import { ElButton, ElEmpty, ElTable, ElTableColumn, ElTag } from 'element-plus';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
+import TraceCodeTooltip from '#/components/trace/trace-code-tooltip.vue';
 
 defineOptions({
   name: 'ReturnMedicineDetailCenter',
@@ -30,7 +31,6 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   confirmReturn: [];
-  declineReturn: [];
 }>();
 
 const detailTableRef = ref<null | TableInstance>(null);
@@ -127,9 +127,6 @@ defineExpose({
           <ElButton type="primary" :disabled="!canOperate" @click="emit('confirmReturn')">
             确认退药
           </ElButton>
-          <ElButton type="warning" plain :disabled="!canOperate" @click="emit('declineReturn')">
-            拒绝退药
-          </ElButton>
         </div>
       </header>
       <div
@@ -169,7 +166,11 @@ defineExpose({
             </template>
           </ElTableColumn>
           <ElTableColumn prop="reqStatusText" label="请求状态" width="96" show-overflow-tooltip />
-          <ElTableColumn prop="traceNo" label="追溯码" min-width="120" show-overflow-tooltip />
+          <ElTableColumn prop="traceNo" label="追溯码" min-width="120">
+            <template #default="{ row }">
+              <TraceCodeTooltip :value="row.traceNo" />
+            </template>
+          </ElTableColumn>
         </ElTable>
         <ElEmpty
           v-else-if="selectedPatient && !detailLoading"

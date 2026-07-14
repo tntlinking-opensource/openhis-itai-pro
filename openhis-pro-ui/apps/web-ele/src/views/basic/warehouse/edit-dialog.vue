@@ -12,8 +12,12 @@ import {
   createWarehouseApi,
   editWarehouseApi,
   getWarehouseApi,
+  initWarehouseApi,
+  isDepartmentPharmacyFormEnum,
+  isPharmacyFormEnum,
   WAREHOUSE_FORM_ENUM,
 } from '#/api/basic/warehouse';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 interface Props {
   visible?: boolean;
@@ -30,11 +34,51 @@ const emit = defineEmits<{
   'update:visible': [value: boolean];
 }>();
 
-const type = ref<(typeof WAREHOUSE_FORM_ENUM)[keyof typeof WAREHOUSE_FORM_ENUM]>(
-  WAREHOUSE_FORM_ENUM.WAREHOUSE,
-);
+const organizationOptions = ref<Array<{ label: string; value: string }>>([]);
+const formEnumOptions = ref<Array<{ label: string; value: string }>>([]);
+const initLoading = ref(false);
 
 const isEditMode = computed(() => !!props.formData?.id);
+
+/** 将后端形态码规范为前端下拉值 */
+function normalizeFormEnum(formEnum?: null | string) {
+  if (isPharmacyFormEnum(formEnum)) {
+    return WAREHOUSE_FORM_ENUM.PHARMACY;
+  }
+  if (isDepartmentPharmacyFormEnum(formEnum)) {
+    return WAREHOUSE_FORM_ENUM.DEPARTMENT_PHARMACY;
+  }
+  return WAREHOUSE_FORM_ENUM.WAREHOUSE;
+}
+
+/** 加载维护页初始化下拉（形态、上级科室） */
+async function loadInitOptions() {
+  initLoading.value = true;
+  try {
+    const response = await initWarehouseApi();
+    formEnumOptions.value = (response?.formEnumOptions ?? []).map((item) => ({
+      label: item.label,
+      value: item.value,
+    }));
+    organizationOptions.value = (response?.organizationOptions ?? []).map((item) => ({
+      label: item.label,
+      value: preserveApiIdForRequest(item.value) ?? String(item.value),
+    }));
+    await formApi.updateSchema([
+      {
+        fieldName: 'type',
+        componentProps: {
+          options: formEnumOptions.value,
+        },
+      },
+    ]);
+  } catch (error) {
+    console.error('加载库房初始化选项失败:', error);
+    ElMessage.error('加载科室选项失败，请稍后重试');
+  } finally {
+    initLoading.value = false;
+  }
+}
 
 async function handleSubmit() {
   const { valid } = await formApi.validate();
@@ -43,24 +87,26 @@ async function handleSubmit() {
   modalApi.lock(true);
   try {
     const formValues = await formApi.getValues();
-    const currentType = (formValues.type ||
-      type.value) as (typeof WAREHOUSE_FORM_ENUM)[keyof typeof WAREHOUSE_FORM_ENUM];
+    const currentType =
+      formValues.type as (typeof WAREHOUSE_FORM_ENUM)[keyof typeof WAREHOUSE_FORM_ENUM];
+
+    const params: CreateWarehouseParams = {
+      formEnum: currentType,
+      name: formValues.name || '',
+    };
+    if (isDepartmentPharmacyFormEnum(currentType)) {
+      params.organizationId = preserveApiIdForRequest(formValues.organizationId);
+    }
 
     if (isEditMode.value) {
-      const params: CreateWarehouseParams & { id: string } = {
-        formEnum: currentType,
-        name: formValues.name || '',
+      await editWarehouseApi({
+        ...params,
         id: props.formData!.id as string,
-      };
-      await editWarehouseApi(params);
+      });
       ElMessage.success('更新成功');
     } else {
-      const params: CreateWarehouseParams = {
-        formEnum: currentType,
-        name: formValues.name || '',
-      };
       await createWarehouseApi(params);
-      ElMessage.success('创建库房成功');
+      ElMessage.success('创建成功');
     }
 
     emit('success');
@@ -82,6 +128,7 @@ async function handleSubmit() {
 }
 
 async function loadFormData() {
+  await loadInitOptions();
   const id = props.formData?.id;
 
   if (id && typeof id === 'string') {
@@ -89,15 +136,11 @@ async function loadFormData() {
     try {
       const response = await getWarehouseApi({ id });
       if (response) {
-        const backendType = String(response.formEnum);
-        const normalizedType =
-          backendType === WAREHOUSE_FORM_ENUM.PHARMACY
-            ? WAREHOUSE_FORM_ENUM.PHARMACY
-            : WAREHOUSE_FORM_ENUM.WAREHOUSE;
-        type.value = normalizedType;
+        const normalizedType = normalizeFormEnum(response.formEnum);
         await formApi.setValues({
           type: normalizedType,
           name: response.name || '',
+          organizationId: preserveApiIdForRequest(response.organizationId) ?? undefined,
         });
       } else {
         ElMessage.warning('未找到库房信息');
@@ -113,10 +156,10 @@ async function loadFormData() {
     }
   } else {
     await formApi.resetForm();
-    type.value = WAREHOUSE_FORM_ENUM.WAREHOUSE;
     await formApi.setValues({
-      type: type.value,
+      type: WAREHOUSE_FORM_ENUM.WAREHOUSE,
       name: '',
+      organizationId: undefined,
     });
   }
 }
@@ -143,27 +186,42 @@ const formConfig = reactive({
     },
   },
   layout: 'horizontal' as const,
+  labelWidth: 96,
   schema: [
     {
       component: 'RadioGroup',
       fieldName: 'type',
       label: '类型',
-      required: true,
+      rules: 'required',
       componentProps: {
-        options: [
-          { label: '仓库', value: WAREHOUSE_FORM_ENUM.WAREHOUSE },
-          { label: '药房', value: WAREHOUSE_FORM_ENUM.PHARMACY },
-        ],
-        onChange: (value: (typeof WAREHOUSE_FORM_ENUM)[keyof typeof WAREHOUSE_FORM_ENUM]) => {
-          type.value = value;
-        },
+        options: [],
+        class: 'warehouse-form-type-radio',
+      },
+    },
+    {
+      component: 'Select',
+      fieldName: 'organizationId',
+      label: '上级科室',
+      dependencies: {
+        triggerFields: ['type'],
+        show: (values: Record<string, unknown>) =>
+          isDepartmentPharmacyFormEnum(values.type as string),
+        rules: (values: Record<string, unknown>) =>
+          isDepartmentPharmacyFormEnum(values.type as string) ? 'required' : '',
+        componentProps: () => ({
+          options: organizationOptions.value,
+          filterable: true,
+          clearable: true,
+          loading: initLoading.value,
+          placeholder: '请选择上级科室',
+        }),
       },
     },
     {
       component: 'Input',
       fieldName: 'name',
       label: '名称',
-      required: true,
+      rules: 'required',
       componentProps: {
         placeholder: '请输入名称',
       },
@@ -189,7 +247,7 @@ watch(
 
 <template>
   <Modal
-    class="w-[500px]"
+    class="w-[600px]"
     :title="isEditMode ? '编辑' : '新增'"
     :close-on-click-modal="false"
     :close-on-press-escape="false"
@@ -197,3 +255,16 @@ watch(
     <Form />
   </Modal>
 </template>
+
+<style scoped>
+:deep(.warehouse-form-type-radio) {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  width: auto !important;
+  max-width: none;
+}
+
+:deep(.warehouse-form-type-radio .el-radio) {
+  margin-right: 20px;
+}
+</style>

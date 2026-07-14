@@ -174,7 +174,6 @@ function handleAdd() {
     <template #queue>
       <InvQueueCards
         :cabinet-list-options="cabinetListOptions"
-        :location-context-id="locationId"
         :orders="orders"
         :practitioner-option="practitionerOption"
         :selected-order="selectedOrder"

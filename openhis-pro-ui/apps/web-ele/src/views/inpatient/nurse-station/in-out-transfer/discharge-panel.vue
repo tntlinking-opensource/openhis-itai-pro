@@ -67,8 +67,14 @@ const medicationsRequest = useRequest(listDischargePendingMedications, {
   manual: true,
   showErrorMessage: false,
 });
-const dischargeRequest = useRequest(submitInpatientDischarge, { manual: true });
-const clearBedRequest = useRequest(submitClearDischargedBed, { manual: true });
+const dischargeRequest = useRequest(submitInpatientDischarge, {
+  manual: true,
+  showErrorMessage: false,
+});
+const clearBedRequest = useRequest(submitClearDischargedBed, {
+  manual: true,
+  showErrorMessage: false,
+});
 
 const encounterId = computed(() => String(props.patient?.id ?? '').trim());
 const listLoading = computed(
@@ -96,7 +102,13 @@ const patientSummary = computed(() => {
 /** 待出院 / 待结算时可办理出院 */
 const dischargeEnabled = computed(() => {
   const status = (props.patient?.statusEnum ?? '').trim();
-  return status === ENCOUNTER_STATUS_ON_HOLD || status === ENCOUNTER_STATUS_PENDING;
+  return status === ENCOUNTER_STATUS_ON_HOLD;
+});
+
+/** 已结算待清床时可清床离院 */
+const clearBedEnabled = computed(() => {
+  const status = (props.patient?.statusEnum ?? '').trim();
+  return status === ENCOUNTER_STATUS_COMPLETED;
 });
 
 /** 按长临筛选后的待执行医嘱 */
@@ -173,7 +185,8 @@ async function handleDischarge() {
     await props.onRefresh?.();
     await loadDischargePending();
   } catch (error) {
-    ElMessage.error(readRequestErrorMessage(error, '办理出院失败，请刷新后重试'));
+    // 业务错误文案由全局 HTTP 拦截器统一弹出，此处仅刷新待办避免列表与门禁口径不一致
+    await loadDischargePending();
   }
 }
 
@@ -197,8 +210,8 @@ async function handleClearBed() {
     }
     ElMessage.success('清床成功');
     await props.onRefresh?.();
-  } catch (error) {
-    ElMessage.error(readRequestErrorMessage(error, '清床失败，请检查病床状态'));
+  } catch {
+    // 业务错误文案由全局 HTTP 拦截器统一弹出
   }
 }
 
@@ -245,7 +258,9 @@ watch(
           <ElButton type="success" :disabled="!dischargeEnabled" @click="handleDischarge">
             办理出院
           </ElButton>
-          <ElButton type="primary" @click="handleClearBed"> 清床离院 </ElButton>
+          <ElButton type="primary" :disabled="!clearBedEnabled" @click="handleClearBed">
+            清床离院
+          </ElButton>
         </div>
       </section>
 

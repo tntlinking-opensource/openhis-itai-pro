@@ -20,10 +20,13 @@ function goOutpatientSchedule() {
         <strong>门诊排班</strong>：生成 → 发布 → 放号。
       </p>
       <ol class="schedule-template-guide__steps">
-        <li><strong>放号时段</strong> — 上午/下午几点到几点、放多少号</li>
-        <li><strong>日排班</strong> — 谁出诊、什么号别、用哪套放号时段</li>
-        <li><strong>周排班</strong> — 周一～周日各绑哪条日排班</li>
-        <li><strong>门诊排班</strong> — 点「生成正式排班」选日期，再逐条发布、放号</li>
+        <li><strong>① 放号时段</strong> — 先配好上午/下午各段起止时间与放号数量</li>
+        <li><strong>② 日排班</strong> — 选号别、医师号或科室号，并绑定上一步的放号时段</li>
+        <li>
+          <strong>③ 周排班</strong> — 选出诊科室与排班方式（按科室 /
+          按医师），再为周一～周日各选日排班（按医师时一周可排多位）
+        </li>
+        <li><strong>门诊排班</strong> — 「生成正式排班」选日期 → 发布 → 放号</li>
       </ol>
       <p class="schedule-template-guide__note">
         只排某一天、一位医生？可跳过本页，直接在「门诊排班」点「新建日程」。

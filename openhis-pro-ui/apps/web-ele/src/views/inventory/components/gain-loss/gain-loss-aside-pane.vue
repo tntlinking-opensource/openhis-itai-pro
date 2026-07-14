@@ -2,6 +2,8 @@
   损益单左侧：历史单据检索 + 卡片队列 + 新增（与盘点侧栏同构）。
 -->
 <script setup lang="ts">
+import type { ApiOptionItem } from '#/types/api-response';
+
 import { ref } from 'vue';
 
 import { RotateCw, Search } from '@vben/icons';
@@ -23,12 +25,14 @@ withDefaults(
     cabinetListOptions: Record<string, unknown>[];
     locationLabel?: string;
     orders: Record<string, unknown>[];
+    practitionerOption?: ApiOptionItem[];
     queueTitle?: string;
     selectedOrder?: null | Record<string, unknown>;
   }>(),
   {
     addDisabled: false,
     locationLabel: '损益库房',
+    practitionerOption: () => [],
     queueTitle: '历史损益单',
   },
 );
@@ -174,6 +178,7 @@ function handleAdd() {
         :cabinet-list-options="cabinetListOptions"
         :location-context-id="locationId"
         :orders="orders"
+        :practitioner-option="practitionerOption"
         :selected-order="selectedOrder"
         :show-supplier="false"
         @add="handleAdd"

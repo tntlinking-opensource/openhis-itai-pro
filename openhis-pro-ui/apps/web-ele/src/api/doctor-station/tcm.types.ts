@@ -129,6 +129,10 @@ export interface TcmRxLineDto {
   sortNumber?: null | number;
   chargeStatusText?: null | string;
   lineStatusEnum?: null | string;
+  /** 特殊煎法术语 code（dosage_instruction） */
+  dosageInstructionCode?: null | string;
+  /** 特殊煎法展示名 */
+  dosageInstructionText?: null | string;
 }
 
 export interface TcmRxHeaderDto {
@@ -183,6 +187,8 @@ export interface TcmRxDraftLineRequest {
   doseUnitCode?: null | string;
   sortNumber?: null | number;
   dispenseLocationId?: null | string;
+  /** 特殊煎法术语 code（dosage_instruction） */
+  dosageInstructionCode?: null | string;
 }
 
 export interface TcmRxDraftHeaderRequest {
@@ -272,6 +278,8 @@ export interface InitDoctorStationTcmRequest {
 export interface InitDoctorStationTcmResponse {
   tcmMethodCodeOptions?: null | TerminologyOptionDto[];
   medicationRateOptions?: null | TerminologyOptionDto[];
+  /** 单味特殊煎法（dosage_instruction） */
+  dosageInstructionOptions?: null | TerminologyOptionDto[];
 }
 
 /** stopLongTermTcmHerbalPrescription（住院） */

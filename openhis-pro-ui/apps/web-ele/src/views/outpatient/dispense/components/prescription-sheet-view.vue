@@ -32,7 +32,7 @@ const props = withDefaults(
         <h2>{{ props.data.hospitalName }}</h2>
       </div>
       <div class="prescription-sheet-title-center">
-        <h3>处方单</h3>
+        <h3>{{ props.data.documentTitle ?? '处方单' }}</h3>
       </div>
       <div class="prescription-sheet-row-between">
         <div class="prescription-sheet-field">
@@ -82,8 +82,38 @@ const props = withDefaults(
         </div>
       </div>
       <div class="divider"></div>
-      <div class="rp-heading">Rp</div>
-      <div class="medicen-list">
+      <div class="rp-heading">Rp :</div>
+      <div
+        v-if="props.data.rxType === 'herbal' && (props.data.tcmHerbGridRows?.length ?? 0) > 0"
+        class="tcm-herb-grid"
+      >
+        <div
+          v-for="(gridRow, gridIdx) in props.data.tcmHerbGridRows"
+          :key="gridIdx"
+          class="tcm-herb-grid-row"
+        >
+          <div v-if="gridRow.col1" class="tcm-herb-cell">
+            <span>{{ gridRow.col1 }}</span>
+            <span v-if="gridRow.note1" class="tcm-herb-note">{{ gridRow.note1 }}</span>
+          </div>
+          <div v-if="gridRow.col2" class="tcm-herb-cell">
+            <span>{{ gridRow.col2 }}</span>
+            <span v-if="gridRow.note2" class="tcm-herb-note">{{ gridRow.note2 }}</span>
+          </div>
+          <div v-if="gridRow.col3" class="tcm-herb-cell">
+            <span>{{ gridRow.col3 }}</span>
+            <span v-if="gridRow.note3" class="tcm-herb-note">{{ gridRow.note3 }}</span>
+          </div>
+          <div v-if="gridRow.col4" class="tcm-herb-cell">
+            <span>{{ gridRow.col4 }}</span>
+            <span v-if="gridRow.note4" class="tcm-herb-note">{{ gridRow.note4 }}</span>
+          </div>
+        </div>
+        <div v-if="props.data.tcmUsageText" class="tcm-usage-text">
+          {{ props.data.tcmUsageText }}
+        </div>
+      </div>
+      <div v-else class="medicen-list">
         <div v-for="(line, idx) in props.data.lines ?? []" :key="idx" class="medicine-line">
           <span>{{ idx + 1 }}.</span>
           <span>{{ line.title }}</span>
@@ -224,6 +254,40 @@ const props = withDefaults(
   min-height: 330px;
   padding-right: 2px;
   overflow-y: auto;
+}
+
+.tcm-herb-grid {
+  box-sizing: border-box;
+  min-height: 330px;
+  padding-right: 2px;
+}
+
+.tcm-herb-grid-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px 8px;
+  margin-bottom: 10px;
+}
+
+.tcm-herb-cell {
+  position: relative;
+  min-height: 1.4em;
+  padding-right: 2.2em;
+  line-height: 1.35;
+}
+
+.tcm-herb-note {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.tcm-usage-text {
+  margin-top: 8px;
+  text-align: right;
+  font-weight: 500;
 }
 
 .medicine-line {

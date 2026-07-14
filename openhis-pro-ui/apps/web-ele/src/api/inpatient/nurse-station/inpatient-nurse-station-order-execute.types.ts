@@ -125,6 +125,8 @@ export interface ExecuteNurseStationOrdersResponse {
 /** 批量登记不执行 */
 export interface SkipNurseStationOrderSlotsRequest {
   items: NurseStationOrderExecuteWriteSlotDto[];
+  /** 不执行原因（必填） */
+  statusReasonText: string;
 }
 
 export interface SkipNurseStationOrderSlotsResponse {

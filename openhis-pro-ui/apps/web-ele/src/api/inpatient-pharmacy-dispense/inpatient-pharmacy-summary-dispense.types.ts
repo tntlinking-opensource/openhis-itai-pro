@@ -14,8 +14,8 @@ export interface PagePendingMedicationSummarySlipsRequest extends PageParams {
   endDate?: null | string;
   /** 发放药房；0 或空表示当前用户可见全部可操作药房 */
   purposeLocationId?: null | string;
-  /** 供应审批态：待发药 APPROVAL、已核发 AGREE；缺省 APPROVAL */
-  supplyStatusEnumIn?: null | string[];
+  /** 是否仅查询发放表终态 COMPLETED 的汇总单（已发药 Tab）；false/空=待发核对 SUMMARIZED */
+  summaryDispenseCompletedOnly?: boolean | null;
 }
 
 /** 汇总单头（待核发） */
@@ -31,6 +31,10 @@ export interface InpatientPharmacySummarySlipHeaderDto {
   receiverName?: string;
   supplyStatusEnum?: string;
   supplyStatusEnumText?: string;
+  /** 是否已发药（发放表 COMPLETED 终态） */
+  summaryDispenseCompleted?: boolean;
+  /** 汇总门控展示：待核对 / 已发药 */
+  summaryDispenseStatusText?: string;
 }
 
 /** IF-IPS-01 分页响应：行数据仅 {@code content}，与 PagedResult 对齐 */
@@ -57,6 +61,8 @@ export interface InpatientPharmacySummarySlipLineDto {
   purposeLocationName?: string;
   unitPrice?: number | string;
   totalPrice?: number | string;
+  /** 追溯码（汇总核发落 SupplyDelivery；待发由前端暂存） */
+  traceNo?: string;
 }
 
 /** 底层发放行（含患者/批号） */
@@ -85,11 +91,14 @@ export interface GetMedicationSummaryDispenseDetailResponse {
   header?: InpatientPharmacySummarySlipHeaderDto;
   mergedLines?: InpatientPharmacySummarySlipLineDto[];
   dispenseItems?: InpatientPharmacySummaryDispenseItemDto[];
+  /** 是否已发药（发放表终态） */
+  summaryDispenseCompleted?: boolean;
 }
 
 /** IF-IPS-03 批量汇总核发 */
 export interface SummaryDispenseTraceLineSubmitDto {
-  dispenseId: string;
+  /** 供应请求行主键（非 dispenseId） */
+  supplyRequestId: string;
   traceNo?: null | string;
 }
 

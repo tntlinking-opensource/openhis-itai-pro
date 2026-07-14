@@ -3,6 +3,8 @@ import { computed } from 'vue';
 
 import { ElButton, ElCheckbox, ElTag } from 'element-plus';
 
+import type { SupplyDispenseStatusCode } from '#/utils/nurse-station/nurse-execute-status';
+
 export interface SupplyItem {
   id: string;
   name: string;
@@ -10,6 +12,7 @@ export interface SupplyItem {
   usage: string;
   quantity: number;
   status: '已发放' | '已配药' | '待发放';
+  statusCode: SupplyDispenseStatusCode;
   canCancelExecute?: boolean;
 }
 
@@ -32,7 +35,12 @@ const emit = defineEmits<{
 }>();
 
 /** 已执行态不可再勾选随批执行 */
-const isExecuted = computed(() => props.item.status === '已配药' || props.item.status === '已发放');
+const isExecuted = computed(
+  () =>
+    props.item.statusCode === 'PREPARED' ||
+    props.item.statusCode === 'COMPLETED' ||
+    props.item.statusCode === 'PART_COMPLETED',
+);
 
 const cardClass = computed(() => {
   if (isExecuted.value) {
@@ -45,9 +53,9 @@ const cardClass = computed(() => {
 });
 
 const statusTagType = computed(() => {
-  const s = props.item.status;
-  if (s === '已发放') return 'success';
-  if (s === '已配药') return 'warning';
+  const code = props.item.statusCode;
+  if (code === 'COMPLETED' || code === 'PART_COMPLETED') return 'success';
+  if (code === 'PREPARED') return 'warning';
   return 'primary';
 });
 

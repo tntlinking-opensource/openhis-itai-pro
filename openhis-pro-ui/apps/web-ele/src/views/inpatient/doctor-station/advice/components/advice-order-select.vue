@@ -25,7 +25,14 @@ interface ProductColumn {
   width?: number;
 }
 
-type AdviceCategory = '全部' | '药品' | '诊疗';
+type AdviceCategory = 'ALL' | 'DEVICE' | 'MEDICATION' | 'SERVICE';
+
+const ADVICE_CATEGORY_TABS: Array<{ code: AdviceCategory; label: string }> = [
+  { code: 'ALL', label: '全部' },
+  { code: 'MEDICATION', label: '药品' },
+  { code: 'SERVICE', label: '诊疗' },
+  { code: 'DEVICE', label: '耗材' },
+];
 
 const props = withDefaults(
   defineProps<{
@@ -56,7 +63,7 @@ const emit = defineEmits<{
   'update:modelValue': [value: string];
 }>();
 
-const activeCategory = ref<AdviceCategory>('全部');
+const activeCategory = ref<AdviceCategory>('ALL');
 const showPopup = ref(false);
 const keyword = ref('');
 const loading = ref(false);
@@ -71,7 +78,13 @@ const triggerWrapRef = ref<HTMLElement | null>(null);
 /** 弹层内键盘高亮行（与 VxeGrid 当前行同步） */
 const keyboardRowIndex = ref(-1);
 
-const categoryActions: AdviceCategory[] = ['全部', '药品', '诊疗'];
+function productTableNamesForCategory(cat: AdviceCategory): string[] | undefined {
+  if (cat === 'ALL') return undefined;
+  if (cat === 'MEDICATION') return ['med_medication_definition'];
+  if (cat === 'SERVICE') return ['wkf_activity_definition'];
+  if (cat === 'DEVICE') return ['adm_device_definition'];
+  return undefined;
+}
 
 const selectedLabel = computed(() => {
   const id = props.modelValue;
@@ -145,14 +158,6 @@ const syncGridCurrentRow = async () => {
     await grid.clearCurrentRow();
   }
 };
-
-/** 与后端目录请求 `productTableNames` 对齐，用于分类 Tab 收窄检索范围 */
-function productTableNamesForCategory(cat: AdviceCategory): string[] | undefined {
-  if (cat === '全部') return undefined;
-  if (cat === '药品') return ['med_medication_definition'];
-  if (cat === '诊疗') return ['wkf_activity_definition'];
-  return undefined;
-}
 
 const loadOptions = async () => {
   loading.value = true;
@@ -359,13 +364,13 @@ function handleInputClear() {
             class="mb-2 flex items-center gap-1 rounded border border-[#d7e4f2] bg-[#f6fbff] p-1"
           >
             <ElButton
-              v-for="category in categoryActions"
-              :key="category"
+              v-for="tab in ADVICE_CATEGORY_TABS"
+              :key="tab.code"
               size="small"
-              :type="activeCategory === category ? 'primary' : 'default'"
-              @click="activeCategory = category"
+              :type="activeCategory === tab.code ? 'primary' : 'default'"
+              @click="activeCategory = tab.code"
             >
-              {{ category }}
+              {{ tab.label }}
             </ElButton>
           </div>
           <VxeGrid

@@ -31,15 +31,15 @@ interface ProductPickRow extends Record<string, unknown> {
 
 interface Props {
   visible: boolean;
-  /** 目的药库（与单行选品 query.purposeLocationId 一致） */
-  purposeLocationId?: number | string;
+  /** 选品接口药库门禁（与单头库房无关，由父级传入 init 首个药库位） */
+  pickGateLocationId?: number | string;
   /** 入库项目类型（与单行选品 query.productTableName 一致） */
   productTableName?: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   visible: false,
-  purposeLocationId: undefined,
+  pickGateLocationId: undefined,
   productTableName: '',
 });
 
@@ -124,10 +124,20 @@ function resolveProductKey(row: Record<string, unknown>): string {
   return String(row.id ?? row.productDefinitionId ?? '').trim();
 }
 
-/** 加载可选药品列表 */
+/** 加载可选项目列表（仅按项目类型筛选，与单头库房无关） */
 async function getList() {
-  const purposeLocationId = props.purposeLocationId;
-  if (purposeLocationId === undefined || purposeLocationId === null || purposeLocationId === '') {
+  const productTableName = props.productTableName?.trim();
+  if (!productTableName) {
+    tableData.value = [];
+    total.value = 0;
+    return;
+  }
+  const pickGateLocationId = props.pickGateLocationId;
+  if (
+    pickGateLocationId === undefined ||
+    pickGateLocationId === null ||
+    String(pickGateLocationId).trim() === ''
+  ) {
     tableData.value = [];
     total.value = 0;
     return;
@@ -135,8 +145,8 @@ async function getList() {
   loading.value = true;
   try {
     const res = await pageProductsForInboundReceiptApi({
-      purposeLocationId,
-      productTableName: props.productTableName?.trim() || undefined,
+      purposeLocationId: pickGateLocationId,
+      productTableName,
       keyword: String(queryParams.value.keyword ?? '').trim() || undefined,
       pageNo: queryParams.value.pageNo,
       pageSize: queryParams.value.pageSize,
@@ -194,28 +204,36 @@ function handlePickRowClick(row: Record<string, unknown>) {
   const key = resolveProductKey(row);
   if (!key) return;
   if (selectedRows.value.some((item) => resolveProductKey(item) === key)) {
-    ElMessage.warning('该药品已在待添加列表中');
+    ElMessage.warning('该项目已在待添加列表中');
     return;
   }
   appendPickRows([row as ProductPickRow]);
 }
 
-/** 全选：当前筛选条件下全部可选药品加入已选 */
+/** 全选：当前筛选条件下全部可选项目加入已选 */
 async function selectAllPickRows() {
-  const purposeLocationId = props.purposeLocationId;
-  if (purposeLocationId === undefined || purposeLocationId === null || purposeLocationId === '') {
+  const productTableName = props.productTableName?.trim();
+  if (!productTableName) {
+    return;
+  }
+  const pickGateLocationId = props.pickGateLocationId;
+  if (
+    pickGateLocationId === undefined ||
+    pickGateLocationId === null ||
+    String(pickGateLocationId).trim() === ''
+  ) {
     return;
   }
   if (total.value === 0) {
-    ElMessage.warning('暂无可选药品');
+    ElMessage.warning('暂无可选项目');
     return;
   }
   loading.value = true;
   try {
     const pageSize = Math.min(Math.max(total.value, 1), 500);
     const res = await pageProductsForInboundReceiptApi({
-      purposeLocationId,
-      productTableName: props.productTableName?.trim() || undefined,
+      purposeLocationId: pickGateLocationId,
+      productTableName,
       keyword: String(queryParams.value.keyword ?? '').trim() || undefined,
       pageNo: 1,
       pageSize,
@@ -230,7 +248,7 @@ async function selectAllPickRows() {
       ElMessage.info('当前筛选结果均已加入待添加列表');
       return;
     }
-    ElMessage.success(`已加入 ${added} 条药品`);
+    ElMessage.success(`已加入 ${added} 条项目`);
   } finally {
     loading.value = false;
   }
@@ -254,7 +272,7 @@ function handleClose() {
 /** 确认批量添加 */
 function handleConfirm() {
   if (!selectedRows.value.length) {
-    ElMessage.warning('请至少选择一个药品');
+    ElMessage.warning('请至少选择一个项目');
     return;
   }
   emit('confirm', [...selectedRows.value]);
@@ -276,7 +294,7 @@ watch(
 <template>
   <AppDialog
     v-model="dialogVisible"
-    title="批量添加药品"
+    title="批量添加项目"
     width="1360px"
     destroy-on-close
     @close="handleClose"
@@ -286,14 +304,14 @@ watch(
         class="purchase-inbound-batch-dialog__hint text-sm"
         style="color: var(--el-text-color-regular)"
       >
-        检索药品后，点击左侧列表行即可加入右侧「已选药品」。
+        检索项目后，点击左侧列表行即可加入右侧「已选项目」。
       </p>
 
       <div class="purchase-inbound-batch-dialog__body">
         <section
           class="purchase-inbound-batch-dialog__pane purchase-inbound-batch-dialog__pane--pick"
         >
-          <SectionTitle title="可选药品" />
+          <SectionTitle title="可选项目" />
           <TableLayout
             :table-data="tableData"
             :loading="loading"
@@ -327,7 +345,7 @@ watch(
         <section
           class="purchase-inbound-batch-dialog__pane purchase-inbound-batch-dialog__pane--selected"
         >
-          <SectionTitle :title="`已选药品（${selectedRows.length}）`" />
+          <SectionTitle :title="`已选项目（${selectedRows.length}）`" />
           <TableLayout
             :table-data="selectedRows"
             :loading="false"

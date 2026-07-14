@@ -1,26 +1,35 @@
-<!-- 药库订货单：工作站 + 侧栏队列 + 明细；对接 inventoryWarehousePurchaseOrder。 -->
+<!-- 药库订货单：工作站 + 侧栏卡片队列 + 明细；布局与操作同构药库进货单。 -->
 <script lang="ts" setup>
 import type {
-  SupplierOptionDto,
-  WarehouseDocumentDetailRowDto,
-  WarehouseOptionDto,
+  GetPurchaseOrderDetailResponse,
+  PurchaseOrderListRowDto,
 } from '#/api/inventory/warehouse/purchase-order';
 import type { ApiOptionItem } from '#/types/api-response';
 
-import { computed, nextTick, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 
+import { useUserStore } from '@vben/stores';
 import { formatDateTime } from '@vben/utils';
 
 import { ElMessage } from 'element-plus';
 
 import {
+  filterPurchaseOrderWarehouseOptions,
+  getPurchaseOrderDetailApi,
   loadPurchaseOrderFormInitApi,
-  pagePurchaseOrdersApi,
+  mapPurchaseOrderInitToApiOptions,
+  mapPurchaseOrderInitToCabinetRows,
+  pagePurchaseOrderWorkbenchListApi,
   WHS_PO_ALL_WAREHOUSES_PURPOSE_LOCATION_ID,
-  WHS_PO_TYPE_ENUM,
 } from '#/api/inventory/warehouse/purchase-order';
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
-import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import { useCompactViewport } from '#/composables/use-compact-viewport';
+import { INVENTORY_DOC_ASIDE_WIDTH_PX } from '#/constants/layout/viewport-breakpoints';
+import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
+import { isInboundReceiptDocumentEditableRaw } from '#/utils/inventory/inbound-receipt-status';
+import { inboundReceiptStatusLabel } from '#/utils/inventory/inbound-receipt-status';
+import { pickWorkbenchOrderAfterSave } from '#/utils/inventory/inventory-workbench-list';
 
 import PurchaseOrderAsidePane from './purchase-order-aside-pane.vue';
 import PurchaseOrderMainPane from './purchase-order-main-pane.vue';
@@ -29,37 +38,21 @@ defineOptions({
   name: 'InventoryWarehousePurchaseOrderPage',
 });
 
-/** 列表行 statusEnum → 卡片文案（与读模型 SupplyStatus.sortOrder 对齐） */
-const STATUS_LABEL: Record<number, string> = {
-  1: '待审核',
-  2: '审核中',
-  3: '同意',
-  4: '驳回',
-  9: '已撤回',
-  10: '待复审',
-  11: '已失效',
-  12: '已发送',
-};
+const route = useRoute();
+const userStore = useUserStore();
+const { pickPreset } = useCompactViewport();
+/** 左侧历史订货单队列宽度：≥1680 保持 280，窄屏收至 248 */
+const asideWidthPx = pickPreset(INVENTORY_DOC_ASIDE_WIDTH_PX);
+const asideWidth = computed(() => `${asideWidthPx.value}px`);
 
-function statusEnumText(sort?: number): string {
-  if (sort === undefined || sort === null) return '';
-  return STATUS_LABEL[sort] ?? String(sort);
-}
-
-const queryParams = ref<{
-  keyword?: string;
-}>({
-  keyword: '',
-});
+const queryParams = ref<{ keyword?: string }>({ keyword: '' });
 
 function createDefaultMonthRange(): [string, string] {
   const d = new Date();
   const y = d.getFullYear();
   const m = d.getMonth();
   const pad = (n: number) => String(n).padStart(2, '0');
-  const start = `${y}-${pad(m + 1)}-01`;
-  const end = `${y}-${pad(m + 1)}-${pad(d.getDate())}`;
-  return [start, end];
+  return [`${y}-${pad(m + 1)}-01`, `${y}-${pad(m + 1)}-${pad(d.getDate())}`];
 }
 
 const listDateRange = ref<[string, string] | null>(createDefaultMonthRange());
@@ -71,45 +64,25 @@ const listKeywordModel = computed({
   },
 });
 
-interface OrderTableForm {
+const tableForm = ref<{
   locationId?: number | string;
-}
-
-const tableForm = ref<OrderTableForm>({
-  locationId: undefined,
+  applyTime?: string;
+}>({
+  /** 左侧药库默认「全部库房」，与 init 首项 value=0 对齐 */
+  locationId: WHS_PO_ALL_WAREHOUSES_PURPOSE_LOCATION_ID,
 });
 
-const warehouseOptions = ref<WarehouseOptionDto[]>([]);
-const supplierOptions = ref<SupplierOptionDto[]>([]);
-const allWarehousesOption = ref<null | WarehouseOptionDto>(null);
-
 const cabinetListOptions = ref<Record<string, unknown>[]>([]);
+const warehouseHeadOptions = ref<Record<string, unknown>[]>([]);
 const practitionerOption = ref<ApiOptionItem[]>([]);
+const supplierOption = ref<ApiOptionItem[]>([]);
+const itemTableTypeOptions = ref<ApiOptionItem[]>([]);
 
 const orderList = ref<Record<string, unknown>[]>([]);
 const selectedOrder = ref<null | Record<string, unknown>>(null);
+const orderDetail = ref<GetPurchaseOrderDetailResponse | null>(null);
 const mainPaneResetKey = ref(0);
-
 const isAddDisabled = ref(false);
-
-/** 左侧列表 purposeLocationId：0=全部药库 */
-const numericListPurposeId = computed(() => {
-  const v = tableForm.value.locationId;
-  if (v === undefined || v === null || v === '') {
-    return WHS_PO_ALL_WAREHOUSES_PURPOSE_LOCATION_ID;
-  }
-  const n = typeof v === 'number' ? v : Number(v);
-  return Number.isFinite(n) ? n : WHS_PO_ALL_WAREHOUSES_PURPOSE_LOCATION_ID;
-});
-
-/** 新增草稿时传给右侧的默认目的药库 */
-const initialDraftPurposeId = computed((): number | undefined => {
-  const id = numericListPurposeId.value;
-  if (id === WHS_PO_ALL_WAREHOUSES_PURPOSE_LOCATION_ID) {
-    return warehouseOptions.value[0]?.locationId;
-  }
-  return id;
-});
 
 const selectedBusNo = computed(() => {
   const o = selectedOrder.value;
@@ -117,9 +90,25 @@ const selectedBusNo = computed(() => {
   return resolveOrderBusNo(o) ?? '';
 });
 
-const isMainDraft = computed(() => Boolean(selectedOrder.value?._draft));
+const isDraftOrder = computed(() => Boolean(selectedOrder.value?._draft));
 
-function isDraftOrder(row?: null | Record<string, unknown>): boolean {
+const activeOrderStatusEnum = computed(() => {
+  if (selectedOrder.value?._draft) return undefined;
+  return orderDetail.value?.statusEnum ?? selectedOrder.value?.statusEnum;
+});
+
+const orderDocumentEditable = computed(() => {
+  if (selectedOrder.value?._draft) return true;
+  return isInboundReceiptDocumentEditableRaw(activeOrderStatusEnum.value);
+});
+
+const practitionerId = computed(
+  () =>
+    resolveLoginPractitionerIdForRequest(userStore.userInfo as null | Record<string, unknown>) ??
+    practitionerOption.value[0]?.value,
+);
+
+function isDraftOrderRow(row?: null | Record<string, unknown>): boolean {
   return Boolean(row?._draft);
 }
 
@@ -132,14 +121,13 @@ function createDraftOrderRow(): Record<string, unknown> {
     applyTime: formatDateTime(new Date()),
     applicantId_dictText: '',
     totalPrice: undefined,
-    purposeLocationId: tableForm.value.locationId,
   };
 }
 
 function resolveOrderBusNo(row?: null | Record<string, unknown>): string | undefined {
   if (!row) return undefined;
-  const candidates = [row.supplyBusNo, row.busNo, row.orderBusNo, row.purchaseBusNo];
-  for (const raw of candidates) {
+  for (const k of ['supplyBusNo', 'busNo', 'orderBusNo', 'purchaseBusNo']) {
+    const raw = row[k];
     if (raw === undefined || raw === null) continue;
     const s = String(raw).trim();
     if (s !== '') return s;
@@ -147,155 +135,184 @@ function resolveOrderBusNo(row?: null | Record<string, unknown>): string | undef
   return undefined;
 }
 
-/** 供应商名称：下拉字典 */
-function supplierLabel(id?: number): string {
-  if (id === undefined || id === null) return '';
-  const hit = supplierOptions.value.find((s) => s.supplierId === id);
-  return String(hit?.supplierName ?? '').trim();
-}
-
-/** 药库名称：下拉字典 */
-function warehouseLabel(id?: number): string {
-  if (id === undefined || id === null) return '';
-  const hit = warehouseOptions.value.find((w) => w.locationId === id);
-  return String(hit?.displayName ?? '').trim();
-}
-
-/** 将接口列表行转为卡片队列展示结构 */
-function toQueueRow(r: WarehouseDocumentDetailRowDto): Record<string, unknown> {
+function toQueueRow(r: PurchaseOrderListRowDto): Record<string, unknown> {
   return {
     ...r,
-    statusEnum_enumText: statusEnumText(r.statusEnum),
-    supplierId_dictText: supplierLabel(r.supplierId),
-    purposeLocationId_dictText: warehouseLabel(r.purposeLocationId),
+    supplyBusNo: r.busNo,
+    statusEnum_enumText: r.statusEnumText ?? inboundReceiptStatusLabel(r.statusEnum),
+    supplierId_dictText: r.supplierName ?? '',
+    purposeLocationId_dictText: r.purposeLocationName ?? '',
+    totalPrice: r.totalAmount,
   };
 }
 
-/** 加载药库/供应商下拉 */
-async function loadInit() {
+async function init() {
   try {
     const res = await loadPurchaseOrderFormInitApi({});
     const data = res.data;
-    warehouseOptions.value = data?.warehouseOptions ?? [];
-    supplierOptions.value = data?.supplierOptions ?? [];
-    allWarehousesOption.value = data?.allWarehousesOption ?? null;
-
-    const opts: Record<string, unknown>[] = [];
-    const all = allWarehousesOption.value;
-    if (all?.locationId !== undefined && all.locationId !== null) {
-      opts.push({
-        id: all.locationId,
-        name: all.displayName ?? '全部药库',
-      });
-    }
-    for (const w of warehouseOptions.value) {
-      if (w.locationId !== undefined && w.locationId !== null) {
-        opts.push({ id: w.locationId, name: w.displayName ?? String(w.locationId) });
-      }
-    }
-    cabinetListOptions.value = opts;
-
-    const allId = all?.locationId;
-    if (allId !== undefined && allId !== null && tableForm.value.locationId === undefined) {
-      tableForm.value.locationId = allId;
-    } else if (tableForm.value.locationId === undefined && warehouseOptions.value.length > 0) {
-      tableForm.value.locationId = warehouseOptions.value[0]?.locationId;
+    const warehouseOpts = data?.warehouseLocationOptions ?? [];
+    cabinetListOptions.value = mapPurchaseOrderInitToCabinetRows(warehouseOpts);
+    warehouseHeadOptions.value = mapPurchaseOrderInitToCabinetRows(
+      filterPurchaseOrderWarehouseOptions(warehouseOpts),
+    );
+    supplierOption.value = mapPurchaseOrderInitToApiOptions(data?.supplierOptions);
+    practitionerOption.value = mapPurchaseOrderInitToApiOptions(data?.warehouseKeeperOptions);
+    itemTableTypeOptions.value = mapPurchaseOrderInitToApiOptions(
+      data?.purchaseItemTableTypeOptions,
+    );
+    // 与 init 首项 OptionDto.value（"0"/全部）类型对齐，避免下拉显示裸数字 0
+    const allValue = cabinetListOptions.value[0]?.value ?? cabinetListOptions.value[0]?.id;
+    if (
+      tableForm.value.locationId === undefined ||
+      tableForm.value.locationId === null ||
+      String(tableForm.value.locationId).trim() === '' ||
+      tableForm.value.locationId === 0
+    ) {
+      tableForm.value.locationId =
+        allValue === undefined || allValue === null
+          ? WHS_PO_ALL_WAREHOUSES_PURPOSE_LOCATION_ID
+          : (allValue as number | string);
     }
   } catch {
-    warehouseOptions.value = [];
-    supplierOptions.value = [];
-    allWarehousesOption.value = null;
     cabinetListOptions.value = [];
+    warehouseHeadOptions.value = [];
+    supplierOption.value = [];
+    practitionerOption.value = [];
+    itemTableTypeOptions.value = [];
   }
 }
 
-/** 拉取左侧订货单分页并与本地草稿合并 */
-async function fetchOrderList() {
-  const wid = numericListPurposeId.value;
+async function getList() {
+  const draftRows = orderList.value.filter((r) => r._draft);
+  const dr = listDateRange.value;
   try {
-    const dr = listDateRange.value;
-    const res = await pagePurchaseOrdersApi({
-      purposeLocationId: wid,
+    const { records } = await pagePurchaseOrderWorkbenchListApi({
+      purposeLocationId: tableForm.value.locationId,
       keyword: queryParams.value.keyword?.trim() || undefined,
-      applyTimeFrom: dr?.[0],
-      applyTimeTo: dr?.[1],
+      applyTimeBegin: dr?.[0],
+      applyTimeEnd: dr?.[1],
       pageNo: 1,
       pageSize: 100,
-      typeEnum: WHS_PO_TYPE_ENUM,
     });
-    const { content } = parsePagedRowsFromApiData<WarehouseDocumentDetailRowDto>(res.data);
-    const records = content.map((r) => toQueueRow(r));
-    const draftRows = orderList.value.filter((r) => r._draft);
-    orderList.value = [...draftRows, ...records];
+    orderList.value = [...draftRows, ...records.map((r) => toQueueRow(r))];
   } catch {
-    const draftRows = orderList.value.filter((r) => r._draft);
-    orderList.value = draftRows;
+    orderList.value = [...draftRows];
   }
+}
+
+function resetDetailState() {
+  orderDetail.value = null;
 }
 
 function handleAdd() {
-  const lid = numericListPurposeId.value;
-  if (lid === WHS_PO_ALL_WAREHOUSES_PURPOSE_LOCATION_ID) {
-    ElMessage.warning('当前为「全部药库」筛选，请先选择具体药库后再新增');
-    return;
-  }
+  resetDetailState();
   const draft = createDraftOrderRow();
   orderList.value = [draft, ...orderList.value.filter((r) => !r._draft)];
   selectedOrder.value = draft;
   mainPaneResetKey.value += 1;
+  tableForm.value.applyTime = formatDateTime(new Date());
   void nextTick(() => {
     isAddDisabled.value = true;
   });
 }
 
-function handleOrderClick(order: Record<string, unknown>) {
-  selectedOrder.value = order;
-  if (isDraftOrder(order)) {
-    mainPaneResetKey.value += 1;
+async function handleEdit(order?: null | Record<string, unknown>) {
+  const row = order ?? selectedOrder.value;
+  if (isDraftOrderRow(row)) return;
+
+  resetDetailState();
+  const busNo = resolveOrderBusNo(row);
+  if (!busNo) {
+    ElMessage.error('请选择要编辑的单据');
     return;
   }
-  isAddDisabled.value = false;
-}
 
-function handleLocationChange() {
-  void fetchOrderList();
-}
-
-/** 右侧保存/审批等写操作后刷新左侧并选中对应单据号 */
-async function handleDocChanged(payload?: { busNo?: string }) {
-  isAddDisabled.value = false;
-  const keeperNo = payload?.busNo;
-  orderList.value = orderList.value.filter((r) => !r._draft);
-  await fetchOrderList();
-  if (keeperNo) {
-    const row = orderList.value.find((r) => resolveOrderBusNo(r) === keeperNo);
-    selectedOrder.value =
-      row ??
-      ({
-        busNo: keeperNo,
-        statusEnum: 1,
-        statusEnum_enumText: statusEnumText(1),
-      } as Record<string, unknown>);
-  } else {
-    selectedOrder.value = orderList.value[0] ?? null;
+  try {
+    const res = await getPurchaseOrderDetailApi({ busNo });
+    orderDetail.value = res.data ?? null;
+  } catch {
+    ElMessage.error('加载订货单详情失败');
+    return;
   }
+
+  isAddDisabled.value = false;
 }
+
+function handleOrderClick(order: Record<string, unknown>) {
+  selectedOrder.value = order;
+  if (isDraftOrderRow(order)) {
+    // 切回草稿由主区 sync 恢复缓存；勿 bump resetKey，否则会冲掉恢复内容
+    return;
+  }
+  void handleEdit(order);
+}
+
+function handleLocationChange(locationId?: number | string) {
+  const v = locationId;
+  tableForm.value.locationId =
+    v === undefined || v === null || String(v).trim() === ''
+      ? WHS_PO_ALL_WAREHOUSES_PURPOSE_LOCATION_ID
+      : v;
+  void getList();
+}
+
+async function handleDocumentSaved(payload: { busNo?: string }) {
+  orderList.value = orderList.value.filter((r) => !r._draft);
+  await getList();
+  const busNo = payload.busNo?.trim();
+  if (!busNo) return;
+  selectedOrder.value = pickWorkbenchOrderAfterSave(orderList.value, busNo, resolveOrderBusNo);
+  await handleEdit(selectedOrder.value);
+}
+
+async function handleDocumentChanged(payload: { busNo?: string }) {
+  await handleDocumentSaved(payload);
+}
+
+async function handleDocumentRemoved() {
+  if (selectedOrder.value?._draft) {
+    orderList.value = orderList.value.filter((r) => r !== selectedOrder.value);
+    selectedOrder.value = null;
+    resetDetailState();
+    mainPaneResetKey.value += 1;
+    isAddDisabled.value = false;
+    return;
+  }
+  orderList.value = orderList.value.filter((r) => !r._draft);
+  resetDetailState();
+  selectedOrder.value = null;
+  mainPaneResetKey.value += 1;
+  isAddDisabled.value = false;
+  await getList();
+}
+
+watch(
+  () => route.query,
+  async (newQuery) => {
+    const busNo = newQuery.busNo;
+    if (!busNo || Array.isArray(busNo)) return;
+    if (cabinetListOptions.value.length === 0) {
+      await init();
+    }
+    queryParams.value.keyword = String(busNo);
+    await getList();
+    const row = orderList.value.find((item) => resolveOrderBusNo(item) === String(busNo));
+    if (!row) return;
+    selectedOrder.value = row;
+    await handleEdit(row);
+  },
+  { immediate: true },
+);
 
 onMounted(async () => {
-  await loadInit();
-  await fetchOrderList();
-  if (orderList.value.length > 0 && !selectedOrder.value) {
-    const first = orderList.value[0];
-    if (first && !first._draft) {
-      selectedOrder.value = first;
-    }
-  }
+  await init();
+  await getList();
 });
 </script>
 
 <template>
   <WarehouseDocWorkstation
-    aside-width="280px"
+    :aside-width="asideWidth"
     queue-title=""
     aside-dense
     :show-aside-filter="false"
@@ -314,21 +331,26 @@ onMounted(async () => {
         :show-supplier-in-queue="true"
         @add="handleAdd"
         @location-change="handleLocationChange"
-        @search="fetchOrderList"
+        @search="getList"
         @select="handleOrderClick"
       />
     </template>
 
     <PurchaseOrderMainPane
       class="min-h-0 flex-1"
+      :apply-time="tableForm.applyTime"
       :bus-no="selectedBusNo"
+      :document-editable="orderDocumentEditable"
+      :is-draft-order="isDraftOrder"
+      :item-table-type-options="itemTableTypeOptions"
+      :order-detail="orderDetail"
+      :practitioner-id="practitionerId"
       :reset-key="mainPaneResetKey"
-      :is-new-draft="isMainDraft"
-      :initial-purpose-location-id="initialDraftPurposeId"
-      :supplier-options="supplierOptions"
-      :warehouse-options="warehouseOptions"
-      :list-purpose-location-id="numericListPurposeId"
-      @doc-changed="handleDocChanged"
+      :supplier-options="supplierOption"
+      :warehouse-options="warehouseHeadOptions"
+      @document-changed="handleDocumentChanged"
+      @document-removed="handleDocumentRemoved"
+      @document-saved="handleDocumentSaved"
     />
   </WarehouseDocWorkstation>
 </template>

@@ -10,7 +10,7 @@ import type { NationalCatalogItem } from '#/chs/api';
 
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 
-import { ElButton, ElDialog, ElMessage, ElMessageBox } from 'element-plus';
+import { ElAlert, ElButton, ElDialog, ElMessage, ElMessageBox } from 'element-plus';
 
 import { useVbenForm } from '#/adapter/form';
 import {
@@ -33,6 +33,12 @@ import {
   resolveDefaultInsuranceBusNo,
 } from '#/chs/constants/insurance-contract';
 import { ensureInsuranceSignIn } from '#/chs/utils/ensure-insurance-sign-in';
+import {
+  applyCatalogEditabilityFromDetail,
+  buildCatalogEditabilitySchemaPatches,
+  CATALOG_EDITABILITY_OK,
+  isCatalogStructureLocked,
+} from '#/views/basic/catalog/catalog-editability';
 
 interface Props {
   modelValue: boolean;
@@ -78,11 +84,26 @@ const { handleFormKeydown: handleDeviceFormKeydown } = useFormKeyboardNavigation
 });
 const initOptions = ref<DeviceCatalogInitResponse>({} as DeviceCatalogInitResponse);
 const originalData = ref<Partial<DeviceCatalogItem>>({});
+const editabilityCode = ref(CATALOG_EDITABILITY_OK);
+const editabilityMessage = ref('');
 
-const BOOLEAN_FLAG_FIELDS = ['allergenFlag', 'ybFlag', 'ybMatchFlag', 'hvcmFlag'] as const;
+const catalogStructureLocked = computed(() => isCatalogStructureLocked(editabilityCode.value));
+
+const BOOLEAN_FLAG_FIELDS = [
+  'allergenFlag',
+  'ybFlag',
+  'ybMatchFlag',
+  'hvcmFlag',
+  'chargeableFlag',
+] as const;
 
 /** 业务信息内联复选组 */
-const CHECKBOX_INLINE_GROUP_FIELDS = ['allergenFlag', 'ybFlag', 'hvcmFlag'] as const;
+const CHECKBOX_INLINE_GROUP_FIELDS = [
+  'allergenFlag',
+  'ybFlag',
+  'hvcmFlag',
+  'chargeableFlag',
+] as const;
 
 /** 已从表单移除、提交时须剔除的字段 */
 const REMOVED_FORM_FIELDS = [
@@ -148,9 +169,24 @@ const unitCodeOptions = computed(() => {
   }
   return convertOptions((initOptions.value?.packUnits as OptionItem[]) || null);
 });
-const ybCategories = createOptionsComputed('ybCategories');
 const financialTypes = createOptionsComputed('financialTypes');
-const ybGrades = createOptionsComputed('ybGrades');
+/** 医保类别：优先 medChrgitmTypeOptions，兼容旧 init 字段 ybCategories */
+const medChrgitmTypeOptions = computed(() =>
+  convertOptions(
+    (initOptions.value?.medChrgitmTypeOptions as OptionItem[] | undefined) ??
+      (initOptions.value?.ybCategories as OptionItem[] | undefined) ??
+      null,
+  ),
+);
+/** 医保等级：优先 chrgitmLvOptions，兼容旧 init 字段 ybGrades */
+const chrgitmLvOptions = computed(() =>
+  convertOptions(
+    (initOptions.value?.chrgitmLvOptions as OptionItem[] | undefined) ??
+      (initOptions.value?.ybGrades as OptionItem[] | undefined) ??
+      null,
+  ),
+);
+const mrSettlementTypeCodeOptions = createOptionsComputed('mrSettlementTypeCodeOptions');
 
 /** 弹窗显隐，与 ElDialog v-model 同步 */
 const dialogVisible = computed({
@@ -164,6 +200,12 @@ const isEditMode = computed(() => {
   const id = String(props.catalogId || '');
   return !!id && id !== 'new';
 });
+
+const DEVICE_CATALOG_PRICE_FIELD_NAMES = [
+  'purchasePrice',
+  'retailPrice',
+  'maximumRetailPrice',
+] as const;
 
 const pickerContext = computed(() => ({
   name: String(formData.value?.name ?? ''),
@@ -316,8 +358,18 @@ function finishSuccess() {
 async function resetFormState() {
   formData.value = {};
   originalData.value = {};
+  editabilityCode.value = CATALOG_EDITABILITY_OK;
+  editabilityMessage.value = '';
   await formApi.resetForm();
   await formApi.setFieldValue('__checkbox_inline_group', {});
+}
+
+/** 按 editabilityCode 同步表单字段 disabled */
+function syncDeviceEditabilitySchema() {
+  if (!formApi?.isMounted) {
+    return;
+  }
+  formApi.updateSchema(buildCatalogEditabilitySchemaPatches('device', editabilityCode.value));
 }
 
 function handleDialogClosed() {
@@ -394,6 +446,7 @@ function normalizeFormSelectValues(data: Record<string, unknown>) {
     'itemTypeCode',
     'ybType',
     'chrgitmLv',
+    'mrSettlementTypeCode',
   ];
   const next = normalizeUnitFieldNames({ ...data });
   selectFieldNames.forEach((field) => {
@@ -439,6 +492,9 @@ async function loadDetailData() {
     }
 
     originalData.value = { ...detail };
+    const editability = applyCatalogEditabilityFromDetail(detail);
+    editabilityCode.value = editability.code;
+    editabilityMessage.value = editability.message;
     const normalizedData = normalizeFormSelectValues(detail as Record<string, unknown>);
     normalizeBooleanFields(normalizedData);
     formData.value = { ...normalizedData };
@@ -449,6 +505,7 @@ async function loadDetailData() {
       inlineGroupValue[key] = coerceLegacyBool(normalizedData[key]);
     });
     formApi.setFieldValue('__checkbox_inline_group', inlineGroupValue);
+    syncDeviceEditabilitySchema();
   } catch (error) {
     console.error('获取耗材详情失败:', error);
     ElMessage.error('获取耗材详情失败，请稍后重试');
@@ -497,6 +554,9 @@ function buildSubmitData(formValues: Record<string, unknown>): Partial<DeviceCat
 
 function buildUpdatePayload(submitData: Partial<DeviceCatalogItem>): UpdateDeviceCatalogParams {
   const updateData = { ...submitData } as Record<string, unknown>;
+  DEVICE_CATALOG_PRICE_FIELD_NAMES.forEach((field) => {
+    delete updateData[field];
+  });
   updateData.purchaseUnitCode = updateData.purchaseUnitCode ?? updateData.unitCode;
   updateData.splitUnitCode = updateData.splitUnitCode ?? updateData.minUnitCode;
   updateData.packageUnitCode =
@@ -507,6 +567,7 @@ function buildUpdatePayload(submitData: Partial<DeviceCatalogItem>): UpdateDevic
   delete updateData.salesUnitRatio;
   delete updateData.unitCode;
   delete updateData.minUnitCode;
+  updateData.editabilityCode = editabilityCode.value;
   return updateData as UpdateDeviceCatalogParams;
 }
 
@@ -685,7 +746,7 @@ const [Form, formApi] = useVbenForm(
         fieldName: 'ybType',
         label: '医保类别',
         componentProps: {
-          options: ybCategories.value,
+          options: medChrgitmTypeOptions.value,
           filterable: true,
           placeholder: '请选择医保类别',
           clearable: true,
@@ -696,9 +757,20 @@ const [Form, formApi] = useVbenForm(
         fieldName: 'chrgitmLv',
         label: '医保等级',
         componentProps: {
-          options: ybGrades.value,
+          options: chrgitmLvOptions.value,
           filterable: true,
           placeholder: '请选择医保等级',
+          clearable: true,
+        },
+      },
+      {
+        component: 'Select',
+        fieldName: 'mrSettlementTypeCode',
+        label: '病案结算类型',
+        componentProps: {
+          options: mrSettlementTypeCodeOptions.value,
+          filterable: true,
+          placeholder: '请选择病案结算类型',
           clearable: true,
         },
       },
@@ -761,11 +833,12 @@ const [Form, formApi] = useVbenForm(
         component: 'InputNumber',
         fieldName: 'purchasePrice',
         label: '购入价（包装单位）',
-        rules: 'required',
+        rules: isEditMode.value ? undefined : 'required',
         componentProps: {
           min: 0,
           precision: 2,
           placeholder: '请输入购入价',
+          disabled: isEditMode.value,
         },
       },
       buildInvGridPadField('__inv_grid_pad_r1c4'),
@@ -792,11 +865,12 @@ const [Form, formApi] = useVbenForm(
         component: 'InputNumber',
         fieldName: 'retailPrice',
         label: '零售价（包装单位）',
-        rules: 'required',
+        rules: isEditMode.value ? undefined : 'required',
         componentProps: {
           min: 0,
           precision: 2,
           placeholder: '请输入零售价',
+          disabled: isEditMode.value,
         },
       },
       buildInvGridPadField('__inv_grid_pad_r2c4'),
@@ -827,6 +901,7 @@ const [Form, formApi] = useVbenForm(
           min: 0,
           precision: 2,
           placeholder: '请输入最高零售价',
+          disabled: isEditMode.value,
         },
       },
       buildInvGridPadField('__inv_grid_pad_r3c4'),
@@ -889,6 +964,7 @@ const [Form, formApi] = useVbenForm(
             { fieldName: 'allergenFlag', label: '过敏标记' },
             { fieldName: 'ybFlag', label: '医保标记' },
             { fieldName: 'hvcmFlag', label: '高值耗材标志' },
+            { fieldName: 'chargeableFlag', label: '是否收费耗材' },
           ],
         },
       },
@@ -959,6 +1035,14 @@ watch(
     @closed="handleDialogClosed"
   >
     <div v-loading="loading" class="min-h-0">
+      <ElAlert
+        v-if="catalogStructureLocked"
+        class="mx-4 mb-3 sm:mx-5"
+        type="warning"
+        :closable="false"
+        show-icon
+        :title="editabilityMessage || '该耗材已产生业务引用，分类/单位/拆零倍数/价格等字段不可修改'"
+      />
       <div
         ref="formAreaRef"
         class="device-catalog-form-dialog__form-wrap box-border px-4 pb-3 pt-2 sm:px-5"

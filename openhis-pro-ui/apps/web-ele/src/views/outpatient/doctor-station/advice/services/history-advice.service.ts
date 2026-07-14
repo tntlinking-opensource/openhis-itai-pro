@@ -28,13 +28,7 @@ function mapReuseMeta(
 ): Pick<HistoryAdviceRowItem, 'reusable' | 'reuseWarning'> {
   const charge = String(dto.chargeStatusEnum ?? '').toUpperCase();
   const display = String(dto.displayStatusEnum ?? '').toUpperCase();
-  const displayText = String(dto.displayStatusEnumText ?? '').trim();
-  if (
-    charge.includes('REFUND') ||
-    display.includes('REFUND') ||
-    displayText.includes('退费') ||
-    displayText.includes('待退费')
-  ) {
+  if (charge.includes('REFUND') || display.includes('REFUND')) {
     return { reusable: false, reuseWarning: '该项目已退费或待退费，不可复用' };
   }
   return { reusable: true };

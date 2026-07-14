@@ -47,6 +47,7 @@ interface Props {
   severityOptions: OutpatientSkinTestEnumOptionDto[];
   practitionerOptions: { label: string; value: string }[];
   defaultPractitionerId?: string;
+  defaultPractitionerName?: string;
   savingSkinTestServiceRequestId?: string;
   deletingSkinTestAllergyRecordId?: string;
 }
@@ -97,6 +98,7 @@ defineExpose({
         :severity-options="severityOptions"
         :practitioner-options="practitionerOptions"
         :default-practitioner-id="defaultPractitionerId"
+        :default-practitioner-name="defaultPractitionerName"
         :saving-service-request-id="savingSkinTestServiceRequestId"
         :deleting-allergy-record-id="deletingSkinTestAllergyRecordId"
         @refresh="emit('refreshSkinTest')"

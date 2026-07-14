@@ -1,10 +1,12 @@
 import type {
   NurseStationCostDetailLineDto,
   NurseStationCostDetailPresentationMode,
+  NurseStationCostDetailStatusFilter,
   NurseStationCostSummaryLineDto,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-cost-detail.types';
 
 import { decimalToFixed } from '#/utils/format/decimal-util';
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
 
 /** 明细行表格 row-key */
 export function buildCostDetailLineRowKey(row: NurseStationCostDetailLineDto): string {
@@ -54,12 +56,12 @@ export function formatCostDetailMoney(value: number | string | undefined, dp = 2
   return `￥${decimalToFixed(value, dp).toFixed(dp)}`;
 }
 
-/** 单价格式化为四位小数 */
+/** 单价格式化为两位小数（与 BR-MON-001 展示层一致） */
 export function formatCostDetailUnitPrice(value: number | string | undefined): string {
   if (value == null || value === '') {
     return '—';
   }
-  return decimalToFixed(value, 4).toFixed(4);
+  return formatMoneyDisplay(value);
 }
 
 /** 校验展示模式是否合法 */
@@ -67,4 +69,11 @@ export function isCostDetailPresentationMode(
   value: string | undefined,
 ): value is NurseStationCostDetailPresentationMode {
   return value === 'DETAIL' || value === 'SUMMARY';
+}
+
+/** 校验费用状态筛选是否合法 */
+export function isCostDetailStatusFilter(
+  value: string | undefined,
+): value is NurseStationCostDetailStatusFilter {
+  return value === 'PENDING_SETTLEMENT' || value === 'SETTLED';
 }

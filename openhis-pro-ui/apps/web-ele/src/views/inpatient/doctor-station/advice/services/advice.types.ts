@@ -47,6 +47,12 @@ export interface AdviceDrugItem extends AdviceEditForm {
   totalUnitSalesCode?: string;
   totalUnitSalesName?: string;
   totalAmountSplitToSalesK?: number;
+  /** 住院临时医嘱拆分属性（OrderCalcRule code "1"~"4"） */
+  partAttributeEnum?: string;
+  /** 频次模块计算得到的计划执行次数（供前端推算总量） */
+  frequencyExecutionCount?: number;
+  /** 医生手工改过总量/单位后，自动推算不再覆盖本行 */
+  totalAmountManualOverride?: boolean;
   /** 目录原始单价（SALES 带，未换算） */
   catalogUnitPrice?: number | string;
   unitBands?: DoctorStationMedicationUnitBandDto[];
@@ -98,6 +104,8 @@ export interface AdviceProductOption {
   defaultUnitName?: string;
   /** 目录原始单价（SALES 带） */
   catalogUnitPrice?: number;
+  /** 门诊/住院临时医嘱拆分属性（OrderCalcRule code "1"~"4"） */
+  partAttributeEnum?: string;
 }
 
 /** 开立页主表行（含嵌入编辑卡用的虚拟行） */
@@ -142,4 +150,8 @@ export interface AdviceRowItem {
   dispensePerDuration?: number;
   /** 申请单整单号（诊疗 AR 前缀 prescriptionNo，同单多行共享） */
   applyFormNo?: string;
+  /** 诊疗服务类目 code（26=护理级别） */
+  serviceCategoryEnum?: string;
+  /** 目录分类码（与 serviceCategoryEnum 对齐时可用于识别护理级别） */
+  catalogCategoryCode?: string;
 }

@@ -9,10 +9,18 @@ import { formatDateTime } from '@vben/utils';
 
 import {
   loadTransferOutFormInitApi,
-  pageTransferOutsApi,
+  mapTransferOutInitToCabinetRows,
+  pageTransferOutWorkbenchListApi,
   WHS_TRANSFER_OUT_TYPE_ENUM,
 } from '#/api/inventory/warehouse/transfer-out';
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
+import {
+  INV_ALL_LOCATIONS_FILTER_ID,
+  mapInitOptionDtoToApiItems,
+  normalizeSidebarLocationFilterValue,
+  pickWorkbenchOrderAfterSave,
+  resolveDefaultAllLocationsFilterValue,
+} from '#/utils/inventory/inventory-workbench-list';
 import TransferAsidePane from './transfer-out-aside-pane.vue';
 import TransferMainPane from './transfer-out-main-pane.vue';
 
@@ -29,11 +37,7 @@ function createDefaultMonthRange(): [string, string] {
 }
 
 function mapOptions(list?: { label?: string; value?: string }[]): ApiOptionItem[] {
-  return (list ?? []).map((o) => ({ label: String(o.label ?? ''), value: String(o.value ?? '') }));
-}
-
-function optionsToCabinetRows(list: ApiOptionItem[]): Record<string, unknown>[] {
-  return list.map((w) => ({ id: w.value, value: w.value, name: w.label, label: w.label }));
+  return mapInitOptionDtoToApiItems(list);
 }
 
 const queryParams = ref<{ keyword?: string }>({ keyword: '' });
@@ -45,7 +49,9 @@ const listKeywordModel = computed({
   },
 });
 
-const tableForm = ref<{ sourceLocationId?: number | string }>({ sourceLocationId: undefined });
+const tableForm = ref<{ sourceLocationId?: number | string }>({
+  sourceLocationId: INV_ALL_LOCATIONS_FILTER_ID,
+});
 const cabinetListOptions = ref<Record<string, unknown>[]>([]);
 const warehouseOptions = ref<ApiOptionItem[]>([]);
 const pharmacyOptions = ref<ApiOptionItem[]>([]);
@@ -76,10 +82,16 @@ async function init() {
     pharmacyOptions.value = mapOptions(data?.pharmacyLocationOptions);
     warehouseOptions.value = mapOptions(data?.warehouseLocationOptions);
     practitionerOptions.value = mapOptions(data?.pharmacistOptions ?? data?.warehouseKeeperOptions);
-    cabinetListOptions.value = optionsToCabinetRows(warehouseOptions.value);
-    if (tableForm.value.sourceLocationId === undefined && cabinetListOptions.value.length > 0) {
-      const first = cabinetListOptions.value[0] as Record<string, unknown>;
-      tableForm.value.sourceLocationId = (first.id ?? first.value) as number | string | undefined;
+    cabinetListOptions.value = mapTransferOutInitToCabinetRows(data?.warehouseLocationOptions);
+    if (
+      tableForm.value.sourceLocationId === undefined ||
+      tableForm.value.sourceLocationId === null ||
+      String(tableForm.value.sourceLocationId).trim() === '' ||
+      tableForm.value.sourceLocationId === 0
+    ) {
+      tableForm.value.sourceLocationId = resolveDefaultAllLocationsFilterValue(
+        cabinetListOptions.value,
+      );
     }
   } catch {
     pharmacyOptions.value = [];
@@ -90,24 +102,17 @@ async function init() {
 }
 
 async function getList() {
-  const sid = tableForm.value.sourceLocationId;
   const draftRows = orderList.value.filter((r) => r._draft);
-  if (sid === undefined || sid === null || String(sid).trim() === '') {
-    orderList.value = [...draftRows];
-    return;
-  }
   const dr = listDateRange.value;
   try {
-    const res = await pageTransferOutsApi({
-      sourceLocationId: sid,
+    const { records } = await pageTransferOutWorkbenchListApi({
+      sourceLocationId: normalizeSidebarLocationFilterValue(tableForm.value.sourceLocationId),
       typeEnum: WHS_TRANSFER_OUT_TYPE_ENUM,
       keyword: queryParams.value.keyword?.trim() || undefined,
-      pageNo: 1,
-      pageSize: 200,
-      ...(dr?.[0] ? { applyTimeFrom: dr[0] } : {}),
-      ...(dr?.[1] ? { applyTimeTo: dr[1] } : {}),
+      applyTimeBegin: dr?.[0],
+      applyTimeEnd: dr?.[1],
     });
-    orderList.value = [...draftRows, ...(res.data?.records ?? [])];
+    orderList.value = [...draftRows, ...(records as Record<string, unknown>[])];
   } catch {
     orderList.value = [...draftRows];
   }
@@ -118,7 +123,6 @@ function handleAdd() {
     _draft: true,
     statusEnum_enumText: '编辑中',
     applyTime: formatDateTime(new Date()),
-    sourceLocationId: tableForm.value.sourceLocationId,
   };
   orderList.value = [draft, ...orderList.value.filter((r) => !r._draft)];
   selectedOrder.value = draft;
@@ -131,7 +135,7 @@ function handleAdd() {
 function handleOrderClick(order: Record<string, unknown>) {
   selectedOrder.value = order;
   if (order._draft) {
-    mainPaneResetKey.value += 1;
+    // 切回草稿由主区 sync 恢复缓存；勿 bump resetKey，否则会冲掉恢复内容
     return;
   }
   isAddDisabled.value = false;
@@ -142,8 +146,7 @@ async function handleDocumentSaved(payload: { busNo?: string }) {
   await getList();
   const busNo = payload.busNo?.trim();
   if (!busNo) return;
-  const row = orderList.value.find((item) => resolveBusNo(item) === busNo);
-  if (row) selectedOrder.value = row;
+  selectedOrder.value = pickWorkbenchOrderAfterSave(orderList.value, busNo, resolveBusNo);
   isAddDisabled.value = false;
 }
 
@@ -210,11 +213,10 @@ onMounted(async () => {
       :bus-no="selectedBusNo"
       :is-draft-order="isDraftOrder"
       :reset-key="mainPaneResetKey"
-      :sidebar-filter-location-id="tableForm.sourceLocationId"
       :warehouse-options="warehouseOptions"
       :pharmacy-options="pharmacyOptions"
       :practitioner-options="practitionerOptions"
-      head-section-title="调拨出库单"
+      head-section-title="药库调拨出库单"
       @document-removed="handleDocumentRemoved"
       @document-saved="handleDocumentSaved"
     />

@@ -1,5 +1,5 @@
 <!--
-  药房入库单左侧：历史入库单检索 + 卡片队列 + 新增（与药库出库侧栏同构）。
+  药房入库单左侧：历史入库单检索 + 卡片队列（只读台账，由药库出库同意后自动生成）。
 -->
 <script setup lang="ts">
 import type { ApiOptionItem } from '#/types/api-response';
@@ -9,7 +9,6 @@ import { computed, ref } from 'vue';
 import { RotateCw, Search } from '@vben/icons';
 
 import InvAsideShell from '@inventory/components/inv-aside-shell.vue';
-import InvPrimaryBtn from '@inventory/components/inv-primary-btn.vue';
 import InvQueueCards from '@inventory/components/inv-queue-cards.vue';
 import dayjs from 'dayjs';
 import isoWeek from 'dayjs/plugin/isoWeek';
@@ -21,7 +20,6 @@ defineOptions({ name: 'InventoryPharmacyStockInAsidePane' });
 
 const props = withDefaults(
   defineProps<{
-    addDisabled?: boolean;
     /** 源药库下拉 */
     cabinetListOptions: Record<string, unknown>[];
     orders: Record<string, unknown>[];
@@ -33,7 +31,6 @@ const props = withDefaults(
     selectedOrder?: null | Record<string, unknown>;
   }>(),
   {
-    addDisabled: false,
     pharmacyListOptions: () => [],
   },
 );
@@ -44,7 +41,6 @@ const mergedCabinetOptionsForQueue = computed(() => [
 ]);
 
 const emit = defineEmits<{
-  add: [];
   search: [];
   select: [row: Record<string, unknown>];
 }>();
@@ -124,11 +120,6 @@ function handleRefreshClick() {
 function handleQueueSelect(row: Record<string, unknown>) {
   emit('select', row);
 }
-
-/** 底部新增入库单。 */
-function handleAdd() {
-  emit('add');
-}
 </script>
 
 <template>
@@ -167,7 +158,7 @@ function handleAdd() {
           <ElSelect
             v-model="sourceLocationId"
             class="min-w-0 flex-1"
-            placeholder="请选择源药库"
+            placeholder="全部库房"
             clearable
             filterable
             @change="handleLocationFiltersChange"
@@ -186,7 +177,7 @@ function handleAdd() {
         <ElSelect
           v-model="purposeLocationId"
           class="w-full"
-          placeholder="请选择目的药房"
+          placeholder="全部药房"
           clearable
           filterable
           @change="handleLocationFiltersChange"
@@ -209,14 +200,10 @@ function handleAdd() {
         :practitioner-option="practitionerOption"
         :resolve-warehouse-line="resolveQueueWarehouseLine"
         :selected-order="selectedOrder"
+        :show-empty-add="false"
         :show-supplier="false"
-        @add="handleAdd"
         @select="handleQueueSelect"
       />
-    </template>
-
-    <template #footer>
-      <InvPrimaryBtn label="新增入库单" :disabled="addDisabled" @click="handleAdd" />
     </template>
   </InvAsideShell>
 </template>

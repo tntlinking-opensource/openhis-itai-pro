@@ -39,6 +39,8 @@ export interface NurseStationOrderAuditRowDto {
   requesterName?: string;
   performerLocationDisplay?: string;
   categoryEnum?: string;
+  /** 类型列展示：药品/诊疗/出院/转科/护理 */
+  orderKindDisplay?: string;
   groupNo?: number;
   sortNumber?: number;
   /** 是否中药饮片方（方级折叠行） */

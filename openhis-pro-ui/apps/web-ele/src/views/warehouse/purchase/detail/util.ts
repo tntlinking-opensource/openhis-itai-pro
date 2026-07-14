@@ -1,21 +1,16 @@
 import type { ProductDetail } from '#/types/common';
 
-import { decimalAdd, decimalMul } from '#/utils/format/decimal-util';
+import { calcMoneyLineTotal, sumMoneyThenSettle } from '#/utils/format/money-scale';
 
-export const calcPurchasePrice = (partPercent: number, unitPrice: number) => {
-  return decimalMul(unitPrice, partPercent);
-};
+export const calcPurchasePrice = (partPercent: number, unitPrice: number) =>
+  calcMoneyLineTotal(unitPrice, partPercent);
 
 export const calcTotalPrice = (total: number, price: number) => {
-  return decimalMul(total, price);
+  return calcMoneyLineTotal(price, total);
 };
 
 export const calcAllTotalPrice = (supplyList: ProductDetail[]) => {
-  let total = 0;
-  for (const item of supplyList) {
-    total = decimalAdd(total, item.totalSalePrice);
-  }
-  return total;
+  return sumMoneyThenSettle(supplyList.map((item) => item.totalSalePrice ?? 0));
 };
 
 export const validRules = {
