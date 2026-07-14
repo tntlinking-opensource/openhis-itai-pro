@@ -1,0 +1,16 @@
+openhis:
+  modules:
+    crb:
+      enabled: false
+  crb:
+    front-software:
+      base-url: ""
+      license: ""
+      org-code: ""
+    push:
+      mock-enabled: true
+      realtime-max-delay-seconds: 180
+      max-retry: 5
+    id:
+      patient-pattern: "{orgCode}_{patientBusNo}"
+      activity-versioned: false

@@ -1,0 +1,15 @@
+{
+  "moduleId": "einvoice-boss",
+  "displayName": "博思电子票据",
+  "enabledProperty": "openhis.modules.einvoice-boss.enabled",
+  "autoConfigurationClass": "com.openhis.whale.einvoice.boss.application.config.EinvoiceBossAutoConfiguration",
+  "appServiceNames": [
+    "einvoiceBossCommon",
+    "einvoiceBossContrast",
+    "einvoiceBossDocument",
+    "einvoiceBossList",
+    "einvoiceBossCompensation",
+    "einvoiceBossCashier",
+    "einvoiceBossReconcile"
+  ]
+}

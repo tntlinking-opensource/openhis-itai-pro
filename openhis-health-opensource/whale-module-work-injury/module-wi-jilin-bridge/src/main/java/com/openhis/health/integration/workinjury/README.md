@@ -1,0 +1,1 @@
+> 文档已迁至 **[whale-doc/whale-module-work-injury/java/com/openhis/health/integration/workinjury/README.md](../../../../../../../../../../../whale-doc/whale-module-work-injury/java/com/openhis/health/integration/workinjury/README.md)**。

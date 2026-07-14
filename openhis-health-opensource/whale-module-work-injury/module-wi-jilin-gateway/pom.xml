@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.openhis</groupId>
+        <artifactId>whale-module-work-injury</artifactId>
+        <version>2.0.3-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>module-wi-jilin-gateway</artifactId>
+    <packaging>jar</packaging>
+    <name>Work Injury Jilin Gateway Scheme</name>
+    <description>工伤平台报文 Scheme（OpenHIS.Win 出站，无 HTTP 客户端）</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>module-wi-jilin-domain</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>module-chs-jilin-gateway</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.fastjson2</groupId>
+            <artifactId>fastjson2</artifactId>
+            <version>2.0.58</version>
+        </dependency>
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>whale-core</artifactId>
+            <version>${whale.framework.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+</project>

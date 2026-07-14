@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.openhis</groupId>
+        <artifactId>whale-module-unionpay-bpc</artifactId>
+        <version>2.0.3-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>module-bpc-gateway</artifactId>
+    <packaging>jar</packaging>
+    <name>UnionPay BPC Gateway</name>
+    <description>银联 BPC 出站传输与院点契约配置（P0 DLL 仍走 OpenHIS.Win）</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>whale-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+</project>

@@ -1,0 +1,1 @@
+> 文档已迁至 **[whale-doc/whale-module-chs-jilin/java/com/openhis/chs/application/foundation/person/README.md](../../../../../../../../../../../../whale-doc/whale-module-chs-jilin/java/com/openhis/chs/application/foundation/person/README.md)**。

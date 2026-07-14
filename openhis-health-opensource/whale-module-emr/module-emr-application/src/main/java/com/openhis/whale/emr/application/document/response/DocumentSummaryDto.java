@@ -1,0 +1,41 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.openhis.whale.emr.application.document.response;
+
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.time.LocalDateTime;
+
+@Getter
+@Setter
+public class DocumentSummaryDto {
+
+    @JsonSerialize(using = ToStringSerializer.class)
+    /** 主键 id */
+    private Long id;
+    /** 患者 id（字符串） */
+    private String patientId;
+    /** 就诊 id（字符串，门诊/住院会话） */
+    private String encounterId;
+    /** 文书类型编码 */
+    private String documentTypeCode;
+    /** PDF 页眉用文书类型名 */
+    private String documentTypeName;
+    /** 文书标题 */
+    private String title;
+    /** 文书状态 code：DRAFT/SUBMITTED/LOCKED/ARCHIVED */
+    private String status;
+    /** 创建时间 */
+    private LocalDateTime createdAt;
+    /** 最后更新时间 */
+    private LocalDateTime updatedAt;
+    /** 创建人 id */
+    private Long createdBy;
+    /** 最后更新人 id */
+    private Long updatedBy;
+}

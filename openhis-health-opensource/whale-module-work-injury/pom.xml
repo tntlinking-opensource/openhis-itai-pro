@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.openhis</groupId>
+        <artifactId>whale</artifactId>
+        <version>2.0.3-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>whale-module-work-injury</artifactId>
+    <packaging>pom</packaging>
+
+    <name>Whale Module Work Injury Jilin</name>
+    <description>吉林省工伤扩展 Module（Win-Only 架构，对齐 whale-module-chs-jilin v3）</description>
+
+    <modules>
+        <module>module-wi-jilin-domain</module>
+        <module>module-wi-jilin-gateway</module>
+        <module>module-wi-jilin-bridge</module>
+        <module>module-wi-jilin-application</module>
+        <module>module-wi-jilin-starter</module>
+    </modules>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

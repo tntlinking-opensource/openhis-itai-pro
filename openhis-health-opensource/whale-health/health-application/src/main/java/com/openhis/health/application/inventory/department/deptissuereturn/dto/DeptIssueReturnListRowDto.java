@@ -1,0 +1,90 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.openhis.health.application.inventory.department.deptissuereturn.dto;
+
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.experimental.Accessors;
+
+import java.time.LocalDateTime;
+
+/**
+ * 科室退领单列表聚合行（IF-DEP-TL-02：每 bus_no 一行）。
+ */
+@Getter
+@Setter
+@Accessors(chain = true)
+@Schema(description = "科室退领单列表聚合行")
+public class DeptIssueReturnListRowDto {
+
+    /** 业务单号 busNo。 */
+    @Schema(description = "业务单号 busNo")
+    private String busNo;
+
+    /** 源领用单号 originalBusNo。 */
+    @Schema(description = "源领用单号 originalBusNo")
+    private String originalBusNo;
+
+    /** 科室药房 purposeLocationId。 */
+    @Schema(description = "科室药房 purposeLocationId")
+    private String purposeLocationId;
+
+    /** 科室药房名称 purposeLocationName。 */
+    @Schema(description = "科室药房名称 purposeLocationName")
+    private String purposeLocationName;
+
+    /** 领用科室 consumingOrganizationId。 */
+    @Schema(description = "领用科室 consumingOrganizationId")
+    private String consumingOrganizationId;
+
+    /** 领用科室名称 consumingOrganizationName。 */
+    @Schema(description = "领用科室名称 consumingOrganizationName")
+    private String consumingOrganizationName;
+
+    /** 单据状态 statusEnum。 */
+    @Schema(description = "单据状态 statusEnum")
+    private String statusEnum;
+
+    /** 状态中文展示 statusEnumText。 */
+    @Schema(description = "状态中文展示 statusEnumText")
+    private String statusEnumText;
+
+    /** 驳回原因（status=REJECT 时取供应行 reason；其它态可空）。 */
+    @Schema(description = "驳回原因")
+    private String rejectReason;
+
+    /** 申请人 applicantId。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "申请人 applicantId")
+    private Long applicantId;
+
+    /** 申请人姓名 applicantName。 */
+    @Schema(description = "申请人姓名 applicantName")
+    private String applicantName;
+
+    /** 申请时间 applyTime。 */
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    @Schema(description = "申请时间 applyTime")
+    private LocalDateTime applyTime;
+
+    /** 审批人 approverId。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "审批人 approverId")
+    private Long approverId;
+
+    /** 审批人姓名 approverName。 */
+    @Schema(description = "审批人姓名 approverName")
+    private String approverName;
+
+    /** 审批时间 approvalTime。 */
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    @Schema(description = "审批时间 approvalTime")
+    private LocalDateTime approvalTime;
+}

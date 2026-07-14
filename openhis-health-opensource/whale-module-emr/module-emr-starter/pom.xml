@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.openhis</groupId>
+        <artifactId>whale-module-emr</artifactId>
+        <version>2.0.3-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>module-emr-starter</artifactId>
+    <packaging>jar</packaging>
+    <name>EMR Starter</name>
+    <description>EMR Module 安装入口</description>
+
+    <dependencies>
+        <!-- 显式引入 domain/bridge，避免 IDE 增量编译时丢失 EMR 类型 FQCN -->
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>module-emr-domain</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>module-emr-bridge</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>module-emr-application</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
+</project>

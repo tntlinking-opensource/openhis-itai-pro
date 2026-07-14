@@ -1,0 +1,18 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.openhis.health.infrastructure.integration.noop.insurance.dict;
+
+import com.openhis.health.infrastructure.integration.insurance.platformdict.InsurancePlatformDictDisplayExtension;
+
+/**
+ * 未装配 chs-jilin（或任意第三方 1901 字典 Module）时的默认 {@link InsurancePlatformDictDisplayExtension}。
+ *
+ * <p>{@link InsurancePlatformDictDisplayExtension#isEnabled()} 继承接口默认 false；参保地等区划码仅展示原始 value，
+ * 不发起平台字典查询。</p>
+ *
+ * <p>吉林 Module 启用时由 {@code InsurancePlatformDictDisplayExtensionImpl}（{@code @Primary}）覆盖。</p>
+ */
+public final class NoOpInsurancePlatformDictDisplayExtension implements InsurancePlatformDictDisplayExtension {
+}

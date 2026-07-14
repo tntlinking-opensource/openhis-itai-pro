@@ -1,0 +1,111 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.openhis.health.integration.elep;
+
+
+import com.openhis.health.infrastructure.integration.elep.ElepPrescriptionExtension;
+import com.openhis.health.infrastructure.integration.elep.ExtensionIn.CloneElepPrescriptionExtensionIn;
+import com.openhis.health.infrastructure.integration.elep.ExtensionIn.ElepMedResultQueryExtensionIn;
+import com.openhis.health.infrastructure.integration.elep.ExtensionIn.ElepQueryExtensionIn;
+import com.openhis.health.infrastructure.integration.elep.ExtensionIn.ElepRevokeExtensionIn;
+import com.openhis.health.infrastructure.integration.elep.ExtensionIn.ElepUploadExtensionIn;
+import com.openhis.health.infrastructure.integration.elep.ExtensionIn.ElepRxNoByPrescriptionExtensionIn;
+import com.openhis.health.infrastructure.integration.elep.ExtensionIn.ElepRxNoByPrescriptionNoExtensionIn;
+import com.openhis.health.infrastructure.integration.elep.ExtensionIn.PatientElepHistoryQueryExtensionIn;
+import com.openhis.health.integration.elep.mapper.ElepIntegrationMapper;
+import com.openhis.health.infrastructure.integration.elep.ExtensionOut.ElepMedExtensionOut;
+import com.openhis.health.infrastructure.integration.elep.ExtensionOut.ElepPageExtensionOut;
+import com.openhis.health.infrastructure.integration.elep.ExtensionOut.CloneElepPrescriptionExtensionOut;
+import com.openhis.health.infrastructure.integration.elep.ExtensionOut.ElepQueryExtensionOut;
+import com.openhis.health.infrastructure.integration.elep.ExtensionOut.ElepRevokeExtensionOut;
+import com.openhis.health.infrastructure.integration.elep.ExtensionOut.ElepRxNoQueryExtensionOut;
+import com.openhis.health.infrastructure.integration.elep.ExtensionOut.ElepUploadExtensionOut;
+import com.openhis.health.infrastructure.integration.elep.ExtensionOut.PatientElepPrescriptionSummaryQueryExtensionOut;
+import com.openhis.elep.domain.client.JilinElepPrescriptionClient;
+import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Primary;
+import org.springframework.stereotype.Component;
+
+import java.util.Optional;
+
+/** {@link ElepPrescriptionExtension} 实现（委托 {@link JilinElepPrescriptionClient}）。省份差异由 Maven 模块隔离。 */
+@Component
+@Primary
+@RequiredArgsConstructor
+@ConditionalOnBean(name = {"elepPrescriptionOrchestrator", "elepPrescriptionOperationsRemoteAdapter"})
+@ConditionalOnProperty(name = "openhis.modules.elep.enabled", havingValue = "true")
+public class ElepPrescriptionExtensionImpl implements ElepPrescriptionExtension {
+
+    private final JilinElepPrescriptionClient jilinElepPrescriptionClient;
+
+    @Override
+    public boolean isEnabled() {
+        return true;
+    }
+
+    @Override
+    public boolean supportsPrescription(Long prescriptionGroupId) {
+        return prescriptionGroupId != null;
+    }
+
+    @Override
+    public ElepUploadExtensionOut upload(ElepUploadExtensionIn command) {
+        return ElepIntegrationMapper.toExtensionUploadResult(
+                jilinElepPrescriptionClient.upload(ElepIntegrationMapper.toContractsUploadCommand(command)));
+    }
+
+    @Override
+    public ElepRevokeExtensionOut revoke(ElepRevokeExtensionIn command) {
+        return ElepIntegrationMapper.toExtensionRevokeResult(
+                jilinElepPrescriptionClient.revoke(ElepIntegrationMapper.toContractsRevokeCommand(command)));
+    }
+
+    @Override
+    public ElepQueryExtensionOut query(ElepQueryExtensionIn command) {
+        return ElepIntegrationMapper.toExtensionQueryResult(
+                jilinElepPrescriptionClient.query(ElepIntegrationMapper.toContractsQueryCommand(command)));
+    }
+
+    @Override
+    public ElepMedExtensionOut queryMedResult(ElepMedResultQueryExtensionIn command) {
+        return ElepIntegrationMapper.toExtensionMedResult(
+                jilinElepPrescriptionClient.queryMedResult(
+                        ElepIntegrationMapper.toContractsMedResultQuery(command)));
+    }
+
+    @Override
+    public Optional<ElepRxNoQueryExtensionOut> findRxNoByPrescription(ElepRxNoByPrescriptionExtensionIn query) {
+        if (query == null || query.getPrescriptionGroupId() == null) {
+            return Optional.empty();
+        }
+        return jilinElepPrescriptionClient.findRxNoByPrescription(query.getPrescriptionGroupId())
+                .map(ElepIntegrationMapper::toExtensionRxNoSnapshot);
+    }
+
+    @Override
+    public Optional<ElepRxNoQueryExtensionOut> findRxNoByPrescriptionNo(ElepRxNoByPrescriptionNoExtensionIn query) {
+        if (query == null || query.getPrescriptionNo() == null) {
+            return Optional.empty();
+        }
+        return jilinElepPrescriptionClient.findRxNoByPrescriptionNo(query.getPrescriptionNo())
+                .map(ElepIntegrationMapper::toExtensionRxNoSnapshot);
+    }
+
+    @Override
+    public ElepPageExtensionOut<PatientElepPrescriptionSummaryQueryExtensionOut> listPatientHistory(PatientElepHistoryQueryExtensionIn query) {
+        return ElepIntegrationMapper.toExtensionPatientHistoryPage(
+                jilinElepPrescriptionClient.listPatientHistory(
+                        ElepIntegrationMapper.toContractsPatientHistoryQuery(query)));
+    }
+
+    @Override
+    public CloneElepPrescriptionExtensionOut cloneToNewEncounter(CloneElepPrescriptionExtensionIn command) {
+        return ElepIntegrationMapper.toExtensionPrescriptionDraftDto(
+                jilinElepPrescriptionClient.cloneToNewEncounter(
+                        ElepIntegrationMapper.toContractsCloneCommand(command)));
+    }
+}

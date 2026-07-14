@@ -1,0 +1,7212 @@
+-- Platform seed (admin + terminology + menus + MRMS/EMR shell)
+
+INSERT INTO "whale_users" ("id", "user_name", "email", "phone_number", "password_hash", "name", "surname", "is_active", "is_locked_out", "lockout_end", "access_failed_count", "extra_properties", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "ukey_id", "ukey_src_id")
+VALUES
+('1', 'admin', 'admin@example.com', NULL, '$2a$10$7H11xZICXxBlwxh2/hBRzuB0TC7wEduR4Fs2x4s7yFOn4fjrOIMuK', 'admin', NULL, true, false, NULL, 0, NULL, '2026-05-02 22:07:04.503+00', '2026-06-10 08:49:49.813+00', NULL, NULL, false, NULL, NULL, NULL, NULL),
+('322932010666430464', 'yaofang', NULL, NULL, '$2a$10$fgewpcSdDLz1V8hz5mGJs.VI/AQSxgh15vCqQXv3uExk3MQQXeNq6', '药房', NULL, true, false, NULL, 0, NULL, '2026-06-10 02:56:31.129+00', '2026-06-10 02:56:31.129+00', '1', '1', false, NULL, NULL, NULL, NULL),
+('322932096091820032', 'kuguan', NULL, NULL, '$2a$10$xmtLIpu./wIOtQvtOCasN.CxUuSv0Z27KYkoK/KsmR0862gtZd2ne', '库管', NULL, true, false, NULL, 0, NULL, '2026-06-10 02:56:51.496+00', '2026-06-10 02:57:30.134+00', '1', '1', false, NULL, NULL, NULL, NULL),
+('322932211309350912', 'shoufei', NULL, NULL, '$2a$10$aUBhg.2LPcQaoaZJcqQSZusUsUxb52Sr9oPVhfE8.M6c40RPNs4di', '收费', NULL, true, false, NULL, 0, NULL, '2026-06-10 02:57:18.966+00', '2026-06-10 02:57:18.966+00', '1', '1', false, NULL, NULL, NULL, NULL),
+('322935698131259392', 'zyyisheng', NULL, NULL, '$2a$10$WLfRePjxQHwBcz5v/qpsPejS3I.bZU1PUKocrAL5rzn.fWGoDrvey', '住院医生', NULL, true, false, NULL, 0, NULL, '2026-06-10 03:11:10.289+00', '2026-06-10 03:11:10.289+00', '1', '1', false, NULL, NULL, NULL, NULL),
+('322963602154721280', 'yisheng', NULL, NULL, '$2a$10$40qkQYyXUxyemhox33jLMOaNht/hJnwdpA8ERsbdKN2lbXWUV0vBK', '门诊医生', NULL, true, false, NULL, 0, NULL, '2026-06-10 05:02:03.127+00', '2026-06-10 05:02:03.127+00', '1', '1', false, NULL, NULL, NULL, NULL),
+('322965022853566464', 'hushi', NULL, NULL, '$2a$10$L0qwEnhMmYg/UfpMnNGA1eaEy5NhM1LogeA8ehGQBSiO86ebOpsBm', '护士', NULL, true, false, NULL, 0, NULL, '2026-06-10 05:07:41.848+00', '2026-06-10 05:08:11.113+00', '1', '1', false, NULL, NULL, NULL, NULL),
+('323022664197214208', 'xinxike', NULL, NULL, '$2a$10$yUUyPkFp8YrLgFHB3ydovuoBwaqe6mF6dcs7PMpyImY4obRTFMSMS', '信息科', NULL, true, false, NULL, 0, NULL, '2026-06-10 08:56:44.615+00', '2026-06-10 08:56:44.615+00', '1', '1', false, NULL, NULL, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_roles" ("id", "name", "display_name", "code", "description", "is_default", "is_static", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('1', 'admin', '系统管理员', 'ROLE_ADMIN', '系统管理员，拥有所有权限', false, true, NULL, '2026-05-02 22:07:04.508+00', NULL, NULL, NULL, false, NULL, NULL),
+('10', 'doctor', '医生', 'ROLE_DOCTOR', '医生角色，负责诊疗相关工作', true, true, NULL, '2026-06-09 12:07:51.267+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('11', 'nurse', '护士', 'ROLE_NURSE', '护士角色，负责护理相关工作', true, true, NULL, '2026-06-09 12:07:51.267+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('12', 'pharmacist', '药师', 'ROLE_PHARMACIST', '药师角色，负责药房药品管理', true, true, NULL, '2026-06-09 12:07:51.267+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('13', 'warehouse_keeper', '库管', 'ROLE_WAREHOUSE', '库管角色，负责库存物资管理', true, true, NULL, '2026-06-09 12:07:51.267+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('14', 'accountant', '财务', 'ROLE_ACCOUNTANT', '财务角色，负责财务收费管理', true, true, NULL, '2026-06-09 12:07:51.267+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('323022177255297024', 'custom_role_6da58f2e', '信息科', 'ROLE_CUSTOM_6DA58F2E', '', true, true, '1', '2026-06-10 08:54:48.519+00', '2026-06-10 08:54:48.519+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_user_roles" ("id", "user_id", "role_id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('1', '1', '1', NULL, '2026-05-02 22:07:04.512+00', NULL, NULL, NULL, false, NULL, NULL),
+('322932010733539328', '322932010666430464', '12', '1', '2026-06-10 02:56:31.145+00', '2026-06-10 02:56:31.145+00', '1', '1', false, NULL, NULL),
+('322932096154734592', '322932096091820032', '13', '1', '2026-06-10 02:56:51.511+00', '2026-06-10 02:56:51.511+00', '1', '1', false, NULL, NULL),
+('322932211372265472', '322932211309350912', '14', '1', '2026-06-10 02:57:18.981+00', '2026-06-10 02:57:18.981+00', '1', '1', false, NULL, NULL),
+('322935698261282816', '322935698131259392', '10', '1', '2026-06-10 03:11:10.320+00', '2026-06-10 03:11:10.320+00', '1', '1', false, NULL, NULL),
+('322963602620289024', '322963602154721280', '10', '1', '2026-06-10 05:02:03.238+00', '2026-06-10 05:02:03.238+00', '1', '1', false, NULL, NULL),
+('322965022908092416', '322965022853566464', '11', '1', '2026-06-10 05:07:41.861+00', '2026-06-10 05:07:41.861+00', '1', '1', false, NULL, NULL),
+('322965878780989440', '1', '14', '1', '2026-06-10 05:11:05.917+00', '2026-06-10 05:11:05.917+00', '1', '1', false, NULL, NULL),
+('322965878881652736', '1', '10', '1', '2026-06-10 05:11:05.941+00', '2026-06-10 05:11:05.941+00', '1', '1', false, NULL, NULL),
+('322965878919401472', '1', '13', '1', '2026-06-10 05:11:05.950+00', '2026-06-10 05:11:05.950+00', '1', '1', false, NULL, NULL),
+('322965878990704640', '1', '12', '1', '2026-06-10 05:11:05.967+00', '2026-06-10 05:11:05.967+00', '1', '1', false, NULL, NULL),
+('322965879020064768', '1', '11', '1', '2026-06-10 05:11:05.974+00', '2026-06-10 05:11:05.974+00', '1', '1', false, NULL, NULL),
+('323021900313792512', '322965022853566464', '13', '1', '2026-06-10 08:53:42.491+00', '2026-06-10 08:53:42.491+00', '1', '1', false, NULL, NULL),
+('323022664272711680', '323022664197214208', '323022177255297024', '1', '2026-06-10 08:56:44.633+00', '2026-06-10 08:56:44.633+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+
+
+INSERT INTO "whale_organization_units" ("id", "code", "display_name", "parent_id", "sort_order", "is_enabled", "remark", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('322663105157926912', 'OR0007', '测试医院', NULL, 0, true, NULL, '1', '2026-06-09 09:07:59.060+00', '2026-06-09 09:07:59.060+00', '1', '1', false, NULL, NULL),
+('322663218286694400', 'OR0007.OR0008', '门诊内科', '322663105157926912', 0, true, NULL, '1', '2026-06-09 09:08:26.032+00', '2026-06-09 09:08:26.032+00', '1', '1', false, NULL, NULL),
+('322663308824940544', 'OR0007.OR0009', '住院内科', '322663105157926912', 0, true, NULL, '1', '2026-06-09 09:08:47.618+00', '2026-06-09 09:08:47.618+00', '1', '1', false, NULL, NULL),
+('322663606398226432', 'OR0007.OR0010', '处置室', '322663105157926912', 0, true, NULL, '1', '2026-06-09 09:09:58.565+00', '2026-06-09 09:09:58.565+00', '1', '1', false, NULL, NULL),
+('322663652535570432', 'OR0007.OR0011', '护理站', '322663105157926912', 0, true, NULL, '1', '2026-06-09 09:10:09.565+00', '2026-06-09 09:10:09.565+00', '1', '1', false, NULL, NULL),
+('322663815438143488', 'OR0007.OR0012', '挂号收费处', '322663105157926912', 0, true, NULL, '1', '2026-06-09 09:10:48.405+00', '2026-06-09 09:10:48.405+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_role_claims" ("id", "role_id", "claim_type", "claim_value", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('105001', '10', 'AssignmentScope', 'ORG', NULL, '2026-06-09 12:18:57.404+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105002', '10', 'StaffScope', 'DOCTOR_VISIT_ORG', NULL, '2026-06-09 12:18:57.404+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105004', '11', 'AssignmentScope', 'WARD', NULL, '2026-06-09 12:18:57.404+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105006', '11', 'StaffScope', 'NURSE_WARD_LOCATION', NULL, '2026-06-09 12:18:57.404+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105007', '12', 'AssignmentScope', 'PHARMACY', NULL, '2026-06-09 12:18:57.404+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105008', '12', 'StaffScope', 'PHARMACY_LOCATION', NULL, '2026-06-09 12:18:57.404+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105009', '13', 'AssignmentScope', 'WAREHOUSE', NULL, '2026-06-09 12:18:57.404+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105010', '13', 'StaffScope', 'WAREHOUSE_LOCATION', NULL, '2026-06-09 12:18:57.404+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105011', '14', 'AssignmentScope', 'ORG', NULL, '2026-06-09 12:18:57.404+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105013', '1', 'AssignmentScope', 'GLOBAL', NULL, '2026-06-09 12:03:45.933+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105015', '1', 'StaffScope', 'DOCTOR_VISIT_ORG', NULL, '2026-06-09 12:03:45.933+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105016', '1', 'StaffScope', 'WAREHOUSE_LOCATION', NULL, '2026-06-09 12:03:45.933+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105017', '1', 'StaffScope', 'PHARMACY_LOCATION', NULL, '2026-06-09 12:03:45.933+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105018', '1', 'StaffScope', 'NURSE_ORG', NULL, '2026-06-09 12:03:45.933+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105019', '1', 'StaffScope', 'NURSE_WARD_LOCATION', NULL, '2026-06-09 12:03:45.933+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105021', '13', 'AssignmentScope', 'PHARMACY', NULL, '2026-06-10 03:51:26.617+00', '2026-06-10 03:51:26.617+00', NULL, NULL, false, NULL, NULL),
+('105022', '13', 'StaffScope', 'PHARMACY_LOCATION', NULL, '2026-06-10 03:51:26.617+00', '2026-06-10 03:51:26.617+00', NULL, NULL, false, NULL, NULL),
+('323022177729253376', '323022177255297024', 'StaffScope', 'DOCTOR_VISIT_ORG', '1', '2026-06-10 08:54:48.632+00', '2026-06-10 08:54:48.632+00', '1', '1', false, NULL, NULL),
+('323022177729253378', '323022177255297024', 'StaffScope', 'WAREHOUSE_LOCATION', '1', '2026-06-10 08:54:48.632+00', '2026-06-10 08:54:48.632+00', '1', '1', false, NULL, NULL),
+('323022177729253379', '323022177255297024', 'StaffScope', 'PHARMACY_LOCATION', '1', '2026-06-10 08:54:48.632+00', '2026-06-10 08:54:48.632+00', '1', '1', false, NULL, NULL),
+('323022177733447680', '323022177255297024', 'StaffScope', 'NURSE_WARD_LOCATION', '1', '2026-06-10 08:54:48.633+00', '2026-06-10 08:54:48.633+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_qrtz_locks" ("sched_name", "lock_name")
+VALUES
+('WhaleScheduler', 'TRIGGER_ACCESS')
+ON CONFLICT ("sched_name", "lock_name") DO NOTHING;
+
+-- Quartz demo jobs (住院滚费 / 库存备份) from pre-squash V1
+INSERT INTO whale_qrtz_job_details (
+    sched_name, job_name, job_group, description, job_class_name,
+    is_durable, is_nonconcurrent, is_update_data, requests_recovery, job_data
+) VALUES (
+    'WhaleScheduler',
+    '住院滚费',
+    'DEFAULT',
+    '住院滚费',
+    'com.openhis.whale.core.infrastructure.job.QuartzDisallowConcurrentJobAdapter',
+    false,
+    true,
+    false,
+    false,
+    '\x230d0a23547565204a756e2032332031343a32323a32302043535420323032360d0a6a6f624265616e4e616d653d6e7572736553746174696f6e496e70617469656e7442696c6c696e672f65786563757465496e70617469656e744175746f526f6c6c4a6f620d0a646973706c61794e616d653d5c75344634465c75393636325c75364544415c75384433390d0a74656e616e7449643d310d0a6d697366697265506f6c6963793d44454641554c540d0a636f6e63757272656e74506f6c6963793d444953414c4c4f570d0a'::bytea
+) ON CONFLICT (sched_name, job_name, job_group) DO NOTHING;
+
+INSERT INTO whale_qrtz_triggers (
+    sched_name, trigger_name, trigger_group, job_name, job_group,
+    description, next_fire_time, prev_fire_time, priority,
+    trigger_state, trigger_type, start_time, end_time,
+    calendar_name, misfire_instr, job_data
+) VALUES (
+    'WhaleScheduler',
+    '住院滚费_trigger',
+    'DEFAULT',
+    '住院滚费',
+    'DEFAULT',
+    NULL,
+    0,
+    -1,
+    5,
+    'PAUSED',
+    'CRON',
+    (EXTRACT(EPOCH FROM TIMESTAMP '2026-01-01 00:00:00+08') * 1000)::bigint,
+    0,
+    NULL,
+    0,
+    NULL
+) ON CONFLICT (sched_name, trigger_name, trigger_group) DO NOTHING;
+
+INSERT INTO whale_qrtz_cron_triggers (
+    sched_name, trigger_name, trigger_group, cron_expression, time_zone_id
+) VALUES (
+    'WhaleScheduler',
+    '住院滚费_trigger',
+    'DEFAULT',
+    '0 5 0 * * ?',
+    'Asia/Shanghai'
+) ON CONFLICT (sched_name, trigger_name, trigger_group) DO NOTHING;
+
+INSERT INTO whale_qrtz_job_details (
+    sched_name, job_name, job_group, description, job_class_name,
+    is_durable, is_nonconcurrent, is_update_data, requests_recovery, job_data
+) VALUES (
+    'WhaleScheduler',
+    '库存备份',
+    'DEFAULT',
+    '库存备份',
+    'com.openhis.whale.core.infrastructure.job.QuartzDisallowConcurrentJobAdapter',
+    false,
+    true,
+    false,
+    false,
+    '\x0d0a2353756e204a756e2032382031323a30303a30302043535420323032360d0a6a6f624265616e4e616d653d696e76656e746f727957617265686f757365496e76656e746f727944657461696c2f65786563757465496e76656e746f727944657461696c536e617073686f740d0a646973706c61794e616d653d5c75354539335c75354235385c75353930375c75344546440d0a74656e616e7449643d310d0a6d697366697265506f6c6963793d44454641554c540d0a636f6e63757272656e74506f6c6963793d444953414c4c4f570d0a'::bytea
+) ON CONFLICT (sched_name, job_name, job_group) DO NOTHING;
+
+INSERT INTO whale_qrtz_triggers (
+    sched_name, trigger_name, trigger_group, job_name, job_group,
+    description, next_fire_time, prev_fire_time, priority,
+    trigger_state, trigger_type, start_time, end_time,
+    calendar_name, misfire_instr, job_data
+) VALUES (
+    'WhaleScheduler',
+    '库存备份_trigger',
+    'DEFAULT',
+    '库存备份',
+    'DEFAULT',
+    NULL,
+    0,
+    -1,
+    5,
+    'PAUSED',
+    'CRON',
+    (EXTRACT(EPOCH FROM TIMESTAMP '2026-01-01 00:00:00+08') * 1000)::bigint,
+    0,
+    NULL,
+    0,
+    NULL
+) ON CONFLICT (sched_name, trigger_name, trigger_group) DO NOTHING;
+
+INSERT INTO whale_qrtz_cron_triggers (
+    sched_name, trigger_name, trigger_group, cron_expression, time_zone_id
+) VALUES (
+    'WhaleScheduler',
+    '库存备份_trigger',
+    'DEFAULT',
+    '0 5 0 * * ?',
+    'Asia/Shanghai'
+) ON CONFLICT (sched_name, trigger_name, trigger_group) DO NOTHING;
+
+
+INSERT INTO "whale_tenants" ("id", "name", "code", "description", "is_active", "extra_properties", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('1', '默认租户', 'DEFAULT', '系统默认租户，用于单租户或主租户场景', true, NULL, '2026-05-02 22:07:04.556+00', '2026-05-02 22:07:04.556+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_user_tenants" ("id", "user_id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('5', '1', '1', '2026-05-02 22:07:04.564+00', '2026-05-02 22:07:04.564+00', '1', NULL, false, NULL, NULL),
+('322934748440170496', '322932211309350912', '1', '2026-06-10 03:07:23.865+00', '2026-06-10 03:07:23.865+00', '1', '1', false, NULL, NULL),
+('322934748461142016', '322932096091820032', '1', '2026-06-10 03:07:23.870+00', '2026-06-10 03:07:23.870+00', '1', '1', false, NULL, NULL),
+('322934748473724928', '322932010666430464', '1', '2026-06-10 03:07:23.873+00', '2026-06-10 03:07:23.873+00', '1', '1', false, NULL, NULL),
+('322935698188275712', '322935698131259392', '1', '2026-06-10 03:11:10.330+00', '2026-06-10 03:11:10.330+00', '1', '1', false, NULL, NULL),
+('322963602188275712', '322963602154721280', '1', '2026-06-10 05:02:03.135+00', '2026-06-10 05:02:03.135+00', '1', '1', false, NULL, NULL),
+('322965022861955072', '322965022853566464', '1', '2026-06-10 05:07:41.850+00', '2026-06-10 05:07:41.850+00', '1', '1', false, NULL, NULL),
+('323022664205602816', '323022664197214208', '1', '2026-06-10 08:56:44.617+00', '2026-06-10 08:56:44.617+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_settings" ("id", "name", "value", "provider_name", "provider_key", "tenant_id", "description", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('322347974589943808', 'ybSwich', '0', 'G', NULL, '1', '医保开关', '2026-06-08 12:15:46.078+00', '2026-06-10 07:14:45.901+00', '1', '1', false, NULL, NULL),
+('322983522708492288', 'deviceAutoInventoryDeductSwich', '1', 'G', NULL, '1', '耗材是否自动扣库', '2026-06-10 06:21:12.557+00', '2026-06-10 06:21:12.557+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+
+
+
+
+
+
+
+
+
+
+INSERT INTO whale_roles (
+    id, name, display_name, code, description, is_default, is_static,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+) VALUES
+    ('15', 'medical_technician', '医技', 'ROLE_MEDICAL_TECH', '医技人员，负责检验检查等医技工作', true, true, NULL,
+     '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL),
+    ('16', 'staff_other', '其他', 'ROLE_STAFF_OTHER', '其他岗位人员（老库 STAFF_TYPE=1）', true, true, NULL,
+     '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL),
+    ('17', 'finance_approver', '财务审批', 'ROLE_FINANCE_APPROVER', '财务审批岗位，负责动账类供应单与调价单的审批与驳回', true, true, NULL,
+     '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO whale_role_claims (
+    id, role_id, claim_type, claim_value, tenant_id,
+    created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+) VALUES
+    ('105023', '15', 'AssignmentScope', 'ORG', NULL,
+     '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL),
+    ('105024', '15', 'StaffScope', 'DOCTOR_VISIT_ORG', NULL,
+     '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL),
+    ('105025', '16', 'AssignmentScope', 'ORG', NULL,
+     '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL),
+    ('105026', '11', 'StaffScope', 'NURSE_ORG', NULL,
+     '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL)
+ON CONFLICT (id) DO NOTHING;
+
+
+
+INSERT INTO "adm_location" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "name", "bus_no", "status_enum", "operational_enum", "form_enum", "mode_enum", "type_json", "organization_id", "display_order", "py_str", "wb_str", "parent_id")
+VALUES
+('322954857622802432', '1', '2026-06-10 04:27:18.268+00', '2026-06-10 04:27:18.268+00', '1', '1', false, NULL, NULL, 0, '耗材库', 'LO0019', 'ACTIVE', 'NOT_IN_USE', 'WAREHOUSE', 'INSTANCE', '{}', '322663105141149696', 0, NULL, NULL, NULL),
+('322954885380706304', '1', '2026-06-10 04:27:24.886+00', '2026-06-10 04:27:24.886+00', '1', '1', false, NULL, NULL, 0, '西药库', 'LO0020', 'ACTIVE', 'NOT_IN_USE', 'WAREHOUSE', 'INSTANCE', '{}', '322663105141149696', 0, NULL, NULL, NULL),
+('322954919841107968', '1', '2026-06-10 04:27:33.102+00', '2026-06-10 04:27:33.102+00', '1', '1', false, NULL, NULL, 0, '中药库', 'LO0021', 'ACTIVE', 'NOT_IN_USE', 'WAREHOUSE', 'INSTANCE', '{}', '322663105141149696', 0, NULL, NULL, NULL),
+('322954949549363200', '1', '2026-06-10 04:27:40.185+00', '2026-06-10 04:27:40.185+00', '1', '1', false, NULL, NULL, 0, '门诊西药房', 'LO0022', 'ACTIVE', 'NOT_IN_USE', 'PHARMACY', 'INSTANCE', '{}', '322663105141149696', 0, NULL, NULL, NULL),
+('322954984441778176', '1', '2026-06-10 04:27:48.505+00', '2026-06-10 04:27:48.505+00', '1', '1', false, NULL, NULL, 0, '门诊中药房', 'LO0023', 'ACTIVE', 'NOT_IN_USE', 'PHARMACY', 'INSTANCE', '{}', '322663105141149696', 0, NULL, NULL, NULL),
+('322955009603407872', '1', '2026-06-10 04:27:54.503+00', '2026-06-10 04:27:54.503+00', '1', '1', false, NULL, NULL, 0, '住院西药房', 'LO0024', 'ACTIVE', 'NOT_IN_USE', 'PHARMACY', 'INSTANCE', '{}', '322663105141149696', 0, NULL, NULL, NULL),
+('322955039064199168', '1', '2026-06-10 04:28:01.527+00', '2026-06-10 04:28:01.527+00', '1', '1', false, NULL, NULL, 0, '住院中药房', 'LO0025', 'ACTIVE', 'NOT_IN_USE', 'PHARMACY', 'INSTANCE', '{}', '322663105141149696', 0, NULL, NULL, NULL),
+('322955075642724352', '1', '2026-06-10 04:28:10.248+00', '2026-06-10 04:28:10.248+00', '1', '1', false, NULL, NULL, 0, '门诊耗材房', 'LO0026', 'ACTIVE', 'NOT_IN_USE', 'PHARMACY', 'INSTANCE', '{}', '322663105141149696', 0, NULL, NULL, NULL),
+('322955098803671040', '1', '2026-06-10 04:28:15.770+00', '2026-06-10 04:28:15.770+00', '1', '1', false, NULL, NULL, 0, '住院耗材房', 'LO0027', 'ACTIVE', 'NOT_IN_USE', 'PHARMACY', 'INSTANCE', '{}', '322663105141149696', 0, NULL, NULL, NULL),
+('322955305339588608', '1', '2026-06-10 04:29:05.012+00', '2026-06-10 04:29:20.543+00', '1', '1', false, NULL, NULL, 0, '内科疗区', 'LO0028', 'ACTIVE', 'NOT_IN_USE', 'WARD', 'INSTANCE', NULL, '322663308812357632', NULL, NULL, NULL, NULL),
+('322955414072725504', '1', '2026-06-10 04:29:30.936+00', '2026-06-10 06:13:38.711+00', '1', '1', false, NULL, NULL, 0, '301', 'LO0028.LO0029', 'ACTIVE', 'NOT_IN_USE', 'HOUSE', 'INSTANCE', NULL, '322663308812357632', NULL, NULL, NULL, '322955305339588608'),
+('322955435841163264', '1', '2026-06-10 04:29:36.126+00', '2026-06-10 06:13:46.171+00', '1', '1', false, NULL, NULL, 0, '302', 'LO0028.LO0030', 'ACTIVE', 'NOT_IN_USE', 'HOUSE', 'INSTANCE', NULL, '322663308812357632', NULL, NULL, NULL, '322955305339588608'),
+('322955450206654464', '1', '2026-06-10 04:29:39.551+00', '2026-06-10 06:13:52.009+00', '1', '1', false, NULL, NULL, 0, '303', 'LO0028.LO0031', 'ACTIVE', 'NOT_IN_USE', 'HOUSE', 'INSTANCE', NULL, '322663308812357632', NULL, NULL, NULL, '322955305339588608'),
+('322955479021522944', '1', '2026-06-10 04:29:46.421+00', '2026-06-10 04:29:46.421+00', '1', '1', false, NULL, NULL, 0, '1号床', 'LO0028.LO0029.LO0032', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955414072725504'),
+('322955492829171712', '1', '2026-06-10 04:29:49.713+00', '2026-06-10 04:29:49.713+00', '1', '1', false, NULL, NULL, 0, '2号床', 'LO0028.LO0029.LO0033', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955414072725504'),
+('322955505781182464', '1', '2026-06-10 04:29:52.802+00', '2026-06-10 04:29:52.802+00', '1', '1', false, NULL, NULL, 0, '3号床', 'LO0028.LO0029.LO0034', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955414072725504'),
+('322955532368875520', '1', '2026-06-10 04:29:59.140+00', '2026-06-10 04:29:59.140+00', '1', '1', false, NULL, NULL, 0, '4号床', 'LO0028.LO0029.LO0035', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955414072725504'),
+('322955544607854592', '1', '2026-06-10 04:30:02.058+00', '2026-06-10 04:30:02.058+00', '1', '1', false, NULL, NULL, 0, '1号床', 'LO0028.LO0030.LO0036', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955435841163264'),
+('322955557694083072', '1', '2026-06-10 04:30:05.178+00', '2026-06-10 04:30:05.178+00', '1', '1', false, NULL, NULL, 0, '2号床', 'LO0028.LO0030.LO0037', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955435841163264'),
+('322955569337470976', '1', '2026-06-10 04:30:07.954+00', '2026-06-10 04:30:07.954+00', '1', '1', false, NULL, NULL, 0, '3号床', 'LO0028.LO0030.LO0038', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955435841163264'),
+('322955581840691200', '1', '2026-06-10 04:30:10.935+00', '2026-06-10 04:30:10.935+00', '1', '1', false, NULL, NULL, 0, '4号床', 'LO0028.LO0030.LO0039', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955435841163264'),
+('322955603542020096', '1', '2026-06-10 04:30:16.109+00', '2026-06-10 04:30:16.109+00', '1', '1', false, NULL, NULL, 0, '1号床', 'LO0028.LO0031.LO0040', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955450206654464'),
+('322955616741494784', '1', '2026-06-10 04:30:19.256+00', '2026-06-10 04:30:19.256+00', '1', '1', false, NULL, NULL, 0, '2号床', 'LO0028.LO0031.LO0041', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955450206654464'),
+('322955629387321344', '1', '2026-06-10 04:30:22.271+00', '2026-06-10 04:30:22.271+00', '1', '1', false, NULL, NULL, 0, '3号床', 'LO0028.LO0031.LO0042', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955450206654464'),
+('322955643350159360', '1', '2026-06-10 04:30:25.601+00', '2026-06-10 04:30:25.601+00', '1', '1', false, NULL, NULL, 0, '4号床', 'LO0028.LO0031.LO0043', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955450206654464')
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "adm_organization" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "name", "bus_no", "parent_id", "type_enum", "class_enum", "status_enum", "active_flag", "display_order", "def_doctor_id", "py_str", "wb_str", "yb_no", "yb_name", "medins_id", "medins_admdvs", "medins_type", "medins_lv", "caty")
+VALUES
+('322663105141149696', '1', '2026-06-09 09:07:59.056+00', '2026-06-09 09:07:59.056+00', '1', '1', false, NULL, NULL, 0, '测试医院', 'OR0007', NULL, 'HOSPITAL', NULL, 'ACTIVE', true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+('322663218269917184', '1', '2026-06-09 09:08:26.028+00', '2026-06-09 09:08:26.028+00', '1', '1', false, NULL, NULL, 0, '门诊内科', 'OR0007.OR0008', '322663105141149696', 'DEPARTMENT', 'CLINIC', 'ACTIVE', true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+('322663308812357632', '1', '2026-06-09 09:08:47.615+00', '2026-06-09 09:08:47.615+00', '1', '1', false, NULL, NULL, 0, '住院内科', 'OR0007.OR0009', '322663105141149696', 'DEPARTMENT', 'INPATIENT', 'ACTIVE', true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+('322663606385643520', '1', '2026-06-09 09:09:58.562+00', '2026-06-09 09:37:54.930+00', '1', '1', false, NULL, NULL, 0, '处置室', 'OR0007.OR0010', '322663105141149696', 'DEPARTMENT', 'NS', 'ACTIVE', true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+('322663652522987520', '1', '2026-06-09 09:10:09.562+00', '2026-06-09 09:37:49.884+00', '1', '1', false, NULL, NULL, 0, '护理站', 'OR0007.OR0011', '322663105141149696', 'DEPARTMENT', 'NS', 'ACTIVE', true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+('322663815429754880', '1', '2026-06-09 09:10:48.402+00', '2026-06-09 09:10:48.402+00', '1', '1', false, NULL, NULL, 0, '挂号收费处', 'OR0007.OR0012', '322663105141149696', 'DEPARTMENT', 'FIN', 'ACTIVE', true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "adm_practitioner" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "name", "name_json", "py_str", "wb_str", "gender_enum", "birth_date", "deceased_date", "phone", "address_province", "address_city", "address_district", "address_street", "address_json", "status_enum", "active_flag", "bus_no", "yb_no", "user_id", "org_id", "dr_profttl_code", "phar_prac_cert_no", "prsc_dr_cert_code", "signature", "kpd_code", "pos_no")
+VALUES
+('308791351298756608', '1', '2026-06-10 03:23:06.648+00', '2026-06-10 05:11:05.910+00', '1', '1', false, NULL, NULL, '0', 'admin', NULL, NULL, NULL, 'UNKNOWN', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ACTIVE', true, NULL, NULL, '1', '322663218269917184', NULL, NULL, NULL, NULL, NULL, NULL),
+('322932010683207680', '1', '2026-06-10 02:56:31.133+00', '2026-06-10 04:53:46.571+00', '1', '1', false, NULL, NULL, '0', '药房', NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ACTIVE', true, NULL, NULL, '322932010666430464', NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+('322932096108597248', '1', '2026-06-10 02:56:51.500+00', '2026-06-10 02:57:30.134+00', '1', '1', false, NULL, NULL, '0', '库管', NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ACTIVE', true, NULL, NULL, '322932096091820032', NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+('322932211326128128', '1', '2026-06-10 02:57:18.970+00', '2026-06-10 05:38:13.796+00', '1', '1', false, NULL, NULL, '0', '收费', NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ACTIVE', true, NULL, NULL, '322932211309350912', '322663815429754880', NULL, NULL, NULL, NULL, NULL, NULL),
+('322935698173202432', '1', '2026-06-10 03:11:10.299+00', '2026-06-10 04:53:21.933+00', '1', '1', false, NULL, NULL, '0', '住院医生', NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ACTIVE', true, NULL, NULL, '322935698131259392', '322663308812357632', NULL, NULL, NULL, NULL, NULL, NULL),
+('322963602326687744', '1', '2026-06-10 05:02:03.168+00', '2026-06-10 05:36:51.309+00', '1', '1', false, NULL, NULL, '0', '门诊医生', NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ACTIVE', true, NULL, NULL, '322963602154721280', '322663218269917184', NULL, NULL, NULL, NULL, NULL, NULL),
+('322965022887120896', '1', '2026-06-10 05:07:41.856+00', '2026-06-10 05:36:43.288+00', '1', '1', false, NULL, NULL, '0', '护士', NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ACTIVE', true, NULL, NULL, '322965022853566464', '322663652522987520', NULL, NULL, NULL, NULL, NULL, NULL),
+('323022664260128768', '1', '2026-06-10 08:56:44.630+00', '2026-06-10 08:56:44.630+00', '1', '1', false, NULL, NULL, '0', '信息科', NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ACTIVE', true, 'PR0015', NULL, '323022664197214208', NULL, NULL, NULL, NULL, NULL, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "fin_contract" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "bus_no", "name", "category_enum", "status_enum", "active_flag", "org_id", "yb_flag", "display_order", "adm_vs", "py_str", "wb_str", "client_id", "client_secret", "username", "password", "cli_prv_key", "cli_pub_key", "server_pub_key", "scope", "grant_type", "fixmedins_code", "fixmedins_name")
+VALUES
+('3100000000000000001', '1', '2026-05-03 06:07:04.571+00', '2026-05-03 06:07:04.571+00', '1', '1', false, NULL, NULL, 0, '1', '自费', '1', '1', true, NULL, NULL, 1, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+('3100000000000000002', '1', '2026-05-03 06:07:04.571+00', '2026-05-03 06:07:04.571+00', '1', '1', false, NULL, NULL, 0, 'H22010402403-229900', '省医保', '3', '1', true, NULL, true, 2, '229900', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+('3100000000000000003', '1', '2026-05-03 06:07:04.571+00', '2026-05-03 06:07:04.571+00', '1', '1', false, NULL, NULL, 0, 'H22010402403-220199', '市医保', '4', '1', true, NULL, true, 3, '220199', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+-- ter_code_system + ter_concept (full platform terminology from V50/V51)
+
+INSERT INTO "ter_code_system" ("id", "name", "title", "description", "version", "status", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('1', 'sys_user_sex', '用户性别', '用户性别列表', '1.0', '2', '1', '2025-02-05 23:09:36.000+00', '2025-02-24 21:30:07.171+00', '1', '1', false, NULL, NULL),
+('2', 'sys_show_hide', '菜单状态', '菜单状态列表', '1.0', '2', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('3', 'sys_normal_disable', '系统开关', '系统开关列表', '1.0', '2', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('4', 'sys_job_status', '任务状态', '任务状态列表', '1.0', '2', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('5', 'sys_job_group', '任务分组', '任务分组列表', '1.0', '2', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('6', 'sys_yes_no', '系统是否', '系统是否列表', '1.0', '2', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('7', 'sys_notice_type', '通知类型', '通知类型列表', '1.0', '2', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('8', 'sys_notice_status', '通知状态', '通知状态列表', '1.0', '2', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('9', 'sys_oper_type', '操作类型', '操作类型列表', '1.0', '2', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('10', 'sys_common_status', '系统状态', '登录状态列表', '1.0', '2', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('100', 'exp_data_type', '表达式类型', NULL, '1.0', '2', '1', '2024-03-11 17:03:02.000+00', NULL, '1', '1', false, NULL, NULL),
+('102', 'sys_listener_type', '监听类型', NULL, '1.0', '2', '1', '2022-12-18 06:03:07.000+00', NULL, '1', '1', false, NULL, NULL),
+('103', 'sys_listener_value_type', '监听值类型', NULL, '1.0', '2', '1', '2022-12-18 06:03:39.000+00', NULL, '1', '1', false, NULL, NULL),
+('104', 'sys_listener_event_type', '监听属性', NULL, '1.0', '2', '1', '2022-12-18 06:04:29.000+00', NULL, '1', '1', false, NULL, NULL),
+('105', 'sys_process_category', '流程分类', NULL, '1.0', '2', '1', '2024-03-11 17:08:18.000+00', NULL, '1', '1', false, NULL, NULL),
+('200', 'org_type', '科室类型', NULL, '1.0', '2', '1', '2025-02-17 19:20:24.962+00', NULL, '1', '1', false, NULL, NULL),
+('203', 'patient_gender_enum', '病人性别', '病人性别列表', '1.0', '2', '1', '2025-02-23 23:46:32.685+00', NULL, '1', '1', false, NULL, NULL),
+('204', 'sys_idtype', '证件类别', NULL, '1.0', '2', '1', '2025-02-24 00:30:27.155+00', NULL, '1', '1', false, NULL, NULL),
+('205', 'prfs_enum', '职业类别', NULL, '1.0', '2', '1', '2025-02-24 01:01:10.582+00', NULL, '1', '1', false, NULL, NULL),
+('206', 'blood_abo', '血型ABO', NULL, '1.0', '2', '1', '2025-02-24 18:06:12.519+00', '2025-02-24 23:13:07.768+00', '1', '1', false, NULL, NULL),
+('207', 'blood_rh', '血型RH', NULL, '1.0', '2', '1', '2025-02-24 18:08:00.272+00', '2025-02-24 23:12:59.475+00', '1', '1', false, NULL, NULL),
+('208', 'marital_status_enum', '婚姻状态', '婚姻状态', '1.0', '2', '1', '2025-02-24 18:32:48.001+00', '2025-02-24 23:46:14.210+00', '1', '1', false, NULL, NULL),
+('209', 'patient_temp_flag', '临时标记', NULL, '1.0', '2', '1', '2025-02-24 18:58:09.892+00', NULL, '1', '1', false, NULL, NULL),
+('210', 'link_relation_code', '联系人关系', NULL, '1.0', '2', '1', '2025-02-24 19:15:27.453+00', NULL, '1', '1', false, NULL, NULL),
+('211', 'charge_item_status', '定价项目状态', NULL, '1.0', '2', '1', '2025-02-24 22:51:11.509+00', NULL, '1', '1', false, NULL, NULL),
+('212', 'category_code', '服务分类', '服务分类', '1.0', '2', '1', '2025-02-26 00:25:00.416+00', NULL, '1', '1', false, NULL, NULL),
+('213', 'service_type_code', '服务类型', '服务类型', '1.0', '2', '1', '2025-02-26 00:28:59.835+00', '2025-02-27 18:12:46.548+00', '1', '1', false, NULL, NULL),
+('214', 'specialty_code', '服务专业', '服务专业', '1.0', '2', '1', '2025-02-26 00:30:01.623+00', NULL, '1', '1', false, NULL, NULL),
+('215', 'medical_service_item', '医疗服务项', '诊疗医疗服务项类型', '1.0', '2', '1', '2025-02-26 17:19:02.408+00', '2025-02-26 17:47:32.534+00', '1', '1', false, NULL, NULL),
+('216', 'treatment_surgery', '治疗与手术', '治疗与手术类型', '1.0', '2', '1', '2025-02-26 17:27:57.601+00', '2025-03-29 20:41:03.728+00', '1', '1', false, NULL, NULL),
+('217', 'financial_type_code', '财务类型', '财务类型', '1.0', '2', '1', '2025-02-27 19:26:28.527+00', NULL, '1', '1', false, NULL, NULL),
+('218', 'med_chrgitm_type', ' 医疗收费项目类别', ' 医疗收费项目类别', '1.0', '2', '1', '2025-02-27 19:32:48.447+00', NULL, '1', '1', false, NULL, NULL),
+('219', 'practitioner_role', '参与者角色', '参与者角色', '1.0', '2', '1', '2025-03-05 22:07:46.151+00', NULL, '1', '1', false, NULL, NULL),
+('221', 'medicine_properties', '药品性质', '药品目录的药品性质', '1.0', '2', '1', '2025-03-10 22:37:58.246+00', NULL, '1', '1', false, NULL, NULL),
+('223', 'dose_form_code', '药品剂型编码', '', '1.0', '2', '1', '2025-03-10 22:45:05.698+00', '2025-03-25 03:14:32.749+00', '1', '1', false, NULL, NULL),
+('224', 'yb_type', '医保类型', '医保类型', '1.0', '2', '1', '2025-03-10 22:49:41.862+00', '2025-03-25 00:28:55.642+00', '1', '1', false, NULL, NULL),
+('225', 'method_code', '用药途径(用法)', '用药途径(用法)', '1.0', '2', '1', '2025-03-10 22:51:01.961+00', '2025-03-12 19:07:48.258+00', '1', '1', false, NULL, NULL),
+('227', 'medicine_basic_flag', '基药标识', '药品目录的基药标识', '1.0', '2', '1', '2025-03-10 22:53:28.641+00', '2025-03-10 22:53:52.198+00', '1', '1', false, NULL, NULL),
+('228', 'system_categories', '系统类别', '药品目录的系统类别', '1.0', '2', '1', '2025-03-11 01:33:27.367+00', '2025-03-11 01:37:01.147+00', '1', '1', false, NULL, NULL),
+('229', 'service_apply_code', '服务申请单类型', '服务申请单类型', '1.0', '2', '1', '2025-03-12 19:11:16.606+00', NULL, '1', '1', false, NULL, NULL),
+('233', 'warehous_type', '仓库类型', NULL, '1.0', '2', '1', '2025-03-18 02:31:23.528+00', NULL, '1', '1', false, NULL, NULL),
+('234', 'purchase_type', '采购项目类型', NULL, '1.0', '2', '1', '2025-03-18 22:23:25.619+00', NULL, '1', '1', false, NULL, NULL),
+('235', 'device_type_code', '器材种类', NULL, '1.0', '2', '1', '2025-03-24 02:54:43.608+00', NULL, '1', '1', false, NULL, NULL),
+('236', 'fin_type_code', '财务类别', NULL, '1.0', '2', '1', '2025-03-24 17:43:21.639+00', '2025-03-24 18:22:14.259+00', '1', '1', false, NULL, NULL),
+('238', 'ddd_code', 'DDD值编码', NULL, '1.0', '2', '1', '2025-03-25 03:15:18.025+00', NULL, '1', '1', false, NULL, NULL),
+('239', 'antibiotic_type_code', '抗生素分类', NULL, '1.0', '2', '1', '2025-03-25 03:27:57.885+00', NULL, '1', '1', false, NULL, NULL),
+('240', 'part_type_code', '发药类型', '发药类型', '1.0', '2', '1', '2025-03-25 22:03:55.877+00', NULL, '1', '1', false, NULL, NULL),
+('241', 'item_code', '库存项目类型', NULL, '1.0', '2', '1', '2025-03-25 22:07:53.305+00', NULL, '1', '1', false, NULL, NULL),
+('242', 'supply_request_reason_code', '供应请求类型', NULL, '1.0', '2', '1', '2025-03-25 22:11:36.649+00', NULL, '1', '1', false, NULL, NULL),
+('243', 'template_code', '病历模板类型', NULL, '1.0', '2', '1', '2025-03-25 22:22:00.919+00', NULL, '1', '1', false, NULL, NULL),
+('244', 'nationality_code', '民族', NULL, '1.0', '2', '1', '2025-03-25 22:23:27.671+00', NULL, '1', '1', false, NULL, NULL),
+('245', 'country_code', '国家地区', NULL, '1.0', '2', '1', '2025-03-25 22:41:38.019+00', '2025-03-26 18:15:21.302+00', '1', '1', false, NULL, NULL),
+('246', 'patient_identifier_type_code', '患者身份', NULL, '1.0', '2', '1', '2025-03-25 22:43:50.007+00', NULL, '1', '1', false, NULL, NULL),
+('247', 'participant_type_code', '参与者类型', NULL, '1.0', '2', '1', '2025-03-25 22:52:31.556+00', NULL, '1', '1', false, NULL, NULL),
+('248', 'dose_from_code', '剂量形式', NULL, '1.0', '2', '1', '2025-03-26 17:44:36.495+00', NULL, '1', '1', false, NULL, NULL),
+('249', 'body_site_code', '身体部位', NULL, '1.0', '2', '1', '2025-03-26 19:02:03.492+00', NULL, '1', '1', false, NULL, NULL),
+('250', 'specimen_code', '所需标本', NULL, '1.0', '2', '1', '2025-03-26 19:02:16.502+00', NULL, '1', '1', false, NULL, NULL),
+('251', 'distribution_category_code', '发放类别', NULL, '1.0', '2', '1', '2025-03-26 19:28:23.438+00', NULL, '1', '1', false, NULL, NULL),
+('252', 'condition_code', '收费条件编码', NULL, '1.0', '2', '1', '2025-03-26 22:39:16.055+00', NULL, '1', '1', false, NULL, NULL),
+('253', 'device_category_code', '器材分类编码', NULL, '1.0', '2', '1', '2025-03-27 18:11:53.316+00', NULL, '1', '1', false, NULL, NULL),
+('254', 'account_code', '账户类型', NULL, '1.0', '2', '1', '2025-03-29 00:19:45.993+00', NULL, '1', '1', false, NULL, NULL),
+('255', 'activity_category_code', '诊疗目录类别', NULL, '1.0', '2', '1', '2025-03-29 20:41:42.224+00', NULL, '1', '1', false, NULL, NULL),
+('256', 'dcla_souc', '申报来源', '申报来源列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('257', 'matn_type', '生育类别', '生育类别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('258', 'birctrl_type', '计划生育手术类别', '计划生育手术类别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('259', 'nwb_flag', '新生儿标志', '新生儿标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('260', 'hosp_appr_flag', '医院审批标志', '医院审批标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('261', 'hosp_prep_flag', '医院制剂标志', '医院制剂标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('262', 'tcmdrug_used_way', '中药使用方式', '中药使用方式列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('263', 'cvlserv_flag', '公务员标志', '公务员标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('264', 'dscg_way', '离院方式', '离院方式列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('265', 'psn_type', '人员类别', '人员类别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('266', 'stmt_rslt', '对账结果', '对账结果列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('267', 'fixmedins_type', '定点医疗服务机构类型', '定点医疗服务机构类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('268', 'psn_cert_type', '人员证件类型', '人员证件类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('269', 'gend', '性别', '性别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('270', 'naty', '民族', '民族列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('271', 'lmt_used_flag', '限制使用标志', '限制使用标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('272', 'prodplac_type', '生产地类别', '生产地类别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('273', 'bas_medn_flag', '基本药物标志', '基本药物标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('274', 'hi_nego_drug_flag', '医保谈判药品标志', '医保谈判药品标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('275', 'chrgitm_lv', '收费项目等级', '收费项目等级列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('276', 'agnter_rlts', '代办人关系', '代办人关系列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('277', 'ars_year_ipt_flag', '跨年度住院标志', '跨年度住院标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('278', 'clr_type', '清算类别', '清算类别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('279', 'refd_setl_flag', '退费结算标志', '退费结算标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('280', 'latechb_flag', '晚育标志', '晚育标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('281', 'pre_pay_flag', '先行支付标志', '先行支付标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('282', 'pay_loc', '支付地点', '支付地点列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('283', 'med_type', '医疗类别', '医疗类别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('284', 'cvlserv_lv', '公务员等级', '公务员等级列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('285', 'insutype', '险种类型', '险种类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('286', 'vali_flag', '有效标志', '有效标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('287', 'inhosp_stas', '在院状态', '在院状态列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('288', 'cop_flag', '伴有并发症标志', '伴有并发症标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('289', 'dscg_tkdrug_flag', '出院带药标志', '出院带药标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('290', 'mdtrt_cert_type', '就诊凭证类型', '就诊凭证类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('291', 'flxempe_flag', '灵活就业标志', '灵活就业标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('292', 'list_sp_item_flag', '目录特项标志', '目录特项标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('293', 'dedc_hosp_lv', '起付线医院等级', '起付线医院等级列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('294', 'clr_way', '清算方式', '清算方式列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('295', 'matn_fee_flag', '生育费用标志', '生育费用标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('296', 'lmtpric_hosp_lv', '限价医院等级', '限价医院等级列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('298', 'drord_type', '医嘱类别', '医嘱类别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('299', 'pret_flag', '早产标志', '早产标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('300', 'drt_reim_flag', '直报标志', '直报标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('301', 'turnaround_hosp_lv', '转住医院等级', '转住医院等级列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('302', 'fund_pay_type', '基金支付类型', '基金支付类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('303', 'list_type', '目录类别', '目录类别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('304', 'biz_appy_type)', '业务申请类型', '业务申请类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('305', 'rx_flag', '处方药标志', '处方药标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('306', 'inv_chg_type', '库存变更类型', '库存变更类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('307', 'hi_feesetl_type', '医保费用结算类型', '医保费用结算类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('308', 'inout_diag_type', '出入院诊断类别', '出入院诊断类别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('309', 'diag_type', '诊断类别', '诊断类别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('310', 'bank_type_code', '银行行别代码', '银行行别代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('311', 'hosp_lv', '医院等级', '医院等级列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('312', 'fix_onln_open_flag', '定点联网开通标志', '定点联网开通标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('313', 'out_flag', '异地标志', '异地标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('314', 'etip_flag', '外检标志', '外检标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('315', 'chld_medc_flag', '儿童用药标志', '儿童用药标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('316', 'maindiag_flag', '主诊断标志', '主诊断标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('317', 'drug_dosform', '药品剂型', '药品剂型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('318', 'tcmpat_flag', '中成药标志', '中成药标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('320', 'pacmatl', '包装材质', '包装材质列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('322', 'sp_lmtpric_drug_flag', '特殊限价药品标志', '特殊限价药品标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('323', 'sp_drug_flag', '特殊药品标志', '特殊药品标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('324', 'servitem_type', '服务项目类别', '服务项目类别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('325', 'prod_pacmatl', '产品包装材质', '产品包装材质列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('326', 'case_flag', '机套标志', '机套标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('327', 'highval_mcs_flag', '高值耗材标志', '高值耗材标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('328', 'impt_matl_hmorgn_flag', '植入材料和人体器官标志', '植入材料和人体器官标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('329', 'impt_itvt_clss_flag', '植入或介入类标志', '植入或介入类标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('330', 'dspo_used_flag', '一次性使用标志', '一次性使用标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('331', 'trt_chk_type', '待遇检查类型', '待遇检查类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('332', 'trt_enjymnt_flag', '基金款项待遇享受标志', '基金款项待遇享受标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('333', 'vola_amt_stas', '违规金额计算状态', '违规金额计算状态列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('334', 'sev_deg', '严重程度', '严重程度列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('335', 'vola_bhvr_type', '违规行为分类', '违规行为分类列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('336', 'vola_item_type', '违规明细类型', '违规明细类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('337', 'transaction_type', '交易类型', '交易类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('338', 'fixmedins_refd_setl_flag', '定点医药机构退费结算标志', '定点医药机构退费结算标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('339', 'nwb_adm_type', '新生儿入院类型', '新生儿入院类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('340', 'trdn_flag', '拆零标志', '拆零标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('341', 'psn_idet_type', '人员身份类别', '人员身份类别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('342', 'disa_lv', '残疾等级', '残疾等级列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('343', 'nat_regn_code', '国家地区代码', '国家地区代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('344', 'adm_way', '入院途径', '入院途径列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('345', 'ipt_med_type', '住院医疗类型', '住院医疗类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('346', 'trt_type', '治疗类别', '治疗类别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('347', 'hi_paymtd', '医保支付方式', '医保支付方式列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('348', 'dept', '科室代码', '科室代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('349', 'rgst_type_code', '挂号类别代码', '挂号类别代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('350', 'rgst_way_code', '挂号方式代码', '挂号方式代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('351', 'ordr_way_code', '预约途径代码', '预约途径代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('352', 'aise_code', '过敏源代码', '过敏源代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('353', 'disa_info_code', '残疾情况代码', '残疾情况代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('354', 'symp_code', '症状代码', '症状代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('355', 'rx_type_code', '处方类别代码', '处方类别代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('356', 'rx_item_type_code', '处方项目分类代码', '处方项目分类代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('357', 'tcmdrug_type_code', '中药类别代码', '中药类别代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('358', 'medn_type_code', '药物类型代码', '药物类型代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('360', 'rgst_back', '是否退号', '是否退号列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('361', 'fstdiag', '是否初诊', '是否初诊列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('362', 'rgst_mdtrt', '是否就诊', '是否就诊列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('363', 'maindise', '是否主诊断', '是否主诊断列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('364', 'skintst_dicm', '过敏皮试判别', '过敏皮试判别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('365', 'main_medc', '是否主药', '是否主药列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('366', 'urgt', '是否加急', '是否加急列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('367', 'mrg_stas', '婚姻状况类别代码', '婚姻状况类别代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('368', 'drug_dicm', '药物过敏标志', '药物过敏标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('369', 'die_autp', '死亡患者尸检标志', '死亡患者尸检标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('370', 'blotype_abo', 'ABO血型代码', 'ABO血型代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('371', 'blotype_rh', 'Rh血型代码', 'Rh血型代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('372', 'die_code', '死亡标识', '死亡标识列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('373', 'medcas_qlt_code', '住院病例病案质量代码', '住院病例病案质量代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('374', 'days_rinp_flag_31', '出院 31天内再住院计划标志', '出院 31天内再住院计划标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('375', 'ipt_dise_crsp', '住院患者疾病诊断对照代码', '住院患者疾病诊断对照代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('376', 'ipt_dise_inscp_code', '住院患者诊断符合情况代码', '住院患者诊断符合情况代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('377', 'dscg_trt_rslt_code', '出院治疗结果代码', '出院治疗结果代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('378', 'hbsag', '乙肝表面抗原', '乙肝表面抗原列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('379', 'hcv-ab', '丙型肝炎抗体', '丙型肝炎抗体列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('380', 'hiv-ab', '艾滋病毒抗体', '艾滋病毒抗体列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('381', 'hosp_dise_fsttime', '手术、治疗、检查、诊断为本院第一例', '手术、治疗、检查、诊断为本院第一例列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('382', 'hif_pay_code', '医保付费方式代码', '医保付费方式代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('383', 'medfee_paymtd_code', '医疗费用支付方式代码', '医疗费用支付方式代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('384', 'ipt_dise_type_code', '住院患者疾病诊断类型代码', '住院患者疾病诊断类型代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('385', 'adm_dise_cond_code', '入院疾病病情代码', '入院疾病病情代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('386', 'adm_cond_code', '入院时情况代码', '入院时情况代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('387', 'high_dise_evid', '最高诊断依据', '最高诊断依据列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('388', 'bkup_deg_code', '分化程度代码', '分化程度代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('389', 'oprn_oprt_lv_code', '手术级别代码', '手术级别代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('390', 'sinc_heal_lv_code', '手术切口愈合等级代码', '手术切口愈合等级代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('391', 'anst_mtd_code', '麻醉-方法代码', '麻醉-方法代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('392', 'oprn_oper_part_code', '手术操作部位代码', '手术操作部位代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('393', 'anst_lv_code', '麻醉分级代码', '麻醉分级代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('394', 'oprn_patn_type _code', '手术患者类型', '手术患者类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('395', 'main_oprn', '是否主要手术', '是否主要手术列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('396', 'canc_oprn', '是否择取消手术', '是否择取消手术列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_code_system" ("id", "name", "title", "description", "version", "status", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('397', 'back_icu', '是否重返重症监护室', '是否重返重症监护室列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('398', 'drord_item_type', '医嘱项目分类代码', '医嘱项目分类代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('399', 'use_vent', '使用呼吸机标志', '使用呼吸机标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('400', 'exam_test_type', '检验检查类别', '检验检查类别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('401', 'exam_rslt_poit', '检查结果是否阳性', '检查结果是否阳性列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('402', 'exam_rslt_abn', '检查结果异常标识', '检查结果异常标识列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('403', 'rpt_type_code', '报告单类别代码', '报告单类别代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('404', 'reta_rslt_code', '抗药结果代码', '抗药结果代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('405', 'exam_test', '检查/检验标志', '检查/检验标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('406', 'bfpn_inhosp_infect', '术前是否发生院内感染', '术前是否发生院内感染列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('407', 'back_oprn', '是否重返手术', '是否重返手术列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('408', 'selv', '是否择期', '是否择期列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('409', 'prev_abtl_medn', '是否预防使用抗菌药物', '是否预防使用抗菌药物列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('410', 'oprn_asps', '是否无菌手术', '是否无菌手术列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('411', 'oprn_asps_ifet', '无菌手术是否感染', '无菌手术是否感染列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('412', 'oprn_merg', '是否手术合并症', '是否手术合并症列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('413', 'oprn_conc', '是否手术并发症', '是否手术并发症列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('414', 'out_std_oprn_time', '是否超出标准手术时间', '是否超出标准手术时间列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('415', 'bld_natu_code', '输血性质代码', '输血性质代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('416', 'bld_cat_code', '输血品种代码', '输血品种代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('417', 'bld_defs_type_code', '输血反应类型代码', '输血反应类型代码列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('418', 'stte_rele', '陈述内容是否可靠标识', '陈述内容是否可靠标识列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('419', 'infect', '患者传染性标志', '患者传染性标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('420', 'mtl_stas_norm', '精神状态正常标志', '精神状态正常标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('421', 'smok', '吸烟标志', '吸烟标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('422', 'drnk', '饮酒标志', '饮酒标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('423', 'agre_corp_dset', '家属是否同意尸体解剖标志', '家属是否同意尸体解剖标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('424', 'matn_stas', '生育状态', '生育状态列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('425', 'drord_dr_profttl', '开单医务人员职称', '医师(231-235 国标) + 护/药/技(241-265 院内扩展)', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('426', 'med_use_flag', '医疗使用标志', '医疗使用标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('427', 'matn_used_flag', '生育使用标志', '生育使用标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('428', 'lmt_cpnd_type', '限复方使用类型', '限复方使用类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('429', 'matn_trt_dclaer_type', '生育待遇申报人类别', '生育待遇申报人类别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('430', 'medins_psn_type', '医务人员类别', '医务人员类别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('431', 'hi_dr_flag', '医保医师标志', '医保医师标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('432', 'hosp_agre_refl_flag', '医院同意转院标志', '医院同意转院标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('433', 'rute', '给药途径', '给药途径列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('434', 'adm_cond_type', '入院病情类型', '入院病情类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('435', 'hi_setl_lv', '医保结算等级', '医保结算等级列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('436', 'hilist_lmtprc_type', '医保目录限价类型', '医保目录限价类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('437', 'selfpay_prop_psn_type', '医保目录自付比例人员类别', '医保目录自付比例人员类别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('438', 'selfpay_prop_type', '目录自付比例类别', '目录自付比例类别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('439', 'onln_pay_cnfm_flag', '在线支付确认标志', '在线支付确认标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('440', 'opter_type', '经办人类别', '经办人类别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('441', 'mid_setl_flag', '中途结算标志', '中途结算标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('442', 'refl_type', '转院类型', '转院类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('443', 'oprn_oprt_type', '手术操作类别', '手术操作类别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('444', 'patn_cert_type', '患者证件类别', '患者证件类别列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('445', 'prfs', '职业', '职业列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('446', 'patn_rlts', '与患者关系', '与患者关系列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('447', 'mdcs_type', '医疗保障类型', '医疗保障类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('448', 'sp_psn_type', '特殊人员类型', '特殊人员类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('449', 'psn_setlway', '个人结算方式', '个人结算方式列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('450', 'unif_purc_drug', '是否统一采购药品', '是否统一采购药品列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('451', 'used_frqu', '使用频次', '使用频次列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('452', 'hlcon', '健康状况', '健康状况列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('453', 'rx_cotn_flag', '续方标志', '续方标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('454', 'sp_dise_flag', '特殊病种标志', '特殊病种标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('455', 'acct_used_flag', '个人账户使用标志', '个人账户使用标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('456', 'rx_chk_stas_codg', '处方审核状态', '处方审核状态列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('457', 'delv_stas_codg', '配送状态', '配送状态列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('458', 'delver_geo_type', '配送位置经纬度类型', '配送位置经纬度类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('459', 'maf_psn_flag', '医疗救助对象标志', '医疗救助对象标志列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('460', 'hilist_lmtpric_type', '医保目录限价类型', '医保目录限价类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('461', 'ipt_psn_sp_flag_type', '就医人员特殊标识类型', '就医人员特殊标识类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('462', 'ipt_psn_sp_flag', '就医人员特殊标识', '就医人员特殊标识列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('463', 'trum_flag', '外伤标识', '外伤标识列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('464', 'rel_ttp_flag', '第三方标识', '第三方标识列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('465', 'mdtrt_grp_type', '异地人员就诊人群类型', '异地人员就诊人群类型列表', '1.0', '2', '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('467', 'item_type', '项目类型', NULL, '1.0', '2', '1', '2025-05-05 22:32:43.670+00', NULL, '1', '1', false, NULL, NULL),
+('468', 'bind_type', '绑定类型', NULL, '1.0', '2', '1', '2025-05-05 22:34:03.054+00', NULL, '1', '1', false, NULL, NULL),
+('469', 'use_range', '适用范围', NULL, '1.0', '2', '1', '2025-05-05 22:35:44.724+00', NULL, '1', '1', false, NULL, NULL),
+('470', 'inventory_range', '库存范围', NULL, '1.0', '2', '1', '2025-05-05 22:59:31.464+00', NULL, '1', '1', false, NULL, NULL),
+('471', 'profit_reason', '盈亏原因', NULL, '1.0', '2', '1', '2025-05-07 22:24:33.125+00', NULL, '1', '1', false, NULL, NULL),
+('472', 'payment_enum', '付费', '回显前端时使用', '1.0', '2', '1', '2025-05-27 05:22:24.071+00', NULL, '1', '1', false, NULL, NULL),
+('473', 'payment_status', '支付的状态', NULL, '1.0', '2', '1', '2025-05-27 05:25:12.962+00', NULL, '1', '1', false, NULL, NULL),
+('474', 'payment_outcome', '付款结果', NULL, '1.0', '2', '1', '2025-05-27 05:28:19.615+00', '2025-05-27 05:29:25.277+00', '1', '1', false, NULL, NULL),
+('475', 'elep_rate_code', '电子处方使用频次', '电子处方使用频次', '1.0', '2', '1', '2025-03-10 22:52:17.790+00', '2025-03-12 19:08:09.454+00', '1', '1', false, NULL, NULL),
+('476', 'outcome_enum', '付款结果', NULL, '1.0', '2', '1', '2025-06-10 23:45:31.054+00', NULL, '1', '1', false, NULL, NULL),
+('477', 'pay_enum', '付款详情', NULL, '1.0', '2', '1', '2025-06-19 18:42:37.926+00', NULL, '1', '1', false, NULL, NULL),
+('478', 'category_enum', '合同类别', NULL, '1.0', '2', '1', '2025-07-10 17:08:46.414+00', NULL, '1', '1', false, NULL, NULL),
+('479', 'in_way_code', '入院方式', '入院方式', '1.0', '2', '1', '2025-07-27 17:48:21.192+00', '2025-07-27 17:48:42.910+00', '1', '1', false, NULL, NULL),
+('480', 'admit_source_code', '入院类型', '入院类型', '1.0', '2', '1', '2025-07-27 17:51:08.383+00', NULL, '1', '1', false, NULL, NULL),
+('482', 'out_way_code', '出院方式', '出院方式', '1.0', '2', '1', '2025-08-25 21:10:35.025+00', NULL, '1', '1', false, NULL, NULL),
+('483', 'dosage_instruction', '用药说明', NULL, '1.0', '2', '1', '2026-01-13 02:42:30.013+00', NULL, '1', '1', false, NULL, NULL),
+('484', 'speed_code', '输液滴速', NULL, '1.0', '2', '1', '2026-01-22 00:57:03.283+00', NULL, '1', '1', false, NULL, NULL),
+('485', 'priority', '优先级', NULL, '1.0', '2', '1', '2026-01-30 00:45:02.519+00', NULL, '1', '1', false, NULL, NULL),
+('900001', 'dose_unit', '剂量单位', '剂量单位字典（如 mg、ml、IU 等）', '1.0', '2', '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900002', 'purchase_unit', '采购单位', '采购单位字典（如 箱、盒、瓶 等）', '1.0', '2', '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900003', 'stock_unit', '库存单位', '库存单位字典（如 个、支、瓶 等）', '1.0', '2', '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900004', 'sales_unit', '销售单位', '销售单位字典（如 盒、瓶、支 等）', '1.0', '2', '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900005', 'split_unit', '拆零单位', '拆零单位字典（最小使用单位，如 片、粒、ml 等）', '1.0', '2', '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900006', 'medication_category_code', '药品分类', '药品目录分类（西药/中成药/中草药/外购药品/其他）', '1.0', '2', '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900007', 'tcm_method_code', '中药用法', '中药处方用法', '1.0', '2', '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('279125561775755264', 'ces', '11212', '2121', '121221', '2', '1', '2026-02-08 21:45:19.829+00', '2026-02-11 01:45:48.869+00', '1', '1', false, NULL, NULL),
+('279125561775755265', 'unit_code', '单位编码', '使用单位、包装单位、剂量单位', '1.0', '2', '1', '2026-05-02 22:07:04.606+00', '2026-05-02 22:07:04.606+00', '1', '1', false, NULL, NULL),
+('279125561775755266', 'condition_definition_source', '疾病目录来源分类', '诊断定义目录来源：通用/慢病/病种付费/中西医等（DM-CLN-002 ConditionDefinitionSource）', '1.0', '2', '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_code_system" (
+    "id", "name", "title", "description", "version", "status", "tenant_id",
+    "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by"
+)
+VALUES (
+    '900008', 'vital_signs_code', '生命体征项', '护士站/体温单可选体征项编码（DM-DIA-002）', '1.0', '2', '1',
+    '2026-06-18 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL
+)
+ON CONFLICT ("name") DO NOTHING;
+
+
+
+INSERT INTO "ter_code_system" (
+    "id", "name", "title", "description", "version", "status", "tenant_id",
+    "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by"
+)
+VALUES (
+    '900009', 'special_event_code', '体温单特殊事件', '护士站体温单特殊事件编码（DM-DIA-002）', '1.0', '2', '1',
+    '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL
+)
+ON CONFLICT ("name") DO NOTHING;
+
+
+INSERT INTO "ter_code_system" (
+    "id", "name", "title", "description", "version", "status", "tenant_id",
+    "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by"
+)
+VALUES (
+    '900010', 'mr_settlement_type_code', '病案结算类型', '三大目录病案首页费用结算分类', '1.0', '2', '1',
+    '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL
+)
+ON CONFLICT ("name") DO NOTHING;
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('1', '1', '0', '男', '性别男', NULL, '1', true, '', '', 'Y', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('2', '1', '1', '女', '性别女', NULL, '2', true, '', '', 'N', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('3', '1', '2', '未知', '性别未知', NULL, '3', true, '', '', 'N', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('4', '2', '0', '显示', '显示菜单', NULL, '1', true, '', 'primary', 'Y', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('5', '2', '1', '隐藏', '隐藏菜单', NULL, '2', true, '', 'danger', 'N', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('6', '3', '0', '正常', '正常状态', NULL, '1', true, '', 'primary', 'Y', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('7', '3', '1', '停用', '停用状态', NULL, '2', true, '', 'danger', 'N', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('8', '4', '0', '正常', '正常状态', NULL, '1', true, '', 'primary', 'Y', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('9', '4', '1', '暂停', '停用状态', NULL, '2', true, '', 'danger', 'N', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('10', '5', 'DEFAULT', '默认', '默认分组', NULL, '1', true, '', '', 'Y', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('11', '5', 'SYSTEM', '系统', '系统分组', NULL, '2', true, '', '', 'N', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('12', '6', 'Y', '是', '系统默认是', NULL, '1', true, '', 'primary', 'Y', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('13', '6', 'N', '否', '系统默认否', NULL, '2', true, '', 'danger', 'N', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('14', '7', '1', '通知', '通知', NULL, '1', true, '', 'warning', 'Y', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('15', '7', '2', '公告', '公告', NULL, '2', true, '', 'success', 'N', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('16', '8', '0', '正常', '正常状态', NULL, '1', true, '', 'primary', 'Y', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('17', '8', '1', '关闭', '关闭状态', NULL, '2', true, '', 'danger', 'N', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('18', '9', '0', '其他', '其他操作', NULL, '99', true, '', 'info', 'N', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('19', '9', '1', '新增', '新增操作', NULL, '1', true, '', 'info', 'N', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('20', '9', '2', '修改', '修改操作', NULL, '2', true, '', 'info', 'N', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('21', '9', '3', '删除', '删除操作', NULL, '3', true, '', 'danger', 'N', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('22', '9', '4', '授权', '授权操作', NULL, '4', true, '', 'primary', 'N', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('23', '9', '5', '导出', '导出操作', NULL, '5', true, '', 'warning', 'N', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('24', '9', '6', '导入', '导入操作', NULL, '6', true, '', 'warning', 'N', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('25', '9', '7', '强退', '强退操作', NULL, '7', true, '', 'danger', 'N', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('26', '9', '8', '生成代码', '生成操作', NULL, '8', true, '', 'warning', 'N', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('27', '9', '9', '清空数据', '清空操作', NULL, '9', true, '', 'danger', 'N', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('28', '10', '0', '成功', '正常状态', NULL, '1', true, '', 'primary', 'N', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('29', '10', '1', '失败', '停用状态', NULL, '2', true, '', 'danger', 'N', '1', '2025-02-05 23:09:36.000+00', NULL, '1', '1', false, NULL, NULL),
+('100', '100', 'fixed', '系统指定', NULL, NULL, '0', true, NULL, 'default', 'N', '1', '2024-03-11 17:04:46.000+00', NULL, '1', '1', false, NULL, NULL),
+('101', '100', 'dynamic', '动态选择', NULL, NULL, '0', true, NULL, 'default', 'N', '1', '2024-03-11 17:05:02.000+00', NULL, '1', '1', false, NULL, NULL),
+('104', '102', '1', '任务监听', NULL, NULL, '0', true, NULL, 'default', 'N', '1', '2022-12-24 19:47:26.000+00', NULL, '1', '1', false, NULL, NULL),
+('105', '102', '2', '执行监听', NULL, NULL, '2', true, NULL, 'default', 'N', '1', '2022-12-24 19:47:37.000+00', NULL, '1', '1', false, NULL, NULL),
+('106', '103', 'classListener', 'JAVA类', NULL, NULL, '0', true, NULL, 'default', 'N', '1', '2022-12-24 19:48:55.000+00', '2024-09-05 05:38:02.000+00', '1', '1', false, NULL, NULL),
+('107', '103', 'expressionListener', '表达式', NULL, NULL, '0', true, NULL, 'default', 'N', '1', '2022-12-24 19:49:05.000+00', '2024-09-05 05:38:10.000+00', '1', '1', false, NULL, NULL),
+('108', '103', 'delegateExpressionListener', '代理表达式', NULL, NULL, '0', true, NULL, 'default', 'N', '1', '2022-12-24 19:49:16.000+00', '2024-09-05 05:38:16.000+00', '1', '1', false, NULL, NULL),
+('109', '105', 'leave', '请假', NULL, NULL, '0', true, NULL, 'default', 'N', '1', '2024-03-11 17:08:42.000+00', NULL, '1', '1', false, NULL, NULL),
+('110', '105', 'expense', '报销', NULL, NULL, '0', true, NULL, 'default', 'N', '1', '2024-03-11 17:09:02.000+00', NULL, '1', '1', false, NULL, NULL),
+('201', '203', '0', '未知', '未知性别', NULL, '1', true, NULL, 'default', NULL, '1', '2025-02-23 23:47:03.666+00', NULL, '1', '1', false, NULL, NULL),
+('202', '203', '1', '男', '性别男', NULL, '2', true, NULL, 'default', NULL, '1', '2025-02-23 23:47:39.177+00', NULL, '1', '1', false, NULL, NULL),
+('203', '203', '2', '女', '性别女', NULL, '3', true, NULL, 'default', NULL, '1', '2025-02-23 23:48:04.310+00', '2025-02-23 23:48:39.883+00', '1', '1', false, NULL, NULL),
+('204', '203', '9', '其他', '其他性别', NULL, '4', true, NULL, 'default', NULL, '1', '2025-02-23 23:48:31.872+00', NULL, '1', '1', false, NULL, NULL),
+('205', '204', '1', '居民身份证', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-02-24 00:31:42.048+00', '2025-05-14 17:42:53.012+00', '1', '1', false, NULL, NULL),
+('206', '204', '2', '居民户口簿', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-02-24 00:32:00.161+00', NULL, '1', '1', false, NULL, NULL),
+('207', '204', '3', '护照', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-02-24 00:39:49.475+00', NULL, '1', '1', false, NULL, NULL),
+('208', '204', '4', '军官证', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-02-24 00:40:12.073+00', NULL, '1', '1', false, NULL, NULL),
+('209', '204', '5', '驾驶证', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-02-24 00:40:24.552+00', NULL, '1', '1', false, NULL, NULL),
+('210', '204', '6', '港澳居民来往内地通行证', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2025-02-24 00:40:46.447+00', NULL, '1', '1', false, NULL, NULL),
+('211', '204', '7', '台湾居民来往大陆通行证', NULL, NULL, '7', true, NULL, 'default', NULL, '1', '2025-02-24 00:41:17.162+00', NULL, '1', '1', false, NULL, NULL),
+('212', '204', '99', '其他身份证', NULL, NULL, '8', true, NULL, 'default', NULL, '1', '2025-02-24 00:41:38.215+00', NULL, '1', '1', false, NULL, NULL),
+('213', '205', '11', '国家公务员', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-02-24 01:07:08.628+00', NULL, '1', '1', false, NULL, NULL),
+('214', '205', '13', '专业技术人员', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-02-24 01:07:38.249+00', NULL, '1', '1', false, NULL, NULL),
+('215', '205', '17', '职员', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-02-24 01:08:06.009+00', NULL, '1', '1', false, NULL, NULL),
+('216', '205', '21', '企业管理人员', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-02-24 01:08:27.308+00', NULL, '1', '1', false, NULL, NULL),
+('217', '205', '24', '工人', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-02-24 01:08:40.500+00', NULL, '1', '1', false, NULL, NULL),
+('218', '205', '27', '农民', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2025-02-24 01:09:01.024+00', NULL, '1', '1', false, NULL, NULL),
+('219', '205', '31', '学生', NULL, NULL, '7', true, NULL, 'default', NULL, '1', '2025-02-24 01:09:12.750+00', NULL, '1', '1', false, NULL, NULL),
+('220', '205', '37', '现役军人', NULL, NULL, '8', true, NULL, 'default', NULL, '1', '2025-02-24 01:09:32.544+00', NULL, '1', '1', false, NULL, NULL),
+('221', '205', '51', '自由职业者', NULL, NULL, '9', true, NULL, 'default', NULL, '1', '2025-02-24 01:09:50.976+00', NULL, '1', '1', false, NULL, NULL),
+('222', '205', '54', '个体经营者', NULL, NULL, '10', true, NULL, 'default', NULL, '1', '2025-02-24 01:10:04.507+00', NULL, '1', '1', false, NULL, NULL),
+('223', '205', '70', '无业人员', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-02-24 01:10:21.156+00', NULL, '1', '1', false, NULL, NULL),
+('224', '205', '80', '退（离）休人员', NULL, NULL, '12', true, NULL, 'default', NULL, '1', '2025-02-24 01:10:53.178+00', NULL, '1', '1', false, NULL, NULL),
+('225', '205', '90', '其他', NULL, NULL, '13', true, NULL, 'default', NULL, '1', '2025-02-24 01:11:03.963+00', NULL, '1', '1', false, NULL, NULL),
+('226', '206', '1', 'A型', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-02-24 18:06:41.656+00', NULL, '1', '1', false, NULL, NULL),
+('227', '206', '2', 'B型', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-02-24 18:06:55.619+00', NULL, '1', '1', false, NULL, NULL),
+('228', '206', '3', 'O型', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-02-24 18:07:07.455+00', NULL, '1', '1', false, NULL, NULL),
+('229', '206', '4', 'AB型', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-02-24 18:07:20.830+00', NULL, '1', '1', false, NULL, NULL),
+('230', '206', '5', '不详', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-02-24 18:07:33.423+00', NULL, '1', '1', false, NULL, NULL),
+('231', '206', '9', '未查', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2025-02-24 18:07:46.424+00', NULL, '1', '1', false, NULL, NULL),
+('232', '207', '1', 'Rh阴性', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-02-24 18:08:20.334+00', NULL, '1', '1', false, NULL, NULL),
+('233', '207', '2', 'Rh阳性', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-02-24 18:08:42.799+00', NULL, '1', '1', false, NULL, NULL),
+('234', '207', '3', '不详', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-02-24 18:08:55.075+00', NULL, '1', '1', false, NULL, NULL),
+('235', '207', '4', '未查', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-02-24 18:09:04.791+00', NULL, '1', '1', false, NULL, NULL),
+('236', '208', '10', '未婚', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-02-24 18:32:59.334+00', NULL, '1', '1', false, NULL, NULL),
+('237', '208', '20', '已婚', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-02-24 18:33:09.449+00', NULL, '1', '1', false, NULL, NULL),
+('238', '208', '21', '初婚', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-02-24 18:33:26.972+00', NULL, '1', '1', false, NULL, NULL),
+('239', '208', '22', '再婚', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-02-24 18:33:50.645+00', NULL, '1', '1', false, NULL, NULL),
+('240', '208', '23', '复婚', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-02-24 18:34:03.166+00', NULL, '1', '1', false, NULL, NULL),
+('241', '208', '30', '丧偶', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2025-02-24 18:34:16.529+00', NULL, '1', '1', false, NULL, NULL),
+('242', '208', '40', '离婚', NULL, NULL, '7', true, NULL, 'default', NULL, '1', '2025-02-24 18:34:44.372+00', NULL, '1', '1', false, NULL, NULL),
+('243', '208', '90', '未说明的婚姻状况', NULL, NULL, '8', true, NULL, 'default', NULL, '1', '2025-02-24 18:35:02.665+00', NULL, '1', '1', false, NULL, NULL),
+('244', '209', '0', '否', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-02-24 18:58:23.782+00', NULL, '1', '1', false, NULL, NULL),
+('245', '209', '1', '是', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-02-24 18:58:31.878+00', NULL, '1', '1', false, NULL, NULL),
+('246', '211', '0', '草稿', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-02-24 22:52:07.736+00', '2025-02-25 18:40:03.258+00', '1', '1', false, NULL, NULL),
+('247', '211', '1', '活动', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-02-24 22:52:30.398+00', '2025-02-25 18:40:07.259+00', '1', '1', false, NULL, NULL),
+('248', '211', '2', '停用', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-02-24 22:52:47.519+00', '2025-02-25 18:40:12.158+00', '1', '1', false, NULL, NULL),
+('249', '211', '3', '未知', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-02-24 22:53:02.839+00', '2025-02-25 18:40:16.683+00', '1', '1', false, NULL, NULL),
+('250', '212', '1', '挂号', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-02-26 00:25:50.670+00', NULL, '1', '1', false, NULL, NULL),
+('251', '212', '2', '咨询', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-02-26 00:26:09.346+00', NULL, '1', '1', false, NULL, NULL),
+('252', '213', '1', '普通号', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-02-26 00:29:19.900+00', NULL, '1', '1', false, NULL, NULL),
+('253', '213', '2', '专家号', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-02-26 00:29:31.799+00', NULL, '1', '1', false, NULL, NULL),
+('254', '213', '3', '急诊号', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-02-26 00:29:42.232+00', NULL, '1', '1', false, NULL, NULL),
+('255', '214', '1', '内科', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-02-26 00:30:24.943+00', NULL, '1', '1', false, NULL, NULL),
+('256', '214', '2', '外科', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-02-26 00:30:33.206+00', NULL, '1', '1', false, NULL, NULL),
+('257', '214', '3', '病理学', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-02-26 00:30:48.882+00', NULL, '1', '1', false, NULL, NULL),
+('258', '215', '101', '化验', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-02-26 17:20:37.870+00', '2025-03-28 01:43:34.073+00', '1', '1', false, NULL, NULL),
+('259', '215', '102', '检查', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-02-26 17:22:07.065+00', '2025-03-28 01:43:38.863+00', '1', '1', false, NULL, NULL),
+('260', '215', '103', '影像', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-02-26 17:26:11.237+00', '2025-03-28 01:43:43.512+00', '1', '1', false, NULL, NULL),
+('261', '216', '201', '饮食', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-02-26 17:29:12.494+00', '2025-03-28 01:43:58.761+00', '1', '1', false, NULL, NULL),
+('262', '216', '202', '电诊', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-02-26 17:29:50.210+00', '2025-03-28 01:44:03.135+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('263', '216', '203', '手术', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-02-26 17:30:04.187+00', '2025-03-28 01:44:07.826+00', '1', '1', false, NULL, NULL),
+('264', '216', '204', '诊断', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-02-26 17:30:16.235+00', '2025-03-28 01:44:13.025+00', '1', '1', false, NULL, NULL),
+('265', '216', '205', '护理', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-02-26 17:30:29.940+00', '2025-03-28 01:44:19.224+00', '1', '1', false, NULL, NULL),
+('266', '216', '206', '治疗', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2025-02-26 17:30:48.088+00', '2025-03-28 01:44:26.087+00', '1', '1', false, NULL, NULL),
+('267', '216', '207', '麻醉', NULL, NULL, '7', true, NULL, 'default', NULL, '1', '2025-02-26 17:30:59.506+00', '2025-03-28 01:44:30.969+00', '1', '1', false, NULL, NULL),
+('268', '216', '208', '内镜治疗', NULL, NULL, '8', true, NULL, 'default', NULL, '1', '2025-02-26 17:31:25.334+00', '2025-03-28 01:44:35.343+00', '1', '1', false, NULL, NULL),
+('269', '217', '1', '收入', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-02-27 19:27:04.765+00', NULL, '1', '1', false, NULL, NULL),
+('270', '217', '2', '支出', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-02-27 19:27:14.813+00', NULL, '1', '1', false, NULL, NULL),
+('271', '218', '1', '床位费', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-02-27 19:33:18.413+00', NULL, '1', '1', false, NULL, NULL),
+('272', '218', '2', '诊察费', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-02-27 19:33:35.255+00', NULL, '1', '1', false, NULL, NULL),
+('273', '219', 'doctor', '医生', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-03-05 22:08:01.911+00', NULL, '1', '1', false, NULL, NULL),
+('274', '219', 'nurse', '护士', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-03-05 22:08:12.543+00', NULL, '1', '1', false, NULL, NULL),
+('275', '219', 'pharmacist', '药师', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-03-05 22:08:24.553+00', NULL, '1', '1', false, NULL, NULL),
+('281', '224', '1', '自费', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-03-10 22:58:30.602+00', NULL, '1', '1', false, NULL, NULL),
+('282', '224', '2', '甲类', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-03-10 22:58:39.950+00', NULL, '1', '1', false, NULL, NULL),
+('283', '224', '3', '乙类', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-03-10 22:58:49.331+00', NULL, '1', '1', false, NULL, NULL),
+('284', '224', '4', '丙类', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-03-10 22:58:58.731+00', NULL, '1', '1', false, NULL, NULL),
+('285', '225', '1', '口服', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-10 22:59:17.282+00', '2025-12-21 23:48:48.968+00', '1', '1', false, NULL, NULL),
+('286', '225', '2', '直肠给药', NULL, NULL, '100', true, NULL, 'default', NULL, '1', '2025-03-10 22:59:27.437+00', '2025-06-26 21:53:55.234+00', '1', '1', false, NULL, NULL),
+('287', '225', '3', '舌下给药', NULL, NULL, '102', true, NULL, 'default', NULL, '1', '2025-03-10 22:59:37.120+00', '2025-06-26 21:54:08.320+00', '1', '1', false, NULL, NULL),
+('291', '227', '1', '国基药', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-03-10 23:02:05.524+00', NULL, '1', '1', false, NULL, NULL),
+('292', '227', '2', '非国基药', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-03-10 23:02:15.994+00', NULL, '1', '1', false, NULL, NULL),
+('293', '228', '1', '西药', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-03-11 01:37:15.206+00', NULL, '1', '1', false, NULL, NULL),
+('294', '228', '2', '中成药', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-03-11 01:37:26.164+00', '2025-03-11 01:37:48.899+00', '1', '1', false, NULL, NULL),
+('295', '228', '3', '中草药', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-03-11 01:37:41.066+00', NULL, '1', '1', false, NULL, NULL),
+('296', '221', '1', '普通药品', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-03-12 18:09:56.337+00', NULL, '1', '1', false, NULL, NULL),
+('297', '221', '2', '麻醉药品', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-03-12 18:10:05.648+00', NULL, '1', '1', false, NULL, NULL),
+('298', '221', '3', '毒性药品', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-03-12 18:10:49.121+00', NULL, '1', '1', false, NULL, NULL),
+('299', '221', '4', '一类精神药', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-03-12 18:11:02.490+00', NULL, '1', '1', false, NULL, NULL),
+('300', '221', '5', '二类精神药', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-03-12 18:11:13.885+00', NULL, '1', '1', false, NULL, NULL),
+('301', '221', '6', '大输液', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2025-03-12 18:11:26.003+00', NULL, '1', '1', false, NULL, NULL),
+('302', '229', '1', '检查申请单', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-03-12 19:11:30.007+00', NULL, '1', '1', false, NULL, NULL),
+('303', '229', '2', '检验申请单', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-03-12 19:11:38.510+00', NULL, '1', '1', false, NULL, NULL),
+('304', '229', '3', '手术申请单', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-03-12 19:11:49.534+00', NULL, '1', '1', false, NULL, NULL),
+('305', '223', '1', '片剂', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-03-12 19:39:48.513+00', NULL, '1', '1', false, NULL, NULL),
+('306', '223', '2', '颗粒剂', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-03-12 19:39:59.182+00', '2025-03-12 19:40:14.894+00', '1', '1', false, NULL, NULL),
+('307', '223', '3', '丸剂', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-03-12 19:40:08.855+00', NULL, '1', '1', false, NULL, NULL),
+('315', '233', '16', '药房', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-18 02:32:31.183+00', '2025-04-02 18:58:06.091+00', '1', '1', false, NULL, NULL),
+('316', '233', '11', '仓库', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-03-18 02:32:39.807+00', '2025-04-02 18:58:11.023+00', '1', '1', false, NULL, NULL),
+('317', '234', 'med_medication_definition', '药品', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-03-18 22:23:54.545+00', '2026-01-03 21:18:55.562+00', '1', '1', false, NULL, NULL),
+('318', '234', 'adm_device_definition', '耗材', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-03-18 22:24:05.854+00', '2026-01-03 21:19:25.338+00', '1', '1', false, NULL, NULL),
+('319', '235', '1', '注射器', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-03-24 02:55:14.319+00', NULL, '1', '1', false, NULL, NULL),
+('320', '235', '2', '针管', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-03-24 02:55:32.768+00', NULL, '1', '1', false, NULL, NULL),
+('321', '236', '1001', '西药', NULL, NULL, '0', true, '', 'default', NULL, '1', '2025-03-24 17:45:33.752+00', '2025-04-02 01:16:44.026+00', '1', '1', false, NULL, NULL),
+('322', '236', '1002', '外购药品', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-24 17:46:40.301+00', '2025-03-25 21:53:43.045+00', '1', '1', false, NULL, NULL),
+('323', '236', '1003', '中草药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-24 17:47:09.502+00', '2025-04-02 01:16:28.334+00', '1', '1', false, NULL, NULL),
+('324', '236', '1004', '化验', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-24 17:47:20.019+00', '2025-03-25 21:54:00.091+00', '1', '1', false, NULL, NULL),
+('325', '236', '1005', '手术', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-24 17:47:32.898+00', '2025-03-25 21:54:08.989+00', '1', '1', false, NULL, NULL),
+('326', '236', '1009', '护理', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-24 17:47:43.055+00', '2025-04-02 01:16:39.049+00', '1', '1', false, NULL, NULL),
+('327', '236', '1007', '诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-24 17:47:53.510+00', '2025-04-02 01:16:49.352+00', '1', '1', false, NULL, NULL),
+('328', '236', '1008', '治疗', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-24 17:48:03.158+00', '2025-04-02 01:16:55.045+00', '1', '1', false, NULL, NULL),
+('329', '236', '1010', '床位', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-24 17:48:23.879+00', '2025-04-02 01:24:44.293+00', '1', '1', false, NULL, NULL),
+('330', '236', '2001', '麻醉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-24 17:50:30.235+00', '2025-03-25 21:57:00.595+00', '1', '1', false, NULL, NULL),
+('331', '236', '2002', '膳食', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-24 17:50:39.770+00', '2025-03-25 21:57:14.344+00', '1', '1', false, NULL, NULL),
+('332', '236', '2003', '输血费', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-24 17:50:46.985+00', '2025-03-25 21:57:39.557+00', '1', '1', false, NULL, NULL),
+('333', '236', '2004', '自备医嘱', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-24 17:50:55.335+00', '2025-03-25 21:57:56.828+00', '1', '1', false, NULL, NULL),
+('334', '236', '2005', '医用耗材', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-24 17:51:02.930+00', '2025-03-25 21:58:18.631+00', '1', '1', false, NULL, NULL),
+('335', '236', '2006', '循环物质', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-24 17:51:10.856+00', '2025-03-25 21:58:42.773+00', '1', '1', false, NULL, NULL),
+('336', '236', '2007', '物资', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-24 17:51:18.303+00', '2025-03-25 21:58:54.615+00', '1', '1', false, NULL, NULL),
+('337', '236', '2008', '办公用品', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-24 17:51:25.768+00', '2025-03-25 21:59:05.074+00', '1', '1', false, NULL, NULL),
+('338', '236', '2009', '检查', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-24 17:51:33.460+00', '2025-03-25 21:59:27.340+00', '1', '1', false, NULL, NULL),
+('339', '236', '2010', '中成药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-24 17:51:41.097+00', '2025-03-25 21:59:44.504+00', '1', '1', false, NULL, NULL),
+('340', '236', '2011', 'CT', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-24 17:51:48.248+00', '2025-03-25 21:59:33.370+00', '1', '1', false, NULL, NULL),
+('346', '239', '1', '青霉素类', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-03-25 19:27:35.700+00', NULL, '1', '1', false, NULL, NULL),
+('347', '239', '2', '头孢菌素类', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-03-25 19:27:44.776+00', NULL, '1', '1', false, NULL, NULL),
+('348', '240', '1', '部分发药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:05:01.793+00', NULL, '1', '1', false, NULL, NULL),
+('349', '240', '2', '紧急发药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:05:13.969+00', NULL, '1', '1', false, NULL, NULL),
+('350', '241', '1', '采购入库', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:09:54.611+00', NULL, '1', '1', false, NULL, NULL),
+('351', '241', '2', '调拨入库', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:10:03.397+00', NULL, '1', '1', false, NULL, NULL),
+('352', '241', '3', '退库', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:10:11.257+00', NULL, '1', '1', false, NULL, NULL),
+('353', '242', '1', '发药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:11:54.681+00', NULL, '1', '1', false, NULL, NULL),
+('354', '242', '2', '批量发药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:11:59.691+00', NULL, '1', '1', false, NULL, NULL),
+('355', '243', '1', '个人', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:22:19.593+00', NULL, '1', '1', false, NULL, NULL),
+('356', '243', '2', '科室', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:22:26.781+00', NULL, '1', '1', false, NULL, NULL),
+('357', '243', '3', '全院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:22:33.099+00', NULL, '1', '1', false, NULL, NULL),
+('358', '244', '1', '汉族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:23:44.963+00', NULL, '1', '1', false, NULL, NULL),
+('359', '244', '2', '蒙古族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:23:58.049+00', NULL, '1', '1', false, NULL, NULL),
+('360', '244', '3', '回族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:29:40.417+00', NULL, '1', '1', false, NULL, NULL),
+('361', '244', '4', '藏族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:29:50.134+00', NULL, '1', '1', false, NULL, NULL),
+('362', '244', '5', '维吾尔族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:29:59.079+00', NULL, '1', '1', false, NULL, NULL),
+('363', '244', '6', '苗族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:30:06.672+00', NULL, '1', '1', false, NULL, NULL),
+('364', '244', '7', '彝族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:30:14.967+00', '2025-03-25 22:30:22.392+00', '1', '1', false, NULL, NULL),
+('365', '244', '8', '壮族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:30:32.673+00', NULL, '1', '1', false, NULL, NULL),
+('366', '244', '9', '布依族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:30:39.866+00', NULL, '1', '1', false, NULL, NULL),
+('367', '244', '10', '朝鲜族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:30:52.577+00', NULL, '1', '1', false, NULL, NULL),
+('368', '244', '11', '满族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:31:02.079+00', NULL, '1', '1', false, NULL, NULL),
+('369', '244', '12', '侗族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:31:17.379+00', NULL, '1', '1', false, NULL, NULL),
+('370', '244', '13', '瑶族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:31:24.940+00', NULL, '1', '1', false, NULL, NULL),
+('371', '244', '14', '白族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:31:33.719+00', NULL, '1', '1', false, NULL, NULL),
+('372', '244', '15', '土家族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:31:41.504+00', NULL, '1', '1', false, NULL, NULL),
+('373', '244', '16', '哈尼族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:31:50.145+00', NULL, '1', '1', false, NULL, NULL),
+('374', '244', '17', '哈萨克族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:31:58.263+00', NULL, '1', '1', false, NULL, NULL),
+('375', '244', '18', '傣族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:32:07.877+00', NULL, '1', '1', false, NULL, NULL),
+('376', '244', '19', '黎族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:32:15.036+00', NULL, '1', '1', false, NULL, NULL),
+('377', '244', '20', '傈僳族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:32:23.029+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('378', '244', '21', '佤族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:32:30.889+00', NULL, '1', '1', false, NULL, NULL),
+('379', '244', '22', '畲族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:32:37.741+00', NULL, '1', '1', false, NULL, NULL),
+('380', '244', '23', '高山族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:32:45.095+00', NULL, '1', '1', false, NULL, NULL),
+('381', '244', '24', '拉祜族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:32:58.862+00', NULL, '1', '1', false, NULL, NULL),
+('382', '244', '25', '水族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:33:06.499+00', NULL, '1', '1', false, NULL, NULL),
+('383', '244', '26', '东乡族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:33:16.327+00', NULL, '1', '1', false, NULL, NULL),
+('384', '244', '27', '纳西族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:33:26.096+00', NULL, '1', '1', false, NULL, NULL),
+('385', '244', '28', '景颇族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:33:34.528+00', NULL, '1', '1', false, NULL, NULL),
+('386', '244', '29', '柯尔克孜族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:33:45.032+00', NULL, '1', '1', false, NULL, NULL),
+('387', '244', '30', '土族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:33:52.878+00', NULL, '1', '1', false, NULL, NULL),
+('388', '244', '31', '达斡尔族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:34:02.106+00', NULL, '1', '1', false, NULL, NULL),
+('389', '244', '32', '仫佬族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:34:12.184+00', NULL, '1', '1', false, NULL, NULL),
+('390', '244', '33', '羌族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:35:27.799+00', NULL, '1', '1', false, NULL, NULL),
+('391', '244', '34', '布朗族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:35:35.540+00', NULL, '1', '1', false, NULL, NULL),
+('392', '244', '35', '撒拉族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:35:43.106+00', NULL, '1', '1', false, NULL, NULL),
+('393', '244', '36', '毛南族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:35:50.688+00', NULL, '1', '1', false, NULL, NULL),
+('394', '244', '37', '仡佬族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:35:58.676+00', NULL, '1', '1', false, NULL, NULL),
+('395', '244', '38', '锡伯族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:36:07.284+00', NULL, '1', '1', false, NULL, NULL),
+('396', '244', '39', '阿昌族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:36:16.764+00', NULL, '1', '1', false, NULL, NULL),
+('397', '244', '40', '普米族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:36:24.137+00', NULL, '1', '1', false, NULL, NULL),
+('398', '244', '41', '塔吉克族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:36:32.898+00', NULL, '1', '1', false, NULL, NULL),
+('399', '244', '42', '怒族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:36:42.195+00', NULL, '1', '1', false, NULL, NULL),
+('400', '244', '43', '乌孜别克族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:36:50.621+00', NULL, '1', '1', false, NULL, NULL),
+('401', '244', '44', '俄罗斯族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:36:58.043+00', NULL, '1', '1', false, NULL, NULL),
+('402', '244', '45', '鄂温克族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:37:05.790+00', NULL, '1', '1', false, NULL, NULL),
+('403', '244', '46', '德昂族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:37:14.600+00', NULL, '1', '1', false, NULL, NULL),
+('404', '244', '47', '保安族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:37:23.154+00', NULL, '1', '1', false, NULL, NULL),
+('405', '244', '48', '裕固族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:37:31.340+00', NULL, '1', '1', false, NULL, NULL),
+('406', '244', '49', '京族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:37:38.954+00', NULL, '1', '1', false, NULL, NULL),
+('407', '244', '50', '塔塔尔族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:37:46.491+00', NULL, '1', '1', false, NULL, NULL),
+('408', '244', '51', '独龙族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:37:56.683+00', NULL, '1', '1', false, NULL, NULL),
+('409', '244', '52', '鄂伦春族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:38:05.358+00', NULL, '1', '1', false, NULL, NULL),
+('410', '244', '53', '赫哲族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:38:13.204+00', NULL, '1', '1', false, NULL, NULL),
+('411', '244', '54', '门巴族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:38:21.772+00', NULL, '1', '1', false, NULL, NULL),
+('412', '244', '55', '珞巴族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:38:29.786+00', NULL, '1', '1', false, NULL, NULL),
+('413', '244', '56', '基诺族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:38:48.974+00', NULL, '1', '1', false, NULL, NULL),
+('414', '245', 'CHN', '中国', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:41:53.758+00', NULL, '1', '1', false, NULL, NULL),
+('415', '245', 'HKG', '香港', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:42:12.410+00', NULL, '1', '1', false, NULL, NULL),
+('416', '245', 'MAC', '澳门', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:42:23.142+00', NULL, '1', '1', false, NULL, NULL),
+('417', '245', 'TWN', '台湾', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:42:32.833+00', NULL, '1', '1', false, NULL, NULL),
+('418', '246', '1', '居民身份证', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-03-25 22:50:43.657+00', '2025-03-26 18:13:42.691+00', '1', '1', false, NULL, NULL),
+('419', '246', '2', '居民户口簿', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-03-25 22:50:53.910+00', '2025-03-26 18:13:50.987+00', '1', '1', false, NULL, NULL),
+('420', '246', '3', '护照', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-03-25 22:51:01.284+00', '2025-03-26 18:13:56.209+00', '1', '1', false, NULL, NULL),
+('421', '246', '4', '军官证', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-03-25 22:51:08.215+00', '2025-03-26 18:14:01.421+00', '1', '1', false, NULL, NULL),
+('422', '246', '5', '驾驶证', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-03-25 22:51:15.757+00', '2025-03-26 18:14:08.441+00', '1', '1', false, NULL, NULL),
+('423', '246', '6', '港澳居民来往内地通行证', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2025-03-25 22:51:24.924+00', '2025-03-26 18:14:12.916+00', '1', '1', false, NULL, NULL),
+('424', '246', '7', '台湾居民来往内地通行证', NULL, NULL, '7', true, NULL, 'default', NULL, '1', '2025-03-25 22:51:32.427+00', '2025-03-26 18:14:17.107+00', '1', '1', false, NULL, NULL),
+('425', '246', '99', '其他身份证件', NULL, NULL, '8', true, NULL, 'default', NULL, '1', '2025-03-25 22:51:46.144+00', '2025-03-26 18:14:24.511+00', '1', '1', false, NULL, NULL),
+('426', '247', '1', '首诊医生', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:52:41.344+00', NULL, '1', '1', false, NULL, NULL),
+('427', '247', '2', '责任护士', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:52:50.733+00', NULL, '1', '1', false, NULL, NULL),
+('428', '247', '3', '管床护士', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-25 22:52:58.021+00', NULL, '1', '1', false, NULL, NULL),
+('429', '218', '3', '检查费', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-03-25 23:00:44.918+00', NULL, '1', '1', false, NULL, NULL),
+('430', '218', '4', '化验费', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-03-25 23:00:52.706+00', '2025-03-25 23:01:08.386+00', '1', '1', false, NULL, NULL),
+('431', '218', '5', '治疗费', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-03-25 23:01:19.211+00', NULL, '1', '1', false, NULL, NULL),
+('432', '218', '6', '手术费', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2025-03-25 23:01:28.821+00', NULL, '1', '1', false, NULL, NULL),
+('433', '218', '7', '护理费', NULL, NULL, '7', true, NULL, 'default', NULL, '1', '2025-03-25 23:01:38.190+00', NULL, '1', '1', false, NULL, NULL),
+('434', '218', '8', '卫生材料费', NULL, NULL, '8', true, NULL, 'default', NULL, '1', '2025-03-25 23:01:47.677+00', NULL, '1', '1', false, NULL, NULL),
+('435', '218', '9', '西药费', NULL, NULL, '9', true, NULL, 'default', NULL, '1', '2025-03-25 23:01:59.924+00', NULL, '1', '1', false, NULL, NULL),
+('436', '218', '10', '中药饮片费', NULL, NULL, '10', true, NULL, 'default', NULL, '1', '2025-03-25 23:02:09.071+00', NULL, '1', '1', false, NULL, NULL),
+('437', '218', '11', '中成药费', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-03-25 23:02:20.565+00', NULL, '1', '1', false, NULL, NULL),
+('438', '218', '12', '一般诊疗费', NULL, NULL, '12', true, NULL, 'default', NULL, '1', '2025-03-25 23:02:31.397+00', NULL, '1', '1', false, NULL, NULL),
+('439', '218', '13', '挂号费', NULL, NULL, '13', true, NULL, 'default', NULL, '1', '2025-03-25 23:02:43.514+00', NULL, '1', '1', false, NULL, NULL),
+('440', '218', '14', '其他费', NULL, NULL, '14', true, NULL, 'default', NULL, '1', '2025-03-25 23:02:54.340+00', NULL, '1', '1', false, NULL, NULL),
+('441', '248', '1', '胶囊', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-03-26 17:46:05.203+00', NULL, '1', '1', false, NULL, NULL),
+('442', '251', '1', '中成药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-26 19:28:57.917+00', NULL, '1', '1', false, NULL, NULL),
+('443', '251', '2', '西药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-26 19:29:05.376+00', NULL, '1', '1', false, NULL, NULL),
+('444', '251', '3', '外购药品', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-26 19:29:17.739+00', NULL, '1', '1', false, NULL, NULL),
+('445', '251', '4', '中草药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-26 19:29:46.848+00', NULL, '1', '1', false, NULL, NULL),
+('446', '251', '7', '耗材', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-26 19:29:56.669+00', NULL, '1', '1', false, NULL, NULL),
+('447', '251', '9', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-26 19:30:06.215+00', '2025-04-10 21:08:52.542+00', '1', '1', false, NULL, NULL),
+('448', '252', '1', '单位,产品批号', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-27 00:34:20.644+00', NULL, '1', '1', false, NULL, NULL),
+('449', '252', '2', '采购', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-27 00:34:27.333+00', NULL, '1', '1', false, NULL, NULL),
+('450', '252', '3', '单位', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-27 00:34:34.573+00', NULL, '1', '1', false, NULL, NULL),
+('451', '252', '4', '限制', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-27 00:34:41.567+00', NULL, '1', '1', false, NULL, NULL),
+('452', '253', '1', '有源的', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-27 18:12:10.395+00', NULL, '1', '1', false, NULL, NULL),
+('453', '253', '2', '通讯类', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-27 18:12:17.982+00', NULL, '1', '1', false, NULL, NULL),
+('454', '253', '3', '非院内使用', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-27 18:12:25.101+00', NULL, '1', '1', false, NULL, NULL),
+('455', '253', '4', '植入类', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-27 18:12:32.516+00', NULL, '1', '1', false, NULL, NULL),
+('456', '253', '5', '试管类', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-27 18:12:38.741+00', NULL, '1', '1', false, NULL, NULL),
+('457', '253', '6', '床旁类', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-27 18:12:46.397+00', NULL, '1', '1', false, NULL, NULL),
+('458', '253', '7', '单次消耗类', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-27 18:12:52.934+00', NULL, '1', '1', false, NULL, NULL),
+('459', '253', '8', '可重用的', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-27 18:12:58.597+00', NULL, '1', '1', false, NULL, NULL),
+('460', '253', '9', '软件类', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-27 18:13:04.045+00', NULL, '1', '1', false, NULL, NULL),
+('461', '253', '10', '治疗设备', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-27 18:13:12.502+00', NULL, '1', '1', false, NULL, NULL),
+('462', '254', '1', '自费', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-03-29 00:20:40.992+00', NULL, '1', '1', false, NULL, NULL),
+('463', '254', '2', '医保', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-03-29 00:21:07.830+00', '2025-03-29 00:25:34.003+00', '1', '1', false, NULL, NULL),
+('466', '255', '21', '治疗', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-03-29 20:42:14.147+00', '2025-05-11 23:43:41.436+00', '1', '1', false, NULL, NULL),
+('467', '255', '22', '检验', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-03-29 20:42:20.468+00', '2025-05-11 23:43:51.633+00', '1', '1', false, NULL, NULL),
+('478', '236', '1011', '挂号费', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-02 01:25:09.790+00', NULL, '1', '1', false, NULL, NULL),
+('481', '223', '4', '注射剂', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-04-06 22:57:10.863+00', NULL, '1', '1', false, NULL, NULL),
+('482', '251', '8', '诊疗', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-10 21:08:42.491+00', NULL, '1', '1', false, NULL, NULL),
+('488', '467', '1', '中成药', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-05-05 22:33:49.844+00', NULL, '1', '1', false, NULL, NULL),
+('489', '467', '2', '西药', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-05-05 22:34:09.937+00', NULL, '1', '1', false, NULL, NULL),
+('490', '467', '3', '外购药品', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-05-05 22:34:23.380+00', NULL, '1', '1', false, NULL, NULL),
+('491', '468', '1', '用法', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-05-05 22:34:29.685+00', NULL, '1', '1', false, NULL, NULL),
+('492', '467', '4', '中草药', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-05-05 22:34:38.557+00', NULL, '1', '1', false, NULL, NULL),
+('493', '468', '2', '诊疗', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-05-05 22:34:40.745+00', NULL, '1', '1', false, NULL, NULL),
+('494', '467', '9', '耗材', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-05-05 22:34:53.176+00', NULL, '1', '1', false, NULL, NULL),
+('495', '468', '3', '号源', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-05-05 22:34:55.654+00', NULL, '1', '1', false, NULL, NULL),
+('496', '469', '1', '个人', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-05-05 22:36:08.491+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('497', '469', '2', '科室', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-05-05 22:36:16.456+00', NULL, '1', '1', false, NULL, NULL),
+('498', '469', '3', '全院', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-05-05 22:36:30.113+00', NULL, '1', '1', false, NULL, NULL),
+('499', '470', '1', '无限制', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-05-05 22:59:51.330+00', NULL, '1', '1', false, NULL, NULL),
+('500', '470', '2', '数量等于0', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-05-05 23:00:06.456+00', NULL, '1', '1', false, NULL, NULL),
+('501', '470', '3', '数量大于0', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-05-05 23:00:17.690+00', NULL, '1', '1', false, NULL, NULL),
+('502', '471', '1', '过期', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-05-07 22:24:52.289+00', NULL, '1', '1', false, NULL, NULL),
+('503', '471', '2', '损坏', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-05-07 22:25:02.924+00', NULL, '1', '1', false, NULL, NULL),
+('504', '471', '3', '发药', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-05-07 22:25:32.182+00', NULL, '1', '1', false, NULL, NULL),
+('505', '471', '4', '退药', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-05-07 22:25:41.719+00', NULL, '1', '1', false, NULL, NULL),
+('506', '225', '4', '注射给药', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-05-10 01:31:46.500+00', '2025-05-10 01:31:56.443+00', '1', '1', false, NULL, NULL),
+('507', '225', '401', '皮下注射', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-05-10 01:39:07.060+00', '2025-05-10 01:39:15.236+00', '1', '1', false, NULL, NULL),
+('508', '225', '402', '皮内注射', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2025-05-10 01:39:40.646+00', NULL, '1', '1', false, NULL, NULL),
+('510', '225', '404', '静脉注射', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-05-10 01:40:11.543+00', '2025-06-26 21:53:47.186+00', '1', '1', false, NULL, NULL),
+('511', '225', '5', '吸入给药', NULL, NULL, '9', true, NULL, 'default', NULL, '1', '2025-05-10 01:40:50.761+00', NULL, '1', '1', false, NULL, NULL),
+('512', '225', '6', '局部用药', NULL, NULL, '10', true, NULL, 'default', NULL, '1', '2025-05-10 01:41:03.746+00', NULL, '1', '1', false, NULL, NULL),
+('513', '225', '601', '椎管内用药', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-05-10 01:41:16.054+00', NULL, '1', '1', false, NULL, NULL),
+('514', '225', '602', '关节腔内用药', NULL, NULL, '12', true, NULL, 'default', NULL, '1', '2025-05-10 01:41:29.508+00', NULL, '1', '1', false, NULL, NULL),
+('515', '225', '603', '胸膜腔用药', NULL, NULL, '13', true, NULL, 'default', NULL, '1', '2025-05-10 01:41:42.888+00', NULL, '1', '1', false, NULL, NULL),
+('516', '225', '604', '腹腔用药', NULL, NULL, '14', true, NULL, 'default', NULL, '1', '2025-05-10 01:41:56.920+00', NULL, '1', '1', false, NULL, NULL),
+('517', '225', '605', '阴道用药', NULL, NULL, '15', true, NULL, 'default', NULL, '1', '2025-05-10 01:42:07.650+00', NULL, '1', '1', false, NULL, NULL),
+('518', '225', '606', '气管内用药', NULL, NULL, '99', true, '16', 'default', NULL, '1', '2025-05-10 01:42:16.254+00', '2025-06-26 21:53:34.472+00', '1', '1', false, NULL, NULL),
+('519', '225', '607', '滴眼', NULL, NULL, '17', true, NULL, 'default', NULL, '1', '2025-05-10 01:42:26.846+00', '2025-05-10 01:42:38.881+00', '1', '1', false, NULL, NULL),
+('520', '225', '608', '滴鼻', NULL, NULL, '18', true, NULL, 'default', NULL, '1', '2025-05-10 01:43:20.350+00', '2025-05-10 01:43:44.694+00', '1', '1', false, NULL, NULL),
+('521', '225', '609', '喷喉', NULL, NULL, '19', true, NULL, 'default', NULL, '1', '2025-05-10 01:43:37.745+00', NULL, '1', '1', false, NULL, NULL),
+('522', '225', '610', '含化', NULL, NULL, '20', true, NULL, 'default', NULL, '1', '2025-05-10 01:44:13.168+00', NULL, '1', '1', false, NULL, NULL),
+('523', '225', '611', '敷伤口', NULL, NULL, '21', true, NULL, 'default', NULL, '1', '2025-05-10 01:44:55.228+00', NULL, '1', '1', false, NULL, NULL),
+('524', '225', '612', '擦皮肤', NULL, NULL, '22', true, NULL, 'default', NULL, '1', '2025-05-10 01:45:11.567+00', '2025-05-10 01:45:19.488+00', '1', '1', false, NULL, NULL),
+('525', '225', '699', '其他局部给药途径', NULL, NULL, '23', true, NULL, 'default', NULL, '1', '2025-05-10 01:45:35.227+00', NULL, '1', '1', false, NULL, NULL),
+('526', '225', '9', '其他给药途径', NULL, NULL, '24', true, NULL, 'default', NULL, '1', '2025-05-10 01:45:52.060+00', NULL, '1', '1', false, NULL, NULL),
+('527', '255', '23', '检查', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-05-11 23:44:18.346+00', NULL, '1', '1', false, NULL, NULL),
+('528', '255', '24', '手术', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-05-11 23:44:28.809+00', NULL, '1', '1', false, NULL, NULL),
+('529', '255', '25', '麻醉', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-05-11 23:44:44.812+00', NULL, '1', '1', false, NULL, NULL),
+('530', '255', '26', '护理级别', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-05-11 23:45:00.768+00', '2025-12-01 22:51:02.833+00', '1', '1', false, NULL, NULL),
+('531', '255', '27', '膳食', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2025-05-11 23:45:21.275+00', NULL, '1', '1', false, NULL, NULL),
+('532', '255', '28', '输血', NULL, NULL, '7', true, NULL, 'default', NULL, '1', '2025-05-11 23:45:38.754+00', NULL, '1', '1', false, NULL, NULL),
+('533', '255', '29', '输氧', NULL, NULL, '8', true, NULL, 'default', NULL, '1', '2025-05-11 23:45:50.420+00', NULL, '1', '1', false, NULL, NULL),
+('534', '255', '31', '其他', NULL, NULL, '10', true, NULL, 'default', NULL, '1', '2025-05-11 23:46:02.359+00', NULL, '1', '1', false, NULL, NULL),
+('535', '255', '32', '转科', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-05-11 23:46:11.774+00', NULL, '1', '1', false, NULL, NULL),
+('536', '255', '33', '术后', NULL, NULL, '12', true, NULL, 'default', NULL, '1', '2025-05-11 23:46:32.856+00', NULL, '1', '1', false, NULL, NULL),
+('537', '255', '34', '出院', NULL, NULL, '13', true, NULL, 'default', NULL, '1', '2025-05-11 23:46:59.502+00', NULL, '1', '1', false, NULL, NULL),
+('538', '255', '35', '转院', NULL, NULL, '14', true, NULL, 'default', NULL, '1', '2025-05-11 23:47:24.733+00', NULL, '1', '1', false, NULL, NULL),
+('539', '255', '36', '死亡', NULL, NULL, '15', true, NULL, 'default', NULL, '1', '2025-05-11 23:47:37.358+00', NULL, '1', '1', false, NULL, NULL),
+('540', '255', '37', '产后', NULL, NULL, '16', true, NULL, 'default', NULL, '1', '2025-05-11 23:47:54.710+00', NULL, '1', '1', false, NULL, NULL),
+('541', '223', '5', '胶囊剂', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-05-17 05:28:13.890+00', NULL, '1', '1', false, NULL, NULL),
+('542', '223', '6', '乳膏剂', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2025-05-17 05:28:27.175+00', NULL, '1', '1', false, NULL, NULL),
+('544', '223', '7', '口服液', NULL, NULL, '7', true, NULL, 'default', NULL, '1', '2025-05-17 05:59:52.493+00', NULL, '1', '1', false, NULL, NULL),
+('545', '223', '8', '滴耳剂', NULL, NULL, '8', true, NULL, 'default', NULL, '1', '2025-05-17 06:00:14.589+00', NULL, '1', '1', false, NULL, NULL),
+('546', '223', '9', '气雾剂', NULL, NULL, '9', true, NULL, 'default', NULL, '1', '2025-05-17 06:00:27.247+00', NULL, '1', '1', false, NULL, NULL),
+('547', '223', '10', '酊剂', NULL, NULL, '10', true, NULL, 'default', NULL, '1', '2025-05-17 06:00:39.167+00', NULL, '1', '1', false, NULL, NULL),
+('548', '223', '11', '散剂', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-05-17 06:00:59.117+00', NULL, '1', '1', false, NULL, NULL),
+('669', '223', '12', '滴眼剂', NULL, NULL, '12', true, NULL, 'default', NULL, '1', '2025-05-18 00:18:40.868+00', NULL, '1', '1', false, NULL, NULL),
+('670', '223', '13', '软膏剂', NULL, NULL, '13', true, NULL, 'default', NULL, '1', '2025-05-18 01:09:05.736+00', NULL, '1', '1', false, NULL, NULL),
+('671', '223', '14', '贴剂', NULL, NULL, '14', true, NULL, 'default', NULL, '1', '2025-05-18 01:57:55.392+00', NULL, '1', '1', false, NULL, NULL),
+('676', '223', '15', '贴膏剂', NULL, NULL, '15', true, NULL, 'default', NULL, '1', '2025-05-19 02:37:28.088+00', NULL, '1', '1', false, NULL, NULL),
+('677', '236', '1012', '诊察费', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-05-19 23:23:50.193+00', NULL, '1', '1', false, NULL, NULL),
+('701', '236', '1013', '其他费', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-05-22 00:06:39.104+00', NULL, '1', '1', false, NULL, NULL),
+('706', '225', '405', '静脉滴注', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-05-24 00:17:04.959+00', '2025-06-26 21:54:02.200+00', '1', '1', false, NULL, NULL),
+('1001', '256', '1', '定点医药机构', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1002', '256', '2', '中心经办系统', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1003', '256', '3', '网上经办系统', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1004', '256', '4', 'APP', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1005', '256', '5', '一体机', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1006', '257', '4', '难产', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1007', '257', '5', '流产', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1008', '257', '6', '引产', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1009', '257', '7', '产前检查', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1010', '257', '1', '正常产', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1011', '257', '2', '助娩产', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1012', '257', '3', '剖宫产', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1013', '258', '7', '绝育手术（输精管）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1014', '258', '8', '绝育复通手术（输精管）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1015', '258', '1', '放置宫内节育器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1016', '258', '2', '取出宫内节育器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1017', '258', '3', '流产术', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1018', '258', '4', '引产术', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1019', '258', '5', '绝育手术', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1020', '258', '6', '绝育复通手术', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1021', '259', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1022', '259', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1023', '260', '0', '无须审批', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1024', '260', '2', '审批不通过', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1025', '260', '1', '审批通过', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1026', '261', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1027', '261', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1028', '262', '1', '复方', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1029', '262', '2', '单方', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1030', '263', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1031', '263', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1032', '264', '1', '医嘱离院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1033', '264', '4', '非医嘱离院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1034', '264', '2', '医嘱转院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1035', '264', '5', '死亡', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1036', '264', '3', '医嘱转社区卫生服务机构/乡镇卫生院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1037', '264', '9', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1038', '265', '11', '在职', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1039', '265', '1101', '职工在职', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1040', '265', '1102', '公务员在职', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1041', '265', '1103', '灵活就业人员在职', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1042', '265', '11031', '保健对象在职', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1043', '265', '116015', '二等乙级在职职工', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('1044', '265', '12', '退休人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1045', '265', '1201', '职工退休', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1046', '265', '1202', '公务员退休', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1047', '265', '1203', '灵活就业人员退休', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1048', '265', '12031', '保健对象退休', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1049', '265', '1205', '转制并轨退休', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1050', '265', '126016', '二等乙级退休职工', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1051', '265', '1300', '离休人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1052', '265', '136015', '省属离休人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1053', '265', '136019', '市属离休人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1054', '265', '136024', '享受副省部级待遇离休', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1055', '265', '14', '居民（未成年）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1056', '265', '1401', '新生儿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1057', '265', '1402', '学龄前儿童', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1058', '265', '1403', '中小学生', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1059', '265', '1404', '大学生', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1060', '265', '1405', '未成年（未入学）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1061', '265', '1406', '低保学生儿童', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1062', '265', '146004', '低保人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1063', '265', '15', '居民（成年）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1064', '265', '1501', '普通居民（成年）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1065', '265', '156001', '普通居民', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1066', '265', '16', '居民（老年）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1067', '265', '34', '建国前老工人', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1068', '265', '99', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1069', '265', '136027', '二等乙级伤残军人', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1070', '265', '116041', '在职三级保健对象公务员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1071', '265', '116043', '在职二级保健对象公务员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1072', '265', '116044', '在职二级保健对象非公务员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1073', '265', '116045', '在职一级保健对象公务员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1074', '265', '116046', '在职一级保健对象非公务员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1075', '265', '126041', '退休三级保健对象公务员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1076', '265', '126043', '退休二级保健对象公务员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1077', '265', '126044', '退休二级保健对象非公务员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1078', '265', '126045', '退休一级保健对象公务员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1079', '265', '126046', '退休一级保健对象非公务员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1080', '265', '11032', '在职劳模保健对象', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1081', '265', '11033', '在职省级以上劳模', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1082', '265', '11034', '在职保健非公务员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1083', '265', '12033', '退休省级以上劳模', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1084', '265', '12034', '退休保健非公务员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1085', '265', '12035', '保健建国前退休人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1086', '265', '116047', '企业补充在职', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1087', '265', '126047', '企业补充退休', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1088', '265', '116048', '企业补充二级保健对象在职', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1089', '265', '126048', '企业补充二级保健对象退休', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1090', '266', '0', '平', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1091', '266', '1', '中心多', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1092', '266', '2', '医药机构多', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1093', '266', '3', '数据不一致', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1094', '267', '1', '定点医疗机构', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1095', '267', '2', '定点零售药店', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1096', '267', '3', '工伤定点康复机构', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1097', '267', '4', '辅助器具配置机构', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1098', '267', '5', '计划生育服务机构', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1099', '268', '16', '中国护照', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1100', '268', '17', '港澳台居民居住证', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1101', '268', '1', '居民身份证（户口簿）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1102', '268', '2', '中国人民解放军军官证', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1103', '268', '3', '中国人民武装警察警官证', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1104', '268', '4', '香港特区护照/港澳居民来往内地通行证', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1105', '268', '5', '澳门特区护照/港澳居民来往内地通行证', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1106', '268', '6', '台湾居民来往大陆通行证', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1107', '268', '7', '外国人永久居留证', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1108', '268', '8', '外国人护照', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1109', '268', '9', '残疾人证', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1110', '268', '10', '军烈属证明', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1111', '268', '11', '外国人就业证', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1112', '268', '12', '外国专家证', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1113', '268', '13', '外国人常驻记者证', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1114', '268', '14', '台港澳人员就业证', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1115', '268', '15', '回国（来华）定居专家证', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1116', '268', '90', '社会保障卡', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1117', '268', '99', '其他身份证件', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1118', '269', '0', '未知的性别', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1119', '269', '2', '女', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1120', '269', '1', '男', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1121', '269', '9', '未说明性别', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1122', '270', '1', '汉族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1123', '270', '29', '柯尔克孜族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1124', '270', '2', '蒙古族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1125', '270', '30', '土族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1126', '270', '3', '回族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1127', '270', '31', '达斡尔族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1128', '270', '4', '藏族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1129', '270', '32', '仫佬族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1130', '270', '5', '维吾尔族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1131', '270', '33', '羌族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1132', '270', '6', '苗族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1133', '270', '34', '布朗族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1134', '270', '7', '彝族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1135', '270', '35', '撒拉族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1136', '270', '8', '壮族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1137', '270', '36', '毛南族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1138', '270', '9', '布依族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1139', '270', '37', '仡佬族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1140', '270', '10', '朝鲜族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1141', '270', '38', '锡伯族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1142', '270', '11', '满族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1143', '270', '39', '阿昌族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('1144', '270', '12', '侗族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1145', '270', '40', '普米族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1146', '270', '13', '瑶族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1147', '270', '41', '塔吉克族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1148', '270', '14', '白族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1149', '270', '42', '怒族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1150', '270', '15', '土家族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1151', '270', '43', '乌孜别克族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1152', '270', '16', '哈尼族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1153', '270', '44', '俄罗斯族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1154', '270', '17', '哈萨克族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1155', '270', '45', '鄂温克族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1156', '270', '18', '傣族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1157', '270', '46', '德昂族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1158', '270', '19', '黎族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1159', '270', '47', '保安族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1160', '270', '20', '傈僳族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1161', '270', '48', '裕固族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1162', '270', '21', '佤族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1163', '270', '49', '京族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1164', '270', '22', '畲族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1165', '270', '50', '塔塔尔族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1166', '270', '23', '高山族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1167', '270', '51', '独龙族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1168', '270', '24', '拉祜族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1169', '270', '52', '鄂伦春族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1170', '270', '25', '水族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1171', '270', '53', '赫哲族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1172', '270', '26', '东乡族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1173', '270', '54', '门巴族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1174', '270', '27', '纳西族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1175', '270', '55', '珞巴族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1176', '270', '28', '景颇族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1177', '270', '56', '基诺族', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1178', '271', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1179', '271', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1180', '272', '1', '国内生产（合资）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1181', '272', '2', '国外生产', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1182', '273', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1183', '273', '2', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1184', '274', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1185', '274', '2', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1186', '275', '1', '甲类', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-05-21 22:18:10.701+00', '1', '1', false, NULL, NULL),
+('1187', '275', '3', '自费', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-05-21 22:18:05.017+00', '1', '1', false, NULL, NULL),
+('1188', '275', '2', '乙类', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-05-21 22:18:16.492+00', '1', '1', false, NULL, NULL),
+('1189', '276', '1', '配偶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1190', '276', '6', '祖父母或外祖父母', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1191', '276', '2', '子女', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1192', '276', '7', '兄、弟、姐、妹', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1193', '276', '4', '孙子、孙女，或外孙子、外孙女', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1194', '276', '8', '其他亲属', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1195', '276', '5', '父母', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1196', '276', '9', '非亲属', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1197', '277', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1198', '277', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1199', '278', '11', '门诊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1200', '278', '41', '药店购药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1201', '278', '21', '住院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1202', '278', '99', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1203', '279', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1204', '279', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1205', '280', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1206', '280', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1207', '281', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1208', '281', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1209', '282', '1', '中心', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1210', '282', '4', '跨省异地', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1211', '282', '2', '医疗机构', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1212', '282', '5', '互联网医院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1213', '282', '3', '省内异地', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1214', '283', '25', '异地住院', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:36:38.040+00', '1', '1', false, NULL, NULL),
+('1215', '283', '26', '单病种住院', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:36:30.706+00', '1', '1', false, NULL, NULL),
+('1216', '283', '27', '自主就医', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:33:24.855+00', '1', '1', false, NULL, NULL),
+('1217', '283', '81', '意外伤害门诊', NULL, NULL, '9', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:35:04.728+00', '1', '1', false, NULL, NULL),
+('1218', '283', '15', '特药', NULL, NULL, '10', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:35:12.439+00', '1', '1', false, NULL, NULL),
+('1219', '283', '28', '日间手术', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:35:40.793+00', '1', '1', false, NULL, NULL),
+('1220', '283', '61', '照护保险', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:36:50.827+00', '1', '1', false, NULL, NULL),
+('1221', '283', '11', '普通门诊', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:31:45.103+00', '1', '1', false, NULL, NULL),
+('1222', '283', '12', '门诊挂号', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:32:40.081+00', '1', '1', false, NULL, NULL),
+('1223', '283', '13', '急诊', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:32:54.526+00', '1', '1', false, NULL, NULL),
+('1224', '283', '14', '门诊慢特病', NULL, NULL, '7', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:34:11.285+00', '1', '1', false, NULL, NULL),
+('1225', '283', '990404', '门诊特检特治（限吉林市）', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:36:55.617+00', '1', '1', false, NULL, NULL),
+('1226', '283', '21', '普通住院', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:36:27.156+00', '1', '1', false, NULL, NULL),
+('1227', '283', '22', '外伤住院', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:36:34.609+00', '1', '1', false, NULL, NULL),
+('1228', '283', '23', '转外诊治住院', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:36:43.745+00', '1', '1', false, NULL, NULL),
+('1229', '283', '24', '急诊转住院', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:36:47.304+00', '1', '1', false, NULL, NULL),
+('1230', '283', '41', '定点药店购药', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:36:18.255+00', '1', '1', false, NULL, NULL),
+('1231', '283', '51', '生育门诊', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:36:22.619+00', '1', '1', false, NULL, NULL),
+('1232', '283', '52', '生育住院', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:35:47.147+00', '1', '1', false, NULL, NULL),
+('1233', '283', '5212', '生育新生儿费用', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:35:54.419+00', '1', '1', false, NULL, NULL),
+('1234', '283', '16', '中医特色门诊', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:35:50.835+00', '1', '1', false, NULL, NULL),
+('1235', '283', '29', '起付线治疗', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:36:04.505+00', '1', '1', false, NULL, NULL),
+('1236', '283', '9107', '体检', NULL, NULL, '8', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:34:39.638+00', '1', '1', false, NULL, NULL),
+('1237', '283', '3101', '低自付住院', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:35:57.670+00', '1', '1', false, NULL, NULL),
+('1238', '283', '3102', '低自付门诊', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:36:01.347+00', '1', '1', false, NULL, NULL),
+('1239', '283', '140104', '门诊慢病', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:32:14.708+00', '1', '1', false, NULL, NULL),
+('1240', '283', '140201', '门诊特病', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:32:24.206+00', '1', '1', false, NULL, NULL),
+('1241', '283', '2114', '舒缓疗护住院', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-06-05 03:36:12.090+00', '1', '1', false, NULL, NULL),
+('1242', '284', '101', '国家级正职', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1243', '284', '132', '县处级副职', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('1244', '284', '102', '国家级副职', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1245', '284', '141', '乡科级正职', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1246', '284', '111', '省部级正职', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1247', '284', '142', '乡科级副职', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1248', '284', '112', '省部级副职', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1249', '284', '150', '科员级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1250', '284', '121', '厅局级正职', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1251', '284', '160', '办事员级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1252', '284', '122', '厅局级副职', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1253', '284', '199', '未定职', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1254', '284', '131', '县处级正职', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1255', '285', '410', '长期照护保险', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1256', '285', '310', '职工基本医疗保险', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1257', '285', '320', '公务员医疗补助', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1258', '285', '330', '大额医疗费用补助', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1259', '285', '340', '离休人员医疗保障', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1260', '285', '350', '一至六级残废军人医疗补助', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1261', '285', '360', '老红军医疗保障', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1262', '285', '370', '企业补充医疗保险', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1263', '285', '380', '新型农村合作医疗', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1264', '285', '390', '城乡居民基本医疗保险', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1265', '285', '391', '城镇居民基本医疗保险', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1266', '285', '392', '城乡居民大病医疗保险', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1267', '285', '399', '其他特殊人员医疗保障', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1268', '286', '0', '无效', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1269', '286', '1', '有效', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1270', '287', '0', '出院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1271', '287', '1', '在院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1272', '288', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1273', '288', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1274', '289', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1275', '289', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1276', '290', '1', '医保电子凭证', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1277', '290', '3', '社会保障卡', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1278', '290', '2', '居民身份证', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1279', '291', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1280', '291', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1281', '292', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1282', '292', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1283', '293', '1', '一级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1284', '293', '3', '三级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1285', '293', '2', '二级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1286', '294', '1', '按项目', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1287', '294', '4', '按人头', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1288', '294', '2', '单病种', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1289', '294', '5', 'DRGs点数法', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1290', '294', '3', '按床日', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1291', '294', '99', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1292', '295', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1293', '295', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1294', '296', '1', '一级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1295', '296', '3', '三级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1296', '296', '2', '二级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1311', '298', '1', '临时医嘱', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1312', '298', '3', '备用医嘱', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1313', '298', '2', '长期医嘱', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1314', '299', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1315', '299', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1316', '300', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1317', '300', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1318', '301', '1', '一级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1319', '301', '3', '三级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1320', '301', '2', '二级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1321', '302', '510100', '生育基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1322', '302', '340100', '离休人员医疗保障基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1323', '302', '390100', '城乡居民基本医疗保险基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1324', '302', '390200', '城乡居民大病医疗保险基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1325', '302', '610100', '医疗救助基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1326', '302', '640100', '政府兜底基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1327', '302', '390400', '意外伤害基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1328', '302', '620100', '照护保险基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1329', '302', '360100', '财政基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1330', '302', '999900', '医院垫付', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1331', '302', '390300', '城乡居民大病补充保险基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1332', '302', '360300', '保健预支基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1333', '303', '101', '西药中成药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1334', '303', '102', '重要饮片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1335', '303', '103', '自制剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1336', '303', '104', '民族药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1337', '303', '201', '医疗服务项目', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1338', '303', '301', '医用耗材', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1339', '304', '1', '门慢门特登记', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1340', '304', '2', '意外伤害登记', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1341', '304', '3', '就医定点医疗机构登记', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1342', '304', '4', '家庭病床登记', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1343', '304', '5', '家庭医生签约登记', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1344', '304', '6', '转诊转院登记', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1345', '304', '7', '异地急诊住院登记', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1346', '304', '8', '异地安置登记', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1347', '304', '9', '特检特治登记', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1348', '304', '10', '特殊药品登记', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1349', '304', '11', '长期带药登记', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1350', '304', '12', '代购药品登记', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1351', '304', '13', '生育备案登记', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1352', '304', '14', '账户备案登记', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1353', '304', '15', '临时医疗救助人员资格认定', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1354', '304', '16', '年度救助备案登记', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1355', '304', '17', '按病种结算登记', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1356', '304', '18', '无医保凭证结算备案登记', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1357', '304', '19', '退费备案登记', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('1358', '304', '20', '外检外购登记', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1359', '305', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1360', '305', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1361', '305', '2', '双跨', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1362', '306', '101', '调拨入库', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1363', '306', '107', '其他出库', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1364', '306', '102', '调拨出库', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1365', '306', '108', '商品采购入库', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1366', '306', '103', '盘盈', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1367', '306', '109', '商品退货出库', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1368', '306', '104', '盘损', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1369', '306', '110', '赠药入库', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1370', '306', '105', '销毁', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1371', '306', '111', '赠药退回出库', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1372', '306', '106', '其他入库', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1373', '307', '0', '非医疗保险结算', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1374', '307', '2', '异地医疗保险结算', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1375', '307', '1', '本地医疗保险结算', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1376', '308', '1', '入院诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1377', '308', '2', '出院诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1378', '309', '1', '西医诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1379', '309', '2', '中医主病诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1380', '309', '3', '中医主证诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1381', '310', '1', '中国人民银行会计营业部门', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1382', '310', '11', '中国人民银行国家金库', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1383', '310', '102', '中国工商银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1384', '310', '103', '中国农业银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1385', '310', '104', '中国银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1386', '310', '105', '中国建设银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1387', '310', '201', '国家开发银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1388', '310', '202', '中国进出口银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1389', '310', '203', '中国农业发展银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1390', '310', '301', '交通银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1391', '310', '302', '中信银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1392', '310', '303', '中国光大银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1393', '310', '304', '华夏银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1394', '310', '305', '中国民生银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1395', '310', '306', '广发银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1396', '310', '307', '平安银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1397', '310', '308', '招商银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1398', '310', '309', '兴业银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1399', '310', '310', '上海浦东发展银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1400', '310', '313', '城市商业银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1401', '310', '314', '农村商业银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1402', '310', '315', '恒丰银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1403', '310', '316', '浙商银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1404', '310', '317', '农村合作银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1405', '310', '318', '渤海银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1406', '310', '319', '徽商银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1407', '310', '320', '村镇银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1408', '310', '321', '重庆三峡银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1409', '310', '322', '上海农村商业银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1410', '310', '401', '城市信用社', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1411', '310', '402', '农村信用联社', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1412', '310', '403', '中国邮政储蓄银行', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1413', '311', '1', '三级特等', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1414', '311', '2', '三级甲等', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1415', '311', '3', '三级乙等', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1416', '311', '4', '三级丙等', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1417', '311', '5', '二级甲等', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1418', '311', '6', '二级乙等', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1419', '311', '7', '二级丙等', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1420', '311', '8', '一级甲等', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1421', '311', '9', '一级乙等', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1422', '311', '10', '一级丙等', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1423', '311', '11', '无等级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1424', '312', '0', '暂停联网', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1425', '312', '2', '取消定点', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1426', '312', '1', '正常联网', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1427', '313', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1428', '313', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1429', '314', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1430', '314', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1431', '315', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1432', '315', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1433', '316', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1434', '316', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1435', '317', '100000', '片剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1436', '317', '120312', '控释颗粒剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1437', '317', '110000', '胶囊剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1438', '317', '120313', '颗粒剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1439', '317', '120000', '口服液体剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1440', '317', '120314', '缓释颗粒剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1441', '317', '300000', '颗粒与溶液', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1442', '317', '130101', '浓缩水丸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1443', '317', '130000', '丸剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1444', '317', '130102', '浓缩水蜜丸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1445', '317', '140000', '颗粒剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1446', '317', '130103', '浓缩蜜丸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1447', '317', '150000', '散剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1448', '317', '130201', '大蜜丸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1449', '317', '160000', '外用液体剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1450', '317', '130202', '小蜜丸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1451', '317', '170000', '注射剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1452', '317', '130301', '水蜜丸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1453', '317', '180000', '软膏剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1454', '317', '130401', '水丸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1455', '317', '190000', '凝胶剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1456', '317', '130501', '糊丸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1457', '317', '200000', '硬膏剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('1458', '317', '130601', '微丸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1459', '317', '210000', '贴剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1460', '317', '130701', '滴丸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1461', '317', '220000', '涂剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1462', '317', '130801', '蜡丸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1463', '317', '230000', '栓剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1464', '317', '130901', '丸剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1465', '317', '240000', '眼用制剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1466', '317', '130902', '糖丸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1467', '317', '250000', '鼻用制剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1468', '317', '130903', '缓释丸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1469', '317', '260000', '耳用制剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1470', '317', '140101', '颗粒剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1471', '317', '270000', '吸入剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1472', '317', '140102', '细粒剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1473', '317', '280000', '植入剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1474', '317', '140103', '茶剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1475', '317', '290000', '其他剂型', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1476', '317', '140104', '泡腾颗粒剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1477', '317', '100100', '口服常释片剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1478', '317', '140105', '混悬颗粒剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1479', '317', '100200', '缓释控释片剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1480', '317', '140106', '缓释颗粒剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1481', '317', '100300', '其他片剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1482', '317', '140107', '控释颗粒剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1483', '317', '110100', '口服常释胶囊剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1484', '317', '150101', '口服散剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1485', '317', '110200', '缓释控释胶囊剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1486', '317', '150102', '外用散剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1487', '317', '110300', '其他胶囊剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1488', '317', '150201', '口服粉剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1489', '317', '120100', '医保口服液体剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1490', '317', '150202', '外用粉剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1491', '317', '120200', '其他口服液体剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1492', '317', '160101', '溶液剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1493', '317', '120300', '颗粒剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1494', '317', '160102', '洗剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1495', '317', '130100', '浓缩丸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1496', '317', '160103', '冲洗剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1497', '317', '130200', '蜜丸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1498', '317', '160104', '搽剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1499', '317', '130300', '水蜜丸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1500', '317', '160105', '油剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1501', '317', '130400', '水丸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1502', '317', '160106', '含漱液', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1503', '317', '130500', '糊丸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1504', '317', '160107', '外用酊剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1505', '317', '130600', '微丸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1506', '317', '160108', '醑剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1507', '317', '130700', '滴丸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1508', '317', '160109', '灌肠剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1509', '317', '130800', '蜡丸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1510', '317', '160110', '外用混悬剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1511', '317', '130900', '其他丸剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1512', '317', '160111', '泡沫剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1513', '317', '140100', '颗粒剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1514', '317', '170101', '粉针剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1515', '317', '150100', '散剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1516', '317', '170102', '冻干粉针剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1517', '317', '150200', '粉剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1518', '317', '170103', '溶媒结晶粉针剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1519', '317', '160100', '外用液体剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1520', '317', '170199', '注射用无菌粉针', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1521', '317', '170100', '注射用无菌粉末', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1522', '317', '170201', '大容量注射液', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1523', '317', '170200', '注射液', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1524', '317', '170202', '小容量注射液', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1525', '317', '180100', '软膏剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1526', '317', '170203', '靶向制剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1527', '317', '180200', '乳膏剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1528', '317', '180101', '软膏剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1529', '317', '180300', '霜剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1530', '317', '180102', '阴道软膏剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1531', '317', '180400', '糊剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1532', '317', '180103', '口腔软膏剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1533', '317', '180500', '油膏剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1534', '317', '180201', '乳膏剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1535', '317', '190100', '凝胶剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1536', '317', '180301', '霜剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1537', '317', '190200', '乳胶剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1538', '317', '180401', '糊剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1539', '317', '200100', '膏药剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1540', '317', '180501', '油膏剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1541', '317', '210100', '医保贴剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1542', '317', '190101', '凝胶剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1543', '317', '210200', '其他贴剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1544', '317', '190102', '混悬型凝胶剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1545', '317', '220100', '涂剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1546', '317', '190103', '阴道凝胶剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1547', '317', '230100', '栓剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1548', '317', '190104', '眼用凝胶剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1549', '317', '240100', '眼用制剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1550', '317', '190201', '乳胶剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1551', '317', '250100', '鼻用制剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1552', '317', '200101', '膏药剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1553', '317', '260100', '耳用制剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1554', '317', '210101', '贴剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1555', '317', '270100', '吸入剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1556', '317', '210102', '贴膏剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1557', '317', '280100', '植入剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('1558', '317', '210103', '透皮贴剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1559', '317', '290100', '其他剂型', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1560', '317', '210104', '膜剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1561', '317', '100101', '素片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1562', '317', '210105', '凝胶贴膏', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1563', '317', '100102', '糖衣片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1564', '317', '210201', '橡胶膏剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1565', '317', '100103', '薄膜衣片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1566', '317', '210202', '巴布膏剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1567', '317', '100104', '肠溶片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1568', '317', '210203', '控释贴剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1569', '317', '100105', '分散片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1570', '317', '210204', '贴脐片剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1571', '317', '100199', '普通片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1572', '317', '210205', '缓释透皮贴剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1573', '317', '100201', '缓释片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1574', '317', '210206', '牙用缓释膜', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1575', '317', '100202', '控释片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1576', '317', '210207', '敷剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1577', '317', '100203', '肠溶缓释片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1578', '317', '220101', '涂剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1579', '317', '100204', '口崩缓释片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1580', '317', '220102', '涂膜剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1581', '317', '100301', '咀嚼片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1582', '317', '230101', '阴道栓', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1583', '317', '100302', '泡腾片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1584', '317', '230102', '直肠栓', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1585', '317', '100303', '速释片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1586', '317', '230103', '尿道栓', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1587', '317', '100304', '多层片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1588', '317', '240101', '滴眼剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1589', '317', '100305', '舌下片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1590', '317', '240102', '眼膏剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1591', '317', '100306', '含片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1592', '317', '240103', '洗眼剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1593', '317', '100307', '口腔崩解片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1594', '317', '240104', '眼膜剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1595', '317', '100308', '口腔贴片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1596', '317', '240105', '眼丸剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1597', '317', '100309', '口颊片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1598', '317', '250101', '滴鼻剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1599', '317', '100310', '控释口颊片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1600', '317', '250102', '洗鼻剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1601', '317', '100311', '纸片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1602', '317', '260101', '滴耳剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1603', '317', '100312', '阴道片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1604', '317', '260102', '洗耳剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1605', '317', '100313', '阴道泡腾片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1606', '317', '260103', '耳丸剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1607', '317', '100314', '外用片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1608', '317', '270101', '鼻用喷雾剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1609', '317', '110101', '胶囊剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1610', '317', '270102', '气雾剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1611', '317', '110102', '肠溶胶囊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1612', '317', '270103', '喷雾剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1613', '317', '110103', '软胶囊(胶丸)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1614', '317', '270104', '粉雾剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1615', '317', '110104', '肠溶软胶囊(肠溶胶丸)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1616', '317', '270105', '吸入剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1617', '317', '110105', '肠溶微丸胶囊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1618', '317', '270106', '吸入溶液剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1619', '317', '110201', '缓释胶囊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1620', '317', '280101', '植入剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1621', '317', '110202', '肠溶缓释胶囊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1622', '317', '280102', '缓释植入剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1623', '317', '110203', '控释胶囊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1624', '317', '280103', '密封源', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1625', '317', '110204', '双释放肠溶胶囊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1626', '317', '290101', '冻干粉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1627', '317', '110301', '微囊(微丸)胶囊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1628', '317', '290102', '曲剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1629', '317', '110302', '阴道胶囊剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1630', '317', '290103', '熨剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1631', '317', '110303', '阴道用软胶囊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1632', '317', '290104', '酒剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1633', '317', '120101', '合剂（含口服液）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1634', '317', '290105', '灸剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1635', '317', '120102', '口服混悬剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1636', '317', '290106', '锭剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1637', '317', '120103', '干混悬剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1638', '317', '290107', '海绵剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1639', '317', '120104', '口服乳液', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1640', '317', '290108', '药棒剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1641', '317', '120105', '口服溶液剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1642', '317', '290109', '蜡棒', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1643', '317', '120106', '口服酊剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1644', '317', '290110', '牙周条', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1645', '317', '120107', '糖浆剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1646', '317', '290111', '口胶剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1647', '317', '120108', '滴剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1648', '317', '290112', '诊断试剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1649', '317', '120109', '胶剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1650', '317', '290113', '药盒', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1651', '317', '120110', '胶浆剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1652', '317', '290114', '纱布', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1653', '317', '120111', '混悬滴剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1654', '317', '290115', '试纸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1655', '317', '120201', '缓释混悬剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1656', '317', '290116', '湿巾', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1657', '317', '120202', '露剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('1658', '317', '290117', '宫内节育系统', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1659', '317', '120203', '酏剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1660', '317', '290118', '释氧剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1661', '317', '120204', '浸膏剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1662', '317', '290119', '去垢剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1663', '317', '120205', '流浸膏剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1664', '317', '290120', '气体', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1665', '317', '120206', '煎膏剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1666', '317', '290121', '火棉胶剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1667', '317', '120207', '滴剂（胶囊型）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1668', '317', '290122', '原料', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1669', '317', '120308', '细粒剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1670', '317', '290123', '其他剂型', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1671', '317', '120309', '茶剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1672', '317', '290124', '熏蒸剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1673', '317', '120310', '泡腾颗粒剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1674', '317', '290125', '点刺液', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1675', '317', '120311', '混悬颗粒剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1676', '318', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1677', '318', '2', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1680', '320', '2', '盒', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1681', '320', '76', '口服固体药用高密度聚乙烯瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1682', '320', '3', '瓶（固体制剂）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1683', '320', '77', '多层共挤膜输液袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1684', '320', '4', '袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1685', '320', '78', '复合膜', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1686', '320', '5', '特充', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1687', '320', '79', '低硼硅玻璃管制注射剂瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1688', '320', '6', '预充式(预灌封)注射器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1689', '320', '80', '中性硼硅玻璃管制注射剂瓶 ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1690', '320', '7', '板', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1691', '320', '81', '管制玻璃瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1692', '320', '8', '铝塑管', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1693', '320', '82', '中硼硅玻璃安瓿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1694', '320', '9', '配溶媒+无菌加药输液器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1695', '320', '83', '低硼硅玻璃管制瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1696', '320', '11', '笔芯', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1697', '320', '84', '双联双袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1698', '320', '12', '玻璃瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1699', '320', '85', '无色安瓿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1700', '320', '14', '配溶媒+双通输液器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1701', '320', '86', '玻璃安瓿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1702', '320', '15', '配溶媒', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1703', '320', '87', '管制西林瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1704', '320', '16', '管装（植入剂）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1705', '320', '88', '聚丙烯输液瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1706', '320', '17', '散装（植入剂）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1707', '320', '89', '玻璃安瓿+预充式(预灌封)注射器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1708', '320', '18', '西林瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1709', '320', '90', '管制抗生素瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1710', '320', '19', '安瓿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1711', '320', '91', '棕色管制注射剂玻璃瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1712', '320', '20', '塑料瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1713', '320', '92', '铝管', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1714', '320', '21', '非PVC膜', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1715', '320', '93', '非PVC+单管双阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1716', '320', '28', '直立式输液袋（聚乙烯）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1717', '320', '94', '非PVC+单管双阀+双层无菌', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1718', '320', '29', '直立式聚丙烯输液袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1719', '320', '95', '三层共挤输液用袋+单阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1720', '320', '30', '配溶媒(氯化钠)+无菌加药输液器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1721', '320', '96', '硼硅玻璃管制注射剂瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1722', '320', '31', '针管注射器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1723', '320', '97', '玻璃管制注射剂瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1724', '320', '32', '配溶媒+预灌封注射器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1725', '320', '98', '三层共挤输液用袋+双管双阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1726', '320', '33', '聚丙烯膜', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1727', '320', '99', '非PVC多层共挤输液用袋双阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1728', '320', '34', '非易拉型', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1729', '320', 'A1', '聚丙烯输液袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1730', '320', '35', 'PVC膜', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1731', '320', 'A2', '聚丙烯输液袋双阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1732', '320', '36', '非PVC膜+双管双塞', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1733', '320', 'A3', '聚丙烯易折式双阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1734', '320', '37', 'PVC膜+双管双塞', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1735', '320', 'A4', '三层共挤输液用膜（I）制袋双阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1736', '320', '38', 'PVC膜+双管双塞+双层无菌', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1737', '320', 'A5', '贴膜式非PVC多层共挤输液用袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1738', '320', '39', '非PVC膜+双管双塞+双层无菌', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1739', '320', 'A6', '贴膜式非PVC多层共挤输液用袋双阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1740', '320', '41', '硬塑', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1741', '320', 'A7', '易折式非PVC多层共挤输液用袋双阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1742', '320', '42', '金属管', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1743', '320', 'A8', '直立式聚丙烯输液袋双阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1744', '320', '43', '塑料管', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1745', '320', 'A9', '直立式聚丙烯易折式双阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1746', '320', '44', 'PVC铝箔', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1747', '320', 'B1', '聚丙烯共混输液袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1748', '320', '50', '含冲洗器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1749', '320', 'B2', '非PVC多层共挤膜（扳开式，单座双阀）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1750', '320', '51', '弹力布', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1751', '320', 'B3', '聚丙烯共混输液袋（双阀)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1752', '320', '52', '弹力微孔布', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1753', '320', 'B4', '中性硼硅玻璃安瓿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1754', '320', '53', '无纺布', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1755', '320', 'B5', '内封式聚丙烯输液袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1756', '320', '54', '配溶媒(葡萄糖)+无菌加药输液器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1757', '320', 'B6', '多层共挤输液袋（双阀）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1758', '320', '55', '塑料安瓿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1759', '320', 'B7', '口服液体药用高密度聚乙烯瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('1760', '320', '56', '配溶媒(葡萄糖+氯化钠)+无菌加药输液器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1761', '320', 'B8', '药用塑料瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1762', '320', '57', '配溶媒+无菌导液针', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1763', '320', 'B9', '低硼硅玻璃管制注射剂瓶（配一次性使用预充注射式溶药器（带针））', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1764', '320', '58', '输液瓶+易折式组合盖', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1765', '320', 'C1', '软袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1766', '320', '59', '输液袋+易折式组合盖', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1767', '320', 'C2', '聚乙烯喷雾瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1768', '320', '61', '单袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1769', '320', 'C3', '五层共挤输液用袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1770', '320', '63', '双袋双联', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1771', '320', 'C4', '玻璃输液瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1772', '320', '64', '含吸入器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1773', '320', 'C5', '畅充', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1774', '320', '65', '裹金衣', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1775', '320', 'C6', '安瓿瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1776', '320', '66', '带针头', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1777', '320', 'C7', '无色玻璃安瓿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1778', '320', '68', '高密度聚乙烯瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1779', '320', 'C8', '玻璃', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1780', '320', '69', '塑料滴眼剂瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1781', '320', 'C9', '管制注射剂瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1782', '320', '70', '抗生素玻璃瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1783', '320', 'CA', '管制抗生素玻璃瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1784', '320', '71', '直立式低密度聚乙烯输液袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1785', '320', 'CB', '低硼硅玻璃安瓿装', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1786', '320', '72', '低硼硅玻璃管制注射瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1787', '320', 'CC', '曲颈易折安瓿瓶装', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1788', '320', '73', '低硼硅玻璃安瓿瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1789', '320', 'CD', '白卡纸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1790', '320', '74', '铝塑', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1791', '320', 'CE', '易折安瓿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1792', '320', '75', '钠钙玻璃模制注射剂瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1793', '320', '67', '加药器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1812', '322', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1813', '322', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1814', '323', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1815', '323', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1816', '324', '1001', '综合医疗服务类', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1817', '324', '1002', '医技诊疗类', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1818', '324', '1003', '临床诊疗类', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1819', '324', '1004', '中医及民族医诊疗类', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1820', '325', '2', '盒', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1821', '325', '76', '口服固体药用高密度聚乙烯瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1822', '325', '3', '瓶（固体制剂）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1823', '325', '77', '多层共挤膜输液袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1824', '325', '4', '袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1825', '325', '78', '复合膜', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1826', '325', '5', '特充', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1827', '325', '79', '低硼硅玻璃管制注射剂瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1828', '325', '6', '预充式(预灌封)注射器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1829', '325', '80', '中性硼硅玻璃管制注射剂瓶 ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1830', '325', '7', '板', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1831', '325', '81', '管制玻璃瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1832', '325', '8', '铝塑管', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1833', '325', '82', '中硼硅玻璃安瓿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1834', '325', '9', '配溶媒+无菌加药输液器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1835', '325', '83', '低硼硅玻璃管制瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1836', '325', '11', '笔芯', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1837', '325', '84', '双联双袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1838', '325', '12', '玻璃瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1839', '325', '85', '无色安瓿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1840', '325', '14', '配溶媒+双通输液器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1841', '325', '86', '玻璃安瓿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1842', '325', '15', '配溶媒', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1843', '325', '87', '管制西林瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1844', '325', '16', '管装（植入剂）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1845', '325', '88', '聚丙烯输液瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1846', '325', '17', '散装（植入剂）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1847', '325', '89', '玻璃安瓿+预充式(预灌封)注射器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1848', '325', '18', '西林瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1849', '325', '90', '管制抗生素瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1850', '325', '19', '安瓿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1851', '325', '91', '棕色管制注射剂玻璃瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1852', '325', '20', '塑料瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1853', '325', '92', '铝管', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1854', '325', '21', '非PVC膜', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1855', '325', '93', '非PVC+单管双阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1856', '325', '28', '直立式输液袋（聚乙烯）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1857', '325', '94', '非PVC+单管双阀+双层无菌', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1858', '325', '29', '直立式聚丙烯输液袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1859', '325', '95', '三层共挤输液用袋+单阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1860', '325', '30', '配溶媒(氯化钠)+无菌加药输液器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1861', '325', '96', '硼硅玻璃管制注射剂瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1862', '325', '31', '针管注射器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1863', '325', '97', '玻璃管制注射剂瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1864', '325', '32', '配溶媒+预灌封注射器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1865', '325', '98', '三层共挤输液用袋+双管双阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1866', '325', '33', '聚丙烯膜', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1867', '325', '99', '非PVC多层共挤输液用袋双阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1868', '325', '34', '非易拉型', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1869', '325', 'A1', '聚丙烯输液袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1870', '325', '35', 'PVC膜', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1871', '325', 'A2', '聚丙烯输液袋双阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1872', '325', '36', '非PVC膜+双管双塞', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1873', '325', 'A3', '聚丙烯易折式双阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1874', '325', '37', 'PVC膜+双管双塞', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1875', '325', 'A4', '三层共挤输液用膜（I）制袋双阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1876', '325', '38', 'PVC膜+双管双塞+双层无菌', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1877', '325', 'A5', '贴膜式非PVC多层共挤输液用袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('1878', '325', '39', '非PVC膜+双管双塞+双层无菌', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1879', '325', 'A6', '贴膜式非PVC多层共挤输液用袋双阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1880', '325', '41', '硬塑', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1881', '325', 'A7', '易折式非PVC多层共挤输液用袋双阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1882', '325', '42', '金属管', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1883', '325', 'A8', '直立式聚丙烯输液袋双阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1884', '325', '43', '塑料管', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1885', '325', 'A9', '直立式聚丙烯易折式双阀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1886', '325', '44', 'PVC铝箔', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1887', '325', 'B1', '聚丙烯共混输液袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1888', '325', '50', '含冲洗器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1889', '325', 'B2', '非PVC多层共挤膜（扳开式，单座双阀）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1890', '325', '51', '弹力布', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1891', '325', 'B3', '聚丙烯共混输液袋（双阀)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1892', '325', '52', '弹力微孔布', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1893', '325', 'B4', '中性硼硅玻璃安瓿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1894', '325', '53', '无纺布', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1895', '325', 'B5', '内封式聚丙烯输液袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1896', '325', '54', '配溶媒(葡萄糖)+无菌加药输液器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1897', '325', 'B6', '多层共挤输液袋（双阀）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1898', '325', '55', '塑料安瓿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1899', '325', 'B7', '口服液体药用高密度聚乙烯瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1900', '325', '56', '配溶媒(葡萄糖+氯化钠)+无菌加药输液器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1901', '325', 'B8', '药用塑料瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1902', '325', '57', '配溶媒+无菌导液针', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1903', '325', 'B9', '低硼硅玻璃管制注射剂瓶（配一次性使用预充注射式溶药器（带针））', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1904', '325', '58', '输液瓶+易折式组合盖', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1905', '325', 'C1', '软袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1906', '325', '59', '输液袋+易折式组合盖', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1907', '325', 'C2', '聚乙烯喷雾瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1908', '325', '61', '单袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1909', '325', 'C3', '五层共挤输液用袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1910', '325', '63', '双袋双联', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1911', '325', 'C4', '玻璃输液瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1912', '325', '64', '含吸入器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1913', '325', 'C5', '畅充', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1914', '325', '65', '裹金衣', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1915', '325', 'C6', '安瓿瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1916', '325', '66', '带针头', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1917', '325', 'C7', '无色玻璃安瓿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1918', '325', '68', '高密度聚乙烯瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1919', '325', 'C8', '玻璃', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1920', '325', '69', '塑料滴眼剂瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1921', '325', 'C9', '管制注射剂瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1922', '325', '70', '抗生素玻璃瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1923', '325', 'CA', '管制抗生素玻璃瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1924', '325', '71', '直立式低密度聚乙烯输液袋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1925', '325', 'CB', '低硼硅玻璃安瓿装', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1926', '325', '72', '低硼硅玻璃管制注射瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1927', '325', 'CC', '曲颈易折安瓿瓶装', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1928', '325', '73', '低硼硅玻璃安瓿瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1929', '325', 'CD', '白卡纸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1930', '325', '74', '铝塑', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1931', '325', 'CE', '易折安瓿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1932', '325', '75', '钠钙玻璃模制注射剂瓶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1933', '325', '67', '加药器', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1934', '326', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1935', '326', '2', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1936', '327', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1937', '327', '2', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1938', '328', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1939', '328', '2', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1940', '329', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1941', '329', '2', '介入', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1942', '329', '1', '植入', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1943', '330', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1944', '330', '2', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1945', '331', '1', '基金项检查', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1946', '331', '99', '其他检查', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1947', '332', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1948', '332', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1949', '333', '0', '异常', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1950', '333', '1', '正常', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1951', '334', '1', '明确违规', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1952', '334', '3', '轻度可疑', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1953', '334', '2', '高度可疑', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1954', '335', '1', '行为类', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1955', '335', '2', '项目类', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1956', '336', '1', '违规项', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1957', '336', '2', '涉及项', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1958', '337', '1', '正交易', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1959', '337', '-1', '反交易', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1960', '338', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1961', '338', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1962', '339', '1', '正常新生儿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1963', '339', '4', '非无菌分娩', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1964', '339', '2', '早产', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1965', '339', '9', '其它', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1966', '339', '3', '有疾病新生儿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1967', '340', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1968', '340', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1969', '341', '21', '优抚人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1970', '341', '2101', '因公牺牲军人家属', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1971', '341', '2102', '退出现役的残疾军人', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1972', '341', '2103', '二等乙级伤残军人', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1973', '341', '2104', '一至六级残疾军人', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1974', '341', '2105', '老红军', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1975', '341', '2160', '地方扩展优抚人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1976', '341', '22', '医疗照顾人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1977', '341', '2201', '副省级以上在职和退休领导', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('1978', '341', '2211', '两院院士', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1979', '341', '2212', '省直直管优秀专家', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1980', '341', '2231', '国家级劳模', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1981', '341', '2232', '享受公务员的省级劳模', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1982', '341', '2241', '亚洲以上冠军运动员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1983', '341', '2260', '地方扩展医疗照顾人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1984', '341', '23', '医疗救助人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1985', '341', '2301', '三无人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1986', '341', '2302', '建档立卡贫困人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1987', '341', '2303', '低保救助对象', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1988', '341', '2304', '特困救助对象', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1989', '341', '2305', '低收入救助对象', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1990', '341', '2306', '因病致贫救助对象（含重特大疾病人员）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1991', '341', '2307', '农村五保户', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1992', '341', '2308', '残疾人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1993', '341', '2360', '地方扩展医疗救助对象人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1994', '341', '24', '军人', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1995', '341', '2401', '现役军人家属', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1996', '341', '2460', '地方扩展军人人员，其他军转人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1997', '341', '31', '计划生育户', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1998', '341', '32', '双女结扎户', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('1999', '341', '33', '三结合户', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2000', '341', '34', '独女户', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2001', '341', '35', '放弃生育指标户', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2002', '341', '36', '独生子女户', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2003', '341', '60', '地方扩展其他特殊待遇人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2004', '341', '6001', '文革基残保健对象', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2005', '341', '6002', '文革全残', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2006', '341', '6003', '建国前老工人', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2007', '341', '6004', '计划生育户', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2008', '341', '6005', '实行退牧的牧民', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2009', '341', '6006', '退地农业劳动力', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2010', '341', '6007', '城中村', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2011', '341', '6008', '失独父母', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2012', '342', '1', '残疾一级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2013', '342', '3', '残疾三级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2014', '342', '2', '残疾二级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2015', '342', '4', '残疾四级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2016', '343', 'AFG', '阿富汗', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2017', '343', 'LSO', '莱索托', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2018', '343', 'ALB', '阿尔巴尼亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2019', '343', 'LBR', '利比里亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2020', '343', 'DZA', '阿尔及利亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2021', '343', 'LBY', '利比亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2022', '343', 'ASM', '美属萨摩亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2023', '343', 'LIE', '列支敦士登', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2024', '343', 'AND', '安道尔', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2025', '343', 'LTU', '立陶宛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2026', '343', 'AGO', '安哥拉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2027', '343', 'LUX', '卢森堡', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2028', '343', 'AIA', '安圭拉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2029', '343', 'MKD', '前南马其顿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2030', '343', 'ATA', '南极洲', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2031', '343', 'MDG', '马达加斯加', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2032', '343', 'ATG', '安提瓜和巴布达', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2033', '343', 'MWI', '马拉维', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2034', '343', 'ARG', '阿根廷', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2035', '343', 'MYS', '马来西亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2036', '343', 'ARM', '亚美尼亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2037', '343', 'MDV', '马尔代夫', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2038', '343', 'ABW', '阿鲁巴', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2039', '343', 'MLI', '马里', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2040', '343', 'AUS', '澳大利亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2041', '343', 'MLT', '马耳他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2042', '343', 'AUT', '奥地利', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2043', '343', 'MHL', '马绍尔群岛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2044', '343', 'AZE', '阿塞拜疆', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2045', '343', 'MTQ', '马提尼克', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2046', '343', 'BHS', '巴哈马', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2047', '343', 'MRT', '毛里塔尼亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2048', '343', 'BHR', '巴林', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2049', '343', 'MUS', '毛里求斯', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2050', '343', 'BGD', '孟加拉国', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2051', '343', 'MYT', '马约特', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2052', '343', 'BRB', '巴巴多斯', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2053', '343', 'MEX', '墨西哥', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2054', '343', 'BLR', '白俄罗斯', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2055', '343', 'FSM', '密克罗尼西亚联邦', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2056', '343', 'BEL', '比利时', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2057', '343', 'MDA', '摩尔多瓦', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2058', '343', 'BLZ', '伯利兹', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2059', '343', 'MCO', '摩纳哥', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2060', '343', 'BEN', '贝宁', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2061', '343', 'MNG', '蒙古', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2062', '343', 'BMU', '百慕大', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2063', '343', 'MSR', '蒙特塞拉特', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2064', '343', 'BTN', '不丹', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2065', '343', 'MAR', '摩洛哥', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2066', '343', 'BOL', '玻利维亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2067', '343', 'MOZ', '莫桑比克', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2068', '343', 'BIH', '波黑', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2069', '343', 'MMR', '缅甸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2070', '343', 'BWA', '博茨瓦纳', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2071', '343', 'NAM', '纳米比亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2072', '343', 'BVT', '布维岛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2073', '343', 'NRU', '瑙鲁', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2074', '343', 'BRA', '巴西', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2075', '343', 'NPL', '尼泊尔', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2076', '343', 'IOT', '英属印度洋领土', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2077', '343', 'NLD', '荷兰', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('2078', '343', 'BRN', '文莱', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2079', '343', 'ANT', '荷属安的列斯', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2080', '343', 'BGR', '保加利亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2081', '343', 'NCL', '新喀里多尼亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2082', '343', 'BFA', '布基纳法索', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2083', '343', 'NZL', '新西兰', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2084', '343', 'BDI', '布隆迪', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2085', '343', 'NIC', '尼加拉瓜', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2086', '343', 'KHM', '柬埔寨', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2087', '343', 'NER', '尼日尔', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2088', '343', 'CMR', '喀麦隆', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2089', '343', 'NGA', '尼日利亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2090', '343', 'CAN', '加拿大', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2091', '343', 'NIU', '纽埃', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2092', '343', 'CPV', '佛得角', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2093', '343', 'NFK', '诺福克岛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2094', '343', 'CYM', '开曼群岛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2095', '343', 'MNP', '北马里亚纳', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2096', '343', 'CAF', '中非', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2097', '343', 'NOR', '挪威', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2098', '343', 'TCD', '乍得', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2099', '343', 'OMN', '阿曼', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2100', '343', 'CHL', '智利', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2101', '343', 'PAK', '巴基斯坦', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2102', '343', 'CHN', '中国', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2103', '343', 'PLW', '帕劳', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2104', '343', 'HKG', '香港', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2105', '343', 'PSE', '巴勒斯坦', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2106', '343', 'MAC', '澳门', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2107', '343', 'PAN', '巴拿马', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2108', '343', 'TWN', '台湾', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2109', '343', 'PNG', '巴布亚新几内亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2110', '343', 'CXR', '圣诞岛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2111', '343', 'PRY', '巴拉圭', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2112', '343', 'CCK', '科科斯(基林)群岛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2113', '343', 'PER', '秘鲁', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2114', '343', 'COL', '哥伦比亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2115', '343', 'PHL', '菲律宾', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2116', '343', 'COM', '科摩罗', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2117', '343', 'PCN', '皮特凯恩群岛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2118', '343', 'COG', '刚果（布）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2119', '343', 'POL', '波兰', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2120', '343', 'COD', '刚果（金）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2121', '343', 'PRT', '葡萄牙', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2122', '343', 'COK', '库克群岛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2123', '343', 'PRI', '波多黎各', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2124', '343', 'CRI', '哥斯达黎加', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2125', '343', 'QAT', '卡塔尔', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2126', '343', 'CIV', '科特迪瓦', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2127', '343', 'REU', '留尼汪', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2128', '343', 'HRV', '克罗地亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2129', '343', 'ROM', '罗马尼亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2130', '343', 'CUB', '古巴', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2131', '343', 'RUS', '俄罗斯联邦', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2132', '343', 'CYP', '塞浦路斯', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2133', '343', 'RWA', '卢旺达', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2134', '343', 'CZE', '捷克', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2135', '343', 'SHN', '圣赫勒拿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2136', '343', 'DNK', '丹麦', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2137', '343', 'KNA', '圣基茨和尼维斯', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2138', '343', 'DJI', '吉布提', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2139', '343', 'LCA', '圣卢西亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2140', '343', 'DMA', '多米尼克', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2141', '343', 'SPM', '圣皮埃尔和密克隆', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2142', '343', 'DOM', '多米尼加共和国', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2143', '343', 'VCT', '圣文森特和格林纳丁斯', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2144', '343', 'TMP', '东帝汶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2145', '343', 'WSM', '萨摩亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2146', '343', 'ECU', '厄瓜多尔', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2147', '343', 'SMR', '圣马力诺', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2148', '343', 'EGY', '埃及', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2149', '343', 'STP', '圣多美和普林西比', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2150', '343', 'SLV', '萨尔瓦多', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2151', '343', 'SAU', '沙特阿拉伯', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2152', '343', 'GNQ', '赤道几内亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2153', '343', 'SEN', '塞内加尔', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2154', '343', 'ERI', '厄立特里亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2155', '343', 'SYC', '塞舌尔', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2156', '343', 'EST', '爱沙尼亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2157', '343', 'SLE', '塞拉利昂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2158', '343', 'ETH', '埃塞俄比亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2159', '343', 'SGP', '新加坡', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2160', '343', 'FLK', '福克兰群岛(马尔维纳斯)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2161', '343', 'SVK', '斯洛伐克', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2162', '343', 'FRO', '法罗群岛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2163', '343', 'SVN', '斯洛文尼亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2164', '343', 'FJI', '斐济', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2165', '343', 'SLB', '所罗门群岛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2166', '343', 'FIN', '芬兰', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2167', '343', 'SOM', '索马里', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2168', '343', 'FRA', '法国', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2169', '343', 'ZAF', '南非', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2170', '343', 'GUF', '法属圭亚那', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2171', '343', 'SGS', '南乔治亚岛和南桑德韦奇岛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2172', '343', 'PYF', '法属波利尼西亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2173', '343', 'ESP', '西班牙', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2174', '343', 'ATF', '法属南部领土', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2175', '343', 'LKA', '斯里兰卡', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2176', '343', 'GAB', '加蓬', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2177', '343', 'SDN', '苏丹', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('2178', '343', 'GMB', '冈比亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2179', '343', 'SUR', '苏里南', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2180', '343', 'GEO', '格鲁吉亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2181', '343', 'SJM', '斯瓦尔巴群岛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2182', '343', 'DEU', '德国', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2183', '343', 'SWZ', '斯威士兰', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2184', '343', 'GHA', '加纳', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2185', '343', 'SWE', '瑞典', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2186', '343', 'GIB', '直布罗陀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2187', '343', 'CHE', '瑞士', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2188', '343', 'GRC', '希腊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2189', '343', 'SYR', '叙利亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2190', '343', 'GRL', '格陵兰', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2191', '343', 'TJK', '塔吉克斯坦', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2192', '343', 'GRD', '格林纳达', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2193', '343', 'TZA', '坦桑尼亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2194', '343', 'GLP', '瓜德罗普', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2195', '343', 'THA', '泰国', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2196', '343', 'GUM', '关岛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2197', '343', 'TGO', '多哥', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2198', '343', 'GTM', '危地马拉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2199', '343', 'TKL', '托克劳', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2200', '343', 'GIN', '几内亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2201', '343', 'TON', '汤加', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2202', '343', 'GNB', '几内亚比绍', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2203', '343', 'TTO', '特立尼达和多巴哥', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2204', '343', 'GUY', '圭亚那', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2205', '343', 'TUN', '突尼斯', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2206', '343', 'HTI', '海地', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2207', '343', 'TUR', '土耳其', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2208', '343', 'HMD', '赫德岛和麦克唐纳岛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2209', '343', 'TKM', '土库曼斯坦', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2210', '343', 'HND', '洪都拉斯', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2211', '343', 'TCA', '特克斯科斯群岛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2212', '343', 'HUN', '匈牙利', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2213', '343', 'TUV', '图瓦卢', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2214', '343', 'ISL', '冰岛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2215', '343', 'UGA', '乌干达', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2216', '343', 'IND', '印度', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2217', '343', 'UKR', '乌克兰', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2218', '343', 'IDN', '印度尼西亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2219', '343', 'ARE', '阿联酋', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2220', '343', 'IRN', '伊朗', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2221', '343', 'GBR', '英国', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2222', '343', 'IRQ', '伊拉克', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2223', '343', 'USA', '美国', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2224', '343', 'IRL', '爱尔兰', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2225', '343', 'UMI', '美国本土外小岛屿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2226', '343', 'ISR', '以色列', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2227', '343', 'URY', '乌拉圭', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2228', '343', 'ITA', '意大利', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2229', '343', 'UZB', '乌兹别克斯坦', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2230', '343', 'JAM', '牙买加', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2231', '343', 'VUT', '瓦努阿图', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2232', '343', 'JPN', '日本', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2233', '343', 'VAT', '梵蒂冈', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2234', '343', 'JOR', '约旦', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2235', '343', 'VEN', '委内瑞拉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2236', '343', 'KAZ', '哈萨克斯坦', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2237', '343', 'VNM', '越南', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2238', '343', 'KEN', '肯尼亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2239', '343', 'VGB', '英属维尔京群岛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2240', '343', 'KIR', '基里巴斯', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2241', '343', 'VIR', '美属维尔京群岛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2242', '343', 'PRK', '朝鲜', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2243', '343', 'WLF', '瓦利斯和富图纳', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2244', '343', 'KOR', '韩国', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2245', '343', 'ESH', '西撒哈拉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2246', '343', 'KWT', '科威特', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2247', '343', 'YEM', '也门', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2248', '343', 'KGZ', '吉尔吉斯斯坦', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2249', '343', 'YUG', '南斯拉夫', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2250', '343', 'LAO', '老挝', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2251', '343', 'ZMB', '赞比亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2252', '343', 'LVA', '拉脱维亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2253', '343', 'ZWE', '津巴布韦', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2254', '343', 'LBN', '黎巴嫩', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2255', '343', 'SRB', '塞尔维亚', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2256', '344', '1', '急诊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2257', '344', '3', '其他医疗机构转入', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2258', '344', '2', '门诊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2259', '344', '9', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2260', '345', '1', '住院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2261', '345', '2', '日间手术', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2262', '346', '1', '西医', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2263', '346', '2.2', '民族医', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2264', '346', '2.1', '中医', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2265', '346', '3', '中西医', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2266', '347', '1', '按项目', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2267', '347', '5', '按床日', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2268', '347', '2', '单病种', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2269', '347', '6', '按人次', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2270', '347', '3', '按病种分值', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2271', '347', '7', '按定额', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2272', '347', '4', '基本诊断相关分组（DRG）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2273', '347', '9', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2274', '348', 'A01  ', '预防保健科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2275', '348', 'A18 ', '地方病科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2276', '348', 'A02 ', '全科医疗科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2277', '348', 'A19 ', '肿瘤科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('2278', '348', 'A03 ', '内科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2279', '348', 'A20 ', '急诊医学科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2280', '348', 'A03.01 ', '呼吸内科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2281', '348', 'A21 ', '康复医学科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2282', '348', 'A03.02 ', '消化内科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2283', '348', 'A22 ', '运动医学科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2284', '348', 'A03.03 ', '神经内科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2285', '348', 'A23 ', '职业病科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2286', '348', 'A03.04 ', '心血管内科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2287', '348', 'A23.01 ', '职业中毒专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2288', '348', 'A03.05 ', '血液内科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2289', '348', 'A23.02 ', '尘肺专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2290', '348', 'A03.06 ', '肾病学专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2291', '348', 'A23.03 ', '放射病专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2292', '348', 'A03.07 ', '内分泌专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2293', '348', 'A23.04 ', '物理因素损伤专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2294', '348', 'A03.08 ', '免疫学专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2295', '348', 'A23.05 ', '职业健康监护专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2296', '348', 'A03.09 ', '变态反应专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2297', '348', 'A23.06 ', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2298', '348', 'A03.10 ', '老年病专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2299', '348', 'A24 ', '临终关怀科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2300', '348', 'A03.11 ', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2301', '348', 'A25 ', '特种医学与军事医学科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2302', '348', 'A04 ', '外科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2303', '348', 'A26 ', '麻醉科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2304', '348', 'A04.01 ', '普通外科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2305', '348', 'A27 ', '疼痛科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2306', '348', 'A04.01.01 ', '肝脏移植项目', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2307', '348', 'A28 ', '重症医学科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2308', '348', 'A04.01.02 ', '胰腺移植项目', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2309', '348', 'A30 ', '医学检验科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2310', '348', 'A04.01.03 ', '小肠移植项目', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2311', '348', 'A30.01 ', '临床体液、血液专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2312', '348', 'A04.02 ', '神经外科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2313', '348', 'A30.02 ', '临床微生物学专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2314', '348', 'A04.03 ', '骨科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2315', '348', 'A30.03 ', '临床生化检验专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2316', '348', 'A04.04 ', '泌尿外科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2317', '348', 'A30.04 ', '临床免疫、血清学专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2318', '348', 'A04.04.01 ', '肾脏移植项目', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2319', '348', 'A30.05 ', '临床细胞分子遗传学专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2320', '348', 'A04.05 ', '胸外科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2321', '348', 'A30.06 ', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2322', '348', 'A04.05.01 ', '肺脏移植项目', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2323', '348', 'A31 ', '病理科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2324', '348', 'A04.06 ', '心脏大血管外科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2325', '348', 'A32 ', '医学影像科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2326', '348', 'A04.06.01 ', '心脏移植项目', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2327', '348', 'A32.01 X ', '线诊断专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2328', '348', 'A04.07 ', '烧伤科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2329', '348', 'A32.02 CT ', '诊断专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2330', '348', 'A04.08 ', '整形外科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2331', '348', 'A32.03 ', '磁共振成像诊断专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2332', '348', 'A04.09 ', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2333', '348', 'A32.04 ', '核医学专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2334', '348', 'A05 ', '妇产科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2335', '348', 'A32.05 ', '超声诊断专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2336', '348', 'A05.01 ', '妇科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2337', '348', 'A32.06 ', '心电诊断专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2338', '348', 'A05.02 ', '产科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2339', '348', 'A32.07 ', '脑电及脑血流图诊断专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2340', '348', 'A05.03 ', '计划生育专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2341', '348', 'A32.08 ', '神经肌肉电图专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2342', '348', 'A05.04 ', '优生学专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2343', '348', 'A32.09 ', '介入放射学专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2344', '348', 'A05.05 ', '生殖健康与不孕症专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2345', '348', 'A32.10 ', '放射治疗专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2346', '348', 'A05.06 ', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2347', '348', 'A32.11 ', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2348', '348', 'A06 ', '妇女保健科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2349', '348', 'A50 ', '中医科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2350', '348', 'A06.01 ', '青春期保健专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2351', '348', 'A50.01 ', '内科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2352', '348', 'A06.02 ', '围产期保健专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2353', '348', 'A50.02 ', '外科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2354', '348', 'A06.03 ', '更年期保健专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2355', '348', 'A50.03 ', '妇产科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2356', '348', 'A06.04 ', '妇女心理卫生专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2357', '348', 'A50.04 ', '儿科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2358', '348', 'A06.05 ', '妇女营养专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2359', '348', 'A50.05 ', '皮肤科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2360', '348', 'A06.06 ', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2361', '348', 'A50.06 ', '眼科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2362', '348', 'A07 ', '儿科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2363', '348', 'A50.07 ', '耳鼻咽喉科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2364', '348', 'A07.01 ', '新生儿专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2365', '348', 'A50.08 ', '口腔科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2366', '348', 'A07.02 ', '小儿传染病专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2367', '348', 'A50.09 ', '肿瘤科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2368', '348', 'A07.03 ', '小儿消化专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2369', '348', 'A50.10 ', '骨伤科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2370', '348', 'A07.04 ', '小儿呼吸专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2371', '348', 'A50.11 ', '肛肠科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2372', '348', 'A07.05 ', '小儿心脏病专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2373', '348', 'A50.12 ', '老年病科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2374', '348', 'A07.06 ', '小儿肾病专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2375', '348', 'A50.13 ', '针灸科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2376', '348', 'A07.07 ', '小儿血液病专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2377', '348', 'A50.14 ', '推拿科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('2378', '348', 'A07.08 ', '小儿神经病学专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2379', '348', 'A50.15 ', '康复医学专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2380', '348', 'A07.09 ', '小儿内分泌专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2381', '348', 'A50.16 ', '急诊科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2382', '348', 'A07.10 ', '小儿遗传病专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2383', '348', 'A50.17 ', '预防保健科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2384', '348', 'A07.11 ', '小儿免疫专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2385', '348', 'A50.18 ', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2386', '348', 'A07.12 ', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2387', '348', 'A51 ', '民族医学科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2388', '348', 'A08 ', '小儿外科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2389', '348', 'A51.01 ', '维吾尔医学', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2390', '348', 'A08.01 ', '小儿普通外科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2391', '348', 'A51.02 ', '藏医学', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2392', '348', 'A08.02 ', '小儿骨科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2393', '348', 'A51.03 ', '蒙医学', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2394', '348', 'A08.03 ', '小儿泌尿外科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2395', '348', 'A51.04 ', '彝医学', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2396', '348', 'A08.04 ', '小儿胸心外科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2397', '348', 'A51.05 ', '傣医学', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2398', '348', 'A08.05 ', '小儿神经外科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2399', '348', 'A51.06 ', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2400', '348', 'A08.06 ', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2401', '348', 'A52 ', '中西医结合科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2402', '348', 'A09 ', '儿童保健科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2403', '348', 'A69 ', '其他业务科室', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2404', '348', 'A09.01 ', '儿童生长发育专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2405', '348', 'B01 ', '传染病预防控制科(中心)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2406', '348', 'A09.02 ', '儿童营养专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2407', '348', 'B02 ', '性病艾滋病预防控制科(中心)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2408', '348', 'A09.03 ', '儿童心理卫生专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2409', '348', 'B03 ', '结核病预防控制科(中心)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2410', '348', 'A09.04 ', '儿童五官保健专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2411', '348', 'B04 ', '血吸虫预防控制科(中心)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2412', '348', 'A09.05 ', '儿童康复专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2413', '348', 'B05 ', '慢性非传染性疾病预防控制科(中心)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2414', '348', 'A09.06 ', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2415', '348', 'B06 ', '寄生虫病预防控制科(中心)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2416', '348', 'A10 ', '眼科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2417', '348', 'B07 ', '地方病控制科(中心)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2418', '348', 'A11 ', '耳鼻咽喉科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2419', '348', 'B08 ', '精神卫生科(中心)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2420', '348', 'A11.01 ', '耳科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2421', '348', 'B09 ', '妇幼保健科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2422', '348', 'A11.02 ', '鼻科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2423', '348', 'B10 ', '免疫规划科(中心)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2424', '348', 'A11.03 ', '咽喉科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2425', '348', 'B11 ', '农村改水技术指导科(中心)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2426', '348', 'A11.04 ', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2427', '348', 'B12 ', '疾病控制与应急处理办公室', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2428', '348', 'A12 ', '口腔科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2429', '348', 'B13 ', '食品卫生科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2430', '348', 'A12.01 ', '牙体牙髓病专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2431', '348', 'B14 ', '环境卫生所', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2432', '348', 'A12.02 ', '牙周病专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2433', '348', 'B15 ', '职业卫生科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2434', '348', 'A12.03 ', '口腔黏膜病专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2435', '348', 'B16 ', '放射卫生科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2436', '348', 'A12.04 ', '儿童口腔专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2437', '348', 'B17 ', '学校卫生科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2438', '348', 'A12.05 ', '口腔颌骨外科专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2439', '348', 'B18 ', '健康教育科(中心)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2440', '348', 'A12.06 ', '口腔修复专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2441', '348', 'B19 ', '预防医学门诊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2442', '348', 'A12.07 ', '口腔正畸专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2443', '348', 'B69 ', '其他业务科室', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2444', '348', 'A12.08 ', '口腔种植专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2445', '348', 'C01 ', '综合卫生监督科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2446', '348', 'A12.09 ', '口腔麻醉专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2447', '348', 'C02 ', '产品卫生监督科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2448', '348', 'A12.10 ', '口腔颌面医学影像专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2449', '348', 'C03 ', '职业卫生监督科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2450', '348', 'A13 ', '皮肤科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2451', '348', 'C04 ', '环境卫生监督科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2452', '348', 'A13.01 ', '皮肤病专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2453', '348', 'C05 ', '传染病执法监督科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2454', '348', 'A13.02 ', '性传播疾病专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2455', '348', 'C06 ', '医疗服务监督科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2456', '348', 'A13.03 ', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2457', '348', 'C07 ', '稽查科(大队)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2458', '348', 'A14 ', '医疗美容科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2459', '348', 'C08 ', '许可受理科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2460', '348', 'A15 ', '精神科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2461', '348', 'C09 ', '放射卫生监督科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2462', '348', 'A15.01 ', '精神病专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2463', '348', 'C10 ', '学校卫生监督科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2464', '348', 'A15.02 ', '精神卫生专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2465', '348', 'C11 ', '食品安全监督科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2466', '348', 'A15.03 ', '药物依赖专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2467', '348', 'C69 ', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2468', '348', 'A15.04 ', '精神康复专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2469', '348', 'D71 ', '护理部', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2470', '348', 'A15.05 ', '社区防治专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2471', '348', 'D72 ', '药剂科(药房)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2472', '348', 'A15.06 ', '临床心理专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2473', '348', 'D73 ', '感染科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2474', '348', 'A15.07 ', '司法精神专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2475', '348', 'D74 ', '输血科(血库)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2476', '348', 'A15.08 ', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2477', '348', 'D81 ', '办公室', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('2478', '348', 'A16 ', '传染科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2479', '348', 'D82 ', '人事科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2480', '348', 'A16.01 ', '肠道传染病专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2481', '348', 'D83 ', '财务科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2482', '348', 'A16.02 ', '呼吸道传染病专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2483', '348', 'D84 ', '设备科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2484', '348', 'A16.03 ', '肝炎专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2485', '348', 'D85 ', '信息科(中心)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2486', '348', 'A16.04 ', '虫媒传染病专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2487', '348', 'D86 ', '医政科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2488', '348', 'A16.05 ', '动物源性传染病专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2489', '348', 'D87 ', '教育培训科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2490', '348', 'A16.06 ', '蠕虫病专业', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2491', '348', 'D88 ', '总务科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2492', '348', 'A16.07 ', '其它', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2493', '348', 'D89 ', '新农合管理办公室', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2494', '348', 'A17 ', '结核病科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2495', '348', 'D99 ', '其他科室', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2496', '349', '1', '普通门诊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2497', '349', '32', '预防体检', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2498', '349', '11', '西医', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2499', '349', '33', '孕产保健', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2500', '349', '12', '中医', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2501', '349', '4', '专科门诊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2502', '349', '2', '急诊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2503', '349', '5', '特需门诊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2504', '349', '21', '西医急诊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2505', '349', '6', '专病门诊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2506', '349', '22', '中医急诊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2507', '349', '7', '预约挂号', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2508', '349', '3', '健康咨询', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2509', '349', '99', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2510', '349', '31', '体检', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2511', '350', '1', '现场', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2512', '350', '3', '特诊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2513', '350', '2', '预约', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2514', '350', '9', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2515', '351', '1', '现场预约', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2516', '351', '4', '网上预约', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2517', '351', '2', '电话预约', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2518', '351', '5', 'APP预约', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2519', '351', '3', '短信预约', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2520', '351', '9', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2521', '352', '1', '药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2522', '352', '204', '牛奶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2523', '352', '101', '青霉素类抗生素', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2524', '352', '205', '蛋及蛋制品', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2525', '352', '102', '磺胺类抗生素', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2526', '352', '206', '鸡、鸭等禽类食品', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2527', '352', '103', '头孢类抗生素', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2528', '352', '207', '鱼、虾等水产类食品', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2529', '352', '104', '含碘药品', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2530', '352', '208', '水果（包括带壳的果仁）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2531', '352', '105', '酒精', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2532', '352', '299', '其他食物过敏源', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2533', '352', '106', '镇静麻醉剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2534', '352', '3', '环境', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2535', '352', '107', '链霉素类抗生素', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2536', '352', '301', '植物花粉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2537', '352', '199', '其他药物过敏源', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2538', '352', '302', '动物毛发', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2539', '352', '2', '食物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2540', '352', '303', '空气粉尘', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2541', '352', '201', '猪肉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2542', '352', '399', '其他环境过敏源', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2543', '352', '202', '羊肉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2544', '352', '4', '混合型过敏源', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2545', '352', '203', '牛肉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2546', '352', '9', '其他过敏源', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2547', '353', '1', '无残疾', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2548', '353', '6', '视力残疾', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2549', '353', '2', '听力残疾', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2550', '353', '7', '精神残疾', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2551', '353', '3', '言语残疾', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2552', '353', '8', '多重残疾', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2553', '353', '4', '肢体残疾', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2554', '353', '9', '其他残疾', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2555', '353', '5', '智力残疾', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2556', '354', '1', '通用', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2557', '354', '209', '下肢水肿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2558', '354', '101', '头痛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2559', '354', '3', '糖尿病', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2560', '354', '102', '头晕', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2561', '354', '301', '无症状', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2562', '354', '103', '心悸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2563', '354', '302', '多饮', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2564', '354', '104', '胸闷', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2565', '354', '303', '多食', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2566', '354', '105', '胸痛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2567', '354', '304', '多尿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2568', '354', '106', '咳嗽', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2569', '354', '305', '视力模糊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2570', '354', '107', '咳痰', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2571', '354', '306', '感染', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2572', '354', '108', '呼吸困难', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2573', '354', '307', '手脚麻木', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2574', '354', '109', '多饮', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2575', '354', '308', '下肢浮肿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2576', '354', '110', '多尿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2577', '354', '309', '体重明显下降', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('2578', '354', '111', '体重下降', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2579', '354', '4', '健康体检', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2580', '354', '112', '乏力', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2581', '354', '401', '无症状', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2582', '354', '113', '关节肿痛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2583', '354', '402', '头痛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2584', '354', '114', '视力模糊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2585', '354', '403', '头晕', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2586', '354', '115', '四肢麻木', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2587', '354', '404', '心悸', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2588', '354', '116', '消瘦', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2589', '354', '405', '胸闷', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2590', '354', '117', '尿痛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2591', '354', '406', '胸痛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2592', '354', '118', '便秘', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2593', '354', '407', '慢性咳嗽', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2594', '354', '119', '腹泻', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2595', '354', '408', '咳痰', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2596', '354', '120', '恶心呕吐', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2597', '354', '409', '呼吸困难', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2598', '354', '121', '眼花', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2599', '354', '410', '多饮', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2600', '354', '122', '耳鸣', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2601', '354', '411', '多尿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2602', '354', '123', '发热', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2603', '354', '412', '体重下降', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2604', '354', '124', '鼻衄', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2605', '354', '413', '乏力', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2606', '354', '125', '浮肿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2607', '354', '414', '关节肿痛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2608', '354', '126', '多食', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2609', '354', '415', '视力模糊', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2610', '354', '127', '皮疹', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2611', '354', '416', '手脚麻木', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2612', '354', '199', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2613', '354', '417', '尿急', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2614', '354', '2', '高血压', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2615', '354', '418', '尿痛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2616', '354', '201', '无症状', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2617', '354', '419', '便秘', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2618', '354', '202', '头痛头晕', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2619', '354', '420', '腹泻', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2620', '354', '203', '恶心呕吐', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2621', '354', '421', '恶心呕吐', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2622', '354', '204', '眼花耳鸣', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2623', '354', '422', '眼花', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2624', '354', '205', '呼吸困难', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2625', '354', '423', '耳鸣', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2626', '354', '206', '心悸胸闷', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2627', '354', '424', '乳房肿痛', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2628', '354', '207', '鼻衄出血不止', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2629', '354', '425', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2630', '354', '208', '四肢发麻', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2631', '355', '1', '门诊西药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2632', '355', '7', '麻、精一', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2633', '355', '2', '门诊中药饮片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2634', '355', '8', '精二', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2635', '355', '3', '急诊西药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2636', '355', '9', '中药饮片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2637', '355', '4', '急诊中药饮片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2638', '355', '10', '中成药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2639', '355', '5', '儿科西药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2640', '355', '99', '其它', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2641', '355', '6', '儿科中药饮片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2642', '356', '11', '西药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2643', '356', '28', '输血', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2644', '356', '12', '中成药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2645', '356', '29', '输氧', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2646', '356', '13', '中药饮片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2647', '356', '31', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2648', '356', '21', '治疗', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2649', '356', '32', '转科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2650', '356', '22', '检验', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2651', '356', '33', '术后', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2652', '356', '23', '检查', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2653', '356', '34', '出院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2654', '356', '24', '手术', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2655', '356', '35', '转院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2656', '356', '25', '麻醉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2657', '356', '36', '死亡', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2658', '356', '26', '护理', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2659', '356', '37', '产后', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2660', '356', '27', '膳食', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2661', '357', '1', '未使用', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2662', '357', '3', '中药饮片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2663', '357', '2', '中成药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2664', '357', '9', '其他中药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2665', '358', '100', '抗生素类抗感染药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2666', '358', '1206', '抗癫痫及抗惊厥药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2667', '358', '101', '青霉素类抗生素', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2668', '358', '1207', '抗震颤麻痹药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2669', '358', '102', '头孢菌素类抗生素', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2670', '358', '1209', '作用于植物神经系统药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2671', '358', '103', '氨基糖苷类抗生素', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2672', '358', '1299', '其它神经系统用药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2673', '358', '104', '酰胺醇类抗生素', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2674', '358', '1300', '呼吸系统用药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2675', '358', '105', '四环素类抗生素', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2676', '358', '1301', '祛痰药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2677', '358', '106', '大环内酯类抗生素', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('2678', '358', '1302', '镇咳药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2679', '358', '107', '多肽类抗生素', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2680', '358', '1303', '平喘药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2681', '358', '108', 'β - 内酰胺酶抑制剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2682', '358', '1399', '其它呼吸系统用药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2683', '358', '109', '林可胺类抗生素', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2684', '358', '1400', '消化系统用药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2685', '358', '110', '利福霉素类抗生素', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2686', '358', '1401', '抗酸及治溃疡病药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2687', '358', '111', '多烯类抗生素', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2688', '358', '1402', '健胃助消化药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2689', '358', '199', '其它抗生素类抗感染药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2690', '358', '1403', '胃肠解痉药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2691', '358', '200', '非抗生素类抗感染药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2692', '358', '1404', '止吐催吐药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2693', '358', '201', '磺胺类药及增效剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2694', '358', '1405', '泻药止泻药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2695', '358', '202', '喹诺酮类抗感染药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2696', '358', '1406', '食欲抑制药及其它减肥药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2697', '358', '203', '抗结核麻风分枝杆菌类药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2698', '358', '1407', '肝病辅助药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2699', '358', '204', '抗真菌类药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2700', '358', '1408', '利胆药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2701', '358', '205', '抗病毒类药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2702', '358', '1409', '治痔药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2703', '358', '206', '抗螺旋体类药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2704', '358', '1499', '其它消化系统用药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2705', '358', '207', '天然来源抗感染药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2706', '358', '1500', '循环系统用药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2707', '358', '208', '硝基呋喃类抗感染药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2708', '358', '1501', '强心药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2709', '358', '209', '消毒防腐药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2710', '358', '1502', '抗心律失常药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2711', '358', '299', '其它非抗生素类抗感染药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2712', '358', '1503', '防治心绞痛药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2713', '358', '300', '抗寄生虫病药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2714', '358', '1504', '抗高血压病药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2715', '358', '301', '抗吸虫病药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2716', '358', '1505', '抗休克血管活性药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2717', '358', '302', '抗疟药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2718', '358', '1506', '周围血管扩张药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2719', '358', '303', '驱肠虫药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2720', '358', '1507', '调节血脂药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2721', '358', '304', '抗丝虫病及抗黑热病药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2722', '358', '1599', '其它循环系统用药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2723', '358', '305', '抗阿米巴及抗滴虫病药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2724', '358', '1600', '泌尿系统用药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2725', '358', '399', '其它抗寄生虫病药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2726', '358', '1601', '利尿药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2727', '358', '400', '解热镇痛药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2728', '358', '1602', '脱水药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2729', '358', '401', '解热镇痛药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2730', '358', '1603', '尿崩症用药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2731', '358', '402', '非成瘾性镇痛药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2732', '358', '1699', '其它泌尿系统用药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2733', '358', '403', '抗炎镇痛药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2734', '358', '1700', '血液系统用药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2735', '358', '404', '抗痛风药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2736', '358', '1701', '止血药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2737', '358', '405', '抗偏头痛药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2738', '358', '1702', '血浆及血容量扩充制', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2739', '358', '499', '其它解热镇痛药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2740', '358', '1703', '抗贫血药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2741', '358', '500', '麻醉用药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2742', '358', '1704', '促白细胞增生药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2743', '358', '501', '全身麻醉药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2744', '358', '1705', '促血小板增生药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2745', '358', '502', '局部麻醉药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2746', '358', '1799', '其它血液系统用药说明', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2747', '358', '503', '麻醉辅助药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2748', '358', '1800', '水电解质及酸碱平衡调节药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2749', '358', '599', '其它麻醉用药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2750', '358', '1801', '葡萄糖类药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2751', '358', '600', '维生素类与矿物质类药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2752', '358', '1802', '电解质平衡调节药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2753', '358', '601', '维生素   AD属', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2754', '358', '1803', '酸硷平衡调节药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2755', '358', '602', '维生素   B 属', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2756', '358', '1899', '其它水电解质及酸碱平衡调节药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2757', '358', '603', '维生素   C属及其它属', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2758', '358', '1900', '专科用药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2759', '358', '604', '复合维生素类', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2760', '358', '1901', '外科用药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2761', '358', '605', '微量元素与矿物质', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2762', '358', '1902', '皮肤科用药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2763', '358', '606', '滋补营养药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2764', '358', '1903', '眼科用药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2765', '358', '699', '其它营养类药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2766', '358', '1904', '耳鼻喉科用药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2767', '358', '700', '酶类及其它生化药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2768', '358', '1905', '口腔科用药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2769', '358', '701', '酶及辅酶类药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2770', '358', '1906', '妇产科用药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2771', '358', '702', '氨基酸及蛋白质类药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2772', '358', '1907', '解毒药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2773', '358', '703', '复方氨基酸类药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2774', '358', '1908', '放射性同位素药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2775', '358', '704', '多糖及脂类药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2776', '358', '1999', '其它专科用药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2777', '358', '705', '核酸类药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('2778', '358', '2000', '诊断用药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2779', '358', '799', '其他生化药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2780', '358', '2001', 'X 线造影剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2781', '358', '800', '激素及调节内分泌功能类药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2782', '358', '2002', '器官功能检查剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2783', '358', '801', '肾上腺皮质激素类药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2784', '358', '2099', '其它诊断用药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2785', '358', '802', '促肾上腺皮质激素类药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2786', '358', '2100', '生物制品', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2787', '358', '803', '雄激素及同化激素类药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2788', '358', '2101', '菌苗', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2789', '358', '804', '雌激素及孕激素类药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2790', '358', '2102', '疫苗', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2791', '358', '805', '促性激素类药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2792', '358', '2103', '毒素', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2793', '358', '806', '避孕药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2794', '358', '2104', '类毒素', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2795', '358', '807', '子宫收缩药及抗生育药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2796', '358', '2105', '抗毒素', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2797', '358', '808', '胰腺激素及其它调节血糖药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2798', '358', '2106', '抗血清', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2799', '358', '809', '甲状腺激素及抗甲状腺药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2800', '358', '2107', '血液制品', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2801', '358', '810', '前列腺素类药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2802', '358', '2108', '细胞因子', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2803', '358', '899', '其它激素及调节内分泌功能类药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2804', '358', '2109', '体内诊断用生物制品', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2805', '358', '900', '调节免疫功能药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2806', '358', '2110', '细菌类体外诊断用生物制品', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2807', '358', '901', '免疫抑制剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2808', '358', '2111', '病毒类体外诊断用生物制品', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2809', '358', '902', '生物反应调节剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2810', '358', '2112', '立克次代本类体外诊断用生物制品', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2811', '358', '999', '其它调节免疫功能药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2812', '358', '2113', '血液免疫类体外诊断用生物制品', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2813', '358', '1000', '抗肿瘤药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2814', '358', '2114', '其它类体外诊断用生物制品        ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2815', '358', '1001', '烷化剂类抗肿瘤药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2816', '358', '2199', '其它生物制品', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2817', '358', '1002', '抗代谢类抗肿瘤药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2818', '358', '2200', '制剂辅料', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2819', '358', '1003', '抗生素类抗肿瘤药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2820', '358', '2201', '制剂稳定性辅料', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2821', '358', '1004', '天然来源类抗肿瘤药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2822', '358', '2202', '固体制剂辅料', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2823', '358', '1005', '激素类抗肿瘤药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2824', '358', '2203', '半固体制剂辅料', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2825', '358', '1099', '其它抗肿瘤药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2826', '358', '2204', '液体制剂辅料', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2827', '358', '1100', '抗变态反应药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2828', '358', '2299', '其它制剂辅料', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2829', '358', '1101', '抗组织胺药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2830', '358', '2300', '特殊管理药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2831', '358', '1102', '过敏反应介质阻滞剂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2832', '358', '2301', '麻醉药品', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2833', '358', '1199', '其它抗变态反应药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2834', '358', '2302', '精神药品第一类', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2835', '358', '1200', '神经系统用药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2836', '358', '2303', '精神药品第二类', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2837', '358', '1201', '中枢兴奋药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2838', '358', '2399', '其它特殊管理药品', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2839', '358', '1202', '镇静催眠药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2840', '358', '9900', '其它化学药物', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2841', '358', '1203', '抗精神病药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2842', '358', '9901', '三防特殊用药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2843', '358', '1204', '抗抑郁躁狂药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2844', '358', '9902', '卫生防疫用药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2845', '358', '1205', '抗焦虑药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2846', '358', '9999', '其它化学药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2871', '360', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2872', '360', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2873', '361', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2874', '361', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2875', '362', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2876', '362', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2877', '363', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2878', '363', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2879', '364', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2880', '364', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2881', '365', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2882', '365', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2883', '366', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2884', '366', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2885', '367', '10', '未婚              ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2886', '367', '23', '复婚              ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2887', '367', '20', '已婚              ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2888', '367', '30', '丧偶              ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2889', '367', '21', '初婚              ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2890', '367', '40', '离婚              ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2891', '367', '22', '再婚              ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2892', '367', '90', '未说明的婚姻状况', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2893', '368', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2894', '368', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2895', '369', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2896', '369', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2897', '370', '1', 'A 型', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2898', '370', '4', 'AB 型', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2899', '370', '2', 'B 型', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2900', '370', '5', '不详', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2901', '370', '3', 'O 型', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('2902', '370', '9', '未查', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2903', '371', '1', 'Rh 阴性', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2904', '371', '3', '不详', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2905', '371', '2', 'Rh 阳性', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2906', '371', '4', '未查', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2907', '372', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2908', '372', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2909', '373', '1', '甲', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2910', '373', '3', '丙', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2911', '373', '2', '乙', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2912', '374', '1', '无', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2913', '374', '2', '有', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2914', '375', '1', '门诊诊断与出院诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2915', '375', '6', '放射诊断与病理诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2916', '375', '10', '中医入院与出院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2917', '375', '7', '临床诊断与尸检诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2918', '375', '2', '入院诊断与出院诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2919', '375', '8', '中医门诊与出院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2920', '375', '3', '术前诊断与术后诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2921', '375', '9', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2922', '375', '4', '放射诊断与术后诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2923', '375', 'X', '疾病诊断对照组扩充内容', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2924', '375', '5', '出院诊断与病理诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2925', '376', '1', '符合', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2926', '376', '3', '诊断符合情况扩充内容', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2927', '376', '2', '不符合', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2928', '376', '9', '无对照', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2929', '377', '1', '治愈', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2930', '377', '4', '无效', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2931', '377', '2', '好转', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2932', '377', '5', '死亡', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2933', '377', '3', '未愈', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2934', '377', '9', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2935', '378', '0', '未做', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2936', '378', '2', '阳性', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2937', '378', '1', '阴性', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2938', '379', '0', '未做', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2939', '379', '2', '阳性', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2940', '379', '1', '阴性', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2941', '380', '0', '未做', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2942', '380', '2', '阳性', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2943', '380', '1', '阴性', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2944', '381', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2945', '381', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2946', '382', '1', '总额预付', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2947', '382', '97', '项目付费', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2948', '382', '2', '病组付费', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2949', '382', '98', '按床日付费（含日间）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2950', '382', '3', '单病种付费', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2951', '382', '99', '非医疗保险 ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2952', '382', '4', '人头付费', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2953', '383', '1', '职工基本医疗保险', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2954', '383', '6', '全公费', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2955', '383', '2', '居民基本医疗保险', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2956', '383', '7', '全自费', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2957', '383', '3', '新型农村合作医疗', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2958', '383', '90', '城乡居民医疗保险', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2959', '383', '4', '贫困救助', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2960', '383', '99', '其他 ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2961', '383', '5', '商业医疗保险', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2962', '384', '1', '出院诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2963', '384', '31', '入院诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2964', '384', '10', '并发症诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2965', '384', '4', '术前诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2966', '384', '11', '院内感染诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2967', '384', '5', '术后诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2968', '384', '12', '主要诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2969', '384', '6', '尸检诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2970', '384', '13', '次要诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2971', '384', '7', '放射诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2972', '384', '14', '中医出院诊断病名', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2973', '384', '8', '超声诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2974', '384', '141', '中医出院主病', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2975', '384', '9', '病理诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2976', '384', '142', '中医出院主证', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2977', '384', '98', '损伤、中毒的外部原因', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2978', '384', '2', '门诊诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2979', '384', '99', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2980', '384', '3', '入院初步诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2981', '385', '1', '有', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2982', '385', '3', '情况不明', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2983', '385', '2', '临床未确定', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2984', '385', '4', '无', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2985', '386', '1', '危', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2986', '386', '3', '一般', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2987', '386', '2', '急', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2988', '387', '1', '临床诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2989', '387', '2', '病理诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2990', '388', '1', '高分化', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2991', '388', '6', 'B细胞', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2992', '388', '2', '中分化', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2993', '388', '7', '非T-非B', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2994', '388', '3', '低分化', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2995', '388', '8', 'NK(自然杀伤)细胞', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2996', '388', '4', '未分化', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2997', '388', '9', '未确定', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2998', '388', '5', 'T细胞', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('2999', '389', '1', '一级手术', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3000', '389', '4', '四级手术', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3001', '389', '2', '二级手术', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('3002', '389', '5', '其他等级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3003', '389', '3', '三级手术', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3004', '390', '0', '0类切口', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3005', '390', '7', '切口等级Ⅲ/愈合类型甲', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3006', '390', '1', '切口等级Ⅰ/愈合类型甲', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3007', '390', '8', '切口等级Ⅲ/愈合类型乙', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3008', '390', '2', '切口等级Ⅰ/愈合类型乙', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3009', '390', '9', '切口等级Ⅲ/愈合类型丙', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3010', '390', '3', '切口等级Ⅰ/愈合类型丙', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3011', '390', '10', '切口等级Ⅰ/其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3012', '390', '4', '切口等级Ⅱ/愈合类型甲', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3013', '390', '11', '切口等级Ⅱ/其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3014', '390', '5', '切口等级Ⅱ/愈合类型乙', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3015', '390', '12', '切口等级Ⅲ/其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3016', '390', '6', '切口等级Ⅱ/愈合类型丙', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3017', '390', '99', '其他切口类型', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3018', '391', '1', '全身麻醉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3019', '391', '34', '区域阻滞麻醉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3020', '391', '11', '吸入麻醉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3021', '391', '35', '局部浸润麻醉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3022', '391', '12', '静脉麻醉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3023', '391', '36', '表面麻醉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3024', '391', '13', '基础麻醉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3025', '391', '4', '复合麻醉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3026', '391', '2', '椎管内麻醉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3027', '391', '41', '静吸复合全麻', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3028', '391', '21', '蛛网膜下腔阻滞麻醉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3029', '391', '42', '针药复合麻醉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3030', '391', '22', '硬脊膜外腔阻滞麻醉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3031', '391', '43', '神经丛与硬膜外阻滞复合麻醉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3032', '391', '3', '局部麻醉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3033', '391', '44', '全麻复合全身降温', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3034', '391', '31', '神经丛阻滞麻醉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3035', '391', '45', '全麻复合控制性降压', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3036', '391', '32', '神经节阻滞麻醉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3037', '391', '9', '其他麻醉方法', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3038', '391', '33', '神经阻滞麻醉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3039', '392', '1', '双侧鼻孔BN', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3040', '392', '27', '双眼OU', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3041', '392', '2', '臀部BU', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3042', '392', '28', '肛门PA', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3043', '392', '3', '左臂LA', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3044', '392', '29', '会阴PERIN', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3045', '392', '4', '左前胸LAC', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3046', '392', '30', '右臂RA', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3047', '392', '5', '左肘前窝LACF', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3048', '392', '31', '右前胸RAC', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3049', '392', '6', '左三角肌LD', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3050', '392', '32', '右肘前窝RACF', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3051', '392', '7', '左耳LE', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3052', '392', '33', '右侧三角肌RD', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3053', '392', '8', '左外颈LEJ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3054', '392', '34', '右耳RE', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3055', '392', '9', '左足LF', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3056', '392', '35', '右外颈REJ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3057', '392', '10', '左臀中肌LG', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3058', '392', '36', '右足RF', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3059', '392', '11', '左手LH', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3060', '392', '37', '右臀中肌RG', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3061', '392', '12', '左内颈LIJ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3062', '392', '38', '右手RH', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3063', '392', '13', '左下腹LLAQ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3064', '392', '39', '右内颈RIJ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3065', '392', '14', '左下臂LLFA', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3066', '392', '40', '右下腹RLAQ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3067', '392', '15', '左中臂LMFA', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3068', '392', '41', '右下臂RLFA', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3069', '392', '16', '左侧鼻孔LN', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3070', '392', '42', '右中臂RMFA', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3071', '392', '17', '左后胸LPC', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3072', '392', '43', '右后胸RPC', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3073', '392', '18', '左锁骨下LSC', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3074', '392', '44', '右锁骨下RSC', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3075', '392', '19', '左大腿LT', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3076', '392', '45', '右大腿RT', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3077', '392', '20', '左上臂LUA', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3078', '392', '46', '右上臂RUA', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3079', '392', '21', '左上腹LUAQ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3080', '392', '47', '右上腹RUAQ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3081', '392', '22', '左上臂LUFA', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3082', '392', '48', '右上臂RUFA', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3083', '392', '23', '左腹侧臀肌LVG', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3084', '392', '49', '右腹侧臀肌RVG', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3085', '392', '24', '左股外肌LVL', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3086', '392', '50', '右股外侧肌RVL', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3087', '392', '25', '右眼OD', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3088', '392', '99', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3089', '392', '26', '左眼OS', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3090', '393', '1', '正常的患者', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3091', '393', '4', '患者有明显的系统临床症状，且危及生命', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3092', '393', '2', '患者有轻微的临床症状', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3093', '393', '5', '如果不手术患者将不能存活', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3094', '393', '3', '患者有明显的系统临床症状', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3095', '393', '6', '脑死亡的患者', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3096', '394', '1', '非手术患者', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3097', '394', '3', '择期手术', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3098', '394', '2', '急诊手术', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3099', '395', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3100', '395', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3101', '396', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('3102', '396', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3103', '397', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3104', '397', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3105', '398', '11', '西药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3106', '398', '28', '输血', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3107', '398', '12', '中成药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3108', '398', '29', '输氧', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3109', '398', '13', '中药饮片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3110', '398', '31', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3111', '398', '21', '治疗', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3112', '398', '32', '转科', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3113', '398', '22', '检验', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3114', '398', '33', '术后', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3115', '398', '23', '检查', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3116', '398', '34', '出院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3117', '398', '24', '手术', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3118', '398', '35', '转院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3119', '398', '25', '麻醉', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3120', '398', '36', '死亡', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3121', '398', '26', '护理', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3122', '398', '37', '产后', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3123', '398', '27', '膳食', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3124', '399', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3125', '399', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3126', '400', '1', '问询', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3127', '400', '299', '其他检查项目', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3128', '400', '2', '物理', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3129', '400', '3', '实验室', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3130', '400', '201', '计算机X线断层摄影', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3131', '400', '301', '临检项目', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3132', '400', '202', '核磁共振成像', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3133', '400', '302', '血生化项目', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3134', '400', '203', '数字减影血管造影', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3135', '400', '303', '免疫项目', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3136', '400', '204', '普通X光摄影', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3137', '400', '304', '微生物项目', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3138', '400', '205', '特殊X光摄影', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3139', '400', '305', '血液学项目', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3140', '400', '206', '超声检查', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3141', '400', '399', '其他检验项目', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3142', '400', '207', '病理检查', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3143', '400', '4', '心电', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3144', '400', '208', '内镜检查', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3145', '400', '40112', '导同步心电检查', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3146', '400', '209', '核医学检查', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3148', '401', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3149', '401', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3150', '402', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3151', '402', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3152', '403', '1', '一般临床检验', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3153', '403', '5', '临床微生物学检查', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3154', '403', '2', '血液学检查', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3155', '403', '6', '临床寄生虫学检查', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3156', '403', '3', '临床化学检查', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3157', '403', '7', '分子生物学检查', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3158', '403', '4', '临床免疫学检查', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3159', '403', '99', '其它', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3160', '404', '1', '耐药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3161', '404', '3', '污染', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3162', '404', '2', '敏感', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3163', '404', '4', '未做', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3164', '405', '1', '检查报告', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3165', '405', '2', '检验报告', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3166', '406', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3167', '406', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3168', '407', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3169', '407', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3170', '408', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3171', '408', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3172', '409', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3173', '409', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3174', '410', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3175', '410', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3176', '411', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3177', '411', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3178', '412', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3179', '412', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3180', '413', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3181', '413', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3182', '414', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3183', '414', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3184', '415', '1', '常规', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3185', '415', '3', '大量', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3186', '415', '2', '紧急', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3187', '415', '4', '特殊供血者', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3188', '416', '1', '红细胞', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3189', '416', '32', '机采血小板', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3190', '416', '11', '浓缩红细胞', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3191', '416', '33', '滤白机采血小板', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3192', '416', '12', '滤白红细胞', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3193', '416', '34', '冷冻机采血小板', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3194', '416', '13', '红细胞悬液', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3195', '416', '4', '血浆', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3196', '416', '14', '洗涤红细胞', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3197', '416', '41', '新鲜液体血浆', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3198', '416', '15', '冰冻红细胞', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3199', '416', '42', '新鲜冰冻血浆', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3200', '416', '16', '冰冻解冻去甘油红细胞', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3201', '416', '43', '普通冰冻血浆', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3202', '416', '17', 'Rh阴性悬浮红细胞', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('3203', '416', '44', '滤白病毒灭活冰冻血浆', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3204', '416', '2', '全血', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3205', '416', '45', '滤白新鲜冰冻血浆', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3206', '416', '21', '滤白全血', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3207', '416', '46', '滤白普通冰冻血浆', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3208', '416', '22', '重组全血', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3209', '416', '5', '冷沉淀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3210', '416', '23', 'Rh阴性全血', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3211', '416', '51', '滤白冷沉淀', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3212', '416', '3', '血小板', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3213', '416', '6', '机采浓缩白细胞悬液', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3214', '416', '31', '手工分离浓缩血小板', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3215', '416', '9', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3216', '417', '1', '发热', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3217', '417', '3', '溶血', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3218', '417', '2', '过敏', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3219', '417', '9', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3220', '418', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3221', '418', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3222', '419', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3223', '419', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3224', '420', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3225', '420', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3226', '421', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3227', '421', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3228', '422', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3229', '422', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3230', '423', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3231', '423', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3232', '424', '0', '未知', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3233', '424', '1', '非妊娠期或哺乳期', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3234', '424', '2', '近期有生育计划', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3235', '424', '3', '妊娠期', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3236', '424', '4', '哺乳期', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3237', '425', '231', '主任医师', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3238', '425', '232', '副主任医师', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3239', '425', '233', '主诊医师', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3240', '425', '234', '医师', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3241', '425', '235', '医士', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3242', '426', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3243', '426', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3244', '427', '0', '生育不可用', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3245', '427', '1', '生育可用', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3246', '428', '1', '单复方均可用', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3247', '428', '3', '单复方不可用', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3248', '428', '2', '限复方可用', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3249', '429', '1', '参保本人', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3250', '429', '3', '配偶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3251', '429', '2', '单位经办人', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3252', '429', '4', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3253', '430', '1', '医师', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3254', '430', '3', '药师', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3255', '430', '2', '护士', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3256', '430', '4', '医技人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3257', '431', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3258', '431', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3259', '432', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3260', '432', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3261', '433', '0', '属性待定', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3262', '433', '3', '口服控释', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3263', '433', '1', '口服', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3264', '433', '4', '外用', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3265', '433', '2', '口服缓释', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3266', '433', '5', '注射', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3267', '434', '1', '有', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3268', '434', '3', '情况不明', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3269', '434', '2', '临床未确定', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3270', '434', '4', '无', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3271', '435', '1', '一级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3272', '435', '3', '三级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3273', '435', '2', '二级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3274', '436', '1', '一级及以下限价', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3275', '436', '3', '三级限价', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3276', '436', '2', '二级限价', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3277', '437', '310', '职工', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3278', '437', '390', '城乡居民', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3279', '437', '330', '离休人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3280', '438', '10', '目录先自付比例', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3281', '438', '20', '目录直接报销比例', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3282', '439', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3283', '439', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3284', '440', '1', '经办人', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3285', '440', '2', '自助终端', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3286', '440', '3', '移动终端', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3287', '441', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3288', '441', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3289', '442', '1', '正常转院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3290', '442', '2', '转往上级医院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3291', '442', '3', '转往下级医院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3292', '442', '4', '转往省内异地医院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3293', '442', '5', '转往省外异地医院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3294', '442', '902', '自主转院', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3295', '442', '90101', '满足分级诊疗', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3296', '442', '90102', '不满足分级诊疗', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3297', '443', '1', '主要手术及操作', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3298', '443', '2', '其他手术及操作', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3299', '444', '1', '居民身份证', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-05-14 04:39:58.719+00', '1', '1', false, NULL, NULL),
+('3300', '444', '5', '驾驶证', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-05-14 04:47:14.353+00', '1', '1', false, NULL, NULL),
+('3301', '444', '2', '居民户口簿', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-05-14 04:40:05.352+00', '1', '1', false, NULL, NULL),
+('3302', '444', '6', '港澳居民来往内地通行证', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-05-14 04:46:58.985+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('3303', '444', '3', '护照', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-05-14 04:40:12.278+00', '1', '1', false, NULL, NULL),
+('3304', '444', '7', '台湾居民来往内地通行证', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-05-14 04:47:08.585+00', '1', '1', false, NULL, NULL),
+('3305', '444', '4', '军官证', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-05-14 04:46:46.509+00', '1', '1', false, NULL, NULL),
+('3306', '444', '99', '其他身份证件', NULL, NULL, '8', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-05-14 04:47:23.633+00', '1', '1', false, NULL, NULL),
+('3307', '445', '11', '国家公务员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3308', '445', '37', '现役军人', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3309', '445', '13', '专业技术人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3310', '445', '51', '自由职业者', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3311', '445', '17', '职员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3312', '445', '54', '个体经营者', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3313', '445', '21', '企业管理人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3314', '445', '70', '无业人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3315', '445', '24', '工人', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3316', '445', '80', '退（离）休人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3317', '445', '27', '农民', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3318', '445', '90', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3319', '445', '31', '学生', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3320', '446', '1', '本人', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3321', '446', '57', '继父或养父', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3322', '446', '2', '户主', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3323', '446', '58', '继母或养母', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3324', '446', '10', '配偶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3325', '446', '59', '其他父母关系', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3326', '446', '11', '夫', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3327', '446', '60', '祖父母、外祖父母', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3328', '446', '12', '妻', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3329', '446', '61', '祖父', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3330', '446', '20', '子', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3331', '446', '62', '祖母', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3332', '446', '21', '独生子', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3333', '446', '63', '外祖父', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3334', '446', '22', '长子', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3335', '446', '64', '外祖母', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3336', '446', '23', '次子', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3337', '446', '65', '配偶的祖父母、外祖父母', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3338', '446', '24', '三子', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3339', '446', '66', '曾祖父', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3340', '446', '25', '四子', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3341', '446', '67', '曾祖母', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3342', '446', '26', '五子', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3343', '446', '68', '配偶的曾祖父母、外曾祖父母', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3344', '446', '27', '养子或继子', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3345', '446', '69', '其他祖父母和外祖父母关系', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3346', '446', '28', '女婿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3347', '446', '70', '兄、弟、姐、妹', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3348', '446', '29', '其他儿子', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3349', '446', '71', '兄', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3350', '446', '30', '女', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3351', '446', '72', '嫂', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3352', '446', '31', '独生女', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3353', '446', '73', '弟', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3354', '446', '32', '长女', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3355', '446', '74', '弟媳', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3356', '446', '33', '次女', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3357', '446', '75', '姐姐', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3358', '446', '34', '三女', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3359', '446', '76', '姐夫', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3360', '446', '35', '四女', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3361', '446', '77', '妹妹', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3362', '446', '36', '五女', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3363', '446', '78', '妹夫', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3364', '446', '37', '养女或继女', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3365', '446', '79', '其他兄弟姐妹', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3366', '446', '38', '儿媳', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3367', '446', '80', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3368', '446', '39', '其他女儿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3369', '446', '81', '伯父', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3370', '446', '40', '孙子、孙女、外孙子、外孙女', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3371', '446', '82', '伯母', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3372', '446', '41', '孙子', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3373', '446', '83', '叔父', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3374', '446', '42', '孙女', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3375', '446', '84', '婶母', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3376', '446', '43', '外孙子', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3377', '446', '85', '舅父', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3378', '446', '44', '外孙女', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3379', '446', '86', '舅母', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3380', '446', '45', '孙媳妇或外孙媳妇', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3381', '446', '87', '姨父', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3382', '446', '46', '孙女婿或外孙女婿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3383', '446', '88', '姨母', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3384', '446', '47', '曾孙子或外曾孙子', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3385', '446', '89', '姑父', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3386', '446', '48', '曾孙女或外曾孙女', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3387', '446', '90', '姑母', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3388', '446', '49', '其他孙子、孙女、外孙子、外孙女', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3389', '446', '91', '堂兄弟、堂姐妹', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3390', '446', '50', '父母', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3391', '446', '92', '表兄弟、表姐妹', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3392', '446', '51', '父亲', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3393', '446', '93', '侄子', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3394', '446', '52', '母亲', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3395', '446', '94', '侄女', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3396', '446', '53', '公公', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3397', '446', '95', '外甥', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3398', '446', '54', '婆婆', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3399', '446', '96', '外甥女', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3400', '446', '55', '岳父', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3401', '446', '97', '其他亲属', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3402', '446', '56', '岳母', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('3403', '446', '99', '非亲属', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3404', '447', '310', '职工基本医疗保险         ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3405', '447', '380', '新型农村合作医疗         ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3406', '447', '340', '离休人员医疗保障         ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3407', '447', '390', '城乡居民基本医疗保险     ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3408', '447', '350', '一至六级残疾军人医疗补助 ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3409', '447', '391', '城镇居民基本医疗保险     ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3410', '447', '360', '老红军医疗保障           ', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3411', '447', '999', '其他医疗保险', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3412', '448', '1', '特困人员', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3413', '448', '4', '贫困重度残疾人', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3414', '448', '2', '城乡低保对象', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3415', '448', '9', '其他', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3416', '448', '3', '农村建档立卡贫困人口', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3417', '449', '1', '按项目结算', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3418', '449', '2', '按定额结算', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3419', '450', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3420', '450', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3421', '451', 'QD', '每天一次（qd）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3423', '451', 'BID', '每天二次（bid）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3425', '451', 'TID', '每天三次（tid）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3429', '451', 'QW', '每周一次（qw）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3430', '451', 'QOD', '隔天一次（qod）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3431', '451', 'BIW', '每周二次（biw）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3443', '452', '1', '健康或良好', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3444', '452', '3', '有慢性病', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3445', '452', '2', '一般或较弱', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3446', '452', '5', '残疾', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3447', '453', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3448', '453', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3449', '454', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3450', '454', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3451', '455', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3452', '455', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3453', '456', '0', '审核不通过', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3454', '456', '1', '审核通过', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3455', '457', '0', '待配送', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3456', '457', '3', '配送取消', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3457', '457', '1', '配送中', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3458', '457', '4', '配送异常', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3459', '457', '2', '配送完成', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3460', '458', '0', 'WGS-84(GPS地图坐标系)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3461', '458', '3', 'BD09(百度地图坐标系)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3462', '458', '1', 'GCJ-02(高德、腾讯地图坐标系)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3463', '458', '4', 'BDCS(北斗坐标系)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3464', '459', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3465', '459', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3466', '460', '1', '一级及以下', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3467', '460', '2', '二级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3468', '460', '3', '三级', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3469', '461', '2001', '结算方式', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3470', '462', '0', '一站式结算(默认)（结算全部基金支付）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3471', '462', '1', '非一站式(只结算统筹基金支付和大病基金支付)', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3472', '463', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3473', '463', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3474', '464', '0', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3475', '464', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3476', '465', '1', '新冠肺炎确诊患者', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3477', '465', '2', '其他国家突发公共事件', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3478', '465', '3', '新冠肺炎疑似患者', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3479', '465', '4', '无症状感染者', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3490', '472', '0', '付费', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-05-27 05:23:28.971+00', NULL, '1', '1', false, NULL, NULL),
+('3491', '472', '1', '退费', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-05-27 05:23:45.788+00', NULL, '1', '1', false, NULL, NULL),
+('3492', '473', '0', '草稿', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-05-27 05:26:16.465+00', NULL, '1', '1', false, NULL, NULL),
+('3493', '473', '1', '支付成功', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-05-27 05:26:29.973+00', NULL, '1', '1', false, NULL, NULL),
+('3494', '473', '2', '取消支付', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-05-27 05:26:42.381+00', NULL, '1', '1', false, NULL, NULL),
+('3495', '473', '3', '全部退款', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-05-27 05:26:55.028+00', NULL, '1', '1', false, NULL, NULL),
+('3496', '473', '4', '部分退款', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-05-27 05:27:07.634+00', NULL, '1', '1', false, NULL, NULL),
+('3497', '473', '5', '退款中', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-05-27 05:27:21.873+00', NULL, '1', '1', false, NULL, NULL),
+('3498', '474', '0', '排队', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-05-27 05:29:50.142+00', NULL, '1', '1', false, NULL, NULL),
+('3499', '474', '1', '已完成', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-05-27 05:30:25.779+00', NULL, '1', '1', false, NULL, NULL),
+('3500', '474', '2', '错误', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-05-27 05:30:38.780+00', NULL, '1', '1', false, NULL, NULL),
+('3501', '474', '3', '部分成功', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-05-27 05:30:51.494+00', NULL, '1', '1', false, NULL, NULL),
+('3502', '475', '74', '每6个月2次（q6m）', '电子处方使用频次', NULL, '28', true, '', 'default', '', '1', '2025-05-25 21:16:51.000+00', '2025-06-30 19:16:07.981+00', '1', '1', false, NULL, NULL),
+('3503', '475', '73', '每3个月1次（q3m）', '电子处方使用频次', NULL, '27', true, '', 'default', '', '1', '2025-05-25 21:16:49.000+00', '2025-06-30 19:16:01.440+00', '1', '1', false, NULL, NULL),
+('3504', '475', '72', '每月2次（bim）', '电子处方使用频次', NULL, '26', true, '', 'default', '', '1', '2025-05-25 21:16:47.000+00', '2025-06-30 19:15:55.613+00', '1', '1', false, NULL, NULL),
+('3505', '475', '71', '每月1次（qm）', '电子处方使用频次', NULL, '25', true, '', 'default', '', '1', '2025-05-25 21:16:44.000+00', '2025-06-30 19:15:51.111+00', '1', '1', false, NULL, NULL),
+('3506', '475', '63', '1次（once）', '电子处方使用频次', NULL, '24', true, '', 'default', '', '1', '2025-05-25 21:16:42.000+00', '2025-06-30 19:15:43.784+00', '1', '1', false, NULL, NULL),
+('3507', '475', '62', '必要时使用（prn）', '电子处方使用频次', NULL, '23', true, '', 'default', '', '1', '2025-05-25 21:16:40.000+00', NULL, '1', '1', false, NULL, NULL),
+('3508', '475', '61', '立即（st）', '电子处方使用频次', NULL, '22', true, '', 'default', '', '1', '2025-05-25 21:16:37.000+00', NULL, '1', '1', false, NULL, NULL),
+('3509', '475', '52', '24 小时维持', '电子处方使用频次', NULL, '21', true, '', 'default', '', '1', '2025-05-25 21:16:35.000+00', NULL, '1', '1', false, NULL, NULL),
+('3510', '475', '51', '12 小时维持', '电子处方使用频次', NULL, '20', true, '', 'default', '', '1', '2025-05-25 21:16:32.000+00', NULL, '1', '1', false, NULL, NULL),
+('3511', '475', '45', '隔3日1次（q3d）', '电子处方使用频次', NULL, '19', true, '', 'default', '', '1', '2025-05-25 21:16:30.000+00', '2025-06-30 19:15:29.136+00', '1', '1', false, NULL, NULL),
+('3512', '475', '44', '10天1次（q10d）', '电子处方使用频次', NULL, '18', true, '', 'default', '', '1', '2025-05-25 21:16:27.000+00', '2025-06-30 19:15:20.360+00', '1', '1', false, NULL, NULL),
+('3513', '475', '43', '5天1次（q5d）', '电子处方使用频次', NULL, '17', true, '', 'default', '', '1', '2025-05-25 21:16:25.000+00', '2025-06-30 19:14:45.945+00', '1', '1', false, NULL, NULL),
+('3514', '475', '42', '隔天1次（qod） ', '电子处方使用频次', NULL, '16', true, '', 'default', '', '1', '2025-05-25 21:16:22.000+00', '2025-06-30 19:14:34.577+00', '1', '1', false, NULL, NULL),
+('3515', '475', '41', '每晚1次（qn）', '电子处方使用频次', NULL, '15', true, '', 'default', '', '1', '2025-05-25 21:16:20.000+00', '2025-06-30 19:14:30.033+00', '1', '1', false, NULL, NULL),
+('3516', '475', '37', '每 12 小时1次（q12h）', '电子处方使用频次', NULL, '14', true, '', 'default', '', '1', '2025-05-25 21:16:18.000+00', '2025-06-30 19:14:25.592+00', '1', '1', false, NULL, NULL),
+('3517', '475', '36', '每 8 小时1次（q8h）', '电子处方使用频次', NULL, '13', true, '', 'default', '', '1', '2025-05-25 21:16:15.000+00', '2025-06-30 19:14:21.612+00', '1', '1', false, NULL, NULL),
+('3518', '475', '35', '每 6 小时1次（q6h）', '电子处方使用频次', NULL, '12', true, '', 'default', '', '1', '2025-05-25 21:16:12.000+00', '2025-06-30 19:14:17.193+00', '1', '1', false, NULL, NULL),
+('3519', '475', '34', '每 5 小时1次（q5h）', '电子处方使用频次', NULL, '11', true, '', 'default', '', '1', '2025-05-25 21:16:10.000+00', '2025-06-30 19:14:13.039+00', '1', '1', false, NULL, NULL),
+('3520', '475', '33', '每 4 小时1次（q4h）', '电子处方使用频次', NULL, '10', true, '', 'default', '', '1', '2025-05-25 21:16:08.000+00', '2025-06-30 19:14:09.001+00', '1', '1', false, NULL, NULL),
+('3521', '475', '32', '每 2 小时1次（q2h）', '电子处方使用频次', NULL, '9', true, '', 'default', '', '1', '2025-05-25 21:16:05.000+00', '2025-06-30 19:14:03.050+00', '1', '1', false, NULL, NULL),
+('3522', '475', '31', '每小时1次（qh）', '电子处方使用频次', NULL, '8', true, '', 'default', '', '1', '2025-05-25 21:16:03.000+00', '2025-06-30 19:13:57.656+00', '1', '1', false, NULL, NULL),
+('3523', '475', '24', '每2周1次（q2w）', '电子处方使用频次', NULL, '7', true, '', 'default', '', '1', '2025-05-25 21:16:00.000+00', '2025-06-30 19:13:52.874+00', '1', '1', false, NULL, NULL),
+('3524', '475', '23', '每周3次（tiw）', '电子处方使用频次', NULL, '6', true, '', 'default', '', '1', '2025-05-25 21:15:56.000+00', '2025-06-30 19:13:44.857+00', '1', '1', false, NULL, NULL),
+('3525', '475', '22', '每周2次（biw）', '电子处方使用频次', NULL, '5', true, '', 'default', '', '1', '2025-05-25 21:15:53.000+00', '2025-06-30 19:13:39.442+00', '1', '1', false, NULL, NULL),
+('3526', '475', '21', '每周1次（qw）', '电子处方使用频次', NULL, '4', true, '', 'default', '', '1', '2025-05-25 21:15:51.000+00', '2025-06-30 19:13:31.244+00', '1', '1', false, NULL, NULL),
+('3527', '475', '14', '每天4次（qid）', '电子处方使用频次', NULL, '3', true, '', 'default', '', '1', '2025-05-25 21:15:46.000+00', '2025-06-30 19:13:26.242+00', '1', '1', false, NULL, NULL),
+('3528', '475', '13', '每天3次（tid）', '电子处方使用频次', NULL, '2', true, '', 'default', '', '1', '2025-05-25 21:15:44.000+00', '2025-06-30 19:13:21.187+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('3529', '475', '12', '每天2次（bid）', '电子处方使用频次', NULL, '1', true, '', 'default', '', '1', '2025-05-25 21:15:41.000+00', '2025-06-30 19:13:15.602+00', '1', '1', false, NULL, NULL),
+('3530', '475', '11', '每天1次（qd）', '电子处方使用频次', NULL, '0', true, '', 'default', '', '1', '2025-05-25 21:11:43.000+00', '2025-06-30 19:13:09.995+00', '1', '1', false, NULL, NULL),
+('3548', '223', '16', '糖浆剂', NULL, NULL, '16', true, NULL, 'default', NULL, '1', '2025-06-17 18:57:07.873+00', '2025-06-17 19:01:46.422+00', '1', '1', false, NULL, NULL),
+('3549', '223', '17', '合剂', NULL, NULL, '17', true, NULL, 'default', NULL, '1', '2025-06-17 21:14:54.391+00', NULL, '1', '1', false, NULL, NULL),
+('3550', '223', '18', '粉剂', NULL, NULL, '18', true, NULL, 'default', NULL, '1', '2025-06-17 21:51:34.630+00', NULL, '1', '1', false, NULL, NULL),
+('3551', '223', '19', '液体制剂', NULL, NULL, '19', true, NULL, 'default', NULL, '1', '2025-06-17 22:15:17.239+00', NULL, '1', '1', false, NULL, NULL),
+('3552', '223', '20', '洗剂', NULL, NULL, '20', true, NULL, 'default', NULL, '1', '2025-06-17 23:24:54.512+00', NULL, '1', '1', false, NULL, NULL),
+('3553', '223', '21', '软胶囊', NULL, NULL, '21', true, NULL, 'default', NULL, '1', '2025-06-17 23:24:59.148+00', '2025-06-17 23:25:08.311+00', '1', '1', false, NULL, NULL),
+('3554', '477', '100000', '基金支付总额', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-06-19 18:44:01.771+00', NULL, '1', '1', false, NULL, NULL),
+('3555', '477', '200000', '个人负担总金额', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:44:22.850+00', NULL, '1', '1', false, NULL, NULL),
+('3556', '477', '300000', '其他（如医院负担金额）', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:44:42.742+00', NULL, '1', '1', false, NULL, NULL),
+('3557', '477', '110000', '基本医保统筹基金支出', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:45:00.563+00', NULL, '1', '1', false, NULL, NULL),
+('3558', '477', '120000', '补充医疗保险基金支出', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:45:12.633+00', NULL, '1', '1', false, NULL, NULL),
+('3559', '477', '130000', '医疗救助基金支出', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:45:24.369+00', NULL, '1', '1', false, NULL, NULL),
+('3560', '477', '140000', '其他支出', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:45:35.719+00', NULL, '1', '1', false, NULL, NULL),
+('3561', '477', '110100', '职工基本医疗保险', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:45:47.123+00', NULL, '1', '1', false, NULL, NULL),
+('3562', '477', '110200', '居民基本医疗保险', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:46:37.177+00', NULL, '1', '1', false, NULL, NULL),
+('3563', '477', '120100', '全体参保人的居民大病保险', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:46:49.076+00', NULL, '1', '1', false, NULL, NULL),
+('3564', '477', '120200', '大额医疗费用补助', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:46:59.369+00', NULL, '1', '1', false, NULL, NULL),
+('3565', '477', '120300', '企业职工大额医疗费用补助', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:47:09.929+00', NULL, '1', '1', false, NULL, NULL),
+('3566', '477', '120400', '公务员医疗补助', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:47:21.405+00', NULL, '1', '1', false, NULL, NULL),
+('3567', '477', '130100', '伤残人员医疗保障基金支出', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:47:33.095+00', NULL, '1', '1', false, NULL, NULL),
+('3568', '477', '210000', '个人医保账户支付', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:50:24.027+00', NULL, '1', '1', false, NULL, NULL),
+('3569', '477', '210100', '账户共济支付金额', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:50:33.679+00', NULL, '1', '1', false, NULL, NULL),
+('3570', '477', '220000', '个人现金支付金额', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:50:42.023+00', NULL, '1', '1', false, NULL, NULL),
+('3571', '477', '230000', '微信支付金额', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:50:52.772+00', NULL, '1', '1', false, NULL, NULL),
+('3572', '477', '240000', '阿里支付金额', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:51:05.496+00', NULL, '1', '1', false, NULL, NULL),
+('3577', '477', '300001', '兜底基金支出', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:52:14.254+00', NULL, '1', '1', false, NULL, NULL),
+('3578', '477', '300002', '意外伤害基金支出', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:52:23.583+00', NULL, '1', '1', false, NULL, NULL),
+('3579', '477', '300003', '离休人员医疗保障金支出', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:52:36.031+00', NULL, '1', '1', false, NULL, NULL),
+('3580', '477', '300004', '离休人员优惠金支出', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:52:45.623+00', NULL, '1', '1', false, NULL, NULL),
+('3581', '477', '300005', '财政基金支出', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:52:57.511+00', NULL, '1', '1', false, NULL, NULL),
+('3582', '477', '300006', '财政预支支出', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:53:09.158+00', NULL, '1', '1', false, NULL, NULL),
+('3583', '477', '300007', '职工大病基金支出', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:53:27.031+00', NULL, '1', '1', false, NULL, NULL),
+('3584', '477', '300008', '二乙基金支出', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:53:43.822+00', NULL, '1', '1', false, NULL, NULL),
+('3585', '477', '300009', '倾斜救助支出', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:53:55.717+00', NULL, '1', '1', false, NULL, NULL),
+('3586', '477', '300010', '医疗救助再救助基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:54:19.262+00', NULL, '1', '1', false, NULL, NULL),
+('3587', '477', '300011', '医院负担金额', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:54:29.580+00', NULL, '1', '1', false, NULL, NULL),
+('3588', '477', '1', '全自费金额', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:54:38.205+00', NULL, '1', '1', false, NULL, NULL),
+('3589', '477', '3', '超限价自费费用', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:54:50.503+00', NULL, '1', '1', false, NULL, NULL),
+('3590', '477', '4', '先行自付金额', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:54:59.900+00', NULL, '1', '1', false, NULL, NULL),
+('3591', '477', '5', '符合政策范围金额', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:55:10.156+00', NULL, '1', '1', false, NULL, NULL),
+('3592', '477', '6', '实际支付起付线', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:55:17.957+00', NULL, '1', '1', false, NULL, NULL),
+('3593', '477', '7', '基本医疗保险统筹基金支付比例', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:55:28.966+00', NULL, '1', '1', false, NULL, NULL),
+('3594', '477', '8', '余额', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:55:37.876+00', NULL, '1', '1', false, NULL, NULL),
+('3595', '477', '510100', '生育基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:55:56.748+00', NULL, '1', '1', false, NULL, NULL),
+('3596', '477', '340100', '离休人员医疗保障基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:56:07.428+00', NULL, '1', '1', false, NULL, NULL),
+('3597', '477', '390100', '城乡居民基本医疗保险基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:56:19.636+00', NULL, '1', '1', false, NULL, NULL),
+('3598', '477', '390200', '城乡居民大病医疗保险基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:56:29.916+00', NULL, '1', '1', false, NULL, NULL),
+('3599', '477', '610100', '医疗救助基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:56:41.267+00', NULL, '1', '1', false, NULL, NULL),
+('3600', '477', '640100', '政府兜底基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:56:50.715+00', NULL, '1', '1', false, NULL, NULL),
+('3601', '477', '390400', '意外伤害基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:57:00.334+00', NULL, '1', '1', false, NULL, NULL),
+('3602', '477', '620100', '照护保险基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:57:10.451+00', NULL, '1', '1', false, NULL, NULL),
+('3603', '477', '360100', '财政基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:57:20.132+00', NULL, '1', '1', false, NULL, NULL),
+('3604', '477', '999900', '医院垫付', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:57:30.020+00', NULL, '1', '1', false, NULL, NULL),
+('3605', '477', '390300', '城乡居民大病补充保险基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:57:39.771+00', NULL, '1', '1', false, NULL, NULL),
+('3606', '477', '360300', '保健预支基金', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-06-19 18:57:49.468+00', NULL, '1', '1', false, NULL, NULL),
+('3607', '204', '8', '就诊卡', NULL, NULL, '7', true, NULL, 'default', NULL, '1', '2025-06-22 23:20:56.433+00', '2025-06-22 23:21:25.751+00', '1', '1', false, NULL, NULL),
+('3608', '470', '4', '数量小于等于20', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-05-05 23:00:17.690+00', NULL, '1', '1', false, NULL, NULL),
+('3609', '470', '5', '数量小于等于50', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-05-05 23:00:17.690+00', NULL, '1', '1', false, NULL, NULL),
+('3610', '225', '700', '冲管', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-06-26 17:49:33.526+00', '2025-06-26 22:35:21.575+00', '1', '1', false, NULL, NULL),
+('3611', '213', '4', '就诊卡', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-06-26 18:22:34.813+00', NULL, '1', '1', false, NULL, NULL),
+('3612', '225', '20', '滴耳', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2025-06-29 21:24:29.403+00', '2025-12-21 22:11:14.063+00', '1', '1', false, NULL, NULL),
+('3615', '478', '0', '自费', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-07-10 17:09:38.754+00', NULL, '1', '1', false, NULL, NULL),
+('3616', '478', '1', '省医保', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-07-10 17:09:54.002+00', NULL, '1', '1', false, NULL, NULL),
+('3617', '478', '2', '市医保', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-07-10 17:10:05.520+00', NULL, '1', '1', false, NULL, NULL),
+('3618', '478', '3', '公费', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-07-10 17:10:17.417+00', NULL, '1', '1', false, NULL, NULL),
+('3619', '480', '1', '事故', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-07-27 17:49:19.850+00', NULL, '1', '1', false, NULL, NULL),
+('3620', '480', '2', '随意选择的', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-07-27 17:49:35.136+00', NULL, '1', '1', false, NULL, NULL),
+('3621', '480', '3', '紧急', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-07-27 17:49:54.030+00', NULL, '1', '1', false, NULL, NULL),
+('3622', '480', '4', '分娩', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-07-27 17:50:05.882+00', NULL, '1', '1', false, NULL, NULL),
+('3623', '480', '5', '新生儿', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-07-27 17:50:16.027+00', NULL, '1', '1', false, NULL, NULL),
+('3624', '480', '6', '常规', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2025-07-27 17:50:26.600+00', NULL, '1', '1', false, NULL, NULL),
+('3625', '480', '7', '危重', NULL, NULL, '7', true, NULL, 'default', NULL, '1', '2025-07-27 17:50:37.735+00', NULL, '1', '1', false, NULL, NULL),
+('3626', '479', '1', '门诊转住院', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-07-27 17:51:41.284+00', NULL, '1', '1', false, NULL, NULL),
+('3627', '479', '2', '急诊入院', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-07-27 17:51:54.961+00', NULL, '1', '1', false, NULL, NULL),
+('3628', '479', '3', '转入入院', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-07-27 17:52:08.815+00', NULL, '1', '1', false, NULL, NULL),
+('3629', '479', '4', '其它医疗机构转入', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-07-27 17:52:31.859+00', NULL, '1', '1', false, NULL, NULL),
+('3630', '479', '5', '其它', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-07-27 17:52:47.977+00', NULL, '1', '1', false, NULL, NULL),
+('3636', '482', '1', '医嘱离院', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-08-25 21:20:16.816+00', NULL, '1', '1', false, NULL, NULL),
+('3637', '482', '2', '医嘱转院', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-08-25 21:20:30.738+00', NULL, '1', '1', false, NULL, NULL),
+('3638', '482', '3', '医嘱转社区卫生服务机构/乡镇卫生院', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-08-25 21:25:31.095+00', NULL, '1', '1', false, NULL, NULL),
+('3639', '482', '4', '非医嘱离院', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-08-25 21:27:03.947+00', NULL, '1', '1', false, NULL, NULL),
+('3640', '482', '5', '死亡', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-08-25 21:27:26.465+00', NULL, '1', '1', false, NULL, NULL),
+('3641', '482', '6', '其他', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2025-08-25 21:27:54.906+00', NULL, '1', '1', false, NULL, NULL),
+('3642', '255', '38', '病情', NULL, NULL, '17', true, NULL, 'default', NULL, '1', '2025-08-27 16:54:58.754+00', '2025-08-27 16:55:46.448+00', '1', '1', false, NULL, NULL),
+('3643', '255', '39', '护理常规', NULL, NULL, '18', true, NULL, 'default', NULL, '1', '2025-08-27 16:56:42.152+00', '2025-08-27 16:56:49.372+00', '1', '1', false, NULL, NULL),
+('3644', '255', '40', '体位', NULL, NULL, '19', true, NULL, 'default', NULL, '1', '2025-08-27 16:57:42.867+00', NULL, '1', '1', false, NULL, NULL),
+('3645', '255', '41', '陪护', NULL, NULL, '20', true, NULL, 'default', NULL, '1', '2025-08-27 17:00:13.717+00', NULL, '1', '1', false, NULL, NULL),
+('3646', '255', '42', '隔离等级', NULL, NULL, '21', true, NULL, 'default', NULL, '1', '2025-08-27 17:02:51.278+00', NULL, '1', '1', false, NULL, NULL),
+('3647', '255', '43', '口腔检查', NULL, NULL, '22', true, NULL, 'default', NULL, '1', '2025-11-27 23:17:51.477+00', NULL, '1', '1', false, NULL, NULL),
+('3648', '255', '44', '内镜检查', NULL, NULL, '24', true, NULL, 'default', NULL, '1', '2025-11-27 23:21:10.253+00', NULL, '1', '1', false, NULL, NULL),
+('3654', '255', '45', '内镜治疗', NULL, NULL, '25', true, NULL, 'default', NULL, '1', '2025-11-28 01:35:35.308+00', NULL, '1', '1', false, NULL, NULL),
+('3655', '255', '46', '基础服务', NULL, NULL, '27', true, NULL, 'default', NULL, '1', '2025-11-28 01:36:07.400+00', '2025-12-01 22:47:22.662+00', '1', '1', false, NULL, NULL),
+('3656', '255', '47', '诊断费', NULL, NULL, '28', true, NULL, 'default', NULL, '1', '2025-11-28 01:36:52.480+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('3657', '255', '48', '预防接种手续费', NULL, NULL, '29', true, NULL, 'default', NULL, '1', '2025-11-28 01:37:09.645+00', '2025-11-28 01:37:44.126+00', '1', '1', false, NULL, NULL),
+('3658', '255', '49', '口腔治疗', NULL, NULL, '30', true, NULL, 'default', NULL, '1', '2025-11-28 01:37:56.396+00', NULL, '1', '1', false, NULL, NULL),
+('3679', '255', '50', '护理项目', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-12-01 22:50:52.825+00', NULL, '1', '1', false, NULL, NULL),
+('3685', '221', '7', '医用耗材', NULL, NULL, '7', true, NULL, 'default', NULL, '1', '2025-12-03 00:48:55.170+00', NULL, '1', '1', false, NULL, NULL),
+('3686', '221', '8', '检验试剂', NULL, NULL, '8', true, NULL, 'default', NULL, '1', '2025-12-03 00:49:24.212+00', NULL, '1', '1', false, NULL, NULL),
+('3689', '253', '11', '医用耗材', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2025-12-03 21:36:49.025+00', NULL, '1', '1', false, NULL, NULL),
+('3690', '253', '12', '检验试剂', NULL, NULL, '12', true, NULL, 'default', NULL, '1', '2025-12-03 21:37:03.646+00', NULL, '1', '1', false, NULL, NULL),
+('3701', '236', '2012', '电诊', '电诊项目', NULL, '0', true, NULL, 'default', NULL, '1', '2025-12-26 03:33:17.953+00', NULL, '1', '1', false, NULL, NULL),
+('3702', '483', '1', '先煎', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2026-01-13 02:43:06.556+00', NULL, '1', '1', false, NULL, NULL),
+('3703', '483', '2', '后下', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2026-01-13 02:43:18.670+00', NULL, '1', '1', false, NULL, NULL),
+('3704', '484', '1', '40-50滴/分', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2026-01-22 01:01:07.240+00', NULL, '1', '1', false, NULL, NULL),
+('3705', '484', '2', '50-60滴/分', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2026-01-22 01:01:24.926+00', NULL, '1', '1', false, NULL, NULL),
+('3706', '485', '1', '1', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2026-01-30 00:48:32.090+00', '2026-01-30 00:53:46.447+00', '1', '1', false, NULL, NULL),
+('3707', '485', '2', '2', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2026-01-30 00:48:38.981+00', '2026-01-30 00:53:42.618+00', '1', '1', false, NULL, NULL),
+('3708', '485', '3', '3', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2026-01-30 00:48:43.558+00', '2026-01-30 00:50:57.924+00', '1', '1', false, NULL, NULL),
+('3709', '485', '4', '4', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2026-01-30 00:48:47.965+00', '2026-01-30 00:51:05.197+00', '1', '1', false, NULL, NULL),
+('3710', '485', '5', '5', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2026-01-30 00:48:51.958+00', '2026-01-30 00:51:08.745+00', '1', '1', false, NULL, NULL),
+('3711', '483', '3', '包煎', '包煎', NULL, '2', true, NULL, 'default', NULL, '1', '2026-06-30 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3712', '483', '4', '另煎', '另煎', NULL, '3', true, NULL, 'default', NULL, '1', '2026-06-30 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3713', '483', '5', '烊化', '烊化', NULL, '4', true, NULL, 'default', NULL, '1', '2026-06-30 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('3714', '483', '6', '冲服', '冲服', NULL, '5', true, NULL, 'default', NULL, '1', '2026-06-30 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900001001', '900001', 'mg', '毫克', NULL, NULL, '1', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900001002', '900001', 'g', '克', NULL, NULL, '2', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900001003', '900001', 'ug', '微克', NULL, NULL, '3', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900001004', '900001', 'ml', '毫升', NULL, NULL, '4', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900001005', '900001', 'l', '升', NULL, NULL, '5', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900001006', '900001', 'IU', '国际单位', NULL, NULL, '6', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900002001', '900002', 'case', '箱', NULL, NULL, '1', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900002002', '900002', 'box', '盒', NULL, NULL, '2', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900002003', '900002', 'pack', '包', NULL, NULL, '3', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900002004', '900002', 'bottle', '瓶', NULL, NULL, '4', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900002005', '900002', 'bag', '袋', NULL, NULL, '5', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900003001', '900003', 'pcs', '个', NULL, NULL, '1', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900003002', '900003', 'bottle', '瓶', NULL, NULL, '2', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900003003', '900003', 'piece', '片', NULL, NULL, '3', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900003004', '900003', 'tablet', '粒', NULL, NULL, '4', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900003005', '900003', 'branch', '支', NULL, NULL, '5', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900004001', '900004', 'pcs', '个', NULL, NULL, '1', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900004002', '900004', 'box', '盒', NULL, NULL, '2', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900004003', '900004', 'bottle', '瓶', NULL, NULL, '3', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900004004', '900004', 'branch', '支', NULL, NULL, '4', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900005001', '900005', 'piece', '片', NULL, NULL, '1', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900005002', '900005', 'tablet', '粒', NULL, NULL, '2', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900005003', '900005', 'ml', '毫升', NULL, NULL, '3', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900005004', '900005', 'drop', '滴', NULL, NULL, '4', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900005005', '900005', 'pcs', '个', NULL, NULL, '5', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900006001', '900006', '2', '西药', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900006002', '900006', '1', '中成药', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900006003', '900006', '4', '中草药', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900006004', '900006', '3', '外购药品', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900006005', '900006', '9', '其他', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('900006006', '279125561775755265', '1', '片', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:04.606+00', '2026-05-02 22:07:04.606+00', '1', '1', false, NULL, NULL),
+('900006007', '279125561775755265', '2', '盒', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:04.606+00', '2026-05-02 22:07:04.606+00', '1', '1', false, NULL, NULL),
+('900006008', '279125561775755265', '3', 'ml', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:04.606+00', '2026-05-02 22:07:04.606+00', '1', '1', false, NULL, NULL),
+('900006009', '279125561775755265', '4', 'mg', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:04.606+00', '2026-05-02 22:07:04.606+00', '1', '1', false, NULL, NULL),
+('900006010', '279125561775755265', '5', '粒', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:04.606+00', '2026-05-02 22:07:04.606+00', '1', '1', false, NULL, NULL),
+('900006011', '279125561775755265', '6', '次', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:04.606+00', '2026-05-02 22:07:04.606+00', '1', '1', false, NULL, NULL),
+('900006012', '279125561775755265', '7', '箱', NULL, NULL, '7', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:04.606+00', '2026-05-02 22:07:04.606+00', '1', '1', false, NULL, NULL),
+('900006013', '279125561775755265', '8', '瓶', NULL, NULL, '8', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:04.606+00', '2026-05-02 22:07:04.606+00', '1', '1', false, NULL, NULL),
+('900006014', '279125561775755265', '9', '支', NULL, NULL, '9', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:04.606+00', '2026-05-02 22:07:04.606+00', '1', '1', false, NULL, NULL),
+('900006015', '279125561775755265', '10', 'g', NULL, NULL, '10', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:04.606+00', '2026-05-02 22:07:04.606+00', '1', '1', false, NULL, NULL),
+('900006016', '279125561775755265', '11', '袋', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:04.606+00', '2026-05-02 22:07:04.606+00', '1', '1', false, NULL, NULL),
+('900006017', '279125561775755266', 'general_dx', '疾病与诊断', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
+('900006018', '279125561775755266', 'chronic_spec', '特慢病诊断目录', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
+('900006019', '279125561775755266', 'disease_pkg', '按病种目录', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
+('900006020', '279125561775755266', 'paid_dx', '付费诊断', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
+('900006021', '279125561775755266', 'day_surgery_dx', '日间手术治疗病种', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
+('900006022', '279125561775755266', 'tcm_dx', '中医诊断', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
+('900006023', '279125561775755266', 'tcm_syndrome', '中医证候目录', NULL, NULL, '7', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
+('900006024', '279125561775755266', 'tumor_morph', '肿瘤形态学目录', NULL, NULL, '8', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" (
+    "id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order",
+    "is_active", "css_class", "list_class", "is_default", "tenant_id",
+    "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by"
+)
+VALUES
+('9000070001', '900007', 'T01', '水煎服', '汤剂加水煎煮后服用', NULL, '1', true, NULL, 'default', '1', '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('9000070002', '900007', 'T02', '煎服', '煎煮后服用', NULL, '2', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('9000070003', '900007', 'T03', '温服', '药液温热后服用', NULL, '3', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('9000070004', '900007', 'T04', '热服', '药液热服', NULL, '4', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('9000070005', '900007', 'T05', '冷服', '药液放冷后服用', NULL, '5', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('9000070006', '900007', 'T06', '顿服', '一次服完', NULL, '6', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('9000070007', '900007', 'T07', '代茶饮', '代茶饮用', NULL, '7', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('9000070008', '900007', 'T08', '泡服', '开水泡服', NULL, '8', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('9000070009', '900007', 'T09', '冲服', '温水或开水冲服', NULL, '9', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('9000070010', '900007', 'T10', '烊化冲服', '烊化后冲服', NULL, '10', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('9000070011', '900007', 'T11', '含服', '含于口中缓慢服用', NULL, '11', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('9000070012', '900007', 'T12', '嚼服', '嚼碎后服用', NULL, '12', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('9000070013', '900007', 'T13', '外用', '外用', NULL, '13', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('9000070014', '900007', 'T14', '外敷', '外敷患处', NULL, '14', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('9000070015', '900007', 'T15', '外洗', '外洗', NULL, '15', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('9000070016', '900007', 'T16', '熏洗', '熏洗', NULL, '16', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('9000070017', '900007', 'T17', '湿敷', '湿敷', NULL, '17', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('9000070018', '900007', 'T18', '坐浴', '坐浴', NULL, '18', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
+('9000070019', '900007', 'T19', '灌肠', '灌肠', NULL, '19', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("code_system_id", "code") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" (
+    "id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order",
+    "is_active", "css_class", "list_class", "is_default", "tenant_id",
+    "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by"
+)
+SELECT
+    9000070100 + ROW_NUMBER() OVER (ORDER BY COALESCE(c.sort_order, 0), c.id),
+    900007,
+    c.code,
+    c.display,
+    c.definition,
+    NULL,
+    COALESCE(c.sort_order, 0) + 1000,
+    c.is_active,
+    c.css_class,
+    c.list_class,
+    c.is_default,
+    c.tenant_id,
+    '2026-05-02 22:07:03.745+00',
+    NULL,
+    c.created_by,
+    c.updated_by,
+    false,
+    NULL,
+    NULL
+FROM "ter_concept" c
+WHERE c.code_system_id = 225
+  AND c.is_deleted = false
+ON CONFLICT ("code_system_id", "code") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" (
+    "id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order",
+    "is_active", "css_class", "list_class", "is_default", "tenant_id",
+    "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by"
+)
+VALUES
+    ('900008001', '900008', 'TEMP', '体温', '℃', NULL, '1', true, NULL, 'default', NULL, '1', '2026-06-18 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008002', '900008', 'SBP', '收缩压', 'mmHg', NULL, '2', true, NULL, 'default', NULL, '1', '2026-06-18 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008003', '900008', 'DBP', '舒张压', 'mmHg', NULL, '3', true, NULL, 'default', NULL, '1', '2026-06-18 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008004', '900008', 'PULSE', '脉搏', '次/分', NULL, '4', true, NULL, 'default', NULL, '1', '2026-06-18 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008005', '900008', 'RESP', '呼吸', '次/分', NULL, '5', true, NULL, 'default', NULL, '1', '2026-06-18 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008006', '900008', 'SPO2', '血氧饱和度', '%', NULL, '6', true, NULL, 'default', NULL, '1', '2026-06-18 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008007', '900008', 'HR', '心率', '次/分', NULL, '7', true, NULL, 'default', NULL, '1', '2026-06-18 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008008', '900008', 'HEIGHT', '身高', 'cm', NULL, '8', true, NULL, 'default', NULL, '1', '2026-06-18 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008009', '900008', 'WEIGHT', '体重', 'kg', NULL, '9', true, NULL, 'default', NULL, '1', '2026-06-18 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008010', '900008', 'BG', '血糖', 'mmol/L', NULL, '10', true, NULL, 'default', NULL, '1', '2026-06-18 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008011', '900008', 'PAIN', '疼痛评分', '分', NULL, '11', true, NULL, 'default', NULL, '1', '2026-06-18 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008012', '900008', 'PHYS_COOL', '物理降温', '℃', NULL, '12', true, NULL, 'default', NULL, '1', '2026-06-18 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008013', '900008', 'INTAKE', '入量', 'ml', NULL, '13', true, NULL, 'default', NULL, '1', '2026-06-18 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008014', '900008', 'OUTPUT', '出量', 'ml', NULL, '14', true, NULL, 'default', NULL, '1', '2026-06-18 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008015', '900008', 'STOOL', '大便次数', '次/天', NULL, '15', true, NULL, 'default', NULL, '1', '2026-06-18 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008016', '900008', 'URINE_FREQ', '小便次数', '次/天', NULL, '16', true, NULL, 'default', NULL, '1', '2026-06-18 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008017', '900008', 'URINE_VOL', '尿量', 'ml', NULL, '17', true, NULL, 'default', NULL, '1', '2026-06-18 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("code_system_id", "code") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" (
+    "id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order",
+    "is_active", "css_class", "list_class", "is_default", "tenant_id",
+    "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by"
+)
+VALUES
+    ('900008018', '900008', 'BP', '血压', 'mmHg', NULL, '18', true, NULL, 'default', NULL, '1', '2026-06-19 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008019', '900008', 'CONSCIOUSNESS', '意识', NULL, NULL, '19', true, NULL, 'default', NULL, '1', '2026-06-19 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008020', '900008', 'PUPIL_L', '瞳孔左', NULL, NULL, '20', true, NULL, 'default', NULL, '1', '2026-06-19 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008021', '900008', 'PUPIL_R', '瞳孔右', NULL, NULL, '21', true, NULL, 'default', NULL, '1', '2026-06-19 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008022', '900008', 'OXYGEN_MODE', '吸氧方式', NULL, NULL, '22', true, NULL, 'default', NULL, '1', '2026-06-19 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008023', '900008', 'OXYGEN_RATE', '吸氧', 'L/分', NULL, '23', true, NULL, 'default', NULL, '1', '2026-06-19 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008024', '900008', 'OXYGEN_FLOW', '氧流量', NULL, NULL, '24', true, NULL, 'default', NULL, '1', '2026-06-19 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008025', '900008', 'INTAKE_NAME', '入量名称', NULL, NULL, '25', true, NULL, 'default', NULL, '1', '2026-06-19 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008026', '900008', 'INTAKE_ROUTE', '入量途径', NULL, NULL, '26', true, NULL, 'default', NULL, '1', '2026-06-19 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008027', '900008', 'OUTPUT_NAME', '出量名称', NULL, NULL, '27', true, NULL, 'default', NULL, '1', '2026-06-19 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008028', '900008', 'OUTPUT_CHARACTER', '出量颜色性状', NULL, NULL, '28', true, NULL, 'default', NULL, '1', '2026-06-19 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008029', '900008', 'SKIN_STATUS', '皮肤情况', NULL, NULL, '29', true, NULL, 'default', NULL, '1', '2026-06-19 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008030', '900008', 'TUBE_CARE', '管路护理', NULL, NULL, '30', true, NULL, 'default', NULL, '1', '2026-06-19 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008031', '900008', 'CCU_HR', 'CCU心率', 'bpm', NULL, '31', true, NULL, 'default', NULL, '1', '2026-06-19 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008032', '900008', 'INCUBATOR', '暖箱温度', '℃', NULL, '32', true, NULL, 'default', NULL, '1', '2026-06-19 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008033', '900008', 'BLOOD_KETONE', '血酮', 'mmol/L', NULL, '33', true, NULL, 'default', NULL, '1', '2026-06-19 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008034', '900008', 'WAIST', '腰围', 'cm', NULL, '34', true, NULL, 'default', NULL, '1', '2026-06-19 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008035', '900008', 'ENEMA', '灌肠次数', '次/天', NULL, '35', true, NULL, 'default', NULL, '1', '2026-06-19 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008036', '900008', 'STOOL_AFTER_ENEMA', '灌肠后大便', '次/天', NULL, '36', true, NULL, 'default', NULL, '1', '2026-06-19 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900008037', '900008', 'STOOL_VOL', '大便量', 'g', NULL, '37', true, NULL, 'default', NULL, '1', '2026-06-19 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("code_system_id", "code") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" (
+    "id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order",
+    "is_active", "css_class", "list_class", "is_default", "tenant_id",
+    "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by"
+)
+VALUES
+    ('900009001', '900009', 'ADMISSION', '入院', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009002', '900009', 'TRANSFER', '转科', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009003', '900009', 'SURGERY', '手术', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009004', '900009', 'DELIVERY', '分娩', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009005', '900009', 'DISCHARGE', '出院', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009006', '900009', 'DEATH', '死亡', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009007', '900009', 'OUT_FOR_EXAM', '外出检查', NULL, NULL, '7', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009008', '900009', 'REFUSE_TEMP', '拒测体温', NULL, NULL, '8', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009009', '900009', 'PHYSICAL_COOLING', '物理降温', NULL, NULL, '9', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009010', '900009', 'MEDICATION_COOLING', '药物降温', NULL, NULL, '10', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009011', '900009', 'TEMP_NOT_RISING', '体温不升', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009012', '900009', 'PULSE_DEFICIT', '脉搏短绌', NULL, NULL, '12', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("code_system_id", "code") DO NOTHING;
+
+
+
+INSERT INTO ter_concept (
+    id,
+    code_system_id,
+    code,
+    display,
+    definition,
+    parent_id,
+    sort_order,
+    is_active,
+    css_class,
+    list_class,
+    is_default,
+    tenant_id,
+    created_at,
+    updated_at,
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by
+)
+VALUES
+    (
+        9477001,
+        477,
+        'CASH',
+        '现金',
+        '手工现金',
+        NULL,
+        1,
+        true,
+        NULL,
+        'default',
+        NULL,
+        1,
+        CURRENT_TIMESTAMP,
+        NULL,
+        1,
+        1,
+        false,
+        NULL,
+        NULL
+    ),
+    (
+        9477002,
+        477,
+        'WECHAT',
+        '微信',
+        '固定码手工或银联被扫（WEIX）落库',
+        NULL,
+        2,
+        true,
+        NULL,
+        'default',
+        NULL,
+        1,
+        CURRENT_TIMESTAMP,
+        NULL,
+        1,
+        1,
+        false,
+        NULL,
+        NULL
+    ),
+    (
+        9477003,
+        477,
+        'ALIPAY',
+        '支付宝',
+        '固定码手工或银联被扫（ZFBA）落库',
+        NULL,
+        3,
+        true,
+        NULL,
+        'default',
+        NULL,
+        1,
+        CURRENT_TIMESTAMP,
+        NULL,
+        1,
+        1,
+        false,
+        NULL,
+        NULL
+    ),
+    (
+        9477004,
+        477,
+        'BANK_CARD',
+        '银行卡',
+        '手工刷卡或银联被扫（UPAY）落库',
+        NULL,
+        4,
+        true,
+        NULL,
+        'default',
+        NULL,
+        1,
+        CURRENT_TIMESTAMP,
+        NULL,
+        1,
+        1,
+        false,
+        NULL,
+        NULL
+    )
+ON CONFLICT (code_system_id, code) DO NOTHING;
+
+
+
+INSERT INTO ter_concept (
+    id, code_system_id, code, display, definition, parent_id, sort_order,
+    is_active, css_class, list_class, is_default, tenant_id,
+    created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+) VALUES
+    (337000001, 425, '236', '主治医师', NULL, NULL, 6, true, NULL, 'default', NULL, 1, '2025-04-14 08:00:00.000+00', NULL, 1, 1, false, NULL, NULL),
+    (337000002, 425, '241', '主任护师', NULL, NULL, 10, true, NULL, 'default', NULL, 1, '2025-04-14 08:00:00.000+00', NULL, 1, 1, false, NULL, NULL),
+    (337000003, 425, '242', '副主任护师', NULL, NULL, 11, true, NULL, 'default', NULL, 1, '2025-04-14 08:00:00.000+00', NULL, 1, 1, false, NULL, NULL),
+    (337000004, 425, '243', '主管护师', NULL, NULL, 12, true, NULL, 'default', NULL, 1, '2025-04-14 08:00:00.000+00', NULL, 1, 1, false, NULL, NULL),
+    (337000005, 425, '244', '护师', NULL, NULL, 13, true, NULL, 'default', NULL, 1, '2025-04-14 08:00:00.000+00', NULL, 1, 1, false, NULL, NULL),
+    (337000006, 425, '245', '护士', NULL, NULL, 14, true, NULL, 'default', NULL, 1, '2025-04-14 08:00:00.000+00', NULL, 1, 1, false, NULL, NULL),
+    (337000007, 425, '251', '主任药师', NULL, NULL, 20, true, NULL, 'default', NULL, 1, '2025-04-14 08:00:00.000+00', NULL, 1, 1, false, NULL, NULL),
+    (337000008, 425, '252', '副主任药师', NULL, NULL, 21, true, NULL, 'default', NULL, 1, '2025-04-14 08:00:00.000+00', NULL, 1, 1, false, NULL, NULL),
+    (337000009, 425, '253', '主管药师', NULL, NULL, 22, true, NULL, 'default', NULL, 1, '2025-04-14 08:00:00.000+00', NULL, 1, 1, false, NULL, NULL),
+    (337000010, 425, '254', '药师', NULL, NULL, 23, true, NULL, 'default', NULL, 1, '2025-04-14 08:00:00.000+00', NULL, 1, 1, false, NULL, NULL),
+    (337000011, 425, '255', '药士', NULL, NULL, 24, true, NULL, 'default', NULL, 1, '2025-04-14 08:00:00.000+00', NULL, 1, 1, false, NULL, NULL),
+    (337000012, 425, '261', '主任技师', NULL, NULL, 30, true, NULL, 'default', NULL, 1, '2025-04-14 08:00:00.000+00', NULL, 1, 1, false, NULL, NULL),
+    (337000013, 425, '262', '副主任技师', NULL, NULL, 31, true, NULL, 'default', NULL, 1, '2025-04-14 08:00:00.000+00', NULL, 1, 1, false, NULL, NULL),
+    (337000014, 425, '263', '主管技师', NULL, NULL, 32, true, NULL, 'default', NULL, 1, '2025-04-14 08:00:00.000+00', NULL, 1, 1, false, NULL, NULL),
+    (337000015, 425, '264', '技师', NULL, NULL, 33, true, NULL, 'default', NULL, 1, '2025-04-14 08:00:00.000+00', NULL, 1, 1, false, NULL, NULL),
+    (337000016, 425, '265', '技士', NULL, NULL, 34, true, NULL, 'default', NULL, 1, '2025-04-14 08:00:00.000+00', NULL, 1, 1, false, NULL, NULL)
+ON CONFLICT (code_system_id, code) DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('3680', '255', '51', '床位服务', '住院床位费、采暖费、空调费等床位相关服务', NULL, '26', true, NULL, 'default', NULL, '1', '2026-06-18 16:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('900006025', '279125561775755265', '14', '日', '按自然日计价', NULL, '12', true, NULL, 'default', NULL, '1', '2026-06-18 16:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('900006026', '279125561775755265', '71', '床日', '按床日计价', NULL, '13', true, NULL, 'default', NULL, '1', '2026-06-18 16:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('900010001', '900010', '1', '一般医疗服务费', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010002', '900010', '2', '一般治疗操作费', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010003', '900010', '3', '护理费', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010004', '900010', '4', '综合医疗服务类其他费用', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010005', '900010', '5', '病理诊断费', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010006', '900010', '6', '实验室诊断费', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010007', '900010', '7', '影像学诊断费', NULL, NULL, '7', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010008', '900010', '8', '临床诊断项目费', NULL, NULL, '8', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010009', '900010', '9', '非手术治疗项目费', NULL, NULL, '9', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010010', '900010', '10', '临床物理治疗费', NULL, NULL, '10', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010011', '900010', '11', '手术治疗费', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010012', '900010', '12', '麻醉费', NULL, NULL, '12', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010013', '900010', '13', '手术费', NULL, NULL, '13', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010014', '900010', '14', '康复费', NULL, NULL, '14', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010015', '900010', '15', '中医治疗费', NULL, NULL, '15', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010016', '900010', '16', '西药费', NULL, NULL, '16', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010017', '900010', '17', '抗菌药物费用', NULL, NULL, '17', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010018', '900010', '18', '中成药费', NULL, NULL, '18', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010019', '900010', '19', '中药饮片费', NULL, NULL, '19', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010020', '900010', '20', '血费', NULL, NULL, '20', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010021', '900010', '21', '白蛋白类制品费', NULL, NULL, '21', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010022', '900010', '22', '球蛋白类制品费', NULL, NULL, '22', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010023', '900010', '23', '凝血因子类制品费', NULL, NULL, '23', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010024', '900010', '24', '细胞因子类制品费', NULL, NULL, '24', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010025', '900010', '25', '检查用一次性医用材料费', NULL, NULL, '25', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010026', '900010', '26', '治疗用一次性医用材料费', NULL, NULL, '26', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010027', '900010', '27', '手术用一次性医用材料费', NULL, NULL, '27', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('900010028', '900010', '28', '其他费', NULL, NULL, '28', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070101', '900007', '1', '口服', NULL, NULL, '1000', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070102', '900007', '404', '静脉注射', NULL, NULL, '1002', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070103', '900007', '700', '冲管', NULL, NULL, '1002', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070104', '900007', '405', '静脉滴注', NULL, NULL, '1003', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070105', '900007', '4', '注射给药', NULL, NULL, '1004', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070106', '900007', '401', '皮下注射', NULL, NULL, '1005', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070107', '900007', '402', '皮内注射', NULL, NULL, '1006', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070108', '900007', '20', '滴耳', NULL, NULL, '1006', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070109', '900007', '5', '吸入给药', NULL, NULL, '1009', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070110', '900007', '6', '局部用药', NULL, NULL, '1010', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070111', '900007', '601', '椎管内用药', NULL, NULL, '1011', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070112', '900007', '602', '关节腔内用药', NULL, NULL, '1012', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070113', '900007', '603', '胸膜腔用药', NULL, NULL, '1013', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070114', '900007', '604', '腹腔用药', NULL, NULL, '1014', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070115', '900007', '605', '阴道用药', NULL, NULL, '1015', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070116', '900007', '607', '滴眼', NULL, NULL, '1017', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070117', '900007', '608', '滴鼻', NULL, NULL, '1018', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070118', '900007', '609', '喷喉', NULL, NULL, '1019', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070119', '900007', '610', '含化', NULL, NULL, '1020', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070120', '900007', '611', '敷伤口', NULL, NULL, '1021', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070121', '900007', '612', '擦皮肤', NULL, NULL, '1022', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070122', '900007', '699', '其他局部给药途径', NULL, NULL, '1023', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070123', '900007', '9', '其他给药途径', NULL, NULL, '1024', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070124', '900007', '606', '气管内用药', NULL, NULL, '1099', true, '16', 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070125', '900007', '2', '直肠给药', NULL, NULL, '1100', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('9000070126', '900007', '3', '舌下给药', NULL, NULL, '1102', true, NULL, 'default', NULL, '1', '2026-05-02 14:07:03.745+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+
+INSERT INTO mrms_qc_rule (id, tenant_id, rule_code, rule_name, severity_code, category_code, enabled, expression_json, created_at, is_deleted)
+VALUES
+    (880001, 0, 'QC_HP_SUBMIT_REQUIRED', '首页提交必填项', 'block', 'completeness', TRUE, '{"requiredFields":["psn_name","dscg_way_code"]}', NOW(), FALSE),
+    (880002, 0, 'QC_HP_DATE_LOGIC', '入出院日期逻辑', 'block', 'consistency', TRUE, '{}', NOW(), FALSE),
+    (880003, 0, 'QC_HP_DISCHARGE_MAIN_DIAG', '出院主诊断', 'block', 'completeness', TRUE, '{}', NOW(), FALSE),
+    (880004, 0, 'QC_SUBMIT_OVERDUE', '出院后未及时提交', 'warn', 'timeliness', TRUE, '{"maxDaysAfterDischarge":30}', NOW(), FALSE),
+    (880005, 0, 'QC_ARCHIVE_OVERDUE', '出院后未及时归档', 'warn', 'timeliness', TRUE, '{"maxDaysAfterDischarge":60}', NOW(), FALSE),
+    (880006, 0, 'QC_DOC_REQUIRED', '必写文书齐全', 'block', 'document', TRUE, '{}', NOW(), FALSE)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO mrms_required_doc_type (id, tenant_id, document_type_code, encounter_class_code, required, created_at, is_deleted)
+VALUES
+    (881001, 0, 'ADMISSION_RECORD', 'IMP', TRUE, NOW(), FALSE),
+    (881002, 0, 'DISCHARGE_RECORD', 'IMP', TRUE, NOW(), FALSE),
+    (881003, 0, 'FIRST_PROGRESS_NOTE', 'IMP', TRUE, NOW(), FALSE)
+ON CONFLICT (id) DO NOTHING;
+
+-- Menu seeds restored from origin/master (V1__Init.sql + V98__mrms_menu_seed.sql)
+
+INSERT INTO "whale_permissions" ("id", "name", "display_name", "parent_name", "description", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('1', 'Navigation', '导航菜单', NULL, '由业务菜单自动生成的入口权限分组', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('2', 'Navigation.UserManagement', '用户管理', 'Navigation', '菜单入口: user_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('3', 'Navigation.RoleManagement', '角色管理', 'Navigation', '菜单入口: role_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('4', 'Navigation.PermissionManagement', '权限管理', 'Navigation', '菜单入口: permission_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('5', 'Navigation.TenantManagement', '租户管理', 'Navigation', '菜单入口: tenant_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('6', 'Navigation.MenuManagement', '菜单管理', 'Navigation', '菜单入口: menu_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('7', 'Navigation.SettingManagement', '设置管理', 'Navigation', '菜单入口: setting_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('8', 'Navigation.CodesystemManagement', '编码管理', 'Navigation', '菜单入口: codesystem_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('9', 'Navigation.BodystructureManagement', '部位管理', 'Navigation', '菜单入口: bodystructure_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10', 'Navigation.WarehouseManagement', '库房药房', 'Navigation', '菜单入口: warehouse_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('11', 'Navigation.WardLocationManagement', '病区病房', 'Navigation', '菜单入口: ward_location_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('12', 'Navigation.PatientManagement', '患者管理', 'Navigation', '菜单入口: patient_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('14', 'Navigation.DeptManagement', '科室管理', 'Navigation', '菜单入口: dept_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('15', 'Navigation.HealthcareServiceManagement', '挂号类型管理', 'Navigation', '菜单入口: healthcare_service_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('16', 'Navigation.ContractManagement', '费用性质管理', 'Navigation', '菜单入口: contract_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('17', 'Navigation.Analytics', '工作台', 'Navigation', '菜单入口: Analytics', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('18', 'Navigation.Frequency', '频次管理', 'Navigation', '菜单入口: Frequency', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('19', 'Navigation.Supplier', '供应商管理', 'Navigation', '菜单入口: Supplier', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('20', 'Navigation.Medicine', '药品管理', 'Navigation', '菜单入口: Medicine', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('21', 'Navigation.Device', '耗材管理', 'Navigation', '菜单入口: Device', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('22', 'Navigation.Diagnosistreatment', '诊疗管理', 'Navigation', '菜单入口: Diagnosistreatment', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('23', 'Navigation.Disease', '诊断', 'Navigation', '菜单入口: Disease', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('25', 'Navigation.Outpatientnursestation', '门诊护士站', 'Navigation', '菜单入口: OutpatientNurseStation', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('26', 'Navigation.Inpatientnursestation', '住院护士站', 'Navigation', '菜单入口: InpatientNurseStation', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('27', 'Navigation.Reportfinance', '财务报表', 'Navigation', '菜单入口: ReportFinance', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('28', 'Navigation.Chargeopregister', '门诊挂号', 'Navigation', '菜单入口: ChargeOpRegister', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('29', 'Navigation.Chargeopcharge', '门诊收费', 'Navigation', '菜单入口: ChargeOpCharge', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('30', 'Navigation.Chargeoprefund', '门诊退费', 'Navigation', '菜单入口: ChargeOpRefund', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('31', 'Navigation.Chargeopdayclose', '门诊日结', 'Navigation', '菜单入口: ChargeOpDayClose', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('32', 'Navigation.Chargeipregister', '住院登记', 'Navigation', '菜单入口: ChargeIpRegister', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('33', 'Navigation.Chargeipsettle', '住院结算', 'Navigation', '菜单入口: ChargeIpSettle', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('34', 'Navigation.Chargeipprepay', '预交金管理', 'Navigation', '菜单入口: ChargeIpPrepay', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('35', 'Navigation.Chargeipfee', '住院费用管理', 'Navigation', '菜单入口: ChargeIpFee', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('73', 'Navigation.Chargeipdayclose', '住院日结', 'Navigation', '菜单入口: ChargeIpDayClose', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('74', 'Navigation.Dispenserecordop', '门诊发退药记录', 'Navigation', '菜单入口: DispenseRecordOp', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('75', 'Navigation.Dispenserecordip', '住院发退药记录', 'Navigation', '菜单入口: DispenseRecordIp', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('76', 'Navigation.Opfeedetail', '门诊费用明细', 'Navigation', '菜单入口: OpFeeDetail', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('36', 'Navigation.Outpatientdoctorstation', '门诊医生站', 'Navigation', '菜单入口: OutpatientDoctorStation', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('37', 'Navigation.Inpatientdoctorstation', '住院医生站', 'Navigation', '菜单入口: InpatientDoctorStation', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('38', 'Navigation.Dispenseop', '门诊发药', 'Navigation', '菜单入口: DispenseOp', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('39', 'Navigation.Dispenseip', '住院发药', 'Navigation', '菜单入口: DispenseIp', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('40', 'Navigation.Dispensedoc', '发药单据', 'Navigation', '菜单入口: DispenseDoc', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('41', 'Navigation.Whpurchaseorder', '药库订货单', 'Navigation', '菜单入口: WhPurchaseOrder', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('42', 'Navigation.Reporthome', '首页', 'Navigation', '菜单入口: ReportHome', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('43', 'Navigation.Reportdean', '院长', 'Navigation', '菜单入口: ReportDean', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('44', 'Navigation.Reportclinical', '临床报表', 'Navigation', '菜单入口: ReportClinical', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('45', 'Navigation.Whpurchaseinbound', '药库进货单', 'Navigation', '菜单入口: WhPurchaseInbound', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('46', 'Navigation.Whstockout', '药库出库单', 'Navigation', '菜单入口: WhStockOut', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('47', 'Navigation.Phstockin', '药房入库单', 'Navigation', '菜单入口: PhStockIn', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('48', 'Navigation.Invstocklist', '库存明细', 'Navigation', '菜单入口: InvStockList', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('49', 'Navigation.Medicinereturnop', '门诊退药', 'Navigation', '菜单入口: MedicineReturnOp', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('53', 'Navigation.Medicinereturnip', '住院退药', 'Navigation', '菜单入口: MedicineReturnIp', NULL, '2026-06-11 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('50', 'Navigation.Emrtemplate', '病历模版', 'Navigation', '菜单入口: EmrTemplate', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('51', 'Navigation.Whstocktakeorder', '药库盘点单', 'Navigation', '菜单入口: WhStocktakeOrder', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('52', 'Navigation.Phstocktakeorder', '药房盘点单', 'Navigation', '菜单入口: PhStocktakeOrder', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('54', 'Navigation.ActivityDeviceBinding', '耗材绑定', 'Navigation', '菜单入口: activity_device_binding', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('55', 'Navigation.Executelocation', '执行地点', 'Navigation', '菜单入口: ExecuteLocation', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('56', 'Navigation.OrderTemplate', '医嘱组套', 'Navigation', '菜单入口: order_template', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('57', 'Navigation.ServiceLocation', '取药科室', 'Navigation', '菜单入口: service_location', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('322589916090863616', 'Identity.Users', '用户管理', NULL, NULL, NULL, '2026-06-09 04:17:09.426+00', '2026-06-09 04:17:09.426+00', NULL, NULL, false, NULL, NULL),
+('322589916120223744', 'Identity.Users.Create', '创建用户', 'Identity.Users', NULL, NULL, '2026-06-09 04:17:09.433+00', '2026-06-09 04:17:09.433+00', NULL, NULL, false, NULL, NULL),
+('322589916137000960', 'Identity.Users.Update', '更新用户', 'Identity.Users', NULL, NULL, '2026-06-09 04:17:09.437+00', '2026-06-09 04:17:09.437+00', NULL, NULL, false, NULL, NULL),
+('322589916157972480', 'Identity.Users.Delete', '删除用户', 'Identity.Users', NULL, NULL, '2026-06-09 04:17:09.442+00', '2026-06-09 04:17:09.442+00', NULL, NULL, false, NULL, NULL),
+('322589916174749696', 'Identity.Users.View', '查看用户', 'Identity.Users', NULL, NULL, '2026-06-09 04:17:09.446+00', '2026-06-09 04:17:09.446+00', NULL, NULL, false, NULL, NULL),
+('322589916199915520', 'Identity.Roles', '角色管理', NULL, NULL, NULL, '2026-06-09 04:17:09.452+00', '2026-06-09 04:17:09.452+00', NULL, NULL, false, NULL, NULL),
+('322589916216692736', 'Identity.Roles.Create', '创建角色', 'Identity.Roles', NULL, NULL, '2026-06-09 04:17:09.456+00', '2026-06-09 04:17:09.456+00', NULL, NULL, false, NULL, NULL),
+('322589916229275648', 'Identity.Roles.Update', '更新角色', 'Identity.Roles', NULL, NULL, '2026-06-09 04:17:09.459+00', '2026-06-09 04:17:09.459+00', NULL, NULL, false, NULL, NULL),
+('322589916246052864', 'Identity.Roles.Delete', '删除角色', 'Identity.Roles', NULL, NULL, '2026-06-09 04:17:09.463+00', '2026-06-09 04:17:09.463+00', NULL, NULL, false, NULL, NULL),
+('322589916254441472', 'Identity.Roles.View', '查看角色', 'Identity.Roles', NULL, NULL, '2026-06-09 04:17:09.465+00', '2026-06-09 04:17:09.465+00', NULL, NULL, false, NULL, NULL),
+('322589916267024384', 'Identity.Permissions', '权限管理', NULL, NULL, NULL, '2026-06-09 04:17:09.468+00', '2026-06-09 04:17:09.468+00', NULL, NULL, false, NULL, NULL),
+('322589916287995904', 'Identity.Permissions.Grant', '授予权限', 'Identity.Permissions', NULL, NULL, '2026-06-09 04:17:09.473+00', '2026-06-09 04:17:09.473+00', NULL, NULL, false, NULL, NULL),
+('322589916304773120', 'Identity.Permissions.Revoke', '撤销权限', 'Identity.Permissions', NULL, NULL, '2026-06-09 04:17:09.477+00', '2026-06-09 04:17:09.477+00', NULL, NULL, false, NULL, NULL),
+('322589916325744640', 'Identity.Permissions.View', '查看权限', 'Identity.Permissions', NULL, NULL, '2026-06-09 04:17:09.482+00', '2026-06-09 04:17:09.482+00', NULL, NULL, false, NULL, NULL),
+('322589916338327552', 'Identity.OrganizationUnits', '组织单元管理', NULL, NULL, NULL, '2026-06-09 04:17:09.485+00', '2026-06-09 04:17:09.485+00', NULL, NULL, false, NULL, NULL),
+('322589916355104768', 'Identity.OrganizationUnits.Create', '创建组织单元', 'Identity.OrganizationUnits', NULL, NULL, '2026-06-09 04:17:09.489+00', '2026-06-09 04:17:09.489+00', NULL, NULL, false, NULL, NULL),
+('322589916380270592', 'Identity.OrganizationUnits.Update', '更新组织单元', 'Identity.OrganizationUnits', NULL, NULL, '2026-06-09 04:17:09.495+00', '2026-06-09 04:17:09.495+00', NULL, NULL, false, NULL, NULL),
+('322589916397047808', 'Identity.OrganizationUnits.Delete', '删除组织单元', 'Identity.OrganizationUnits', NULL, NULL, '2026-06-09 04:17:09.499+00', '2026-06-09 04:17:09.499+00', NULL, NULL, false, NULL, NULL),
+('322589916413825024', 'Identity.OrganizationUnits.View', '查看组织单元', 'Identity.OrganizationUnits', NULL, NULL, '2026-06-09 04:17:09.503+00', '2026-06-09 04:17:09.503+00', NULL, NULL, false, NULL, NULL),
+('322589916430602240', 'Identity.Users.Impersonate', '代理登录', 'Identity.Users', NULL, NULL, '2026-06-09 04:17:09.507+00', '2026-06-09 04:17:09.507+00', NULL, NULL, false, NULL, NULL),
+('322589916443185152', 'TenantManagement.Tenants', '租户管理', NULL, NULL, NULL, '2026-06-09 04:17:09.510+00', '2026-06-09 04:17:09.510+00', NULL, NULL, false, NULL, NULL),
+('322589916459962368', 'TenantManagement.Tenants.Create', '创建租户', 'TenantManagement.Tenants', NULL, NULL, '2026-06-09 04:17:09.514+00', '2026-06-09 04:17:09.514+00', NULL, NULL, false, NULL, NULL),
+('322589916476739584', 'TenantManagement.Tenants.Update', '更新租户', 'TenantManagement.Tenants', NULL, NULL, '2026-06-09 04:17:09.518+00', '2026-06-09 04:17:09.518+00', NULL, NULL, false, NULL, NULL),
+('322589916497711104', 'TenantManagement.Tenants.Delete', '删除租户', 'TenantManagement.Tenants', NULL, NULL, '2026-06-09 04:17:09.523+00', '2026-06-09 04:17:09.523+00', NULL, NULL, false, NULL, NULL),
+('322589916510294016', 'TenantManagement.Tenants.View', '查看租户', 'TenantManagement.Tenants', NULL, NULL, '2026-06-09 04:17:09.526+00', '2026-06-09 04:17:09.526+00', NULL, NULL, false, NULL, NULL),
+('322589916527071232', 'SettingManagement.Settings', '设置管理', NULL, NULL, NULL, '2026-06-09 04:17:09.530+00', '2026-06-09 04:17:09.530+00', NULL, NULL, false, NULL, NULL),
+('322589916548042752', 'SettingManagement.Settings.Create', '创建设置', 'SettingManagement.Settings', NULL, NULL, '2026-06-09 04:17:09.535+00', '2026-06-09 04:17:09.535+00', NULL, NULL, false, NULL, NULL),
+('322589916564819968', 'SettingManagement.Settings.Update', '更新设置', 'SettingManagement.Settings', NULL, NULL, '2026-06-09 04:17:09.539+00', '2026-06-09 04:17:09.539+00', NULL, NULL, false, NULL, NULL),
+('322589916577402880', 'SettingManagement.Settings.Delete', '删除设置', 'SettingManagement.Settings', NULL, NULL, '2026-06-09 04:17:09.542+00', '2026-06-09 04:17:09.542+00', NULL, NULL, false, NULL, NULL),
+('322589916594180096', 'SettingManagement.Settings.View', '查看设置', 'SettingManagement.Settings', NULL, NULL, '2026-06-09 04:17:09.546+00', '2026-06-09 04:17:09.546+00', NULL, NULL, false, NULL, NULL),
+('322970151327633408', 'Navigation.Reporttemplatedesigner', '打印模板设计', 'Navigation', '菜单入口: PrintTemplateDesigner（Report 遗留，已废弃）', '1', '2026-06-10 05:28:04.571+00', '2026-06-25 00:00:00.000+00', '1', '1', true, '2026-06-25 00:00:00.000+00', NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('10001', 'Navigation.ActivityDeviceBinding', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10002', 'Navigation.Analytics', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10003', 'Navigation.BodystructureManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10004', 'Navigation.Chargeipfee', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10005', 'Navigation.Chargeipprepay', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10006', 'Navigation.Chargeipregister', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10007', 'Navigation.Chargeipsettle', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10008', 'Navigation.Chargeopcharge', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10009', 'Navigation.Chargeopdayclose', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10075', 'Navigation.Chargeipdayclose', 'R', '1', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10076', 'Navigation.Dispenserecordop', 'R', '1', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10077', 'Navigation.Dispenserecordip', 'R', '1', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10078', 'Navigation.Opfeedetail', 'R', '1', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10010', 'Navigation.Chargeoprefund', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10011', 'Navigation.Chargeopregister', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10012', 'Navigation.CodesystemManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10013', 'Navigation.ContractManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10014', 'Navigation.DeptManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10015', 'Navigation.Device', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10017', 'Navigation.Diagnosistreatment', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10018', 'Navigation.Disease', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10019', 'Navigation.Dispensedoc', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10020', 'Navigation.Dispenseip', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10021', 'Navigation.Dispenseop', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10022', 'Navigation.Emrtemplate', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10023', 'Navigation.Executelocation', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10024', 'Navigation.Frequency', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10025', 'Navigation.HealthcareServiceManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10026', 'Navigation.Inpatientdoctorstation', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10027', 'Navigation.Inpatientnursestation', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10028', 'Navigation.Invstocklist', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10029', 'Navigation.Medicine', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10031', 'Navigation.Medicinereturnop', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10032', 'Navigation.MenuManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10033', 'Navigation.OrderTemplate', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10034', 'Navigation.Outpatientdoctorstation', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10035', 'Navigation.Outpatientnursestation', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10036', 'Navigation.PatientManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10037', 'Navigation.PermissionManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10038', 'Navigation.Phstockin', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10039', 'Navigation.Phstocktakeorder', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10041', 'Navigation.Reportclinical', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10042', 'Navigation.Reportdean', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10043', 'Navigation.Reportfinance', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10044', 'Navigation.Reporthome', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10045', 'Navigation.RoleManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10046', 'Navigation.ServiceLocation', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10047', 'Navigation.SettingManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10048', 'Navigation.Supplier', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10049', 'Navigation.TenantManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10050', 'Navigation.UserManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10051', 'Navigation.WardLocationManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10052', 'Navigation.WarehouseManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10053', 'Navigation.Whpurchaseinbound', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10054', 'Navigation.Whpurchaseorder', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10055', 'Navigation.Whstockout', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10056', 'Navigation.Whstocktakeorder', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('322733268284215296', 'Navigation.Inpatientdoctorstation', 'R', '10', '1', '2026-06-09 13:46:47.253+00', '2026-06-09 13:46:47.253+00', '1', '1', false, NULL, NULL),
+('322733268309381120', 'Navigation.Outpatientdoctorstation', 'R', '10', '1', '2026-06-09 13:46:47.259+00', '2026-06-09 13:46:47.259+00', '1', '1', false, NULL, NULL),
+('322733323334455296', 'Navigation.Outpatientnursestation', 'R', '11', '1', '2026-06-09 13:47:00.379+00', '2026-06-09 13:47:00.379+00', '1', '1', false, NULL, NULL),
+('322733323347038208', 'Navigation.Inpatientnursestation', 'R', '11', '1', '2026-06-09 13:47:00.381+00', '2026-06-09 13:47:00.381+00', '1', '1', false, NULL, NULL),
+('322733438140944384', 'Navigation.Dispenseip', 'R', '12', '1', '2026-06-09 13:47:27.750+00', '2026-06-09 13:47:27.750+00', '1', '1', false, NULL, NULL),
+('322733438157721600', 'Navigation.Dispenseop', 'R', '12', '1', '2026-06-09 13:47:27.754+00', '2026-06-09 13:47:27.754+00', '1', '1', false, NULL, NULL),
+('322733438174498816', 'Navigation.Device', 'R', '12', '1', '2026-06-09 13:47:27.758+00', '2026-06-09 13:47:27.758+00', '1', '1', false, NULL, NULL),
+('322733438187081728', 'Navigation.Dispensedoc', 'R', '12', '1', '2026-06-09 13:47:27.761+00', '2026-06-09 13:47:27.761+00', '1', '1', false, NULL, NULL),
+('322733438203858944', 'Navigation.Medicine', 'R', '12', '1', '2026-06-09 13:47:27.765+00', '2026-06-09 13:47:27.765+00', '1', '1', false, NULL, NULL),
+('322733438216441856', 'Navigation.Medicinereturnop', 'R', '12', '1', '2026-06-09 13:47:27.768+00', '2026-06-09 13:47:27.768+00', '1', '1', false, NULL, NULL),
+('322733572107014144', 'Navigation.Invstocklist', 'R', '13', '1', '2026-06-09 13:47:59.690+00', '2026-06-09 13:47:59.690+00', '1', '1', false, NULL, NULL),
+('322733572119597056', 'Navigation.Whpurchaseinbound', 'R', '13', '1', '2026-06-09 13:47:59.693+00', '2026-06-09 13:47:59.693+00', '1', '1', false, NULL, NULL),
+('322733572136374272', 'Navigation.Whpurchaseorder', 'R', '13', '1', '2026-06-09 13:47:59.697+00', '2026-06-09 13:47:59.697+00', '1', '1', false, NULL, NULL),
+('322733572153151488', 'Navigation.Phstockin', 'R', '13', '1', '2026-06-09 13:47:59.701+00', '2026-06-09 13:47:59.701+00', '1', '1', false, NULL, NULL),
+('322733572165734400', 'Navigation.Device', 'R', '13', '1', '2026-06-09 13:47:59.704+00', '2026-06-09 13:47:59.704+00', '1', '1', false, NULL, NULL),
+('322733572182511616', 'Navigation.Whstockout', 'R', '13', '1', '2026-06-09 13:47:59.708+00', '2026-06-09 13:47:59.708+00', '1', '1', false, NULL, NULL),
+('322733572199288832', 'Navigation.Phstocktakeorder', 'R', '13', '1', '2026-06-09 13:47:59.712+00', '2026-06-09 13:47:59.712+00', '1', '1', false, NULL, NULL),
+('322733572207677440', 'Navigation.Medicine', 'R', '13', '1', '2026-06-09 13:47:59.714+00', '2026-06-09 13:47:59.714+00', '1', '1', false, NULL, NULL),
+('322733572220260352', 'Navigation.Whstocktakeorder', 'R', '13', '1', '2026-06-09 13:47:59.717+00', '2026-06-09 13:47:59.717+00', '1', '1', false, NULL, NULL),
+('322733614511427584', 'Navigation.Reportclinical', 'R', '14', '1', '2026-06-09 13:48:09.800+00', '2026-06-09 13:48:09.800+00', '1', '1', false, NULL, NULL),
+('322733614519816192', 'Navigation.Chargeipfee', 'R', '14', '1', '2026-06-09 13:48:09.802+00', '2026-06-09 13:48:09.802+00', '1', '1', false, NULL, NULL),
+('322733614528204800', 'Navigation.Chargeipprepay', 'R', '14', '1', '2026-06-09 13:48:09.804+00', '2026-06-09 13:48:09.804+00', '1', '1', false, NULL, NULL),
+('322733614544982016', 'Navigation.Chargeoprefund', 'R', '14', '1', '2026-06-09 13:48:09.808+00', '2026-06-09 13:48:09.808+00', '1', '1', false, NULL, NULL),
+('322733614553370624', 'Navigation.Reporthome', 'R', '14', '1', '2026-06-09 13:48:09.810+00', '2026-06-09 13:48:09.810+00', '1', '1', false, NULL, NULL),
+('322733614561759232', 'Navigation.Chargeopdayclose', 'R', '14', '1', '2026-06-09 13:48:09.812+00', '2026-06-09 13:48:09.812+00', '1', '1', false, NULL, NULL),
+('322733614561759233', 'Navigation.Chargeipdayclose', 'R', '14', '1', '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL),
+('322733614561759234', 'Navigation.Opfeedetail', 'R', '14', '1', '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL),
+('322733438157721601', 'Navigation.Dispenserecordop', 'R', '12', '1', '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL),
+('322733438157721602', 'Navigation.Dispenserecordip', 'R', '12', '1', '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL),
+('322733614574342144', 'Navigation.Chargeipregister', 'R', '14', '1', '2026-06-09 13:48:09.815+00', '2026-06-09 13:48:09.815+00', '1', '1', false, NULL, NULL),
+('322733614582730752', 'Navigation.Chargeopregister', 'R', '14', '1', '2026-06-09 13:48:09.817+00', '2026-06-09 13:48:09.817+00', '1', '1', false, NULL, NULL),
+('322733614586925056', 'Navigation.Chargeopcharge', 'R', '14', '1', '2026-06-09 13:48:09.818+00', '2026-06-09 13:48:09.818+00', '1', '1', false, NULL, NULL),
+('322733614599507968', 'Navigation.Reportdean', 'R', '14', '1', '2026-06-09 13:48:09.821+00', '2026-06-09 13:48:09.821+00', '1', '1', false, NULL, NULL),
+('322733614612090880', 'Navigation.Chargeipsettle', 'R', '14', '1', '2026-06-09 13:48:09.824+00', '2026-06-09 13:48:09.824+00', '1', '1', false, NULL, NULL),
+('322733614620479488', 'Navigation.Reportfinance', 'R', '14', '1', '2026-06-09 13:48:09.826+00', '2026-06-09 13:48:09.826+00', '1', '1', false, NULL, NULL),
+('322973244809809920', 'Navigation.Analytics', 'R', '10', '1', '2026-06-10 05:40:22.115+00', '2026-06-10 05:40:22.115+00', '1', '1', false, NULL, NULL),
+('322973259494068224', 'Navigation.Analytics', 'R', '11', '1', '2026-06-10 05:40:25.616+00', '2026-06-10 05:40:25.616+00', '1', '1', false, NULL, NULL),
+('322973270965489664', 'Navigation.Analytics', 'R', '12', '1', '2026-06-10 05:40:28.351+00', '2026-06-10 05:40:28.351+00', '1', '1', false, NULL, NULL),
+('322973282835369984', 'Navigation.Analytics', 'R', '13', '1', '2026-06-10 05:40:31.181+00', '2026-06-10 05:40:31.181+00', '1', '1', false, NULL, NULL),
+('322973294264848384', 'Navigation.Analytics', 'R', '14', '1', '2026-06-10 05:40:33.906+00', '2026-06-10 05:40:33.906+00', '1', '1', false, NULL, NULL),
+('323005257756971008', 'Navigation.Phstockin', 'R', '12', '1', '2026-06-10 07:47:34.596+00', '2026-06-10 07:47:34.596+00', '1', '1', false, NULL, NULL),
+('323005257777942528', 'Navigation.Phstocktakeorder', 'R', '12', '1', '2026-06-10 07:47:34.601+00', '2026-06-10 07:47:34.601+00', '1', '1', false, NULL, NULL),
+('323022177444040704', 'Navigation.WarehouseManagement', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.564+00', '2026-06-10 08:54:48.564+00', '1', '1', false, NULL, NULL),
+('323022177465012224', 'Navigation.PatientManagement', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.569+00', '2026-06-10 08:54:48.569+00', '1', '1', false, NULL, NULL),
+('323022177477595136', 'Navigation.Disease', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.572+00', '2026-06-10 08:54:48.572+00', '1', '1', false, NULL, NULL),
+('323022177490178048', 'Navigation.Diagnosistreatment', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.575+00', '2026-06-10 08:54:48.575+00', '1', '1', false, NULL, NULL),
+('323022177502760960', 'Navigation.DeptManagement', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.578+00', '2026-06-10 08:54:48.578+00', '1', '1', false, NULL, NULL),
+('323022177511149568', 'Navigation.CodesystemManagement', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.580+00', '2026-06-10 08:54:48.580+00', '1', '1', false, NULL, NULL),
+('323022177519538176', 'Navigation.Reporttemplatedesigner', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.582+00', '2026-06-10 08:54:48.582+00', '1', '1', false, NULL, NULL),
+('323022177532121088', 'Navigation.Executelocation', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.585+00', '2026-06-10 08:54:48.585+00', '1', '1', false, NULL, NULL),
+('323022177540509696', 'Navigation.OrderTemplate', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.587+00', '2026-06-10 08:54:48.587+00', '1', '1', false, NULL, NULL),
+('323022177553092608', 'Navigation.ServiceLocation', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.590+00', '2026-06-10 08:54:48.590+00', '1', '1', false, NULL, NULL),
+('323022177565675520', 'Navigation.BodystructureManagement', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.593+00', '2026-06-10 08:54:48.593+00', '1', '1', false, NULL, NULL),
+('323022177574064128', 'Navigation.WardLocationManagement', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.595+00', '2026-06-10 08:54:48.595+00', '1', '1', false, NULL, NULL),
+('323022177586647040', 'Navigation.HealthcareServiceManagement', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.598+00', '2026-06-10 08:54:48.598+00', '1', '1', false, NULL, NULL),
+('323022177595035648', 'Navigation.Device', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.600+00', '2026-06-10 08:54:48.600+00', '1', '1', false, NULL, NULL),
+('323022177603424256', 'Navigation.Medicine', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.602+00', '2026-06-10 08:54:48.602+00', '1', '1', false, NULL, NULL),
+('323022177620201472', 'Navigation.ContractManagement', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.606+00', '2026-06-10 08:54:48.606+00', '1', '1', false, NULL, NULL),
+('323022177632784384', 'Navigation.Supplier', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.609+00', '2026-06-10 08:54:48.609+00', '1', '1', false, NULL, NULL),
+('323022177645367296', 'Navigation.Frequency', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.612+00', '2026-06-10 08:54:48.612+00', '1', '1', false, NULL, NULL),
+('323022177653755904', 'Navigation.Emrtemplate', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.614+00', '2026-06-10 08:54:48.614+00', '1', '1', false, NULL, NULL),
+('323022177662144512', 'Navigation.ActivityDeviceBinding', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.616+00', '2026-06-10 08:54:48.616+00', '1', '1', false, NULL, NULL),
+('323022431488839680', 'Navigation.Reportclinical', 'R', '323022177255297024', '1', '2026-06-10 08:55:49.133+00', '2026-06-10 08:55:49.133+00', '1', '1', false, NULL, NULL),
+('323022431501422592', 'Navigation.RoleManagement', 'R', '323022177255297024', '1', '2026-06-10 08:55:49.136+00', '2026-06-10 08:55:49.136+00', '1', '1', false, NULL, NULL),
+('323022431514005504', 'Navigation.Reportfinance', 'R', '323022177255297024', '1', '2026-06-10 08:55:49.139+00', '2026-06-10 08:55:49.139+00', '1', '1', false, NULL, NULL),
+('323022431522394112', 'Navigation.UserManagement', 'R', '323022177255297024', '1', '2026-06-10 08:55:49.141+00', '2026-06-10 08:55:49.141+00', '1', '1', false, NULL, NULL),
+('323022431534977024', 'Navigation.Reporthome', 'R', '323022177255297024', '1', '2026-06-10 08:55:49.144+00', '2026-06-10 08:55:49.144+00', '1', '1', false, NULL, NULL),
+('323022431547559936', 'Navigation.Reportdean', 'R', '323022177255297024', '1', '2026-06-10 08:55:49.147+00', '2026-06-10 08:55:49.147+00', '1', '1', false, NULL, NULL),
+('323022431560142848', 'Navigation.SettingManagement', 'R', '323022177255297024', '1', '2026-06-10 08:55:49.150+00', '2026-06-10 08:55:49.150+00', '1', '1', false, NULL, NULL),
+('323023014815862784', 'Navigation.Analytics', 'R', '323022177255297024', '1', '2026-06-10 08:58:08.209+00', '2026-06-10 08:58:08.209+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_menus" ("id", "code", "name", "display_name", "icon", "path", "component", "permission_name", "parent_id", "sort_order", "is_enabled", "is_hidden", "is_external", "external_url", "menu_type", "remark", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "keep_alive")
+VALUES
+('1000', 'system_management', 'SystemManagement', '系统管理', 'lucide:folder-tree', '/system', '', NULL, NULL, 1, true, false, false, '', 'directory', '系统管理目录', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('1001', 'user_management', 'UserManagement', '用户管理', 'lucide:user', '/system/user', '/system/user/index', 'Navigation.UserManagement', '1000', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('1002', 'role_management', 'RoleManagement', '角色管理', 'lucide:shield-check', '/system/user/role', '/system/user/role/index', 'Navigation.RoleManagement', '1000', 2, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('1004', 'permission_management', 'PermissionManagement', '权限管理', 'lucide:fingerprint-pattern', '/system/user/permission', '/system/user/permission/index', 'Navigation.PermissionManagement', '1000', 3, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('1005', 'tenant_management', 'TenantManagement', '租户管理', 'lucide:square-user-round', '/system/tenant', '/system/tenant/index', 'Navigation.TenantManagement', '1000', 4, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('1006', 'menu_management', 'MenuManagement', '菜单管理', 'lucide:square-menu', '/system/menu', '/system/menu/index', 'Navigation.MenuManagement', '1000', 5, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('1007', 'setting_management', 'SettingManagement', '设置管理', 'lucide:settings', '/system/settings', '/system/settings/index', 'Navigation.SettingManagement', '1000', 6, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('2000', 'basic_data', 'BasicData', '基础数据', 'lucide:database', '/basic', '', NULL, NULL, 2, true, false, false, '', 'directory', '基础数据目录', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('2001', 'codesystem_management', 'CodeSystemManagement', '编码管理', 'lucide:message-circle-code', '/basic/code', '/basic/code/index', 'Navigation.CodesystemManagement', '2000', 2, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('2002', 'bodystructure_management', 'BodyStructureManagement', '部位管理', 'lucide:person-standing', '/basic/body', '/basic/body/index', 'Navigation.BodystructureManagement', '2000', 5, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('2003', 'warehouse_management', 'WarehouseManagement', '库房药房', 'lucide:map-pinned', '/basic/warehouse', '/basic/warehouse/index', 'Navigation.WarehouseManagement', '2000', 7, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('2004', 'ward_location_management', 'WardLocationManagement', '病区病房', 'lucide:circle-pile', '/basic/wardbed', '/basic/wardbed/index', 'Navigation.WardLocationManagement', '2000', 6, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('2005', 'patient_management', 'PatientManagement', '患者管理', 'lucide:file-user', '/basic/patient', '/basic/patient/index', 'Navigation.PatientManagement', '2000', 3, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('2007', 'dept_management', 'DeptManagement', '科室管理', 'lucide:building', '/basic/department', '/basic/department/index', 'Navigation.DeptManagement', '2000', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('2008', 'healthcare_service_management', 'HealthcareServiceManagement', '挂号类型管理', 'lucide:clipboard-list', '/basic/registrationtype', '/basic/registrationtype/index', 'Navigation.HealthcareServiceManagement', '2000', 11, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('2010', 'contract_management', 'ContractManagement', '费用性质管理', 'lucide:credit-card', '/basic/chargetype', '/basic/chargetype/index', 'Navigation.ContractManagement', '2000', 10, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('279418897187213312', 'Analytics', 'Analytics', '工作台', 'lucide:chart-line', '/analytics', '/_core/analytics/index', 'Navigation.Analytics', NULL, 0, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('284501743746682880', 'Frequency', 'Frequency', '频次管理', 'lucide:alarm-clock', '/basic/frequency', '/basic/frequency/index', 'Navigation.Frequency', '2000', 9, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('284502213630365696', 'Supplier', 'Supplier', '供应商管理', 'lucide:truck', '/basic/supplier', '/basic/supplier/index', 'Navigation.Supplier', '2000', 8, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('284503862625177600', 'Warehouse', 'Warehouse', '药库单据管理', 'lucide:warehouse', '/inventory', '', NULL, NULL, 9, true, false, false, '', 'directory', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('284517877903003648', 'Medicine', 'Medicine', '药品管理', 'lucide:pill', '/basic/medicationcatalog', '/basic/medicationcatalog/index', 'Navigation.Medicine', '2000', 13, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('284518561658441728', 'Device', 'Device', '耗材管理', 'lucide:syringe', '/basic/devicecatalog', '/basic/devicecatalog/index', 'Navigation.Device', '2000', 16, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('284519152342274048', 'Diagnosistreatment', 'Diagnosistreatment', '诊疗管理', 'lucide:square-activity', '/basic/servicecatalog', '/basic/servicecatalog/index', 'Navigation.Diagnosistreatment', '2000', 15, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('284519592148602880', 'Disease', 'Disease', '诊断', 'lucide:heart-pulse', '/basic/diagnosiscatalog', '/basic/diagnosiscatalog/index', 'Navigation.Disease', '2000', 12, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('301665359451131904', 'OutpatientNurseStation', 'OutpatientNurseStation', '门诊护士站', 'lucide:clipboard-list', '/outpatient/nurse-station', '/outpatient/nurse-station/index', 'Navigation.Outpatientnursestation', NULL, 6, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('301666596158443520', 'InpatientNurseStation', 'InpatientNurseStation', '住院护士站', 'lucide:bed-double', '/inpatient/nurse-station', '/inpatient/nurse-station/index', 'Navigation.Inpatientnursestation', NULL, 7, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('301696493912330240', 'Pharmacy', 'Pharmacy', '药房单据管理', 'lucide:store', '/pharmacy', '', NULL, NULL, 10, true, false, false, '', 'directory', '', '1', '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000125', 'DeptPharmacy', 'DeptPharmacy', '科室单据管理', 'lucide:building', '/inventory/department', '', NULL, NULL, 10, true, false, false, '', 'directory', '科室进销存单据', NULL, '2026-07-01 00:00:00.000+00', '2026-07-01 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('301699662818054144', 'ReportFinance', 'ReportFinance', '财务报表', 'lucide:receipt-text', '/reports/finance', '/reports/finance/index', 'Navigation.Reportfinance', '310400000000000100', 4, true, false, false, '', 'menu', '', '1', '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000001', 'ChargeStation', 'ChargeStation', '收费工作站', 'lucide:banknote', '/charge', '', NULL, NULL, 3, true, false, false, '', 'directory', 'HIS清单-收费工作站', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000002', 'ChargeOpRegister', 'ChargeOpRegister', '门诊挂号', 'lucide:calendar-plus', '/outpatient/charge/register', '/outpatient/charge/register/index', 'Navigation.Chargeopregister', '310400000000000001', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000003', 'ChargeOpCharge', 'ChargeOpCharge', '门诊收费', 'lucide:circle-dollar-sign', '/outpatient/charge/charge', '/outpatient/charge/charge/index', 'Navigation.Chargeopcharge', '310400000000000001', 2, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000004', 'ChargeOpRefund', 'ChargeOpRefund', '门诊退费', 'lucide:undo-2', '/outpatient/charge/refund', '/outpatient/charge/refund/index', 'Navigation.Chargeoprefund', '310400000000000001', 3, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000005', 'ChargeOpDayClose', 'ChargeOpDayClose', '门诊日结', 'lucide:calendar-check', '/outpatient/charge/daily-settlement', '/outpatient/charge/daily-settlement/index', 'Navigation.Chargeopdayclose', '310400000000000001', 4, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000006', 'ChargeIpRegister', 'ChargeIpRegister', '住院登记', 'lucide:bed-single', '/inpatient/charge/register', '/inpatient/charge/register/index', 'Navigation.Chargeipregister', '310400000000000001', 5, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000007', 'ChargeIpSettle', 'ChargeIpSettle', '住院结算', 'lucide:wallet', '/inpatient/charge/settle', '/inpatient/charge/settle/index', 'Navigation.Chargeipsettle', '310400000000000001', 6, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000008', 'ChargeIpPrepay', 'ChargeIpPrepay', '预交金管理', 'lucide:coins', '/inpatient/charge/prepay', '/inpatient/charge/prepay/index', 'Navigation.Chargeipprepay', '310400000000000001', 7, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000009', 'ChargeIpFee', 'ChargeIpFee', '住院费用管理', 'lucide:list-todo', '/inpatient/charge/fee', '/inpatient/charge/fee/index', 'Navigation.Chargeipfee', '310400000000000001', 8, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000117', 'ChargeIpDayClose', 'ChargeIpDayClose', '住院日结', 'lucide:calendar-check', '/inpatient/charge/daily-settlement', '/inpatient/charge/daily-settlement/index', 'Navigation.Chargeipdayclose', '310400000000000001', 9, true, false, false, '', 'menu', '住院收费日结交账', NULL, '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000118', 'DispenseRecordOp', 'DispenseRecordOp', '门诊发退药记录', 'lucide:clipboard-list', '/pharmacy/dispense-record/outpatient', '/pharmacy/dispense-record/outpatient/index', 'Navigation.Dispenserecordop', '301696493912330240', 3, true, false, false, '', 'menu', '门诊发退药记录查询与导出', NULL, '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000119', 'DispenseRecordIp', 'DispenseRecordIp', '住院发退药记录', 'lucide:clipboard-list', '/pharmacy/dispense-record/inpatient', '/pharmacy/dispense-record/inpatient/index', 'Navigation.Dispenserecordip', '301696493912330240', 4, true, false, false, '', 'menu', '住院发退药记录查询与导出', NULL, '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000120', 'OpReport', 'OpReport', '门诊报表', 'lucide:file-bar-chart', '/outpatient/report', '', NULL, '310400000000000001', 10, true, false, false, '', 'directory', '门诊域报表（费用明细等）', NULL, '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000121', 'OpFeeDetail', 'OpFeeDetail', '门诊费用明细', 'lucide:receipt', '/outpatient/report/fee-detail', '/outpatient/report/fee-detail/index', 'Navigation.Opfeedetail', '310400000000000120', 1, true, false, false, '', 'menu', '门诊费用明细查询与导出', NULL, '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000020', 'OutpatientDoctorStation', 'OutpatientDoctorStation', '门诊医生站', 'lucide:user-round-pen', '/outpatient/doctor-station', '/outpatient/doctor-station/index', 'Navigation.Outpatientdoctorstation', NULL, 4, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000040', 'InpatientDoctorStation', 'InpatientDoctorStation', '住院医生站', 'lucide:hospital', '/inpatient/doctor-station', '/inpatient/doctor-station/index', 'Navigation.Inpatientdoctorstation', NULL, 5, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000060', 'MedicationDispense', 'MedicationDispense', '发药管理', 'lucide:pill-bottle', '/pharmacy/dispense', '', NULL, NULL, 8, true, false, false, '', 'directory', 'HIS清单-发药管理', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000061', 'DispenseOp', 'DispenseOp', '门诊发药', 'lucide:package-open', '/pharmacy/dispense/outpatient', '/pharmacy/dispense/outpatient/index', 'Navigation.Dispenseop', '310400000000000060', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000062', 'DispenseIp', 'DispenseIp', '住院发药', 'lucide:truck', '/pharmacy/dispense/inpatient', '/pharmacy/dispense/inpatient/index', 'Navigation.Dispenseip', '310400000000000060', 2, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000063', 'DispenseDoc', 'DispenseDoc', '发药单据', 'lucide:file-box', '/pharmacy/dispense/documents', '/pharmacy/dispense/documents/index', 'Navigation.Dispensedoc', '310400000000000060', 3, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000081', 'WhPurchaseOrder', 'WhPurchaseOrder', '药库订货单', 'lucide:file-spreadsheet', '/inventory/warehouse/purchase-order', '/inventory/warehouse/purchase-order/index', 'Navigation.Whpurchaseorder', '284503862625177600', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000100', 'ReportManagement', 'ReportManagement', '报表管理', 'lucide:layout-dashboard', '/reports', '', NULL, NULL, 11, true, false, false, '', 'directory', 'HIS清单-报表管理', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000101', 'ReportHome', 'ReportHome', '首页', 'lucide:home', '/reports/home', '/reports/home/index', 'Navigation.Reporthome', '310400000000000100', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000102', 'ReportDean', 'ReportDean', '院长', 'lucide:building-2', '/reports/dean', '/reports/dean/index', 'Navigation.Reportdean', '310400000000000100', 2, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000103', 'ReportClinical', 'ReportClinical', '临床报表', 'lucide:activity', '/reports/clinical', '/reports/clinical/index', 'Navigation.Reportclinical', '310400000000000100', 3, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310500000000000100', 'ChsManagement', 'ChsManagement', '医保管理', 'lucide:shield', '/chs', '', '', NULL, 12, true, false, false, '', 'directory', 'CHS 医保扩展菜单', NULL, '2026-06-01 16:00:00.000+00', '2026-06-01 16:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310500000000000101', 'ChsNationalCatalog', 'ChsNationalCatalog', '国家目录查询', 'lucide:book-open', '/chs/national-catalog', '/chs/national-catalog/index', 'Navigation.Chsnationalcatalog', '310500000000000100', 1, true, false, false, '', 'menu', '1312/1301 国家医保目录查询与下载', NULL, '2026-06-01 16:00:00.000+00', '2026-06-01 16:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310500000000000102', 'ChsCatalogDownload', 'ChsCatalogDownload', '目录文件下载', 'lucide:download', '/chs/catalog-download', '/chs/catalog-download/index', 'Navigation.Chscatalogdownload', '310500000000000100', 2, true, false, false, '', 'menu', '1301/1305/1306 + 9102 文件下载解压入库', NULL, '2026-06-01 16:00:00.000+00', '2026-06-01 16:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310600000000000101', 'PrintTemplate', 'PrintTemplate', '打印模板', 'lucide:printer', '/basic/print-template', '/basic/print-template/index', 'Print.Templates.View', '2000', 25, true, false, false, '', 'menu', 'PrintJson 模板列表（新建/发布/复制草稿）；设计请用「打印设计器」菜单', NULL, '2026-06-03 16:00:00.000+00', '2026-06-25 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310600000000000102', 'PrintTemplateDesigner', 'PrintTemplateDesigner', '打印设计器', 'lucide:layout-template', '/basic/print-design', '/basic/print-template/designer/index', 'Print.Templates.Design', '2000', 24, true, false, false, '', 'menu', '独立 hiprint 设计器；纯画布编辑，与业务 binding/发印无关', NULL, '2026-06-22 00:00:00.000+00', '2026-06-25 00:00:00.000+00', '1', '1', false, NULL, NULL, false),
+('310600000000000103', 'ReportPrintLog', 'ReportPrintLog', '打印日志', 'lucide:scroll-text', '/basic/print-log', '/basic/print-log/index', 'Print.PrintLog.View', '2000', 27, true, false, false, '', 'menu', 'PRT 打印审计 prt_print_event_log', NULL, '2026-06-03 16:00:00.000+00', '2026-06-22 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310600000000000104', 'ReportPrintBinding', 'ReportPrintBinding', '打印模板配置', 'lucide:link-2', '/basic/print-binding', '/basic/print-binding/index', 'Print.PrintBinding.View', '2000', 26, true, false, false, '', 'menu', 'PRT bindingCode→busNo 租户绑定', NULL, '2026-06-22 00:00:00.000+00', '2026-06-22 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310600000000000111', 'ReportDesigner', 'ReportDesigner', '报表设计器', 'lucide:pen-line', '/reports/designer', '/report/designer/index', 'Report.Designer.View', '310400000000000100', 4, true, true, false, '', 'menu', 'C 类报表配置、PDF 模板绑定与发布（draft → published）', NULL, '2026-06-03 16:00:00.000+00', '2026-06-03 16:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('312881978679496704', 'WhPurchaseInbound', 'WhPurchaseInbound', '药库进货单', 'lucide:package-check', '/inventory/warehouse/purchase-inbound', '/inventory/warehouse/purchase-inbound/index', 'Navigation.Whpurchaseinbound', '284503862625177600', 2, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('313234941086273536', 'WhStockOut', 'WhStockOut', '药库出库单', 'lucide:package-minus', '/inventory/warehouse/stock-out', '/inventory/warehouse/stock-out/index', 'Navigation.Whstockout', '284503862625177600', 3, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('313295483593297921', 'PhStockIn', 'PhStockIn', '药房入库单', 'lucide:package-plus', '/inventory/pharmacy/stock-in', '/inventory/pharmacy/stock-in/index', 'Navigation.Phstockin', '301696493912330240', 1, true, false, false, '', 'menu', '', '1', '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('313570119616827392', 'InvStockList', 'InvStockList', '库存明细', 'lucide:rows-3', '/inventory/stock-list', '/inventory/stock-list/index', 'Navigation.Invstocklist', '284503862625177600', 5, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('313945127476793344', 'MedicineReturnOp', 'MedicineReturnOp', '门诊退药', 'lucide:truck', '/pharmacy/return-medicine/outpatient', '/pharmacy/return-medicine/outpatient/index', 'Navigation.Medicinereturnop', '310400000000000060', 4, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000064', 'MedicineReturnIp', 'MedicineReturnIp', '住院退药', 'lucide:undo-2', '/pharmacy/return-medicine/inpatient', '/pharmacy/return-medicine/inpatient/index', 'Navigation.Medicinereturnip', '310400000000000060', 5, true, false, false, '', 'menu', '', NULL, '2026-06-11 00:00:00.000+00', '2026-06-11 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('315372803691384832', 'EmrTemplate', 'EmrTemplate', '病历模版', 'lucide:file-text', '/basic/emr-template', '/basic/emr-template/index', 'Navigation.Emrtemplate', '2000', 18, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('316800463887929340', 'WhStocktakeOrder', 'WhStocktakeOrder', '药库盘点单', 'lucide:clipboard-list', '/inventory/warehouse/stocktake', '/inventory/warehouse/stocktake/index', 'Navigation.Whstocktakeorder', '284503862625177600', 4, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('316800463887929341', 'PhStocktakeOrder', 'PhStocktakeOrder', '药房盘点单', 'lucide:clipboard-check', '/inventory/pharmacy/stocktake', '/inventory/pharmacy/stocktake/index', 'Navigation.Phstocktakeorder', '301696493912330240', 2, true, false, false, '', 'menu', '', '1', '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('316900463887929346', 'ServiceDeviceBinding', 'ServiceDeviceBinding', '诊疗耗材绑定', 'lucide:link-2', '/basic/servicedevicebinding', '/basic/servicedevicebinding/index', 'Navigation.ActivityDeviceBinding', '2000', 23, true, false, false, '', 'menu', '基础数据-诊疗耗材绑定', NULL, '2026-05-26 20:00:00.000+00', '2026-06-04 16:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('316900463887929347', 'ExecuteLocation', 'ExecuteLocation', '执行地点', 'lucide:map-pin', '/basic/executelocation', '/basic/executelocation/index', 'Navigation.Executelocation', '2000', 20, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('316900463887929348', 'order_template', 'OrderTemplate', '医嘱组套', 'lucide:layers', '/basic/ordertemplate', '/basic/ordertemplate/index', 'Navigation.OrderTemplate', '2000', 21, true, false, false, '', 'menu', '基础数据-医嘱组套模板', NULL, '2026-06-02 09:46:21.106+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('316900463887929349', 'service_location', 'ServiceLocation', '取药科室', 'lucide:pill-bottle', '/basic/servicelocation', '/basic/servicelocation/index', 'Navigation.ServiceLocation', '2000', 22, true, false, false, '', 'menu', '基础数据-取药科室配置', NULL, '2026-06-02 09:46:21.106+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('317000463887929350', 'specimen_definition', 'SpecimenDefinition', '样本管理', 'lucide:test-tubes', '/basic/specimendefinition', '/basic/specimendefinition/index', 'Navigation.SpecimenDefinition', '2000', 24, true, false, false, '', 'menu', '基础数据-样本定义维护（SpecimenDefinitionAppService）', NULL, '2026-06-12 08:18:12.580+00', '2026-06-12 08:18:12.580+00', '1', '1', false, NULL, NULL, true)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310700000000000001', 'Report', '打印与报表', NULL,
+     'whale-print/report 模块入口权限分组', NULL,
+     TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000002', 'Print.Templates.View', '打印模板', 'BasicData',
+     '菜单入口: PrintTemplate', NULL,
+     TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-22 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000003', 'Print.Templates.Design', '打印设计器', 'BasicData',
+     '独立 hiprint 画布设计器菜单；与 PrintBinding / 业务发印无关', NULL,
+     TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000004', 'Print.PrintLog.View', '打印日志', 'BasicData',
+     '菜单入口: ReportPrintLog', NULL,
+     TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-22 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000005', 'Report.Center.View', '动态报表', 'Report',
+     '菜单入口: ReportCenter', NULL,
+     TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000006', 'Health.ExternalDocument.View', '外系统报告', 'Report',
+     '菜单入口: ExternalDocument', NULL,
+     TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+    ('310400000000000100', 'ReportManagement', 'ReportManagement', '报表管理', 'lucide:layout-dashboard',
+     '/reports', '', NULL, NULL, 11, TRUE, FALSE, FALSE, '', 'directory',
+     '报表中心 / 报表设计器 / 外系统报告（PRT 打印菜单在基础数据）', NULL,
+     TIMESTAMP '2026-06-03 16:00:00+00', TIMESTAMP '2026-06-22 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('310600000000000111', 'ReportDesigner', 'ReportDesigner', '报表设计器', 'lucide:pen-line',
+     '/reports/designer', '/report/designer/index', 'Report.Designer.View', '310400000000000100', 4,
+     TRUE, TRUE, FALSE, '', 'menu', 'C 类报表配置、PDF 模板绑定与发布（draft → published）', NULL,
+     TIMESTAMP '2026-06-03 16:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('310600000000000112', 'ExternalDocument', 'ExternalDocument', '外系统报告', 'lucide:file-search',
+     '/health/external-document', '/health/external-document/index', 'Health.ExternalDocument.View', '310400000000000100', 5,
+     TRUE, FALSE, FALSE, '', 'menu', 'D 类 LIS/PACS 外系统报告查看', NULL,
+     TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310800000000000001', 'Print.Templates.View', 'R', '1', NULL, TIMESTAMP '2026-06-11 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000002', 'Print.Templates.Design', 'R', '1', NULL, TIMESTAMP '2026-06-11 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000003', 'Print.PrintLog.View', 'R', '1', NULL, TIMESTAMP '2026-06-11 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000004', 'Report.Center.View', 'R', '1', NULL, TIMESTAMP '2026-06-11 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000005', 'Health.ExternalDocument.View', 'R', '1', NULL, TIMESTAMP '2026-06-11 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-06-11 00:00:00+00';
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310700000000000007', 'Print.PrintBinding.View', '打印模板配置', 'BasicData',
+    '菜单入口: ReportPrintBinding — bindingCode→busNo', NULL,
+    TIMESTAMP '2026-06-11 12:00:00+00', TIMESTAMP '2026-06-11 12:00:00+00', 1, 1, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310600000000000104', 'ReportPrintBinding', 'ReportPrintBinding', '打印模板配置', 'lucide:link-2',
+    '/basic/print-binding', '/basic/print-binding/index', 'Print.PrintBinding.View', '2000', 26,
+    TRUE, FALSE, FALSE, '', 'menu', 'PRT bindingCode→busNo 租户绑定', NULL,
+    TIMESTAMP '2026-06-11 12:00:00+00', TIMESTAMP '2026-06-11 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310800000000000006', 'Print.PrintBinding.View', 'R', '1', NULL,
+    TIMESTAMP '2026-06-11 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    provider_name   = EXCLUDED.provider_name,
+    provider_key    = EXCLUDED.provider_key,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310700000000000008', 'Report.Designer.View', '报表设计器', 'Report',
+    '菜单入口: ReportDesigner — C 类报表配置与发布', NULL,
+    TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310600000000000113', 'ReportCenter', 'ReportCenter', '报表中心', 'lucide:table-2',
+    '/reports/center', '/report/center/index', 'Report.Center.View', '310400000000000100', 5,
+    TRUE, FALSE, FALSE, '', 'menu', '已发布 C 类报表：查询、Excel/PDF 导出、打印预览与打印', NULL,
+    TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310800000000000007', 'Report.Designer.View', 'R', '1', NULL,
+    TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    provider_name   = EXCLUDED.provider_name,
+    provider_key    = EXCLUDED.provider_key,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310700000000000009', 'Report.Definition.View', '报表模板', 'Report',
+    '菜单入口: ReportTemplate — C 类报表 CRUD', NULL,
+    TIMESTAMP '2026-06-13 12:00:00+00', TIMESTAMP '2026-06-13 12:00:00+00', 1, 1, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name, display_name = EXCLUDED.display_name,
+    description = EXCLUDED.description, is_deleted = FALSE, updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310600000000000114', 'ReportTemplate', 'ReportTemplate', '报表模板', 'lucide:file-spreadsheet',
+    '/reports/report-template', '/report/template/index', 'Report.Definition.View', '310400000000000100', 4,
+    TRUE, FALSE, FALSE, '', 'menu', 'C 类报表增删改查（类比打印模板列表）', NULL,
+    TIMESTAMP '2026-06-13 12:00:00+00', TIMESTAMP '2026-06-13 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code = EXCLUDED.code, display_name = EXCLUDED.display_name, path = EXCLUDED.path,
+    component = EXCLUDED.component, permission_name = EXCLUDED.permission_name,
+    sort_order = EXCLUDED.sort_order, remark = EXCLUDED.remark, is_deleted = FALSE,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310800000000000008', 'Report.Definition.View', 'R', '1', NULL,
+    TIMESTAMP '2026-06-13 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    provider_name   = EXCLUDED.provider_name,
+    provider_key    = EXCLUDED.provider_key,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310500000000000103', 'ChsReconciliation', 'ChsReconciliation', '对账清算', 'lucide:scale',
+    '/chs/reconciliation', '/chs/reconciliation/index', '', '310500000000000100', 3,
+    TRUE, FALSE, FALSE, '', 'menu', '3201 日对账 + 3206A→3203A→3205A→3204A 月清算', NULL,
+    TIMESTAMP '2026-06-13 12:00:00+00', TIMESTAMP '2026-06-13 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310500000000000104', 'ChsCatalogMappingWorkbench', 'ChsCatalogMappingWorkbench', '目录对码工作台', 'lucide:git-compare',
+    '/chs/catalog-mapping-workbench', '/chs/catalog-mapping-workbench/index', '', '310500000000000100', 4,
+    TRUE, FALSE, FALSE, '', 'menu', '待对码分页 + 3301 批量上传进度', NULL,
+    TIMESTAMP '2026-06-13 14:00:00+00', TIMESTAMP '2026-06-13 14:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310500000000000105', 'ChsInventoryOps', 'ChsInventoryOps', '进销存运维', 'lucide:package-search',
+    '/chs/inventory', '/chs/inventory/index', '', '310500000000000100', 5,
+    TRUE, FALSE, FALSE, '', 'menu', '3503–3506 本地上传流水 + 3508–3513 平台查询', NULL,
+    TIMESTAMP '2026-06-14 12:00:00+00', TIMESTAMP '2026-06-14 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310400000000000106', 'WhReturnToSupplier', 'WhReturnToSupplier', '药库退货单', 'lucide:package-x',
+    '/inventory/warehouse/return-to-supplier', '/inventory/warehouse/return-to-supplier/index', '', '284503862625177600', 6,
+    TRUE, FALSE, FALSE, '', 'menu', '药库向供应商退货 + 医保3504', NULL,
+    TIMESTAMP '2026-06-14 14:00:00+00', TIMESTAMP '2026-06-14 14:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310400000000000107', 'DeptStocktakeOrder', 'DeptStocktakeOrder', '科室盘点单', 'lucide:clipboard-check',
+    '/inventory/department/stocktake', '/inventory/department/stocktake/index', '', '284503862625177600', 7,
+    TRUE, FALSE, FALSE, '', 'menu', '科室盘点 + 医保3501/3502', NULL,
+    TIMESTAMP '2026-06-14 16:00:00+00', TIMESTAMP '2026-06-14 16:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+(
+    '310400000000000108', 'WhGainLoss', 'WhGainLoss', '药库损益单', 'lucide:scale',
+    '/inventory/warehouse/gain-loss', '/inventory/warehouse/gain-loss/index', '', '284503862625177600', 8,
+    TRUE, FALSE, FALSE, '', 'menu', '药库损益 + 医保3502', NULL,
+    TIMESTAMP '2026-06-14 18:00:00+00', TIMESTAMP '2026-06-14 18:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+),
+(
+    '310400000000000109', 'PhaGainLoss', 'PhaGainLoss', '药房损益单', 'lucide:scale',
+    '/inventory/pharmacy/gain-loss', '/inventory/pharmacy/gain-loss/index', '', '284503862625177600', 9,
+    TRUE, FALSE, FALSE, '', 'menu', '药房损益 + 医保3502', NULL,
+    TIMESTAMP '2026-06-14 18:00:00+00', TIMESTAMP '2026-06-14 18:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+),
+(
+    '310400000000000110', 'DeptGainLoss', 'DeptGainLoss', '科室损益单', 'lucide:scale',
+    '/inventory/department/gain-loss', '/inventory/department/gain-loss/index', '', '284503862625177600', 10,
+    TRUE, FALSE, FALSE, '', 'menu', '科室损益 + 医保3502', NULL,
+    TIMESTAMP '2026-06-14 18:00:00+00', TIMESTAMP '2026-06-14 18:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+),
+(
+    '310400000000000111', 'WhTransferOut', 'WhTransferOut', '药库调拨出库', 'lucide:arrow-right-left',
+    '/inventory/warehouse/transfer-out', '/inventory/warehouse/transfer-out/index', '', '284503862625177600', 11,
+    TRUE, FALSE, FALSE, '', 'menu', '药库调拨出库 + 医保3502(102)', NULL,
+    TIMESTAMP '2026-06-14 18:00:00+00', TIMESTAMP '2026-06-14 18:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+),
+(
+    '310400000000000112', 'WhTransferIn', 'WhTransferIn', '药库调拨入库', 'lucide:arrow-right-left',
+    '/inventory/warehouse/transfer-in', '/inventory/warehouse/transfer-in/index', '', '284503862625177600', 12,
+    TRUE, FALSE, FALSE, '', 'menu', '药房调拨入库 + 医保3502(101)', NULL,
+    TIMESTAMP '2026-06-14 18:00:00+00', TIMESTAMP '2026-06-14 18:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+(
+    '310400000000000114', 'PhaReturnToWarehouse', 'PhaReturnToWarehouse', '药房退库', 'lucide:undo-2',
+    '/inventory/pharmacy/return-to-warehouse', '/inventory/pharmacy/return-to-warehouse/index', '', '284503862625177600', 14,
+    TRUE, FALSE, FALSE, '', 'menu', '药房退库至药库', NULL,
+    TIMESTAMP '2026-06-14 18:00:00+00', TIMESTAMP '2026-06-14 18:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+),
+(
+    '310400000000000115', 'WhReturnStockIn', 'WhReturnStockIn', '退库入库', 'lucide:undo-2',
+    '/inventory/warehouse/return-stock-in', '/inventory/warehouse/return-stock-in/index', '', '284503862625177600', 15,
+    TRUE, FALSE, FALSE, '', 'menu', '药房/科室退库后药库只读台账', NULL,
+    TIMESTAMP '2026-06-14 18:00:00+00', TIMESTAMP '2026-06-14 18:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+),
+(
+    '310400000000000116', 'DeptReturn', 'DeptReturn', '科室退库', 'lucide:undo-2',
+    '/inventory/department/dept-return', '/inventory/department/dept-return/index', '', '284503862625177600', 16,
+    TRUE, FALSE, FALSE, '', 'menu', '科室退库至药库', NULL,
+    TIMESTAMP '2026-06-14 18:00:00+00', TIMESTAMP '2026-06-14 18:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('58', 'Navigation.Chsreconciliation', '对账清算', 'Navigation', '菜单入口: ChsReconciliation', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('59', 'Navigation.Chscatalogmappingworkbench', '目录对码工作台', 'Navigation', '菜单入口: ChsCatalogMappingWorkbench', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('60', 'Navigation.Chsinventoryops', '进销存运维', 'Navigation', '菜单入口: ChsInventoryOps', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('61', 'Navigation.Whreturntosupplier', '药库退货单', 'Navigation', '菜单入口: WhReturnToSupplier', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('62', 'Navigation.Deptstocktakeorder', '科室盘点单', 'Navigation', '菜单入口: DeptStocktakeOrder', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('63', 'Navigation.Whgainloss', '药库损益单', 'Navigation', '菜单入口: WhGainLoss', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('64', 'Navigation.Phagainloss', '药房损益单', 'Navigation', '菜单入口: PhaGainLoss', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('65', 'Navigation.Deptgainloss', '科室损益单', 'Navigation', '菜单入口: DeptGainLoss', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('66', 'Navigation.Whtransferout', '药库调拨出库', 'Navigation', '菜单入口: WhTransferOut', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('67', 'Navigation.Whtransferin', '药库调拨入库', 'Navigation', '菜单入口: WhTransferIn', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('68', 'Navigation.Phareturntowarehouse', '药房退库', 'Navigation', '菜单入口: PhaReturnToWarehouse', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('69', 'Navigation.Whreturnstockin', '退库入库', 'Navigation', '菜单入口: WhReturnStockIn', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('70', 'Navigation.Deptreturn', '科室退库', 'Navigation', '菜单入口: DeptReturn', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    parent_name = EXCLUDED.parent_name,
+    description = EXCLUDED.description,
+    is_deleted = FALSE,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('10057', 'Navigation.Chsreconciliation', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10058', 'Navigation.Chscatalogmappingworkbench', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10059', 'Navigation.Chsinventoryops', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10060', 'Navigation.Whreturntosupplier', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10061', 'Navigation.Deptstocktakeorder', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10062', 'Navigation.Whgainloss', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10063', 'Navigation.Phagainloss', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10064', 'Navigation.Deptgainloss', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10065', 'Navigation.Whtransferout', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10066', 'Navigation.Whtransferin', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10067', 'Navigation.Phareturntowarehouse', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10068', 'Navigation.Whreturnstockin', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10069', 'Navigation.Deptreturn', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10070', 'Navigation.Medicinereturnip', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-06-17 00:00:00+00';
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310900000000000001', 'Booking', '排班预约', NULL,
+     'whale-booking 模块入口权限分组', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000002', 'Booking.OutpatientSchedule.View', '门诊排班', 'Booking',
+     '菜单入口: BookingOutpatientSchedule', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000012', 'Booking.SlotCalendar.View', '号源日历', 'Booking',
+     '菜单入口: BookingSlotCalendar', NULL,
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000003', 'Booking.Register.View', '门诊预约', 'Booking',
+     '门诊预约登记', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000004', 'Booking.Queue.View', '候诊叫号', 'Booking',
+     '候诊叫号台', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000005', 'Booking.Policy.View', '预约策略', 'Booking',
+     '放号策略与院点挂号策略', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000006', 'Booking.MedTech.View', '医技预约', 'Booking',
+     '医技预约登记', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000007', 'Booking.Bed.View', '床位预约', 'Booking',
+     '床位预留日历', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000008', 'Booking.HealthCheckup.View', '体检预约', 'Booking',
+     '团检与个检预约', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000009', 'Booking.Channel.View', '渠道配置', 'Booking',
+     '预约渠道与配额', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000010', 'Booking.QueueDisplay.View', '叫号大屏', 'Booking',
+     '候诊叫号大屏', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000011', 'Booking.Template.View', '排班设置', 'Booking',
+     '日排班、周排班、放号时段与日历例外配置', NULL,
+     TIMESTAMP '2026-06-14 00:00:00+00', TIMESTAMP '2026-06-14 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    parent_name = EXCLUDED.parent_name,
+    description = EXCLUDED.description,
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+    ('310900000000000100', 'BookingHub', 'BookingHub', '排班预约', 'lucide:calendar-range',
+     '/booking', '', NULL, NULL, 8, TRUE, FALSE, FALSE, '', 'directory',
+     '门诊排班 / 号源 / 预约 / 候诊叫号 / 策略 / 模板', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000112', 'BookingScheduleTemplate', 'BookingScheduleTemplate', '排班设置', 'lucide:layout-template',
+     '/booking/schedule-template', '/booking/schedule-template/index', 'Booking.Template.View', '310900000000000100', 1,
+     TRUE, FALSE, FALSE, '', 'menu', 'ScheduleTemplateAppService · 日/周排班惯例与放号时段', NULL,
+     TIMESTAMP '2026-06-14 00:00:00+00', TIMESTAMP '2026-06-14 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000101', 'BookingOutpatientSchedule', 'BookingOutpatientSchedule', '门诊排班', 'lucide:calendar-clock',
+     '/booking/outpatient-schedule', '/booking/outpatient-schedule/index', 'Booking.OutpatientSchedule.View', '310900000000000100', 2,
+     TRUE, FALSE, FALSE, '', 'menu', 'OutpatientScheduleAppService', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000102', 'BookingSlotCalendar', 'BookingSlotCalendar', '号源日历', 'lucide:calendar-days',
+     '/booking/slot-calendar', '/booking/slot-calendar/index', 'Booking.SlotCalendar.View', '310900000000000100', 3,
+     TRUE, FALSE, FALSE, '', 'menu', 'SlotManageAppService', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000103', 'BookingOutpatientRegister', 'BookingOutpatientRegister', '门诊预约', 'lucide:calendar-check',
+     '/booking/outpatient-register', '/booking/outpatient-register/index', 'Booking.Register.View', '310900000000000100', 4,
+     TRUE, TRUE, FALSE, '', 'menu', 'BookingRegisterAppService', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000104', 'BookingQueueBoard', 'BookingQueueBoard', '候诊叫号', 'lucide:megaphone',
+     '/booking/queue-board', '/booking/queue-board/index', 'Booking.Queue.View', '310900000000000100', 5,
+     TRUE, TRUE, FALSE, '', 'menu', 'QueueBoardAppService', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000110', 'BookingQueueDisplay', 'BookingQueueDisplay', '叫号大屏', 'lucide:monitor',
+     '/booking/queue-display', '/booking/queue-display/index', 'Booking.QueueDisplay.View', '310900000000000100', 6,
+     TRUE, TRUE, FALSE, '', 'menu', 'Queue display fullscreen', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, FALSE),
+    ('310900000000000106', 'BookingMedTech', 'BookingMedTech', '医技预约', 'lucide:stethoscope',
+     '/booking/med-tech', '/booking/med-tech/index', 'Booking.MedTech.View', '310900000000000100', 7,
+     TRUE, TRUE, FALSE, '', 'menu', 'MedTechBookingAppService', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000107', 'BookingBed', 'BookingBed', '床位预约', 'lucide:bed',
+     '/booking/bed', '/booking/bed/index', 'Booking.Bed.View', '310900000000000100', 8,
+     TRUE, TRUE, FALSE, '', 'menu', 'BedBookingAppService', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000108', 'BookingHealthCheckup', 'BookingHealthCheckup', '体检预约', 'lucide:heart-pulse',
+     '/booking/health-checkup', '/booking/health-checkup/index', 'Booking.HealthCheckup.View', '310900000000000100', 9,
+     TRUE, TRUE, FALSE, '', 'menu', 'HealthCheckupBookingAppService', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000105', 'BookingPolicy', 'BookingPolicy', '预约策略', 'lucide:settings-2',
+     '/booking/policy', '/booking/policy/index', 'Booking.Policy.View', '310900000000000100', 10,
+     TRUE, TRUE, FALSE, '', 'menu', 'BookingPolicyAppService · 挂号策略与停诊策略', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000109', 'BookingChannel', 'BookingChannel', '渠道配置', 'lucide:share-2',
+     '/booking/channel', '/booking/channel/index', 'Booking.Channel.View', '310900000000000100', 11,
+     TRUE, TRUE, FALSE, '', 'menu', 'ChannelBookingAppService', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
+ON CONFLICT (id) DO UPDATE SET
+    code = EXCLUDED.code,
+    name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    icon = EXCLUDED.icon,
+    path = EXCLUDED.path,
+    component = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    is_enabled = EXCLUDED.is_enabled,
+    is_hidden = EXCLUDED.is_hidden,
+    remark = EXCLUDED.remark,
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('317000463887929349', 'Navigation.SpecimenDefinition', '样本管理', 'Navigation',
+     '菜单入口: specimen_definition', NULL,
+     TIMESTAMP '2026-06-12 08:18:12.580+00', TIMESTAMP '2026-06-12 08:18:12.580+00', 1, 1, FALSE, NULL, NULL),
+    ('71', 'Navigation.Chsnationalcatalog', '国家目录查询', 'Navigation',
+     '菜单入口: ChsNationalCatalog', NULL,
+     TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('72', 'Navigation.Chscatalogdownload', '目录文件下载', 'Navigation',
+     '菜单入口: ChsCatalogDownload', NULL,
+     TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    parent_name = EXCLUDED.parent_name,
+    description = EXCLUDED.description,
+    is_deleted = FALSE,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '317000463887929350', 'specimen_definition', 'SpecimenDefinition', '样本管理', 'lucide:test-tubes',
+    '/basic/specimendefinition', '/basic/specimendefinition/index', 'Navigation.SpecimenDefinition', '2000', 24,
+    TRUE, FALSE, FALSE, '', 'menu', '基础数据-样本定义维护（SpecimenDefinitionAppService）', NULL,
+    TIMESTAMP '2026-06-12 08:18:12.580+00', TIMESTAMP '2026-06-12 08:18:12.580+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code = EXCLUDED.code,
+    name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    icon = EXCLUDED.icon,
+    path = EXCLUDED.path,
+    component = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    is_enabled = EXCLUDED.is_enabled,
+    is_hidden = EXCLUDED.is_hidden,
+    remark = EXCLUDED.remark,
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310900000000000011', 'Booking.OutpatientSchedule.View', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000037', 'Booking.SlotCalendar.View', 'R', '1', NULL, TIMESTAMP '2026-06-25 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310900000000000014', 'Booking', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310900000000000021', 'Booking.Template.View', 'R', '1', NULL, TIMESTAMP '2026-06-14 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('317000463887929351', 'Navigation.SpecimenDefinition', 'R', '1', NULL, TIMESTAMP '2026-06-12 08:18:12.580+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10071', 'Navigation.Chsnationalcatalog', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10072', 'Navigation.Chscatalogdownload', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10073', 'Navigation.Reporttemplatedesigner', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-06-17 00:00:00+00';
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310500000000000106', 'ChsMedicalInfoQuery', 'ChsMedicalInfoQuery', '医保信息查询', 'lucide:search',
+    '/chs/medical-info-query', '/chs/medical-info-query/index', '', '310500000000000100', 4,
+    TRUE, FALSE, FALSE, '', 'menu', '5201–5206 就诊/结算/慢特病/累计查询', NULL,
+    TIMESTAMP '2026-06-15 12:00:00+00', TIMESTAMP '2026-06-15 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310700000000000010', 'Navigation.ChsNationalCatalog', '国家目录查询', 'Navigation',
+     '菜单入口: ChsNationalCatalog', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', TIMESTAMP '2026-06-15 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000011', 'Navigation.ChsCatalogDownload', '目录文件下载', 'Navigation',
+     '菜单入口: ChsCatalogDownload', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', TIMESTAMP '2026-06-15 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000012', 'Navigation.ChsReconciliation', '对账清算', 'Navigation',
+     '菜单入口: ChsReconciliation', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', TIMESTAMP '2026-06-15 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000013', 'Navigation.ChsCatalogMappingWorkbench', '目录对码工作台', 'Navigation',
+     '菜单入口: ChsCatalogMappingWorkbench', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', TIMESTAMP '2026-06-15 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000014', 'Navigation.ChsInventoryOps', '进销存运维', 'Navigation',
+     '菜单入口: ChsInventoryOps', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', TIMESTAMP '2026-06-15 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000015', 'Navigation.ChsMedicalInfoQuery', '医保信息查询', 'Navigation',
+     '菜单入口: ChsMedicalInfoQuery — 5201–5206', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', TIMESTAMP '2026-06-15 12:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310800000000000010', 'Navigation.ChsNationalCatalog', 'R', '1', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000011', 'Navigation.ChsCatalogDownload', 'R', '1', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000012', 'Navigation.ChsReconciliation', 'R', '1', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000013', 'Navigation.ChsCatalogMappingWorkbench', 'R', '1', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000014', 'Navigation.ChsInventoryOps', 'R', '1', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000015', 'Navigation.ChsMedicalInfoQuery', 'R', '1', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO NOTHING;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '1010', 'job_management', 'JobManagement', '定时任务', 'lucide:timer',
+    '/system/job', '/system/job/index', 'Navigation.JobManagement', '1000', 7,
+    TRUE, FALSE, FALSE, '', 'menu', 'Quartz 定时任务管理（whale_qrtz_*）', NULL,
+    TIMESTAMP '2026-06-18 12:00:00+00', TIMESTAMP '2026-06-18 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '330000000000000001', 'Navigation.JobManagement', '定时任务', 'Navigation',
+    '菜单入口: job_management', NULL,
+    TIMESTAMP '2026-06-18 12:00:00+00', TIMESTAMP '2026-06-18 12:00:00+00',
+    1, 1, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '330000000000000002', 'Navigation.JobManagement', 'R', '1', NULL,
+    TIMESTAMP '2026-06-18 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL
+)
+ON CONFLICT (permission_name, provider_name, provider_key) DO NOTHING;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310400000000000122', 'ReportCenterRoot', 'ReportCenterRoot', '报表中心', 'lucide:layout-dashboard',
+    '/report-center', '', NULL, NULL, 11,
+    TRUE, FALSE, FALSE, '', 'directory', 'HIS 报表中心（门诊费用明细、库存明细等）', NULL,
+    TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310400000000000123', 'ConfigManagementRoot', 'ConfigManagementRoot', '配置管理', 'lucide:settings-2',
+    '/config', '', NULL, NULL, 12,
+    TRUE, FALSE, FALSE, '', 'directory', 'HIS 配置管理（病历/执行地点/组套/取药科室/耗材绑定等）', NULL,
+    TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310400000000000124', 'PrintManagementRoot', 'PrintManagementRoot', '打印管理', 'lucide:printer',
+    '/print', '', NULL, NULL, 16,
+    TRUE, FALSE, FALSE, '', 'directory', 'HIS 打印管理（模板/绑定/日志）', NULL,
+    TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310900000000000012', 'Booking.SlotCalendar.View', '号源日历', 'Booking',
+    '菜单入口: BookingSlotCalendar', NULL,
+    TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT 310800000000000037, 'Booking.SlotCalendar.View', 'R', '1', NULL,
+       TIMESTAMP '2026-06-25 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL
+WHERE NOT EXISTS (
+    SELECT 1 FROM whale_permission_grants
+    WHERE permission_name = 'Booking.SlotCalendar.View'
+      AND provider_name = 'R'
+      AND provider_key = '1'
+      AND is_deleted = FALSE
+);
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310800000000000020', 'Navigation.WarehouseManagement', 'R', '13', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00';
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT 310800000000000019, 'Booking.OutpatientSchedule.View', 'R', '10', '1',
+       TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL
+WHERE NOT EXISTS (
+    SELECT 1 FROM whale_permission_grants
+    WHERE permission_name = 'Booking.OutpatientSchedule.View'
+      AND provider_name = 'R'
+      AND provider_key = '10'
+      AND is_deleted = FALSE
+);
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT 310800000000000036, 'Booking.SlotCalendar.View', 'R', '10', '1',
+       TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL
+WHERE NOT EXISTS (
+    SELECT 1 FROM whale_permission_grants
+    WHERE permission_name = 'Booking.SlotCalendar.View'
+      AND provider_name = 'R'
+      AND provider_key = '10'
+      AND is_deleted = FALSE
+);
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310800000000000022', 'Booking.Template.View', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000023', 'Navigation.ChsCatalogDownload', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000024', 'Navigation.ChsCatalogMappingWorkbench', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000025', 'Navigation.ChsInventoryOps', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000026', 'Navigation.ChsMedicalInfoQuery', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000027', 'Navigation.ChsNationalCatalog', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000028', 'Navigation.ChsReconciliation', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000029', 'Navigation.JobManagement', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000030', 'Navigation.Opfeedetail', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000031', 'Navigation.SpecimenDefinition', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000032', 'Print.PrintBinding.View', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000033', 'Print.PrintLog.View', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000034', 'Print.Templates.View', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00';
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT 310800000000000035, 'Booking.SlotCalendar.View', 'R', '323022177255297024', '1',
+       TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL
+WHERE NOT EXISTS (
+    SELECT 1 FROM whale_permission_grants
+    WHERE permission_name = 'Booking.SlotCalendar.View'
+      AND provider_name = 'R'
+      AND provider_key = '323022177255297024'
+      AND is_deleted = FALSE
+);
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310500000000000107', 'ChsPlatformDict', 'ChsPlatformDict', '平台字典(1901)', 'lucide:map',
+    '/chs/platform-dict', '/chs/platform-dict/index', 'Navigation.ChsPlatformDict', '310500000000000100', 7,
+    TRUE, FALSE, FALSE, '', 'menu', '1901 医保区划等字典手动同步与本地镜像查询', NULL,
+    TIMESTAMP '2026-06-24 12:00:00+00', TIMESTAMP '2026-06-24 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310700000000000019', 'Navigation.ChsPlatformDict', '平台字典(1901)', 'Navigation',
+    '菜单入口: ChsPlatformDict — 1901 参保地医保区划字典', NULL,
+    TIMESTAMP '2026-06-24 12:00:00+00', TIMESTAMP '2026-06-24 12:00:00+00', 1, 1, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310800000000000038', 'Navigation.ChsPlatformDict', 'R', '1', NULL,
+    TIMESTAMP '2026-06-24 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL
+)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-06-24 12:00:00+00';
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310700000000000020', 'Finance', '财务管理', NULL,
+     '财务域菜单入口权限分组', NULL,
+     TIMESTAMP '2026-06-27 00:00:00+00', TIMESTAMP '2026-06-27 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000021', 'Navigation.PriceAdjustment', '调价管理', 'Navigation',
+     '菜单入口: PriceAdjustment — 批量调价单与审批', NULL,
+     TIMESTAMP '2026-06-27 00:00:00+00', TIMESTAMP '2026-06-27 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000022', 'Navigation.PriceAdjustmentDetail', '调价明细', 'Navigation',
+     '菜单入口: PriceAdjustmentDetail — 已生效调价项目明细查询', NULL,
+     TIMESTAMP '2026-06-27 00:00:00+00', TIMESTAMP '2026-06-27 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+    ('310900000000000200', 'FinanceManagement', 'FinanceManagement', '财务管理', 'lucide:landmark',
+     '/finance', '', NULL, NULL, 13, TRUE, FALSE, FALSE, '', 'directory',
+     '财务域：调价管理、调价明细等', NULL,
+     TIMESTAMP '2026-06-27 00:00:00+00', TIMESTAMP '2026-06-27 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000201', 'PriceAdjustment', 'PriceAdjustment', '调价管理', 'lucide:trending-up',
+     '/finance/price-adjustment', '/finance/price-adjustment/index', 'Navigation.PriceAdjustment', '310900000000000200', 1,
+     TRUE, FALSE, FALSE, '', 'menu', 'PriceAdjustment 批量调价单与审批', NULL,
+     TIMESTAMP '2026-06-27 00:00:00+00', TIMESTAMP '2026-06-27 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000202', 'PriceAdjustmentDetail', 'PriceAdjustmentDetail', '调价明细', 'lucide:scroll-text',
+     '/finance/price-adjustment-detail', '/finance/price-adjustment-detail/index', 'Navigation.PriceAdjustmentDetail', '310900000000000200', 2,
+     TRUE, FALSE, FALSE, '', 'menu', 'PriceAdjustmentDetail 已生效调价项目明细查询', NULL,
+     TIMESTAMP '2026-06-27 00:00:00+00', TIMESTAMP '2026-06-27 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310800000000000039', 'Navigation.PriceAdjustment', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000040', 'Navigation.PriceAdjustmentDetail', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-06-27 00:00:00+00';
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('880020000000000001', 'Navigation.MrmsCaseRecordList', '病案检索', 'Navigation',
+     '菜单入口: MrmsCaseRecordList — 病案检索列表', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('880020000000000002', 'Navigation.MrmsQcWorkbench', '质控工作台', 'Navigation',
+     '菜单入口: MrmsQcWorkbench — 病案质控与归档', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('880020000000000003', 'Navigation.MrmsBorrow', '借阅复印', 'Navigation',
+     '菜单入口: MrmsBorrow — 病案借阅复印审批', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('880020000000000004', 'Navigation.MrmsUpload', '4401上传', 'Navigation',
+     '菜单入口: MrmsUpload — 医保病案首页手动上传', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('880020000000000005', 'Navigation.MrmsCaseRecordHomepage', '病案首页编辑', 'Navigation',
+     '隐藏路由: MrmsCaseRecordHomepage — 全屏首页编辑', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('880020000000000006', 'Navigation.MrmsCaseRecordVolume', '卷宗预览', 'Navigation',
+     '隐藏路由: MrmsCaseRecordVolume — 卷宗 PDF 预览', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+    ('880010000000000000', 'MrmsManagement', 'MrmsManagement', '病案管理', 'lucide:folder-archive',
+     '/mrms', '', NULL, NULL, 12, TRUE, FALSE, FALSE, '', 'directory',
+     '病案检索 / 质控 / 借阅 / 4401 手动上传', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('880010000000000001', 'MrmsCaseRecordList', 'MrmsCaseRecordList', '病案检索', 'lucide:search',
+     '/mrms/case-record', '/mrms/case-record/index', 'Navigation.MrmsCaseRecordList', '880010000000000000', 1,
+     TRUE, FALSE, FALSE, '', 'menu', '病案室/医生检索与打开首页', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('880010000000000002', 'MrmsQcWorkbench', 'MrmsQcWorkbench', '质控工作台', 'lucide:clipboard-check',
+     '/mrms/qc-workbench', '/mrms/qc-workbench/index', 'Navigation.MrmsQcWorkbench', '880010000000000000', 2,
+     TRUE, FALSE, FALSE, '', 'menu', '质控、归档、解档', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('880010000000000003', 'MrmsBorrow', 'MrmsBorrow', '借阅复印', 'lucide:book-open',
+     '/mrms/borrow', '/mrms/borrow/index', 'Navigation.MrmsBorrow', '880010000000000000', 3,
+     TRUE, FALSE, FALSE, '', 'menu', '借阅申请审批与借还', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('880010000000000004', 'MrmsUpload', 'MrmsUpload', '4401上传', 'lucide:upload-cloud',
+     '/mrms/upload', '/mrms/upload/index', 'Navigation.MrmsUpload', '880010000000000000', 4,
+     TRUE, FALSE, FALSE, '', 'menu', '医保病案首页手动上传（无自动上传）', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('880010000000000005', 'MrmsCaseRecordHomepage', 'MrmsCaseRecordHomepage', '病案首页', 'lucide:file-text',
+     '/mrms/case-record/homepage/:caseRecordId', '/mrms/case-record/homepage/index',
+     'Navigation.MrmsCaseRecordHomepage', '880010000000000000', 10,
+     TRUE, TRUE, FALSE, '', 'menu', '列表跳转全屏编辑，不单独展示', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('880010000000000006', 'MrmsCaseRecordVolume', 'MrmsCaseRecordVolume', '卷宗预览', 'lucide:files',
+     '/mrms/case-record/volume/:caseRecordId', '/mrms/case-record/volume/index',
+     'Navigation.MrmsCaseRecordVolume', '880010000000000000', 11,
+     TRUE, TRUE, FALSE, '', 'menu', '卷宗 PDF 预览，列表/质控跳转', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('880030000000000001', 'Navigation.MrmsCaseRecordList', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('880030000000000002', 'Navigation.MrmsQcWorkbench', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('880030000000000003', 'Navigation.MrmsBorrow', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('880030000000000004', 'Navigation.MrmsUpload', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('880030000000000005', 'Navigation.MrmsCaseRecordHomepage', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('880030000000000006', 'Navigation.MrmsCaseRecordVolume', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-06-27 12:00:00+00';
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310400000000000125', 'DeptPharmacy', 'DeptPharmacy', '科室单据管理', 'lucide:building',
+    '/inventory/department', '', NULL, NULL,
+    10, TRUE, FALSE, FALSE, '', 'directory', '科室进销存单据', NULL,
+    TIMESTAMP '2026-07-01 00:00:00+00', TIMESTAMP '2026-07-01 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code = EXCLUDED.code, name = EXCLUDED.name, display_name = EXCLUDED.display_name,
+    icon = EXCLUDED.icon, path = EXCLUDED.path, component = EXCLUDED.component,
+    parent_id = EXCLUDED.parent_id, sort_order = EXCLUDED.sort_order,
+    is_enabled = EXCLUDED.is_enabled, is_hidden = EXCLUDED.is_hidden,
+    menu_type = EXCLUDED.menu_type, remark = EXCLUDED.remark,
+    is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+(
+    '310400000000000137', 'PhRequisition', 'PhRequisition', '药房请领单', 'lucide:clipboard-list',
+    '/inventory/pharmacy/requisition', '/inventory/pharmacy/requisition/index',
+    'Navigation.Phrequisition', '301696493912330240', 0,
+    TRUE, FALSE, FALSE, '', 'menu', '药房请领（② 申请单）', NULL,
+    TIMESTAMP '2026-07-01 00:00:00+00', TIMESTAMP '2026-07-01 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+),
+(
+    '310400000000000138', 'PhTransferOut', 'PhTransferOut', '药房调出单', 'lucide:arrow-right-left',
+    '/inventory/pharmacy/transfer-out', '/inventory/pharmacy/transfer-out/index',
+    'Navigation.Phtransferout', '301696493912330240', 5,
+    TRUE, FALSE, FALSE, '', 'menu', '药房调拨出库（⑤ 执行单）', NULL,
+    TIMESTAMP '2026-07-01 00:00:00+00', TIMESTAMP '2026-07-01 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+),
+(
+    '310400000000000139', 'PhTransferIn', 'PhTransferIn', '药房调入单', 'lucide:arrow-right-left',
+    '/inventory/pharmacy/transfer-in', '/inventory/pharmacy/transfer-in/index',
+    'Navigation.Phtransferin', '301696493912330240', 6,
+    TRUE, FALSE, FALSE, '', 'menu', '药房调拨入库（⑤ 只读壳单）', NULL,
+    TIMESTAMP '2026-07-01 00:00:00+00', TIMESTAMP '2026-07-01 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code = EXCLUDED.code, name = EXCLUDED.name, display_name = EXCLUDED.display_name,
+    icon = EXCLUDED.icon, path = EXCLUDED.path, component = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name, parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order, is_enabled = EXCLUDED.is_enabled, is_hidden = EXCLUDED.is_hidden,
+    remark = EXCLUDED.remark, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310400000000000114', 'PhaReturnToWarehouse', 'PhaReturnToWarehouse', '药房退库单', 'lucide:undo-2',
+    '/inventory/pharmacy/return-to-warehouse', '/inventory/pharmacy/return-to-warehouse/index',
+    'Navigation.Phareturntowarehouse', '301696493912330240', 4,
+    TRUE, FALSE, FALSE, '', 'menu', '药房退库至药库', NULL,
+    TIMESTAMP '2026-07-01 00:00:00+00', TIMESTAMP '2026-07-01 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code = EXCLUDED.code, name = EXCLUDED.name, display_name = EXCLUDED.display_name,
+    icon = EXCLUDED.icon, path = EXCLUDED.path, component = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name, parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order, is_enabled = EXCLUDED.is_enabled, is_hidden = EXCLUDED.is_hidden,
+    remark = EXCLUDED.remark, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+(
+    '310400000000000131', 'DeptRequisition', 'DeptRequisition', '科室请领单', 'lucide:clipboard-list',
+    '/inventory/department/requisition', '/inventory/department/requisition/index',
+    'Navigation.Deptrequisition', '310400000000000125', 1,
+    TRUE, FALSE, FALSE, '', 'menu', '科室请领（② 申请单）', NULL,
+    TIMESTAMP '2026-07-01 00:00:00+00', TIMESTAMP '2026-07-01 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+),
+(
+    '310400000000000132', 'DeptStockIn', 'DeptStockIn', '科室入库单', 'lucide:package-plus',
+    '/inventory/department/stock-in', '/inventory/department/stock-in/index',
+    'Navigation.Deptstockin', '310400000000000125', 2,
+    TRUE, FALSE, FALSE, '', 'menu', '科室入库（② 只读壳单）', NULL,
+    TIMESTAMP '2026-07-01 00:00:00+00', TIMESTAMP '2026-07-01 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+),
+(
+    '310400000000000133', 'DeptTransferOut', 'DeptTransferOut', '科室调出单', 'lucide:arrow-right-left',
+    '/inventory/department/transfer-out', '/inventory/department/transfer-out/index',
+    'Navigation.Depttransferout', '310400000000000125', 4,
+    TRUE, FALSE, FALSE, '', 'menu', '科室调拨出库（⑤ 执行单）', NULL,
+    TIMESTAMP '2026-07-01 00:00:00+00', TIMESTAMP '2026-07-01 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+),
+(
+    '310400000000000134', 'DeptTransferIn', 'DeptTransferIn', '科室调入单', 'lucide:arrow-right-left',
+    '/inventory/department/transfer-in', '/inventory/department/transfer-in/index',
+    'Navigation.Depttransferin', '310400000000000125', 5,
+    TRUE, FALSE, FALSE, '', 'menu', '科室调拨入库（⑤ 只读壳单）', NULL,
+    TIMESTAMP '2026-07-01 00:00:00+00', TIMESTAMP '2026-07-01 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+),
+(
+    '310400000000000135', 'DeptIssue', 'DeptIssue', '科室领用单', 'lucide:package-minus',
+    '/inventory/department/dept-issue', '/inventory/department/dept-issue/index',
+    'Navigation.Deptissue', '310400000000000125', 8,
+    TRUE, FALSE, FALSE, '', 'menu', '科室领用（⑦ 执行单）', NULL,
+    TIMESTAMP '2026-07-01 00:00:00+00', TIMESTAMP '2026-07-01 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+),
+(
+    '310400000000000136', 'DeptIssueReturn', 'DeptIssueReturn', '科室退领单', 'lucide:undo-2',
+    '/inventory/department/dept-issue-return', '/inventory/department/dept-issue-return/index',
+    'Navigation.Deptissuereturn', '310400000000000125', 9,
+    TRUE, FALSE, FALSE, '', 'menu', '科室退领（⑦ 须拉领用单）', NULL,
+    TIMESTAMP '2026-07-01 00:00:00+00', TIMESTAMP '2026-07-01 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code = EXCLUDED.code, name = EXCLUDED.name, display_name = EXCLUDED.display_name,
+    icon = EXCLUDED.icon, path = EXCLUDED.path, component = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name, parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order, is_enabled = EXCLUDED.is_enabled, is_hidden = EXCLUDED.is_hidden,
+    remark = EXCLUDED.remark, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permissions (id, name, display_name, parent_name, description, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by)
+VALUES
+    ('77', 'Navigation.Phrequisition',       '药房请领单',   'Navigation', '菜单入口: PhRequisition',       NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('78', 'Navigation.Phtransferout',       '药房调出单',   'Navigation', '菜单入口: PhTransferOut',       NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('79', 'Navigation.Phtransferin',        '药房调入单',   'Navigation', '菜单入口: PhTransferIn',        NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('80', 'Navigation.Deptrequisition',     '科室请领单',   'Navigation', '菜单入口: DeptRequisition',     NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('81', 'Navigation.Deptstockin',        '科室入库单',   'Navigation', '菜单入口: DeptStockIn',        NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('82', 'Navigation.Depttransferout',    '科室调出单',   'Navigation', '菜单入口: DeptTransferOut',    NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('83', 'Navigation.Depttransferin',     '科室调入单',   'Navigation', '菜单入口: DeptTransferIn',     NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('84', 'Navigation.Deptissue',          '科室领用单',   'Navigation', '菜单入口: DeptIssue',          NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('85', 'Navigation.Deptissuereturn',    '科室退领单',   'Navigation', '菜单入口: DeptIssueReturn',    NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name, display_name = EXCLUDED.display_name,
+    parent_name = EXCLUDED.parent_name, description = EXCLUDED.description,
+    is_deleted = FALSE, updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('10086', 'Navigation.Phrequisition',     'R', '1', NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10087', 'Navigation.Phtransferout',     'R', '1', NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10088', 'Navigation.Phtransferin',      'R', '1', NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10089', 'Navigation.Deptrequisition',   'R', '1', NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10090', 'Navigation.Deptstockin',       'R', '1', NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10091', 'Navigation.Depttransferout',   'R', '1', NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10092', 'Navigation.Depttransferin',    'R', '1', NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10093', 'Navigation.Deptissue',         'R', '1', NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10094', 'Navigation.Deptissuereturn',   'R', '1', NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted  = FALSE,
+    deleted_at  = NULL,
+    deleted_by  = NULL,
+    updated_at  = TIMESTAMP '2026-07-01 00:00:00+00';
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310800000000000041', 'Navigation.Whreturntosupplier', 'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000042', 'Navigation.Whgainloss',         'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000043', 'Navigation.Whtransferout',      'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000044', 'Navigation.Whtransferin',       'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000045', 'Navigation.Whreturnstockin',    'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-07-07 00:00:00+00';
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('890020000000000001', 'Navigation.PractitionerWorkload', '科室医生工作量', 'Navigation',
+     '菜单入口: PractitionerWorkload — 科室/医生工作量统计', NULL,
+     TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890020000000000002', 'Navigation.NurseWorkload', '护士工作量', 'Navigation',
+     '菜单入口: NurseWorkload — 护士诊疗执行/耗材工作量统计', NULL,
+     TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890020000000000003', 'Navigation.InvDocumentDetailWarehouse', '药库单据详情', 'Navigation',
+     '菜单入口: InvDocumentDetailWarehouse — 药库域单据详情报表', NULL,
+     TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890020000000000004', 'Navigation.InvDocumentDetailPharmacy', '药房单据详情', 'Navigation',
+     '菜单入口: InvDocumentDetailPharmacy — 药房域单据详情报表', NULL,
+     TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890020000000000005', 'Navigation.InvDocumentDetailDepartment', '科室单据详情', 'Navigation',
+     '菜单入口: InvDocumentDetailDepartment — 科室域单据详情报表', NULL,
+     TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890020000000000006', 'Navigation.InvDailySettlement', '库房日结', 'Navigation',
+     '菜单入口: InvDailySettlement — 库房日结对账报表', NULL,
+     TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890020000000000007', 'Navigation.TraceNumberReport', '追溯码查询', 'Navigation',
+     '菜单入口: TraceNumberReport — 追溯码查询报表（只读）', NULL,
+     TIMESTAMP '2026-07-07 12:00:00+00', TIMESTAMP '2026-07-07 12:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+    ('890010000000000001', 'PractitionerWorkload', 'PractitionerWorkload', '科室医生工作量', 'lucide:stethoscope',
+     '/report/practitioner-workload', '/report/practitioner-workload/index', 'Navigation.PractitionerWorkload',
+     '310400000000000122', 2, TRUE, FALSE, FALSE, '', 'menu',
+     '双 Tab 汇总/明细；首页弹窗快捷入口', NULL,
+     TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('890010000000000002', 'NurseWorkload', 'NurseWorkload', '护士工作量', 'lucide:heart-pulse',
+     '/report/nurse-workload', '/report/nurse-workload/index', 'Navigation.NurseWorkload',
+     '310400000000000122', 3, TRUE, FALSE, FALSE, '', 'menu',
+     '诊疗执行/耗材使用；首页弹窗快捷入口', NULL,
+     TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('890010000000000003', 'InvDocumentDetailWarehouse', 'InvDocumentDetailWarehouse', '药库单据详情', 'lucide:file-spreadsheet',
+     '/report/document-detail/warehouse', '/report/document-detail/warehouse/index', 'Navigation.InvDocumentDetailWarehouse',
+     '284503862625177600', 20, TRUE, FALSE, FALSE, '', 'menu',
+     'domainScope=WAREHOUSE', NULL,
+     TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('890010000000000004', 'InvDocumentDetailPharmacy', 'InvDocumentDetailPharmacy', '药房单据详情', 'lucide:file-spreadsheet',
+     '/report/document-detail/pharmacy', '/report/document-detail/pharmacy/index', 'Navigation.InvDocumentDetailPharmacy',
+     '301696493912330240', 20, TRUE, FALSE, FALSE, '', 'menu',
+     'domainScope=PHARMACY', NULL,
+     TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('890010000000000005', 'InvDocumentDetailDepartment', 'InvDocumentDetailDepartment', '科室单据详情', 'lucide:file-spreadsheet',
+     '/report/document-detail/department', '/report/document-detail/department/index', 'Navigation.InvDocumentDetailDepartment',
+     '310400000000000125', 20, TRUE, FALSE, FALSE, '', 'menu',
+     'domainScope=DEPARTMENT', NULL,
+     TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('890010000000000006', 'InvDailySettlement', 'InvDailySettlement', '库房日结', 'lucide:calculator',
+     '/report/daily-settlement', '/report/daily-settlement/index', 'Navigation.InvDailySettlement',
+     '310400000000000122', 7, TRUE, FALSE, FALSE, '', 'menu',
+     '期初/期末备份 + 动态列日结对账', NULL,
+     TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('890010000000000007', 'TraceNumberReport', 'TraceNumberReport', '追溯码查询', 'lucide:scan-barcode',
+     '/report/trace-number', '/report/trace-number/index', 'Navigation.TraceNumberReport',
+     '310400000000000122', 8, TRUE, FALSE, FALSE, '', 'menu',
+     '药品追溯码只读查询；支持 deep link', NULL,
+     TIMESTAMP '2026-07-07 12:00:00+00', TIMESTAMP '2026-07-07 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('890030000000000001', 'Navigation.PractitionerWorkload', 'R', '1', NULL,
+     TIMESTAMP '2026-07-04 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('890030000000000002', 'Navigation.NurseWorkload', 'R', '1', NULL,
+     TIMESTAMP '2026-07-04 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('890030000000000003', 'Navigation.InvDocumentDetailWarehouse', 'R', '1', NULL,
+     TIMESTAMP '2026-07-04 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('890030000000000004', 'Navigation.InvDocumentDetailPharmacy', 'R', '1', NULL,
+     TIMESTAMP '2026-07-04 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('890030000000000005', 'Navigation.InvDocumentDetailDepartment', 'R', '1', NULL,
+     TIMESTAMP '2026-07-04 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('890030000000000006', 'Navigation.InvDailySettlement', 'R', '1', NULL,
+     TIMESTAMP '2026-07-04 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('890030000000000007', 'Navigation.TraceNumberReport', 'R', '1', NULL,
+     TIMESTAMP '2026-07-07 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('890030000000000013', 'Navigation.InvDocumentDetailWarehouse', 'R', '13', '1',
+     TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890030000000000015', 'Navigation.InvDocumentDetailPharmacy', 'R', '12', '1',
+     TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890030000000000014', 'Navigation.InvDailySettlement', 'R', '13', '1',
+     TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890030000000000021', 'Navigation.PractitionerWorkload', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890030000000000022', 'Navigation.NurseWorkload', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890030000000000023', 'Navigation.InvDocumentDetailWarehouse', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890030000000000024', 'Navigation.InvDocumentDetailPharmacy', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890030000000000025', 'Navigation.InvDocumentDetailDepartment', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890030000000000026', 'Navigation.InvDailySettlement', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('10074', 'Identity.Users.Impersonate', 'R', '1', NULL, TIMESTAMP '2026-06-09 04:17:09.507+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000038', 'Navigation.ChsPlatformDict', 'R', '1', NULL, TIMESTAMP '2026-06-24 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('330000000000000002', 'Navigation.JobManagement', 'R', '1', NULL, TIMESTAMP '2026-06-18 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000006', 'Print.PrintBinding.View', 'R', '1', NULL, TIMESTAMP '2026-06-11 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000009', 'Report', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000008', 'Report.Definition.View', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000007', 'Report.Designer.View', 'R', '1', NULL, TIMESTAMP '2026-06-12 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('332763182014664704', 'Navigation.PractitionerWorkload', 'R', '10', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332763296691130368', 'Navigation.NurseWorkload', 'R', '11', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332763352089497600', 'Navigation.InvDailySettlement', 'R', '12', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332763352064331776', 'Navigation.Invstocklist', 'R', '12', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332763352076914688', 'Navigation.Medicinereturnip', 'R', '12', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762875805306880', 'Navigation.Deptgainloss', 'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762875830472704', 'Navigation.Deptissue', 'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762876031799296', 'Navigation.Deptissuereturn', 'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762875905970176', 'Navigation.Deptrequisition', 'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762876048576512', 'Navigation.Deptreturn', 'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762875926941696', 'Navigation.Deptstockin', 'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762876010827776', 'Navigation.Deptstocktakeorder', 'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762875763363840', 'Navigation.Depttransferin', 'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762875868221440', 'Navigation.Depttransferout', 'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762875771752448', 'Navigation.InvDocumentDetailDepartment', 'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762875947913216', 'Navigation.InvDocumentDetailPharmacy', 'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762875780141056', 'Navigation.Phagainloss', 'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762875989856256', 'Navigation.Phareturntowarehouse', 'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762875847249920', 'Navigation.Phrequisition', 'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762875817889792', 'Navigation.Phtransferin', 'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762875884998656', 'Navigation.Phtransferout', 'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762875792723968', 'Navigation.PriceAdjustment', 'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762875964690432', 'Navigation.PriceAdjustmentDetail', 'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332763045511041024', 'Navigation.NurseWorkload', 'R', '14', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332763045473292288', 'Navigation.PractitionerWorkload', 'R', '14', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332763045485875200', 'Navigation.PriceAdjustment', 'R', '14', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332763045494263808', 'Navigation.PriceAdjustmentDetail', 'R', '14', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762686579281920', 'Navigation.BodystructureManagement', 'R', '15', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762686612836352', 'Navigation.Device', 'R', '15', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762686629613568', 'Navigation.Diagnosistreatment', 'R', '15', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762686596059136', 'Navigation.Outpatientnursestation', 'R', '15', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762686642196480', 'Navigation.SpecimenDefinition', 'R', '15', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762769425174530', 'Booking.OutpatientSchedule.View', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762768951218176', 'Navigation.Deptgainloss', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762769265790976', 'Navigation.Deptissue', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762769110601728', 'Navigation.Deptissuereturn', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762769345482752', 'Navigation.Deptrequisition', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762769408397312', 'Navigation.Deptreturn', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762769387425793', 'Navigation.Deptstockin', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762769089630208', 'Navigation.Deptstocktakeorder', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762769127378945', 'Navigation.Depttransferin', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762768993161216', 'Navigation.Depttransferout', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762769228042240', 'Navigation.Invstocklist', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762768854749184', 'Navigation.Phagainloss', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762769051881472', 'Navigation.Phareturntowarehouse', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762769303539712', 'Navigation.Phrequisition', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762769030909952', 'Navigation.Phstockin', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762768917663744', 'Navigation.Phstocktakeorder', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762769249013760', 'Navigation.Phtransferin', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762769324511232', 'Navigation.Phtransferout', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762768833777664', 'Navigation.Whgainloss', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762768976384000', 'Navigation.Whpurchaseinbound', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762769190293504', 'Navigation.Whpurchaseorder', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762769014132736', 'Navigation.Whreturnstockin', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762769370648577', 'Navigation.Whreturntosupplier', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762769072852992', 'Navigation.Whstockout', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762768888303616', 'Navigation.Whstocktakeorder', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762769286762496', 'Navigation.Whtransferin', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332762769207070720', 'Navigation.Whtransferout', 'R', '323022177255297024', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = EXCLUDED.updated_at;
+
+-- Menu terminal state: 140 UPDATE whale_menus replayed from pre-squash V1__Init.sql (5b32d3a48)
+-- Squash must run INSERTs first, then this block (parent_id / sort_order / is_hidden).
+
+UPDATE whale_menus
+SET parent_id   = NULL,
+    sort_order  = 12,
+    is_hidden   = TRUE,
+    remark      = COALESCE(remark, '') || '；V74 已迁至隐藏，whale-print/report 统一在「报表打印」',
+    updated_at  = TIMESTAMP '2026-06-11 00:00:00+00'
+WHERE id IN (
+    '310400000000000101',
+    '310400000000000102',
+    '310400000000000103',
+    '301699662818054144'
+)
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET code            = 'ReportDesigner',
+    name            = 'ReportDesigner',
+    display_name    = '报表设计器',
+    icon            = 'lucide:pen-line',
+    path            = '/reports/designer',
+    component       = '/report/designer/index',
+    permission_name = 'Report.Designer.View',
+    sort_order      = 4,
+    remark          = 'C 类报表配置、PDF 模板绑定与发布（draft → published）',
+    updated_at      = TIMESTAMP '2026-06-13 00:00:00+00'
+WHERE id = '310600000000000111'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET sort_order = 6,
+    updated_at = TIMESTAMP '2026-06-13 00:00:00+00'
+WHERE id = '310600000000000112'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET remark = 'whale-print/report 打印模板 / 日志 / 报表设计器 / 报表中心 / 外系统报告',
+    updated_at = TIMESTAMP '2026-06-13 00:00:00+00'
+WHERE id = '310400000000000100'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET sort_order = 5,
+    is_hidden  = TRUE,
+    remark     = 'C 类报表设计编辑页（可从报表模板「设计」进入）',
+    updated_at = TIMESTAMP '2026-06-13 12:00:00+00'
+WHERE id = '310600000000000111' AND is_deleted = FALSE;
+UPDATE whale_menus
+SET sort_order = 6, updated_at = TIMESTAMP '2026-06-13 12:00:00+00'
+WHERE id = '310600000000000113' AND is_deleted = FALSE;
+UPDATE whale_menus
+SET sort_order = 7, updated_at = TIMESTAMP '2026-06-13 12:00:00+00'
+WHERE id = '310600000000000112' AND is_deleted = FALSE;
+UPDATE whale_menus
+SET remark = 'whale-print/report 打印模板 / 报表模板 / 报表中心 / 外系统报告',
+    updated_at = TIMESTAMP '2026-06-13 12:00:00+00'
+WHERE id = '310400000000000100' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Chsreconciliation', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310500000000000103' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Chscatalogmappingworkbench', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310500000000000104' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Chsinventoryops', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310500000000000105' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Whreturntosupplier', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000106' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Deptstocktakeorder', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000107' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Whgainloss', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000108' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Phagainloss', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000109' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Deptgainloss', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000110' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Whtransferout', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000111' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Whtransferin', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000112' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Phareturntowarehouse', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000114' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Whreturnstockin', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000115' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Deptreturn', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000116' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Chsnationalcatalog', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310500000000000101' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Chscatalogdownload', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310500000000000102' AND is_deleted = FALSE;
+UPDATE whale_menus
+SET display_name = '组套模板',
+    remark       = '基础数据-组套模板',
+    updated_at   = TIMESTAMP '2026-06-24 00:00:00+00'
+WHERE id = 316900463887929348
+  AND code = 'order_template'
+  AND is_deleted = FALSE
+  AND display_name = '医嘱组套';
+UPDATE whale_menus
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    remark     = COALESCE(remark, '') || '；V89 菜单已移除'
+WHERE id = '310400000000000063'
+  AND code = 'DispenseDoc'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET parent_id  = '310400000000000060',
+    sort_order = 6,
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    remark     = '发药管理-门诊发退药记录查询与导出'
+WHERE id = '310400000000000118'
+  AND code = 'DispenseRecordOp'
+  AND is_deleted = FALSE
+  AND parent_id = '301696493912330240';
+UPDATE whale_menus
+SET parent_id  = '310400000000000060',
+    sort_order = 7,
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    remark     = '发药管理-住院发退药记录查询与导出'
+WHERE id = '310400000000000119'
+  AND code = 'DispenseRecordIp'
+  AND is_deleted = FALSE
+  AND parent_id = '301696493912330240';
+UPDATE whale_menus
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    remark     = COALESCE(remark, '') || '；V90 误挂库房管理，菜单已移除'
+WHERE id = '310400000000000107'
+  AND code = 'DeptStocktakeOrder'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET is_hidden  = TRUE,
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    remark     = COALESCE(remark, '') || '；V90 库房管理侧栏暂隐藏'
+WHERE parent_id = '284503862625177600'
+  AND is_deleted = FALSE
+  AND id NOT IN (
+      '312881978679496704', -- 药库进货单
+      '313234941086273536', -- 药库出库单
+      '316800463887929340', -- 药库盘点单
+      '890010000000000003'  -- 药库单据详情
+  );
+UPDATE whale_menus
+SET is_hidden  = FALSE,
+    sort_order = 1,
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+WHERE id = '312881978679496704'
+  AND code = 'WhPurchaseInbound'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET is_hidden  = FALSE,
+    sort_order = 2,
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+WHERE id = '313234941086273536'
+  AND code = 'WhStockOut'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET is_hidden  = FALSE,
+    sort_order = 3,
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+WHERE id = '316800463887929340'
+  AND code = 'WhStocktakeOrder'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET is_hidden  = TRUE,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = COALESCE(remark, '') || '；V91 报表管理侧栏暂隐藏'
+WHERE id = '310400000000000100'
+  AND code = 'ReportManagement'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET is_hidden  = TRUE,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = COALESCE(remark, '') || '；V91 随报表管理暂隐藏'
+WHERE parent_id = '310400000000000100'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET parent_id  = '310400000000000122',
+    sort_order = 1,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = '报表中心-门诊费用明细查询与导出'
+WHERE id = '310400000000000121'
+  AND code = 'OpFeeDetail'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET parent_id  = '310400000000000122',
+    sort_order = 4,
+    is_hidden  = FALSE,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = '报表中心-药库库存明细查询与导出'
+WHERE id = '313570119616827392'
+  AND code = 'InvStockList'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = COALESCE(remark, '') || '；V91 门诊费用明细已迁至报表中心，目录已移除'
+WHERE id = '310400000000000120'
+  AND code = 'OpReport'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET parent_id  = '310400000000000123',
+    sort_order = 1,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = '配置管理-病历模版'
+WHERE id = '315372803691384832'
+  AND code = 'EmrTemplate'
+  AND is_deleted = FALSE
+  AND parent_id = '2000';
+UPDATE whale_menus
+SET parent_id  = '310400000000000123',
+    sort_order = 2,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = '配置管理-执行地点'
+WHERE id = '316900463887929347'
+  AND code = 'ExecuteLocation'
+  AND is_deleted = FALSE
+  AND parent_id = '2000';
+UPDATE whale_menus
+SET parent_id  = '310400000000000123',
+    sort_order = 3,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = '配置管理-组套模板'
+WHERE id = '316900463887929348'
+  AND code = 'order_template'
+  AND is_deleted = FALSE
+  AND parent_id = '2000';
+UPDATE whale_menus
+SET parent_id  = '310400000000000123',
+    sort_order = 4,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = '配置管理-取药科室'
+WHERE id = '316900463887929349'
+  AND code = 'service_location'
+  AND is_deleted = FALSE
+  AND parent_id = '2000';
+UPDATE whale_menus
+SET parent_id  = '310400000000000123',
+    sort_order = 5,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = '配置管理-诊疗耗材绑定'
+WHERE id = '316900463887929346'
+  AND code = 'ServiceDeviceBinding'
+  AND is_deleted = FALSE
+  AND parent_id = '2000';
+UPDATE whale_menus
+SET parent_id  = '310400000000000124',
+    sort_order = 1,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = '打印管理-PRT 画布打印模板（PrintJson）'
+WHERE id = '310600000000000101'
+  AND code = 'PrintTemplate'
+  AND is_deleted = FALSE
+  AND parent_id = '2000';
+UPDATE whale_menus
+SET parent_id  = '310400000000000124',
+    sort_order = 2,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = '打印管理-PRT bindingCode→busNo 租户绑定'
+WHERE id = '310600000000000104'
+  AND code = 'ReportPrintBinding'
+  AND is_deleted = FALSE
+  AND parent_id = '2000';
+UPDATE whale_menus
+SET parent_id  = '310400000000000124',
+    sort_order = 3,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = '打印管理-PRT 打印审计 prt_print_event_log'
+WHERE id = '310600000000000103'
+  AND code = 'ReportPrintLog'
+  AND is_deleted = FALSE
+  AND parent_id = '2000';
+UPDATE whale_menus
+SET parent_id  = '310400000000000124',
+    sort_order = 4,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = '打印管理-隐藏：设计从列表进入 /basic/print-template/design'
+WHERE id = '310600000000000102'
+  AND code = 'PrintTemplateDesigner'
+  AND is_deleted = FALSE
+  AND parent_id = '2000';
+UPDATE whale_menus
+SET sort_order = 1,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '2000'
+  AND code = 'basic_data'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET sort_order = 2,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310400000000000001'
+  AND code = 'ChargeStation'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET sort_order = 3,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310400000000000020'
+  AND code = 'OutpatientDoctorStation'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET sort_order = 4,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310400000000000040'
+  AND code = 'InpatientDoctorStation'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET sort_order = 5,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '301665359451131904'
+  AND code = 'OutpatientNurseStation'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET sort_order = 6,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '301666596158443520'
+  AND code = 'InpatientNurseStation'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET sort_order = 7,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310400000000000060'
+  AND code = 'MedicationDispense'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET display_name = '药房单据管理',
+    sort_order   = 8,
+    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '301696493912330240'
+  AND code = 'Pharmacy'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET display_name = '药库单据管理',
+    sort_order   = 9,
+    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '284503862625177600'
+  AND code = 'Warehouse'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET sort_order = 11,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310400000000000122'
+  AND code = 'ReportCenterRoot'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET sort_order = 12,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310400000000000123'
+  AND code = 'ConfigManagementRoot'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET sort_order = 13,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '1000'
+  AND code = 'system_management'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET sort_order = 14,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310900000000000100'
+  AND code = 'BookingHub'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET sort_order = 15,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310500000000000100'
+  AND code = 'ChsManagement'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET sort_order = 16,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310400000000000124'
+  AND code = 'PrintManagementRoot'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET sort_order = 17,
+    is_hidden  = TRUE,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310400000000000100'
+  AND code = 'ReportManagement'
+  AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 1,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '284517877903003648' AND code = 'Medicine' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 2,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '284519152342274048' AND code = 'Diagnosistreatment' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 3,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '284518561658441728' AND code = 'Device' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 4,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '284519592148602880' AND code = 'Disease' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 5,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2008' AND code = 'healthcare_service_management' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 6,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2007' AND code = 'dept_management' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 7,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2004' AND code = 'ward_location_management' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 8,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2003' AND code = 'warehouse_management' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 9,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2005' AND code = 'patient_management' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 10, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2002' AND code = 'bodystructure_management' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 11, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '317000463887929350' AND code = 'specimen_definition' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 12, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '284501743746682880' AND code = 'Frequency' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 13, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '284502213630365696' AND code = 'Supplier' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 14, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2010' AND code = 'contract_management' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 99, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2001' AND code = 'codesystem_management' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 6, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000008' AND code = 'ChargeIpPrepay' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 7, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000007' AND code = 'ChargeIpSettle' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 8, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000117' AND code = 'ChargeIpDayClose' AND is_deleted = FALSE;
+UPDATE whale_menus
+SET sort_order      = 9,
+    is_hidden       = TRUE,
+    permission_name = NULL,
+    updated_at      = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark          = COALESCE(remark, '') || '；V91 侧栏暂隐藏'
+WHERE id = '310400000000000009'
+  AND code = 'ChargeIpFee'
+  AND is_deleted = FALSE;
+UPDATE whale_menus SET parent_id = '310400000000000060', sort_order = 2, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '313945127476793344' AND code = 'MedicineReturnOp' AND is_deleted = FALSE;
+UPDATE whale_menus SET parent_id = '310400000000000060', sort_order = 3, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000062' AND code = 'DispenseIp' AND is_deleted = FALSE;
+UPDATE whale_menus SET parent_id = '310400000000000060', sort_order = 4, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000064' AND code = 'MedicineReturnIp' AND is_deleted = FALSE;
+UPDATE whale_menus SET parent_id = '310400000000000060', sort_order = 5, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000118' AND code = 'DispenseRecordOp' AND is_deleted = FALSE;
+UPDATE whale_menus SET parent_id = '310400000000000060', sort_order = 6, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000119' AND code = 'DispenseRecordIp' AND is_deleted = FALSE;
+UPDATE whale_menus
+SET parent_id       = '301696493912330240',
+    display_name    = '药房损益单',
+    sort_order      = 9,
+    is_hidden       = TRUE,
+    permission_name = NULL,
+    updated_at      = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark          = COALESCE(remark, '') || '；V91 药房管理侧栏暂隐藏'
+WHERE id = '310400000000000109'
+  AND code = 'PhaGainLoss'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET parent_id       = '301696493912330240',
+    display_name    = '药房退库单',
+    sort_order      = 14,
+    is_hidden       = TRUE,
+    permission_name = NULL,
+    updated_at      = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark          = COALESCE(remark, '') || '；V91 药房管理侧栏暂隐藏'
+WHERE id = '310400000000000114'
+  AND code = 'PhaReturnToWarehouse'
+  AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 1, is_hidden = TRUE, permission_name = NULL, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000081' AND code = 'WhPurchaseOrder' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 2, is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '312881978679496704' AND code = 'WhPurchaseInbound' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 3, is_hidden = TRUE, permission_name = NULL, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000106' AND code = 'WhReturnToSupplier' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 4, is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '313234941086273536' AND code = 'WhStockOut' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 5, is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '316800463887929340' AND code = 'WhStocktakeOrder' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 6, is_hidden = TRUE, permission_name = NULL, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000108' AND code = 'WhGainLoss' AND is_deleted = FALSE;
+UPDATE whale_menus SET display_name = '药库调拨出库单', sort_order = 7, is_hidden = TRUE, permission_name = NULL, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000111' AND code = 'WhTransferOut' AND is_deleted = FALSE;
+UPDATE whale_menus SET display_name = '药库调拨入库单', sort_order = 8, is_hidden = TRUE, permission_name = NULL, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000112' AND code = 'WhTransferIn' AND is_deleted = FALSE;
+UPDATE whale_menus
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = COALESCE(remark, '') || '；V91 菜单已移除'
+WHERE id = '310400000000000110'
+  AND code = 'DeptGainLoss'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = COALESCE(remark, '') || '；V91 菜单已移除'
+WHERE id = '310400000000000116'
+  AND code = 'DeptReturn'
+  AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 2,  is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310600000000000104' AND code = 'ReportPrintBinding' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 3,  is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310600000000000103' AND code = 'ReportPrintLog' AND is_deleted = FALSE;
+UPDATE whale_menus SET display_name = '打印设计器', sort_order = 24, is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310600000000000102' AND code = 'PrintTemplateDesigner' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 25, is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310600000000000101' AND code = 'PrintTemplate' AND is_deleted = FALSE;
+UPDATE whale_menus SET display_name = '排班设置', sort_order = 1, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000112' AND code = 'BookingScheduleTemplate' AND is_deleted = FALSE;
+UPDATE whale_menus SET display_name = '门诊排班', sort_order = 2, permission_name = 'Booking.OutpatientSchedule.View', updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000101' AND code = 'BookingOutpatientSchedule' AND is_deleted = FALSE;
+UPDATE whale_menus SET display_name = '号源日历', sort_order = 3, permission_name = 'Booking.SlotCalendar.View', updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000102' AND code = 'BookingSlotCalendar' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 4, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000103' AND code = 'BookingOutpatientRegister' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 5, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000104' AND code = 'BookingQueueBoard' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 6, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000110' AND code = 'BookingQueueDisplay' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 7, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000106' AND code = 'BookingMedTech' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 8, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000107' AND code = 'BookingBed' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 9, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000108' AND code = 'BookingHealthCheckup' AND is_deleted = FALSE;
+UPDATE whale_menus SET display_name = '预约策略', sort_order = 10, remark = 'BookingPolicyAppService · 挂号策略与停诊策略', updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000105' AND code = 'BookingPolicy' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 11, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000109' AND code = 'BookingChannel' AND is_deleted = FALSE;
+UPDATE whale_menus
+SET display_name = '排班预约',
+    remark       = '门诊排班 / 号源 / 预约 / 候诊叫号 / 策略 / 模板',
+    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310900000000000100'
+  AND code = 'BookingHub'
+  AND is_deleted = FALSE;
+UPDATE whale_menus
+SET is_hidden  = TRUE,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id IN (
+    '310900000000000103',
+    '310900000000000104',
+    '310900000000000110',
+    '310900000000000106',
+    '310900000000000107',
+    '310900000000000108',
+    '310900000000000105',
+    '310900000000000109'
+)
+  AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 1, is_hidden = FALSE, is_deleted = FALSE, deleted_at = NULL,
+    parent_id = '301696493912330240',
+    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Phstockin'), updated_at = NOW()
+WHERE id = '313295483593297921' AND code = 'PhStockIn';
+UPDATE whale_menus SET sort_order = 2, is_hidden = FALSE, is_deleted = FALSE, deleted_at = NULL,
+    parent_id = '301696493912330240',
+    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Phstocktakeorder'), updated_at = NOW()
+WHERE id = '316800463887929341' AND code = 'PhStocktakeOrder';
+UPDATE whale_menus SET parent_id = '301696493912330240', display_name = '药房损益单',
+    sort_order = 3, is_hidden = FALSE, is_deleted = FALSE, deleted_at = NULL,
+    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Phagainloss'), updated_at = NOW()
+WHERE id = '310400000000000109' AND code = 'PhaGainLoss';
+UPDATE whale_menus SET parent_id = '301696493912330240', display_name = '药房退库单',
+    sort_order = 4, is_hidden = FALSE, is_deleted = FALSE, deleted_at = NULL,
+    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Phareturntowarehouse'), updated_at = NOW()
+WHERE id = '310400000000000114' AND code = 'PhaReturnToWarehouse';
+UPDATE whale_menus SET
+    parent_id = '310400000000000125', display_name = '科室退库单', sort_order = 3,
+    is_hidden = FALSE, is_enabled = TRUE, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL,
+    permission_name = 'Navigation.Deptreturn', path = '/inventory/department/dept-return',
+    component = '/inventory/department/dept-return/index', updated_at = NOW()
+WHERE id = '310400000000000116' AND code = 'DeptReturn';
+UPDATE whale_menus SET
+    parent_id = '310400000000000125', display_name = '科室盘点单', sort_order = 6,
+    is_hidden = FALSE, is_enabled = TRUE, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL,
+    permission_name = 'Navigation.Deptstocktakeorder', updated_at = NOW()
+WHERE id = '310400000000000107' AND code = 'DeptStocktakeOrder';
+UPDATE whale_menus SET
+    parent_id = '310400000000000125', display_name = '科室损益单', sort_order = 7,
+    is_hidden = FALSE, is_enabled = TRUE, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL,
+    permission_name = 'Navigation.Deptgainloss', updated_at = NOW()
+WHERE id = '310400000000000110' AND code = 'DeptGainLoss';
+UPDATE whale_menus SET parent_id = '284503862625177600', sort_order = 1, is_hidden = FALSE, is_deleted = FALSE,
+    deleted_at = NULL, deleted_by = NULL,
+    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Whpurchaseorder'), updated_at = NOW()
+WHERE id = '310400000000000081' AND code = 'WhPurchaseOrder';
+UPDATE whale_menus SET parent_id = '284503862625177600', sort_order = 2, is_hidden = FALSE, is_deleted = FALSE,
+    deleted_at = NULL, deleted_by = NULL, updated_at = NOW()
+WHERE id = '312881978679496704' AND code = 'WhPurchaseInbound';
+UPDATE whale_menus SET parent_id = '284503862625177600', sort_order = 3, is_hidden = FALSE, is_deleted = FALSE,
+    deleted_at = NULL, deleted_by = NULL, updated_at = NOW()
+WHERE id = '313234941086273536' AND code = 'WhStockOut';
+UPDATE whale_menus SET parent_id = '284503862625177600', sort_order = 4, is_hidden = FALSE, is_deleted = FALSE,
+    deleted_at = NULL, deleted_by = NULL, updated_at = NOW()
+WHERE id = '316800463887929340' AND code = 'WhStocktakeOrder';
+UPDATE whale_menus SET parent_id = '284503862625177600', sort_order = 5, is_hidden = FALSE, is_deleted = FALSE,
+    deleted_at = NULL, deleted_by = NULL,
+    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Whreturntosupplier'), updated_at = NOW()
+WHERE id = '310400000000000106' AND code = 'WhReturnToSupplier';
+UPDATE whale_menus SET parent_id = '284503862625177600', display_name = '药库损益单', sort_order = 6,
+    is_hidden = FALSE, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL,
+    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Whgainloss'), updated_at = NOW()
+WHERE id = '310400000000000108' AND code = 'WhGainLoss';
+UPDATE whale_menus SET parent_id = '284503862625177600', display_name = '药库调拨出库单', sort_order = 7,
+    is_hidden = FALSE, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL,
+    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Whtransferout'), updated_at = NOW()
+WHERE id = '310400000000000111' AND code = 'WhTransferOut';
+UPDATE whale_menus SET parent_id = '284503862625177600', display_name = '药库调拨入库单', sort_order = 8,
+    is_hidden = FALSE, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL,
+    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Whtransferin'), updated_at = NOW()
+WHERE id = '310400000000000112' AND code = 'WhTransferIn';
+UPDATE whale_menus SET parent_id = '284503862625177600', display_name = '退库入库', sort_order = 9,
+    is_hidden = FALSE, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL,
+    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Whreturnstockin'), updated_at = NOW()
+WHERE id = '310400000000000115' AND code = 'WhReturnStockIn';
+UPDATE whale_menus SET parent_id = '310400000000000122', sort_order = 4, is_hidden = FALSE, is_deleted = FALSE,
+    deleted_at = NULL, deleted_by = NULL,
+    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Invstocklist'), updated_at = NOW()
+WHERE id = '313570119616827392' AND code = 'InvStockList';
+UPDATE whale_menus SET parent_id = '310400000000000125', updated_at = NOW()
+WHERE parent_id = '310400000000000130' AND is_deleted = FALSE;
+UPDATE whale_menus SET
+    is_deleted = TRUE, deleted_at = NOW(), deleted_by = 1, updated_at = NOW()
+WHERE id = '310400000000000130' AND code = 'DeptPharmacy' AND is_deleted = FALSE;
+UPDATE whale_menus SET
+    name = 'DeptPharmacy',
+    display_name = '科室单据管理',
+    path = '/inventory/department',
+    component = '',
+    menu_type = 'directory',
+    permission_name = NULL,
+    is_enabled = TRUE,
+    is_hidden = FALSE,
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = NOW()
+WHERE id = '310400000000000125'
+  AND code = 'DeptPharmacy';
+UPDATE whale_menus SET
+    name = 'Warehouse',
+    display_name = '药库单据管理',
+    path = '/inventory',
+    component = '',
+    menu_type = 'directory',
+    permission_name = NULL,
+    is_enabled = TRUE,
+    is_hidden = FALSE,
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = NOW()
+WHERE id = '284503862625177600'
+  AND code = 'Warehouse';
+UPDATE whale_menus SET
+    name = 'ReportCenterRoot',
+    display_name = '报表中心',
+    path = '/report-center',
+    component = '',
+    menu_type = 'directory',
+    permission_name = NULL,
+    is_enabled = TRUE,
+    is_hidden = FALSE,
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = NOW()
+WHERE id = '310400000000000122'
+  AND code = 'ReportCenterRoot';
+UPDATE whale_menus SET parent_id = '284503862625177600', sort_order = 20, is_hidden = FALSE, is_enabled = TRUE,
+    is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL, updated_at = TIMESTAMP '2026-07-07 00:00:00+00'
+WHERE id = '890010000000000003' AND code = 'InvDocumentDetailWarehouse' AND is_deleted = FALSE;
+UPDATE whale_menus SET parent_id = '301696493912330240', sort_order = 20, is_hidden = FALSE, is_enabled = TRUE,
+    is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL, updated_at = TIMESTAMP '2026-07-07 00:00:00+00'
+WHERE id = '890010000000000004' AND code = 'InvDocumentDetailPharmacy' AND is_deleted = FALSE;
+UPDATE whale_menus SET parent_id = '310400000000000125', sort_order = 20, is_hidden = FALSE, is_enabled = TRUE,
+    is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL, updated_at = TIMESTAMP '2026-07-07 00:00:00+00'
+WHERE id = '890010000000000005' AND code = 'InvDocumentDetailDepartment' AND is_deleted = FALSE;
+-- 12. 权限分组：配置管理 / 打印管理 / 报表中心 + 子权限归组 + 管理员授权
+-- ---------------------------------------------------------------------------
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310700000000000016', 'ConfigManagement', '配置管理', NULL,
+     'HIS 配置管理入口权限分组（病历/执行地点/组套/取药科室/耗材绑定）', NULL,
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000017', 'PrintManagement', '打印管理', NULL,
+     'HIS 打印管理入口权限分组（PRT 模板/绑定/日志）', NULL,
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000018', 'ReportCenter', '报表中心', NULL,
+     'HIS 报表中心入口权限分组（门诊费用明细等）', NULL,
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
+
+-- 配置类 Navigation 权限归入 ConfigManagement
+UPDATE whale_permissions
+SET parent_name = 'ConfigManagement',
+    updated_at  = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE name IN (
+    'Navigation.Emrtemplate',
+    'Navigation.Executelocation',
+    'Navigation.OrderTemplate',
+    'Navigation.ServiceLocation',
+    'Navigation.ActivityDeviceBinding'
+)
+  AND is_deleted = FALSE
+  AND parent_name = 'Navigation';
+
+-- 打印类 Print 权限归入 PrintManagement
+UPDATE whale_permissions
+SET parent_name = 'PrintManagement',
+    updated_at  = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE name IN (
+    'Print.Templates.View',
+    'Print.Templates.Design',
+    'Print.PrintLog.View',
+    'Print.PrintBinding.View'
+)
+  AND is_deleted = FALSE
+  AND parent_name = 'BasicData';
+
+-- 门诊费用明细归入 ReportCenter
+UPDATE whale_permissions
+SET parent_name = 'ReportCenter',
+    updated_at  = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE name = 'Navigation.Opfeedetail'
+  AND is_deleted = FALSE
+  AND parent_name = 'Navigation';
+
+-- 管理员（R / 1）补三个一级分组授权
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310800000000000016', 'ConfigManagement', 'R', '1', NULL,
+     TIMESTAMP '2026-06-25 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000017', 'PrintManagement', 'R', '1', NULL,
+     TIMESTAMP '2026-06-25 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000018', 'ReportCenter', 'R', '1', NULL,
+     TIMESTAMP '2026-06-25 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00';
+
+-- ---------------------------------------------------------------------------
+
+-- Platform terminal patches from pre-squash V1__Init.sql
+-- qrtz: 6 INSERT blocks
+-- permission UPDATEs: 15
+-- grant UPDATEs: 9
+
+-- --- whale_permissions terminal UPDATE chain ---
+UPDATE whale_permissions
+SET display_name = '报表中心',
+    description  = '菜单入口: ReportCenter — 已发布 C 类报表查询/导出/打印',
+    updated_at   = TIMESTAMP '2026-06-13 00:00:00+00'
+WHERE name = 'Report.Center.View'
+  AND is_deleted = FALSE;
+UPDATE whale_permissions
+SET display_name = '报表设计器',
+    description = '菜单入口: ReportDesigner — SQL/表头/表底/筛选器设计',
+    updated_at = TIMESTAMP '2026-06-13 12:00:00+00'
+WHERE name = 'Report.Designer.View' AND is_deleted = FALSE;
+UPDATE whale_permissions
+SET display_name = '组套模板',
+    updated_at   = TIMESTAMP '2026-06-24 00:00:00+00'
+WHERE id = 56
+  AND name = 'Navigation.OrderTemplate'
+  AND is_deleted = FALSE
+  AND display_name = '医嘱组套';
+UPDATE whale_permissions
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+WHERE id = 40
+  AND name = 'Navigation.Dispensedoc'
+  AND is_deleted = FALSE;
+UPDATE whale_permissions
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+WHERE id = 62
+  AND name = 'Navigation.Deptstocktakeorder'
+  AND is_deleted = FALSE;
+UPDATE whale_permissions
+SET display_name = '诊疗耗材绑定',
+    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE name = 'Navigation.ActivityDeviceBinding'
+  AND is_deleted = FALSE;
+UPDATE whale_permissions
+SET display_name = '打印设计器',
+    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE name = 'Print.Templates.Design'
+  AND is_deleted = FALSE;
+UPDATE whale_permissions
+SET display_name = '排班设置',
+    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE name = 'Booking.Template.View'
+  AND is_deleted = FALSE;
+UPDATE whale_permissions
+SET display_name = '排班预约',
+    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE name = 'Booking'
+  AND is_deleted = FALSE;
+UPDATE whale_permissions
+SET name         = 'Booking.OutpatientSchedule.View',
+    display_name = '门诊排班',
+    description  = '菜单入口: BookingOutpatientSchedule',
+    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE name = 'Booking.Schedule.View'
+  AND is_deleted = FALSE;
+UPDATE whale_permissions
+SET parent_name = 'ConfigManagement',
+    updated_at  = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE name IN (
+    'Navigation.Emrtemplate',
+    'Navigation.Executelocation',
+    'Navigation.OrderTemplate',
+    'Navigation.ServiceLocation',
+    'Navigation.ActivityDeviceBinding'
+)
+  AND is_deleted = FALSE
+  AND parent_name = 'Navigation';
+UPDATE whale_permissions
+SET parent_name = 'PrintManagement',
+    updated_at  = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE name IN (
+    'Print.Templates.View',
+    'Print.Templates.Design',
+    'Print.PrintLog.View',
+    'Print.PrintBinding.View'
+)
+  AND is_deleted = FALSE
+  AND parent_name = 'BasicData';
+UPDATE whale_permissions
+SET parent_name = 'ReportCenter',
+    updated_at  = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE name = 'Navigation.Opfeedetail'
+  AND is_deleted = FALSE
+  AND parent_name = 'Navigation';
+UPDATE whale_permissions SET display_name = '药房退库单', is_deleted = FALSE, deleted_at = NULL, updated_at = NOW()
+WHERE id = '68' AND name = 'Navigation.Phareturntowarehouse';
+UPDATE whale_permissions SET is_deleted = FALSE, deleted_at = NULL, updated_at = NOW()
+WHERE id IN ('62','65','70') AND name IN ('Navigation.Deptstocktakeorder','Navigation.Deptgainloss','Navigation.Deptreturn');
+
+-- --- whale_permission_grants terminal UPDATE chain ---
+UPDATE whale_permission_grants
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+WHERE permission_name = 'Navigation.Dispensedoc'
+  AND is_deleted = FALSE;
+UPDATE whale_permission_grants
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+WHERE permission_name = 'Navigation.Deptstocktakeorder'
+  AND is_deleted = FALSE;
+UPDATE whale_permission_grants
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE permission_name IN (
+    'Booking.Register.View',
+    'Booking.Queue.View',
+    'Booking.QueueDisplay.View',
+    'Booking.MedTech.View',
+    'Booking.Bed.View',
+    'Booking.HealthCheckup.View',
+    'Booking.Policy.View',
+    'Booking.Channel.View'
+)
+  AND is_deleted = FALSE;
+UPDATE whale_permission_grants
+SET permission_name = 'Booking.OutpatientSchedule.View',
+    updated_at      = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE permission_name = 'Booking.Schedule.View'
+  AND is_deleted = FALSE;
+UPDATE whale_permission_grants
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE provider_name = 'R'
+  AND provider_key = '323022177255297024'
+  AND permission_name IN (
+      'Navigation.Reportclinical',
+      'Navigation.Reportdean',
+      'Navigation.Reportfinance',
+      'Navigation.Reporthome',
+      'Navigation.Reporttemplatedesigner'
+  )
+  AND is_deleted = FALSE;
+UPDATE whale_permission_grants
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE provider_name = 'R'
+  AND provider_key = '14'
+  AND permission_name IN (
+      'Navigation.Reportclinical',
+      'Navigation.Reportdean',
+      'Navigation.Reportfinance',
+      'Navigation.Reporthome'
+  )
+  AND is_deleted = FALSE;
+UPDATE whale_permission_grants
+SET permission_name = 'Navigation.Phareturntowarehouse',
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-07-01 00:00:00+00'
+WHERE id = '10067';
+UPDATE whale_permission_grants
+SET is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-07-01 00:00:00+00'
+WHERE provider_name = 'R'
+  AND provider_key = '1'
+  AND permission_name IN (
+      'Navigation.Deptstocktakeorder',
+      'Navigation.Deptgainloss',
+      'Navigation.Deptreturn'
+  );
+UPDATE whale_permission_grants
+SET is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-07-07 00:00:00+00'
+WHERE provider_name = 'R'
+  AND provider_key = '13'
+  AND permission_name IN (
+      'Navigation.Whpurchaseorder',
+      'Navigation.Whpurchaseinbound',
+      'Navigation.Whstockout',
+      'Navigation.Whstocktakeorder',
+      'Navigation.Invstocklist',
+      'Navigation.Deptrequisition',
+      'Navigation.Deptstockin',
+      'Navigation.Deptreturn',
+      'Navigation.Depttransferout',
+      'Navigation.Depttransferin',
+      'Navigation.Deptstocktakeorder',
+      'Navigation.Deptgainloss',
+      'Navigation.Deptissue',
+      'Navigation.Deptissuereturn',
+      'Navigation.InvDocumentDetailDepartment'
+  )
+  AND is_deleted = TRUE;
+UPDATE whale_permission_grants
+SET is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-07-07 00:00:00+00'
+WHERE provider_name = 'R'
+  AND provider_key = '323022177255297024'
+  AND permission_name IN (
+      'Navigation.Deptrequisition',
+      'Navigation.Deptstockin',
+      'Navigation.Deptreturn',
+      'Navigation.Depttransferout',
+      'Navigation.Depttransferin',
+      'Navigation.Deptstocktakeorder',
+      'Navigation.Deptgainloss',
+      'Navigation.Deptissue',
+      'Navigation.Deptissuereturn',
+      'Navigation.InvDocumentDetailDepartment'
+  )
+  AND is_deleted = TRUE;

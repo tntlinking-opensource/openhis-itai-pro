@@ -1,0 +1,17 @@
+{
+  "moduleId": "booking",
+  "displayName": "统一预约（Booking）",
+  "enabledProperty": "openhis.modules.booking.enabled",
+  "autoConfigurationClass": "com.openhis.whale.booking.application.config.BookingAutoConfiguration",
+  "appServiceNames": [
+    "outpatientSchedule",
+    "slotManage",
+    "bookingRegister",
+    "queueBoard",
+    "bookingPolicy",
+    "medTechBooking",
+    "bedBooking",
+    "healthCheckupBooking",
+    "channelBooking"
+  ]
+}

@@ -1,0 +1,55 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.openhis.health.application.inventory.warehouse.returnstockin.request;
+
+import com.openhis.health.application.inventory.warehouse.returnstockin.dto.ReturnStockInLineDto;
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.util.List;
+
+/**
+ * 新建退库入库壳单请求（IF-WHS-RSI-04，壳单只读：接口固定拒绝 WHS_RSI_006）。
+ *
+ * <p>壳单由药房/科室退库 agree 编排自动生成，禁止手工新建。</p>
+ */
+@Getter
+@Setter
+@Schema(description = "新建退库入库壳单 IF-WHS-RSI-04（已拒绝）")
+public class CreateReturnStockInRequest {
+
+    /** 来源单号 originalBusNo。 */
+    @Schema(description = "来源单号 originalBusNo")
+    private String originalBusNo;
+
+    /** 源位置 sourceLocationId。 */
+    @Schema(description = "源位置 sourceLocationId")
+    private Long sourceLocationId;
+
+    /** 目的药库 purposeLocationId。 */
+    @Schema(description = "目的药库 purposeLocationId")
+    private Long purposeLocationId;
+
+    /** 源位置类型 sourceTypeEnum。 */
+    @Schema(description = "源位置类型 sourceTypeEnum")
+    private Integer sourceTypeEnum;
+
+    /** 目的位置类型 purposeTypeEnum。 */
+    @Schema(description = "目的位置类型 purposeTypeEnum")
+    private Integer purposeTypeEnum;
+
+    /** 供应类别 categoryEnum。 */
+    @Schema(description = "供应类别 categoryEnum")
+    private Integer categoryEnum;
+
+    /** 供应商 supplierId。 */
+    @Schema(description = "供应商 supplierId")
+    private Long supplierId;
+
+    /** 明细行 lines。 */
+    @Schema(description = "明细行 lines")
+    private List<ReturnStockInLineDto> lines;
+}

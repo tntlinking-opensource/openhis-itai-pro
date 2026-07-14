@@ -1,0 +1,413 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.openhis.whale.identity.application;
+
+import com.openhis.whale.core.application.dto.BaseQueryRequest;
+import com.openhis.whale.core.application.dto.PagedResult;
+import com.openhis.whale.core.application.exception.BusinessException;
+import com.openhis.whale.core.application.exception.EntityNotFoundException;
+import com.openhis.whale.core.application.exception.ValidationException;
+import com.openhis.whale.core.application.util.PageRequestUtils;
+import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
+import com.openhis.whale.core.infrastructure.permission.RequirePermission;
+import com.openhis.whale.identity.application.dto.*;
+import com.openhis.whale.identity.domain.OrganizationUnit;
+import com.openhis.whale.identity.domain.UserOrganizationUnit;
+import com.openhis.whale.identity.infrastructure.repository.OrganizationUnitRepository;
+import com.openhis.whale.identity.infrastructure.repository.UserOrganizationUnitRepository;
+import com.openhis.whale.identity.infrastructure.repository.UserRepository;
+import com.openhis.whale.identity.domain.User;
+import com.openhis.whale.core.application.util.SpecificationUtils;
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Service;
+
+import jakarta.persistence.criteria.Predicate;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+/**
+ * 组织单元应用服务
+ */
+@Service
+public class OrganizationUnitAppService {
+
+    @Autowired
+    private OrganizationUnitRepository organizationUnitRepository;
+
+    @Autowired
+    private UserOrganizationUnitRepository userOrganizationUnitRepository;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    /**
+     * 获取组织单元
+     */
+    @RequirePermission("Identity.OrganizationUnits.View")
+    public OrganizationUnitDto getById(IdRequest request) {
+        if (request.getId() == null) {
+            throw new ValidationException("组织单元ID不能为空");
+        }
+        OrganizationUnit ou = organizationUnitRepository.findById(request.getId())
+                .orElseThrow(() -> new EntityNotFoundException("组织单元", request.getId()));
+        return toDto(ou);
+    }
+
+    /**
+     * 获取组织单元列表（树形结构）
+     */
+    public List<OrganizationUnitDto> getTree() {
+        Long tenantId = TenantUtils.getCurrentTenantId();
+
+        // 获取根组织单元并过滤租户
+        List<OrganizationUnit> rootOus = organizationUnitRepository.findByParentIdIsNullOrderBySortOrderAsc();
+
+        // 租户过滤
+        if (tenantId != null) {
+            rootOus = rootOus.stream()
+                    .filter(ou -> tenantId.equals(ou.getTenantId()))
+                    .collect(Collectors.toList());
+        } else {
+            // 宿主用户只看tenantId为null的
+            rootOus = rootOus.stream()
+                    .filter(ou -> ou.getTenantId() == null)
+                    .collect(Collectors.toList());
+        }
+
+        return rootOus.stream()
+                .map(this::toDtoWithChildren)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 获取组织单元列表（分页）
+     */
+    public PagedResult<OrganizationUnitDto> getList(BaseQueryRequest request) {
+        Specification<OrganizationUnit> spec = buildSpecification(request);
+        var pageRequest = PageRequestUtils.createDefault(
+                request.getPageNo(),
+                request.getPageSize()
+        );
+
+        Page<OrganizationUnit> page = organizationUnitRepository.findAll(spec, pageRequest);
+        return PagedResult.fromPage(page.map(this::toDto));
+    }
+
+    /**
+     * 创建组织单元（编码自动生成）
+     */
+    @RequirePermission("Identity.OrganizationUnits.Create")
+    public OrganizationUnitDto create(CreateOrganizationUnitRequest request) {
+        // 检查父组织单元
+        if (request.getParentId() != null) {
+            organizationUnitRepository.findById(request.getParentId())
+                    .orElseThrow(() -> new EntityNotFoundException("父组织单元", request.getParentId()));
+        }
+
+        OrganizationUnit ou = new OrganizationUnit();
+        ou.setDisplayName(request.getDisplayName());
+        ou.setParentId(request.getParentId());
+        ou.setSortOrder(request.getSortOrder() != null ? request.getSortOrder() : 0);
+        ou.setIsEnabled(request.getIsEnabled() != null ? request.getIsEnabled() : true);
+        ou.setRemark(request.getRemark());
+        ou.setTenantId(TenantUtils.getCurrentTenantId());
+
+        // 自动生成级联编码
+        ou.setCode(generateCode(request.getParentId()));
+
+        ou = organizationUnitRepository.save(ou);
+        return toDto(ou);
+    }
+
+    /**
+     * 生成级联编码
+     */
+    private String generateCode(Long parentId) {
+        if (parentId == null) {
+            // 根节点：001, 002, 003...
+            List<OrganizationUnit> roots = organizationUnitRepository.findByParentIdIsNullOrderBySortOrderAsc();
+            int nextNumber = roots.size() + 1;
+            return String.format("%03d", nextNumber);
+        } else {
+            // 子节点：父编码.001
+            OrganizationUnit parent = organizationUnitRepository.findById(parentId).orElseThrow();
+            List<OrganizationUnit> siblings = organizationUnitRepository.findByParentIdOrderBySortOrderAsc(parentId);
+            int nextNumber = siblings.size() + 1;
+            return parent.getCode() + "." + String.format("%03d", nextNumber);
+        }
+    }
+
+    /**
+     * 更新组织单元
+     */
+    @RequirePermission("Identity.OrganizationUnits.Update")
+    public OrganizationUnitDto update(UpdateOrganizationUnitRequest request) {
+        if (request.getId() == null) {
+            throw new ValidationException("组织单元ID不能为空");
+        }
+
+        OrganizationUnit ou = organizationUnitRepository.findById(request.getId())
+                .orElseThrow(() -> new EntityNotFoundException("组织单元", request.getId()));
+
+        // 检查父组织单元（不能将自己设为父）
+        if (request.getParentId() != null && request.getParentId().equals(request.getId())) {
+            throw new BusinessException("不能将自己设为父组织单元");
+        }
+
+        if (request.getParentId() != null) {
+            organizationUnitRepository.findById(request.getParentId())
+                    .orElseThrow(() -> new EntityNotFoundException("父组织单元", request.getParentId()));
+        }
+
+        if (request.getDisplayName() != null) {
+            ou.setDisplayName(request.getDisplayName());
+        }
+        if (request.getParentId() != null) {
+            ou.setParentId(request.getParentId());
+        }
+        if (request.getSortOrder() != null) {
+            ou.setSortOrder(request.getSortOrder());
+        }
+        if (request.getIsEnabled() != null) {
+            ou.setIsEnabled(request.getIsEnabled());
+        }
+        if (request.getRemark() != null) {
+            ou.setRemark(request.getRemark());
+        }
+
+        ou = organizationUnitRepository.save(ou);
+        return toDto(ou);
+    }
+
+    /**
+     * 删除组织单元（软删除）
+     */
+    @RequirePermission("Identity.OrganizationUnits.Delete")
+    public void delete(IdRequest request) {
+        if (request.getId() == null) {
+            throw new ValidationException("组织单元ID不能为空");
+        }
+
+        OrganizationUnit ou = organizationUnitRepository.findById(request.getId())
+                .orElseThrow(() -> new EntityNotFoundException("组织单元", request.getId()));
+
+        // 检查是否有子组织单元
+        List<OrganizationUnit> children = organizationUnitRepository.findByParentIdOrderBySortOrderAsc(request.getId());
+        if (!children.isEmpty()) {
+            throw new BusinessException("存在子组织单元，无法删除");
+        }
+
+        // 软删除
+        ou.setIsDeleted(true);
+        ou.setDeletedAt(java.time.LocalDateTime.now());
+        organizationUnitRepository.save(ou);
+    }
+
+    /**
+     * 获取组织单元的用户列表
+     */
+    public List<UserDto> getUsers(IdRequest request) {
+        if (request.getId() == null) {
+            throw new ValidationException("组织单元ID不能为空");
+        }
+
+        organizationUnitRepository.findById(request.getId())
+                .orElseThrow(() -> new EntityNotFoundException("组织单元", request.getId()));
+
+        List<UserOrganizationUnit> userOus = userOrganizationUnitRepository.findByOrganizationUnitId(request.getId());
+
+        // 获取用户ID列表
+        List<Long> userIds = userOus.stream()
+                .map(UserOrganizationUnit::getUserId)
+                .collect(Collectors.toList());
+
+        if (userIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        // 查询用户详情（避免懒加载问题）
+        List<User> users = userRepository.findAllById(userIds);
+        return users.stream()
+                .map(user -> {
+                    UserDto dto = new UserDto();
+                    BeanUtils.copyProperties(user, dto);
+                    return dto;
+                })
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 分配用户到组织单元
+     */
+    public void assignUsers(AssignUsersRequest request) {
+        if (request.getOrganizationUnitId() == null) {
+            throw new ValidationException("组织单元ID不能为空");
+        }
+        if (request.getUserIds() == null || request.getUserIds().isEmpty()) {
+            throw new ValidationException("用户ID列表不能为空");
+        }
+
+        organizationUnitRepository.findById(request.getOrganizationUnitId())
+                .orElseThrow(() -> new EntityNotFoundException("组织单元", request.getOrganizationUnitId()));
+
+        Long tenantId = TenantUtils.getCurrentTenantId();
+
+        for (Long userId : request.getUserIds()) {
+            if (!userOrganizationUnitRepository.existsByUserIdAndOrganizationUnitId(userId, request.getOrganizationUnitId())) {
+                UserOrganizationUnit uou = new UserOrganizationUnit();
+                uou.setUserId(userId);
+                uou.setOrganizationUnitId(request.getOrganizationUnitId());
+                uou.setTenantId(tenantId);
+                userOrganizationUnitRepository.save(uou);
+            }
+        }
+    }
+
+    /**
+     * 从组织单元移除用户
+     */
+    public void removeUsers(RemoveUsersRequest request) {
+        if (request.getOrganizationUnitId() == null) {
+            throw new ValidationException("组织单元ID不能为空");
+        }
+        if (request.getUserIds() == null || request.getUserIds().isEmpty()) {
+            throw new ValidationException("用户ID列表不能为空");
+        }
+
+        organizationUnitRepository.findById(request.getOrganizationUnitId())
+                .orElseThrow(() -> new EntityNotFoundException("组织单元", request.getOrganizationUnitId()));
+
+        for (Long userId : request.getUserIds()) {
+            userOrganizationUnitRepository.deleteByUserIdAndOrganizationUnitId(userId, request.getOrganizationUnitId());
+        }
+    }
+
+    /**
+     * 将用户的可登录科室与给定 Whale OU 主键列表对齐（全量替换，供人员岗位维护派生）。
+     *
+     * @param userId 系统用户主键（{@code whale_users.id}）
+     * @param organizationUnitIds Whale {@code OrganizationUnit.id} 列表（可为空表示清空）；非 HIS 组织 id
+     */
+    public void syncOrganizationUnitsForUser(Long userId, List<Long> organizationUnitIds) {
+        if (userId == null) {
+            throw new ValidationException("用户ID不能为空");
+        }
+        userRepository.findById(userId)
+            .orElseThrow(() -> new EntityNotFoundException("用户", userId));
+
+        List<Long> desiredIds = organizationUnitIds != null ? organizationUnitIds : List.of();
+        Set<Long> desiredSet = new HashSet<>();
+        for (Long orgUnitId : desiredIds) {
+            if (orgUnitId != null) {
+                desiredSet.add(orgUnitId);
+            }
+        }
+
+        Long tenantId = TenantUtils.getCurrentTenantId();
+        List<UserOrganizationUnit> existing = userOrganizationUnitRepository.findByUserIdAndTenantId(userId, tenantId);
+        Set<Long> processed = new HashSet<>();
+
+        for (UserOrganizationUnit row : existing) {
+            Long orgUnitId = row.getOrganizationUnitId();
+            if (desiredSet.contains(orgUnitId)) {
+                processed.add(orgUnitId);
+            } else {
+                userOrganizationUnitRepository.deleteByUserIdAndOrganizationUnitId(userId, orgUnitId);
+            }
+        }
+
+        for (Long orgUnitId : desiredSet) {
+            if (processed.contains(orgUnitId)) {
+                continue;
+            }
+            organizationUnitRepository.findById(orgUnitId)
+                .orElseThrow(() -> new EntityNotFoundException("组织单元", orgUnitId));
+            UserOrganizationUnit uou = new UserOrganizationUnit();
+            uou.setUserId(userId);
+            uou.setOrganizationUnitId(orgUnitId);
+            uou.setTenantId(tenantId);
+            userOrganizationUnitRepository.save(uou);
+        }
+    }
+
+    /**
+     * 按主键加载组织单元（不存在时为空）。
+     *
+     * @param id 组织单元主键
+     * @return 组织单元或空
+     */
+    public Optional<OrganizationUnit> findOptionalById(Long id) {
+        if (id == null) {
+            return Optional.empty();
+        }
+        return organizationUnitRepository.findById(id);
+    }
+
+    /**
+     * 按编码加载组织单元（不存在时为空）。
+     *
+     * @param code 组织单元编码
+     * @return 组织单元或空
+     */
+    public Optional<OrganizationUnit> findOptionalByCode(String code) {
+        if (code == null || code.isBlank()) {
+            return Optional.empty();
+        }
+        return organizationUnitRepository.findByCode(code.trim());
+    }
+
+    /**
+     * 持久化组织单元（新建或更新）。
+     */
+    public OrganizationUnit persistOrganizationUnit(OrganizationUnit organizationUnit) {
+        if (organizationUnit == null) {
+            return null;
+        }
+        return organizationUnitRepository.save(organizationUnit);
+    }
+
+    private Specification<OrganizationUnit> buildSpecification(BaseQueryRequest request) {
+        return SpecificationUtils.<OrganizationUnit>tenantFilter()
+            .and(SpecificationUtils.<OrganizationUnit>notDeleted())
+            .and((root, query, cb) -> {
+                List<Predicate> predicates = new ArrayList<>();
+
+                // 关键字搜索
+                if (request.getSearchKey() != null && !request.getSearchKey().trim().isEmpty()) {
+                    String pattern = "%" + request.getSearchKey().trim() + "%";
+                    predicates.add(cb.or(
+                            cb.like(root.get("code"), pattern),
+                            cb.like(root.get("displayName"), pattern)
+                    ));
+                }
+
+                return predicates.isEmpty() ? cb.conjunction() : cb.and(predicates.toArray(new Predicate[0]));
+            });
+    }
+
+    private OrganizationUnitDto toDto(OrganizationUnit ou) {
+        OrganizationUnitDto dto = new OrganizationUnitDto();
+        BeanUtils.copyProperties(ou, dto);
+        // 不访问懒加载的 parent 关联，避免 "no session" 错误
+        // 如需 parentDisplayName，可以在前端通过 parentId 查找
+        return dto;
+    }
+
+    private OrganizationUnitDto toDtoWithChildren(OrganizationUnit ou) {
+        OrganizationUnitDto dto = toDto(ou);
+        List<OrganizationUnit> children = organizationUnitRepository.findByParentIdOrderBySortOrderAsc(ou.getId());
+        dto.setChildren(children.stream()
+                .map(this::toDtoWithChildren)
+                .collect(Collectors.toList()));
+        return dto;
+    }
+}

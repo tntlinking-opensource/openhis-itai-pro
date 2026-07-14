@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.openhis</groupId>
+        <artifactId>whale-module-elep-jilin</artifactId>
+        <version>2.0.3-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>module-elep-jilin-bridge</artifactId>
+    <packaging>jar</packaging>
+    <name>ELEP Jilin Bridge</name>
+    <description>ELEP Module HIS 侧集成：ExtensionImpl、Invoker、Orchestrator</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>module-elep-jilin-domain</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>module-elep-jilin-gateway</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>health-infrastructure</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>health-domain</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>health-domain-shared</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>whale-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.fastjson2</groupId>
+            <artifactId>fastjson2</artifactId>
+            <version>2.0.58</version>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>ban-elep-application-and-health-module-support</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <excludes>
+                                        <exclude>com.openhis:module-elep-jilin-application</exclude>
+                                        <exclude>com.openhis:health-application</exclude>
+                                        <exclude>com.openhis:health-module-support</exclude>
+                                    </excludes>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -1,0 +1,7 @@
+{
+  "moduleId": "wi",
+  "displayName": "工伤（WORK_INJURY）",
+  "enabledProperty": "openhis.modules.work-injury.enabled",
+  "autoConfigurationClass": "com.openhis.whale.wi.starter.WiJilinModuleAutoConfiguration",
+  "appServiceNames": []
+}

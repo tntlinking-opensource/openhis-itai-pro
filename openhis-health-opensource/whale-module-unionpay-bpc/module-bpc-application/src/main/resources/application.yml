@@ -1,0 +1,4 @@
+﻿openhis:
+  modules:
+    unionpay-bpc:
+      enabled: false

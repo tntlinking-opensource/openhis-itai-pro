@@ -1,0 +1,20 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.openhis.whale.identity.application.dto;
+
+import jakarta.validation.constraints.NotNull;
+import lombok.Data;
+
+import java.util.List;
+
+/**
+ * 分配权限请求
+ */
+@Data
+public class AssignPermissionsRequest {
+
+    @NotNull(message = "权限名称列表不能为空")
+    private List<String> permissionNames;
+}

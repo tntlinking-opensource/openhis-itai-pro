@@ -1,0 +1,13 @@
+server:
+  port: 8092
+
+openhis:
+  modules:
+    chs:
+      enabled: true
+  chs:
+    gateway:
+      mode: local
+      proxy:
+        standalone: true
+        api-key: ${CHS_PROXY_API_KEY:}

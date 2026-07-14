@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.openhis</groupId>
+        <artifactId>whale-module-booking</artifactId>
+        <version>2.0.3-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>module-booking-starter</artifactId>
+    <packaging>jar</packaging>
+    <name>Booking Starter</name>
+    <description>Booking Module 安装入口</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>module-booking-bridge</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>module-booking-application</artifactId>
+        </dependency>
+    </dependencies>
+</project>
