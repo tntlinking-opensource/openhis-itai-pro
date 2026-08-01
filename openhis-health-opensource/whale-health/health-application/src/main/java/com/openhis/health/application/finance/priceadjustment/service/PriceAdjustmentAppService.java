@@ -10,6 +10,7 @@ import com.openhis.health.application.finance.priceadjustment.dto.LockPreviewRow
 import com.openhis.health.application.finance.priceadjustment.dto.PriceAdjustmentDocumentListRowDto;
 import com.openhis.health.application.finance.priceadjustment.mapper.PriceAdjustmentMapper;
 import com.openhis.health.application.finance.priceadjustment.support.PriceAdjustmentDraftPricingAssembler;
+import com.openhis.health.application.finance.priceadjustment.support.PriceAdjustmentLogisticsDetailLocationExpandSupport;
 import com.openhis.health.application.finance.priceadjustment.request.ApprovePriceAdjustmentRequest;
 import com.openhis.health.application.finance.priceadjustment.request.CheckInTransitForSubmitRequest;
 import com.openhis.health.application.finance.priceadjustment.request.ExistsPendingByItemRequest;
@@ -167,6 +168,9 @@ public class PriceAdjustmentAppService {
 
     /** 草稿落库前调前价权威回填。 */
     private final PriceAdjustmentDraftPricingAssembler draftPricingSupport;
+
+    /** 物流草稿子表按库房+批号展开（日结按库；回显仍合并批号）。 */
+    private final PriceAdjustmentLogisticsDetailLocationExpandSupport logisticsDetailLocationExpandSupport;
 
     /**
      * 价格调整页初始化（IF-PRC-01）。
@@ -417,6 +421,8 @@ public class PriceAdjustmentAppService {
             this.priceAdjustmentMapper.toSavePriceAdjustmentDraftCommand(request, operatorId, orgId);
         // Pre：调前价由读侧定价回填，目标价仅刻度（禁止信任请求体 old*）
         this.draftPricingSupport.applyAuthoritativeDraftPricing(command);
+        // Pre：物流批号按当前可用库存拆成库房+批号行（无库存则 loc 空）；不改盈亏公式
+        this.logisticsDetailLocationExpandSupport.expandLogisticsDetailsByLocation(command);
         // Cmd：领域保存草稿（整单覆盖主从表，不加锁）
         String busNo = this.priceAdjustmentDomainService.savePriceAdjustmentDraft(command);
         // Asm：返回单号与 draft 状态

@@ -13,6 +13,7 @@ import com.openhis.whale.einvoice.boss.domain.enums.IssueKind;
 import com.openhis.whale.einvoice.boss.domain.issue.loader.EinvoiceIssueSnapshotContextLoader;
 import com.openhis.whale.einvoice.boss.domain.contrast.entity.EinvChargeContrast;
 import com.openhis.whale.einvoice.boss.domain.contrast.repository.EinvChargeContrastRepository;
+import com.openhis.whale.einvoice.boss.domain.contrast.service.BossLegacyStatisticCode1Mapping;
 import com.openhis.whale.einvoice.boss.domain.document.entity.EinvBossDocument;
 import com.openhis.whale.einvoice.boss.domain.document.entity.EinvBossLine;
 import com.openhis.whale.einvoice.boss.domain.document.repository.EinvBossDocumentRepository;
@@ -23,6 +24,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -132,11 +134,11 @@ public class EinvoiceBossDocumentInitializerService {
             line.setDocumentId(document.getId());
             line.setLineType("CHG");
             line.setLineNo(lineNo);
-            resolveBossCharge(document.getTenantId(), chargeLine, line);
-            line.setStdAmount(chargeLine.getAmount());
-            line.setAmount(chargeLine.getAmount());
-            line.setQuantity(chargeLine.getQuantity() != null ? chargeLine.getQuantity() : BigDecimal.ONE);
+            resolveBossCharge(document.getTenantId(), document.getIssueKind(), chargeLine, line);
+            applyLineAmounts(chargeLine, line);
             line.setUnit(chargeLine.getUnit());
+            // listDetail.name：具体项目名；空则出站回落 chargeName
+            line.setItemName(blankToNull(chargeLine.getItemName()));
             line.setSourceChargeItemId(chargeLine.getChargeItemId());
             line.setAdjusted(false);
             line.setIsDeleted(false);
@@ -150,10 +152,11 @@ public class EinvoiceBossDocumentInitializerService {
             fallback.setLineNo(1);
             BossChargeLineSnapshot regFee = new BossChargeLineSnapshot();
             regFee.setInternalCode("REG_FEE");
-            resolveBossCharge(document.getTenantId(), regFee, fallback);
+            resolveBossCharge(document.getTenantId(), document.getIssueKind(), regFee, fallback);
             fallback.setStdAmount(document.getTotalAmt());
             fallback.setAmount(document.getTotalAmt());
             fallback.setQuantity(BigDecimal.ONE);
+            fallback.setItemName(fallback.getChargeName());
             fallback.setAdjusted(false);
             fallback.setIsDeleted(false);
             lines.add(fallback);
@@ -162,16 +165,60 @@ public class EinvoiceBossDocumentInitializerService {
     }
 
     /**
+     * 写入明细标准价/数量/金额，满足博思 {@code std * number = amt}。
+     *
+     * <p>优先用收费项单价作 {@code std}；无单价时退化为 {@code std=金额、number=1}，
+     * 避免把行金额误写入标准价导致拒收（如中药饮片按克计价）。</p>
+     *
+     * @param chargeLine health 收费快照行
+     * @param line 待填充的 boss 明细
+     */
+    private void applyLineAmounts(BossChargeLineSnapshot chargeLine, EinvBossLine line) {
+        BigDecimal amount = scale2(chargeLine.getAmount());
+        BigDecimal quantity = chargeLine.getQuantity() != null ? chargeLine.getQuantity() : BigDecimal.ONE;
+        BigDecimal stdAmount;
+        if (chargeLine.getUnitPrice() != null) {
+            stdAmount = scale2(chargeLine.getUnitPrice());
+        } else {
+            stdAmount = amount;
+            quantity = BigDecimal.ONE;
+        }
+        line.setStdAmount(stdAmount);
+        line.setAmount(amount);
+        line.setQuantity(quantity);
+    }
+
+    private static BigDecimal scale2(BigDecimal value) {
+        if (value == null) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        return value.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static String blankToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    /**
      * 经 {@code einv_charge_contrast} 将 health internalCode 映射为博思 chargeCode/chargeName。
      *
+     * <p>对照表存住院口径统计项 CODE（YLZY*）；门诊/挂号再换算为老系统 CODE1（YLMZ*），
+     * 对齐 areahis 门诊 {@code chargeDetail.chargeCode}。</p>
+     *
      * @param tenantId 租户（对照表维度）
+     * @param issueKind 票种 REG/AMB/IMP
      * @param chargeLine 快照行
      * @param line 待填充的 boss 明细实体
      */
-    private void resolveBossCharge(Long tenantId, BossChargeLineSnapshot chargeLine, EinvBossLine line) {
+    private void resolveBossCharge(
+            Long tenantId, String issueKind, BossChargeLineSnapshot chargeLine, EinvBossLine line) {
         String internalCode = chargeLine.getInternalCode();
         if (tenantId == null || internalCode == null || internalCode.isBlank()) {
-            line.setChargeCode(internalCode != null ? internalCode : "UNKNOWN");
+            String fallback = internalCode != null ? internalCode : "UNKNOWN";
+            line.setChargeCode(BossLegacyStatisticCode1Mapping.toOutboundChargeCode(issueKind, fallback));
             line.setChargeName(line.getChargeCode());
             return;
         }
@@ -182,14 +229,15 @@ public class EinvoiceBossDocumentInitializerService {
                     cb.equal(root.get("isDeleted"), Boolean.FALSE));
             Optional<EinvChargeContrast> contrast = contrastRepository.findOne(spec);
             if (contrast.isPresent()) {
-                line.setChargeCode(contrast.get().getBossChargeCode());
+                line.setChargeCode(BossLegacyStatisticCode1Mapping.toOutboundChargeCode(
+                        issueKind, contrast.get().getBossChargeCode()));
                 line.setChargeName(contrast.get().getBossChargeName());
                 return;
             }
         } catch (Exception ex) {
             log.warn("Resolve boss charge contrast failed, tenantId={}, internalCode={}", tenantId, internalCode, ex);
         }
-        line.setChargeCode(internalCode);
+        line.setChargeCode(BossLegacyStatisticCode1Mapping.toOutboundChargeCode(issueKind, internalCode));
         String displayName = chargeLine.getItemName();
         line.setChargeName(displayName != null && !displayName.isBlank() ? displayName : internalCode);
     }

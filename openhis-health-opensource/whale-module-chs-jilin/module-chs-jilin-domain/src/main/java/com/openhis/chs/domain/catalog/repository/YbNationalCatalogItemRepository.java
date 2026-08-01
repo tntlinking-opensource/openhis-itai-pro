@@ -8,6 +8,8 @@ import com.openhis.chs.domain.catalog.entity.YbNationalCatalogItem;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -17,6 +19,12 @@ public interface YbNationalCatalogItemRepository extends JpaRepository<YbNationa
 
     Optional<YbNationalCatalogItem> findByContractIdAndListTypeAndHilistCodeAndTenantIdAndIsDeletedFalse(
         Long contractId, String listType, String hilistCode, Long tenantId);
+
+    /**
+     * 按租户 + 多国家码精确匹配（支付对照解析，禁止 raw_json LIKE）。
+     */
+    List<YbNationalCatalogItem> findByTenantIdAndHilistCodeInAndIsDeletedFalse(
+        Long tenantId, Collection<String> hilistCodes);
 
     Optional<YbNationalCatalogItem> findByContractIdAndListTypeAndSourceFileQuryNoAndSourceLineNoAndTenantIdAndIsDeletedFalse(
         Long contractId, String listType, String sourceFileQuryNo, Integer sourceLineNo, Long tenantId);

@@ -5,6 +5,7 @@
 package com.openhis.health.application.inventory.pharmacy.returntowarehouse.mapper;
 
 import com.openhis.health.application.inventory.pharmacy.returntowarehouse.dto.LinkablePharmacyStockInListRowDto;
+import com.openhis.health.application.inventory.pharmacy.returntowarehouse.dto.ReturnToWarehouseListRowDto;
 import com.openhis.health.application.inventory.pharmacy.returntowarehouse.dto.SupplierOptionDto;
 import com.openhis.health.application.inventory.pharmacy.returntowarehouse.dto.WarehouseOptionDto;
 import com.openhis.health.application.inventory.pharmacy.returntowarehouse.request.*;
@@ -70,6 +71,32 @@ public interface InventoryPharmacyReturnToWarehouseMapper {
      * @return 列表分页响应
      */
     PageReturnToWarehousesResponse toPageReturnToWarehousesResponse(Page<WarehouseDocumentDetailQueryModel> page);
+
+    /**
+     * 按 busNo 顺序聚合药房退库供应请求明细为列表行 DTO。
+     *
+     * @param busNoPageOrder 分页单号顺序
+     * @param detailRows     同页全部明细
+     * @return 聚合列表行
+     */
+    List<ReturnToWarehouseListRowDto> toReturnToWarehouseListAggregated(
+        List<String> busNoPageOrder,
+        List<SupplyRequestModel> detailRows);
+
+    /**
+     * 用聚合列表行构建药房退库单分页响应。
+     *
+     * @param mergedTotal 去重后总单数
+     * @param pageNo      页码
+     * @param pageSize    页大小
+     * @param records     列表行
+     * @return 分页响应
+     */
+    PageReturnToWarehousesResponse toPageReturnToWarehousesAggregatedResponse(
+        long mergedTotal,
+        int pageNo,
+        int pageSize,
+        List<ReturnToWarehouseListRowDto> records);
 
     /**
      * 用可关联入库单聚合行构建分页响应。

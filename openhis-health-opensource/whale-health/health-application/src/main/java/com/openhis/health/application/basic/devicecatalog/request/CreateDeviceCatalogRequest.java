@@ -76,8 +76,6 @@ public class CreateDeviceCatalogRequest {
     private Boolean ybFlag;
     /** 医保目录编码。 */
     private String ybNo;
-    /** 医保机构编码。 */
-    private String ybOrgNo;
     /** 医保对码是否完成。 */
     private Boolean ybMatchFlag;
     /** 医保收费等级。 */
@@ -98,9 +96,13 @@ public class CreateDeviceCatalogRequest {
     private String ybType;
     /** 管辖范围或适用范围说明。 */
     private String jurisdiction;
-    /** 采购价（元）。 */
+    /**
+     * 采购参考价（维护态 {@code PURCHASE}，元/包装单位；真正进价见批号 {@code LOT_NUMBER_COST}）。
+     */
     private BigDecimal purchasePrice;
-    /** 零售价（元）。 */
+    /**
+     * 销售参考价（维护态 {@code SALE}，元/包装单位；真正售价见批号 {@code LOT_NUMBER_PRICE}）。
+     */
     private BigDecimal retailPrice;
     /** 最高零售价/限价（元）。 */
     private BigDecimal maximumRetailPrice;
@@ -121,4 +123,16 @@ public class CreateDeviceCatalogRequest {
     private BigDecimal stockUnitRatio;
     /** 销售单位相对拆零单位换算比。 */
     private BigDecimal packageUnitRatio;
+
+    /**
+     * 追溯码所贴单位编码（术语 {@code unit_code}；可游离于五类业务单位之外）。
+     *
+     * <p>耗材目录可选；若填写则须与 {@link #traceUnitRatio} 成对且倍数 &gt; 0。</p>
+     */
+    private String traceUnitCode;
+
+    /**
+     * 1 个追溯码单位对应的拆零数量；与 {@link #traceUnitCode} 成对。
+     */
+    private BigDecimal traceUnitRatio;
 }

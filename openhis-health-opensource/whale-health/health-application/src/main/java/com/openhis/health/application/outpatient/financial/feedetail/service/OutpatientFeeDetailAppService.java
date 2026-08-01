@@ -43,8 +43,12 @@ import com.openhis.health.application.shared.financial.PaymentEntererMatchResolv
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.application.outpatient.financial.feedetail.support.OutpatientFeeDetailLoader;
 import com.openhis.health.application.shared.financial.DailySettlementFinTypeAmountLoader;
+import com.openhis.health.application.shared.pricing.HistoricalChargeItemPurchasePriceSupport;
 import com.openhis.health.application.shared.product.ChargeItemProductLookupHelper;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.application.shared.report.PatientSettlementContextRow;
+import com.openhis.health.application.shared.report.ReportPatientSettlementContextAssembler;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.whale.core.application.dto.OptionDto;
@@ -58,6 +62,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -124,11 +129,17 @@ public class OutpatientFeeDetailAppService {
     /** 定价行 fin_type 解析（与日结口径一致）。 */
     private final DailySettlementFinTypeAmountLoader dailySettlementFinTypeAmountLoader;
 
+    /** 历史进价解析（BR-PRICE-SRC-001）。 */
+    private final HistoricalChargeItemPurchasePriceSupport historicalChargeItemPurchasePriceSupport;
+
     /** 金额列装配。 */
     private final OutpatientFeeDetailAssembler outpatientFeeDetailAssembler;
 
     /** Request/Response 映射。 */
     private final OutpatientFeeDetailMapper outpatientFeeDetailMapper;
+
+    /** 费用性质 + medType 报表上下文装配。 */
+    private final ReportPatientSettlementContextAssembler reportPatientSettlementContextAssembler;
 
     /**
      * IF-OP-FDT-01：门诊费用明细页初始化。
@@ -155,6 +166,7 @@ public class OutpatientFeeDetailAppService {
             // Pre：细分类下拉统一取 fin_type_code 字典（与日结、金额统计口径一致）
             List<OptionDto> finTypeSubCategoryOptions =
                 this.terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.FIN_TYPE_CODE);
+            List<OptionDto> feeNatureOptions = this.reportPatientSettlementContextAssembler.loadFeeNatureOptions();
             // Asm：步骤 5 toLoadOutpatientFeeDetailPageInitResponse
             return this.outpatientFeeDetailMapper.toLoadOutpatientFeeDetailPageInitResponse(
                 todayText,
@@ -166,7 +178,8 @@ public class OutpatientFeeDetailAppService {
                 finTypeSubCategoryOptions,
                 finTypeSubCategoryOptions,
                 registrationDepartmentOptions,
-                cashierOptions);
+                cashierOptions,
+                feeNatureOptions);
         } catch (BusinessException businessException) {
             throw businessException;
         } catch (RuntimeException runtimeException) {
@@ -209,7 +222,7 @@ public class OutpatientFeeDetailAppService {
             // Pre：SDD §3.3 步骤 6～10 + Asm 步骤 12～13 — enrichment 与行/块装配
             List<OutpatientFeeDetailEncounterBlockDto> blockDtos =
                 this.assembleEncounterBlockDtos(blockPage.getContent(), query);
-            // Pre+Asm：SDD §3.3 步骤 11 + §4.1 — 全量 summary（Assembler 权威）
+            // Pre+Asm：全量 summary 走候选行轻量加总（禁止为页脚 enrichment 全部就诊块）
             OutpatientFeeDetailAmountSummaryDto summary = this.buildGlobalSummary(query);
             // Asm：SDD §3.3 步骤 14 — 分页响应
             return this.outpatientFeeDetailMapper.toPageOutpatientFeeDetailResponse(
@@ -360,7 +373,17 @@ public class OutpatientFeeDetailAppService {
      * @param baseQuery 已预解析 scope 的查询
      * @return 全部就诊块 DTO
      */
+    /**
+     * 全量就诊块扫描装配（导出用）。
+     *
+     * <p>先物化候选行缓存，再按页切片 enrichment，避免每页重复 IN ChargeItem。</p>
+     *
+     * @param baseQuery 已预解析 scope 的查询
+     * @return 全部就诊块 DTO
+     */
     private List<OutpatientFeeDetailEncounterBlockDto> loadAllEncounterBlocks(OutpatientFeeDetailPageQuery baseQuery) {
+        // Pre：同请求先物化候选行，后续翻页仅内存切片
+        this.chargeItemQueryService.listOutpatientFeeDetailChargeRows(baseQuery);
         List<OutpatientFeeDetailEncounterBlockDto> allBlocks = new ArrayList<>();
         int pageNo = 1;
         int pageSize = OutpatientFeeDetailConstants.ENCOUNTER_BLOCK_SCAN_PAGE_SIZE;
@@ -386,24 +409,25 @@ public class OutpatientFeeDetailAppService {
     }
 
     /**
-     * 全量命中 summary：先调域层 summarize（SDD §3.3 步骤 11），再以 Assembler 叠加退负/医保（§4.1 权威）。
+     * 全量命中 summary：候选行轻量加总（售价/实收/医保等），禁止为页脚全量 enrichment 就诊块。
+     *
+     * <p>明细分页页脚<strong>不</strong>跑全量历史进价（定价/批号/调价 IO 随命中行线性放大）；
+     * {@code purchaseAmountTotal} 置空由前端展示「—」。行上进价仍由当前页 enrichment 解析。
+     * 汇总 Tab / 导出进价合计走 fin_type 汇总路径，不受本方法约束。</p>
      *
      * @param query 已预解析 scope 的查询
-     * @return 全量金额 summary
+     * @return 全量金额 summary（进价合计为 {@code null}）
      */
     private OutpatientFeeDetailAmountSummaryDto buildGlobalSummary(OutpatientFeeDetailPageQuery query) {
-        // Pre：域层账单事实代数和（与 page 相同 WHERE；不含医保/退负展示列）
-        this.chargeItemQueryService.summarizeOutpatientFeeDetailAmounts(query);
-        List<OutpatientFeeDetailLineDto> allLines = new ArrayList<>();
-        List<OutpatientFeeDetailEncounterBlockDto> allBlocks = this.loadAllEncounterBlocks(query);
-        for (OutpatientFeeDetailEncounterBlockDto block : allBlocks) {
-            if (block == null || block.getLines() == null) {
-                continue;
-            }
-            allLines.addAll(block.getLines());
-        }
-        // Asm：应用层全量行合计为响应 summary 真源（含实收/医保/自费，BR-OP-FDT-013）
-        return this.outpatientFeeDetailAssembler.assembleEncounterSubtotal(allLines);
+        // Pre：复用同请求候选行（含 payment 快照分母）
+        List<OutpatientFeeDetailChargeRowQueryModel> rows =
+            this.chargeItemQueryService.listOutpatientFeeDetailChargeRows(query);
+        // Asm：页脚售价/实收/医保等轻量加总（BR-OP-FDT-013）；进价 Map 空，避免全量历史进价
+        OutpatientFeeDetailAmountSummaryDto summary =
+            this.outpatientFeeDetailAssembler.assembleGlobalSummaryFromChargeRows(rows, Map.of());
+        // 显式置空：与「未算」区分，禁止落成 0.00 误导页脚
+        summary.setPurchaseAmountTotal(null);
+        return summary;
     }
 
     /**
@@ -419,6 +443,14 @@ public class OutpatientFeeDetailAppService {
         if (domainBlocks == null || domainBlocks.isEmpty()) {
             return List.of();
         }
+        LinkedHashSet<Long> encounterIdsForContext = new LinkedHashSet<>();
+        for (OutpatientFeeDetailEncounterBlockQueryModel domainBlock : domainBlocks) {
+            if (domainBlock != null && domainBlock.getEncounterId() != null) {
+                encounterIdsForContext.add(domainBlock.getEncounterId());
+            }
+        }
+        Map<Long, PatientSettlementContextRow> contextByEncounterId =
+            this.reportPatientSettlementContextAssembler.mapContextsByEncounterIds(encounterIdsForContext);
         FeeDetailEnrichmentBundle bundle = this.loadEnrichmentBundle(domainBlocks, query);
         Map<String, String> unitLabelByCode =
             this.terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.UNIT_CODE);
@@ -450,6 +482,13 @@ public class OutpatientFeeDetailAppService {
                 if (patient != null) {
                     blockDto.setPatientName(patient.getName());
                 }
+            }
+            PatientSettlementContextRow settlementContext = contextByEncounterId.get(domainBlock.getEncounterId());
+            if (settlementContext != null) {
+                blockDto.setFeeNatureContractNo(settlementContext.getFeeNatureContractNo());
+                blockDto.setFeeNatureDisplay(settlementContext.getFeeNatureDisplay());
+                blockDto.setMedType(settlementContext.getMedType());
+                blockDto.setMedTypeDisplay(settlementContext.getMedTypeDisplay());
             }
             List<OutpatientFeeDetailLineDto> lineDtos = new ArrayList<>();
             if (domainBlock.getLines() != null) {
@@ -524,7 +563,42 @@ public class OutpatientFeeDetailAppService {
         if (lineDto.getCashierId() != null) {
             lineDto.setCashierName(bundle.practitionerNameById.get(lineDto.getCashierId()));
         }
+        // Asm：回填历史进价（与售价同号；缺锚点置 0）
+        this.applyPurchasePrices(lineDto, chargeItemId, bundle);
         return lineDto;
+    }
+
+    /**
+     * 将批量进价回填到明细行（退费行与售价同号）。
+     *
+     * @param lineDto      已装配售价/实收的明细行
+     * @param chargeItemId 收费明细主键
+     * @param bundle       enrichment 上下文
+     */
+    private void applyPurchasePrices(
+        OutpatientFeeDetailLineDto lineDto,
+        Long chargeItemId,
+        FeeDetailEnrichmentBundle bundle) {
+        BigDecimal signMultiplier = BigDecimal.ONE;
+        if (OutpatientFeeDetailConstants.TRADE_DIRECTION_REFUND.equals(lineDto.getTradeDirection())) {
+            signMultiplier = new BigDecimal("-1");
+        }
+        BigDecimal purchaseUnit = null;
+        BigDecimal purchaseAmount = null;
+        if (chargeItemId != null) {
+            purchaseUnit = bundle.purchaseUnitByChargeItemId.get(chargeItemId);
+            purchaseAmount = bundle.purchaseAmountByChargeItemId.get(chargeItemId);
+        }
+        if (purchaseUnit == null) {
+            purchaseUnit = BigDecimal.ZERO;
+        }
+        if (purchaseAmount == null) {
+            purchaseAmount = BigDecimal.ZERO;
+        }
+        lineDto.setPurchaseUnitPrice(
+            MonetaryAmountSupport.applySignAtCalcScale(purchaseUnit, signMultiplier));
+        lineDto.setPurchaseAmount(
+            MonetaryAmountSupport.applySignAtCalcScale(purchaseAmount, signMultiplier));
     }
 
     /**
@@ -603,6 +677,13 @@ public class OutpatientFeeDetailAppService {
             this.dailySettlementFinTypeAmountLoader.mapFinTypeCodeByChargeItemId(chargeItemsForFinType);
         bundle.finTypeLabelByCode =
             this.terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.FIN_TYPE_CODE);
+        // Pre：历史进价批量解析（禁当前 ACTIVE 目录价）；单价一次、行额由单价推导，禁止双倍定价 IO
+        bundle.purchaseUnitByChargeItemId =
+            this.historicalChargeItemPurchasePriceSupport.computePurchaseUnitPriceByChargeItemId(
+                chargeItemsForFinType);
+        bundle.purchaseAmountByChargeItemId =
+            this.historicalChargeItemPurchasePriceSupport.computePurchaseAmountFromUnitPrices(
+                chargeItemsForFinType, bundle.purchaseUnitByChargeItemId);
         return bundle;
     }
 
@@ -702,11 +783,15 @@ public class OutpatientFeeDetailAppService {
         target.setCashierId(source.getCashierId());
         target.setEntererMatchIds(source.getEntererMatchIds());
         target.setTradeDirection(source.getTradeDirection());
+        target.setFeeNatureContractNo(source.getFeeNatureContractNo());
         target.setResolvedChargeItemScope(source.getResolvedChargeItemScope());
         target.setResolvedEncounterScope(source.getResolvedEncounterScope());
         target.setPaymentChargeItemLinks(source.getPaymentChargeItemLinks());
         target.setResolvedPaymentChargeItemLinks(source.getResolvedPaymentChargeItemLinks());
         target.setPaymentContextByChargeItemId(source.getPaymentContextByChargeItemId());
+        // Pre：导出翻页复用同请求候选行/预加载 ChargeItem，避免每页重复 IN
+        target.setPreloadedChargeItemsById(source.getPreloadedChargeItemsById());
+        target.setCachedChargeRows(source.getCachedChargeRows());
         return target;
     }
 
@@ -863,5 +948,11 @@ public class OutpatientFeeDetailAppService {
 
         /** fin_type_code → 展示名。 */
         private Map<String, String> finTypeLabelByCode = Map.of();
+
+        /** chargeItemId → 进价单价（未带收退符号）。 */
+        private Map<Long, BigDecimal> purchaseUnitByChargeItemId = Map.of();
+
+        /** chargeItemId → 进价总价（未带收退符号）。 */
+        private Map<Long, BigDecimal> purchaseAmountByChargeItemId = Map.of();
     }
 }

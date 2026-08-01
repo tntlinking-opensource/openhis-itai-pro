@@ -33,10 +33,10 @@ public class DiseaseDetailQueryModel {
     private String ybNo;
     /** 是否纳入医保目录。 */
     private Boolean ybFlag;
-    /** 国家/地方疾病编码。 */
-    private String diseaseCode;
     /** 医保匹配标志。 */
     private Boolean ybMatchFlag;
+    /** 国家临床版诊断编码（国临码）。 */
+    private String clinicCode;
     /** 状态枚举编码。 */
     private String statusEnum;
 }

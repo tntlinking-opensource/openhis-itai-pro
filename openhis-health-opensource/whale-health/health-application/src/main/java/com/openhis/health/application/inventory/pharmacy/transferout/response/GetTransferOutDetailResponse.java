@@ -5,6 +5,8 @@
 package com.openhis.health.application.inventory.pharmacy.transferout.response;
 
 import com.openhis.health.application.inventory.pharmacy.transferout.dto.TransferOutDetailLineDto;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
@@ -58,6 +60,16 @@ public class GetTransferOutDetailResponse {
     /** 关联上游单号。 */
     @Schema(description = "关联上游单号")
     private String originalBusNo;
+
+    /** 经手人医务人员主键。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "经手人 practitionerId")
+    private Long practitionerId;
+
+    /** 经手人姓名（详情回显下拉用）。 */
+    @Schema(description = "经手人姓名")
+    private String practitionerName;
+
 
     /** 明细行。 */
     @Schema(description = "明细行")

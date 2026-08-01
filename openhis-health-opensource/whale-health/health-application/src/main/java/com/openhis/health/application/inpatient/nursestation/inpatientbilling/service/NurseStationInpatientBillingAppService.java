@@ -31,6 +31,7 @@ import com.openhis.health.application.inpatient.nursestation.inpatientbilling.re
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.DeleteAutoGenRuleRequest;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.ExecuteInpatientAutoRollJobRequest;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.ListAutoRollConfigsRequest;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.ListAutoRollPostedChargesRequest;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.ListNurseStationPricedOrdersRequest;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.ListNurseStationSupplementParentOrdersRequest;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.PageNurseStationPricingCatalogRequest;
@@ -44,6 +45,7 @@ import com.openhis.health.application.inpatient.nursestation.inpatientbilling.re
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.response.DeleteAutoGenRuleResponse;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.response.ExecuteInpatientAutoRollJobResponse;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.response.ListAutoRollConfigsResponse;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.response.ListAutoRollPostedChargesResponse;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.response.ListNurseStationPricedOrdersResponse;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.response.ListNurseStationSupplementParentOrdersResponse;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.response.PageNurseStationPricingCatalogResponse;
@@ -92,7 +94,7 @@ import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseD
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQueryService;
 import com.openhis.health.application.shared.nursestation.DeviceDispenseNurseWorkflowOrchestrator;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDomainService;
-import com.openhis.health.domain.administration.chargeitem.command.VoidNursePricingChargeItemsByServiceAnchorsCommand;
+import com.openhis.health.domain.administration.chargeitem.command.OffsetNursePricingChargeItemsByServiceAnchorsCommand;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.InpatientAutoRollNursingLevelQueryModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestDomainService;
@@ -125,7 +127,7 @@ import java.util.Set;
  * <p>选品目录：诊疗与耗材定价目录分页（排除药品）。</p>
  * <p>直接划价/医嘱补费：不经校对签发，同事务落请求、诊疗 Procedure（登录人执行）、收费与耗材自动发放（BR-IP-PRC-008/019）。</p>
  * <p>取消划价：已划价列表多选整行还原（IF-IP-PRC-06）。</p>
- * <p>自动计费：配置 CRUD/启停与住院滚费任务（AS-IP-NUR-013 IF-IP-ARG-02～08）。</p>
+ * <p>自动计费：配置 CRUD/启停、已滚费用展开（IF-IP-ARG-09）与住院滚费任务（AS-IP-NUR-013 IF-IP-ARG-02～09）。</p>
  * <p>列表：父医嘱候选与已划价记录，均收窄至护士管理病区可见就诊。</p>
  * <p>接入：AppServiceControllerRegistrar → POST /api/app/nurseStationInpatientBilling/{methodName}。</p>
  */
@@ -359,12 +361,14 @@ public class NurseStationInpatientBillingAppService {
     }
 
     /**
-     * IF-IP-PRC-06：取消划价（已划价列表多选整行还原，BR-IP-PRC-021～028）。
+     * IF-IP-PRC-06：取消划价（整行冲销留痕，BR-IP-PRC-021～028）。
+     *
+     * <p>Request 保持完成态不软删；费用写负向冲销行；诊疗 Procedure CANCEL；耗材 Dispense 回退。</p>
      *
      * @param request 1～50 行；每行含 orderType、requestId、encounterId
-     * @return 已软删的诊疗/耗材请求 id 汇总
+     * @return 已冲销处理的诊疗/耗材请求 id 汇总
      * @throws BusinessException EX-IP-PRC-102 就诊不可见；EX-IP-PRC-401 未选/重复；EX-IP-PRC-402 非 nurse-pricing；
-     *     EX-IP-PRC-403 费用已结算；EX-IP-PRC-404 发放不可回退；EX-IP-PRC-405 域写失败
+     *     EX-IP-PRC-403 费用已结算或无可冲销正向行；EX-IP-PRC-404 发放不可回退；EX-IP-PRC-405 域写失败
      */
     public CancelNurseStationPricingResponse cancelNurseStationPricing(CancelNurseStationPricingRequest request) {
         try {
@@ -392,7 +396,7 @@ public class NurseStationInpatientBillingAppService {
             // Gate：各行 encounter 须在护士管理病区可见，且处于可变更费用态（EX-IP-PRC-406）
             this.assertEncountersVisibleForChargeWrite(encounterIds);
             String nursePricingSource = GenerateSource.NURSE_PRICING.getCode();
-            // Pre：分轨加载并断言 nurse-pricing 来源（BR-IP-PRC-022）
+            // Pre：分轨加载并断言 nurse-pricing 来源（BR-IP-PRC-022）；Request 保持完成态，不软删
             Map<Long, ServiceRequestListModel> serviceModelById =
                 serviceRequestQueryService.mapListModelsByIds(serviceRequestIds);
             Map<Long, DeviceRequestListModel> deviceModelById =
@@ -421,7 +425,7 @@ public class NurseStationInpatientBillingAppService {
                     }
                 }
             }
-            // Pre：关联费用须全部待结算，禁止已结算/退费链路（BR-IP-PRC-023）
+            // Pre：关联费用须全部待结算，且存在未冲销正向行（BR-IP-PRC-023/024）
             Set<Long> chargeAnchorIds = new LinkedHashSet<>(serviceRequestIds);
             chargeAnchorIds.addAll(deviceRequestIds);
             ChargeItemQueryCommand chargeCmd = new ChargeItemQueryCommand();
@@ -429,12 +433,13 @@ public class NurseStationInpatientBillingAppService {
             chargeCmd.setExcludeSupersededSettledLines(true);
             List<ChargeItem> linkedCharges = chargeItemQueryService.listChargeItemsByServiceIds(chargeCmd);
             this.assertCancelPricingChargeGate(linkedCharges, chargeAnchorIds, nursePricingSource);
+            this.assertCancelPricingHasOffsetableCharges(linkedCharges, chargeAnchorIds, nursePricingSource);
             // Pre：耗材发放态须可回退（BR-IP-PRC-025 / EX-IP-PRC-404）
             for (Long deviceReqId : deviceRequestIds) {
                 this.assertDeviceDispenseRevertAllowed(deviceReqId);
             }
             Map<Long, BigDecimal> inventoryIncreaseAccumulator = new HashMap<>();
-            // Cmd：耗材轨按 BR-IP-PRC-019 两轨处理 Dispense → void 费用（BR-IP-PRC-025）
+            // Cmd：耗材轨按 BR-IP-PRC-019 两轨处理 Dispense → 费用冲销（BR-IP-PRC-025）；Request 不软删
             for (NurseStationPricingCancelItemDto row : items) {
                 if (row == null || !ReadModelOrderTypeConstants.DEVICE_REQUEST.equals(row.getOrderType())) {
                     continue;
@@ -444,21 +449,15 @@ public class NurseStationInpatientBillingAppService {
                 deviceDispenseNurseWorkflowOrchestrator.revertInpatientPricingDeviceDispenses(
                     deviceReqId, operatorId, inventoryIncreaseAccumulator);
                 String serviceTable = nurseStationInpatientBillingMapper.resolveCancelServiceTable(row.getOrderType());
-                VoidNursePricingChargeItemsByServiceAnchorsCommand voidChargeCmd =
-                    nurseStationInpatientBillingMapper.toVoidNursePricingChargeItemsByServiceAnchorsCommand(
+                OffsetNursePricingChargeItemsByServiceAnchorsCommand offsetChargeCmd =
+                    nurseStationInpatientBillingMapper.toOffsetNursePricingChargeItemsByServiceAnchorsCommand(
                         row.getEncounterId(),
                         serviceTable,
                         deviceReqId,
                         operatorId);
-                chargeItemDomainService.voidNursePricingChargeItemsByServiceAnchors(voidChargeCmd);
+                chargeItemDomainService.offsetNursePricingChargeItemsByServiceAnchors(offsetChargeCmd);
             }
-            if (!deviceRequestIds.isEmpty()) {
-                // Cmd：批量软删耗材请求（BR-IP-PRC-025 收口）
-                deviceRequestDomainService.revokeExecutedDeviceOrder(
-                    nurseStationInpatientBillingMapper.toRevokeExecutedDeviceOrderCommand(
-                        deviceRequestIds, operatorId));
-            }
-            // Cmd：诊疗轨 Procedure CANCEL 对冲 → void 费用 → 批量软删 ServiceRequest（BR-IP-PRC-026）
+            // Cmd：诊疗轨 Procedure CANCEL 对冲 → 费用冲销（BR-IP-PRC-026）；ServiceRequest 保持完成态
             if (!serviceRequestIds.isEmpty()) {
                 nurseStationInpatientBillingProcedureOrchestrator.cancelCompletedNursePricingProcedures(
                     serviceRequestIds, operatorId);
@@ -468,18 +467,13 @@ public class NurseStationInpatientBillingAppService {
                     continue;
                 }
                 String serviceTable = nurseStationInpatientBillingMapper.resolveCancelServiceTable(row.getOrderType());
-                VoidNursePricingChargeItemsByServiceAnchorsCommand voidChargeCmd =
-                    nurseStationInpatientBillingMapper.toVoidNursePricingChargeItemsByServiceAnchorsCommand(
+                OffsetNursePricingChargeItemsByServiceAnchorsCommand offsetChargeCmd =
+                    nurseStationInpatientBillingMapper.toOffsetNursePricingChargeItemsByServiceAnchorsCommand(
                         row.getEncounterId(),
                         serviceTable,
                         row.getRequestId(),
                         operatorId);
-                chargeItemDomainService.voidNursePricingChargeItemsByServiceAnchors(voidChargeCmd);
-            }
-            if (!serviceRequestIds.isEmpty()) {
-                serviceRequestDomainService.removeFromNursePricing(
-                    nurseStationInpatientBillingMapper.toRemoveFromNursePricingCommand(
-                        serviceRequestIds, operatorId));
+                chargeItemDomainService.offsetNursePricingChargeItemsByServiceAnchors(offsetChargeCmd);
             }
             // Cmd：已发路径累计回补库存（BR-IP-PRC-019 对称，IncreaseQuantityCommand 批量）
             if (!inventoryIncreaseAccumulator.isEmpty()) {
@@ -487,7 +481,7 @@ public class NurseStationInpatientBillingAppService {
                     nurseStationInpatientBillingMapper.toIncreaseQuantityCommand(
                         operatorId, inventoryIncreaseAccumulator));
             }
-            // Asm：汇总已取消 id（补费父医嘱不变，BR-IP-PRC-027）
+            // Asm：汇总已冲销处理的请求 id（补费父医嘱不变，BR-IP-PRC-027；Request 未软删）
             CancelNurseStationPricingResponse resp = new CancelNurseStationPricingResponse();
             resp.setSuccess(Boolean.TRUE);
             resp.setProcessedCount(items.size());
@@ -777,6 +771,82 @@ public class NurseStationInpatientBillingAppService {
         } catch (BusinessException ex) {
             throw this.translateAutoGenBusinessException(ex);
         }
+    }
+
+    /**
+     * IF-IP-ARG-09：查询床位自动计费配置已滚费用记录（配置行展开）。
+     *
+     * <p>读侧：配置 → 长期 SR（auto-roll-fees）→ order-execute Charge。
+     * 取消已滚费用不走本 IF，复用 **AS-IP-NUR-012 IF-IP-CXL-01**（入参 procedureId）。</p>
+     *
+     * @param request encounterId、patientId、ruleId 必填；dateFrom/dateTo 可选
+     * @return 已滚费用行（含 procedureId / cancelable）
+     * @throws BusinessException EX-IP-ARG-201/401/901/902
+     */
+    public ListAutoRollPostedChargesResponse listAutoRollPostedCharges(
+        ListAutoRollPostedChargesRequest request) {
+        // Gate：就诊、患者、配置主键必填（BR-IP-ARG-001 / BR-IP-ARG-020）
+        if (request == null
+            || request.getEncounterId() == null
+            || request.getPatientId() == null
+            || request.getRuleId() == null) {
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_ARG_201,
+                "当前患者不可用，请刷新左侧列表");
+        }
+        // Pre：单就诊可见性门控
+        this.requireVisibleSnapshot(
+            List.of(request.getEncounterId()),
+            request.getPatientId(),
+            InpatientNurseStationConstants.EX_IP_ARG_201);
+        // Pre：配置须属于本就诊且未软删（BR-IP-ARG-020）
+        ChargeItemAutoGenRuleQueryModel matchedRule = null;
+        List<ChargeItemAutoGenRuleQueryModel> rules =
+            chargeItemAutoGenQueryService.findRulesByEncounterId(request.getEncounterId());
+        for (ChargeItemAutoGenRuleQueryModel rule : rules) {
+            if (rule != null && request.getRuleId().equals(rule.getId())) {
+                matchedRule = rule;
+                break;
+            }
+        }
+        if (matchedRule == null) {
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_ARG_401,
+                "自动计费配置不存在或已删除");
+        }
+        // Pre：解析床位滚费长期 SR（based_on=ruleId）
+        Optional<Long> serviceRequestIdOpt =
+            serviceRequestQueryService.findAutoRollBedServiceRequestIdByRuleId(request.getRuleId());
+        if (serviceRequestIdOpt.isEmpty()) {
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_ARG_902,
+                "该配置尚未关联床位滚费医嘱，无法查看计费记录");
+        }
+        Long serviceRequestId = serviceRequestIdOpt.get();
+        List<ChargeItem> chargeRows;
+        try {
+            // Pre：按 SR 拉取 order-execute 费用（可选自然日闭区间）
+            chargeRows = chargeItemQueryService.listOrderExecuteChargesByServiceRequestId(
+                serviceRequestId,
+                request.getDateFrom(),
+                request.getDateTo());
+        } catch (RuntimeException ex) {
+            log.error(
+                "自动计费已滚费用加载失败 ruleId={} serviceRequestId={}",
+                request.getRuleId(),
+                serviceRequestId,
+                ex);
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_ARG_901,
+                "计费记录加载失败，请稍后重试");
+        }
+        // Asm：装配展开行（含取消执行可点性）
+        ListAutoRollPostedChargesResponse response = new ListAutoRollPostedChargesResponse();
+        response.setRuleId(request.getRuleId());
+        response.setServiceRequestId(serviceRequestId);
+        response.setCharges(nurseStationAutoRollListAssembler.assemblePostedChargeRows(
+            chargeRows, request.getEncounterId()));
+        return response;
     }
 
     /**
@@ -1581,6 +1651,73 @@ public class NurseStationInpatientBillingAppService {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_PRC_403,
                     "费用已结算，无法取消划价");
+            }
+        }
+    }
+
+    /**
+     * 取消划价冲销 Gate：每个锚点须仍有未冲销的正向待结算 nurse-pricing 行（BR-IP-PRC-024）。
+     *
+     * @param linkedCharges      锚点关联费用
+     * @param cancelAnchorIds    待取消请求 id 集合
+     * @param nursePricingSource generate_source=nurse-pricing code
+     */
+    private void assertCancelPricingHasOffsetableCharges(
+        List<ChargeItem> linkedCharges,
+        Set<Long> cancelAnchorIds,
+        String nursePricingSource) {
+        Set<Long> alreadyOffsetSourceIds = new HashSet<>();
+        if (linkedCharges != null) {
+            for (ChargeItem charge : linkedCharges) {
+                if (charge == null || charge.getRefundId() == null) {
+                    continue;
+                }
+                if (!ChargeItemStatus.PENDING_SETTLEMENT.getCode().equals(charge.getStatusEnum())) {
+                    continue;
+                }
+                if (charge.getGenerateSourceEnum() == null
+                    || !nursePricingSource.equals(charge.getGenerateSourceEnum())) {
+                    continue;
+                }
+                alreadyOffsetSourceIds.add(charge.getRefundId());
+            }
+        }
+        Set<Long> anchorsWithOffsetable = new HashSet<>();
+        if (linkedCharges != null) {
+            for (ChargeItem charge : linkedCharges) {
+                if (charge == null || charge.getServiceId() == null || charge.getId() == null) {
+                    continue;
+                }
+                if (!cancelAnchorIds.contains(charge.getServiceId())) {
+                    continue;
+                }
+                if (!ChargeItemStatus.PENDING_SETTLEMENT.getCode().equals(charge.getStatusEnum())) {
+                    continue;
+                }
+                if (charge.getGenerateSourceEnum() == null
+                    || !nursePricingSource.equals(charge.getGenerateSourceEnum())) {
+                    continue;
+                }
+                // 冲销行本身不可再冲
+                if (charge.getRefundId() != null) {
+                    continue;
+                }
+                if (charge.getQuantityValue() == null || charge.getQuantityValue().signum() <= 0) {
+                    continue;
+                }
+                // 已被冲销过的正向行跳过
+                if (alreadyOffsetSourceIds.contains(charge.getId())) {
+                    continue;
+                }
+                anchorsWithOffsetable.add(charge.getServiceId());
+            }
+        }
+        for (Long anchorId : cancelAnchorIds) {
+            // 无未冲销正向费用则拒绝，避免空跑 Dispense/Procedure
+            if (!anchorsWithOffsetable.contains(anchorId)) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_PRC_403,
+                    "费用已冲销或无可取消划价行，请刷新列表后重试");
             }
         }
     }

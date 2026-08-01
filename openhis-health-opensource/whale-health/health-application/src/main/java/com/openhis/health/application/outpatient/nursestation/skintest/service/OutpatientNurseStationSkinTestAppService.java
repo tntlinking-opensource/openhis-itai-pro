@@ -4,7 +4,6 @@
  */
 package com.openhis.health.application.outpatient.nursestation.skintest.service;
 
-import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.application.shared.validator.PatientEncounterConsistencyGate;
 import com.openhis.health.application.outpatient.nursestation.skintest.assembler.OutpatientSkinTestInitAssembler;
@@ -91,7 +90,6 @@ public class OutpatientNurseStationSkinTestAppService {
     private final PractitionerQueryService practitionerQueryService;
     private final CurrentPractitionerResolver currentPractitionerResolver;
     private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
-    private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
 
     /**
      * IF-OP-STK-01：加载皮试表单枚举下拉与护士候选。
@@ -102,11 +100,10 @@ public class OutpatientNurseStationSkinTestAppService {
     public LoadOutpatientSkinTestInitResponse loadOutpatientSkinTestInit(LoadOutpatientSkinTestInitRequest request) {
         try {
             // Gate：只读初始化，无就诊/患者上下文门禁
-            // Pre：枚举选项与当前机构下激活护士岗人员
+            // Pre：枚举选项 + 全院激活护士岗（双签可选所有护士；orgId=null 不按科室收窄）
             LoadOutpatientSkinTestInitResponse response = outpatientSkinTestInitAssembler.assembleInitOptions();
-            Long organizationId = managedOrganizationIdsResolver.resolveOrganizationUnitIdForQuery();
-            List<Practitioner> nurses = practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
-                WhalePlatformRoleCodeConstants.ROLE_NURSE, organizationId);
+            List<Practitioner> nurses = practitionerRoleScopeLoader.listActivePractitionersForPlatformRole(
+                WhalePlatformRoleCodeConstants.ROLE_NURSE, null);
             response.setNurseOptions(outpatientSkinTestMapper.toNurseOptionList(nurses));
             // Asm：透传初始化响应
             return outpatientSkinTestMapper.toInitResponse(response);

@@ -21,6 +21,8 @@ import com.openhis.health.domain.administration.chargeitem.query.InpatientNurseS
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.support.InpatientNurseStationCostDetailLoader;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
+import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
@@ -28,6 +30,10 @@ import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
+import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.enums.GenerateSource;
+import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
+import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -63,6 +69,8 @@ public class NurseStationCostDetailAppService {
     private final NurseStationCostDetailMapper nurseStationCostDetailMapper;
     private final NurseStationCostDetailAssembler nurseStationCostDetailAssembler;
     private final PatientEncounterConsistencyGate patientEncounterConsistencyGate;
+    private final PractitionerQueryService practitionerQueryService;
+    private final ServiceRequestQueryService serviceRequestQueryService;
 
     /**
      * 费用明细页初始化：默认当日日期区间与明细/汇总展示选项。
@@ -82,7 +90,9 @@ public class NurseStationCostDetailAppService {
     /**
      * 按就诊与日期区间查询住院费用明细或汇总。
      *
-     * @param request 就诊、患者、日期区间与展示模式
+     * <p>可选 {@code keyword}：按展示产品名称、院内编码模糊过滤后再装配行与合计（BR-IP-CDT-019）。</p>
+     *
+     * @param request 就诊、患者、日期区间、展示模式与可选项目关键字
      * @return 明细行或汇总行 + 合计块
      * @throws BusinessException EX-IP-CDT-101～203
      */
@@ -104,18 +114,30 @@ public class NurseStationCostDetailAppService {
                 productDefinitionDisplayTerminologyAssembler.loadAsMap(productLookups);
             nurseStationCostDetailAssembler.validateChargeRowsForAssembly(
                 chargeRows, productByKey, parentChargeById);
+            // Pre：排除嘱托账单（BR-IP-CDT-020）；再按关键字过滤（BR-IP-CDT-019）
+            List<InpatientNurseStationCostDetailChargeRow> nonEntrustRows =
+                nurseStationCostDetailAssembler.filterOutEntrustChargeRows(
+                    chargeRows, productByKey, parentChargeById);
+            List<InpatientNurseStationCostDetailChargeRow> displayRows =
+                nurseStationCostDetailAssembler.filterChargeRowsByItemKeyword(
+                    nonEntrustRows, productByKey, parentChargeById, request.getKeyword());
             NurseStationCostDetailTotalsDto totals =
-                nurseStationCostDetailAssembler.buildTotals(chargeRows, productByKey, parentChargeById);
+                nurseStationCostDetailAssembler.buildTotals(displayRows, productByKey, parentChargeById);
+            // Pre：识别床位自动计费 SR（auto-roll-fees），供明细来源/汇总操作类型覆盖展示
+            Set<Long> autoRollServiceRequestIds = this.resolveAutoRollServiceRequestIds(displayRows);
             List<NurseStationCostDetailLineDto> detailLines = new ArrayList<>();
             List<NurseStationCostSummaryLineDto> summaryLines = new ArrayList<>();
             String presentationMode = request.getPresentationMode().trim();
             // Branch：按展示模式装配明细行或汇总行
             if (InpatientNurseStationConstants.COST_DETAIL_PRESENTATION_MODE_DETAIL.equals(presentationMode)) {
                 detailLines = nurseStationCostDetailAssembler.buildDetailLines(
-                    chargeRows, productByKey, parentChargeById);
+                    displayRows, productByKey, parentChargeById, autoRollServiceRequestIds);
             } else {
+                // Pre：批量加载汇总展开明细涉及的操作人展示名
+                Map<Long, String> practitionerNameById =
+                    this.loadPractitionerNamesForChargeRows(displayRows);
                 summaryLines = nurseStationCostDetailAssembler.buildSummaryLines(
-                    chargeRows, productByKey, parentChargeById);
+                    displayRows, productByKey, parentChargeById, practitionerNameById, autoRollServiceRequestIds);
             }
             // Asm：映射查询响应
             return nurseStationCostDetailMapper.toQueryResponse(
@@ -250,6 +272,79 @@ public class NurseStationCostDetailAppService {
             }
         }
         return parentById;
+    }
+
+    /**
+     * 批量加载费用候选行涉及操作人的展示名（汇总展开明细用）。
+     *
+     * @param chargeRows 域查询候选行
+     * @return 操作人 id → 姓名；无命中时空 Map
+     */
+    private Map<Long, String> loadPractitionerNamesForChargeRows(
+        List<InpatientNurseStationCostDetailChargeRow> chargeRows) {
+        Map<Long, String> practitionerNameById = new HashMap<>();
+        Set<Long> operatorIds = nurseStationCostDetailAssembler.collectOperatorIdsForChargeRows(chargeRows);
+        if (operatorIds.isEmpty()) {
+            return practitionerNameById;
+        }
+        List<Practitioner> practitioners = practitionerQueryService.findAllByIds(operatorIds);
+        for (Practitioner practitioner : practitioners) {
+            if (practitioner != null && practitioner.getId() != null
+                && StringUtils.isNotEmpty(practitioner.getName())) {
+                practitionerNameById.put(practitioner.getId(), practitioner.getName().trim());
+            }
+        }
+        return practitionerNameById;
+    }
+
+    /**
+     * 从费用候选行解析床位自动计费 SR 主键（generate_source=auto-roll-fees）。
+     *
+     * @param chargeRows 域查询候选行
+     * @return auto-roll-fees 诊疗申请主键集合
+     */
+    private Set<Long> resolveAutoRollServiceRequestIds(List<InpatientNurseStationCostDetailChargeRow> chargeRows) {
+        Set<Long> serviceRequestIds = new LinkedHashSet<>();
+        if (chargeRows == null || chargeRows.isEmpty()) {
+            return serviceRequestIds;
+        }
+        String orderExecute = GenerateSource.ORDER_EXECUTE.getCode();
+        String serviceTable = TableNameConstants.WKF_SERVICE_REQUEST;
+        for (InpatientNurseStationCostDetailChargeRow row : chargeRows) {
+            if (row == null || row.getChargeItem() == null) {
+                continue;
+            }
+            ChargeItem charge = row.getChargeItem();
+            // 仅 order-execute + 诊疗申请锚点才可能是床位滚费
+            if (!orderExecute.equals(charge.getGenerateSourceEnum())) {
+                continue;
+            }
+            if (charge.getServiceId() == null || StringUtils.isEmpty(charge.getServiceTable())) {
+                continue;
+            }
+            if (!serviceTable.equalsIgnoreCase(charge.getServiceTable().trim())) {
+                continue;
+            }
+            serviceRequestIds.add(charge.getServiceId());
+        }
+        if (serviceRequestIds.isEmpty()) {
+            return serviceRequestIds;
+        }
+        Map<Long, ServiceRequestListModel> modelById =
+            serviceRequestQueryService.mapListModelsByIds(serviceRequestIds);
+        Set<Long> autoRollIds = new LinkedHashSet<>();
+        String autoRollSource = GenerateSource.AUTO_ROLL_FEES.getCode();
+        for (Map.Entry<Long, ServiceRequestListModel> entry : modelById.entrySet()) {
+            ServiceRequestListModel model = entry.getValue();
+            if (model == null) {
+                continue;
+            }
+            // 床位配置 ensure 的长期 SR 带 auto-roll-fees
+            if (autoRollSource.equals(model.getGenerateSourceEnum())) {
+                autoRollIds.add(entry.getKey());
+            }
+        }
+        return autoRollIds;
     }
 
 }

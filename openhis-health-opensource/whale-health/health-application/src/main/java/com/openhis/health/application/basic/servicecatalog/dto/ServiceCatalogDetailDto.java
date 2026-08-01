@@ -152,12 +152,15 @@ public class ServiceCatalogDetailDto {
     @Schema(description = "财务类别编码")
     private String itemTypeCode;
 
-    /** 项目购入价。 */
-    @Schema(description = "项目购入价")
+    /**
+     * 进价。
+     * <p>诊疗目录维护页不展示；详情可回填存量 PURCHASE 行（若有）。</p>
+     */
+    @Schema(description = "进价（诊疗目录维护页不使用）")
     private BigDecimal purchasePrice;
 
-    /** 项目零售价。 */
-    @Schema(description = "项目零售价")
+    /** 售价。 */
+    @Schema(description = "售价")
     private BigDecimal retailPrice;
 
     /** 项目最高零售价。 */

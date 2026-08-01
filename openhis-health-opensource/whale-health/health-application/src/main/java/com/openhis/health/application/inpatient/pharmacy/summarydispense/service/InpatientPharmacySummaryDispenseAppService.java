@@ -38,12 +38,12 @@ import com.openhis.health.domain.administration.practitioner.service.Practitione
 import com.openhis.health.domain.custom.tracenumber.queries.model.TraceNumberQueryModel;
 import com.openhis.health.domain.custom.tracenumber.service.TraceNumberQueryService;
 import com.openhis.health.application.shared.tracenumber.TraceNumberDispenseTraceOrchestrator;
+import com.openhis.health.application.shared.tracenumber.DispenseTraceUnitSnapshotEnricher;
 import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSummaryItemQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.SummaryDispenseGateQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseDomainService;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
-import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InpatientPharmacySummaryDispenseConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
@@ -68,8 +68,6 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.model.Medication
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
-import com.openhis.health.infrastructure.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
-import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterDispenseExtensionIn;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -97,7 +95,7 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li><b>IF-IPS-01</b>：Tab 仅 {@code summaryDispenseCompletedOnly}；发放表门控（{@code SUMMARIZED}/{@code COMPLETED}）收窄 {@code busNoIn}，已发药不以 Supply {@code AGREE} 为准</li>
  *   <li><b>IF-IPS-02</b>：合并 Supply 行 + 底层发放行明细（含批号）</li>
- *   <li><b>IF-IPS-03</b>：批量核发（扣库 → complete → Delivery → AGREE → 追溯）</li>
+ *   <li><b>IF-IPS-03</b>：批量核发（扣库 → complete → Delivery → AGREE → 追溯）；<b>不</b>触发医保 3505（汇总径进销存不上报）</li>
  *   <li><b>IF-IPS-04</b>：批量驳回（reject → 释放发放行）</li>
  * </ul>
  *
@@ -108,8 +106,6 @@ import java.util.regex.Pattern;
 @Service
 @RequiredArgsConstructor
 public class InpatientPharmacySummaryDispenseAppService {
-
-    private final InventoryThirdPartyUploadExtension inventoryUploadExtension;
 
     /** 写路径操作人门控（B.6.1）。 */
     private final CurrentPractitionerResolver currentPractitionerResolver;
@@ -138,6 +134,8 @@ public class InpatientPharmacySummaryDispenseAppService {
     private final TraceNumberQueryService traceNumberQueryService;
     /** 追溯写侧（核发后出库记录）。 */
     private final TraceNumberDispenseTraceOrchestrator traceNumberDispenseTraceOrchestrator;
+    /** 发药行主档贴码快照回填（与患者发药同口径）。 */
+    private final DispenseTraceUnitSnapshotEnricher dispenseTraceUnitSnapshotEnricher;
     /** 药品目录批量读侧。 */
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     /** 医务人员查询（调配药师校验）。 */
@@ -313,6 +311,8 @@ public class InpatientPharmacySummaryDispenseAppService {
             List<InpatientPharmacySummaryDispenseItemDto> dispenseItems =
                 inpatientPharmacySummaryDispenseAssembler.buildDispenseItemDtos(
                     dispenseRows, productByKey, patientNameById, bedDisplayByEncounterId, locationNameById);
+            // Asm：合并行回填主档贴码快照 + 代表批号（待扫换算与门诊/住院患者发药同口径）
+            this.enrichSummaryMergedLinesTraceUnitSnapshot(mergedLines, dispenseItems, header);
             // Asm：详情响应
             GetMedicationSummaryDispenseDetailResponse response =
                 inpatientPharmacySummaryDispenseMapper.toGetMedicationSummaryDispenseDetailResponse(
@@ -386,7 +386,6 @@ public class InpatientPharmacySummaryDispenseAppService {
                 "追溯码冲突或请选择有效调配药师");
         }
         List<String> succeededSummaryNos = new ArrayList<>();
-        List<MedicationDispense> succeededDispenses = new ArrayList<>();
         try {
             for (String summaryNo : summaryNos) {
                 // Pre：强加载 Supply 行并断言 APPROVAL
@@ -420,6 +419,7 @@ public class InpatientPharmacySummaryDispenseAppService {
                 Map<Long, String> traceBySupplyRequestId =
                     this.buildTraceOverrideBySupplyRequestId(request.getTraceLines());
                 List<String> allTraceCodes = this.collectTraceCodesFromSupplyLines(supplyLines, traceBySupplyRequestId);
+                List<String> hardHospitalCodes = new ArrayList<>();
                 for (SupplyRequestModel supplyLine : supplyLines) {
                     if (supplyLine == null || supplyLine.getId() == null) {
                         continue;
@@ -434,16 +434,26 @@ public class InpatientPharmacySummaryDispenseAppService {
                             InpatientPharmacySummaryDispenseConstants.EX_IPS_204,
                             "追溯码冲突或请选择有效调配药师");
                     }
+                    // Gate：有码批本库优先否则全院；无码批跳过硬校验
+                    String lotForAssert = this.resolveSummaryTraceLotNumber(supplyLine, traceNoRaw);
+                    boolean lotHasMaster = traceNumberQueryService.existsMasterByItemLot(
+                        TableNameConstants.MED_MEDICATION_DEFINITION,
+                        supplyLine.getItemId(),
+                        lotForAssert);
+                    if (!lotHasMaster) {
+                        continue;
+                    }
+                    hardHospitalCodes.addAll(lineTraceCodes);
                     traceNumberQueryService.assertCodesInNetStockForDispenseLine(
                         TableNameConstants.MED_MEDICATION_DEFINITION,
                         supplyLine.getItemId(),
-                        null,
+                        lotForAssert,
                         supplyLine.getPurposeLocationId(),
                         lineTraceCodes);
                 }
                 traceNumberQueryService.assertNoDuplicateTraceCodes(allTraceCodes);
-                if (!allTraceCodes.isEmpty()) {
-                    traceNumberQueryService.assertCodesInHospitalForDispense(allTraceCodes);
+                if (!hardHospitalCodes.isEmpty()) {
+                    traceNumberQueryService.assertCodesInHospitalForDispense(hardHospitalCodes);
                 }
                 // Pre：药品目录（单位换算）
                 Map<String, ProductDefinitionDisplayDto> productByKey =
@@ -472,7 +482,7 @@ public class InpatientPharmacySummaryDispenseAppService {
                         dispense.getLotNumber(),
                         requiredQuantity,
                         dispense.getUnitCode(),
-                        ProductDefinitionDisplaySupport.toUnitConversionSource(productRow),
+                        productRow,
                         dispense.getId());
                 }
                 // Cmd：按 lot+location 合并扣库（仅 MedicationDispense 行；BR-IPS-008 须先于发放终态）
@@ -558,11 +568,10 @@ public class InpatientPharmacySummaryDispenseAppService {
                         operatorId);
                 }
                 succeededSummaryNos.add(summaryNo);
-                succeededDispenses.addAll(dispenses);
             }
             DispenseSummaryMedicationsResponse response =
                 inpatientPharmacySummaryDispenseMapper.toDispenseSummaryMedicationsResponse(succeededSummaryNos);
-            tryUploadMedicareInventoryAfterSummaryDispense(request, succeededDispenses, response);
+            // Asm：汇总核发本地闭环完成即返回；医保 3505 不在汇总径触发（与按患者发药分流）
             return response;
         } catch (BusinessException ex) {
             throw ex;
@@ -571,71 +580,6 @@ public class InpatientPharmacySummaryDispenseAppService {
             throw new BusinessException(
                 InpatientPharmacySummaryDispenseConstants.EX_IPS_205,
                 "核发失败，请检查汇总单状态");
-        }
-    }
-
-    /**
-     * 汇总核发成功后尝试 3505 医保库存上传；失败不阻断主流程。
-     *
-     * @param request   核发请求
-     * @param dispenses 已核发发放单
-     * @param response  响应（可回填提示）
-     */
-    private void tryUploadMedicareInventoryAfterSummaryDispense(
-        DispenseSummaryMedicationsRequest request,
-        List<MedicationDispense> dispenses,
-        DispenseSummaryMedicationsResponse response
-    ) {
-        if (request == null) {
-            return;
-        }
-        if (dispenses == null || dispenses.isEmpty()) {
-            return;
-        }
-        // Pre：按 encounter 分组 dispenseId，供 3505 按就诊批量上传
-        Map<Long, List<Long>> dispenseIdsByEncounter = new LinkedHashMap<>();
-        for (MedicationDispense dispense : dispenses) {
-            if (dispense == null || dispense.getId() == null || dispense.getEncounterId() == null) {
-                continue;
-            }
-            dispenseIdsByEncounter
-                .computeIfAbsent(dispense.getEncounterId(), key -> new ArrayList<>())
-                .add(dispense.getId());
-        }
-        if (dispenseIdsByEncounter.isEmpty()) {
-            return;
-        }
-        // Gate：CHS 模块未启用时跳过上传，不影响本地核发结果
-        if (!inventoryUploadExtension.isEnabled()) {
-            return;
-        }
-        List<String> uploadWarnings = new ArrayList<>();
-        // Cmd：按就诊调用 3505；单就诊失败不 rollback 已完成的汇总核发
-        for (Map.Entry<Long, List<Long>> entry : dispenseIdsByEncounter.entrySet()) {
-            if (entry.getValue() == null || entry.getValue().isEmpty()) {
-                continue;
-            }
-            try {
-                InventoryUploadAfterDispenseExtensionIn uploadCommand = new InventoryUploadAfterDispenseExtensionIn()
-                    .setEncounterId(entry.getKey())
-                    .setDispenseIds(entry.getValue())
-                    .setContractBusNo(request.getContractBusNo());
-                inventoryUploadExtension.uploadAfterDispense(uploadCommand);
-            } catch (RuntimeException ex) {
-                log.warn("汇总发药医保进销存3505上传失败 encounterId={}", entry.getKey(), ex);
-                uploadWarnings.add(ex.getMessage());
-            }
-        }
-        if (!uploadWarnings.isEmpty()) {
-            // Asm：部分上传失败时追加警告，不抛异常（本地核发已成功）
-            String base;
-            if (response.getMessage() != null) {
-                base = response.getMessage().trim();
-            } else {
-                base = "核对发药成功";
-            }
-            response.setMessage(base + "；" + ErrorCodeConstants.EX_OPP_207_MEDICARE_PARTIAL_FAILURE
-                + "：" + String.join("；", uploadWarnings));
         }
     }
 
@@ -1230,6 +1174,64 @@ public class InpatientPharmacySummaryDispenseAppService {
             }
         }
         return null;
+    }
+
+    /**
+     * 汇总合并行回填主档贴码快照与代表批号。
+     *
+     * <p>批号取同药品首个发放行；库房取单头 purposeLocationId。</p>
+     *
+     * @param mergedLines   合并 Supply 行
+     * @param dispenseItems 底层发放行（供批号）
+     * @param header        汇总单头（供库房）
+     */
+    private void enrichSummaryMergedLinesTraceUnitSnapshot(
+        List<InpatientPharmacySummarySlipLineDto> mergedLines,
+        List<InpatientPharmacySummaryDispenseItemDto> dispenseItems,
+        InpatientPharmacySummarySlipHeaderDto header
+    ) {
+        if (mergedLines == null || mergedLines.isEmpty()) {
+            return;
+        }
+        Long locationId = null;
+        if (header != null) {
+            locationId = header.getPurposeLocationId();
+        }
+        Map<Long, String> firstLotByMedicationId = new HashMap<>();
+        if (dispenseItems != null) {
+            for (InpatientPharmacySummaryDispenseItemDto item : dispenseItems) {
+                if (item == null || item.getMedicationId() == null) {
+                    continue;
+                }
+                if (StringUtils.isEmpty(item.getLotNumber())) {
+                    continue;
+                }
+                // 同药品仅取首个批号作代表（待扫换算用）
+                if (!firstLotByMedicationId.containsKey(item.getMedicationId())) {
+                    firstLotByMedicationId.put(item.getMedicationId(), item.getLotNumber().trim());
+                }
+            }
+        }
+        List<DispenseTraceUnitSnapshotEnricher.Request> requests = new ArrayList<>();
+        for (InpatientPharmacySummarySlipLineDto line : mergedLines) {
+            if (line == null || line.getItemId() == null) {
+                continue;
+            }
+            String lot = firstLotByMedicationId.get(line.getItemId());
+            line.setRepresentativeLotNumber(lot);
+            InpatientPharmacySummarySlipLineDto target = line;
+            requests.add(new DispenseTraceUnitSnapshotEnricher.Request(
+                locationId,
+                line.getItemId(),
+                lot,
+                (code, ratio) -> {
+                    target.setTraceUnitCode(code);
+                    target.setTraceUnitRatio(ratio);
+                },
+                target::setLotHasTraceMaster
+            ));
+        }
+        this.dispenseTraceUnitSnapshotEnricher.enrich(requests);
     }
 
     /**

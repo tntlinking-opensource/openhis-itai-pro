@@ -28,7 +28,8 @@ public final class SupplyRequestDocumentListPredicateSupport {
     }
 
     /**
-     * 组装软删、类型、状态、租户、源/目的位置、申请时刻窗（{@code startDate}/{@code endDate}）、关键字（单号/原因/备注）谓词。
+     * 组装软删、类型、状态、租户、源/目的位置、申请时刻窗（{@code startDate}/{@code endDate}）、
+     * 制单/审批时刻窗、制单人/审批人、品类、关键字（单号/原因/备注）与单号专用模糊谓词。
      *
      * @param root  供应请求根
      * @param cb    条件构建器
@@ -68,15 +69,25 @@ public final class SupplyRequestDocumentListPredicateSupport {
         if (query.getTenantId() != null) {
             predicates.add(cb.equal(root.get(FieldNameConstants.TENANT_ID), query.getTenantId()));
         }
-        if (query.getSourceLocationIds() != null && !query.getSourceLocationIds().isEmpty()) {
-            predicates.add(root.get(FieldNameConstants.SOURCE_LOCATION_ID).in(query.getSourceLocationIds()));
-        } else if (query.getSourceLocationId() != null) {
-            predicates.add(cb.equal(root.get(FieldNameConstants.SOURCE_LOCATION_ID), query.getSourceLocationId()));
+        if (query.getLocationId() != null) {
+            // 财务审批统一库房筛：源库或目的库任一命中即可（进货/损益偏目的，退货偏源）
+            predicates.add(cb.or(
+                cb.equal(root.get(FieldNameConstants.SOURCE_LOCATION_ID), query.getLocationId()),
+                cb.equal(root.get(FieldNameConstants.PURPOSE_LOCATION_ID), query.getLocationId())));
+        } else {
+            if (query.getSourceLocationIds() != null && !query.getSourceLocationIds().isEmpty()) {
+                predicates.add(root.get(FieldNameConstants.SOURCE_LOCATION_ID).in(query.getSourceLocationIds()));
+            } else if (query.getSourceLocationId() != null) {
+                predicates.add(cb.equal(root.get(FieldNameConstants.SOURCE_LOCATION_ID), query.getSourceLocationId()));
+            }
+            if (query.getPurposeLocationIds() != null && !query.getPurposeLocationIds().isEmpty()) {
+                predicates.add(root.get(FieldNameConstants.PURPOSE_LOCATION_ID).in(query.getPurposeLocationIds()));
+            } else if (query.getPurposeLocationId() != null) {
+                predicates.add(cb.equal(root.get(FieldNameConstants.PURPOSE_LOCATION_ID), query.getPurposeLocationId()));
+            }
         }
-        if (query.getPurposeLocationIds() != null && !query.getPurposeLocationIds().isEmpty()) {
-            predicates.add(root.get(FieldNameConstants.PURPOSE_LOCATION_ID).in(query.getPurposeLocationIds()));
-        } else if (query.getPurposeLocationId() != null) {
-            predicates.add(cb.equal(root.get(FieldNameConstants.PURPOSE_LOCATION_ID), query.getPurposeLocationId()));
+        if (query.getSupplierId() != null) {
+            predicates.add(cb.equal(root.get(FieldNameConstants.SUPPLIER_ID), query.getSupplierId()));
         }
         if (query.getStartDate() != null) {
             predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.APPLY_TIME), query.getStartDate()));
@@ -95,6 +106,36 @@ public final class SupplyRequestDocumentListPredicateSupport {
         if (query.getBusNoIn() != null && !query.getBusNoIn().isEmpty()) {
             // 住院汇总发药：应用层按发放表门控写入 busNo 白名单
             predicates.add(root.get(FieldNameConstants.BUS_NO).in(query.getBusNoIn()));
+        }
+        if (StringUtils.isNotEmpty(query.getBusNoLike())) {
+            // 财务审批等：单号专用模糊，不扫原因/备注列
+            String busLikeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getBusNoLike().trim());
+            predicates.add(cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), busLikeIc));
+        }
+        if (query.getApplicantId() != null) {
+            predicates.add(cb.equal(root.get(FieldNameConstants.APPLICANT_ID), query.getApplicantId()));
+        }
+        if (query.getApproverId() != null) {
+            predicates.add(cb.equal(root.get(FieldNameConstants.APPROVER_ID), query.getApproverId()));
+        }
+        if (StringUtils.isNotEmpty(query.getItemTable())) {
+            predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_TABLE), query.getItemTable().trim()));
+        }
+        if (query.getOccurrenceTimeFrom() != null) {
+            predicates.add(cb.greaterThanOrEqualTo(
+                root.get(FieldNameConstants.OCCURRENCE_TIME), query.getOccurrenceTimeFrom()));
+        }
+        if (query.getOccurrenceTimeTo() != null) {
+            predicates.add(cb.lessThanOrEqualTo(
+                root.get(FieldNameConstants.OCCURRENCE_TIME), query.getOccurrenceTimeTo()));
+        }
+        if (query.getApprovalTimeFrom() != null) {
+            predicates.add(cb.greaterThanOrEqualTo(
+                root.get(FieldNameConstants.APPROVAL_TIME), query.getApprovalTimeFrom()));
+        }
+        if (query.getApprovalTimeTo() != null) {
+            predicates.add(cb.lessThanOrEqualTo(
+                root.get(FieldNameConstants.APPROVAL_TIME), query.getApprovalTimeTo()));
         }
         return predicates;
     }

@@ -16,6 +16,7 @@ import com.openhis.health.application.basic.code.request.QueryCodeSystemRequest;
 import com.openhis.health.application.basic.code.request.UpdateCodeSystemRequest;
 import com.openhis.health.application.basic.code.request.UpdateConceptRequest;
 import com.openhis.health.application.basic.code.dto.OrganizationDictDto;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.share.enums.EnumInterface;
 import com.openhis.health.domain.terminology.entity.CodeSystem;
@@ -55,6 +56,8 @@ public class CodeAppService {
     private final CodeSystemDomainService codeSystemDomainService;
     /** DTO/请求 ↔ 领域命令与实体展示映射。 */
     private final CodesystemMapper codesystemMapper;
+    /** 术语下拉软缓存：概念变更后须同步失效。 */
+    private final TerminologyOptionLoader terminologyOptionLoader;
 
     /**
      * 枚举简单类名 → 枚举 {@code Class}，进程内懒加载双检锁缓存。
@@ -260,6 +263,7 @@ public class CodeAppService {
         // Cmd：领域新增概念
         com.openhis.health.domain.terminology.entity.Concept saved = codeSystemDomainService.createConcept(command);
         codeSystemQueryService.evictDictByCodeSystemId(saved.getCodeSystemId());
+        terminologyOptionLoader.evictByCodeSystemId(saved.getCodeSystemId());
     }
 
     /**
@@ -280,6 +284,7 @@ public class CodeAppService {
         // Cmd：领域更新概念
         com.openhis.health.domain.terminology.entity.Concept saved = codeSystemDomainService.updateConcept(command);
         codeSystemQueryService.evictDictByCodeSystemId(saved.getCodeSystemId());
+        terminologyOptionLoader.evictByCodeSystemId(saved.getCodeSystemId());
     }
 
     /**
@@ -296,8 +301,10 @@ public class CodeAppService {
             throw new ValidationException("删除编码失败：编码ID不能为空");
         }
         // Pre：删除前失效对应体系字典缓存
-        codeSystemQueryService.findConceptById(id).ifPresent(concept ->
-            codeSystemQueryService.evictDictByCodeSystemId(concept.getCodeSystemId()));
+        codeSystemQueryService.findConceptById(id).ifPresent(concept -> {
+            codeSystemQueryService.evictDictByCodeSystemId(concept.getCodeSystemId());
+            terminologyOptionLoader.evictByCodeSystemId(concept.getCodeSystemId());
+        });
         // Cmd：领域删除概念
         codeSystemDomainService.deleteConcept(id);
     }

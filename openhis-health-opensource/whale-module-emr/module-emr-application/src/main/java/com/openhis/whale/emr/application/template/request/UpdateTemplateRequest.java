@@ -24,10 +24,10 @@ public class UpdateTemplateRequest {
     private String documentTypeCode;
     /** 使用范围 code：PERSONAL/DEPARTMENT/HOSPITAL */
     private String scopeLevel;
-    /** 适用科室/机构 id */
-    private Long organizationId;
-    /** 个人模板所有者（医师）id */
-    private Long ownerPractitionerId;
+    /** 适用科室/机构 id（雪花，字符串传参） */
+    private String organizationId;
+    /** 个人模板所有者（医师）id（雪花，字符串传参） */
+    private String ownerPractitionerId;
     /** 适用就诊类别 code：AMB/IMP/OBSENC */
     private String encounterClassCode;
     /** 就诊类型枚举（扩展） */

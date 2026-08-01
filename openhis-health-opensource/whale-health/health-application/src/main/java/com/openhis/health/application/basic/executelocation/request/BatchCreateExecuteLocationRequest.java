@@ -9,12 +9,14 @@ import lombok.Data;
 import java.util.List;
 
 /**
- * 在同一执行科室与诊疗大类下，批量将多条诊疗定义绑定为相同执行时段/地点/优先级的规则。
+ * 在同一开立科室与诊疗大类下，批量将多条诊疗定义绑定为相同执行科室/时段/地点/优先级的规则。
  */
 @Data
 public class BatchCreateExecuteLocationRequest {
 
-    /** 执行科室主键。 */
+    /** 开立科室主键。 */
+    private Long organizationId;
+    /** 执行科室主键（批量行共用）。 */
     private Long executionOrgId;
     /** 诊疗大类业务码。 */
     private String activityCategoryCode;

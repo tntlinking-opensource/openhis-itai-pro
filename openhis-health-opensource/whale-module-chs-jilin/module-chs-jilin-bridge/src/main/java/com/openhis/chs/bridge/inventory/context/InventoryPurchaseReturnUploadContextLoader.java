@@ -18,6 +18,7 @@ import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
 import com.openhis.health.domain.financial.contract.entity.Contract;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.workflow.inventoryitem.entity.InventoryItem;
@@ -29,13 +30,14 @@ import com.openhis.chs.bridge.catalog.ChsInsuranceContractReaderImpl;
 import com.openhis.chs.bridge.inventory.assembler.InventoryPlatformFieldAssembler;
 import com.openhis.chs.bridge.inventory.assembler.InventoryPurchaseUploadReferenceResolver;
 import com.openhis.chs.bridge.inventory.assembler.InventoryUploadBatchNoAssembler;
+import com.openhis.chs.bridge.inventory.assembler.InventoryUploadQtyPriceResult;
+import com.openhis.chs.bridge.inventory.assembler.InventoryUploadQuantityAssembler;
 import com.openhis.chs.bridge.inventory.support.InventoryUploadTraceLineSupport;
 import com.openhis.chs.domain.inventory.command.UploadAfterPurchaseReturnCommand;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -49,15 +51,16 @@ import java.util.Set;
  * {@link com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition}、
  * 供应商、{@link com.openhis.health.domain.workflow.inventoryitem.entity.InventoryItem} 批号效期，
  * 并通过 {@link com.openhis.chs.bridge.inventory.assembler.InventoryPurchaseUploadReferenceResolver}
- * 关联原 3503 采购流水。</p>
+ * 解析原 3503 采购批次号。</p>
+ *
+ * <p>吉林省口径：{@code fixmedins_bchno} 与 {@code medins_prod_purc_no} 均填原 3503 的
+ * {@code fixmedins_bchno}（进货单号）；不得用退供单 CRT，否则平台报「未找到商品采购信息」。
+ * {@code purc_invo_no} 取退货/进货 {@code invoice_no}，均空则默认 {@code 0}。</p>
  */
 @Component
 @RequiredArgsConstructor
 @ConditionalOnProperty(name = "openhis.modules.chs.enabled", havingValue = "true")
 public class InventoryPurchaseReturnUploadContextLoader {
-
-    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    private static final DateTimeFormatter DATE_TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final SupplyRequestQueryService supplyRequestQueryService;
     private final MedicationDefinitionQueryService medicationDefinitionQueryService;
@@ -135,24 +138,70 @@ public class InventoryPurchaseReturnUploadContextLoader {
         cmd.setMedListCodg(trimToNull(medication.getYbNo()));
         cmd.setFixmedinsHilistId(medication.getBusNo());
         cmd.setFixmedinsHilistName(medication.getName());
-        cmd.setFixmedinsBchno(InventoryUploadBatchNoAssembler.buildFixmedinsBchno(medication.getBusNo(), line.getLotNumber()));
+        // 回落用进货单 busNo（originalBusNo=CIR…），禁止回落到退供 CRT
+        String inboundFallbackBchno = InventoryUploadBatchNoAssembler.buildFixmedinsBchno(line.getOriginalBusNo());
+        // 吉林：3504 定位采购靠原 3503 fixmedins_bchno，与 medins_prod_purc_no 同值
+        String purchaseBchno = purchaseUploadReferenceResolver.resolvePurchaseFixmedinsBchnoForReturn(
+            line, inboundFallbackBchno);
+        cmd.setFixmedinsBchno(purchaseBchno);
+        cmd.setMedinsProdPurcNo(purchaseBchno);
         cmd.setManuLotnum(line.getLotNumber());
         cmd.setAprvno(medication.getApprovalNumber());
         cmd.setProdentpName(medication.getManufacturerText());
-        cmd.setPurcRetnCnt(line.getItemQuantity());
-        cmd.setFinlTrnsPric(line.getPrice());
+        InventoryUploadQtyPriceResult qtyPrice = InventoryUploadQuantityAssembler.resolveWarehouseQtyAndPrice(
+            medication, line.getUnitCode(), line.getItemQuantity(), line.getPrice(), line.getUnitCode());
+        cmd.setPurcRetnCnt(qtyPrice.getOperationQuantity());
+        cmd.setFinlTrnsPric(qtyPrice.getOperationUnitPrice());
         cmd.setRxFlag(InventoryPlatformFieldAssembler.toRxFlagCode(medication.getRxFlag()));
         cmd.setProdGeayFlag(ProdGeayFlag.NO.getCode());
         cmd.setDyntNo(line.getOriginalBusNo());
         cmd.setMemo(line.getRemake());
+        // purc_invo_no：退货行 → 关联进货单 → 默认占位（不因缺发票拦退货）
+        cmd.setPurcInvoNo(resolvePurcInvoNo(line));
         uploadTraceLineSupport.applyMedicationSupplyLineTrace(
-            medication, line.getUnitCode(), line.getTraceNo(), cmd);
+            medication, line.getUnitCode(), line.getTraceNo(), line.getItemQuantity(), cmd);
         fillSupplierFields(cmd, line.getSupplierId());
         fillInventoryDates(cmd, line);
         fillOperatorFields(cmd, line);
-        cmd.setMedinsProdPurcNo(purchaseUploadReferenceResolver.resolveMedinsProdPurcNoForReturn(
-            line, cmd.getFixmedinsBchno()));
         return cmd;
+    }
+
+    /**
+     * 解析采购发票号：退货行 → 关联进货单 → {@link ChsInventoryConstants#DEFAULT_PURC_INVO_NO}。
+     *
+     * @param line 退货出库行
+     * @return 非空发票号或默认占位
+     */
+    private String resolvePurcInvoNo(SupplyRequestModel line) {
+        String fromReturn = trimToNull(line.getInvoiceNo());
+        // 退货单自身已填发票号
+        if (fromReturn != null) {
+            return fromReturn;
+        }
+        // 无关联进货单号：直接占位（规范 3504 要求非空）
+        if (isEmpty(line.getOriginalBusNo())) {
+            return ChsInventoryConstants.DEFAULT_PURC_INVO_NO;
+        }
+        SupplyByBusNoQuery query = new SupplyByBusNoQuery();
+        query.setBusNo(line.getOriginalBusNo().trim());
+        List<SupplyRequestModel> inboundRows = supplyRequestQueryService.getSupplyByBusNo(query);
+        // 回落关联进货入库行的发票号
+        for (SupplyRequestModel inbound : inboundRows) {
+            if (inbound == null) {
+                continue;
+            }
+            // 仅认药库进货类型行
+            if (!SupplyType.CABINET_INBOUND_RECEIPT.getCode().equals(inbound.getTypeEnum())) {
+                continue;
+            }
+            String fromInbound = trimToNull(inbound.getInvoiceNo());
+            // 进货单有真实发票号则沿用
+            if (fromInbound != null) {
+                return fromInbound;
+            }
+        }
+        // 进货侧亦无：占位 0，不拦退货业务
+        return ChsInventoryConstants.DEFAULT_PURC_INVO_NO;
     }
 
     /**
@@ -195,10 +244,10 @@ public class InventoryPurchaseReturnUploadContextLoader {
         }
         InventoryItem item = items.get(0);
         if (item.getProductionDate() != null) {
-            cmd.setManuDate(item.getProductionDate().toLocalDate().format(DATE_FMT));
+            cmd.setManuDate(item.getProductionDate().toLocalDate().format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
         }
         if (item.getExpirationDate() != null) {
-            cmd.setExpyEnd(item.getExpirationDate().toLocalDate().format(DATE_FMT));
+            cmd.setExpyEnd(item.getExpirationDate().toLocalDate().format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
         }
     }
 
@@ -209,16 +258,11 @@ public class InventoryPurchaseReturnUploadContextLoader {
      * @param line 退货出库行
      */
     private void fillOperatorFields(InvUploadLineCommand cmd, SupplyRequestModel line) {
+        // 3504：退货时间/经办人 = 审批时间/审批人（与 3503 同口径）
         if (line.getApprovalTime() != null) {
-            cmd.setPurcRetnStoinTime(line.getApprovalTime().format(DATE_TIME_FMT));
-        } else if (line.getOccurrenceTime() != null) {
-            cmd.setPurcRetnStoinTime(line.getOccurrenceTime().format(DATE_TIME_FMT));
+            cmd.setPurcRetnStoinTime(line.getApprovalTime().format(GeneralSharedConstants.DATE_TIME_FORMATTER));
         }
-        Long practitionerId = line.getApproverId();
-        if (practitionerId == null) {
-            practitionerId = line.getPractitionerId();
-        }
-        cmd.setPurcRetnOpterName(resolvePractitionerName(practitionerId));
+        cmd.setPurcRetnOpterName(resolvePractitionerName(line.getApproverId()));
     }
 
     /**

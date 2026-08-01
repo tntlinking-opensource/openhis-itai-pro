@@ -21,6 +21,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -61,8 +62,13 @@ public class MrmsCaseRecordListAppService {
         query.setStatusCodes(request.getStatusCodes());
         query.setAdmCatyName(request.getAdmCatyName());
         query.setAttendingPractitionerId(request.getAttendingPractitionerId());
-        query.setDscgFrom(request.getDscgFrom());
-        query.setDscgTo(request.getDscgTo());
+        // 前端日期选择器传 yyyy-MM-dd；领域按 dscg_time 闭区间含当日
+        if (request.getDscgFrom() != null) {
+            query.setDscgFrom(request.getDscgFrom().atStartOfDay());
+        }
+        if (request.getDscgTo() != null) {
+            query.setDscgTo(request.getDscgTo().atTime(LocalTime.MAX));
+        }
         Page<CaseRecordListItemQueryModel> page = caseRecordQueryService.queryPage(
                 query,
                 PageRequest.of(pageNo - 1, pageSize, Sort.by(Sort.Direction.DESC, "dscgTime", "id")));

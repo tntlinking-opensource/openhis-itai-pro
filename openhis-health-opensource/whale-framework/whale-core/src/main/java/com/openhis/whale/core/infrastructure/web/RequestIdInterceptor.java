@@ -4,14 +4,17 @@
  */
 package com.openhis.whale.core.infrastructure.web;
 
+import com.openhis.whale.core.application.ILoginUserOrganizationUnitSync;
 import com.openhis.whale.core.infrastructure.security.ICurrentUser;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -29,8 +32,14 @@ public class RequestIdInterceptor implements HandlerInterceptor {
     @Autowired
     private ICurrentUser currentUser;
 
+    @Autowired
+    private ObjectProvider<ILoginUserOrganizationUnitSync> loginUserOrganizationUnitSync;
+
+    @Autowired
+    private ObjectProvider<List<RequestScopeCleaner>> requestScopeCleaners;
+
     /**
-     * 为当前请求绑定 trace id，并在入口清理 {@link ICurrentUser#clearRequestCache()}。
+     * 为当前请求绑定 trace id，并在入口清理请求级 ThreadLocal 缓存。
      *
      * @param request  当前 HTTP 请求
      * @param response 当前 HTTP 响应
@@ -39,7 +48,7 @@ public class RequestIdInterceptor implements HandlerInterceptor {
      */
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
-        currentUser.clearRequestCache();
+        clearRequestScopedCaches();
 
         String requestId = request.getHeader(REQUEST_ID_HEADER);
         if (requestId == null || requestId.trim().isEmpty()) {
@@ -53,7 +62,7 @@ public class RequestIdInterceptor implements HandlerInterceptor {
     }
 
     /**
-     * 请求结束后清理 MDC 与 {@link ICurrentUser} 请求级缓存。
+     * 请求结束后清理 MDC 与请求级 ThreadLocal 缓存。
      *
      * @param request  当前 HTTP 请求
      * @param response  当前 HTTP 响应
@@ -64,6 +73,25 @@ public class RequestIdInterceptor implements HandlerInterceptor {
     public void afterCompletion(
             HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) {
         MDC.remove(REQUEST_ID_MDC);
+        clearRequestScopedCaches();
+    }
+
+    /**
+     * 清理当前用户管辖缓存、登录科室同步标记与各 {@link RequestScopeCleaner}。
+     */
+    private void clearRequestScopedCaches() {
         currentUser.clearRequestCache();
+        ILoginUserOrganizationUnitSync sync = loginUserOrganizationUnitSync.getIfAvailable();
+        if (sync != null) {
+            sync.clearRequestCache();
+        }
+        List<RequestScopeCleaner> cleaners = requestScopeCleaners.getIfAvailable();
+        if (cleaners != null) {
+            for (RequestScopeCleaner cleaner : cleaners) {
+                if (cleaner != null) {
+                    cleaner.clearRequestScope();
+                }
+            }
+        }
     }
 }

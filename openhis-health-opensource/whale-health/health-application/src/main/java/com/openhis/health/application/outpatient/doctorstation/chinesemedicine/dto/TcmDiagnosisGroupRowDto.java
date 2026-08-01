@@ -22,10 +22,10 @@ public class TcmDiagnosisGroupRowDto {
     @Schema(description = "中医证候组号")
     private String tcmSyndromeGroup;
 
-    /** 病名病情事实主键。 */
+    /** 病名就诊诊断行主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "病名病情事实主键")
-    private Long diseaseConditionId;
+    @Schema(description = "病名就诊诊断行主键")
+    private Long diseaseEncounterDiagnosisId;
 
     /** 病名目录主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
@@ -40,10 +40,10 @@ public class TcmDiagnosisGroupRowDto {
     @Schema(description = "病名展示名称")
     private String diseaseName;
 
-    /** 证候病情事实主键。 */
+    /** 证候就诊诊断行主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "证候病情事实主键")
-    private Long syndromeConditionId;
+    @Schema(description = "证候就诊诊断行主键")
+    private Long syndromeEncounterDiagnosisId;
 
     /** 证候目录主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
@@ -73,4 +73,10 @@ public class TcmDiagnosisGroupRowDto {
     /** 组级诊断描述。 */
     @Schema(description = "组级诊断描述")
     private String diagnosisDesc;
+
+    /**
+     * 病名目录医保诊断编码；未对码时为空，前端展示为「-」。
+     */
+    @Schema(description = "病名医保诊断编码；未对码为空")
+    private String ybNo;
 }

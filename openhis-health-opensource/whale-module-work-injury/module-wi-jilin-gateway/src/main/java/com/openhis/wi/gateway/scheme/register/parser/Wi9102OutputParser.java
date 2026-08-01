@@ -4,6 +4,7 @@
  */
 package com.openhis.wi.gateway.scheme.register.parser;
 
+import static com.openhis.whale.core.application.util.StringUtils.isEmpty;
 import static com.openhis.whale.core.application.util.StringUtils.isNotEmpty;
 
 import com.alibaba.fastjson2.JSON;
@@ -40,7 +41,17 @@ public final class Wi9102OutputParser {
         for (int i = 0; i < rows.size(); i++) {
             Object item = rows.get(i);
             Wi9102QualificationRow row = JSON.parseObject(JSON.toJSONString(item), Wi9102QualificationRow.class);
-            if (row != null && isNotEmpty(row.getQualificationId())) {
+            if (row == null) {
+                continue;
+            }
+            if (isEmpty(row.getQualificationId())) {
+                // 兼容未映射到 alternateNames 的原始 Map
+                String referralId = extractField(item, "referral_id", "referralId");
+                if (isNotEmpty(referralId)) {
+                    row.setQualificationId(referralId);
+                }
+            }
+            if (isNotEmpty(row.getQualificationId())) {
                 parsed.add(row);
             }
         }
@@ -48,7 +59,29 @@ public final class Wi9102OutputParser {
         return result;
     }
 
-    /** 9102 output 可能是数组、rows/list 包装或单键 Map，归一化为 JSONArray。 */
+    private static String extractField(Object item, String... keys) {
+        if (item == null || keys == null) {
+            return null;
+        }
+        com.alibaba.fastjson2.JSONObject json = item instanceof com.alibaba.fastjson2.JSONObject obj
+                ? obj
+                : JSON.parseObject(JSON.toJSONString(item));
+        if (json == null) {
+            return null;
+        }
+        for (String key : keys) {
+            Object value = json.get(key);
+            if (value != null) {
+                String text = String.valueOf(value).trim();
+                if (isNotEmpty(text) && !"null".equalsIgnoreCase(text) && !"0".equals(text)) {
+                    return text;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 9102 output 可能是数组、rows/list 包装、或 Win 解析失败时的 raw 整包。 */
     private static JSONArray extractArray(Map<String, Object> output) {
         Object direct = output.get("output");
         if (direct instanceof List<?> list) {
@@ -57,7 +90,24 @@ public final class Wi9102OutputParser {
         if (direct instanceof JSONArray array) {
             return array;
         }
-        for (String key : List.of("rows", "list", "data", "result")) {
+        Object raw = output.get("raw");
+        if (raw instanceof String rawText && !rawText.isBlank()) {
+            try {
+                com.alibaba.fastjson2.JSONObject envelope = JSON.parseObject(rawText);
+                if (envelope != null) {
+                    Object nested = envelope.get("output");
+                    if (nested instanceof List<?> list) {
+                        return new JSONArray(list);
+                    }
+                    if (nested instanceof JSONArray array) {
+                        return array;
+                    }
+                }
+            } catch (Exception ignored) {
+                // fall through
+            }
+        }
+        for (String key : List.of("rows", "list", "data", "result", "approveinfo")) {
             Object candidate = output.get(key);
             if (candidate instanceof List<?> list) {
                 return new JSONArray(list);

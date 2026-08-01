@@ -21,7 +21,6 @@ import com.openhis.health.domain.medication.medicationdefinition.entity.Medicati
 import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
-import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.InpatientRegistrationConstants;
 import com.openhis.health.domain.share.constants.InpatientSettleQueueTab;
 import com.openhis.health.domain.share.constants.RegistrationSlipConstants;
@@ -36,11 +35,13 @@ import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.query.AbstractPageQuery;
+import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.health.domain.workflow.devicerequest.entity.DeviceRequest;
 import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest;
 import com.openhis.whale.core.application.exception.BusinessException;
 import jakarta.persistence.criteria.Expression;
+import jakarta.persistence.criteria.Order;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import jakarta.persistence.criteria.Subquery;
@@ -72,6 +73,8 @@ public class EncounterContextCriteriaSupport {
     /**
      * 门诊挂号列表筛选规约（AMB、软删、关键字/状态/时段）。
      *
+     * <p>关键字语义与收费窗一致：就诊业务号 / 患者姓名（含拼音、五笔），禁止误用诊断描述。</p>
+     *
      * @param query 挂号筛选；{@code null} 时仅保留类别与未删谓词
      * @return JPA 规约
      */
@@ -82,8 +85,15 @@ public class EncounterContextCriteriaSupport {
             predicates.add(cb.equal(root.get(FieldNameConstants.CLASS_ENUM), EncounterClass.AMB.getCode()));
             if (query != null) {
                 if (StringUtils.isNotEmpty(query.getKeyword())) {
-                    String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getKeyword().trim());
-                    predicates.add(this.existsDiagnosisDescriptionLike(root, cb, criteriaQuery, likeIc));
+                    // 收费窗关键字：就诊号或患者姓名/助记；与 outpatientSpecification 同口径
+                    String trimmed = query.getKeyword().trim();
+                    String pattern = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
+                    Predicate busNoLike = cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), pattern);
+                    predicates.add(cb.or(busNoLike, this.existsPatientKeyword(root, cb, criteriaQuery, pattern)));
+                    // B.2.1：业务号或患者精确命中置顶；无 Sort 时由本 ORDER BY 兜底
+                    this.applyEncounterKeywordExactFirstOrder(
+                        criteriaQuery, cb, root, trimmed, true, true, false,
+                        List.of(cb.desc(root.get(FieldNameConstants.ID))));
                 }
                 if (StringUtils.isNotEmpty(query.getStatusEnum())) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), query.getStatusEnum().trim()));
@@ -227,9 +237,14 @@ public class EncounterContextCriteriaSupport {
                         root, cb, criteriaQuery, query.getDoctorId()));
                 }
                 if (StringUtils.isNotEmpty(query.getKeyword())) {
-                    String pattern = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getKeyword().trim());
+                    String trimmed = query.getKeyword().trim();
+                    String pattern = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
                     Predicate busNoLike = cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), pattern);
                     predicates.add(cb.or(busNoLike, this.existsPatientKeyword(root, cb, criteriaQuery, pattern)));
+                    // B.2.1：业务号或患者姓名/助记精确置顶（次级排序由 Pageable 或分桶 Spec 提供）
+                    this.applyEncounterKeywordExactFirstOrder(
+                        criteriaQuery, cb, root, trimmed, true, true, false,
+                        List.of(cb.desc(root.get(FieldNameConstants.ID))));
                 }
                 if (query.getStartDate() != null) {
                     predicates.add(cb.greaterThanOrEqualTo(
@@ -259,8 +274,15 @@ public class EncounterContextCriteriaSupport {
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
             predicates.add(this.outpatientClassEnumPredicate(root, cb));
             if (StringUtils.isNotEmpty(query.getKeyword())) {
-                String pattern = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getKeyword().trim());
+                String trimmed = query.getKeyword().trim();
+                String pattern = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
                 predicates.add(this.existsPatientKeyword(root, cb, criteriaQuery, pattern));
+                // B.2.1：护士站患者关键字精确置顶，次级开始时间倒序
+                this.applyEncounterKeywordExactFirstOrder(
+                    criteriaQuery, cb, root, trimmed, false, true, false,
+                    List.of(
+                        cb.desc(root.get(FieldNameConstants.START_TIME)),
+                        cb.desc(root.get(FieldNameConstants.ID))));
             }
             if (query.getStartDate() != null) {
                 predicates.add(cb.greaterThanOrEqualTo(
@@ -283,7 +305,10 @@ public class EncounterContextCriteriaSupport {
     }
 
     /**
-     * 医生站查看者可见性：按状态分派（已诊出/候诊/接诊中）与参与者角色组合 OR。
+     * 医生站查看者可见性（BR-DOR-009）：按状态分派，与是否存在活动 {@code REGISTRATION_DOCTOR} 组合 OR。
+     *
+     * <p>挂到科室（无活动挂号医生）时，待诊与接诊后均科室全员可见；挂到医生时，待诊仅挂号医生、
+     * 接诊中/暂离仅接诊医生（ADMITTER）可见；诊毕始终科室共享。</p>
      */
     private Predicate buildDoctorStationViewerVisibilityPredicate(
         Root<Encounter> root,
@@ -317,7 +342,7 @@ public class EncounterContextCriteriaSupport {
                 root, cb, criteriaQuery,
                 EncounterParticipantRole.ADMITTER.getCode(),
                 viewerPractitionerId);
-            // 候诊/分诊：未分诊或分诊医生为当前查看者（含历史 ADMITTER 角色兼容）
+            // 候诊/分诊：未指定挂号医生则科室共享；已指定则仅挂号医生（含历史 ADMITTER 误写兼容）
             Predicate waitingDoctorVisible = cb.or(
                 noRegistrationAssignment,
                 registrationDoctorIsViewer,
@@ -330,12 +355,16 @@ public class EncounterContextCriteriaSupport {
             EncounterStatus.ON_HOLD.getCode());
         if (!inConsultStatuses.isEmpty()) {
             Predicate inConsultStatusIn = root.get(FieldNameConstants.STATUS_ENUM).in(inConsultStatuses);
+            // 挂到科室：无 REGISTRATION_DOCTOR 时接诊后仍科室共享，不收窄到 ADMITTER
+            Predicate noRegistrationDoctor = this.notExistsActiveParticipantWithRole(
+                root, cb, criteriaQuery, EncounterParticipantRole.REGISTRATION_DOCTOR.getCode());
             Predicate admitterIsViewer = this.existsActiveParticipantWithRoleAndPractitioner(
                 root, cb, criteriaQuery,
                 EncounterParticipantRole.ADMITTER.getCode(),
                 viewerPractitionerId);
-            // 接诊中/暂挂：仅接诊医生（ADMITTER）为查看者时可见
-            visibilityOr.add(cb.and(inConsultStatusIn, admitterIsViewer));
+            // 挂到医生：接诊中/暂离仅活动 ADMITTER 可见（与旧口径一致）
+            Predicate inConsultVisible = cb.or(noRegistrationDoctor, admitterIsViewer);
+            visibilityOr.add(cb.and(inConsultStatusIn, inConsultVisible));
         }
         if (visibilityOr.isEmpty()) {
             // 状态范围与可见性规则无交集：空结果
@@ -459,6 +488,152 @@ public class EncounterContextCriteriaSupport {
     }
 
     /**
+     * 就诊关键字：SQL 层精确命中升序在前（B.2.1）。
+     *
+     * @param criteriaQuery      当前查询；count 跳过
+     * @param cb                 CriteriaBuilder
+     * @param root               Encounter 根
+     * @param trimmedKeyword     已 trim 关键字
+     * @param includeBusNo       是否对 bus_no 做精确
+     * @param includePatient     是否对患者姓名/助记做精确（exists）
+     * @param includeBed         是否对活动床位名做精确（exists）
+     * @param secondaryOrders    次级排序
+     */
+    private void applyEncounterKeywordExactFirstOrder(
+        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery,
+        jakarta.persistence.criteria.CriteriaBuilder cb,
+        Root<Encounter> root,
+        String trimmedKeyword,
+        boolean includeBusNo,
+        boolean includePatient,
+        boolean includeBed,
+        List<Order> secondaryOrders) {
+        if (criteriaQuery == null || StringUtils.isEmpty(trimmedKeyword)) {
+            return;
+        }
+        Class<?> resultType = criteriaQuery.getResultType();
+        if (resultType == Long.class || resultType == long.class) {
+            return;
+        }
+        Expression<Integer> rank = this.encounterKeywordExactRankExpression(
+            cb, root, criteriaQuery, trimmedKeyword, includeBusNo, includePatient, includeBed);
+        List<Order> orders = new ArrayList<>();
+        orders.add(cb.asc(rank));
+        if (secondaryOrders != null) {
+            orders.addAll(secondaryOrders);
+        }
+        criteriaQuery.orderBy(orders);
+    }
+
+    /** 挂号诊断描述关键字：精确全等诊断描述置顶。 */
+    private void applyDiagnosisKeywordExactFirstOrder(
+        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery,
+        jakarta.persistence.criteria.CriteriaBuilder cb,
+        Root<Encounter> root,
+        String trimmedKeyword) {
+        if (criteriaQuery == null || StringUtils.isEmpty(trimmedKeyword)) {
+            return;
+        }
+        Class<?> resultType = criteriaQuery.getResultType();
+        if (resultType == Long.class || resultType == long.class) {
+            return;
+        }
+        String exactLower = SearchCodeUtil.toCaseInsensitiveExactValue(trimmedKeyword);
+        Expression<Integer> rank = cb.<Integer>selectCase()
+            .when(this.existsDiagnosisDescriptionExact(root, cb, criteriaQuery, exactLower),
+                KeywordExactFirstOrderSupport.RANK_EXACT)
+            .otherwise(KeywordExactFirstOrderSupport.RANK_FUZZY);
+        criteriaQuery.orderBy(
+            cb.asc(rank),
+            cb.desc(root.get(FieldNameConstants.ID)));
+    }
+
+    /**
+     * 就诊关键字精确命中排序表达式（0=精确，1=仅模糊）。
+     */
+    private Expression<Integer> encounterKeywordExactRankExpression(
+        jakarta.persistence.criteria.CriteriaBuilder cb,
+        Root<Encounter> root,
+        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery,
+        String trimmedKeyword,
+        boolean includeBusNo,
+        boolean includePatient,
+        boolean includeBed) {
+        String exactLower = SearchCodeUtil.toCaseInsensitiveExactValue(trimmedKeyword);
+        List<Predicate> exactOrs = new ArrayList<>();
+        if (includeBusNo) {
+            exactOrs.add(cb.equal(cb.lower(root.get(FieldNameConstants.BUS_NO)), exactLower));
+        }
+        if (includePatient) {
+            exactOrs.add(this.existsPatientKeywordExact(root, cb, criteriaQuery, exactLower));
+        }
+        if (includeBed) {
+            exactOrs.add(this.existsActiveBedNameExact(root, cb, criteriaQuery, exactLower));
+        }
+        if (exactOrs.isEmpty()) {
+            return cb.literal(KeywordExactFirstOrderSupport.RANK_FUZZY);
+        }
+        return cb.<Integer>selectCase()
+            .when(cb.or(exactOrs.toArray(new Predicate[0])), KeywordExactFirstOrderSupport.RANK_EXACT)
+            .otherwise(KeywordExactFirstOrderSupport.RANK_FUZZY);
+    }
+
+    /** 患者姓名/拼音/五笔与关键字忽略大小写全等。 */
+    private Predicate existsPatientKeywordExact(
+        Root<Encounter> root,
+        jakarta.persistence.criteria.CriteriaBuilder cb,
+        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery,
+        String exactLower) {
+        Subquery<Long> sq = criteriaQuery.subquery(Long.class);
+        Root<Patient> patientRoot = sq.from(Patient.class);
+        sq.select(patientRoot.get(FieldNameConstants.ID));
+        sq.where(cb.and(
+            cb.equal(patientRoot.get(FieldNameConstants.ID), root.get(FieldNameConstants.PATIENT_ID)),
+            cb.isFalse(patientRoot.get(FieldNameConstants.IS_DELETED)),
+            cb.or(
+                cb.equal(cb.lower(patientRoot.get(FieldNameConstants.NAME)), exactLower),
+                cb.equal(cb.lower(patientRoot.get(FieldNameConstants.PY_STR)), exactLower),
+                cb.equal(cb.lower(patientRoot.get(FieldNameConstants.WB_STR)), exactLower))));
+        return cb.exists(sq);
+    }
+
+    /** 活动床位名称与关键字忽略大小写全等。 */
+    private Predicate existsActiveBedNameExact(
+        Root<Encounter> root,
+        jakarta.persistence.criteria.CriteriaBuilder cb,
+        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery,
+        String exactLower) {
+        Subquery<Long> sq = criteriaQuery.subquery(Long.class);
+        Root<EncounterLocation> elRoot = sq.from(EncounterLocation.class);
+        Root<Location> locRoot = sq.from(Location.class);
+        sq.select(elRoot.get(FieldNameConstants.ENCOUNTER_ID));
+        sq.where(cb.and(
+            cb.equal(elRoot.get(FieldNameConstants.ENCOUNTER_ID), root.get(FieldNameConstants.ID)),
+            cb.equal(elRoot.get(FieldNameConstants.STATUS_ENUM), EncounterActivityStatus.ACTIVE.getCode()),
+            cb.equal(elRoot.get(FieldNameConstants.FORM_ENUM), LocationForm.BED.getCode()),
+            cb.equal(elRoot.get(FieldNameConstants.LOCATION_ID), locRoot.get(FieldNameConstants.ID)),
+            cb.isFalse(locRoot.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(cb.lower(locRoot.get(FieldNameConstants.NAME)), exactLower)));
+        return cb.exists(sq);
+    }
+
+    /** 诊断描述与关键字忽略大小写全等。 */
+    private Predicate existsDiagnosisDescriptionExact(
+        Root<Encounter> root,
+        jakarta.persistence.criteria.CriteriaBuilder cb,
+        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery,
+        String exactLower) {
+        Subquery<Long> sq = criteriaQuery.subquery(Long.class);
+        Root<EncounterDiagnosis> diagRoot = sq.from(EncounterDiagnosis.class);
+        sq.select(cb.literal(1L));
+        sq.where(cb.and(
+            cb.equal(diagRoot.get(FieldNameConstants.ENCOUNTER_ID), root.get(FieldNameConstants.ID)),
+            cb.isFalse(diagRoot.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(cb.lower(diagRoot.get(FieldNameConstants.DESCRIPTION)), exactLower)));
+        return cb.exists(sq);
+    }
+
+    /**
      * 门诊护士站队列：就诊下存在待执行 completed 申请（服务/设备/注射或皮试药品）或退费中收费行。
      */
     private Predicate buildNurseStationRequestExistsAny(
@@ -523,48 +698,196 @@ public class EncounterContextCriteriaSupport {
     }
 
     /**
-     * 门诊列表排序：医生站队列按接诊时间，其余按创建时间。
+     * 门诊列表排序（BR-DOR-002）：待诊按开始时间升序；在诊/暂离按接诊时间降序。
+     *
+     * <p>多状态并集时本方法返回 {@link Sort#unsorted()}，实际 CASE 分桶排序由
+     * {@link #doctorStationUnionOrderSpecification()} 挂到 Criteria（避免单一 Sort 字段无法同时满足两套规则）。</p>
      *
      * @param query 门诊筛选（状态决定排序字段）
-     * @return Spring Data 排序
+     * @return Spring Data 排序；多状态并集为 unsorted
      */
     public Sort resolveOutpatientListSort(OutpatientEncounterPageQuery query) {
         if (query == null) {
             return Sort.by(Sort.Order.desc(FieldNameConstants.CREATED_AT));
         }
-        if (query.getStatusEnumIn() != null && query.getStatusEnumIn().size() > 1) {
-            // 多状态并集：按 startTime 倒序
-            return Sort.by(
-                Sort.Order.desc(FieldNameConstants.START_TIME),
-                Sort.Order.desc(FieldNameConstants.ID));
+        // 多状态并集：Pageable 不带 Sort，改由 doctorStationUnionOrderSpecification 写 CASE ORDER BY
+        if (isMultiStatusOutpatientQuery(query)) {
+            return Sort.unsorted();
         }
         if (query.getStatusEnumIn() != null && query.getStatusEnumIn().size() == 1) {
-            String onlyStatus = query.getStatusEnumIn().get(0);
-            if (EncounterStatus.IN_PROGRESS.getCode().equals(onlyStatus)) {
-                // 仅接诊中：按 receptionTime
-                return Sort.by(
-                    Sort.Order.desc(FieldNameConstants.RECEPTION_TIME),
-                    Sort.Order.desc(FieldNameConstants.ID));
-            }
-            if (EncounterStatus.PLANNED.getCode().equals(onlyStatus)
-                || EncounterStatus.REGISTERED.getCode().equals(onlyStatus)) {
-                return Sort.by(
-                    Sort.Order.desc(FieldNameConstants.START_TIME),
-                    Sort.Order.desc(FieldNameConstants.ID));
-            }
-            return Sort.by(Sort.Order.desc(FieldNameConstants.CREATED_AT));
+            return resolveOutpatientSortByStatusCode(query.getStatusEnumIn().get(0));
         }
-        if (EncounterStatus.IN_PROGRESS.getCode().equals(query.getStatusEnum())) {
+        if (StringUtils.isNotBlank(query.getStatusEnum())) {
+            return resolveOutpatientSortByStatusCode(query.getStatusEnum());
+        }
+        return Sort.by(Sort.Order.desc(FieldNameConstants.CREATED_AT));
+    }
+
+    /**
+     * 是否门诊医生站缺省/显式多状态并集查询（需 CASE 分桶排序）。
+     *
+     * @param query 门诊分页查询
+     * @return true 表示 statusEnumIn 含多个状态码
+     */
+    public boolean isMultiStatusOutpatientQuery(OutpatientEncounterPageQuery query) {
+        if (query == null) {
+            return false;
+        }
+        if (query.getStatusEnumIn() == null) {
+            return false;
+        }
+        return query.getStatusEnumIn().size() > 1;
+    }
+
+    /**
+     * 医生站多状态并集 ORDER BY：待诊桶 startTime 升序，在诊/暂离桶 receptionTime 降序，其余桶 startTime 降序。
+     *
+     * <p>count 查询不挂 orderBy。前端按待诊/在诊 Tab 过滤后，同桶内相对序仍符合业务规则。</p>
+     *
+     * @return 仅附加排序的规约（谓词恒真）
+     */
+    public Specification<Encounter> doctorStationUnionOrderSpecification() {
+        return this.doctorStationUnionOrderSpecification(null);
+    }
+
+    /**
+     * 医生站多状态并集 ORDER BY；关键字非空时精确命中升序在前，再接状态分桶。
+     *
+     * @param trimmedKeyword 已 trim 关键字；空白则仅分桶排序
+     * @return 仅附加排序的规约（谓词恒真）
+     */
+    public Specification<Encounter> doctorStationUnionOrderSpecification(String trimmedKeyword) {
+        return (root, query, cb) -> {
+            // count 查询禁止挂 ORDER BY，避免部分库在 count 上拒绝对表达式排序
+            if (query == null) {
+                return cb.conjunction();
+            }
+            if (Long.class.equals(query.getResultType()) || long.class.equals(query.getResultType())) {
+                return cb.conjunction();
+            }
+
+            List<String> waitingCodes = List.of(
+                EncounterStatus.PLANNED.getCode(),
+                EncounterStatus.REGISTERED.getCode(),
+                EncounterStatus.TRIAGED.getCode());
+            List<String> inProgressCodes = List.of(
+                EncounterStatus.IN_PROGRESS.getCode(),
+                EncounterStatus.ON_HOLD.getCode());
+
+            // 桶序：待诊 → 在诊/暂离 → 诊毕等，保证「全部」Tab 可读，且过滤后同桶相对序正确
+            Expression<Object> statusBucket = cb.selectCase()
+                .when(root.get(FieldNameConstants.STATUS_ENUM).in(waitingCodes), 0)
+                .when(root.get(FieldNameConstants.STATUS_ENUM).in(inProgressCodes), 1)
+                .otherwise(2);
+
+            // 待诊桶：挂号/开始时间升序（先挂号先看诊）
+            Expression<LocalDateTime> waitingStartTime = cb.<LocalDateTime>selectCase()
+                .when(
+                    root.get(FieldNameConstants.STATUS_ENUM).in(waitingCodes),
+                    root.get(FieldNameConstants.START_TIME))
+                .otherwise(cb.nullLiteral(LocalDateTime.class));
+
+            // 在诊/暂离桶：接诊时间降序（后接诊在上）
+            Expression<LocalDateTime> inProgressReceptionTime = cb.<LocalDateTime>selectCase()
+                .when(
+                    root.get(FieldNameConstants.STATUS_ENUM).in(inProgressCodes),
+                    root.get(FieldNameConstants.RECEPTION_TIME))
+                .otherwise(cb.nullLiteral(LocalDateTime.class));
+
+            // 诊毕等其余桶：开始时间降序
+            Expression<LocalDateTime> otherStartTime = cb.<LocalDateTime>selectCase()
+                .when(
+                    cb.not(root.get(FieldNameConstants.STATUS_ENUM).in(
+                        List.of(
+                            EncounterStatus.PLANNED.getCode(),
+                            EncounterStatus.REGISTERED.getCode(),
+                            EncounterStatus.TRIAGED.getCode(),
+                            EncounterStatus.IN_PROGRESS.getCode(),
+                            EncounterStatus.ON_HOLD.getCode()))),
+                    root.get(FieldNameConstants.START_TIME))
+                .otherwise(cb.nullLiteral(LocalDateTime.class));
+
+            List<Order> orders = new ArrayList<>();
+            // B.2.1：有关键字时精确命中置顶，再接状态分桶
+            if (StringUtils.isNotEmpty(trimmedKeyword)) {
+                Expression<Integer> exactRank = this.encounterKeywordExactRankExpression(
+                    cb, root, query, trimmedKeyword, true, true, false);
+                orders.add(cb.asc(exactRank));
+            }
+            orders.add(cb.asc(statusBucket));
+            orders.add(cb.asc(waitingStartTime));
+            orders.add(cb.desc(inProgressReceptionTime));
+            orders.add(cb.desc(otherStartTime));
+            orders.add(cb.desc(root.get(FieldNameConstants.ID)));
+            query.orderBy(orders);
+            return cb.conjunction();
+        };
+    }
+
+    /**
+     * 按单状态码解析门诊列表 Sort。
+     *
+     * @param statusCode EncounterStatus 持久化 code
+     * @return 对应业务键的 Sort
+     */
+    private Sort resolveOutpatientSortByStatusCode(String statusCode) {
+        // 待诊（含待挂号/已分诊单查）：开始时间升序
+        if (isWaitingReceptionStatus(statusCode)) {
+            return Sort.by(
+                Sort.Order.asc(FieldNameConstants.START_TIME),
+                Sort.Order.asc(FieldNameConstants.ID));
+        }
+        // 在诊/暂离：接诊时间降序
+        if (isInProgressOrHoldStatus(statusCode)) {
             return Sort.by(
                 Sort.Order.desc(FieldNameConstants.RECEPTION_TIME),
                 Sort.Order.desc(FieldNameConstants.ID));
         }
-        if (EncounterStatus.PLANNED.getCode().equals(query.getStatusEnum())) {
-            return Sort.by(
-                Sort.Order.desc(FieldNameConstants.START_TIME),
-                Sort.Order.desc(FieldNameConstants.ID));
+        // 诊毕等其余：开始时间降序
+        return Sort.by(
+            Sort.Order.desc(FieldNameConstants.START_TIME),
+            Sort.Order.desc(FieldNameConstants.ID));
+    }
+
+    /**
+     * 是否待接诊态（排队叫号按挂号时间升序）。
+     *
+     * @param statusCode 就诊状态 code
+     * @return true 表示 PLANNED/REGISTERED/TRIAGED
+     */
+    private boolean isWaitingReceptionStatus(String statusCode) {
+        if (statusCode == null) {
+            return false;
         }
-        return Sort.by(Sort.Order.desc(FieldNameConstants.CREATED_AT));
+        if (EncounterStatus.PLANNED.getCode().equals(statusCode)) {
+            return true;
+        }
+        if (EncounterStatus.REGISTERED.getCode().equals(statusCode)) {
+            return true;
+        }
+        if (EncounterStatus.TRIAGED.getCode().equals(statusCode)) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 是否在诊或暂离（按接诊时间降序）。
+     *
+     * @param statusCode 就诊状态 code
+     * @return true 表示 IN_PROGRESS/ON_HOLD
+     */
+    private boolean isInProgressOrHoldStatus(String statusCode) {
+        if (statusCode == null) {
+            return false;
+        }
+        if (EncounterStatus.IN_PROGRESS.getCode().equals(statusCode)) {
+            return true;
+        }
+        if (EncounterStatus.ON_HOLD.getCode().equals(statusCode)) {
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -579,6 +902,10 @@ public class EncounterContextCriteriaSupport {
         if (query != null) {
             pageNo = query.springPageIndex();
             pageSize = query.getBoundedPageSize();
+        }
+        // B.2.1：关键字非空时无 Sort，保留 Spec 内精确优先 ORDER BY
+        if (query != null && StringUtils.isNotEmpty(query.getKeyword())) {
+            return PageRequest.of(pageNo, pageSize);
         }
         return PageRequest.of(pageNo, pageSize, this.resolveInpatientSort(query));
     }
@@ -723,7 +1050,7 @@ public class EncounterContextCriteriaSupport {
     }
 
     /**
-     * 护士站列表状态收窄：支持默认在院并集与召回列表 {@code SETTLED_DISCHARGED}（AS-IP-NUR-001 BR-IP-NUR-012）。
+     * 护士站列表状态收窄：默认在院并集；{@code statusEnumIn} 可由应用层预解析后传入。
      */
     private void applyNurseStationStatusScope(
         List<Predicate> predicates,
@@ -739,42 +1066,16 @@ public class EncounterContextCriteriaSupport {
     }
 
     /**
-     * 解析护士站状态筛选：优先 {@code statusEnumIn}，其次 {@code nurseStationStatusFilter} 常量。
+     * 解析护士站状态筛选：优先 {@code statusEnumIn}；{@code nurseStationStatusFilter} 已废止不再解析。
      */
     private Collection<String> resolveNurseStationStatusEnumIn(InpatientEncounterPageQuery query) {
         if (query.getStatusEnumIn() != null && !query.getStatusEnumIn().isEmpty()) {
             return query.getStatusEnumIn();
         }
-        String filter = query.getNurseStationStatusFilter();
-        if (StringUtils.isEmpty(filter)) {
-            return Collections.emptyList();
-        }
-        if (InpatientNurseStationConstants.STATUS_FILTER_SETTLED_DISCHARGED.equals(filter.trim())) {
-            // 召回列表：COMPLETED + DISCHARGED 并集（AS-IP-NUR-001）
-            return Arrays.asList(
-                EncounterStatus.COMPLETED.getCode(),
-                EncounterStatus.DISCHARGED.getCode());
-        }
-        return Collections.singletonList(filter.trim());
+        return Collections.emptyList();
     }
 
-    /**
-     * 召回列表是否包含 {@code DISCHARGED}：须改用末次已完成病区地理收窄，而非活动床/病区。
-     */
-    private boolean nurseStationNeedsRecallGeographicScope(InpatientEncounterPageQuery query) {
-        Collection<String> statusIn = this.resolveNurseStationStatusEnumIn(query);
-        if (statusIn == null || statusIn.isEmpty()) {
-            return false;
-        }
-        for (String code : statusIn) {
-            if (EncounterStatus.DISCHARGED.getCode().equals(code)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** 护士站地理收窄：召回列表走末次 WARD，否则活动床/病区 + 预解析床位。 */
+    /** 护士站地理收窄：活动床/病区 + 预解析床位（默认在院列表）。 */
     private void applyNurseStationGeographicScope(
         List<Predicate> predicates,
         Root<Encounter> root,
@@ -783,12 +1084,6 @@ public class EncounterContextCriteriaSupport {
         InpatientEncounterPageQuery query,
         EncounterSessionScope scope,
         InpatientEncounterLocationScope locationScope) {
-        // 已出院结算/已清床召回列表：DISCHARGED 行无活动位置，按末次已完成 WARD 或活动床口径并集收窄。
-        if (this.nurseStationNeedsRecallGeographicScope(query)) {
-            this.applyNurseStationRecallGeographicScope(
-                predicates, root, cb, criteriaQuery, query, scope, locationScope);
-            return;
-        }
         predicates.add(this.existsAnyActiveWardOrBed(root, cb, criteriaQuery));
         if (query.getHouseId() != null) {
             List<Long> bedIds = locationScope.houseBedIds();
@@ -853,6 +1148,12 @@ public class EncounterContextCriteriaSupport {
         Predicate nameLike = this.existsPatientNameLike(root, cb, criteriaQuery, pattern);
         Predicate bedLike = this.existsActiveBedNameLike(root, cb, criteriaQuery, pattern);
         predicates.add(cb.or(busNoLike, nameLike, bedLike));
+        // B.2.1：住院队列关键字（单号/姓名/床位）精确置顶
+        this.applyEncounterKeywordExactFirstOrder(
+            criteriaQuery, cb, root, query.getKeyword().trim(), true, true, true,
+            List.of(
+                cb.desc(root.get(FieldNameConstants.START_TIME)),
+                cb.desc(root.get(FieldNameConstants.ID))));
     }
 
     /** 患者姓名模糊 exists 子查询。 */
@@ -1127,130 +1428,5 @@ public class EncounterContextCriteriaSupport {
             parts.add(this.existsActiveBedIn(root, cb, criteriaQuery, allBedIds));
         }
         return cb.or(parts.toArray(new Predicate[0]));
-    }
-
-    /**
-     * 出院召回列表地理收窄：{@code COMPLETED} 仍按活动床/病区；{@code DISCHARGED} 按末次已完成 {@code WARD}。
-     */
-    private void applyNurseStationRecallGeographicScope(
-        List<Predicate> predicates,
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb,
-        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery,
-        InpatientEncounterPageQuery query,
-        EncounterSessionScope scope,
-        InpatientEncounterLocationScope locationScope) {
-        Collection<String> statusIn = this.resolveNurseStationStatusEnumIn(query);
-        boolean includesCompleted = false;
-        boolean includesDischarged = false;
-        for (String code : statusIn) {
-            if (EncounterStatus.COMPLETED.getCode().equals(code)) {
-                includesCompleted = true;
-            }
-            if (EncounterStatus.DISCHARGED.getCode().equals(code)) {
-                includesDischarged = true;
-            }
-        }
-        List<Long> wardIds = this.resolveManagedWardIds(query, scope);
-        List<Predicate> scopeParts = new ArrayList<>();
-        if (includesCompleted) {
-            scopeParts.add(this.buildNurseStationActiveGeographicPredicate(
-                root, cb, criteriaQuery, query, wardIds, locationScope));
-        }
-        if (includesDischarged) {
-            List<Long> dischargedWardIds;
-            if (query.getWardId() != null) {
-                // 召回列表显式病区：仅按该病区末次 WARD 轨迹收窄
-                dischargedWardIds = List.of(query.getWardId());
-            } else {
-                dischargedWardIds = wardIds;
-            }
-            if (dischargedWardIds == null || dischargedWardIds.isEmpty()) {
-                predicates.add(cb.disjunction());
-                return;
-            }
-            scopeParts.add(this.existsLastCompletedWardIn(root, cb, criteriaQuery, dischargedWardIds));
-        }
-        if (scopeParts.isEmpty()) {
-            predicates.add(cb.disjunction());
-            return;
-        }
-        predicates.add(cb.or(scopeParts.toArray(new Predicate[0])));
-    }
-
-    /**
-     * 召回列表中 {@code COMPLETED} 行仍要求存在活动病区或床位（与默认在院 BR-002 一致）。
-     */
-    private Predicate buildNurseStationActiveGeographicPredicate(
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb,
-        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery,
-        InpatientEncounterPageQuery query,
-        List<Long> wardIds,
-        InpatientEncounterLocationScope locationScope) {
-        if (query.getHouseId() != null) {
-            List<Long> bedIds = locationScope.houseBedIds();
-            if (bedIds.isEmpty()) {
-                return cb.disjunction();
-            }
-            return this.existsActiveBedIn(root, cb, criteriaQuery, bedIds);
-        }
-        if (query.getWardId() != null) {
-            return this.buildWardScopePredicate(root, cb, criteriaQuery, query.getWardId(), locationScope);
-        }
-        if (wardIds != null && !wardIds.isEmpty()) {
-            return this.existsActiveWardIn(root, cb, criteriaQuery, wardIds, locationScope);
-        }
-        return cb.disjunction();
-    }
-
-    /**
-     * 解析护士站管辖病区：请求显式传入优先，否则取会话解析结果。
-     */
-    private List<Long> resolveManagedWardIds(
-        InpatientEncounterPageQuery query,
-        EncounterSessionScope scope) {
-        List<Long> managedWardIds = query.getManagedWardIds();
-        if (managedWardIds == null || managedWardIds.isEmpty()) {
-            managedWardIds = scope.managedWardLocationIds();
-        }
-        List<Long> wardIds = new ArrayList<>();
-        if (managedWardIds == null) {
-            return wardIds;
-        }
-        for (Long wardId : managedWardIds) {
-            if (wardId != null) {
-                wardIds.add(wardId);
-            }
-        }
-        return wardIds;
-    }
-
-    /**
-     * 末次已完成病区轨迹落在管辖病区集合内（清床后召回列表地理归属）。
-     */
-    private Predicate existsLastCompletedWardIn(
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb,
-        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery,
-        Collection<Long> wardIds) {
-        Subquery<LocalDateTime> maxEndSq = criteriaQuery.subquery(LocalDateTime.class);
-        Root<EncounterLocation> maxRoot = maxEndSq.from(EncounterLocation.class);
-        maxEndSq.select(cb.greatest(maxRoot.<LocalDateTime>get(FieldNameConstants.END_TIME)));
-        maxEndSq.where(cb.and(
-            cb.equal(maxRoot.get(FieldNameConstants.ENCOUNTER_ID), root.get(FieldNameConstants.ID)),
-            cb.equal(maxRoot.get(FieldNameConstants.FORM_ENUM), LocationForm.WARD.getCode()),
-            cb.equal(maxRoot.get(FieldNameConstants.STATUS_ENUM), EncounterActivityStatus.COMPLETED.getCode())));
-
-        Subquery<Long> sq = criteriaQuery.subquery(Long.class);
-        Root<EncounterLocation> elRoot = sq.from(EncounterLocation.class);
-        sq.select(elRoot.get(FieldNameConstants.ENCOUNTER_ID));
-        sq.where(cb.and(
-            cb.equal(elRoot.get(FieldNameConstants.ENCOUNTER_ID), root.get(FieldNameConstants.ID)),
-            cb.equal(elRoot.get(FieldNameConstants.FORM_ENUM), LocationForm.WARD.getCode()),
-            cb.equal(elRoot.get(FieldNameConstants.STATUS_ENUM), EncounterActivityStatus.COMPLETED.getCode()),
-            elRoot.get(FieldNameConstants.LOCATION_ID).in(wardIds),
-            cb.equal(elRoot.get(FieldNameConstants.END_TIME), maxEndSq)));
-        return cb.exists(sq);
     }
 }

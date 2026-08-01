@@ -5,9 +5,11 @@
 package com.openhis.chs.bridge.inventory.support;
 
 import static com.openhis.whale.core.application.util.StringUtils.isEmpty;
-import static com.openhis.whale.core.application.util.StringUtils.isNotEmpty;
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
+import com.openhis.chs.bridge.inventory.assembler.InventoryPlatformFieldAssembler;
+import com.openhis.chs.bridge.inventory.assembler.InventoryUploadBatchNoAssembler;
+import com.openhis.chs.bridge.inventory.assembler.InventoryUploadQuantityAssembler;
 import com.openhis.chs.domain.inventory.access.InventoryInitializeFillAccess;
 import com.openhis.chs.domain.share.constants.ChsInventoryConstants;
 import com.openhis.chs.domain.share.enums.InvChgType;
@@ -16,14 +18,18 @@ import com.openhis.chs.domain.inventory.command.InitializeInventoryPairCommand;
 import com.openhis.chs.domain.inventory.command.InvUploadLineCommand;
 import com.openhis.chs.domain.inventory.result.InitializeInventoryFillMeta;
 import com.openhis.chs.domain.inventory.service.YbInvUploadQueryService;
+import com.openhis.chs.domain.inventory.support.InventoryTracePolicySupport;
 import com.openhis.chs.domain.share.constants.ChsErrorCodes;
 import com.openhis.chs.gateway.support.ChsCurrentOperatorResolver;
+import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.PublicationStatus;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.workflow.inventoryitem.queries.InventoryItemPageQuery;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryItemModel;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
@@ -37,7 +43,6 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -54,11 +59,9 @@ import java.util.List;
 @RequiredArgsConstructor
 public class InventoryInitializeUploadContextLoader implements InventoryInitializeFillAccess {
 
-    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    private static final DateTimeFormatter DATE_TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
     private final InventoryItemQueryService inventoryItemQueryService;
     private final MedicationDefinitionQueryService medicationDefinitionQueryService;
+    private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
     private final PractitionerQueryService practitionerQueryService;
     private final ChsCurrentOperatorResolver currentOperatorResolver;
     private final YbInvUploadQueryService invUploadQueryService;
@@ -74,12 +77,18 @@ public class InventoryInitializeUploadContextLoader implements InventoryInitiali
         if (request.getMaxLines() != null && request.getMaxLines() > 0) {
             maxLines = request.getMaxLines();
         }
-        int startPage = request.getPageNo() != null && request.getPageNo() >= 0 ? request.getPageNo() : 0;
-        boolean skipInitialized = request.getSkipInitialized() == null || request.getSkipInitialized();
+        int startPage = 0;
+        if (request.getPageNo() != null && request.getPageNo() >= 0) {
+            startPage = request.getPageNo();
+        }
+        boolean skipInitialized = true;
+        if (request.getSkipInitialized() != null) {
+            skipInitialized = request.getSkipInitialized();
+        }
 
         String operatorName = resolveCurrentOperatorName();
-        String invDate = DATE_FMT.format(java.time.LocalDate.now());
-        String invChgTime = DATE_TIME_FMT.format(LocalDateTime.now());
+        String invDate = GeneralSharedConstants.DATE_DISPLAY_FORMATTER.format(java.time.LocalDate.now());
+        String invChgTime = GeneralSharedConstants.DATE_TIME_FORMATTER.format(LocalDateTime.now());
         Long tenantId = TenantUtils.getCurrentTenantId();
 
         InventoryItemPageQuery query = new InventoryItemPageQuery();
@@ -124,6 +133,10 @@ public class InventoryInitializeUploadContextLoader implements InventoryInitiali
                 if (medication == null) {
                     continue;
                 }
+                // 规范 manu_date/expy_end 必填：缺生产日期或有效期则本行跳过
+                if (item.getProductionDate() == null || item.getExpirationDate() == null) {
+                    continue;
+                }
                 InitializeInventoryPairCommand pair = buildPair(
                     item, medication, invDate, invChgTime, operatorName, request.getRemark());
                 if (pair != null) {
@@ -140,9 +153,13 @@ public class InventoryInitializeUploadContextLoader implements InventoryInitiali
         }
 
         request.setPairs(pairs);
+        Integer nextPageNo = null;
+        if (hasMore) {
+            nextPageNo = currentPage + 1;
+        }
         return new InitializeInventoryFillMeta()
             .setPageNo(startPage)
-            .setNextPageNo(hasMore ? currentPage + 1 : null)
+            .setNextPageNo(nextPageNo)
             .setHasMore(hasMore)
             .setTotalElements(totalElements)
             .setTotalPages(totalPages)
@@ -157,11 +174,36 @@ public class InventoryInitializeUploadContextLoader implements InventoryInitiali
         String operatorName,
         String remark
     ) {
-        String fixmedinsBchno = isNotEmpty(item.getLotNumber())
-            ? item.getLotNumber().trim() : trimToNull(medication.getBusNo());
+        // 批初始化无业务单据：以库存行主键作为机构批次流水号，保证同品种多批不撞键
+        String fixmedinsBchno = InventoryUploadBatchNoAssembler.buildFixmedinsBchno(String.valueOf(item.getId()));
         if (isEmpty(fixmedinsBchno)) {
             return null;
         }
+        // 库内 quantity 为拆零量 → 换成库存行操作单位数量（与 3502/3503 库房口径一致）
+        BigDecimal invCnt = InventoryUploadQuantityAssembler.splitQuantityToOperationUnit(
+            medication, item.getUnitCode(), item.getQuantity());
+        if (invCnt == null || invCnt.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        // 配对 3502 平台 pric 必填：取品种销售定价（包装锚）→ 换到库存操作单位；无价则跳过
+        BigDecimal packageSalePrice = chargeItemDefinitionQueryService.resolveFirstSalePriceValue(
+            TableNameConstants.MED_MEDICATION_DEFINITION, medication.getId());
+        if (packageSalePrice == null) {
+            return null;
+        }
+        BigDecimal opUnitPrice = InventoryUploadQuantityAssembler.convertUnitPricePackageAnchored(
+            medication,
+            medication.getPackageUnitCode(),
+            packageSalePrice,
+            item.getUnitCode());
+        if (opUnitPrice == null) {
+            opUnitPrice = MonetaryAmountSupport.scaleCalc(packageSalePrice);
+        }
+        String manuDate = item.getProductionDate().toLocalDate()
+            .format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
+        String expyEnd = item.getExpirationDate().toLocalDate()
+            .format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
+
         InvUploadLineCommand line3501 = new InvUploadLineCommand();
         line3501.setSourceLineId(item.getId());
         line3501.setMedListCodg(trimToNull(medication.getYbNo()));
@@ -169,20 +211,21 @@ public class InventoryInitializeUploadContextLoader implements InventoryInitiali
         line3501.setFixmedinsHilistName(medication.getName());
         line3501.setFixmedinsBchno(fixmedinsBchno);
         line3501.setManuLotnum(item.getLotNumber());
-        line3501.setInvCnt(item.getQuantity());
+        line3501.setInvCnt(invCnt);
+        // invdate：上报当天
         line3501.setInvdate(invDate);
-        line3501.setRxFlag(Boolean.TRUE.equals(medication.getRxFlag()) ? "1" : "0");
+        // 药典未维护处方标志 → 非处方药 0
+        line3501.setRxFlag(InventoryPlatformFieldAssembler.toRxFlagCode(medication.getRxFlag()));
+        // memo：initialize 请求 remark
         line3501.setMemo(remark);
-        if (item.getProductionDate() != null) {
-            line3501.setManuDate(item.getProductionDate().toLocalDate().format(DATE_FMT));
-        }
-        if (item.getExpirationDate() != null) {
-            line3501.setExpyEnd(item.getExpirationDate().toLocalDate().format(DATE_FMT));
-        }
+        line3501.setManuDate(manuDate);
+        line3501.setExpyEnd(expyEnd);
+        // 无医保目录编码：后续编排按 NO_YB_NO 跳过
         if (isEmpty(line3501.getMedListCodg())) {
             line3501.setTracePolicy(ChsInventoryConstants.TRACE_POLICY_NO_YB_NO);
         }
 
+        // 配对 3502：cnt=inv_cnt、pric=操作单位售价、inv_chg_type=106；初始化无库存追溯码 → trdn=整包装
         InvUploadLineCommand line3502 = new InvUploadLineCommand();
         line3502.setSourceLineId(item.getId());
         line3502.setMedListCodg(line3501.getMedListCodg());
@@ -190,20 +233,20 @@ public class InventoryInitializeUploadContextLoader implements InventoryInitiali
         line3502.setFixmedinsHilistName(line3501.getFixmedinsHilistName());
         line3502.setFixmedinsBchno(fixmedinsBchno);
         line3502.setManuLotnum(item.getLotNumber());
-        line3502.setCnt(item.getQuantity());
+        // 初始化 3502：cnt 与 3501 inv_cnt 同值且为正（106 其他入库）
+        line3502.setCnt(InvChgType.OTHER_IN.toSignedCnt(invCnt));
+        line3502.setPric(opUnitPrice);
         line3502.setInvChgType(InvChgType.OTHER_IN.getCode());
         line3502.setInvChgTime(invChgTime);
         line3502.setInvChgOpterName(operatorName);
         line3502.setRxFlag(line3501.getRxFlag());
         line3502.setMemo(remark);
+        line3502.setManuDate(manuDate);
+        line3502.setExpyEnd(expyEnd);
+        // DD §4.2：未扫默认 trdn_flag=1
+        line3502.setTrdnFlag(InventoryTracePolicySupport.resolveTrdnFlagUnscannedDefault());
         if (isEmpty(line3502.getMedListCodg())) {
             line3502.setTracePolicy(ChsInventoryConstants.TRACE_POLICY_NO_YB_NO);
-        }
-        if (item.getProductionDate() != null) {
-            line3502.setManuDate(line3501.getManuDate());
-        }
-        if (item.getExpirationDate() != null) {
-            line3502.setExpyEnd(line3501.getExpyEnd());
         }
 
         return new InitializeInventoryPairCommand()

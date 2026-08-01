@@ -38,6 +38,7 @@ import com.openhis.health.domain.administration.location.service.LocationQuerySe
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.share.enums.SupplyCategory;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
@@ -265,12 +266,21 @@ public class InventoryDepartmentDeptIssueReturnMapperImpl implements InventoryDe
             dto.setApproverId(head.getApproverId());
             dto.setApplyTime(maxApply);
             dto.setApprovalTime(approvalTime);
-            if (head.getPurposeLocationId() != null) {
-                Long orgId = this.resolveOrganizationIdForLocation(head.getPurposeLocationId());
-                if (orgId != null) {
-                    dto.setConsumingOrganizationId(String.valueOf(orgId));
-                }
+            // 领用科室：优先落库 consumingOrganizationId，历史单回落药房上级科室
+            Long orgId = this.resolveConsumingOrganizationId(head);
+            if (orgId != null) {
+                dto.setConsumingOrganizationId(String.valueOf(orgId));
             }
+            // —— 侧栏「总金额」：明细行 totalPrice 求和（BR-MON-001 计算刻度加总）。——
+            BigDecimal totalAmount = BigDecimal.ZERO;
+            for (SupplyRequestModel line : lines) {
+                if (line == null || line.getTotalPrice() == null) {
+                    continue;
+                }
+                totalAmount = totalAmount.add(MonetaryAmountSupport.scaleCalc(line.getTotalPrice()));
+            }
+            dto.setTotalPrice(totalAmount);
+            dto.setTotalAmount(totalAmount);
             out.add(dto);
         }
         return out;
@@ -331,11 +341,10 @@ public class InventoryDepartmentDeptIssueReturnMapperImpl implements InventoryDe
             }
         }
         res.setApprovalTime(approvalTime);
-        if (head.getPurposeLocationId() != null) {
-            Long orgId = this.resolveOrganizationIdForLocation(head.getPurposeLocationId());
-            if (orgId != null) {
-                res.setConsumingOrganizationId(String.valueOf(orgId));
-            }
+        // 领用科室：优先落库 consumingOrganizationId，历史单回落药房上级科室
+        Long orgId = this.resolveConsumingOrganizationId(head);
+        if (orgId != null) {
+            res.setConsumingOrganizationId(String.valueOf(orgId));
         }
         List<DeptIssueReturnDetailLineDto> detailLines = new ArrayList<>();
         for (SupplyRequestModel line : lines) {
@@ -374,6 +383,9 @@ public class InventoryDepartmentDeptIssueReturnMapperImpl implements InventoryDe
         dto.setUnitCode(line.getUnitCode());
         dto.setPrice(line.getPrice());
         dto.setTotalPrice(line.getTotalPrice());
+        // 效期/行备注：供前端「有效期」「备注」列回显
+        dto.setEndTime(line.getEndTime());
+        dto.setRemake(line.getRemake());
         dto.setItemName(null);
         dto.setSpec(null);
         dto.setManufacturer(null);
@@ -385,10 +397,11 @@ public class InventoryDepartmentDeptIssueReturnMapperImpl implements InventoryDe
     /**
      * 将新建科室退领请求装配为领域 CreateDeptIssueReturnCommand。
      *
-     * @param request     新建请求
-     * @param operatorId  操作人
-     * @param applicantId 制单人员
-     * @param busNo       预分配业务单号；新建时为 null
+     * @param request                   新建请求
+     * @param operatorId                操作人
+     * @param applicantId               制单人员
+     * @param busNo                     预分配业务单号；新建时为 null
+     * @param consumingOrganizationId   领用科室（自源领用单继承）
      * @return 领域写命令
      */
     @Override
@@ -396,7 +409,8 @@ public class InventoryDepartmentDeptIssueReturnMapperImpl implements InventoryDe
         CreateDeptIssueReturnRequest request,
         Long operatorId,
         Long applicantId,
-        String busNo) {
+        String busNo,
+        Long consumingOrganizationId) {
         if (request == null) {
             throw new IllegalArgumentException("request 不能为空");
         }
@@ -411,16 +425,18 @@ public class InventoryDepartmentDeptIssueReturnMapperImpl implements InventoryDe
             busNo,
             revisionMode,
             operatorId,
-            applicantId);
+            applicantId,
+            consumingOrganizationId);
     }
 
     /**
      * 将修订科室退领请求装配为领域 CreateDeptIssueReturnCommand（首行 busNo 表示同号全量对齐）。
      *
-     * @param request               修订请求
-     * @param operatorId            操作人
-     * @param applicantId           制单人员
-     * @param originalBusNoSnapshot 源领用单号快照（自既有退领单头读取）
+     * @param request                   修订请求
+     * @param operatorId                操作人
+     * @param applicantId               制单人员
+     * @param originalBusNoSnapshot     源领用单号快照
+     * @param consumingOrganizationId   领用科室（自源领用单继承）
      * @return 领域写命令
      */
     @Override
@@ -428,7 +444,8 @@ public class InventoryDepartmentDeptIssueReturnMapperImpl implements InventoryDe
         UpdateDeptIssueReturnRequest request,
         Long operatorId,
         Long applicantId,
-        String originalBusNoSnapshot) {
+        String originalBusNoSnapshot,
+        Long consumingOrganizationId) {
         if (request == null) {
             throw new IllegalArgumentException("request 不能为空");
         }
@@ -446,7 +463,8 @@ public class InventoryDepartmentDeptIssueReturnMapperImpl implements InventoryDe
             revisionBusNo,
             true,
             operatorId,
-            applicantId);
+            applicantId,
+            consumingOrganizationId);
     }
 
     /**
@@ -739,14 +757,16 @@ public class InventoryDepartmentDeptIssueReturnMapperImpl implements InventoryDe
             res.setPurposeLocationId(String.valueOf(purposeLocationId));
             this.locationQueryService.findOptionalById(purposeLocationId).ifPresent(location -> {
                 res.setPurposeLocationName(location.getName());
-                Long orgId = location.getOrganizationId();
-                if (orgId != null) {
-                    Set<Long> orgIds = new HashSet<>();
-                    orgIds.add(orgId);
-                    Map<Long, String> orgNameById = this.organizationQueryService.findOrganizationNamesByIds(orgIds);
-                    res.setConsumingOrganizationName(orgNameById.get(orgId));
-                }
             });
+        }
+        // 领用科室：优先落库 consumingOrganizationId，历史单回落药房上级科室
+        Long orgId = this.resolveConsumingOrganizationId(head);
+        if (orgId != null) {
+            res.setConsumingOrganizationId(String.valueOf(orgId));
+            Set<Long> orgIds = new HashSet<>();
+            orgIds.add(orgId);
+            Map<Long, String> orgNameById = this.organizationQueryService.findOrganizationNamesByIds(orgIds);
+            res.setConsumingOrganizationName(orgNameById.get(orgId));
         }
         List<LinkableIssueReturnLineDto> lineDtos = new ArrayList<>();
         Map<String, ProductDefinitionDisplayDto> safeProducts = productByKey;
@@ -796,10 +816,20 @@ public class InventoryDepartmentDeptIssueReturnMapperImpl implements InventoryDe
         dto.setReturnableQuantity(snapshot.getReturnableQuantity());
         dto.setUnitCode(snapshot.getUnitCode());
         dto.setPrice(snapshot.getPrice());
+        // —— 可退余量 × 单价 → 金额初值（BR-MON-001）；详情保存后仍以落库 totalPrice 为准。——
+        if (snapshot.getPrice() != null && snapshot.getReturnableQuantity() != null) {
+            dto.setTotalPrice(
+                MonetaryAmountSupport.lineTotal(snapshot.getPrice(), snapshot.getReturnableQuantity()));
+        } else {
+            dto.setTotalPrice(null);
+        }
+        dto.setEndTime(snapshot.getEndTime());
+        dto.setRemake(snapshot.getRemake());
         // —— 产品展示富化：行价仍取源领用落库价，不回落当前目录价。——
         if (product != null) {
             dto.setProductName(product.getProductName());
             dto.setSpecification(product.getTotalVolume());
+            dto.setManufacturer(product.getManufacturer());
             dto.setUnitCodeDictText(
                 com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler
                     .resolveUnitDisplayName(null, snapshot.getUnitCode(), product));
@@ -836,9 +866,10 @@ public class InventoryDepartmentDeptIssueReturnMapperImpl implements InventoryDe
      * @param purposeLocationId 科室药房位置主键
      * @param lines             写模型明细
      * @param revisionBusNo     修订业务单号（仅首行写入）；新建时为 null
-     * @param revisionMode      是否修订模式（首行写入 revisionBusNo）
-     * @param operatorId        操作人
-     * @param applicantId       制单人员
+     * @param revisionMode              是否修订模式（首行写入 revisionBusNo）
+     * @param operatorId                操作人
+     * @param applicantId               制单人员
+     * @param consumingOrganizationId   领用科室（自源领用单继承）
      * @return 领域写命令
      */
     private CreateDeptIssueReturnCommand buildCreateDeptIssueReturnCommand(
@@ -848,7 +879,8 @@ public class InventoryDepartmentDeptIssueReturnMapperImpl implements InventoryDe
         String revisionBusNo,
         boolean revisionMode,
         Long operatorId,
-        Long applicantId) {
+        Long applicantId,
+        Long consumingOrganizationId) {
         CreateDeptIssueReturnCommand command = new CreateDeptIssueReturnCommand();
         command.setOperatorId(operatorId);
         List<CreateDeptIssueReturnCommand.CreateDeptIssueReturnItemCommand> items = new ArrayList<>();
@@ -890,10 +922,14 @@ public class InventoryDepartmentDeptIssueReturnMapperImpl implements InventoryDe
             item.setCategoryEnum(categoryCode);
             item.setPurposeTypeEnum(purposeTypeCode);
             item.setPurposeLocationId(purposeLocationId);
+            // 领用科室：自源领用单继承，禁止客户端覆盖
+            item.setConsumingOrganizationId(consumingOrganizationId);
             item.setLotNumber(line.getLotNumber());
             item.setTraceNo(line.getTraceNo());
             item.setPrice(line.getPrice());
             item.setTotalPrice(this.resolveLineTotalPrice(line));
+            item.setEndTime(line.getEndTime());
+            item.setRemake(line.getRemake());
             item.setApplicantId(applicantId);
             item.setApplyTime(applyTime);
             item.setOccurrenceTime(null);
@@ -904,7 +940,7 @@ public class InventoryDepartmentDeptIssueReturnMapperImpl implements InventoryDe
     }
 
     /**
-     * 按行单价与数量计算行总价；缺单价或数量时返回 null。
+     * 按行单价与数量计算行总价（BR-MON-001 计算刻度）；缺单价或数量时返回 null。
      *
      * @param line 写模型明细行
      * @return 行总价；无法计算时 null
@@ -913,11 +949,32 @@ public class InventoryDepartmentDeptIssueReturnMapperImpl implements InventoryDe
         if (line == null || line.getPrice() == null || line.getItemQuantity() == null) {
             return null;
         }
-        return line.getPrice().multiply(line.getItemQuantity());
+        return MonetaryAmountSupport.lineTotal(line.getPrice(), line.getItemQuantity());
     }
 
     /**
-     * 由科室药房库位主键解析上级科室 organization_id。
+     * 解析领用科室 organization 主键：优先落库 {@code consumingOrganizationId}，历史单回落科室药房上级科室。
+     *
+     * @param head 供应请求表头行
+     * @return 领用科室主键；无法解析时 null
+     */
+    private Long resolveConsumingOrganizationId(SupplyRequestModel head) {
+        if (head == null) {
+            return null;
+        }
+        // 新单：直接用落库领用科室
+        if (head.getConsumingOrganizationId() != null) {
+            return head.getConsumingOrganizationId();
+        }
+        // 历史单：回落科室药房 Location.organization_id
+        if (head.getPurposeLocationId() != null) {
+            return this.resolveOrganizationIdForLocation(head.getPurposeLocationId());
+        }
+        return null;
+    }
+
+    /**
+     * 由科室药房库位主键解析上级科室 organization_id（历史单回落）。
      *
      * @param locationId 科室药房库位主键
      * @return 上级科室主键；库位不存在或未配置时 null

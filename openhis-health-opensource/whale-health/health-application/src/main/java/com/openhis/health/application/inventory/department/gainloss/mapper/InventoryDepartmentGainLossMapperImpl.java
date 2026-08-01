@@ -244,6 +244,7 @@ public class InventoryDepartmentGainLossMapperImpl implements InventoryDepartmen
             LocalDateTime maxApply = null;
             LocalDateTime maxOccurrence = null;
             BigDecimal profitLossSum = BigDecimal.ZERO;
+            BigDecimal gainLossAmountSum = BigDecimal.ZERO;
             BigDecimal actualAmountSum = BigDecimal.ZERO;
             int itemCount = 0;
             for (SupplyRequestModel line : lines) {
@@ -263,6 +264,10 @@ public class InventoryDepartmentGainLossMapperImpl implements InventoryDepartmen
                 }
                 if (line.getItemQuantity() != null) {
                     profitLossSum = profitLossSum.add(line.getItemQuantity());
+                }
+                // 侧栏总金额：盈亏金额（可负），勿用实盘 totalPrice
+                if (line.getProfitLossPrice() != null) {
+                    gainLossAmountSum = gainLossAmountSum.add(line.getProfitLossPrice());
                 }
                 if (line.getTotalPrice() != null) {
                     actualAmountSum = actualAmountSum.add(line.getTotalPrice());
@@ -292,6 +297,7 @@ public class InventoryDepartmentGainLossMapperImpl implements InventoryDepartmen
             dto.setOccurrenceTime(maxOccurrence);
             dto.setItemCount(Integer.valueOf(itemCount));
             dto.setGainLossQuantitySum(profitLossSum);
+            dto.setGainLossAmountSum(gainLossAmountSum);
             dto.setActualAmountSum(actualAmountSum);
             out.add(dto);
         }
@@ -714,14 +720,8 @@ public class InventoryDepartmentGainLossMapperImpl implements InventoryDepartmen
         item.setBusNo(request.getBusNo());
         item.setApproverId(operatorId);
         item.setApprovalClock(null);
-        String mergedReason;
-        // 优先取文本原因，否则回落原因码
-        if (StringUtils.isEmpty(request.getChangeReason())) {
-            mergedReason = request.getChangeReasonCode();
-        } else {
-            mergedReason = request.getChangeReason();
-        }
-        item.setChangeReasonCode(mergedReason);
+        // 应用层 rejectReason → 领域项 changeReasonCode（落供应行 reason）
+        item.setChangeReasonCode(request.getRejectReason());
         command.setItem(item);
         return command;
     }

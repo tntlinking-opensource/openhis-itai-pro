@@ -4,6 +4,7 @@
  */
 package com.openhis.health.application.inventory.pharmacy.stockin.service;
 
+import com.openhis.health.application.shared.inventory.InventoryListPractitionerNameResolver;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogEditorHintsAssembler;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
@@ -72,6 +73,7 @@ public class InventoryPharmacyStockInAppService {
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final InventoryPharmacyStockInMapper pharmacyStockInMapper;
+    private final InventoryListPractitionerNameResolver inventoryListPractitionerNameResolver;
 
     /**
      * 加载页主数据（库位、人员、状态等下拉）。
@@ -89,9 +91,9 @@ public class InventoryPharmacyStockInAppService {
             List<Location> warehouses = locationQueryService.listAllActiveWarehouses();
             List<Location> gatedPharmacies = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(pharmacies);
             List<Location> gatedWarehouses = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(warehouses);
-            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
                 WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
-            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
                 WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE, resolvedOrg);
             return pharmacyStockInMapper.toLoadPharmacyStockInFormInitResponse(
                 pharmacyStockInMapper.toOptionDtoListFromLocations(gatedPharmacies),
@@ -169,6 +171,7 @@ public class InventoryPharmacyStockInAppService {
             List<PharmacyStockInListRowDto> records = this.pharmacyStockInMapper.toPharmacyStockInListAggregated(busNos, lines);
             this.enrichPharmacyStockInListSourceLocationNames(records);
             this.enrichPharmacyStockInListStatusEnumText(records);
+            this.enrichPharmacyStockInListDisplayNames(records, lines);
             int pageNo = request.getPageNo().intValue();
             int pageSize = listQuery.getBoundedPageSize();
             return this.pharmacyStockInMapper.toPagePharmacyStockInsResponse(mergedTotal, pageNo, pageSize, records);
@@ -374,6 +377,53 @@ public class InventoryPharmacyStockInAppService {
             SupplyStatus st = EnumUtil.fromCode(SupplyStatus.class, row.getStatusEnum().trim());
             if (st != null) {
                 row.setStatusEnumText(st.getDisplay());
+            }
+        }
+    }
+
+    /**
+     * 药房入库列表行 enrich：批量解析制单人/审批人姓名（IF-PHA-IN-02 侧栏卡片展示）。
+     *
+     * @param rows        当前页聚合列表行
+     * @param detailLines 当前页供应请求明细（非空门禁；主键以 rows 为准）
+     */
+    private void enrichPharmacyStockInListDisplayNames(
+        List<PharmacyStockInListRowDto> rows,
+        List<SupplyRequestModel> detailLines) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        if (detailLines == null || detailLines.isEmpty()) {
+            return;
+        }
+        Set<Long> practitionerIds = new HashSet<>();
+        for (PharmacyStockInListRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getApplicantId() != null) {
+                practitionerIds.add(row.getApplicantId());
+            }
+            if (row.getApproverId() != null) {
+                practitionerIds.add(row.getApproverId());
+            }
+        }
+        Map<Long, String> practitionerNameById = this.inventoryListPractitionerNameResolver.resolveNamesByIds(practitionerIds);
+        for (PharmacyStockInListRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getApplicantId() != null) {
+                String creatorName = practitionerNameById.get(row.getApplicantId());
+                if (creatorName != null) {
+                    row.setCreatorName(creatorName);
+                }
+            }
+            if (row.getApproverId() != null) {
+                String approverName = practitionerNameById.get(row.getApproverId());
+                if (approverName != null) {
+                    row.setApproverName(approverName);
+                }
             }
         }
     }

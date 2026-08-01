@@ -14,11 +14,13 @@ import org.springframework.stereotype.Component;
  *
  * <p><b>职责：</b>将 domain {@link CrbFrontSoftwareSsoAccess} 委托至 {@link NationalFrontSoftwareClient} 完成 HTTP 出站。</p>
  * <p><b>实现端口：</b>{@link com.openhis.whale.crb.domain.push.access.CrbFrontSoftwareSsoAccess}</p>
- * <p><b>调用方：</b>{@code InfectiousIntegrationAppService}</p>
+ * <p><b>调用方：</b>已废止</p>
  * <p><b>架构边界：</b>bridge 层组装 gateway 出站上下文；application 只依赖 domain 端口。</p>
  * <p><b>迁移阶段：</b>P10-A</p>
+ *
+ * @deprecated 禁止使用 — SSO 已废止，保留仅供 gateway 联调遗留编译。
  */
-
+@Deprecated
 @Component
 @RequiredArgsConstructor
 public class CrbFrontSoftwareSsoAccessAdapter implements CrbFrontSoftwareSsoAccess {

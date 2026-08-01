@@ -143,6 +143,13 @@ public class DoctorStationPatientQueueItemDto implements InpatientAccountBalance
     private LocalDateTime startTime;
 
     /**
+     * 出院/就诊结束时间（读模型 {@code endTime}；在院未出院时为 null）。
+     */
+    @Schema(description = "出院时间")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    private LocalDateTime endTime;
+
+    /**
      * 入科时间：读模型当前未投影，与护士站列表口径一致为 null。
      */
     @Schema(description = "入科时间")

@@ -22,9 +22,6 @@ public class SkinTestMedicationDraftSpec {
     /** 费用性质/合同。 */
     private Long contractId;
 
-    /** 诊断目录 id。 */
-    private Long conditionDefinitionId;
-
-    /** 就诊诊断关联 id。 */
-    private Long encounterDiagnosisId;
+    /** 绑定就诊诊断主键有序串（皮试联动复制到关联 SR/药嘱）。 */
+    private String encounterDiagnosisIds;
 }

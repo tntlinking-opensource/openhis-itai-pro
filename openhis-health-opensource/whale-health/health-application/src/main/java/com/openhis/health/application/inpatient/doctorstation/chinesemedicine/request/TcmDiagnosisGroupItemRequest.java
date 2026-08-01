@@ -12,7 +12,7 @@ import lombok.Data;
 import lombok.experimental.Accessors;
 
 /**
- * IF-DOR-32：中医病证组批次元素。
+ * IF-IP-TCM-32：中医病证组批次元素。
  */
 @Data
 @Accessors(chain = true)
@@ -23,27 +23,29 @@ public class TcmDiagnosisGroupItemRequest {
     @Schema(description = "中医证候组号")
     private String tcmSyndromeGroup;
 
-    /** 病名目录主键。 */
-    @NotNull(message = "病名目录不能为空")
+    /**
+     * 病名目录主键（可空；与证候成对规则由门诊同名 {@code TcmDiagnosisGroupPairingPolicy} 决定）。
+     */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "病名目录主键", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "病名目录主键（可空；配对规则由应用策略校验）")
     private Long diseaseDefinitionId;
 
-    /** 病名病情事实主键。 */
+    /** 病名就诊诊断行主键（更新时携带）。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "病名病情事实主键")
-    private Long diseaseConditionId;
+    @Schema(description = "病名就诊诊断行主键")
+    private Long diseaseEncounterDiagnosisId;
 
-    /** 证候目录主键。 */
-    @NotNull(message = "证候目录不能为空")
+    /**
+     * 证候目录主键（可空；与病名成对规则由门诊同名 {@code TcmDiagnosisGroupPairingPolicy} 决定）。
+     */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "证候目录主键", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "证候目录主键（可空；配对规则由应用策略校验）")
     private Long syndromeDefinitionId;
 
-    /** 证候病情事实主键。 */
+    /** 证候就诊诊断行主键（更新时携带）。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "证候病情事实主键")
-    private Long syndromeConditionId;
+    @Schema(description = "证候就诊诊断行主键")
+    private Long syndromeEncounterDiagnosisId;
 
     /** 组级主诊标记。 */
     @NotNull(message = "主诊标记不能为空")

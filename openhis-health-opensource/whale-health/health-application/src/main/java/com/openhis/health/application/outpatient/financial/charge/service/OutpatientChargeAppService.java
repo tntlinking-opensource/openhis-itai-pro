@@ -35,12 +35,11 @@ import com.openhis.health.domain.administration.chargeitemdefinition.entity.Char
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
+import com.openhis.health.domain.administration.encounter.entity.EncounterDiagnosis;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.application.outpatient.financial.charge.support.OutpatientChargeEncounterQueueLoader;
-import com.openhis.health.domain.administration.invoice.service.InvoiceDomainService;
-import com.openhis.health.domain.clinical.condition.service.ConditionQueryService;
 import com.openhis.health.domain.clinical.condition.queries.model.ConditionBatchItemQueryModel;
 import com.openhis.health.domain.financial.contract.entity.Contract;
 import com.openhis.health.domain.financial.contract.queries.model.ContractDetailQueryModel;
@@ -67,10 +66,11 @@ import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.orchestration.OutpatientChargeInsuranceCompensationOrchestration;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.OutpatientChargeInsuranceExtension;
+import com.openhis.health.infrastructure.integration.financial.orchestration.InvoiceAfterPaymentOrchestration;
 import com.openhis.health.infrastructure.integration.financial.orchestration.PaymentReconciliationSettleOrchestration;
-import com.openhis.health.infrastructure.integration.einvoice.orchestration.BossElectronicInvoiceAfterCommitOrchestration;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargeConfirmExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargePreSettleExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargePreSettleListExtensionIn;
@@ -149,8 +149,6 @@ public class OutpatientChargeAppService {
     private final PractitionerQueryService practitionerQueryService;
     private final PaymentReconciliationDomainService paymentReconciliationDomainService;
     private final PaymentReconciliationQueryService paymentReconciliationQueryService;
-    private final InvoiceDomainService invoiceDomainService;
-    private final ConditionQueryService conditionQueryService;
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final OutpatientChargeMapper outpatientChargeMapper;
     private final MedicationRequestDomainService medicationRequestDomainService;
@@ -165,7 +163,7 @@ public class OutpatientChargeAppService {
     private final WorkInjuryOutpatientSettlementExtension workInjurySettleExtension;
 
     private final PaymentReconciliationSettleOrchestration paymentReconciliationSettleOrchestration;
-    private final BossElectronicInvoiceAfterCommitOrchestration bossElectronicInvoiceAfterCommitOrchestration;
+    private final InvoiceAfterPaymentOrchestration invoiceAfterPaymentOrchestration;
 
     private final OutpatientChargeInsuranceCompensationOrchestration outpatientChargeInsuranceCompensationOrchestration;
 
@@ -279,6 +277,12 @@ public class OutpatientChargeAppService {
             response.setAccountSwitchEnabled(accountQueryService.hasDualChargeAccounts(request.getEncounterId()));
             // Asm：映射明细行并返回。
             response.setItems(this.toPendingRows(rows, Boolean.TRUE.equals(request.getIncludePriceExtension())));
+            // Asm：已结算支付分摊列表 + 当前选中摘要（多笔时可切换）。
+            List<ChargeSettlementInsuranceSummaryDto> settlementOptions =
+                chargeReceiptPrintAssembler.listSettlementInsuranceSummaries(request.getEncounterId());
+            response.setSettlementInsuranceOptions(settlementOptions);
+            response.setSettlementInsuranceSummary(
+                this.resolveSelectedSettlementInsuranceSummary(settlementOptions, request.getPaymentId()));
             return response;
         } catch (BusinessException ex) {
             throw ex;
@@ -287,6 +291,29 @@ public class OutpatientChargeAppService {
                 ErrorCodeConstants.ENCOUNTER_RULE_CONFLICT,
                 this.buildMessage(OutpatientChargeConstants.MESSAGE_CODE_PENDING_ITEMS_LOAD_FAILED, "明细加载失败或就诊无行"));
         }
+    }
+
+    /**
+     * 从多笔成功支付摘要中解析当前展示项：优先请求指定 paymentId，否则取列表首条（最新）。
+     *
+     * @param options           已按时间倒序的摘要列表
+     * @param requestedPaymentId 前端/队列指定的支付主键；可空
+     * @return 选中摘要；无选项时 null
+     */
+    private ChargeSettlementInsuranceSummaryDto resolveSelectedSettlementInsuranceSummary(
+        List<ChargeSettlementInsuranceSummaryDto> options,
+        Long requestedPaymentId) {
+        if (options == null || options.isEmpty()) {
+            return null;
+        }
+        if (requestedPaymentId != null) {
+            for (ChargeSettlementInsuranceSummaryDto option : options) {
+                if (option != null && requestedPaymentId.equals(option.getPaymentId())) {
+                    return option;
+                }
+            }
+        }
+        return options.get(0);
     }
 
     /**
@@ -348,17 +375,18 @@ public class OutpatientChargeAppService {
             chargeItems,
             request.getEncounterId(),
             OutpatientChargeConstants.MESSAGE_CODE_PRESETTLE_DIAGNOSIS_MISMATCH);
-        // 预结算前校验就诊下存在诊断事实，避免无诊断直接进入收费流程。
-        if (conditionQueryService.getEncounterDiagnosis(request.getEncounterId()).isEmpty()) {
+        // 预结算前校验就诊下存在就诊诊断行，避免无诊断直接进入收费流程（不再查 cln_condition）。
+        if (encounterQueryService.listEncounterDiagnoses(request.getEncounterId()).isEmpty()) {
             throw new BusinessException(
                 ErrorCodeConstants.CONDITION_RULE_CONFLICT,
                 this.buildMessage(OutpatientChargeConstants.MESSAGE_CODE_PRESETTLE_DIAGNOSIS_MISSING, "当前就诊缺少诊断信息，不能预结算"));
         }
-        // 若收费项绑定了 condition_id，则进一步校验诊断主键集合必须可被批量查询命中。
-        List<Long> conditionIds = this.extractConditionIds(chargeItems);
-        if (!conditionIds.isEmpty()) {
-            List<ConditionBatchItemQueryModel> conditions = conditionQueryService.getConditionListById(conditionIds);
-            if (conditions.size() != conditionIds.size()) {
+        // 若收费项绑定了 encounter_diagnosis_ids，则进一步校验就诊诊断主键集合必须可被批量查询命中。
+        List<Long> boundEncounterDiagnosisIds = this.extractEncounterDiagnosisIds(chargeItems);
+        if (!boundEncounterDiagnosisIds.isEmpty()) {
+            List<EncounterDiagnosis> diagnoses =
+                encounterQueryService.listEncounterDiagnosisEntitiesByIds(boundEncounterDiagnosisIds);
+            if (diagnoses.size() != boundEncounterDiagnosisIds.size()) {
                 throw new BusinessException(
                     ErrorCodeConstants.CONDITION_RULE_CONFLICT,
                     this.buildMessage(OutpatientChargeConstants.MESSAGE_CODE_PRESETTLE_DIAGNOSIS_MISMATCH, "收费项关联诊断数据不完整"));
@@ -434,6 +462,9 @@ public class OutpatientChargeAppService {
         PreSettleOutpatientChargesResponse response =
             outpatientChargeMapper.toPreSettleOutpatientChargesResponse(paymentDraftId, totalAmount, previews);
         this.applyInsurancePreSettleIfNeeded(request, paymentDraftId, response, chargeItems);
+        // TODO(ADR-CMP-001 D5/D12)：若 request.gfChargeMode 非空，可选注入 CampusChargeCalcReader#previewSplit，
+        // 将公费/自付写入支付明细两行（PUBLIC_EXPENSE_ACCOUNT + PERSONAL_CASH_ACCOUNT）；不选 mode 则跳过。
+        // 本迭代仅预留字段与注释，不改草稿金额。
         // Asm：返回预结算响应（草稿 ID、预览金额与医保分组）。
         return response;
     }
@@ -524,39 +555,73 @@ public class OutpatientChargeAppService {
                 request.getPaymentDraftId(),
                 contractBusNo);
         }
-        List<OutpatientChargeConfirmExtensionOut> ybConfirmResults = this.collectThirdPartyConfirmResults(request, chargeItems);
-        boolean workInjurySettle = this.isWorkInjuryChargeSettlement(request, chargeItems);
-        SettleOutpatientPaymentCommand settleCommand = outpatientChargeMapper.toSettleOutpatientPaymentCommand(request);
-        settleCommand.setYbSettlements(this.buildYbSettlementItems(ybConfirmResults));
-        this.mergeInsurancePaymentDetailsIntoSettleCommand(
-            settleCommand,
-            ybConfirmResults,
-            details,
-            request.getBillDate(),
-            request.getOutcomeEnum());
-        this.attachDraftAccountsToPayReceiptDetails(settleCommand.getPayReceiptDetails(), details);
-        thirdPartyPaymentSettleOrchestrator.applyScanBeforeSettle(
-            request.getPaymentDraftId(),
-            settleCommand.getPayReceiptDetails(),
-            request.getClientScanResult(),
-            operatorId,
-            null);
-        Long paymentId = paymentReconciliationSettleOrchestration.settleOutpatientPayment(settleCommand);
-        if (workInjurySettle) {
-            this.bindWorkInjuryPaymentAfterLocalSettle(request, paymentId, ybConfirmResults);
+        // Gate：扫码渠道致命校验须在 2207 之前，避免平台已扣款后因缺 clientScanResult 本地回滚掉单。
+        this.assertScanPayReadyBeforeInsuranceConfirm(request);
+        List<OutpatientChargeConfirmExtensionOut> ybConfirmResults = List.of();
+        try {
+            ybConfirmResults = this.collectThirdPartyConfirmResults(request, chargeItems);
+            boolean workInjurySettle = this.isWorkInjuryChargeSettlement(request, chargeItems);
+            SettleOutpatientPaymentCommand settleCommand = outpatientChargeMapper.toSettleOutpatientPaymentCommand(request);
+            settleCommand.setYbSettlements(this.buildYbSettlementItems(ybConfirmResults));
+            this.mergeInsurancePaymentDetailsIntoSettleCommand(
+                settleCommand,
+                ybConfirmResults,
+                details,
+                request.getBillDate(),
+                request.getOutcomeEnum());
+            this.attachDraftAccountsToPayReceiptDetails(settleCommand.getPayReceiptDetails(), details);
+            thirdPartyPaymentSettleOrchestrator.applyScanBeforeSettle(
+                request.getPaymentDraftId(),
+                settleCommand.getPayReceiptDetails(),
+                request.getClientScanResult(),
+                operatorId,
+                null);
+            Long paymentId = paymentReconciliationSettleOrchestration.settleOutpatientPayment(settleCommand);
+            if (workInjurySettle) {
+                this.bindWorkInjuryPaymentAfterLocalSettle(request, paymentId, ybConfirmResults);
+            }
+            BatchChargeItemIdsCommand batchChargeItemIdsCommand =
+                outpatientChargeMapper.toBatchChargeItemIdsCommand(request.getChargeItemIds(), operatorId);
+            chargeItemDomainService.settleChargeItems(batchChargeItemIdsCommand);
+            // 正式结算后清理同就诊其它草稿支付单，防止队列标签仍命中陈旧 DRAFT。
+            this.outpatientPaymentDraftLifecycleOrchestrator.cancelAllDraftsForEncounter(request.getEncounterId(), null);
+            // 收费项已结算：按锚点推进关联医嘱/申请及发放草稿，患者方可进入发药/执行后续环节。
+            this.syncAdviceStatesAfterChargeSettlement(chargeItems, operatorId);
+            // Cmd：票面按收费项合计开票（含医保已付）；现金 displayAmount=0 仍开票（BR-INV-008）
+            BigDecimal invoiceFaceAmount = MonetaryAmountSupport.scaleSettle(this.sumChargeItemAmount(chargeItems));
+            Long invoiceId = invoiceAfterPaymentOrchestration.createDraftAndScheduleIssueIfPayable(
+                outpatientChargeMapper.toCreateDraftInvoiceCommand(payment, paymentId, operatorId, invoiceFaceAmount));
+            // Asm：装配正式结算成功响应（支付主键、票据主键）。
+            return outpatientChargeMapper.toConfirmOutpatientChargeSettlementResponse(paymentId, invoiceId);
+        } catch (RuntimeException ex) {
+            // 2207 已成功但本地落账失败：同事务内冲正平台结算，避免「医保已收、HIS 待收费」。
+            if (!ybConfirmResults.isEmpty()) {
+                try {
+                    outpatientChargeInsuranceCompensationOrchestration.compensateSettlementsByPayment(
+                        request.getPaymentDraftId());
+                } catch (RuntimeException compensationEx) {
+                    compensationEx.addSuppressed(ex);
+                    throw compensationEx;
+                }
+            }
+            throw ex;
         }
-        BatchChargeItemIdsCommand batchChargeItemIdsCommand =
-            outpatientChargeMapper.toBatchChargeItemIdsCommand(request.getChargeItemIds(), operatorId);
-        chargeItemDomainService.settleChargeItems(batchChargeItemIdsCommand);
-        // 正式结算后清理同就诊其它草稿支付单，防止队列标签仍命中陈旧 DRAFT。
-        this.outpatientPaymentDraftLifecycleOrchestrator.cancelAllDraftsForEncounter(request.getEncounterId(), null);
-        // 收费项已结算：按锚点推进关联医嘱/申请及发放草稿，患者方可进入发药/执行后续环节。
-        this.syncAdviceStatesAfterChargeSettlement(chargeItems, operatorId);
-        Long invoiceId = invoiceDomainService.createDraftInvoiceAfterPayment(
-            outpatientChargeMapper.toCreateDraftInvoiceCommand(payment, paymentId, operatorId));
-        bossElectronicInvoiceAfterCommitOrchestration.afterDraftCreated(invoiceId);
-        // Asm：装配正式结算成功响应（支付主键、票据主键）。
-        return outpatientChargeMapper.toConfirmOutpatientChargeSettlementResponse(paymentId, invoiceId);
+    }
+
+    /**
+     * 运维：按支付草稿冲正已落库医保正式结算（2208，失败则 2601）。
+     *
+     * <p>用于孤儿 2207（平台已扣款、本地回执曾回滚后补回）退个账；正常收费/退费流程勿调用。</p>
+     *
+     * @param paymentDraftId 支付草稿主键（与 yb_settlement_record.payment_id 一致）
+     */
+    public void compensateInsuranceSettlementsByPayment(Long paymentDraftId) {
+        if (paymentDraftId == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                "paymentDraftId 不能为空");
+        }
+        outpatientChargeInsuranceCompensationOrchestration.compensateSettlementsByPayment(paymentDraftId);
     }
 
     /**
@@ -837,9 +902,7 @@ public class OutpatientChargeAppService {
             if (row.getAccountId() != null) {
                 batchAccountIds.add(row.getAccountId());
             }
-            if (row.getEncounterDiagnosisId() != null) {
-                batchDxIds.add(row.getEncounterDiagnosisId());
-            }
+            collectEncounterDiagnosisIdsFromIds(row.getEncounterDiagnosisIds(), batchDxIds);
         }
         Map<Long, Account> accountByIdForPending = accountQueryService.mapAccountsByIds(batchAccountIds);
         LinkedHashSet<String> contractBusNos = new LinkedHashSet<>();
@@ -850,6 +913,14 @@ public class OutpatientChargeAppService {
         }
         Map<String, String> contractNameByBusNo = contractQueryService.mapContractNameByBusNoIn(contractBusNos);
         Map<String, Long> contractIdByBusNo = contractQueryService.mapContractIdByBusNoIn(contractBusNos);
+        Map<String, String> contractCategoryByBusNo = new HashMap<>();
+        for (Contract contractEntity : contractQueryService.findAllContractEntitiesByBusNoIn(contractBusNos)) {
+            if (contractEntity == null || StringUtils.isBlank(contractEntity.getBusNo())
+                || StringUtils.isBlank(contractEntity.getCategoryEnum())) {
+                continue;
+            }
+            contractCategoryByBusNo.put(contractEntity.getBusNo().trim(), contractEntity.getCategoryEnum().trim());
+        }
         Map<Long, String> medTypeByEncounterDxId = encounterQueryService.mapMedTypeByEncounterDiagnosisIds(batchDxIds);
         List<PendingChargeItemRowDto> items = new ArrayList<>();
         for (ChargeItem row : rows) {
@@ -892,11 +963,17 @@ public class OutpatientChargeAppService {
                 item.setContractName(feeNature);
                 item.setFeeNatureDisplay(feeNature);
                 item.setContractId(contractIdByBusNo.get(contractBusNo));
+                item.setContractCategoryCode(contractCategoryByBusNo.get(contractBusNo));
             }
-            item.setMedTypeCode(medTypeByEncounterDxId.get(row.getEncounterDiagnosisId()));
+            item.setMedTypeCode(medTypeByEncounterDxId.get(firstEncounterDiagnosisIdFromIds(row.getEncounterDiagnosisIds())));
+            item.setEncounterDiagnosisIds(row.getEncounterDiagnosisIds());
             if (product != null && StringUtils.isNotBlank(product.getYbNo())) {
                 item.setYbNo(product.getYbNo());
                 item.setMedicalInsuranceCode(product.getYbNo());
+            }
+            if (product != null) {
+                item.setChrgitmLv(product.getChrgitmLv());
+                item.setChrgitmLvText(product.getChrgitmLvText());
             }
             items.add(item);
         }
@@ -1528,19 +1605,66 @@ public class OutpatientChargeAppService {
     }
 
     /**
-     * 提取收费项关联诊断主键集合。
+     * 提取收费项绑定的就诊诊断主键集合（解析 {@code encounter_diagnosis_ids} 有序 ids 串）。
      *
      * @param chargeItems 收费项列表
-     * @return 去重后的诊断主键列表
+     * @return 去重后的就诊诊断主键列表
      */
-    private List<Long> extractConditionIds(List<ChargeItem> chargeItems) {
+    private List<Long> extractEncounterDiagnosisIds(List<ChargeItem> chargeItems) {
         LinkedHashSet<Long> idSet = new LinkedHashSet<>();
         for (ChargeItem chargeItem : chargeItems) {
-            if (chargeItem.getConditionId() != null) {
-                idSet.add(chargeItem.getConditionId());
-            }
+            collectEncounterDiagnosisIdsFromIds(chargeItem.getEncounterDiagnosisIds(), idSet);
         }
         return new ArrayList<>(idSet);
+    }
+
+    /**
+     * 从账单绑定 ids 串 收集就诊诊断主键（去重写入 target）。
+     */
+    private static void collectEncounterDiagnosisIdsFromIds(String idsText, Set<Long> target) {
+        if (target == null || StringUtils.isEmpty(idsText)) {
+            return;
+        }
+        String[] parts = idsText.split(",");
+        for (String part : parts) {
+            if (StringUtils.isEmpty(part)) {
+                continue;
+            }
+            String trimmed = part.trim();
+            if (StringUtils.isEmpty(trimmed)) {
+                continue;
+            }
+            try {
+                target.add(Long.parseLong(trimmed));
+            } catch (NumberFormatException ignored) {
+                // 跳过非法段
+            }
+        }
+    }
+
+    /**
+     * 取 ids 串中首个合法就诊诊断主键（有序；首位为主诊断）。
+     */
+    private static Long firstEncounterDiagnosisIdFromIds(String idsText) {
+        if (StringUtils.isEmpty(idsText)) {
+            return null;
+        }
+        String[] parts = idsText.split(",");
+        for (String part : parts) {
+            if (StringUtils.isEmpty(part)) {
+                continue;
+            }
+            String trimmed = part.trim();
+            if (StringUtils.isEmpty(trimmed)) {
+                continue;
+            }
+            try {
+                return Long.parseLong(trimmed);
+            } catch (NumberFormatException ignored) {
+                // 继续扫描
+            }
+        }
+        return null;
     }
 
     /**
@@ -1911,10 +2035,11 @@ public class OutpatientChargeAppService {
                     ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
                     this.buildMessage(OutpatientChargeConstants.MESSAGE_CODE_SETTLE_DRAFT_DETAIL_EMPTY, "支付金额不能为空"));
             }
-            if (request.getPaymentDetails().get(index).getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            // 允许 0：医保全额报销后 displayAmount=0，仍须带渠道明细落账
+            if (request.getPaymentDetails().get(index).getAmount().compareTo(BigDecimal.ZERO) < 0) {
                 throw new BusinessException(
                     ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
-                    this.buildMessage(OutpatientChargeConstants.MESSAGE_CODE_SETTLE_AMOUNT_MISMATCH, "支付金额必须大于0"));
+                    this.buildMessage(OutpatientChargeConstants.MESSAGE_CODE_SETTLE_AMOUNT_MISMATCH, "支付金额不能为负数"));
             }
         }
     }
@@ -2053,12 +2178,54 @@ public class OutpatientChargeAppService {
                 this.buildMessage(OutpatientChargeConstants.MESSAGE_CODE_PRESETTLE_CONTRACT_NOT_FOUND, "医保预结算须先读卡获取人员编号"));
         }
         boolean multiAccount = this.hasMultipleSettlementAccounts(request.getEncounterId(), chargeItems);
+        boolean multiMedType = this.hasMultipleInsuranceMedTypes(chargeItems);
+        // Gate：起付线要求普门/慢病分次收银，禁止一次勾选多种就诊类型合并预结算
+        if (multiMedType) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                "普通门诊与慢病等须分次结算（起付线），请每次只勾选同一就诊类型的明细");
+        }
         if (!multiAccount) {
             this.applySingleInsurancePreSettle(request, paymentDraftId, response, chargeItems, insuranceContractId);
             return;
         }
-        // Cmd：多账户/慢病混合 → Extension preSettleBatch（多组 2206）
+        // Cmd：多账户混合 → Extension preSettleBatch（医保组 + 自费 rollup）
         this.applyMixedInsurancePreSettle(request, paymentDraftId, response, chargeItems, insuranceContractId);
+    }
+
+    /**
+     * 本次勾选是否跨多个医保医疗类别（按收费项绑定诊断的 med_type；缺省视为 11）。
+     *
+     * @param chargeItems 待结算行
+     * @return 去重后 med_type 数 &gt; 1 为 true
+     */
+    private boolean hasMultipleInsuranceMedTypes(List<ChargeItem> chargeItems) {
+        if (chargeItems == null || chargeItems.isEmpty()) {
+            return false;
+        }
+        LinkedHashSet<Long> dxIds = new LinkedHashSet<>();
+        for (ChargeItem item : chargeItems) {
+            collectEncounterDiagnosisIdsFromIds(item.getEncounterDiagnosisIds(), dxIds);
+        }
+        Map<Long, String> medTypeByDxId = encounterQueryService.mapMedTypeByEncounterDiagnosisIds(dxIds);
+        LinkedHashSet<String> medTypes = new LinkedHashSet<>();
+        for (ChargeItem item : chargeItems) {
+            Long primaryDxId = this.firstEncounterDiagnosisIdFromIds(item.getEncounterDiagnosisIds());
+            String medType = null;
+            if (primaryDxId != null) {
+                medType = medTypeByDxId.get(primaryDxId);
+            }
+            if (StringUtils.isBlank(medType)) {
+                medType = "11";
+            } else {
+                medType = medType.trim();
+            }
+            medTypes.add(medType);
+            if (medTypes.size() > 1) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 工伤预结算：qualification 校验 + 启动 OP_SETTLE invoke 会话（2201→2206 由前端 Win 循环）。 */
@@ -2557,6 +2724,43 @@ public class OutpatientChargeAppService {
             items.add(item);
         }
         return items;
+    }
+
+    /**
+     * 正式结算前扫码门禁：含 {@code SCAN_PAY} 时须金额 &gt; 0 且已提交 {@code clientScanResult}。
+     *
+     * <p>须在调用医保 2207 之前执行，避免平台已扣款后因扫码校验失败本地回滚造成账实不一致。</p>
+     *
+     * @param request 正式结算请求
+     * @throws BusinessException 零现金扫码或缺少扫码回执
+     */
+    private void assertScanPayReadyBeforeInsuranceConfirm(ConfirmOutpatientChargeSettlementRequest request) {
+        if (request.getPaymentDetails() == null || request.getPaymentDetails().isEmpty()) {
+            return;
+        }
+        PaymentDetailSubmitDto scanLine = null;
+        for (PaymentDetailSubmitDto detail : request.getPaymentDetails()) {
+            if (detail == null) {
+                continue;
+            }
+            if (PaymentChannel.SCAN_PAY.getCode().equals(StringUtils.trimToEmpty(detail.getPayChannelCode()))) {
+                scanLine = detail;
+                break;
+            }
+        }
+        if (scanLine == null) {
+            return;
+        }
+        if (scanLine.getAmount() == null || scanLine.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                "零现金应付禁止使用扫码支付渠道，请重新预结算后确认收费");
+        }
+        if (request.getClientScanResult() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                "扫码支付须提交 clientScanResult");
+        }
     }
 
     /**

@@ -14,7 +14,8 @@ import java.util.List;
 /**
  * 住院护士站汇总领药 · 待汇总发放明细分页查询入参（**AS-IP-NUR-010 · IF-IP-SUM-01**）。
  *
- * <p>中西药 {@code tcmFlag}、长临嘱 {@code therapyEnum} 由应用层预解析为 {@link #resolvedMedReqIds} 后写入；
+ * <p>中西药 {@code tcmFlag}、长临嘱 {@code therapyEnum} 由应用层预解析为 {@link #resolvedMedReqIds} 后写入
+ * （须已排除 {@code DISCHARGE_MEDICATION}，见 **BR-IP-SUM-016**）；
  * 本 QueryService 仅按 {@code med_req_id IN} 收窄，不做 MedicationRequest 跨聚合过滤。</p>
  */
 @Getter

@@ -38,6 +38,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -75,6 +76,10 @@ public final class WiPlatformInputAssembler {
             Map<String, Object> formContext,
             String mdtrtIdFor2207,
             YbSettlementRecord settlementRecord) {
+        if (WiInfnoConstants.PERSON_INFO.equals(infno)) {
+            // NEUSI：input={}；读卡由 DLL / idfi_mode 完成
+            return Collections.emptyMap();
+        }
         if (WiInfnoConstants.QUALIFICATION_QUERY.equals(infno)) {
             return WiJsonSupport.toInputMap(assemble9102(anchor));
         }

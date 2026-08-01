@@ -48,6 +48,8 @@ public interface TerminologyCodeSystemNameConstants {
     String ANTIBIOTIC_TYPE_CODE = "antibiotic_type_code";
     /** DDD 分类术语。 */
     String DDD_CODE = "ddd_code";
+    /** DDD（限定日剂量）计量单位术语（与计量 {@code unit_code}、剂量 {@code dose_unit} 分离）。 */
+    String DDD_UNIT = "ddd_unit";
     /** 剂量来源口径（录入维度）。 */
     String DOSE_FROM_CODE = "dose_from_code";
 /** TerminologyCodeSystemName 共享常量：flag，值 {@code rx_flag}。 */
@@ -58,26 +60,26 @@ public interface TerminologyCodeSystemNameConstants {
     String UNIT_CODE = "unit_code";
     /**
      * 疾病目录来源分类（编码体系名 {@code condition_definition_source}）。
-     * <p>种子见 {@code health-infrastructure/src/main/resources/db/migration/health/V1__Init.sql}
-     * （{@code ter_code_system.id=485} {@code name=condition_definition_source} 及对应 {@code ter_concept}），
-     * 概念项（code → display）：{@code general_dx}→疾病与诊断；{@code chronic_spec}→特慢病诊断目录；
-     * {@code disease_pkg}→按病种目录；{@code paid_dx}→付费诊断；{@code day_surgery_dx}→日间手术治疗病种；
-     * {@code tcm_dx}→中医诊断；{@code tcm_syndrome}→中医证候目录；{@code tumor_morph}→肿瘤形态学目录。</p>
+     * <p>概念项（code → display，对齐医保 13xx 文档名）：
+     * {@code hospital_dx}→院内诊断；
+     * {@code general_dx}→疾病与诊断目录（1307）；{@code chronic_spec}→门诊慢特病种目录（1309）；
+     * {@code disease_pkg}→按病种付费病种目录（1310）；{@code paid_dx}→同 1310 历史别名（侧栏停用）；
+     * {@code day_surgery_dx}→日间手术治疗病种目录（1311）；{@code tumor_morph}→肿瘤形态学目录（1313）；
+     * {@code tcm_dx}→中医疾病目录（1314）；{@code tcm_syndrome}→中医证候目录（1315）；
+     * {@code clinical_v2}→国家临床版2.0；{@code peis_dx}→体检诊断（不进医生站候选）。</p>
      */
     String CONDITION_DEFINITION_SOURCE = "condition_definition_source";
+
+    /**
+     * 手术目录来源分类（{@code procedure_definition_source}）：
+     * {@code clinical_proc_v3}→国家临床版手术3.0；{@code general_op}→手术操作目录（1308）。
+     */
+    String PROCEDURE_DEFINITION_SOURCE = "procedure_definition_source";
 /** TerminologyCodeSystemName 共享常量：type，值 {@code diag_type}。 */
     String DIAG_TYPE = "diag_type";
     /** 住院患者疾病诊断类型代码（与 {@code adm_encounter_diagnosis.diag_type_code} 展示口径一致）。 */
     String IPT_DISE_TYPE_CODE = "ipt_dise_type_code";
 
-    /** 采购计量单位编码体系（耗材包装）。 */
-    String PURCHASE_UNIT = "purchase_unit";
-/** TerminologyCodeSystemName 共享常量：unit，值 {@code sales_unit}。 */
-    String SALES_UNIT = "sales_unit";
-    /** 拆零/最小单位术语。 */
-    String SPLIT_UNIT = "split_unit";
-/** TerminologyCodeSystemName 共享常量：unit，值 {@code stock_unit}。 */
-    String STOCK_UNIT = "stock_unit";
     /** 剂量单位术语（耗材侧可与药品共用码表）。 */
     String DOSE_UNIT = "dose_unit";
     /** 器材/耗材种类术语（与 {@code adm_device_definition.type_code} 对齐）。 */
@@ -92,10 +94,17 @@ public interface TerminologyCodeSystemNameConstants {
     String ADM_COND_CODE = "adm_cond_code";
     /** 生命体征项编码体系（护士站/体温单体征下拉）。 */
     String VITAL_SIGNS_CODE = "vital_signs_code";
+    /** 护理记录意识状态编码体系。 */
+    String CONSCIOUSNESS_CODE = "consciousness_code";
     /** 收银支付渠道（477 pay_enum，ADR-PAY-001）。 */
     String PAY_ENUM = "pay_enum";
     /** 体温单特殊事件编码体系。 */
     String SPECIAL_EVENT_CODE = "special_event_code";
     /** 库存范围（数量等于 0 / 数量大于 0；种子 {@code inventory_range}）。 */
     String INVENTORY_RANGE = "inventory_range";
+
+    /**
+     * 处方类别代码（国家标准术语 355，{@code med_medication_request.rx_type_code}）。
+     */
+    String RX_TYPE_CODE = "rx_type_code";
 }

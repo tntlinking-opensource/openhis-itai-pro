@@ -34,9 +34,28 @@ public class LinkableIssueListRowDto {
     @Schema(description = "科室药房 purposeLocationId")
     private Long purposeLocationId;
 
-    /** 领用科室名称 consumingOrganizationName。 */
+    /**
+     * 科室药房展示名：由位置主数据解析，供选单「科室药房」列直接展示。
+     */
+    @Schema(description = "科室药房名称 purposeLocationName")
+    private String purposeLocationName;
+
+    /** 领用科室展示名（优先落库 id 解析，历史单回落药房上级科室）。 */
     @Schema(description = "领用科室名称 consumingOrganizationName")
     private String consumingOrganizationName;
+
+    /**
+     * 制单人（申请人）主键：取领用单头行 {@code applicantId}。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "制单人主键 applicantId")
+    private Long applicantId;
+
+    /**
+     * 制单人展示名：由申请人主键解析。
+     */
+    @Schema(description = "制单人名称 creatorName")
+    private String creatorName;
 
     /** 总金额 totalAmount。 */
     @Schema(description = "总金额 totalAmount")
@@ -46,6 +65,13 @@ public class LinkableIssueListRowDto {
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "审批时间 approvalTime")
     private LocalDateTime approvalTime;
+
+    /**
+     * 制单时间：优先头行 {@code occurrenceTime}，其次 {@code applyTime}，最后回落 {@code approvalTime}。
+     */
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    @Schema(description = "制单时间 applyTime")
+    private LocalDateTime applyTime;
 
     /** 是否仍可退领 returnable。 */
     @Schema(description = "是否仍可退领 returnable")

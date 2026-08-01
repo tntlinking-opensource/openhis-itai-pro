@@ -397,7 +397,10 @@ public final class ProductDefinitionCatalogUnitBandsAssembler {
             productRow.getSplitUnitCodeDictText(),
             productRow.getStockUnitCode(),
             productRow.getStockUnitCodeDictText(),
-            productRow.getStockUnitRatio());
+            productRow.getStockUnitRatio(),
+            productRow.getTraceUnitCode(),
+            productRow.getTraceUnitCodeDictText(),
+            productRow.getTraceUnitRatio());
     }
 
     /**
@@ -431,7 +434,10 @@ public final class ProductDefinitionCatalogUnitBandsAssembler {
      * @param stockUnitCode            库存单位 code
      * @param stockUnitCodeDictText    库存单位展示名
      * @param stockUnitRatio           库存→拆零倍数
-     * @return 四槽列表
+     * @param traceUnitCode            追溯码贴码单位 code（可空）
+     * @param traceUnitCodeDictText    追溯码贴码单位展示名
+     * @param traceUnitRatio           追溯码→拆零倍数
+     * @return 四槽 + 可选 TRACE 槽列表
      */
     private static List<ProductDefinitionCatalogUnitBandDto> buildInboundSelectionBands(
         String productTableName,
@@ -445,9 +451,12 @@ public final class ProductDefinitionCatalogUnitBandsAssembler {
         String splitUnitCodeDictText,
         String stockUnitCode,
         String stockUnitCodeDictText,
-        BigDecimal stockUnitRatio
+        BigDecimal stockUnitRatio,
+        String traceUnitCode,
+        String traceUnitCodeDictText,
+        BigDecimal traceUnitRatio
     ) {
-        List<ProductDefinitionCatalogUnitBandDto> bands = new ArrayList<>(4);
+        List<ProductDefinitionCatalogUnitBandDto> bands = new ArrayList<>(5);
         appendInboundPurchaseOrStockBand(
             bands,
             ProductDefinitionCatalogUnitBandConstants.BAND_PURCHASE,
@@ -467,6 +476,13 @@ public final class ProductDefinitionCatalogUnitBandsAssembler {
             stockUnitCode,
             stockUnitCodeDictText,
             stockUnitRatio);
+        // TRACE：扫码换算专用；未维护则不挂槽（药品上线前须维护）
+        appendInboundPurchaseOrStockBand(
+            bands,
+            ProductDefinitionCatalogUnitBandConstants.BAND_TRACE,
+            traceUnitCode,
+            traceUnitCodeDictText,
+            traceUnitRatio);
         return bands;
     }
 

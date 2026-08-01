@@ -5,6 +5,7 @@
 package com.openhis.health.application.inventory.department.returntowarehouse.mapper;
 
 import com.openhis.health.application.inventory.department.returntowarehouse.dto.LinkableStockInListRowDto;
+import com.openhis.health.application.inventory.department.returntowarehouse.dto.ReturnToWarehouseListRowDto;
 import com.openhis.health.application.inventory.department.returntowarehouse.dto.SupplierOptionDto;
 import com.openhis.health.application.inventory.department.returntowarehouse.dto.WarehouseOptionDto;
 import com.openhis.health.application.inventory.department.returntowarehouse.request.*;
@@ -20,7 +21,10 @@ import com.openhis.health.domain.workflow.supplyrequest.command.SubmitApprovalCo
 import com.openhis.health.domain.workflow.supplyrequest.command.WithdrawApprovalCommand;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
+import com.openhis.whale.core.application.dto.OptionDto;
 import org.springframework.data.domain.Page;
 
 import java.math.BigDecimal;
@@ -51,17 +55,29 @@ public interface InventoryDepartmentReturnToWarehouseMapper {
     List<SupplierOptionDto> toSupplierOptionDtoList(List<SupplierListItemQueryModel> suppliers);
 
     /**
+     * 将启用医务人员列表映射为下拉选项。
+     *
+     * @param practitioners 医务人员列表
+     * @return 人员下拉选项
+     */
+    List<OptionDto> toOptionDtoListFromPractitioners(List<Practitioner> practitioners);
+
+    /**
      * 装配科室退药库页初始化响应。
      *
-     * @param departmentPharmacyLocationOptions  源科室药房位置选项
-     * @param warehouseLocationOptions 目的药库选项
-     * @param supplierOptions          供应商选项
+     * @param departmentPharmacyLocationOptions 源科室药房位置选项
+     * @param warehouseLocationOptions          目的药库选项
+     * @param supplierOptions                   供应商选项
+     * @param pharmacistOptions                 药师选项
+     * @param warehouseKeeperOptions            库管选项
      * @return 页初始化响应
      */
     LoadReturnToWarehouseFormInitResponse toLoadReturnToWarehouseFormInitResponse(
         List<WarehouseOptionDto> departmentPharmacyLocationOptions,
         List<WarehouseOptionDto> warehouseLocationOptions,
-        List<SupplierOptionDto> supplierOptions);
+        List<SupplierOptionDto> supplierOptions,
+        List<OptionDto> pharmacistOptions,
+        List<OptionDto> warehouseKeeperOptions);
 
     /**
      * 将库房单据读模型分页装配为退药库列表响应。
@@ -70,6 +86,32 @@ public interface InventoryDepartmentReturnToWarehouseMapper {
      * @return 列表分页响应
      */
     PageReturnToWarehousesResponse toPageReturnToWarehousesResponse(Page<WarehouseDocumentDetailQueryModel> page);
+
+    /**
+     * 按 busNo 顺序聚合科室退库供应请求明细为列表行 DTO。
+     *
+     * @param busNoPageOrder 分页单号顺序
+     * @param detailRows     同页全部明细
+     * @return 聚合列表行
+     */
+    List<ReturnToWarehouseListRowDto> toReturnToWarehouseListAggregated(
+        List<String> busNoPageOrder,
+        List<SupplyRequestModel> detailRows);
+
+    /**
+     * 用聚合列表行构建科室退库单分页响应。
+     *
+     * @param mergedTotal 去重后总单数
+     * @param pageNo      页码
+     * @param pageSize    页大小
+     * @param records     列表行
+     * @return 分页响应
+     */
+    PageReturnToWarehousesResponse toPageReturnToWarehousesAggregatedResponse(
+        long mergedTotal,
+        int pageNo,
+        int pageSize,
+        List<ReturnToWarehouseListRowDto> records);
 
     /**
      * 用可关联入库单聚合行构建分页响应。
@@ -104,15 +146,17 @@ public interface InventoryDepartmentReturnToWarehouseMapper {
         Map<String, ProductDefinitionDisplayDto> productByKey);
 
     /**
-     * 将同号供应请求明细与产品读模型装配为退药库详情响应。
+     * 将同号供应请求明细、产品读模型与目录编辑提示装配为退药库详情响应。
      *
      * @param lines        供应请求明细行
-     * @param productByKey 产品定义读模型映射
+     * @param productByKey 产品定义读模型映射（复合键）
+     * @param productHints 行 id → 目录编辑提示
      * @return 详情响应
      */
     GetReturnToWarehouseDetailResponse toGetReturnToWarehouseDetailResponse(
         List<SupplyRequestModel> lines,
-        Map<String, ProductDefinitionDisplayDto> productByKey);
+        Map<String, ProductDefinitionDisplayDto> productByKey,
+        Map<Long, ProductDefinitionCatalogEditorHintsDto> productHints);
 
     /**
      * 将新建退药库请求装配为领域 CreateReturnCommand。
@@ -120,6 +164,7 @@ public interface InventoryDepartmentReturnToWarehouseMapper {
      * @param request               新建请求
      * @param operatorId            操作人
      * @param applicantId           制单人员
+     * @param practitionerId        经手人
      * @param originalBusNoSnapshot 关联科室入库单号快照
      * @return 领域写命令
      */
@@ -127,6 +172,7 @@ public interface InventoryDepartmentReturnToWarehouseMapper {
         CreateReturnToWarehouseRequest request,
         Long operatorId,
         Long applicantId,
+        Long practitionerId,
         String originalBusNoSnapshot);
 
     /**
@@ -135,6 +181,7 @@ public interface InventoryDepartmentReturnToWarehouseMapper {
      * @param request               修订请求
      * @param operatorId            操作人
      * @param applicantId           制单人员
+     * @param practitionerId        经手人
      * @param originalBusNoSnapshot 关联科室入库单号快照
      * @return 领域写命令
      */
@@ -142,6 +189,7 @@ public interface InventoryDepartmentReturnToWarehouseMapper {
         UpdateReturnToWarehouseRequest request,
         Long operatorId,
         Long applicantId,
+        Long practitionerId,
         String originalBusNoSnapshot);
 
     /**

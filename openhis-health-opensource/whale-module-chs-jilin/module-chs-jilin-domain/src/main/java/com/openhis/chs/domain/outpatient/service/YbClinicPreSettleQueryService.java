@@ -52,6 +52,24 @@ public class YbClinicPreSettleQueryService {
     }
 
     /**
+     * 列出指定就诊 + 契约下 ACTIVE 预结算快照（重试 2204 前须先 2205）。
+     *
+     * @param encounterId 就诊 ID
+     * @param contractId  契约 ID
+     * @param tenantId    租户 ID
+     * @return ACTIVE 快照列表；参数无效时返回空列表
+     */
+    public List<YbClinicPreSettle> listActiveByEncounterIdAndContractId(
+        Long encounterId, Long contractId, Long tenantId) {
+        if (encounterId == null || contractId == null || tenantId == null) {
+            return Collections.emptyList();
+        }
+        return clinicPreSettleRepository
+            .findAllByEncounterIdAndContractIdAndStatusAndTenantIdAndIsDeletedFalseOrderByCreatedAtAsc(
+                encounterId, contractId, YbClinicPreSettle.STATUS_ACTIVE, tenantId);
+    }
+
+    /**
      * 按支付草稿 ID 查找最新一条预结算快照。
      *
      * @param paymentDraftId 支付草稿 ID

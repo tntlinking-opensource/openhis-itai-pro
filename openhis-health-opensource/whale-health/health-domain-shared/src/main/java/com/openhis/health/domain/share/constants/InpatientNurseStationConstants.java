@@ -74,6 +74,12 @@ public interface InpatientNurseStationConstants {
     /** 办理出院：持久化失败（IF-IP-NUR-ATD-05）。 */
     String EX_IP_ATD_306 = "EX-IP-ATD-306";
 
+    /**
+     * 出院追溯提示：已核发正向发药单存在空追溯码（IF-IP-NUR-ATD-05/06 软提示码，供前端展示）。
+     * <p>后端<strong>不再硬拦</strong>办理出院/清床；前端可据此提示「某日某药未分配追溯码」后仍允许清床。</p>
+     */
+    String EX_IP_ATD_308 = "EX-IP-ATD-308";
+
     /** 清床：未结算（IF-IP-NUR-ATD-06）。 */
     String EX_IP_ATD_401 = "EX-IP-ATD-401";
 
@@ -82,6 +88,12 @@ public interface InpatientNurseStationConstants {
 
     /** 清床：展示账户余额非零（IF-IP-NUR-ATD-06，BR-IP-ATD-016）。 */
     String EX_IP_ATD_403 = "EX-IP-ATD-403";
+
+    /**
+     * 清床：存在未冲销的清床汇总销售 3505（IF-IP-NUR-ATD-06）。
+     * <p>召回后冲销 3506 未成功时禁止再次清床，避免平台双报。</p>
+     */
+    String EX_IP_ATD_404 = "EX-IP-ATD-404";
 
     /** 出院召回：当前状态不允许（IF-IP-NUR-ATD-07）。 */
     String EX_IP_ATD_501 = "EX-IP-ATD-501";
@@ -92,11 +104,14 @@ public interface InpatientNurseStationConstants {
     /** 出院召回：无出院嘱或不可退回（IF-IP-NUR-ATD-07）。 */
     String EX_IP_ATD_503 = "EX-IP-ATD-503";
 
-    /** 出院召回：领域持久化失败（IF-IP-NUR-ATD-07）。 */
+    /** 出院召回：领域持久化失败（历史码；写入口已迁 FIN-004 IF-IP-RCL-01）。 */
     String EX_IP_ATD_504 = "EX-IP-ATD-504";
 
-    /** 护士站列表状态筛选：已出院结算（{@code COMPLETED} ∪ {@code DISCHARGED}，AS-IP-NUR-001 BR-IP-NUR-012）。 */
-    String STATUS_FILTER_SETTLED_DISCHARGED = "SETTLED_DISCHARGED";
+    /** 无活动床时末次床展示前缀（召回未占床轨）。 */
+    String UNOCCUPIED_LAST_BED_DISPLAY_PREFIX = "原";
+
+    /** 无活动床时末次床展示后缀（召回未占床轨）。 */
+    String UNOCCUPIED_LAST_BED_DISPLAY_SUFFIX = "（未占床）";
 
     /** 床位列表面板：入科 Tab（IF-IP-NUR-ATD-01）。 */
     String ATD_PANEL_ADMISSION = "admission";
@@ -155,6 +170,13 @@ public interface InpatientNurseStationConstants {
     /** 诊疗类目：出院（DM-WKF-004 §4.3）。 */
     String SERVICE_CATEGORY_DISCHARGE = "34";
 
+    /**
+     * 诊疗类目：嘱托（DM-WKF-004 §4.3；与 {@link ServiceRequestCategoryConstants#SERVICE_CATEGORY_ENTRUST} 同码）。
+     *
+     * <p>住院嘱托医嘱；类型列展示「嘱托」、执行不计费（AS-IP-DOR-003 · BR-IP-ORD-028）。</p>
+     */
+    String SERVICE_CATEGORY_ENTRUST = "52";
+
     /** 护士站医嘱列表类型列：药品。 */
     String ORDER_KIND_DISPLAY_MEDICATION = "药品";
 
@@ -170,6 +192,8 @@ public interface InpatientNurseStationConstants {
     /** 护士站医嘱列表类型列：护理医嘱（category_enum=26）。 */
     String ORDER_KIND_DISPLAY_NURSING = "护理";
 
+    /** 护士站医嘱列表类型列：嘱托医嘱（category_enum=52；BR-IP-ORD-028）。 */
+    String ORDER_KIND_DISPLAY_ENTRUST = "嘱托";
     /** 医嘱校对列表查询失败（IF-IP-AUD-01）。 */
     String EX_IP_AUD_101 = "EX-IP-AUD-101";
 
@@ -210,6 +234,17 @@ public interface InpatientNurseStationConstants {
     /** 批量执行/不执行单批上限（AS-IP-NUR-004 §7 NFR）。 */
     int EXECUTE_WRITE_BATCH_MAX = 50;
 
+    /**
+     * 长嘱不可拆（IF-IP-EXE-01）：为凑满包装批次，相对开嘱日最多向前探测的自然日数；
+     * 超限仍凑不满则降级可拆展开。
+     */
+    int STANDING_ORDER_PACKAGE_BATCH_MAX_LOOKAHEAD_DAYS = 366;
+
+    /**
+     * 长嘱不可拆：单次向后扩展频次窗的步进自然日数（探测「截止落在第几盒」时用）。
+     */
+    int STANDING_ORDER_PACKAGE_BATCH_EXPAND_STEP_DAYS = 14;
+
     /** 医嘱执行列表查询失败（IF-IP-EXE-01）。 */
     String EX_IP_EXE_101 = "EX-IP-EXE-101";
 
@@ -231,9 +266,6 @@ public interface InpatientNurseStationConstants {
     /** 执行域写失败（IF-IP-EXE-02）。 */
     String EX_IP_EXE_304 = "EX-IP-EXE-304";
 
-    /** 长期嘱自然月累计发放超上限（IF-IP-EXE-02，GAP-EXE-010）。 */
-    String EX_IP_EXE_305 = "EX-IP-EXE-305";
-
     /** 不执行时槽位非 pending（IF-IP-EXE-04）。 */
     String EX_IP_EXE_401 = "EX-IP-EXE-401";
 
@@ -252,8 +284,30 @@ public interface InpatientNurseStationConstants {
     /** 护理级别医嘱仅允许校对，不允许护士站执行或不执行登记。 */
     String MSG_NURSING_LEVEL_NOT_EXECUTABLE = "护理级别医嘱仅允许校对，不允许护士站执行";
 
+    /**
+     * 批量执行库存不足提示前缀（IF-IP-EXE-02 / EX-IP-EXE-302）；后接顿号分隔的药品展示名清单。
+     */
+    String MSG_EXE_STOCK_INSUFFICIENT_PREFIX = "以下药品库存不足，无法执行所选计划点：";
+
+    /**
+     * 长嘱皮试药跨批软提示（IF-IP-EXE-02 · BR-IP-EXE-034）。
+     * 占位：{@code {patientName}}、{@code {medicationName}}、{@code {lastSkinTestLot}}。
+     */
+    String MSG_EXE_LONG_TERM_SKIN_TEST_CROSS_LOT =
+        "{patientName}的{medicationName}{lastSkinTestLot}批号已用完，务必请取到新批次的{medicationName}后告知医生需要重新做皮试";
+
     /** 就诊已出院/待结算/已结算（PENDING/COMPLETED/DISCHARGED）禁止医嘱及费用变更（非 ChargeItem 账单态）。 */
     String MSG_ENCOUNTER_PENDING_SETTLEMENT_ORDER_FORBIDDEN = "患者已办理出院或已结算，不可变更医嘱及费用";
+
+    /**
+     * 实际执行时分须与计划时点同一自然日（BR-IP-EXE-030；仅允许改 HH:mm，禁止改日期）。
+     */
+    String MSG_ACTUAL_TIME_DATE_MUST_MATCH_PLAN = "实际执行时分须与计划时点同一天，仅允许调整时分";
+
+    /**
+     * 实际执行时刻不得早于医嘱开立时刻（BR-IP-EXE-024；秒级；相等允许）。
+     */
+    String MSG_ACTUAL_TIME_BEFORE_OPENED = "执行时间不能早于开立时间";
 
     /** 划价/取消划价：就诊已出院或已结算不可写（IF-IP-PRC-02/04/06）。 */
     String EX_IP_PRC_406 = "EX-IP-PRC-406";
@@ -342,6 +396,12 @@ public interface InpatientNurseStationConstants {
     /** 自动计费：启停状态不允许（IF-IP-ARG-06/07）。 */
     String EX_IP_ARG_501 = "EX-IP-ARG-501";
 
+    /** 自动计费：计费记录列表加载失败（IF-IP-ARG-09）。 */
+    String EX_IP_ARG_901 = "EX-IP-ARG-901";
+
+    /** 自动计费：配置未关联床位滚费医嘱（IF-IP-ARG-09）。 */
+    String EX_IP_ARG_902 = "EX-IP-ARG-902";
+
     /** 费用明细展示模式：明细（IF-IP-CDT-02）。 */
     String COST_DETAIL_PRESENTATION_MODE_DETAIL = "DETAIL";
 
@@ -383,6 +443,39 @@ public interface InpatientNurseStationConstants {
 
     /** 费用大类块展示：耗材（BR-IP-CDT-008）。 */
     String COST_DETAIL_EXPENSE_BLOCK_DEVICE_DISPLAY = "耗材";
+
+    /** 汇总展开明细活动类型：划价（BR-IP-CDT-018）。 */
+    String COST_DETAIL_ACTIVITY_TYPE_PRICING = "PRICING";
+
+    /** 汇总展开明细活动类型：执行（BR-IP-CDT-018）。 */
+    String COST_DETAIL_ACTIVITY_TYPE_EXECUTE = "EXECUTE";
+
+    /** 汇总展开明细活动类型：自动计费（滚费 order-execute + auto-roll-fees SR，BR-IP-CDT-018）。 */
+    String COST_DETAIL_ACTIVITY_TYPE_AUTO_ROLL = "AUTO_ROLL";
+
+    /** 汇总展开明细活动展示：划价（BR-IP-CDT-018）。 */
+    String COST_DETAIL_ACTIVITY_TYPE_PRICING_DISPLAY = "划价";
+
+    /** 汇总展开明细活动展示：执行（BR-IP-CDT-018）。 */
+    String COST_DETAIL_ACTIVITY_TYPE_EXECUTE_DISPLAY = "执行";
+
+    /** 汇总展开明细活动展示：自动计费（BR-IP-CDT-018）。 */
+    String COST_DETAIL_ACTIVITY_TYPE_AUTO_ROLL_DISPLAY = "自动计费";
+
+    /** 汇总展开明细活动展示：冲销（护士划价负向留痕，BR-IP-CDT-018）。 */
+    String COST_DETAIL_ACTIVITY_TYPE_CANCEL_PRICING_DISPLAY = "冲销";
+
+    /**
+     * 费用明细「来源」列：护士划价冲销行展示文案（BR-IP-CDT-018；
+     * {@code generate_source} 仍为 {@code nurse-pricing}，仅展示覆盖）。
+     */
+    String COST_DETAIL_GENERATE_SOURCE_NURSE_OFFSET_DISPLAY = "护士冲销";
+
+    /** 汇总展开明细活动展示：取消执行（BR-IP-CDT-018）。 */
+    String COST_DETAIL_ACTIVITY_TYPE_CANCEL_EXECUTE_DISPLAY = "取消执行";
+
+    /** 汇总展开明细活动展示：取消自动计费（BR-IP-CDT-018；冲销/退费类留痕）。 */
+    String COST_DETAIL_ACTIVITY_TYPE_CANCEL_AUTO_ROLL_DISPLAY = "取消自动计费";
 
     /** 费用明细列表/装配失败（IF-IP-CDT-02）。 */
     String EX_IP_CDT_101 = "EX-IP-CDT-101";
@@ -459,6 +552,12 @@ public interface InpatientNurseStationConstants {
     /** 撤销汇总失败或状态不允许（IF-IP-SUM-08）。 */
     String EX_IP_SUM_206 = "EX-IP-SUM-206";
 
+    /**
+     * 汇总领药：勾选含出院带药发放行（IF-IP-SUM-04；**BR-IP-SUM-016** /
+     * **BR-IP-ORD-029⑥**）。
+     */
+    String EX_IP_SUM_207 = "EX-IP-SUM-207";
+
     /** 皮试表单枚举初始化失败（IF-IP-STK-01）。 */
     String EX_IP_STK_101 = "EX-IP-STK-101";
 
@@ -474,10 +573,10 @@ public interface InpatientNurseStationConstants {
     /** 皮试保存：皮试药非已校对或不在本就诊（IF-IP-STK-03）。 */
     String EX_IP_STK_202 = "EX-IP-STK-202";
 
-    /** 皮试保存：皮试检查定价无效（IF-IP-STK-03）。 */
+    /** 皮试保存：皮试检查定价无效（IF-IP-STK-03；v1.4 本 Tab 不再划价，保留常量避免历史引用断裂）。 */
     String EX_IP_STK_203 = "EX-IP-STK-203";
 
-    /** 皮试保存：重复划价/并发（IF-IP-STK-03 · BR-IP-STK-006）。 */
+    /** 皮试保存：重复划价/并发（IF-IP-STK-03 · 原 BR-IP-STK-006；v1.4 废止本 Tab 计费，保留常量）。 */
     String EX_IP_STK_204 = "EX-IP-STK-204";
 
     /** 皮试保存：v1.0 互斥码（已废止，v1.1 改用 {@link #EX_IP_STK_207}）；保留常量避免历史引用断裂。 */
@@ -489,17 +588,23 @@ public interface InpatientNurseStationConstants {
     /** 皮试保存：医生未开立皮试检查医嘱（IF-IP-STK-03 · BR-IP-STK-009）。 */
     String EX_IP_STK_207 = "EX-IP-STK-207";
 
+    /** 皮试保存：就诊已出院或已结算不可登记（IF-IP-STK-03）。 */
+    String EX_IP_STK_208 = "EX-IP-STK-208";
+
+    /** 皮试保存：皮试检查尚未执行（IF-IP-STK-03 · BR-IP-STK-004）。 */
+    String EX_IP_STK_209 = "EX-IP-STK-209";
+
+    /** 皮试保存：批号缺失或不在发放候选内（IF-IP-STK-03 · BR-IP-STK-013）。 */
+    String EX_IP_STK_210 = "EX-IP-STK-210";
+
     /** 皮试删除：记录不存在（IF-IP-STK-04）。 */
     String EX_IP_STK_301 = "EX-IP-STK-301";
 
-    /** 皮试删除：已划价不可删（IF-IP-STK-04）。 */
+    /** 皮试删除：已划价不可删（IF-IP-STK-04；v1.4 废止本门禁，保留常量）。 */
     String EX_IP_STK_302 = "EX-IP-STK-302";
 
     /** 皮试删除：删除失败（IF-IP-STK-04）。 */
     String EX_IP_STK_303 = "EX-IP-STK-303";
-
-    /** 皮试保存：就诊已出院或已结算不可划价（IF-IP-STK-03）。 */
-    String EX_IP_STK_208 = "EX-IP-STK-208";
 
     /** 批量取消执行单批上限（AS-IP-NUR-012 §7 NFR）。 */
     int ORDER_CANCEL_EXECUTE_BATCH_MAX = 50;

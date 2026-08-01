@@ -32,6 +32,9 @@ public class DocumentDetailExportRowDto {
     @Schema(description = "目的库位")
     /** 目的库位。 */
     private String purposeLocationName;
+    @Schema(description = "领用科室")
+    /** 领用科室（行政 Organization 名称；领用/退领有值）。 */
+    private String consumingOrganizationName;
     @Schema(description = "供应商")
     /** 供应商。 */
     private String supplierName;

@@ -79,4 +79,12 @@ public interface AccountRepository extends JpaRepository<Account, Long>, JpaSpec
      * @return 匹配账户列表
      */
     List<Account> findByEncounterIdInAndTypeCode(Collection<Long> encounterIds, String typeCode);
+
+    /**
+     * 按费用性质合同业务号列出账户行（报表按 fin_contract.bus_no 反查就诊候选）。
+     *
+     * @param contractNo {@code fin_contract.bus_no}；调用方须已 trim
+     * @return 匹配账户列表（可含停用/软删，调用方过滤）
+     */
+    List<Account> findAllByContractNo(String contractNo);
 }

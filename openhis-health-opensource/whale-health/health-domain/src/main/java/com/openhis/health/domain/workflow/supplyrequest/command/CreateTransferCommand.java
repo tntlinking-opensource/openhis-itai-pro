@@ -14,8 +14,9 @@ import java.time.LocalDateTime;
 /**
  * 创建调拨执行单命令（见 {@link com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService#createTransfer}）。
  *
- * <p>枚举语义字段均为持久化 {@code getCode()}（B.10.8.1）；源、目位置须满足领域不等式门控。
- * 可选 {@link #bootstrapFinalStatusCode} 用于调出 agree 后生成对侧调入壳单（DM §6.1.8）。</p>
+ * <p>枚举语义字段均为持久化 {@code getCode()}（B.10.8.1）；源、目位置须满足领域创建门控。
+ * 可选 {@link #bootstrapFinalStatusCode} 用于调出 agree 后生成对侧调入壳单（DM §6.1.8）。
+ * 壳单行须写入 {@code approverId}/{@code approvalTime}（bootstrap AGREE 不走 {@code approvalToAgree}）。</p>
  */
 @Getter
 @Setter
@@ -66,6 +67,14 @@ public class CreateTransferCommand extends BatchCommand<CreateTransferCommand.Cr
         private Long applicantId;
         /** 申请时间。 */
         private LocalDateTime applyTime;
+        /**
+         * 审批人主键（调出 agree 生成调入壳单时沿用调出审批人；主动调出新建可空）。
+         */
+        private Long approverId;
+        /**
+         * 审批时刻（壳单引导 AGREE 时与调出审批时刻对齐；主动调出新建可空）。
+         */
+        private LocalDateTime approvalTime;
         /** 原因。 */
         private String reason;
         /** 批号（调拨行/壳单追溯）。 */

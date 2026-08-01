@@ -10,6 +10,7 @@ import com.openhis.health.domain.custom.servicedevicetemplate.repository.Service
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.whale.core.application.exception.BusinessException;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import lombok.RequiredArgsConstructor;
@@ -66,7 +67,7 @@ public class ServiceDeviceTemplateQueryService {
     /**
      * 按来源主键分页查询绑定（默认排序 id 降序，软删由底座/仓储口径排除）。
      *
-     * @param rangeCode 业务范围编码
+     * @param rangeCode 业务范围编码；为空时不限范围
      * @param typeCode 项目类型编码
      * @param itemTable 来源主表名
      * @param itemId 来源主键
@@ -81,20 +82,30 @@ public class ServiceDeviceTemplateQueryService {
         Pageable pageable
     ) {
         // 查询：分页直接下推到数据库，默认排除已逻辑删除行（BR-SDT-013）
-        Page<ServiceDeviceTemplate> page = repository.findAllByRangeCodeAndTypeCodeAndItemTableAndItemIdOrderByIdDesc(
-            rangeCode,
-            typeCode,
-            itemTable,
-            itemId,
-            pageable
-        );
+        Page<ServiceDeviceTemplate> page;
+        if (StringUtils.isEmpty(rangeCode)) {
+            page = repository.findAllByTypeCodeAndItemTableAndItemIdOrderByIdDesc(
+                typeCode,
+                itemTable,
+                itemId,
+                pageable
+            );
+        } else {
+            page = repository.findAllByRangeCodeAndTypeCodeAndItemTableAndItemIdOrderByIdDesc(
+                rangeCode,
+                typeCode,
+                itemTable,
+                itemId,
+                pageable
+            );
+        }
         return page.map(this::toModel);
     }
 
     /**
      * 按来源主键与发布状态分页查询绑定。
      *
-     * @param rangeCode 业务范围编码
+     * @param rangeCode 业务范围编码；为空时不限范围
      * @param typeCode 项目类型编码
      * @param itemTable 来源主表名
      * @param itemId 来源主键
@@ -110,14 +121,25 @@ public class ServiceDeviceTemplateQueryService {
         String statusEnum,
         Pageable pageable
     ) {
-        Page<ServiceDeviceTemplate> page = repository.findAllByRangeCodeAndTypeCodeAndItemTableAndItemIdAndStatusEnumOrderByIdDesc(
-            rangeCode,
-            typeCode,
-            itemTable,
-            itemId,
-            statusEnum,
-            pageable
-        );
+        Page<ServiceDeviceTemplate> page;
+        if (StringUtils.isEmpty(rangeCode)) {
+            page = repository.findAllByTypeCodeAndItemTableAndItemIdAndStatusEnumOrderByIdDesc(
+                typeCode,
+                itemTable,
+                itemId,
+                statusEnum,
+                pageable
+            );
+        } else {
+            page = repository.findAllByRangeCodeAndTypeCodeAndItemTableAndItemIdAndStatusEnumOrderByIdDesc(
+                rangeCode,
+                typeCode,
+                itemTable,
+                itemId,
+                statusEnum,
+                pageable
+            );
+        }
         return page.map(this::toModel);
     }
 

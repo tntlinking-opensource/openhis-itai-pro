@@ -158,16 +158,19 @@ public class CreateServiceCatalogRequest {
     @Schema(description = "医保类别名称（字典回显，无需传参）", accessMode = Schema.AccessMode.READ_ONLY, example = "甲类")
     private String ybType_dictText;
 
-    /** 项目购入价（精度：10位整数，2位小数）。 */
-    @Schema(description = "项目购入价（精度：10位整数，2位小数）", example = "15.50")
-    @Digits(integer = 10, fraction = 2, message = "购入价精度错误，最多10位整数，2位小数")
-    @DecimalMin(value = "0.00", message = "购入价不能小于0")
+    /**
+     * 进价（维护态 {@code PURCHASE}）。
+     * <p>诊疗目录维护页不展示、不提交本字段；接口保留仅为兼容历史导入/存量数据。</p>
+     */
+    @Schema(description = "进价（诊疗目录维护页不使用；精度：10位整数，2位小数）", example = "15.50")
+    @Digits(integer = 10, fraction = 2, message = "进价精度错误，最多10位整数，2位小数")
+    @DecimalMin(value = "0.00", message = "进价不能小于0")
     private BigDecimal purchasePrice;
 
-    /** 项目零售价（精度：10位整数，2位小数）。 */
-    @Schema(description = "项目零售价（精度：10位整数，2位小数）", example = "20.00")
-    @Digits(integer = 10, fraction = 2, message = "零售价精度错误，最多10位整数，2位小数")
-    @DecimalMin(value = "0.00", message = "零售价不能小于0")
+    /** 售价（维护态 {@code SALE}，精度：10位整数，2位小数）。 */
+    @Schema(description = "售价（精度：10位整数，2位小数）", example = "20.00")
+    @Digits(integer = 10, fraction = 2, message = "售价精度错误，最多10位整数，2位小数")
+    @DecimalMin(value = "0.00", message = "售价不能小于0")
     private BigDecimal retailPrice;
 
     /** 项目最高零售价（精度：10位整数，2位小数）。 */
@@ -176,10 +179,10 @@ public class CreateServiceCatalogRequest {
     @DecimalMin(value = "0.00", message = "最高零售价不能小于0")
     private BigDecimal maximumRetailPrice;
 
-    /** 医保收费项目等级（1=甲类，2=乙类，3=丙类）。 */
-    @Schema(description = "医保收费项目等级（1=甲类，2=乙类，3=丙类）", example = "1", allowableValues = {"1", "2", "3"})
-    @Min(value = 1, message = "医保收费项目等级只能是1、2、3")
-    @Max(value = 3, message = "医保收费项目等级只能是1、2、3")
+    /** 医保收费项目等级（与 yb_type 一致：1=自费，2=甲类，3=乙类，4=丙类）。 */
+    @Schema(description = "医保收费项目等级（与 yb_type 一致：1=自费，2=甲类，3=乙类，4=丙类）", example = "2", allowableValues = {"1", "2", "3", "4"})
+    @Min(value = 1, message = "医保收费项目等级只能是1、2、3、4")
+    @Max(value = 4, message = "医保收费项目等级只能是1、2、3、4")
     private Integer chrgitmLv;
 
     /** 病案结算类型编码（术语 mr_settlement_type_code）。 */

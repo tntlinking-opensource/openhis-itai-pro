@@ -14,7 +14,7 @@
 
     <groupId>com.openhis</groupId>
     <artifactId>whale</artifactId>
-    <version>2.0.3-SNAPSHOT</version>
+    <version>2.0.4-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>OpenHIS All</name>
@@ -34,6 +34,7 @@
         <whale.chs.version>${project.version}</whale.chs.version>
         <whale.elep.version>${project.version}</whale.elep.version>
         <whale.booking.version>${project.version}</whale.booking.version>
+        <whale.campus.version>${project.version}</whale.campus.version>
 
         <lombok.version>1.18.30</lombok.version>
         <mapstruct.version>1.5.5.Final</mapstruct.version>
@@ -45,6 +46,7 @@
         <module>whale-dependencies</module>
         <module>whale-framework</module>
         <module>whale-module-booking</module>
+        <module>whale-module-campus</module>
         <module>whale-module-emr</module>
         <module>whale-health</module>
         <module>whale-module-chs-jilin</module>
@@ -90,6 +92,12 @@
             <id>with-booking</id>
             <modules>
                 <module>whale-module-booking</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>with-campus</id>
+            <modules>
+                <module>whale-module-campus</module>
             </modules>
         </profile>
         <profile>

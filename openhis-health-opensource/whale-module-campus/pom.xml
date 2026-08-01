@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.openhis</groupId>
+        <artifactId>whale</artifactId>
+        <version>2.0.4-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>whale-module-campus</artifactId>
+    <packaging>pom</packaging>
+
+    <name>Whale Module Campus</name>
+    <description>高校校务组织/档案/公费（v3：无 contracts；Reader 接口落 domain）</description>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.openhis</groupId>
+                <artifactId>whale-core</artifactId>
+                <version>${whale.framework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.openhis</groupId>
+                <artifactId>health-domain-shared</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.openhis</groupId>
+                <artifactId>module-campus-domain</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.openhis</groupId>
+                <artifactId>module-campus-bridge</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.openhis</groupId>
+                <artifactId>module-campus-application</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <modules>
+        <module>module-campus-domain</module>
+        <module>module-campus-bridge</module>
+        <module>module-campus-application</module>
+        <module>module-campus-starter</module>
+    </modules>
+</project>

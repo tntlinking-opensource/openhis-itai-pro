@@ -50,6 +50,11 @@ import com.openhis.whale.emr.domain.document.entity.DocumentVersion;
 import com.openhis.whale.emr.domain.document.model.StructureItem;
 import com.openhis.whale.emr.domain.document.service.DocumentManager;
 import com.openhis.whale.emr.domain.document.service.DocumentStructureManager;
+import com.openhis.whale.emr.domain.loader.EmrAdmissionContextLoader;
+import com.openhis.whale.emr.domain.loader.EmrLinkedEncounterResolver;
+import com.openhis.whale.emr.domain.template.entity.Template;
+import com.openhis.whale.identity.domain.User;
+import com.openhis.whale.identity.infrastructure.repository.UserRepository;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
@@ -76,6 +81,9 @@ public class DocumentAppService {
     private final PrintConfigResolver printConfigResolver;
     private final EncounterMetadataAppService encounterMetadataAppService;
     private final EmrEditorImageStore emrEditorImageStore;
+    private final EmrAdmissionContextLoader admissionContextLoader;
+    private final EmrLinkedEncounterResolver linkedEncounterResolver;
+    private final UserRepository userRepository;
     private final ICurrentUser currentUser;
 
     public DocumentAppService(
@@ -85,6 +93,9 @@ public class DocumentAppService {
             PrintConfigResolver printConfigResolver,
             EncounterMetadataAppService encounterMetadataAppService,
             EmrEditorImageStore emrEditorImageStore,
+            EmrAdmissionContextLoader admissionContextLoader,
+            @Autowired(required = false) EmrLinkedEncounterResolver linkedEncounterResolver,
+            @Autowired(required = false) UserRepository userRepository,
             @Autowired(required = false) ICurrentUser currentUser) {
         this.documentManager = documentManager;
         this.documentStructureManager = documentStructureManager;
@@ -92,6 +103,10 @@ public class DocumentAppService {
         this.printConfigResolver = printConfigResolver;
         this.encounterMetadataAppService = encounterMetadataAppService;
         this.emrEditorImageStore = emrEditorImageStore;
+        this.admissionContextLoader = admissionContextLoader;
+        this.linkedEncounterResolver =
+                linkedEncounterResolver != null ? linkedEncounterResolver : EmrLinkedEncounterResolver.noop();
+        this.userRepository = userRepository;
         this.currentUser = currentUser;
     }
 
@@ -142,16 +157,54 @@ public class DocumentAppService {
         // Gate：归一化分页
         int pageNo = EmrQuerySupport.resolvePageNo(request.getPageNo(), request.getPageIndex());
         int pageSize = EmrQuerySupport.resolvePageSize(request.getPageSize());
+        // Gate：解析就诊过滤集合（可选关联对端并集）
+        List<String> encounterIds = resolveEncounterIdsForQuery(request);
         // Cmd：领域分页查询
         var docPage = documentManager.findPage(
                 toPatientId(request.getPatientId()),
-                toEncounterId(request.getEncounterId()),
+                encounterIds,
                 request.getDocumentTypeCode(),
                 request.getStatus(),
                 PageRequest.of(pageNo - 1, pageSize, Sort.by(Sort.Direction.DESC, "createdAt")));
-        // Asm：映射摘要分页
-        List<DocumentSummaryDto> items = docPage.getContent().stream().map(this::toSummaryDto).collect(Collectors.toList());
+        // Asm：映射摘要分页（科室/保存人批量解析，供病历树展示）
+        Map<String, String> deptNameByEncounter = new HashMap<>();
+        Map<Long, String> userNameById = new HashMap<>();
+        List<DocumentSummaryDto> items = docPage.getContent().stream()
+                .map(doc -> toSummaryDto(doc, deptNameByEncounter, userNameById))
+                .collect(Collectors.toList());
         return PagedResult.of(items, docPage.getTotalElements(), pageNo, pageSize);
+    }
+
+    /**
+     * 组装文书列表就诊过滤：显式 encounterIds ∪ encounterId；
+     * 若 {@code includeLinkedEncounters=true} 再按门诊/住院关联展开。
+     */
+    private List<String> resolveEncounterIdsForQuery(QueryDocumentRequest request) {
+        LinkedHashSet<String> ids = new LinkedHashSet<>();
+        if (request.getEncounterIds() != null) {
+            for (String raw : request.getEncounterIds()) {
+                String id = toEncounterId(raw);
+                if (id != null) {
+                    ids.add(id);
+                }
+            }
+        }
+        String single = toEncounterId(request.getEncounterId());
+        if (single != null) {
+            ids.add(single);
+        }
+        if (Boolean.TRUE.equals(request.getIncludeLinkedEncounters()) && single != null) {
+            List<String> linked = linkedEncounterResolver.resolveLinkedEncounterIds(single);
+            if (linked != null) {
+                for (String id : linked) {
+                    String normalized = toEncounterId(id);
+                    if (normalized != null) {
+                        ids.add(normalized);
+                    }
+                }
+            }
+        }
+        return ids.isEmpty() ? null : new ArrayList<>(ids);
     }
 
     /**
@@ -170,7 +223,7 @@ public class DocumentAppService {
         // Cmd：保存正文并可选生成版本
         Document doc = documentManager.saveContent(documentId, request.getContent(), saveVersion);
         // Asm：返回摘要
-        return toSummaryDto(doc);
+        return toSummaryDto(doc, new HashMap<>(), new HashMap<>());
     }
 
     /**
@@ -582,13 +635,47 @@ public class DocumentAppService {
                 || DocumentManager.STATUS_ARCHIVED.equals(doc.getStatus())) {
             return true;
         }
-        if (DocumentManager.STATUS_DRAFT.equals(doc.getStatus()) && !isDraftEditableByCurrentUser(doc)) {
-            return true;
+        // 病程 / 会诊：多人可编；其余仅创建者可编
+        if (allowsMultiUserEdit(doc)) {
+            return false;
         }
-        return false;
+        return !isEditableByCurrentUser(doc);
     }
 
-    private boolean isDraftEditableByCurrentUser(Document doc) {
+    /**
+     * 病程记录、会诊相关文书允许多人编辑（未锁定/归档前提下）。
+     *
+     * <p>会诊模板已并入 {@code NOTICE} 类型，故额外按模板编码/名称、文书标题识别。</p>
+     */
+    private boolean allowsMultiUserEdit(Document doc) {
+        String typeCode = doc.getDocumentTypeCode();
+        if (StringUtils.hasText(typeCode)) {
+            String upper = typeCode.trim().toUpperCase();
+            if ("PROGRESS_NOTE".equals(upper) || upper.contains("CONSULT")) {
+                return true;
+            }
+        }
+        Long templateId = doc.getSourceTemplateId();
+        if (templateId != null) {
+            Optional<Template> templateOpt = documentManager.getTemplateById(templateId);
+            if (templateOpt.isPresent()) {
+                Template template = templateOpt.get();
+                String code = template.getCode();
+                if (StringUtils.hasText(code) && code.toUpperCase().contains("CONSULT")) {
+                    return true;
+                }
+                String name = template.getName();
+                if (StringUtils.hasText(name) && name.contains("会诊")) {
+                    return true;
+                }
+            }
+        }
+        String title = doc.getTitle();
+        return StringUtils.hasText(title) && title.contains("会诊");
+    }
+
+    /** 当前登录用户是否为创建者（无用户上下文时放行，供系统调用） */
+    private boolean isEditableByCurrentUser(Document doc) {
         Long currentUserId = null;
         if (currentUser != null) {
             currentUserId = currentUser.getCurrentUserId();
@@ -608,12 +695,22 @@ public class DocumentAppService {
                 || DocumentManager.STATUS_ARCHIVED.equals(doc.getStatus())) {
             throw new ValidationException("文书已锁定或归档，不可修改");
         }
-        if (DocumentManager.STATUS_DRAFT.equals(doc.getStatus()) && !isDraftEditableByCurrentUser(doc)) {
+        if (allowsMultiUserEdit(doc)) {
+            return;
+        }
+        if (!isEditableByCurrentUser(doc)) {
             throw new ValidationException("仅创建者可修改该文书");
         }
     }
 
     private DocumentSummaryDto toSummaryDto(Document doc) {
+        return toSummaryDto(doc, new HashMap<>(), new HashMap<>());
+    }
+
+    private DocumentSummaryDto toSummaryDto(
+            Document doc,
+            Map<String, String> deptNameByEncounter,
+            Map<Long, String> userNameById) {
         DocumentSummaryDto dto = new DocumentSummaryDto();
         dto.setId(doc.getId());
         dto.setPatientId(doc.getPatientId());
@@ -625,9 +722,70 @@ public class DocumentAppService {
         dto.setUpdatedAt(doc.getUpdatedAt());
         dto.setCreatedBy(doc.getCreatedBy());
         dto.setUpdatedBy(doc.getUpdatedBy());
+        dto.setSourceTemplateId(doc.getSourceTemplateId());
         documentManager.getDocumentTypeByCode(doc.getDocumentTypeCode())
                 .ifPresent(t -> dto.setDocumentTypeName(t.getName()));
+        dto.setDeptName(resolveDeptName(doc.getEncounterId(), deptNameByEncounter));
+        Long saverId = doc.getUpdatedBy() != null ? doc.getUpdatedBy() : doc.getCreatedBy();
+        dto.setSavedByName(resolveUserDisplayName(saverId, userNameById));
         return dto;
+    }
+
+    private String resolveDeptName(String encounterId, Map<String, String> cache) {
+        if (!StringUtils.hasText(encounterId)) {
+            return null;
+        }
+        String key = encounterId.trim();
+        if (cache.containsKey(key)) {
+            return cache.get(key);
+        }
+        String deptName = null;
+        try {
+            Map<String, String> ctx = new HashMap<>();
+            admissionContextLoader.contributeEncounter(ctx, key);
+            deptName = firstNonBlank(ctx.get("encounter.deptName"), ctx.get("dept.name"));
+        } catch (RuntimeException ignored) {
+            // HIS 未就绪时列表仍可用
+        }
+        cache.put(key, deptName);
+        return deptName;
+    }
+
+    private String resolveUserDisplayName(Long userId, Map<Long, String> cache) {
+        if (userId == null) {
+            return null;
+        }
+        if (cache.containsKey(userId)) {
+            return cache.get(userId);
+        }
+        String display = null;
+        if (userRepository != null) {
+            display = userRepository.findById(userId)
+                    .map(this::formatUserDisplayName)
+                    .orElse(null);
+        }
+        cache.put(userId, display);
+        return display;
+    }
+
+    private String formatUserDisplayName(User user) {
+        String name = firstNonBlank(user.getName(), user.getUserName());
+        if (!StringUtils.hasText(name) && StringUtils.hasText(user.getSurname())) {
+            name = user.getSurname().trim();
+        }
+        return StringUtils.hasText(name) ? name.trim() : null;
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (StringUtils.hasText(value)) {
+                return value.trim();
+            }
+        }
+        return null;
     }
 
     private DocumentContentDto toContentDto(Document doc) {

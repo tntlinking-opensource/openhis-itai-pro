@@ -52,12 +52,8 @@ public class ChangeDeviceOrderDraftCommand extends BatchCommand<ChangeDeviceOrde
         /** 医生站列表展示排序号；非空时更新。 */
         private Integer sortNumber;
         /**
-         * 诊断定义主键（草稿修改；非空且与存量不同时更新 {@code wkf_device_request.condition_definition_id}）。
+         * 绑定就诊诊断主键有序串（草稿修改；非空且与存量不同时更新 {@code wkf_device_request.encounter_diagnosis_ids}）。
          */
-        private Long conditionDefinitionId;
-        /**
-         * 就诊诊断主键（草稿修改；非空且与存量不同时更新 {@code wkf_device_request.encounter_diagnosis_id}）。
-         */
-        private Long encounterDiagnosisId;
+        private String encounterDiagnosisIds;
     }
 }

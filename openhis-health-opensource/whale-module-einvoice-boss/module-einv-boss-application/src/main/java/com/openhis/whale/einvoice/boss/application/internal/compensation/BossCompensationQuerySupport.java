@@ -181,6 +181,7 @@ public class BossCompensationQuerySupport {
         row.setEncounterBusNo(snapshot.getEncounterBusNo());
         row.setIssueKind(resolveIssueKind(snapshot));
         row.setIssueKindLabel(resolveIssueKindLabel(row.getIssueKind()));
+        row.setTotalAmt(snapshot.getTotalAmt());
         row.setPaymentAmt(snapshot.getPaymentAmt());
         row.setBusNo(snapshot.getBusNo());
         row.setExceptionType(type.getCode());

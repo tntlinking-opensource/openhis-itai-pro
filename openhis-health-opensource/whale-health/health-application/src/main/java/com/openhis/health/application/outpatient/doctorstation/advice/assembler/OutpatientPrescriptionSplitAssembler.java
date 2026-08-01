@@ -22,6 +22,7 @@ import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.YbMedType;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
+import com.openhis.health.domain.share.utils.EncounterDiagnosisIdsSupport;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.application.shared.product.DoctorStationAdviceFifoAllocationAssembler;
 import com.openhis.health.application.outpatient.doctorstation.advice.support.OutpatientPrescriptionAmountLimitSettingResolver;
@@ -33,6 +34,7 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -43,9 +45,13 @@ import java.util.Set;
 /**
  * 门诊医生站签发前处方分方装配器。
  *
- * <p>在 IF-DOR-15 药品签发循环之前，拉取当前就诊下全部未收费药品行，装配 {@link PrescriptionSplitLineContext}
- * 快照（医保医疗类别、特殊药品属性、费用合计、FIFO 主库房），委托 {@link MedicationRequestDomainService#splitPrescription}
- * 回写 {@code prescription_no} 与 {@code rx_type_code}。住院路径不调用本装配器。</p>
+ * <p>在 IF-DOR-15 药品签发循环之前，装配 {@link PrescriptionSplitLineContext} 快照并委托
+ * {@link MedicationRequestDomainService#splitPrescription} 仅回写 {@code prescription_no} 与 {@code rx_type_code}
+ * （不改医嘱状态、不改收费状态）。住院路径不调用本装配器。</p>
+ *
+ * <p>参与集 = 本批待签发药品草稿 ∪ 本就诊已签发（ACTIVE）且未 SETTLED 的药品行，
+ * 用于防止「开一个签一个」绕过分方；<b>禁止</b>给未纳入本批发签的其它 DRAFT 写处方号
+ * （「签发以后才有方」）。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -61,16 +67,23 @@ public class OutpatientPrescriptionSplitAssembler {
     private final OutpatientPrescriptionAmountLimitSettingResolver outpatientPrescriptionAmountLimitSettingResolver;
 
     /**
-     * 对当前就诊下全部未收费药品医嘱执行分方，并返回申请主键到处方号的映射。
+     * 对本批发签目标与已签发未收费药品执行分方，返回申请主键到处方号的映射。
      *
-     * @param encounterId 就诊主键
-     * @param orgId       开立机构（FIFO 库房解析）
-     * @param operatorId  操作人
+     * @param encounterId                  就诊主键
+     * @param orgId                        开立机构（FIFO 库房解析）
+     * @param operatorId                   操作人
+     * @param signingMedicationRequestIds  本批待签发的药品申请主键（须覆盖当前批次全部西药/中成药签发目标）
      * @return 药品申请主键 → 处方号；无参与行时返回空 Map
      */
-    public Map<Long, String> splitAndAssignPrescriptions(Long encounterId, Long orgId, Long operatorId) {
-        // Pre：装配未收费全集行快照（含 med_type、金额、FIFO 首段库位）
-        List<PrescriptionSplitLineContext> lines = buildUnbilledLineContexts(encounterId, orgId);
+    public Map<Long, String> splitAndAssignPrescriptions(
+        Long encounterId,
+        Long orgId,
+        Long operatorId,
+        Collection<Long> signingMedicationRequestIds
+    ) {
+        // Pre：仅装配「本批发签草稿 ∪ 已签发未收费」快照，勿带其它未签发草稿
+        List<PrescriptionSplitLineContext> lines =
+            buildSplitLineContexts(encounterId, orgId, signingMedicationRequestIds);
         if (lines.isEmpty()) {
             return Map.of();
         }
@@ -79,24 +92,41 @@ public class OutpatientPrescriptionSplitAssembler {
         command.setOperatorId(operatorId);
         command.setLines(lines);
         command.setAmountLimitYuan(outpatientPrescriptionAmountLimitSettingResolver.resolveAmountLimitYuan());
-        // Cmd：领域装箱并持久化 prescription_no / rx_type_code
+        // Cmd：领域装箱并持久化 prescription_no / rx_type_code（不碰收费状态）
         SplitPrescriptionResult result = medicationRequestDomainService.splitPrescription(command);
         return result.getPrescriptionNoByRequestId();
     }
 
     /**
-     * 收集未收费药品行并装配分方快照。
+     * 收集参与分方的药品行并装配快照。
      *
-     * @param encounterId 就诊主键
-     * @param orgId       开立机构
+     * <p>纳入：本批发签目标中仍为 DRAFT 的行；以及本就诊 ACTIVE 且未 SETTLED 的行。
+     * 排除：未在本批发签集合内的其它 DRAFT（避免未签发却落处方号）。</p>
+     *
+     * @param encounterId                  就诊主键
+     * @param orgId                        开立机构
+     * @param signingMedicationRequestIds  本批待签发药品申请主键
      * @return 参与分方的行快照列表
      */
-    private List<PrescriptionSplitLineContext> buildUnbilledLineContexts(Long encounterId, Long orgId) {
+    private List<PrescriptionSplitLineContext> buildSplitLineContexts(
+        Long encounterId,
+        Long orgId,
+        Collection<Long> signingMedicationRequestIds
+    ) {
         List<MedicationRequestListQueryModel> medicationRows =
             medicationRequestQueryService.listMedicationRequestsByEncounterForDoctorStation(
                 encounterId, GenerateSource.DOCTOR_PRESCRIPTION.getCode());
         if (medicationRows.isEmpty()) {
             return List.of();
+        }
+        // Pre：本批待签发主键集合；空集合时仍可仅重分已 ACTIVE 未收费行（防御）
+        Set<Long> signingIds = new HashSet<>();
+        if (signingMedicationRequestIds != null) {
+            for (Long signingId : signingMedicationRequestIds) {
+                if (signingId != null) {
+                    signingIds.add(signingId);
+                }
+            }
         }
         // Pre：一次加载就诊全部收费行，供结算判定与金额汇总（避免多次扫描同一列表）
         ChargeItemQueryCommand chargeQuery = new ChargeItemQueryCommand();
@@ -111,20 +141,20 @@ public class OutpatientPrescriptionSplitAssembler {
             if (row == null || row.getId() == null) {
                 continue;
             }
-            String status = row.getStatusEnum();
-            // 仅草稿/已签发未收费行参与分方
-            if (!RequestStatus.DRAFT.getCode().equals(status)
-                && !RequestStatus.ACTIVE.getCode().equals(status)) {
-                continue;
-            }
             if (chargeRollup.settledRequestIds.contains(row.getId())) {
                 // 已结算行不参与重分方
                 continue;
             }
-            candidates.add(row);
-            if (row.getEncounterDiagnosisId() != null) {
-                diagnosisIds.add(row.getEncounterDiagnosisId());
+            String status = row.getStatusEnum();
+            boolean alreadySignedUnsettled = RequestStatus.ACTIVE.getCode().equals(status);
+            // 仅本批发签目标允许以 DRAFT 入方；其它草稿「签发后才有方」
+            boolean signingDraft =
+                RequestStatus.DRAFT.getCode().equals(status) && signingIds.contains(row.getId());
+            if (!alreadySignedUnsettled && !signingDraft) {
+                continue;
             }
+            candidates.add(row);
+            collectEncounterDiagnosisIdsFromIds(row.getEncounterDiagnosisIds(), diagnosisIds);
             if (row.getMedicationId() != null) {
                 medicationDefIds.add(row.getMedicationId());
             }
@@ -156,12 +186,14 @@ public class OutpatientPrescriptionSplitAssembler {
             ctx.setDoseUnitCode(row.getDoseUnitCode());
             ctx.setGroupId(row.getGroupId());
             ctx.setTcmFlag(row.getTcmFlag());
-            Long diagnosisId = row.getEncounterDiagnosisId();
+            Long diagnosisId = EncounterDiagnosisIdsSupport.firstId(row.getEncounterDiagnosisIds());
             String medType = medTypeByDiagnosisId.get(diagnosisId);
             if (StringUtils.isEmpty(medType)) {
                 medType = YbMedType.GENERAL_OUTPATIENT.getCode();
             }
             ctx.setMedType(medType);
+            // 分方同方：诊断有交集即可；仍写 canonical set key 供装箱解析 id 集，禁止裸串 equals
+            ctx.setDiagnosisSetKey(EncounterDiagnosisIdsSupport.toDiagnosisSetKey(row.getEncounterDiagnosisIds()));
             BigDecimal chargeTotal = chargeRollup.chargeTotalByRequestId.get(row.getId());
             if (chargeTotal == null) {
                 chargeTotal = BigDecimal.ZERO;
@@ -171,7 +203,10 @@ public class OutpatientPrescriptionSplitAssembler {
                 TableNameConstants.MED_MEDICATION_DEFINITION, row.getMedicationId());
             ProductDefinitionDisplayDto product = productByKey.get(productKey);
             if (product != null) {
-                ctx.setPartAttributeEnum(product.getPartAttributeEnum());
+                // 分方特殊管理轨只认药品性质，禁止把门诊拆分属性（整包不拆等）塞进性质快照
+                ctx.setPharmacologyCategoryCode(product.getPharmacologyCategoryCode());
+                // 普通药西药/中成药分轨依赖目录分类码（medication_category_code）
+                ctx.setMedicationCategoryCode(product.getCategoryCode());
             }
             Long pharmacyLocationId = null;
             if (row.getMedicationId() != null && row.getQuantity() != null) {
@@ -333,6 +368,20 @@ public class OutpatientPrescriptionSplitAssembler {
             return dispenseIdToRequestId.get(chargeItem.getDispenseId());
         }
         return null;
+    }
+
+    /**
+     * 从医嘱绑定 ids 串 收集就诊诊断主键（去重写入 target）。
+     */
+    private static void collectEncounterDiagnosisIdsFromIds(String idsText, Set<Long> target) {
+        if (target == null || StringUtils.isEmpty(idsText)) {
+            return;
+        }
+        try {
+            target.addAll(EncounterDiagnosisIdsSupport.parseUniqueOrderedIds(idsText, true));
+        } catch (NumberFormatException ignored) {
+            // lenient 路径不应抛出；兜底忽略
+        }
     }
 
     /**

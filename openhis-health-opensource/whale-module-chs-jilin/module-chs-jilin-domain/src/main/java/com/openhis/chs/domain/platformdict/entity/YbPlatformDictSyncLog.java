@@ -5,6 +5,7 @@
 package com.openhis.chs.domain.platformdict.entity;
 
 import com.openhis.whale.core.domain.BaseAuditedEntity;
+import com.openhis.whale.core.domain.IExcludeFromAudit;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
@@ -13,12 +14,12 @@ import lombok.Setter;
 
 import java.time.LocalDateTime;
 
-/** 1901 字典手动同步日志 */
+/** 1901 字典手动同步日志；本表即同步轨迹，排除框架审计。 */
 @Getter
 @Setter
 @Entity
 @Table(name = "yb_platform_dict_sync_log")
-public class YbPlatformDictSyncLog extends BaseAuditedEntity {
+public class YbPlatformDictSyncLog extends BaseAuditedEntity implements IExcludeFromAudit {
 
     @Column(name = "dict_type", nullable = false, length = 30)
     private String dictType;

@@ -128,6 +128,9 @@ public class DocumentTypeAppService {
             entity.setEnabled(Boolean.TRUE);
         }
         entity.setSortOrder(request.getSortOrder());
+        if (request.getCategoryCode() != null) {
+            entity.setCategoryCode(normalizeCategoryCode(request.getCategoryCode()));
+        }
         validateAndApplyDefaultTemplate(entity, request.getDefaultTemplateId());
 
         // Cmd：持久化
@@ -161,6 +164,9 @@ public class DocumentTypeAppService {
         }
         if (request.getSortOrder() != null) {
             entity.setSortOrder(request.getSortOrder());
+        }
+        if (request.getCategoryCode() != null) {
+            entity.setCategoryCode(normalizeCategoryCode(request.getCategoryCode()));
         }
         if (Boolean.TRUE.equals(request.getClearDefaultTemplate())) {
             entity.setDefaultTemplateId(null);
@@ -274,6 +280,7 @@ public class DocumentTypeAppService {
         dto.setDefaultTemplateId(entity.getDefaultTemplateId());
         dto.setIsEnabled(entity.getEnabled());
         dto.setSortOrder(entity.getSortOrder());
+        dto.setCategoryCode(entity.getCategoryCode());
         dto.setCreatedAt(entity.getCreatedAt());
         dto.setUpdatedAt(entity.getUpdatedAt());
         if (entity.getDefaultTemplateId() != null) {
@@ -281,5 +288,13 @@ public class DocumentTypeAppService {
                     .ifPresent(template -> dto.setDefaultTemplateName(template.getName()));
         }
         return dto;
+    }
+
+    private static String normalizeCategoryCode(String categoryCode) {
+        if (categoryCode == null) {
+            return null;
+        }
+        String normalized = categoryCode.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 }

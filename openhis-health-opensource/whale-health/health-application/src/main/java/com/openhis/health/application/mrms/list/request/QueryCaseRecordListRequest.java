@@ -8,7 +8,7 @@ import com.openhis.health.domain.share.query.AbstractPageQuery;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -33,9 +33,9 @@ public class QueryCaseRecordListRequest extends AbstractPageQuery {
     /** 主治医师 {@code adm_practitioner.id} 过滤。 */
     private Long attendingPractitionerId;
 
-    /** 出院日期起。 */
-    private LocalDateTime dscgFrom;
+    /** 出院日期起（{@code yyyy-MM-dd}，闭区间日初）。 */
+    private LocalDate dscgFrom;
 
-    /** 出院日期止。 */
-    private LocalDateTime dscgTo;
+    /** 出院日期止（{@code yyyy-MM-dd}，闭区间日末）。 */
+    private LocalDate dscgTo;
 }

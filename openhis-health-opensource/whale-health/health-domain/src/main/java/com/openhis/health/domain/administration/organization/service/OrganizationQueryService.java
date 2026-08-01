@@ -81,6 +81,36 @@ public class OrganizationQueryService {
     }
 
     /**
+     * 按主键批量加载机构实体（登录 OU 桥接等避免逐条 {@link #loadOrganizationByIdForDisplay}）。
+     *
+     * <p>仅本聚合 {@link OrganizationRepository}；结果已按当前租户过滤。</p>
+     *
+     * @param organizationIds 机构主键集合；{@code null} 或空时返回空映射
+     * @return 机构主键 → 实体；未命中或越租户时不写入该键
+     */
+    public Map<Long, Organization> mapByIds(Collection<Long> organizationIds) {
+        Map<Long, Organization> organizationById = new HashMap<>();
+        if (organizationIds == null || organizationIds.isEmpty()) {
+            return organizationById;
+        }
+        Set<Long> distinctIds = new LinkedHashSet<>();
+        for (Long organizationId : organizationIds) {
+            if (organizationId != null) {
+                distinctIds.add(organizationId);
+            }
+        }
+        if (distinctIds.isEmpty()) {
+            return organizationById;
+        }
+        for (Organization organization : scopeToCurrentTenant(organizationRepository.findAllByIdIn(distinctIds))) {
+            if (organization != null && organization.getId() != null) {
+                organizationById.put(organization.getId(), organization);
+            }
+        }
+        return organizationById;
+    }
+
+    /**
      * 批量解析机构名称（列表/发药单等场景避免 N+1，对齐 A.9.1）。
      *
      * @param organizationIds 机构主键集合；{@code null} 或空时返回空映射
@@ -234,23 +264,36 @@ public class OrganizationQueryService {
     }
 
     /**
-     * 责任科室等场景：在启用机构中筛出已维护分类枚举的行，排除分类为空的脏数据节点。
+     * 责任科室 / 默认登录科室 / 出诊科室 / 执行科室下拉：仅启用「科室」节点且已维护分类。
      *
-     * @return 带非空 {@code classEnum} 的机构子集
-     */
-    /**
-     * 责任科室等场景：在启用机构中筛出已维护分类枚举的行，排除分类为空的脏数据节点。
+     * <p>排除医院根、分类为空的脏数据；名称与类型均以 {@code adm_organization} 为准，
+     * 不得把医院或占位节点当成可选科室。根节点（{@code parentId == null}）即使
+     * {@code typeEnum} 误标为科室，也按医院根排除，避免「执行科室」等下拉里出现院名。</p>
      *
-     * @return 带非空 {@code classEnum} 的机构子集
+     * @return 可作责任/登录/出诊/执行科室的机构子集
      */
     public List<Organization> getOrganizationTreeForResponsibilityDept() {
         List<Organization> all = this.getOrganizationTree();
         List<Organization> result = new ArrayList<>();
-        // Loop：遍历机构列表，过滤出分类非空的节点
+        // Loop：只要科室层级且分类已维护的节点
         for (Organization organization : all) {
-            if (organization.getClassEnum() != null) {
-                result.add(organization);
+            if (organization == null) {
+                continue;
             }
+            // 根节点为医院（选院步骤），不得进入科室下拉；兼容 type 误标为科室的脏数据
+            if (organization.getParentId() == null) {
+                continue;
+            }
+            // 医院层级（含 code / sortOrder 数字串）属选院步骤，不得进入科室下拉
+            OrganizationType type = OrganizationType.resolveRaw(organization.getTypeEnum());
+            if (type != OrganizationType.DEPARTMENT) {
+                continue;
+            }
+            // 分类为空多为导入脏节点，不可选
+            if (organization.getClassEnum() == null) {
+                continue;
+            }
+            result.add(organization);
         }
         return result;
     }
@@ -293,6 +336,42 @@ public class OrganizationQueryService {
             return organization;
         }
         return null;
+    }
+
+    /**
+     * 按业务单号批量解析机构主键（登录 OU code=busNo 反查，避免 N+1）。
+     *
+     * @param busNos 业务单号集合；{@code null} 或空时返回空映射
+     * @return busNo → 机构主键；未命中不写入；同一 busNo 多条时保留先出现者
+     */
+    public Map<String, Long> mapIdsByBusNos(Collection<String> busNos) {
+        Map<String, Long> idByBusNo = new HashMap<>();
+        if (busNos == null || busNos.isEmpty()) {
+            return idByBusNo;
+        }
+        Set<String> distinctBusNos = new LinkedHashSet<>();
+        for (String busNo : busNos) {
+            if (busNo == null || busNo.isBlank()) {
+                continue;
+            }
+            distinctBusNos.add(busNo.trim());
+        }
+        if (distinctBusNos.isEmpty()) {
+            return idByBusNo;
+        }
+        for (Organization organization : scopeToCurrentTenant(organizationRepository.findByBusNoIn(distinctBusNos))) {
+            if (organization == null || organization.getId() == null) {
+                continue;
+            }
+            if (organization.getBusNo() == null || organization.getBusNo().isBlank()) {
+                continue;
+            }
+            String key = organization.getBusNo().trim();
+            if (!idByBusNo.containsKey(key)) {
+                idByBusNo.put(key, organization.getId());
+            }
+        }
+        return idByBusNo;
     }
 
     /**

@@ -71,13 +71,18 @@ public class Op2208Invoker {
             command.setTenantId(TenantUtils.getCurrentTenantId());
         }
         Long tenantId = OutpatientSettleCommandAssembler.resolveTenantId(command.getTenantId());
-        YbSettlementRecord record = settlementRecordQueryService.requireOne(
+        // Pre：撤销允许命中已 REVOKED（requireOne 会拒已撤，导致幂等短路失效、退号误报「请勿重复」）
+        YbSettlementRecord record = settlementRecordQueryService.requireOneAllowRevoked(
             command.getSettlementRecordId(),
             command.getPaymentId(),
             command.getSetlId(),
             tenantId);
+        // 幂等：本地已 REVOKED（含上次 2208 已成功、后续 2202/退费失败后的重试）时直接成功，禁止再打平台。
         if (YbSettlementVoucherStatus.REVOKED.equals(record.getStatus())) {
-            throw new BusinessException(ChsErrorCodes.PLATFORM_FAILED, "结算回执已撤销");
+            return new OpRevokeSettleResult()
+                .setSettlementRecordId(record.getId())
+                .setSetlId(record.getSetlId())
+                .setMdtrtId(record.getMdtrtId());
         }
         ChsInvokeLogContextHolder.set(new ChsInvokeLogContext()
             .setContractId(record.getContractId())

@@ -19,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Map;
 
 /**
- * 工伤 invoke 审计写入 {@code yb_invoke_log}（scheme 隔离：contract_bus_no=H22010402403-GS）。
+ * 工伤 invoke 审计写入 {@code yb_invoke_log}（scheme 隔离：contract_bus_no=H00000000000-GS）。
  */
 @Component
 @RequiredArgsConstructor

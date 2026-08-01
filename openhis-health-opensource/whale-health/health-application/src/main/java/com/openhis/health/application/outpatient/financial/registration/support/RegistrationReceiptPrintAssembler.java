@@ -32,14 +32,17 @@ import com.openhis.health.domain.share.enums.PaymentChannel;
 import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.OutpatientChargeInsuranceExtension;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.OutpatientRegistrationInsuranceExtension;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientRegistrationPlatformQueryExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientChargeSettlementRecordExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientRegistrationPlatformQueryExtensionOut;
 import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -63,13 +66,14 @@ public class RegistrationReceiptPrintAssembler {
     private final ContractQueryService contractQueryService;
     private final PractitionerQueryService practitionerQueryService;
     private final OutpatientRegistrationInsuranceExtension outpatientRegistrationInsuranceExtension;
+    private final OutpatientChargeInsuranceExtension outpatientChargeInsuranceExtension;
 
     /**
      * 在基础挂号单 DTO 上回补小票打印字段。
      *
      * @param slip 已映射的基础挂号单（非 null）
      * @param slipReadModel 挂号单读模型
-     * @param paymentId 支付流水主键；可空时按就诊取最近成功支付
+     * @param paymentId 支付流水主键；可空时按挂号费 chargeItem 锚定对应 SUCCESS 支付单
      */
     public void enrichPrintFields(
         RegistrationSlipDto slip,
@@ -94,9 +98,7 @@ public class RegistrationReceiptPrintAssembler {
 
         Long resolvedPaymentId = paymentId;
         if (resolvedPaymentId == null) {
-            Map<Long, Long> paymentByEncounter =
-                paymentReconciliationQueryService.findLatestSuccessPaymentIdsByEncounterIds(List.of(encounterId));
-            resolvedPaymentId = paymentByEncounter.get(encounterId);
+            resolvedPaymentId = this.resolveRegistrationFeePaymentId(encounterId);
         }
 
         PaymentReconciliationQueryModel payment = null;
@@ -121,6 +123,41 @@ public class RegistrationReceiptPrintAssembler {
             slip.setCashierName("");
             slip.setChargeTimeText("");
         }
+    }
+
+    /**
+     * 按挂号费 chargeItem（service_table = adm_healthcare_service）锚定 SUCCESS 支付单。
+     *
+     * @param encounterId 就诊主键
+     * @return 挂号费支付流水主键；无命中时 null
+     */
+    private Long resolveRegistrationFeePaymentId(Long encounterId) {
+        if (encounterId == null) {
+            return null;
+        }
+        ChargeItemQueryCommand query = new ChargeItemQueryCommand();
+        query.setEncounterIds(List.of(encounterId));
+        List<ChargeItem> lines = chargeItemQueryService.listChargeItemsByEncounterIds(query);
+        LinkedHashSet<Long> registrationChargeItemIds = new LinkedHashSet<>();
+        if (lines != null) {
+            for (ChargeItem line : lines) {
+                if (line == null || line.getId() == null) {
+                    continue;
+                }
+                if (!TableNameConstants.ADM_HEALTHCARE_SERVICE.equals(line.getServiceTable())) {
+                    continue;
+                }
+                registrationChargeItemIds.add(line.getId());
+            }
+        }
+        if (registrationChargeItemIds.isEmpty()) {
+            return null;
+        }
+        Map<Long, LinkedHashSet<Long>> byEncounter = new HashMap<>();
+        byEncounter.put(encounterId, registrationChargeItemIds);
+        Map<Long, Long> paymentByEncounter =
+            paymentReconciliationQueryService.findSuccessPaymentIdsOverlappingChargeItemsByEncounter(byEncounter);
+        return paymentByEncounter.get(encounterId);
     }
 
     /**
@@ -218,6 +255,9 @@ public class RegistrationReceiptPrintAssembler {
     /**
      * 按支付子明细与医保平台快照回填小票各渠道金额字段（统筹/个账/现金/微信/支付宝等）。
      *
+     * <p>起付线取 2207 回执 {@code act_pay_dedc}；个账余额优先取回执 {@code balc}，
+     * 再回落支付明细 {@code afterBalance}（门诊挂号通常不写 afterBalance）。</p>
+     *
      * @param slip               待填充挂号单 DTO
      * @param payment            支付读模型（可 null）
      * @param insuranceSnapshot  医保平台快照（可 null，作渠道回落）
@@ -227,7 +267,7 @@ public class RegistrationReceiptPrintAssembler {
         PaymentReconciliationQueryModel payment,
         OutpatientRegistrationPlatformQueryExtensionOut insuranceSnapshot) {
         Map<String, BigDecimal> channelAmounts = new HashMap<>();
-        BigDecimal accountBalance = null;
+        BigDecimal accountBalanceFromDetail = null;
         if (payment != null && payment.getId() != null) {
             List<PaymentRecDetailQueryModel> details =
                 paymentReconciliationQueryService.listPaymentRecDetailsByPaymentId(payment.getId());
@@ -242,10 +282,19 @@ public class RegistrationReceiptPrintAssembler {
                 channelAmounts.merge(payEnum, detail.getAmount(), BigDecimal::add);
                 if (detail.getAfterBalance() != null
                     && PaymentChannel.INSURANCE_ACCT.getCode().equals(payEnum)) {
-                    accountBalance = detail.getAfterBalance();
+                    accountBalanceFromDetail = detail.getAfterBalance();
                 }
             }
         }
+
+        BigDecimal settlementActPayDedc = null;
+        BigDecimal settlementBalc = null;
+        if (payment != null && payment.getId() != null) {
+            SettlementPrintAmounts settlementAmounts = resolveSettlementPrintAmounts(payment.getId());
+            settlementActPayDedc = settlementAmounts.actPayDedc;
+            settlementBalc = settlementAmounts.balc;
+        }
+        BigDecimal accountBalance = firstNonNull(settlementBalc, accountBalanceFromDetail);
 
         BigDecimal pooling = channelAmounts.get(PaymentChannel.INSURANCE_FUND.getCode());
         BigDecimal snapshotFund = null;
@@ -286,11 +335,64 @@ public class RegistrationReceiptPrintAssembler {
         slip.setPoolingPayText(formatAmountText(pooling));
         slip.setFundPayText(formatAmountText(fund));
         slip.setAccountPayText(formatAmountText(acct));
-        slip.setDeductibleLineText("");
+        slip.setDeductibleLineText(formatAmountText(settlementActPayDedc));
         slip.setCashPayText(formatAmountText(cash));
         slip.setWechatPayText(formatAmountText(wechat));
         slip.setAlipayPayText(formatAmountText(alipay));
         slip.setAccountBalanceText(formatAmountText(accountBalance));
+    }
+
+    /**
+     * 从支付单下未撤销的 2207 正式结算回执汇总小票起付线与个账余额。
+     *
+     * <p>多笔时 {@code act_pay_dedc} 求和；{@code balc} 取最后一笔非空值。</p>
+     *
+     * @param paymentId 支付主键
+     * @return 起付线/余额；扩展未启用或无回执时字段为 null
+     */
+    private SettlementPrintAmounts resolveSettlementPrintAmounts(Long paymentId) {
+        SettlementPrintAmounts amounts = new SettlementPrintAmounts();
+        if (paymentId == null || !outpatientChargeInsuranceExtension.isEnabled()) {
+            return amounts;
+        }
+        List<OutpatientChargeSettlementRecordExtensionOut> records =
+            outpatientChargeInsuranceExtension.listSettlementsByPayment(paymentId);
+        if (records == null || records.isEmpty()) {
+            return amounts;
+        }
+        for (OutpatientChargeSettlementRecordExtensionOut record : records) {
+            if (record == null || "REVOKED".equals(StringUtils.trimToEmpty(record.getStatus()))) {
+                continue;
+            }
+            amounts.actPayDedc = sumNullable(amounts.actPayDedc, record.getActPayDedc());
+            if (record.getBalc() != null) {
+                amounts.balc = record.getBalc();
+            }
+        }
+        return amounts;
+    }
+
+    /**
+     * 可空金额相加（任一侧 null 则返回另一侧）。
+     *
+     * @param left  左侧
+     * @param right 右侧
+     * @return 求和或非 null 侧
+     */
+    private static BigDecimal sumNullable(BigDecimal left, BigDecimal right) {
+        if (left == null) {
+            return right;
+        }
+        if (right == null) {
+            return left;
+        }
+        return left.add(right);
+    }
+
+    /** 小票用结算回执金额（起付线 + 个账余额）。 */
+    private static final class SettlementPrintAmounts {
+        private BigDecimal actPayDedc;
+        private BigDecimal balc;
     }
 
     /**

@@ -14,15 +14,20 @@ import com.openhis.health.application.shared.product.ProductDefinitionDisplayTer
 import com.openhis.health.domain.share.product.dto.ProductDefinitionSelectionTerminologyMaps;
 import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
 import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.LinkableDeptPurchaseRequestListRowDto;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.PurchaseOrderDetailLineDto;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.PurchaseOrderLineDto;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.PurchaseOrderListRowDto;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.PurchaseWarningProductRowDto;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.AgreePurchaseOrderRequest;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.CreatePurchaseOrderRequest;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.request.GetLinkableDeptPurchaseRequestDetailRequest;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.GetPurchaseOrderDetailRequest;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.LoadPurchaseOrderFormInitRequest;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.request.PageLinkableDeptPurchaseRequestsRequest;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.PageProductsForPurchaseRequest;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.PagePurchaseOrdersRequest;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.request.PagePurchaseWarningProductsRequest;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.RejectPurchaseOrderRequest;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.RemovePurchaseOrderRequest;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.SubmitPurchaseOrderApprovalRequest;
@@ -30,10 +35,13 @@ import com.openhis.health.application.inventory.warehouse.purchaseorder.request.
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.WithdrawPurchaseOrderApprovalRequest;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.AgreePurchaseOrderResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.CreatePurchaseOrderResponse;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.response.GetLinkableDeptPurchaseRequestDetailResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.GetPurchaseOrderDetailResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.LoadPurchaseOrderFormInitResponse;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.response.PageLinkableDeptPurchaseRequestsResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.PageProductsForPurchaseResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.PagePurchaseOrdersResponse;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.response.PagePurchaseWarningProductsResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.RejectPurchaseOrderResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.RemovePurchaseOrderResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.SubmitPurchaseOrderApprovalResponse;
@@ -54,11 +62,14 @@ import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.ProductDefinitionItemDto;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.application.inventory.warehouse.support.ProductDefinitionPurchasePageLoader;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.support.PurchaseOrderWarningProductResolver;
 import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
+import com.openhis.health.domain.share.constants.InventoryWarningConstants;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyRequestDocumentListQuery;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.InventoryDepartmentConstants;
 import com.openhis.health.domain.share.constants.InventoryWarehouseConstants;
 import com.openhis.health.domain.share.enums.SupplierStatus;
 import com.openhis.health.domain.share.enums.SupplyStatus;
@@ -103,6 +114,9 @@ import java.util.Set;
  *
  * <p>列表与库房门禁以 {@code purpose_location_id} 为锚；「全部药库」占位见
  * {@link InventoryWarehouseConstants#ALL_WAREHOUSES_LIST_FILTER_LOCATION_ID}（init 中 {@code warehouseLocationOptions} 首项 {@code value="0"}）。</p>
+ *
+ * <p>预警快捷选品（IF-WHS-PO-14）只读查询最晚效期批近效 / 库存低于最小值品种，勾选后经 IF-11
+ * {@code productDefinitionIds} 纳入明细；不写库存、不自动填数量。</p>
  */
 @Slf4j
 @Service
@@ -122,6 +136,8 @@ public class InventoryWarehousePurchaseOrderAppService {
     private final SupplierQueryService supplierQueryService;
     private final ProductDefinitionPurchasePageLoader productDefinitionPurchasePageLoader;
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
+    /** 订货预警快捷选品：效期最晚批 + 仅低储合并（IF-WHS-PO-14）。 */
+    private final PurchaseOrderWarningProductResolver purchaseOrderWarningProductResolver;
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
     private final InventoryWarehousePurchaseOrderMapper purchaseOrderMapper;
 
@@ -142,16 +158,24 @@ public class InventoryWarehousePurchaseOrderAppService {
         List<com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel> suppliers =
             supplierQueryService.listSuppliersByTypeAndActive(
                 com.openhis.health.domain.share.enums.SupplierType.SUPPLIER.getCode());
-        List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+        List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
             WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE, resolvedOrg);
         List<OptionDto> warehouseOpts = purchaseOrderMapper.toOptionDtoListFromLocations(warehouses);
         List<OptionDto> warehouseOptsWithAll = new ArrayList<>();
         // —— 列表筛「全部药库」：value=0 与 pagePurchaseOrders.purposeLocationId 约定一致，非 Location 主键
         warehouseOptsWithAll.add(new OptionDto(0L, "0", "全部"));
         warehouseOptsWithAll.addAll(warehouseOpts);
+        // —— 关联科室采购申请弹窗：院内启用科室药房（不按药库管辖收窄）
+        List<Location> departmentPharmacies = this.locationQueryService.listAllActiveDepartmentPharmacies();
+        List<OptionDto> deptPharmacyOpts =
+            purchaseOrderMapper.toOptionDtoListFromLocations(departmentPharmacies);
+        List<OptionDto> deptPharmacyOptsWithAll = new ArrayList<>();
+        deptPharmacyOptsWithAll.add(new OptionDto(0L, "0", "全部"));
+        deptPharmacyOptsWithAll.addAll(deptPharmacyOpts);
         // Asm：挂接各下拉并返回页初始化响应
         return purchaseOrderMapper.toLoadPurchaseOrderFormInitResponse(
             warehouseOptsWithAll,
+            deptPharmacyOptsWithAll,
             purchaseOrderMapper.toOptionDtoListFromSuppliers(suppliers),
             purchaseOrderMapper.toOptionDtoListFromPractitioners(warehouseKeepers),
             purchaseOrderMapper.toOptionDtoListSupplyStatuses(),
@@ -286,6 +310,7 @@ public class InventoryWarehousePurchaseOrderAppService {
      * @return 新建 {@code busNo} 与待审批状态 code
      * @throws BusinessException {@link ErrorCodeConstants#WHS_PO_001} 参数非法或药库越权；
      *                            {@link ErrorCodeConstants#WHS_PO_002} 供应商不可用；
+     *                            {@link ErrorCodeConstants#WHS_PO_106} 来源科室采购申请不可引用；
      *                            {@link ErrorCodeConstants#WHS_PO_101} 未登录或机构上下文缺失
      */
     public CreatePurchaseOrderResponse createPurchaseOrder(CreatePurchaseOrderRequest request) {
@@ -304,6 +329,10 @@ public class InventoryWarehousePurchaseOrderAppService {
         this.assertLocationAllowed(request.getPurposeLocationId(), allowed);
 
         this.validateSupplierOptional(request.getSupplierId());
+        if (StringUtils.isNotEmpty(request.getOriginalBusNo())) {
+            // Pre：可选拉源须已同意科室采购申请且未被其它订货占用（BR-WHS-PO-012）
+            this.validateOriginalDeptPurchaseRequestForPurchaseOrder(request.getOriginalBusNo().trim(), null);
+        }
         if (request.getPractitionerId() == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "经手人不能为空");
         }
@@ -591,6 +620,8 @@ public class InventoryWarehousePurchaseOrderAppService {
     /**
      * 分页查询订货选品（IF-WHS-PO-11；与进货选品同构，写 PURCHASE 进价与单位槽）。
      *
+     * <p>可选 {@code productDefinitionIds}：预警快捷勾选后按 id 集合收窄（仍须表名/启用门禁）。</p>
+     *
      * @param request 须含 {@code purposeLocationId} 与分页窗口；{@code productTableName} 须在白名单内
      * @return 产品定义展示行分页（{@code availableQuantity} 固定 null，订货不汇总库存）
      * @throws BusinessException {@link ErrorCodeConstants#WHS_PO_001} 参数非法或药库越权；
@@ -600,6 +631,7 @@ public class InventoryWarehousePurchaseOrderAppService {
     public PageProductsForPurchaseResponse pageProductsForPurchase(PageProductsForPurchaseRequest request) {
         // Gate：分页窗口、目的药库、机构门禁与物品表白名单
         pageWindowGate.requireNonNullPageWindow(request, ErrorCodeConstants.WHS_PO_001, "分页参数不能为空");
+        // 无目的药库无法做药库门禁，拒绝探测选品
         if (request.getPurposeLocationId() == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "purposeLocationId 不能为空");
         }
@@ -607,7 +639,16 @@ public class InventoryWarehousePurchaseOrderAppService {
         Set<Long> allowed = this.resolveGatedWarehouseLocationIdsForPurchaseOrderGate();
         this.assertLocationAllowed(request.getPurposeLocationId(), allowed);
         this.assertProductTableNameWhitelistForPurchaseSelection(request.getProductTableName());
-        // Pre：组装产品定义分页查询
+        List<Long> idFilter = request.getProductDefinitionIds();
+        // Pre：预警勾选 ids 路径 — 须带表头项目类型，按目录批量读后内存分页
+        if (idFilter != null && !idFilter.isEmpty()) {
+            // ids 快捷路径须锚定表头药/耗，防止跨表型 id 混入
+            if (StringUtils.isEmpty(request.getProductTableName())) {
+                throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "传 productDefinitionIds 时须指定 productTableName");
+            }
+            return this.pageProductsForPurchaseByIds(request, idFilter);
+        }
+        // Pre：组装产品定义分页查询（普通关键字选品）
         ProductDefinitionPageQuery query = purchaseOrderMapper.toProductDefinitionPageQuery(request);
         try {
             // Cmd：分页查询采购选品
@@ -617,9 +658,382 @@ public class InventoryWarehousePurchaseOrderAppService {
             // Asm：返回富化后的选品分页
             return response;
         } catch (RuntimeException ex) {
+            // 读侧失败统一包装，避免透出底层堆栈给客户端
             log.warn("pageProductForPurchase failed", ex);
             throw new BusinessException(ErrorCodeConstants.WHS_PO_102, "采购选品查询失败");
         }
+    }
+
+    /**
+     * 订货预警快捷选品分页（IF-WHS-PO-14 / AS-INV-WHS-001）：只读；勾选后走 IF-11 {@code productDefinitionIds}。
+     *
+     * <p>效期按最晚效期批近效（BR-014）；低储仅低于最低（BR-015）；本接口不写库存、不自动写订货数量（BR-016）。</p>
+     *
+     * @param request 须含目的药库、表头项目类型、预警筛选项与分页窗口；可选 {@code keyword}
+     * @return 品种维预警行分页（无批号）
+     * @throws BusinessException {@link ErrorCodeConstants#WHS_PO_001} 参数非法或药库越权；
+     *                            {@link ErrorCodeConstants#WHS_PO_101} 机构缺失；
+     *                            {@link ErrorCodeConstants#WHS_PO_102} 查询失败
+     */
+    public PagePurchaseWarningProductsResponse pagePurchaseWarningProducts(
+        PagePurchaseWarningProductsRequest request) {
+        // Gate：分页、药库、机构、表头项目类型、筛选项白名单
+        pageWindowGate.requireNonNullPageWindow(request, ErrorCodeConstants.WHS_PO_001, "分页参数不能为空");
+        // 无目的药库则拒绝，与订货头门禁同构
+        if (request.getPurposeLocationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "purposeLocationId 不能为空");
+        }
+        // 未选表头项目类型时无法收窄药/耗，阻断误查全目录预警
+        if (StringUtils.isEmpty(request.getProductTableName())) {
+            throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "请先选择表头项目类型（药品或耗材）");
+        }
+        // 筛选项为空无法决定效期/低储/全部，拒绝
+        if (StringUtils.isEmpty(request.getWarningFilter())) {
+            throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "warningFilter 不能为空");
+        }
+        String warningFilter = request.getWarningFilter().trim();
+        // 非法筛选项不查库，直接提示合法枚举码
+        if (!InventoryWarningConstants.WARNING_MODE_EXPIRE.equals(warningFilter)
+            && !InventoryWarningConstants.WARNING_MODE_LOW_STOCK.equals(warningFilter)
+            && !InventoryWarningConstants.WARNING_FILTER_ALL.equals(warningFilter)) {
+            throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "warningFilter 须为 expire、lowStock 或 all");
+        }
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_PO_101, "机构上下文缺失");
+        Set<Long> allowed = this.resolveGatedWarehouseLocationIdsForPurchaseOrderGate();
+        this.assertLocationAllowed(request.getPurposeLocationId(), allowed);
+        this.assertProductTableNameWhitelistForPurchaseSelection(request.getProductTableName());
+        String productTableName = request.getProductTableName().trim();
+        try {
+            // Pre：Resolver 合并效期/低储命中（跨聚合目录读在 Asm 装配阶段）
+            List<PurchaseOrderWarningProductResolver.PurchaseWarningHit> hits =
+                this.purchaseOrderWarningProductResolver.resolveWarningProductHits(
+                    warningFilter, productTableName);
+            // Cmd：本接口只读，无领域写命令；装配弹窗行并按 keyword 过滤
+            List<PurchaseWarningProductRowDto> allRows = this.assemblePurchaseWarningRows(hits, request.getKeyword());
+            // 分页缺省：与其它库存列表一致（1-based / 20）
+            int pageNo = 1;
+            if (request.getPageNo() != null) {
+                pageNo = request.getPageNo();
+            }
+            int pageSize = 20;
+            if (request.getPageSize() != null) {
+                pageSize = request.getPageSize();
+            }
+            long total = allRows.size();
+            int from = (pageNo - 1) * pageSize;
+            List<PurchaseWarningProductRowDto> pageRows;
+            // 页越界返回空页，避免 subList 抛错
+            if (from >= allRows.size()) {
+                pageRows = List.of();
+            } else {
+                int to = from + pageSize;
+                // 末页不足一整页时截到列表尾
+                if (to > allRows.size()) {
+                    to = allRows.size();
+                }
+                pageRows = allRows.subList(from, to);
+            }
+            // Asm：PagedResultBuilder 包装当前页
+            return purchaseOrderMapper.toPagePurchaseWarningProductsResponse(pageRows, total, pageNo, pageSize);
+        } catch (BusinessException ex) {
+            // 业务门禁异常原样抛出，不包装成查询失败
+            throw ex;
+        } catch (RuntimeException ex) {
+            log.warn("pagePurchaseWarningProducts failed", ex);
+            throw new BusinessException(ErrorCodeConstants.WHS_PO_102, "预警快捷选品查询失败");
+        }
+    }
+
+    /**
+     * 可关联科室采购申请分页（IF-WHS-PO-12）：仅 {@link SupplyType#DEPT_PURCHASE_REQUEST} + {@link SupplyStatus#AGREE}，
+     * 排除已被未删除药库订货单以 {@code original_bus_no} 占用的单号。
+     *
+     * @param request 可选 {@code keyword}、申请时段与分页窗口
+     * @return 按 {@code busNo} 聚合的可关联申请行
+     * @throws BusinessException {@link ErrorCodeConstants#WHS_PO_001} 分页非法；
+     *                            {@link ErrorCodeConstants#WHS_PO_101} 机构上下文缺失；
+     *                            {@link ErrorCodeConstants#WHS_PO_102} 列表查询失败
+     */
+    public PageLinkableDeptPurchaseRequestsResponse pageLinkableDeptPurchaseRequests(
+        PageLinkableDeptPurchaseRequestsRequest request) {
+        // Gate：分页窗口与机构上下文
+        pageWindowGate.requireNonNullPageWindow(request, ErrorCodeConstants.WHS_PO_001, "分页参数不能为空");
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_PO_101, "机构上下文缺失");
+
+        // Pre：组装供应单据列表查询（固定科室采购申请 + 已同意）
+        SupplyRequestDocumentListQuery listQuery = new SupplyRequestDocumentListQuery();
+        listQuery.setTypeEnum(SupplyType.DEPT_PURCHASE_REQUEST.getCode());
+        listQuery.setStatusEnum(SupplyStatus.AGREE.getCode());
+        // purposeLocationId=0/空：不按科室收窄；否则按申请科室药房筛选
+        Long purposeLocationId = request.getPurposeLocationId();
+        if (purposeLocationId != null
+            && !Long.valueOf(InventoryDepartmentConstants.ALL_DEPARTMENT_PHARMACIES_LIST_FILTER_LOCATION_ID)
+                .equals(purposeLocationId)) {
+            listQuery.setPurposeLocationId(purposeLocationId);
+        }
+        PageQueryBinder.bind(request, listQuery);
+        LocalDateTime rangeStart = request.getApplyTimeFrom();
+        if (rangeStart == null) {
+            rangeStart = request.getStartDate();
+        }
+        listQuery.setStartDate(rangeStart);
+        LocalDateTime rangeEnd = request.getApplyTimeTo();
+        if (rangeEnd == null) {
+            rangeEnd = request.getEndDate();
+        }
+        listQuery.setEndDate(rangeEnd);
+
+        try {
+            // Cmd：按 bus_no 去重分页查询已同意科室采购申请
+            long mergedTotal = this.supplyRequestQueryService.countDistinctBusNo(listQuery);
+            List<String> busNos = this.supplyRequestQueryService.listDistinctBusNoPage(listQuery);
+            List<SupplyRequestModel> lines = this.supplyRequestQueryService.listByBusNosWithFilter(listQuery, busNos);
+            List<LinkableDeptPurchaseRequestListRowDto> records =
+                this.purchaseOrderMapper.toLinkableDeptPurchaseRequestListAggregated(busNos, lines);
+            this.enrichLinkableDeptPurchaseRequestListDisplayNames(records, lines);
+            int pageNo = request.getPageNo().intValue();
+            int pageSize = listQuery.getBoundedPageSize();
+            PageLinkableDeptPurchaseRequestsResponse response =
+                this.purchaseOrderMapper.toPageLinkableDeptPurchaseRequestsAggregatedResponse(
+                    mergedTotal, pageNo, pageSize, records);
+            // —— 排除已被未删除订货单引用的申请单（当前页内存过滤，与进货可关联订货同构）
+            this.filterAlreadyReferencedDeptPurchaseRequestsFromLinkablePage(response);
+            return response;
+        } catch (RuntimeException ex) {
+            log.warn("pageLinkableDeptPurchaseRequests failed", ex);
+            throw new BusinessException(ErrorCodeConstants.WHS_PO_102, "可关联科室采购申请查询失败");
+        }
+    }
+
+    /**
+     * 按科室采购申请单号拉取订货草稿预填数据（IF-WHS-PO-13；只读，不写库）。
+     *
+     * @param request 须含非空 {@code originalBusNo}
+     * @return 申请头摘要与订货预填明细行
+     * @throws BusinessException {@link ErrorCodeConstants#WHS_PO_001} 参数非法；
+     *                            {@link ErrorCodeConstants#WHS_PO_106} 申请不可引用
+     */
+    public GetLinkableDeptPurchaseRequestDetailResponse getLinkableDeptPurchaseRequestDetail(
+        GetLinkableDeptPurchaseRequestDetailRequest request) {
+        // Gate：originalBusNo 与机构上下文
+        if (request == null || StringUtils.isEmpty(request.getOriginalBusNo())) {
+            throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "originalBusNo 不能为空");
+        }
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_PO_101, "机构上下文缺失");
+        String originalBusNo = request.getOriginalBusNo().trim();
+
+        // Pre：校验申请可引用并回读明细行
+        this.validateOriginalDeptPurchaseRequestForPurchaseOrder(originalBusNo, null);
+
+        SupplyByBusNoQuery q = new SupplyByBusNoQuery();
+        q.setBusNo(originalBusNo);
+        List<SupplyRequestModel> deptLines = supplyRequestQueryService.getSupplyByBusNo(q);
+        if (deptLines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.WHS_PO_106, "来源科室采购申请不存在");
+        }
+
+        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
+        for (SupplyRequestModel line : deptLines) {
+            if (line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
+                continue;
+            }
+            ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+            lookup.setProductDefinitionId(line.getItemId());
+            lookup.setProductTableName(line.getItemTable());
+            lookups.add(lookup);
+        }
+        Map<String, ProductDefinitionDisplayDto> products;
+        try {
+            products = productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
+        } catch (RuntimeException ex) {
+            log.warn("batchGetProductByIds degraded for linkable dept purchase request detail", ex);
+            products = new HashMap<>();
+        }
+        ProductDefinitionSelectionTerminologyMaps terminologyMaps =
+            this.productDefinitionDisplayTerminologyAssembler.loadSelectionTerminologyMaps();
+
+        // Asm：映射订货预填响应并富化产品展示
+        GetLinkableDeptPurchaseRequestDetailResponse res =
+            purchaseOrderMapper.toGetLinkableDeptPurchaseRequestDetailResponse(deptLines, products);
+        this.enrichLinkableDeptPurchaseRequestPurposeLocationName(res);
+        this.enrichPurchaseOrderDetailProductDisplay(res.getLines(), products, terminologyMaps);
+        this.enrichPurchaseOrderDetailLines(res.getLines());
+        return res;
+    }
+
+    /**
+     * 预警 ids 快捷选品：批量读目录后按启用/表名过滤并内存分页。
+     *
+     * @param request  选品请求（含表名与分页）
+     * @param idFilter 产品定义主键集合
+     * @return 选品分页
+     */
+    private PageProductsForPurchaseResponse pageProductsForPurchaseByIds(
+        PageProductsForPurchaseRequest request,
+        List<Long> idFilter) {
+        String productTableName = request.getProductTableName().trim();
+        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
+        Set<Long> seen = new HashSet<>();
+        for (Long id : idFilter) {
+            // 跳过空 id，避免 NPE lookup
+            if (id == null) {
+                continue;
+            }
+            // 去重，避免重复 lookup 与重复行
+            if (!seen.add(id)) {
+                continue;
+            }
+            ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+            lookup.setProductTableName(productTableName);
+            lookup.setProductDefinitionId(id);
+            lookups.add(lookup);
+        }
+        try {
+            // Pre：批量加载目录读模型（B.6.4）
+            Map<String, ProductDefinitionDisplayDto> productMap =
+                this.productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
+            List<ProductDefinitionDisplayDto> matched = new ArrayList<>();
+            for (ProductDefinitionBatchLookup lookup : lookups) {
+                String key = ProductDefinitionKeyUtil.buildCompositeKey(
+                    lookup.getProductTableName(), lookup.getProductDefinitionId());
+                ProductDefinitionDisplayDto pr = productMap.get(key);
+                // 未命中目录则丢弃（可能已删或 id 无效）
+                if (pr == null) {
+                    continue;
+                }
+                // 停用目录不可订
+                if (Boolean.FALSE.equals(pr.getActiveFlag())) {
+                    continue;
+                }
+                matched.add(pr);
+            }
+            int pageNo = 1;
+            if (request.getPageNo() != null) {
+                pageNo = request.getPageNo();
+            }
+            int pageSize = 20;
+            if (request.getPageSize() != null) {
+                pageSize = request.getPageSize();
+            }
+            long total = matched.size();
+            int from = (pageNo - 1) * pageSize;
+            List<ProductDefinitionDisplayDto> pageSlice;
+            // 页越界空页
+            if (from >= matched.size()) {
+                pageSlice = List.of();
+            } else {
+                int to = from + pageSize;
+                if (to > matched.size()) {
+                    to = matched.size();
+                }
+                pageSlice = matched.subList(from, to);
+            }
+            PageProductsForPurchaseResponse response =
+                purchaseOrderMapper.toPageProductsForPurchaseResponse(pageSlice, total, pageNo, pageSize);
+            this.enrichPurchaseProductSelectionRows(response.getContent());
+            // Asm：返回 ids 收窄后的选品页
+            return response;
+        } catch (RuntimeException ex) {
+            log.warn("pageProductsForPurchaseByIds failed", ex);
+            throw new BusinessException(ErrorCodeConstants.WHS_PO_102, "采购选品查询失败");
+        }
+    }
+
+    /**
+     * 将预警命中装配为弹窗行，并按关键字过滤名称/编码/拼音。
+     *
+     * @param hits    解析命中
+     * @param keyword 可选关键字
+     * @return 全量行（未分页）
+     */
+    private List<PurchaseWarningProductRowDto> assemblePurchaseWarningRows(
+        List<PurchaseOrderWarningProductResolver.PurchaseWarningHit> hits,
+        String keyword) {
+        // 无命中直接空列表，省一批目录加载
+        if (hits == null || hits.isEmpty()) {
+            return List.of();
+        }
+        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
+        for (PurchaseOrderWarningProductResolver.PurchaseWarningHit hit : hits) {
+            // 键不完整则无法组 compositeKey
+            if (hit == null || hit.getItemId() == null || StringUtils.isEmpty(hit.getItemTable())) {
+                continue;
+            }
+            ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+            lookup.setProductTableName(hit.getItemTable());
+            lookup.setProductDefinitionId(hit.getItemId());
+            lookups.add(lookup);
+        }
+        Map<String, ProductDefinitionDisplayDto> products =
+            this.productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
+        String kw = null;
+        // 有关键字才做小写规范化，供名称/编码/拼音匹配
+        if (StringUtils.isNotEmpty(keyword)) {
+            kw = keyword.trim().toLowerCase();
+        }
+        List<PurchaseWarningProductRowDto> rows = new ArrayList<>();
+        for (PurchaseOrderWarningProductResolver.PurchaseWarningHit hit : hits) {
+            if (hit == null || hit.getItemId() == null || StringUtils.isEmpty(hit.getItemTable())) {
+                continue;
+            }
+            String key = ProductDefinitionKeyUtil.buildCompositeKey(hit.getItemTable(), hit.getItemId());
+            ProductDefinitionDisplayDto pr = products.get(key);
+            // 目录缺失或停用则不展示，避免不可订品种进入勾选
+            if (pr == null || Boolean.FALSE.equals(pr.getActiveFlag())) {
+                continue;
+            }
+            // 关键字未命中则过滤
+            if (kw != null && !this.matchesPurchaseWarningKeyword(pr, kw)) {
+                continue;
+            }
+            PurchaseWarningProductRowDto row = new PurchaseWarningProductRowDto();
+            row.setProductDefinitionId(pr.getProductDefinitionId());
+            row.setProductTableName(pr.getProductTableName());
+            row.setProductBusNo(pr.getProductBusNo());
+            row.setProductName(pr.getProductName());
+            row.setSpecification(pr.getTotalVolume());
+            row.setHitExpire(hit.isHitExpire());
+            row.setHitLowStock(hit.isHitLowStock());
+            row.setLatestExpirationDate(hit.getLatestExpirationDate());
+            row.setRemainingDays(hit.getRemainingDays());
+            row.setHospitalWidePackageQty(hit.getHospitalWidePackageQty());
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    /**
+     * 预警弹窗关键字：匹配名称、编码、拼音、五笔（小写）。
+     *
+     * @param pr      目录展示
+     * @param keyword 已 trim+lower 的关键字
+     * @return true 命中
+     */
+    private boolean matchesPurchaseWarningKeyword(ProductDefinitionDisplayDto pr, String keyword) {
+        // 任一检索字段包含关键字即保留该行
+        if (this.containsIgnoreCase(pr.getProductName(), keyword)
+            || this.containsIgnoreCase(pr.getProductBusNo(), keyword)
+            || this.containsIgnoreCase(pr.getMerchandiseName(), keyword)
+            || this.containsIgnoreCase(pr.getPyStr(), keyword)
+            || this.containsIgnoreCase(pr.getWbStr(), keyword)) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 源串转小写后是否包含关键字。
+     *
+     * @param source  可空
+     * @param keyword 小写关键字
+     * @return true 包含
+     */
+    private boolean containsIgnoreCase(String source, String keyword) {
+        // 空源串视为不匹配，避免 NPE
+        if (StringUtils.isEmpty(source)) {
+            return false;
+        }
+        return source.toLowerCase().contains(keyword);
     }
 
     /**
@@ -1050,5 +1464,223 @@ public class InventoryWarehousePurchaseOrderAppService {
             return new BusinessException(ErrorCodeConstants.WHS_PO_003, msg);
         }
         return ex;
+    }
+
+    /**
+     * 校验 {@code originalBusNo} 指向的科室采购申请可被订货引用（须已同意、类型正确，且未被其它订货占用）。
+     *
+     * @param originalBusNo             来源申请单号
+     * @param excludePurchaseOrderBusNo 改单时排除的本订货单号，可 blank
+     * @throws BusinessException {@link ErrorCodeConstants#WHS_PO_106} 申请不存在、未同意、类型不符或已占用
+     */
+    private void validateOriginalDeptPurchaseRequestForPurchaseOrder(
+        String originalBusNo,
+        String excludePurchaseOrderBusNo) {
+        SupplyByBusNoQuery q = new SupplyByBusNoQuery();
+        q.setBusNo(originalBusNo);
+        List<SupplyRequestModel> deptLines = supplyRequestQueryService.getSupplyByBusNo(q);
+        if (deptLines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.WHS_PO_106, "来源科室采购申请不存在");
+        }
+        for (SupplyRequestModel line : deptLines) {
+            if (line == null) {
+                continue;
+            }
+            if (!SupplyType.DEPT_PURCHASE_REQUEST.getCode().equals(line.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.WHS_PO_106, "来源单据类型不是科室采购申请");
+            }
+            if (!SupplyStatus.AGREE.getCode().equals(line.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.WHS_PO_106, "科室采购申请未同意，禁止引用");
+            }
+        }
+        if (this.isDeptPurchaseRequestReferencedByUndeletedPurchaseOrder(originalBusNo, excludePurchaseOrderBusNo)) {
+            throw new BusinessException(ErrorCodeConstants.WHS_PO_106, "该科室采购申请已被其他订货单引用");
+        }
+    }
+
+    /**
+     * 可关联申请列表：剔除已被未删除药库订货单引用的申请单号（当前页内存过滤）。
+     *
+     * @param response 分页响应，就地改写 {@code content}
+     */
+    private void filterAlreadyReferencedDeptPurchaseRequestsFromLinkablePage(
+        PageLinkableDeptPurchaseRequestsResponse response) {
+        if (response == null || response.getContent() == null || response.getContent().isEmpty()) {
+            return;
+        }
+        Set<String> skippedBusNos = new HashSet<>();
+        List<LinkableDeptPurchaseRequestListRowDto> kept = new ArrayList<>();
+        for (LinkableDeptPurchaseRequestListRowDto row : response.getContent()) {
+            if (row == null || StringUtils.isEmpty(row.getBusNo())) {
+                continue;
+            }
+            String busNo = row.getBusNo().trim();
+            if (skippedBusNos.contains(busNo)) {
+                continue;
+            }
+            if (this.isDeptPurchaseRequestReferencedByUndeletedPurchaseOrder(busNo, null)) {
+                skippedBusNos.add(busNo);
+                continue;
+            }
+            kept.add(row);
+        }
+        response.setContent(kept);
+    }
+
+    /**
+     * 判断科室采购申请是否已被未删除的 {@link SupplyType#CABINET_PURCHASE_ORDER} 以 {@code original_bus_no} 引用。
+     *
+     * @param deptRequestBusNo          科室采购申请业务单号
+     * @param excludePurchaseOrderBusNo 改单时排除的本订货单号，可 blank
+     * @return 已被其它订货单引用时 {@code true}
+     */
+    private boolean isDeptPurchaseRequestReferencedByUndeletedPurchaseOrder(
+        String deptRequestBusNo,
+        String excludePurchaseOrderBusNo) {
+        if (StringUtils.isEmpty(deptRequestBusNo)) {
+            return false;
+        }
+        return supplyRequestQueryService.existsUndeletedSupplyByOriginalBusNo(
+            deptRequestBusNo.trim(),
+            SupplyType.CABINET_PURCHASE_ORDER.getCode(),
+            excludePurchaseOrderBusNo);
+    }
+
+    /**
+     * 可关联申请列表聚合行展示名批量富化（制单人/审批人/科室药房/状态文案）。
+     *
+     * @param rows  当前页聚合行
+     * @param lines 同页 busNo 对应的供应请求明细
+     */
+    private void enrichLinkableDeptPurchaseRequestListDisplayNames(
+        List<LinkableDeptPurchaseRequestListRowDto> rows,
+        List<SupplyRequestModel> lines) {
+        if (rows == null || rows.isEmpty() || lines == null || lines.isEmpty()) {
+            return;
+        }
+        Map<String, Long> busNoToApplicantId = new HashMap<>();
+        Map<String, Long> busNoToApproverId = new HashMap<>();
+        Map<String, SupplyRequestModel> headByBusNo = this.buildDeptPurchaseRequestHeadLineByBusNo(lines);
+        for (Map.Entry<String, SupplyRequestModel> e : headByBusNo.entrySet()) {
+            SupplyRequestModel head = e.getValue();
+            if (head == null) {
+                continue;
+            }
+            String bn = e.getKey();
+            if (head.getApplicantId() != null) {
+                busNoToApplicantId.put(bn, head.getApplicantId());
+            }
+            if (head.getApproverId() != null) {
+                busNoToApproverId.put(bn, head.getApproverId());
+            }
+        }
+        Set<Long> practitionerIds = new HashSet<>();
+        practitionerIds.addAll(busNoToApplicantId.values());
+        practitionerIds.addAll(busNoToApproverId.values());
+        Map<Long, String> practitionerNameById = new HashMap<>();
+        for (Long pid : practitionerIds) {
+            if (pid == null) {
+                continue;
+            }
+            Practitioner pr = this.practitionerQueryService.findById(pid);
+            if (pr != null && StringUtils.isNotEmpty(pr.getName())) {
+                practitionerNameById.put(pid, pr.getName());
+            }
+        }
+        Set<Long> purposeLocationIds = new HashSet<>();
+        for (LinkableDeptPurchaseRequestListRowDto row : rows) {
+            if (row != null && row.getPurposeLocationId() != null) {
+                purposeLocationIds.add(row.getPurposeLocationId());
+            }
+        }
+        Map<Long, String> purposeLocationNameById = new HashMap<>();
+        for (Long locationId : purposeLocationIds) {
+            Optional<Location> locOpt = this.locationQueryService.findOptionalById(locationId);
+            locOpt.ifPresent(loc -> {
+                if (StringUtils.isNotEmpty(loc.getName())) {
+                    purposeLocationNameById.put(locationId, loc.getName().trim());
+                }
+            });
+        }
+        for (LinkableDeptPurchaseRequestListRowDto row : rows) {
+            if (row == null || StringUtils.isEmpty(row.getBusNo())) {
+                continue;
+            }
+            String bn = row.getBusNo().trim();
+            Long aid = busNoToApplicantId.get(bn);
+            if (aid != null) {
+                String an = practitionerNameById.get(aid);
+                if (an != null) {
+                    row.setCreatorName(an);
+                }
+            }
+            Long apid = busNoToApproverId.get(bn);
+            if (apid != null) {
+                String apn = practitionerNameById.get(apid);
+                if (apn != null) {
+                    row.setApproverName(apn);
+                }
+            }
+            Long plid = row.getPurposeLocationId();
+            if (plid != null) {
+                String pln = purposeLocationNameById.get(plid);
+                if (pln != null) {
+                    row.setPurposeLocationName(pln);
+                }
+            }
+            if (StringUtils.isNotEmpty(row.getStatusEnum())) {
+                SupplyStatus st = EnumUtil.fromCode(SupplyStatus.class, row.getStatusEnum().trim());
+                if (st != null) {
+                    row.setStatusEnumText(st.getDisplay());
+                }
+            }
+        }
+    }
+
+    /**
+     * 预填响应：补齐申请科室药房展示名。
+     *
+     * @param res 可关联申请预填响应
+     */
+    private void enrichLinkableDeptPurchaseRequestPurposeLocationName(GetLinkableDeptPurchaseRequestDetailResponse res) {
+        if (res == null || res.getPurposeLocationId() == null) {
+            return;
+        }
+        Optional<Location> locOpt = this.locationQueryService.findOptionalById(res.getPurposeLocationId());
+        locOpt.ifPresent(loc -> {
+            if (StringUtils.isNotEmpty(loc.getName())) {
+                res.setPurposeLocationName(loc.getName().trim());
+            }
+        });
+    }
+
+    /**
+     * 按单号选取「头行」：同号多行时取 {@code apply_time} 最大者。
+     *
+     * @param detailLines 列表同页明细
+     * @return busNo → 代表头行
+     */
+    private Map<String, SupplyRequestModel> buildDeptPurchaseRequestHeadLineByBusNo(List<SupplyRequestModel> detailLines) {
+        Map<String, SupplyRequestModel> best = new HashMap<>();
+        if (detailLines == null) {
+            return best;
+        }
+        for (SupplyRequestModel line : detailLines) {
+            if (line == null || StringUtils.isEmpty(line.getBusNo())) {
+                continue;
+            }
+            String bn = line.getBusNo().trim();
+            SupplyRequestModel prev = best.get(bn);
+            if (prev == null) {
+                best.put(bn, line);
+                continue;
+            }
+            LocalDateTime prevApply = prev.getApplyTime();
+            LocalDateTime curApply = line.getApplyTime();
+            if (curApply != null && (prevApply == null || curApply.isAfter(prevApply))) {
+                best.put(bn, line);
+            }
+        }
+        return best;
     }
 }

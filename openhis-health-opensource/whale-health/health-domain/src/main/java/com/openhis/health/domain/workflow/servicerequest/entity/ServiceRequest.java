@@ -6,6 +6,7 @@ package com.openhis.health.domain.workflow.servicerequest.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
+import com.openhis.health.domain.share.enums.RequestBusinessTimeKind;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.TherapyType;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -85,8 +86,17 @@ public class ServiceRequest extends BaseAuditedEntity {
     @Column(name = "encounter_id", nullable = false)
     private Long encounterId;
 
-    @Column(name = "authored_time")
-    private LocalDateTime authoredTime;
+    /**
+     * 开立时间：首次建草稿/直建落库写一次；签发、改草稿、签退不覆盖。
+     */
+    @Column(name = "req_opened_time")
+    private LocalDateTime reqOpenedTime;
+
+    /**
+     * 签发时间：仅签发（及无草稿直建）写入；列名与药/耗材 {@code req_authored_time} 对齐。
+     */
+    @Column(name = "req_authored_time")
+    private LocalDateTime reqAuthoredTime;
 
     @Column(name = "requester_id", nullable = false)
     private Long requesterId;
@@ -118,8 +128,23 @@ public class ServiceRequest extends BaseAuditedEntity {
     @Column(name = "occurrence_start_time")
     private LocalDateTime occurrenceStartTime;
 
+    /**
+     * 计划结束时间（临床计划窗；停嘱不再写入本列）。
+     */
     @Column(name = "occurrence_end_time")
     private LocalDateTime occurrenceEndTime;
+
+    /**
+     * 停嘱时间：长期停嘱写入；取消停嘱清空；执行 Gate / 频次右界读本列；改停嘱时间可覆盖（不改停嘱人）。
+     */
+    @Column(name = "stop_time")
+    private LocalDateTime stopTime;
+
+    /**
+     * 停嘱人：停嘱操作写入；取消停嘱清空；改停嘱时间不改本列。
+     */
+    @Column(name = "stopper_id")
+    private Long stopperId;
 
     @Column(name = "relevant_history_id")
     private Long relevantHistoryId;
@@ -136,12 +161,11 @@ public class ServiceRequest extends BaseAuditedEntity {
     @Column(name = "print_count")
     private Integer printCount;
 
-    /** 诊断定义主键（列 {@code condition_definition_id}，即 {@code cln_condition_definition.id}）。 */
-    @Column(name = "condition_definition_id")
-    private Long conditionDefinitionId;
-
-    @Column(name = "encounter_diagnosis_id")
-    private Long encounterDiagnosisId;
+    /**
+     * 绑定就诊诊断主键有序串（有序；首位为主诊断 {@code adm_encounter_diagnosis.id}）。
+     */
+    @Column(name = "encounter_diagnosis_ids", length = 2000)
+    private String encounterDiagnosisIds;
 
     @Column(name = "therapy_enum")
     private String therapyEnum;
@@ -426,6 +450,8 @@ public class ServiceRequest extends BaseAuditedEntity {
      */
     public void activeToDraft() {
         this.statusEnum = RequestStatus.DRAFT.getCode();
+        // 签退回草稿：草稿态不得保留签发列。
+        this.reqAuthoredTime = null;
     }
 
     /**
@@ -447,17 +473,24 @@ public class ServiceRequest extends BaseAuditedEntity {
      */
     public void activeOrCompletedToDraft() {
         this.statusEnum = RequestStatus.DRAFT.getCode();
+        // 驳回回草稿：草稿态不得保留签发列。
+        this.reqAuthoredTime = null;
     }
 
     /**
-     * 流转为已停止。
+     * 流转为已停止：写入停嘱时间与停嘱人。
+     *
+     * @param stopTime  停嘱时间（{@code stop_time}）
+     * @param stopperId 停嘱人（{@code stopper_id}）
      */
-    public void toStopped() {
+    public void toStopped(LocalDateTime stopTime, Long stopperId) {
+        this.stopTime = stopTime;
+        this.stopperId = stopperId;
         this.statusEnum = RequestStatus.STOPPED.getCode();
     }
 
     /**
-     * 取消停嘱：按校对痕迹恢复为已校对或已发送，并清空发生结束时间（BR-IP-ORD-025 / BR-SRQ-016a）。
+     * 取消停嘱：按校对痕迹恢复为已校对或已发送，并清空停嘱时间与停嘱人（BR-IP-ORD-025 / BR-SRQ-016a）。
      */
     public void fromStopped() {
         // 护士已校对过则恢复 VERIFIED，否则恢复 ACTIVE（BR-IP-ORD-025 / BR-SRQ-016a）。
@@ -466,7 +499,48 @@ public class ServiceRequest extends BaseAuditedEntity {
         } else {
             this.statusEnum = RequestStatus.ACTIVE.getCode();
         }
-        this.occurrenceEndTime = null;
+        // 取消停嘱清 stop_time 与 stopper_id，不改动计划结束列。
+        this.stopTime = null;
+        this.stopperId = null;
+    }
+
+    /**
+     * 断言可改业务时间：开立任意存在行；停嘱须长期且已 STOPPED（BR-SRQ-016b）。
+     *
+     * @param timeKind 时间种类 code
+     */
+    public void assertBusinessTimeChangeAllowed(String timeKind) {
+        RequestBusinessTimeKind kind = RequestBusinessTimeKind.fromCodeOrNull(timeKind);
+        // 种类非法或试图改签发：拒绝。
+        if (kind == null) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "不可修改该时间");
+        }
+        // 改停嘱时间仅已停嘱长期行可执行。
+        if (RequestBusinessTimeKind.STOP.equals(kind)) {
+            assertCancelStopAllowed();
+        }
+    }
+
+    /**
+     * 改开立或停嘱时间；不改开立人/停嘱人/签发时间（BR-SRQ-016b）。
+     *
+     * @param timeKind 时间种类 code
+     * @param newTime  新业务时间
+     */
+    public void changeBusinessTime(String timeKind, LocalDateTime newTime) {
+        assertBusinessTimeChangeAllowed(timeKind);
+        // 新时间必填，避免误清空业务时间轴。
+        if (newTime == null) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "新业务时间不能为空");
+        }
+        RequestBusinessTimeKind kind = RequestBusinessTimeKind.fromCodeOrNull(timeKind);
+        // OPENED：仅覆盖开立列。
+        if (RequestBusinessTimeKind.OPENED.equals(kind)) {
+            this.reqOpenedTime = newTime;
+            return;
+        }
+        // STOP：仅覆盖停嘱列。
+        this.stopTime = newTime;
     }
 
     /**

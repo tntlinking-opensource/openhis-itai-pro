@@ -4,8 +4,6 @@
  */
 package com.openhis.health.application.inpatient.nursestation.skintest.mapper;
 
-import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingParentRequestAnchorDto;
-import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingWriteItemDto;
 import com.openhis.health.application.inpatient.nursestation.skintest.dto.NurseStationSkinTestRowDto;
 import com.openhis.health.application.inpatient.nursestation.skintest.request.SaveNurseStationSkinTestRecordRequest;
 import com.openhis.health.application.inpatient.nursestation.skintest.response.DeleteNurseStationSkinTestRecordResponse;
@@ -16,13 +14,10 @@ import com.openhis.health.domain.administration.encounter.queries.InpatientEncou
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.clinical.allergyintolerance.command.DeleteSkinTestRecordCommand;
 import com.openhis.health.domain.clinical.allergyintolerance.command.SaveSkinTestRecordCommand;
-import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
-import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -143,62 +138,19 @@ public class NurseStationSkinTestMapperImpl implements NurseStationSkinTestMappe
     }
 
     /**
-     * 首次保存：构造锚 doctor SR 计费用的皮试检查划价写行（父锚点皮试药）。
-     *
-     * @param request    保存请求
-     * @param activityId 皮试检查活动定义 id
-     * @param unitCode   定价单位 code
-     * @return 划价写行
-     */
-    @Override
-    public NurseStationPricingWriteItemDto toSkinTestPricingWriteItem(
-        SaveNurseStationSkinTestRecordRequest request,
-        Long activityId,
-        String unitCode) {
-        NurseStationPricingWriteItemDto row = new NurseStationPricingWriteItemDto();
-        row.setEncounterId(request.getEncounterId());
-        row.setPatientId(request.getPatientId());
-        row.setAccountId(request.getAccountId());
-        row.setProductTableName(TableNameConstants.WKF_ACTIVITY_DEFINITION);
-        row.setProductDefinitionId(activityId);
-        row.setActivityId(activityId);
-        row.setQuantity(BigDecimal.ONE);
-        row.setUnitCode(StringUtils.defaultIfBlank(unitCode, "次"));
-        row.setParentRequestAnchor(this.toMedicationParentAnchor(request.getMedicationRequestId()));
-        return row;
-    }
-
-    /**
-     * 构造皮试药父锚点。
-     *
-     * @param medicationRequestId 皮试药医嘱 id
-     * @return 父锚点
-     */
-    @Override
-    public NurseStationPricingParentRequestAnchorDto toMedicationParentAnchor(Long medicationRequestId) {
-        NurseStationPricingParentRequestAnchorDto anchor = new NurseStationPricingParentRequestAnchorDto();
-        anchor.setOrderType(ReadModelOrderTypeConstants.MED_REQUEST);
-        anchor.setRequestId(medicationRequestId);
-        return anchor;
-    }
-
-    /**
      * 构造保存成功响应。
      *
      * @param allergyRecordId          过敏记录主键
      * @param skinTestServiceRequestId 皮试检查 SR 主键
-     * @param firstTimePriced          是否首次补费
      * @return 保存响应
      */
     @Override
     public SaveNurseStationSkinTestRecordResponse toSaveResponse(
         Long allergyRecordId,
-        Long skinTestServiceRequestId,
-        boolean firstTimePriced) {
+        Long skinTestServiceRequestId) {
         SaveNurseStationSkinTestRecordResponse response = new SaveNurseStationSkinTestRecordResponse();
         response.setAllergyRecordId(allergyRecordId);
         response.setSkinTestServiceRequestId(skinTestServiceRequestId);
-        response.setFirstTimePriced(firstTimePriced);
         return response;
     }
 

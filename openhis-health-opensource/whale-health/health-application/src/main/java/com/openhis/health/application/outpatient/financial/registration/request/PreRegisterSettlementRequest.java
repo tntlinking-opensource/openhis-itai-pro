@@ -34,7 +34,7 @@ public class PreRegisterSettlementRequest {
     @Schema(description = "身份证号")
     private String idCardNo;
 
-    /** 手机号。 */
+    /** 手机号；新建时写入主档；复用既有患者时非空且与主档不同则回写主档（BR-REG-018）。 */
     @Schema(description = "手机号")
     private String phone;
 

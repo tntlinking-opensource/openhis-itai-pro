@@ -59,12 +59,52 @@ public final class ChargeItemDomainEvents {
     @Getter @Setter public static class NursePricingChargeItemCreatedEvent extends DomainEvent { public NursePricingChargeItemCreatedEvent() { super(); } public NursePricingChargeItemCreatedEvent(Long id) { super(id, AggregateTypeConstants.CHARGE_ITEM); } }
     /** 住院滚费收费明细已创建（来源 auto-roll-fees；aggregateId 为 adm_charge_item.id）。 */
     @Getter @Setter public static class AutoRollChargeItemCreatedEvent extends DomainEvent { public AutoRollChargeItemCreatedEvent() { super(); } public AutoRollChargeItemCreatedEvent(Long id) { super(id, AggregateTypeConstants.CHARGE_ITEM); } }
+    /**
+     * 护士划价待结算费用已物理移除（历史整行还原路径；IF-IP-PRC-06 冲销后不再发布）。
+     *
+     * @deprecated 取消划价改为冲销留痕，请订阅 {@link NursePricingChargeItemOffsetEvent}
+     */
+    @Deprecated
     @Getter @Setter public static class NursePricingChargeItemRemovedEvent extends DomainEvent {
         /** 关联就诊标识。 */
         private Long encounterId;
         public NursePricingChargeItemRemovedEvent() { super(); }
         public NursePricingChargeItemRemovedEvent(Long id, Long encounterId) {
             super(id, AggregateTypeConstants.CHARGE_ITEM);
+            this.encounterId = encounterId;
+        }
+    }
+
+    /**
+     * 护士划价待结算费用已冲销：aggregateId 为冲销行主键；原正向行保留，{@code refund_id} 链回源行。
+     *
+     * <p>供费用明细/待结算占用按净额刷新（AS-IP-NUR-005 IF-IP-PRC-06）。</p>
+     */
+    @Getter
+    @Setter
+    public static class NursePricingChargeItemOffsetEvent extends DomainEvent {
+
+        /** 关联就诊标识。 */
+        private Long encounterId;
+
+        /** 被冲销的原正向收费明细主键。 */
+        private Long sourceChargeItemId;
+
+        /** 无参构造器（反序列化用）。 */
+        public NursePricingChargeItemOffsetEvent() {
+            super();
+        }
+
+        /**
+         * 构造器。
+         *
+         * @param offsetChargeItemId 冲销行主键（aggregateId）
+         * @param sourceChargeItemId 原正向行主键
+         * @param encounterId        就诊主键
+         */
+        public NursePricingChargeItemOffsetEvent(Long offsetChargeItemId, Long sourceChargeItemId, Long encounterId) {
+            super(offsetChargeItemId, AggregateTypeConstants.CHARGE_ITEM);
+            this.sourceChargeItemId = sourceChargeItemId;
             this.encounterId = encounterId;
         }
     }

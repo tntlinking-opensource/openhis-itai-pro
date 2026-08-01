@@ -72,14 +72,16 @@ public interface InventoryDepartmentDeptIssueMapper {
     /**
      * 装配科室领用页初始化响应。
      *
-     * @param pharmacyOpts   科室药房选项
-     * @param productTables  项目类型选项
-     * @param statusOpts     状态选项
-     * @param pharmacistOpts 药师选项
+     * @param pharmacyOpts        科室药房选项
+     * @param organizationOpts    启用行政科室选项
+     * @param productTables       项目类型选项
+     * @param statusOpts          状态选项
+     * @param pharmacistOpts      药师选项
      * @return 页初始化响应
      */
     LoadDeptIssueFormInitResponse toLoadDeptIssueFormInitResponse(
         List<DeptPharmacyOptionDto> pharmacyOpts,
+        List<OptionDto> organizationOpts,
         List<OptionDto> productTables,
         List<OptionDto> statusOpts,
         List<OptionDto> pharmacistOpts);

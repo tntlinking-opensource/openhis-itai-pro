@@ -76,4 +76,10 @@ public class NurseStationPatientQueueItemDto {
     @Schema(description = "就诊时间")
     /** 就诊时间。 */
     private LocalDateTime encounterTime;
+
+    /**
+     * 费用性质展示名：有医保账户优先其合同名，否则登记个人现金户合同名（与门诊医生站同口径）。
+     */
+    @Schema(description = "费用性质/医保类型展示")
+    private String contractDisplay;
 }

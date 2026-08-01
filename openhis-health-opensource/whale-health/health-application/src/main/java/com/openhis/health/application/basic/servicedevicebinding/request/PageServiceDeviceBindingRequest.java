@@ -15,7 +15,7 @@ import lombok.EqualsAndHashCode;
 @EqualsAndHashCode(callSuper = true)
 public class PageServiceDeviceBindingRequest extends AbstractHealthPageRequest {
 
-    /** 绑定范围业务码；空串由应用服务默认全院范围。 */
+    /** 绑定范围业务码；空/不传表示同一来源下不限门诊/住院（查全部）。 */
     private String rangeCode;
 
     /** 绑定类型码：USAGE / ACTIVITY。 */

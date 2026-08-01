@@ -22,7 +22,7 @@ public class YbCatalogUploadRecord extends BaseAuditedEntity {
     @Column(name = "contract_id", nullable = false)
     private Long contractId;
 
-    @Column(name = "operation", nullable = false, length = 8)
+    @Column(name = "operation", nullable = false, length = 16)
     private String operation;
 
     @Column(name = "product_table", nullable = false, length = 64)

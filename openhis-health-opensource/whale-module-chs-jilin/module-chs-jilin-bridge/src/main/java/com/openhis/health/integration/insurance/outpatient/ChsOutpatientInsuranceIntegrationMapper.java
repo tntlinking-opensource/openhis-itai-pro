@@ -21,6 +21,7 @@ import com.openhis.chs.domain.outpatient.command.OpRevokeSettleCommand;
 import com.openhis.chs.domain.outpatient.result.OpRevokeSettleResult;
 import com.openhis.chs.domain.outpatient.command.OpSelfPayRollup;
 import com.openhis.chs.domain.outpatient.result.OpSettleRecordResult;
+import com.openhis.chs.domain.settlement.entity.YbSettlementRecord;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargeConfirmExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargeCorrectSettleExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargePreSettleBatchExtensionIn;
@@ -184,7 +185,81 @@ public final class ChsOutpatientInsuranceIntegrationMapper {
         out.setSettlementId(result.getSetlId());
         out.setEncounterPlatformId(result.getMdtrtId());
         out.setMsgid2207(result.getMsgid2207());
+        out.setStatus(result.getStatus());
+        out.setMedfeeSumamt(result.getMedfeeSumamt());
+        out.setFulamtOwnpayAmt(result.getFulamtOwnpayAmt());
+        out.setOverlmtSelfpay(result.getOverlmtSelfpay());
+        out.setPreselfpayAmt(result.getPreselfpayAmt());
+        out.setInscpScpAmt(result.getInscpScpAmt());
+        out.setActPayDedc(result.getActPayDedc());
+        out.setHifpPay(result.getHifpPay());
+        out.setPoolPropSelfpay(result.getPoolPropSelfpay());
+        out.setCvlservPay(result.getCvlservPay());
+        out.setHifesPay(result.getHifesPay());
+        out.setHifmiPay(result.getHifmiPay());
+        out.setHifobPay(result.getHifobPay());
+        out.setMafPay(result.getMafPay());
+        out.setHifdmPay(result.getHifdmPay());
+        out.setOthPay(result.getOthPay());
+        out.setFundPaySumamt(result.getFundPaySumamt());
+        out.setPsnPartAmt(result.getPsnPartAmt());
+        out.setAcctPay(result.getAcctPay());
+        out.setPsnCashPay(result.getPsnCashPay());
+        out.setHospPartAmt(result.getHospPartAmt());
+        out.setBalc(result.getBalc());
+        out.setAcctMulaidPay(result.getAcctMulaidPay());
+        out.setClrOptins(result.getClrOptins());
+        out.setClrWay(result.getClrWay());
+        out.setClrType(result.getClrType());
         return out;
+    }
+
+    /**
+     * {@code yb_settlement_record} → 门诊结算回执摘要（含 2206/2207 setlinfo 金额）。
+     *
+     * @param row 结算回执实体
+     * @return 领域结果；row 为 null 时返回空对象
+     */
+    public static OpSettleRecordResult toSettleRecordResult(YbSettlementRecord row) {
+        OpSettleRecordResult result = new OpSettleRecordResult();
+        if (row == null) {
+            return result;
+        }
+        return result
+            .setSettlementRecordId(row.getId())
+            .setPaymentId(row.getPaymentId())
+            .setPreSettleId(row.getPreSettleId())
+            .setContractId(row.getContractId())
+            .setChrgBchno(row.getChrgBchno())
+            .setSetlId(row.getSetlId())
+            .setMdtrtId(row.getMdtrtId())
+            .setMsgid2207(row.getMsgid2207())
+            .setStatus(row.getStatus())
+            .setMedfeeSumamt(row.getMedfeeSumamt())
+            .setFulamtOwnpayAmt(row.getFulamtOwnpayAmt())
+            .setOverlmtSelfpay(row.getOverlmtSelfpay())
+            .setPreselfpayAmt(row.getPreselfpayAmt())
+            .setInscpScpAmt(row.getInscpScpAmt())
+            .setActPayDedc(row.getActPayDedc())
+            .setHifpPay(row.getHifpPay())
+            .setPoolPropSelfpay(row.getPoolPropSelfpay())
+            .setCvlservPay(row.getCvlservPay())
+            .setHifesPay(row.getHifesPay())
+            .setHifmiPay(row.getHifmiPay())
+            .setHifobPay(row.getHifobPay())
+            .setMafPay(row.getMafPay())
+            .setHifdmPay(row.getHifdmPay())
+            .setOthPay(row.getOthPay())
+            .setFundPaySumamt(row.getFundPaySumamt())
+            .setPsnPartAmt(row.getPsnPartAmt())
+            .setAcctPay(row.getAcctPay())
+            .setPsnCashPay(row.getPsnCashPay())
+            .setHospPartAmt(row.getHospPartAmt())
+            .setBalc(row.getBalc())
+            .setAcctMulaidPay(row.getAcctMulaidPay())
+            .setClrOptins(row.getClrOptins())
+            .setClrWay(row.getClrWay())
+            .setClrType(row.getClrType());
     }
 
     public static OpRevokeSettleCommand toRevokeSettleCommand(OutpatientChargeRevokeSettleExtensionIn command) {

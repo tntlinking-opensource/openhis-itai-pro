@@ -30,8 +30,10 @@ public class DocumentDetailFilterRequest {
     @Schema(description = "业务域 domainScope：WAREHOUSE/PHARMACY/DEPARTMENT", requiredMode = Schema.RequiredMode.REQUIRED)
     private String domainScope;
 
-    /** 单据类型 typeEnum；空则域默认。 */
-    @Schema(description = "单据类型 typeEnum；空则域默认")
+    /**
+     * 单据类型 {@code SupplyType#getCode()}；空或未传 = 查本域白名单全部类型（前端自行默认选中某一类型）。
+     */
+    @Schema(description = "单据类型 typeEnum；空则查本域全部")
     private String typeEnum;
 
     /** 源库位 sourceLocationId。 */

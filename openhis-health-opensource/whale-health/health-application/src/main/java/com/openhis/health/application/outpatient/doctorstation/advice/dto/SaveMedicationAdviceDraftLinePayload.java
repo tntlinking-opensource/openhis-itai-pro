@@ -72,18 +72,10 @@ public class SaveMedicationAdviceDraftLinePayload {
     private Long dispenseLocationId;
 
     /**
-     * 诊断定义主键（落库 {@code med_medication_request.condition_definition_id}）。
+     * 绑定就诊诊断主键有序串（落库 {@code med_medication_request.encounter_diagnosis_ids}；有序，首位为主诊断）。
      */
-    @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "诊断定义主键")
-    private Long conditionDefinitionId;
-
-    /**
-     * 就诊诊断主键（落库 {@code med_medication_request.encounter_diagnosis_id}）。
-     */
-    @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "就诊诊断主键")
-    private Long encounterDiagnosisId;
+    @Schema(description = "绑定就诊诊断主键有序串")
+    private String encounterDiagnosisIds;
 
     /** 费用性质/合同覆盖，可空表示走患者默认。 */
     @JsonSerialize(using = ToStringSerializer.class)

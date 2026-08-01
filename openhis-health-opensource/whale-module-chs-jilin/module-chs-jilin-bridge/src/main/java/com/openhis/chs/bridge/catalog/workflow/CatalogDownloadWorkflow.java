@@ -145,7 +145,8 @@ public class CatalogDownloadWorkflow implements CatalogDownloadAccess {
         String verBranch = trimToNull(request.getVerBranch());
         String cursorVer = null;
         if (!Boolean.TRUE.equals(request.getForceStartFromZero())) {
-            cursorVer = downloadCursorDomainService.findLatest(contractId, infno, tenantId)
+            // 1305：按 verBranch（F002/F003）取本分支最新游标，避免 F003 误用 F002 链尾
+            cursorVer = downloadCursorDomainService.findLatest(contractId, infno, tenantId, verBranch)
                 .map(YbCatalogDownloadCursor::getLocalVer)
                 .filter(StringUtils::isNotEmpty)
                 .orElse(null);
@@ -157,7 +158,11 @@ public class CatalogDownloadWorkflow implements CatalogDownloadAccess {
             request.getStartLocalVer(),
             cursorVer);
         if (Boolean.TRUE.equals(request.getForceStartFromZero())) {
-            log.info("[catalog-dl][ctx] forceStartFromZero=true，忽略游标，从 ver={} 开始 infno={}", startVer, infno);
+            log.info("[catalog-dl][ctx] forceStartFromZero=true，忽略游标，从 ver={} 开始 infno={} verBranch={}",
+                startVer, infno, verBranch);
+        } else if ("1305".equals(infno)) {
+            log.info("[catalog-dl][ctx] 1305 verBranch={} cursorVer={} startVer={}",
+                verBranch, cursorVer, startVer);
         }
         boolean clearZipCache = Boolean.TRUE.equals(request.getClearZipCache());
         if (clearZipCache) {

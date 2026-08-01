@@ -27,6 +27,12 @@ public class LinkableGoodsReceiptListRowDto {
     @Schema(description = "目的药库 purposeLocationId")
     private Long purposeLocationId;
 
+    /**
+     * 目的药库展示名：由位置主数据解析，供选单列表「库房」列直接展示。
+     */
+    @Schema(description = "目的药库名称 purposeLocationName")
+    private String purposeLocationName;
+
     /** 供应商 supplierId。 */
     @Schema(description = "供应商 supplierId")
     private Long supplierId;
@@ -34,6 +40,18 @@ public class LinkableGoodsReceiptListRowDto {
     /** 供应商名称 supplierName。 */
     @Schema(description = "供应商名称 supplierName")
     private String supplierName;
+
+    /**
+     * 制单人（申请人）主键：取进货单头行 {@code applicantId}。
+     */
+    @Schema(description = "制单人主键 applicantId")
+    private Long applicantId;
+
+    /**
+     * 制单人展示名：由申请人主键解析，供选单列表「制单人」列直接展示。
+     */
+    @Schema(description = "制单人名称 creatorName")
+    private String creatorName;
 
     /** 总金额 totalAmount。 */
     @Schema(description = "总金额 totalAmount")
@@ -43,7 +61,9 @@ public class LinkableGoodsReceiptListRowDto {
     @Schema(description = "审批时间 approvalTime")
     private LocalDateTime approvalTime;
 
-    /** 制单时间 applyTime。 */
+    /**
+     * 制单时间：优先进货单头行 {@code occurrenceTime}，其次 {@code applyTime}。
+     */
     @Schema(description = "制单时间 applyTime")
     private LocalDateTime applyTime;
 

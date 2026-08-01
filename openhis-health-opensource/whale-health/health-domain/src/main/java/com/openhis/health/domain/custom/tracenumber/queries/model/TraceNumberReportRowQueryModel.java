@@ -9,6 +9,7 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 追溯码报表分页行（DM-SDD §4.6.8）。
@@ -35,11 +36,18 @@ public class TraceNumberReportRowQueryModel {
     /** 追溯码单位。 */
     private String traceUnitCode;
 
-    /** 本库状态：IN_LOCATION / OUT_OF_LOCATION。 */
+    /**
+     * 本库状态：IN_LOCATION / OUT_OF_LOCATION。
+     *
+     * <p>指定库房范围仅返回本库净量 &gt; 0 的码，对客列表不再展示本列；保留字段兼容旧契约。</p>
+     */
     private String locationStockStatusEnum;
 
-    /** 本库净拆零量。 */
+    /** 本库净拆零量（指定库房范围）。 */
     private BigDecimal locationNetSplitQuantity;
+
+    /** 当前仍在库的库位 id（各库位轧差净量 &gt; 0）。 */
+    private List<Long> currentLocationIds;
 
     /** 最近子表流水时间。 */
     private LocalDateTime lastFlowAt;

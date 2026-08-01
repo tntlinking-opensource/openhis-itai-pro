@@ -26,6 +26,10 @@ public class LoadDeptIssueFormInitResponse {
     @Schema(description = "科室药房下拉 departmentPharmacyOptions")
     private List<DeptPharmacyOptionDto> departmentPharmacyOptions;
 
+    /** 启用行政科室下拉 organizationOptions。 */
+    @Schema(description = "启用行政科室下拉 organizationOptions")
+    private List<OptionDto> organizationOptions;
+
     /** 项目类型下拉 productTableOptions。 */
     @Schema(description = "项目类型下拉 productTableOptions")
     private List<OptionDto> productTableOptions;

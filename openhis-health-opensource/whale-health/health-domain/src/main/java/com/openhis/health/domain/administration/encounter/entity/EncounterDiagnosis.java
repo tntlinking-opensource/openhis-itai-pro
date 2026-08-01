@@ -12,7 +12,9 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 就诊诊断关联子实体：持久化就诊与病情（Condition）的多对多事实及诊断扩展字段。
+ * 就诊诊断行：本次就诊绑定的诊断目录及医疗类别等扩展字段。
+ *
+ * <p>直挂 {@code condition_definition_id}（{@code cln_condition_definition.id}），不再经 {@code cln_condition}。</p>
  */
 @Getter
 @Setter
@@ -24,9 +26,9 @@ public class EncounterDiagnosis extends BaseAuditedEntity {
     @Column(name = "encounter_id", nullable = false)
     private Long encounterId;
 
-    /** 病情/诊断条件主键。 */
-    @Column(name = "condition_id", nullable = false)
-    private Long conditionId;
+    /** 诊断目录主键（{@code cln_condition_definition.id}）。 */
+    @Column(name = "condition_definition_id", nullable = false)
+    private Long conditionDefinitionId;
 
     /** 是否主诊断。 */
     @Column(name = "primary_flag")
@@ -44,11 +46,11 @@ public class EncounterDiagnosis extends BaseAuditedEntity {
     @Column(name = "diag_type_code", length = 32)
     private String diagTypeCode;
 
-    /** 诊断编码。 */
+    /** 诊断编码（历史列，可空；病种码以目录为准）。 */
     @Column(name = "diag_code")
     private Integer diagCode;
 
-    /** 病情编码。 */
+    /** 病情编码（历史列，可空；病种码以目录为准）。 */
     @Column(name = "condition_code")
     private Integer conditionCode;
 

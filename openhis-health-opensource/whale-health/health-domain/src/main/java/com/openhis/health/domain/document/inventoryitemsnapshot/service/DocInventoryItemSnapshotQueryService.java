@@ -12,11 +12,13 @@ import com.openhis.health.domain.document.inventoryitemsnapshot.repository.DocIn
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.utils.InventoryDetailSnapshotBusNoSupport;
+import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Order;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import lombok.RequiredArgsConstructor;
@@ -92,7 +94,7 @@ public class DocInventoryItemSnapshotQueryService {
     }
 
     /**
-     * 租户历史备份批次下拉（单号 + 抓拍时刻，IF-11 / 库房日结 IF-01）。
+     * 租户历史备份批次下拉（单号 + 抓拍时刻，IF-11 / 库房期初期末明细 IF-01）。
      *
      * @param tenantId 租户
      * @return 按 {@code bus_no} 降序；租户为空时空列表
@@ -120,7 +122,10 @@ public class DocInventoryItemSnapshotQueryService {
             if (row == null || row.length < 2) {
                 continue;
             }
-            String busNo = row[0] != null ? row[0].toString() : null;
+            String busNo = null;
+            if (row[0] != null) {
+                busNo = row[0].toString();
+            }
             if (StringUtils.isEmpty(busNo)) {
                 continue;
             }
@@ -182,6 +187,9 @@ public class DocInventoryItemSnapshotQueryService {
         if (effectivePageable == null) {
             effectivePageable = PageRequest.of(0, GeneralSharedConstants.DEFAULT_QUERY_PAGE_SIZE);
         }
+        // 关键字非空时剥掉 Sort，保留 Spec 精确优先 ORDER BY（B.2.1）
+        boolean keywordPresent = query != null && StringUtils.isNotEmpty(query.getKeyword());
+        effectivePageable = this.unsortPageableIfKeyword(keywordPresent, effectivePageable);
         return repository.findAll(specification, effectivePageable).map(this::toRowQueryModel);
     }
 
@@ -308,7 +316,8 @@ public class DocInventoryItemSnapshotQueryService {
                 predicates.add(root.get(FieldNameConstants.CHRGITM_LV).in(query.getChrgitmLvs()));
             }
             if (StringUtils.isNotEmpty(query.getKeyword())) {
-                String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getKeyword().trim());
+                String trimmed = query.getKeyword().trim();
+                String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
                 List<Predicate> keywordOr = new ArrayList<>();
                 // 备份关键字：名称/拼音/五笔/编码/商品名；不含批号（BR-INV-DTL-010）
                 keywordOr.add(cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc));
@@ -317,9 +326,38 @@ public class DocInventoryItemSnapshotQueryService {
                 keywordOr.add(cb.like(cb.lower(root.get(FieldNameConstants.PRODUCT_BUS_NO)), likeIc));
                 keywordOr.add(cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_NAME)), likeIc));
                 predicates.add(cb.or(keywordOr.toArray(new Predicate[0])));
+                // B.2.1：精确全等置顶，次级主键倒序
+                List<Order> secondary = List.of(cb.desc(root.get(FieldNameConstants.ID)));
+                KeywordExactFirstOrderSupport.applyExactFirstOrder(
+                    cq,
+                    cb,
+                    trimmed,
+                    secondary,
+                    root.get(FieldNameConstants.NAME),
+                    root.get(FieldNameConstants.PY_STR),
+                    root.get(FieldNameConstants.WB_STR),
+                    root.get(FieldNameConstants.PRODUCT_BUS_NO),
+                    root.get(FieldNameConstants.MERCHANDISE_NAME));
             }
             return cb.and(predicates.toArray(new Predicate[0]));
         };
+    }
+
+    /**
+     * 关键字非空且 Pageable 带 Sort 时剥掉 Sort，避免覆盖 Specification 精确优先 ORDER BY。
+     *
+     * @param keywordPresent 是否带非空关键字
+     * @param pageable       原始分页
+     * @return 关键字场景下的无 Sort Pageable；否则原 pageable
+     */
+    private Pageable unsortPageableIfKeyword(boolean keywordPresent, Pageable pageable) {
+        if (!keywordPresent || pageable == null) {
+            return pageable;
+        }
+        if (!pageable.getSort().isSorted()) {
+            return pageable;
+        }
+        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
     }
 
     /**

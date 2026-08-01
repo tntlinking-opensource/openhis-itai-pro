@@ -45,10 +45,10 @@ public class ChangeHerbalMedicationOrderDraftCommand {
     private String dosageInstruction;
     /** 备注。 */
     private String remark;
-    /** 绑定诊断定义主键。 */
-    private Long conditionDefinitionId;
-    /** 绑定就诊诊断关联主键。 */
-    private Long encounterDiagnosisId;
+    /**
+     * 绑定就诊诊断主键有序串（列 {@code encounter_diagnosis_ids}）；非空时更新。
+     */
+    private String encounterDiagnosisIds;
     /** 费用性质/合同覆盖。 */
     private Long contractId;
     /** 开立机构主键。 */

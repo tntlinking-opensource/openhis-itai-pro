@@ -60,4 +60,24 @@ public class InsurancePlatformDictDisplayExtensionImpl implements InsurancePlatf
             PlatformDictConstants.LOOKUP_INSUPLC_ADMDVS,
             values);
     }
+
+    /** 本地：从 1901 字典镜像批量查询险种类型名称，无网关出站。 */
+    @Override
+    public Map<String, String> lookupInsutypeLabels(Collection<String> insutypeCodes) {
+        if (insutypeCodes == null || insutypeCodes.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<String> values = insutypeCodes.stream()
+            .filter(StringUtils::isNotEmpty)
+            .map(String::trim)
+            .distinct()
+            .toList();
+        if (values.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return lookupService.lookupLabels(
+            com.openhis.whale.core.infrastructure.multitenancy.TenantUtils.getCurrentTenantId(),
+            PlatformDictConstants.DICT_TYPE_INSUTYPE,
+            values);
+    }
 }

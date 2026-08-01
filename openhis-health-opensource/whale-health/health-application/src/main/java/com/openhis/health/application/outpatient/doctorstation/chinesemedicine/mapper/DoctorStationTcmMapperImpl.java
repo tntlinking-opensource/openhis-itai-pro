@@ -14,7 +14,6 @@ import com.openhis.health.application.outpatient.doctorstation.chinesemedicine.r
 import com.openhis.health.application.outpatient.doctorstation.chinesemedicine.response.*;
 import com.openhis.health.domain.administration.encounter.command.BatchUpsertEncounterDiagnosisAssociationCommand;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
-import com.openhis.health.domain.clinical.condition.command.SaveDoctorDiagnosisTcmCommand;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.DoctorStationConditionDefinitionRowModel;
 import com.openhis.health.domain.medication.medicationrequest.command.ChangeHerbalMedicationOrderDraftCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.CreateHerbalMedicationOrderDraftCommand;
@@ -104,99 +103,79 @@ public class DoctorStationTcmMapperImpl implements DoctorStationTcmMapper {
     }
 
     /**
-     * 将全量病证组保存请求转为 {@link SaveDoctorDiagnosisTcmCommand}（每组展开为病+证两条事实）。
+     * 将全量病证组保存请求转为中医就诊关联 batchUpsert 命令。
      *
      * @param request        全量批次请求
      * @param groupKeyByItem 稳定键 → 组号
      * @param operatorId     操作人
-     * @return 中医诊断事实 upsert 命令
-     */
-    @Override
-    public SaveDoctorDiagnosisTcmCommand toSaveDoctorDiagnosisTcmCommand(
-        SaveTcmDiagnosisGroupsBatchRequest request,
-        Map<String, String> groupKeyByItem,
-        Long operatorId) {
-        SaveDoctorDiagnosisTcmCommand cmd = new SaveDoctorDiagnosisTcmCommand();
-        cmd.setEncounterId(request.getEncounterId());
-        cmd.setPatientId(request.getPatientId());
-        cmd.setOperatorId(operatorId);
-        List<SaveDoctorDiagnosisTcmCommand.DoctorDiagnosisTcmItemCommand> items = new ArrayList<>();
-        for (TcmDiagnosisGroupItemRequest group : request.getGroups()) {
-            String groupKey = groupKeyByItem.get(stableGroupKey(group));
-            items.add(toTcmItem(group.getDiseaseConditionId(), group.getDiseaseDefinitionId(), group.getDiagnosisDesc(), operatorId));
-            items.add(toTcmItem(group.getSyndromeConditionId(), group.getSyndromeDefinitionId(), group.getDiagnosisDesc(), operatorId));
-        }
-        cmd.setItems(items);
-        return cmd;
-    }
-
-    private SaveDoctorDiagnosisTcmCommand.DoctorDiagnosisTcmItemCommand toTcmItem(
-        Long conditionId, Long definitionId, String desc, Long operatorId) {
-        SaveDoctorDiagnosisTcmCommand.DoctorDiagnosisTcmItemCommand item =
-            new SaveDoctorDiagnosisTcmCommand.DoctorDiagnosisTcmItemCommand();
-        item.setId(conditionId);
-        item.setDefinitionId(definitionId);
-        item.setDescription(desc);
-        item.setTcmFlag(Boolean.TRUE);
-        item.setClinicalStatusEnum("ACTIVE");
-        item.setVerificationStatusEnum(DoctorStationDiagnosisConstants.ConditionVerificationStatusCode.CONFIRMED);
-        item.setRecordedDatetime(LocalDateTime.now());
-        item.setRecorderId(operatorId);
-        return item;
-    }
-
-    /**
-     * 中医诊断组稳定键：diseaseDefinitionId:syndromeDefinitionId。
-     *
-     * @param group 组项请求
-     * @return 稳定键字符串
-     */
-    private String stableGroupKey(TcmDiagnosisGroupItemRequest group) {
-        return String.valueOf(group.getDiseaseDefinitionId()) + ":" + String.valueOf(group.getSyndromeDefinitionId());
-    }
-
-    /**
-     * 将保存结果转为中医就诊关联 batchUpsert 命令。
-     *
-     * @param request           全量批次请求
-     * @param savedConditionIds 领域返回的事实 id 列表
-     * @param groupKeyByItem    稳定键 → 组号
-     * @param operatorId        操作人
      * @return 中医批次 upsert 命令
      */
     @Override
     public BatchUpsertEncounterDiagnosisAssociationCommand toBatchUpsertTcmEncounterDiagnosisAssociationCommand(
         SaveTcmDiagnosisGroupsBatchRequest request,
-        List<Long> savedConditionIds,
         Map<String, String> groupKeyByItem,
         Long operatorId) {
-        // Gate：领域应返回每组 2 条事实 id，数量不符说明持久化异常
-        if (savedConditionIds.size() != request.getGroups().size() * 2) {
-            throw new BusinessException(ErrorCodeConstants.CONDITION_RULE_CONFLICT, "中医病证保存结果与入参不一致");
-        }
         BatchUpsertEncounterDiagnosisAssociationCommand cmd = new BatchUpsertEncounterDiagnosisAssociationCommand();
         cmd.setOperatorId(operatorId);
         BatchUpsertEncounterDiagnosisAssociationCommand.BatchUpsertEncounterDiagnosisAssociationItemCommand batchItem =
             new BatchUpsertEncounterDiagnosisAssociationCommand.BatchUpsertEncounterDiagnosisAssociationItemCommand();
         batchItem.setEncounterId(request.getEncounterId());
         List<BatchUpsertEncounterDiagnosisAssociationCommand.DiagnosisItemCommand> diagnosisItems = new ArrayList<>();
-        int idx = 0;
         for (TcmDiagnosisGroupItemRequest group : request.getGroups()) {
-            String groupKey = groupKeyByItem.get(stableGroupKey(group));
-            diagnosisItems.add(toAssocItem(savedConditionIds.get(idx++), group, groupKey));
-            diagnosisItems.add(toAssocItem(savedConditionIds.get(idx++), group, groupKey));
+            String groupKey = groupKeyByItem.get(resolveTcmGroupStableKey(group));
+            // 仅写入已选侧目录，支持院点单侧成组
+            if (group.getDiseaseDefinitionId() != null) {
+                diagnosisItems.add(toAssocItem(
+                    group.getDiseaseEncounterDiagnosisId(), group.getDiseaseDefinitionId(), group, groupKey));
+            }
+            if (group.getSyndromeDefinitionId() != null) {
+                diagnosisItems.add(toAssocItem(
+                    group.getSyndromeEncounterDiagnosisId(), group.getSyndromeDefinitionId(), group, groupKey));
+            }
         }
         batchItem.setDiagnosisItems(diagnosisItems);
         cmd.setItem(batchItem);
         return cmd;
     }
 
+    /**
+     * 病证组稳定键：双侧 diseaseId:syndromeId；仅病 d:{id}；仅证 s:{id}。
+     *
+     * @param group 组项请求
+     * @return 稳定键字符串
+     */
+    @Override
+    public String resolveTcmGroupStableKey(TcmDiagnosisGroupItemRequest group) {
+        Long diseaseId = group.getDiseaseDefinitionId();
+        Long syndromeId = group.getSyndromeDefinitionId();
+        if (diseaseId != null && syndromeId != null) {
+            return String.valueOf(diseaseId) + ":" + String.valueOf(syndromeId);
+        }
+        if (diseaseId != null) {
+            return "d:" + String.valueOf(diseaseId);
+        }
+        if (syndromeId != null) {
+            return "s:" + String.valueOf(syndromeId);
+        }
+        return "empty";
+    }
+
+    /**
+     * 组装单条中医就诊诊断关联项（病名或证候一侧）。
+     *
+     * @param encounterDiagnosisId   已有关联主键，可空表示新建
+     * @param conditionDefinitionId  目录定义主键
+     * @param group                  组级主诊/排序/描述
+     * @param groupKey               tcm_syndrome_group
+     * @return 关联命令项
+     */
     private BatchUpsertEncounterDiagnosisAssociationCommand.DiagnosisItemCommand toAssocItem(
-        Long conditionId, TcmDiagnosisGroupItemRequest group, String groupKey) {
+        Long encounterDiagnosisId, Long conditionDefinitionId, TcmDiagnosisGroupItemRequest group, String groupKey) {
         BatchUpsertEncounterDiagnosisAssociationCommand.DiagnosisItemCommand d =
             new BatchUpsertEncounterDiagnosisAssociationCommand.DiagnosisItemCommand();
-        d.setConditionId(conditionId);
-        // 组级主诊标记同步到组内两行关联
+        d.setEncounterDiagnosisId(encounterDiagnosisId);
+        d.setConditionDefinitionId(conditionDefinitionId);
+        // 组级主诊标记同步到组内各行关联
         if (group.getPrimaryFlag() != null
             && group.getPrimaryFlag() == DoctorStationDiagnosisConstants.MAIN_DIAGNOSIS_FLAG_YES) {
             d.setPrimaryFlag(Boolean.TRUE);
@@ -496,13 +475,14 @@ public class DoctorStationTcmMapperImpl implements DoctorStationTcmMapper {
         TcmRxHistoryRowDto row = new TcmRxHistoryRowDto();
         row.setPrescriptionNo(model.getPrescriptionNo());
         row.setEncounterId(model.getEncounterId());
-        row.setAuthoredAt(model.getReqAuthoredTime());
+        row.setReqOpenedTime(model.getReqOpenedTime());
         row.setMedicationNames(medicationNames);
         int lineCount = 0;
         if (model.getLineCount() != null) {
             lineCount = model.getLineCount();
         }
         row.setSummaryText(lineCount + "味");
+        // 开立人姓名由 Assembler enrichHistoryGroups 批量补齐
         return row;
     }
 }

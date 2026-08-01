@@ -1,0 +1,192 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.openhis.health.application.report.consumableusage.inpatient.mapper;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import org.springframework.stereotype.Component;
+
+import com.openhis.health.application.report.consumableusage.inpatient.dto.InpatientConsumableUsageDetailRowDto;
+import com.openhis.health.application.report.consumableusage.inpatient.dto.InpatientConsumableUsageExportRowDto;
+import com.openhis.health.application.report.consumableusage.inpatient.dto.InpatientConsumableUsageSummaryRowDto;
+import com.openhis.health.application.report.consumableusage.inpatient.response.ExportInpatientConsumableUsageReportResponse;
+import com.openhis.health.application.report.consumableusage.inpatient.response.LoadInpatientConsumableUsageReportPageInitResponse;
+import com.openhis.health.domain.administration.location.entity.Location;
+import com.openhis.health.domain.administration.organization.entity.Organization;
+import com.openhis.health.domain.share.constants.ConsumableUsageReportConstants;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.whale.core.application.dto.OptionDto;
+
+/**
+ * 住院耗材使用报表映射实现（AS-RPT-006）。
+ */
+@Component
+public class InpatientConsumableUsageReportMapperImpl implements InpatientConsumableUsageReportMapper {
+
+    /**
+     * 装配页初始化响应。
+     *
+     * @param organizations           科室列表；调用方保证非 null
+     * @param locations               库位列表；调用方保证非 null
+     * @param summaryDimensionOptions 汇总维选项
+     * @param sourceCodeOptions       来源选项
+     * @param feeNatureOptions        费用性质（bus_no）
+     * @param defaultDateFrom         默认日起
+     * @param defaultDateTo           默认日止
+     * @return 初始化响应
+     */
+    @Override
+    public LoadInpatientConsumableUsageReportPageInitResponse toLoadPageInitResponse(
+        List<Organization> organizations,
+        List<Location> locations,
+        List<OptionDto> summaryDimensionOptions,
+        List<OptionDto> sourceCodeOptions,
+        List<OptionDto> feeNatureOptions,
+        String defaultDateFrom,
+        String defaultDateTo) {
+        LoadInpatientConsumableUsageReportPageInitResponse response =
+            new LoadInpatientConsumableUsageReportPageInitResponse();
+        response.setDefaultDateFrom(defaultDateFrom);
+        response.setDefaultDateTo(defaultDateTo);
+        response.setSummaryDimensionOptions(summaryDimensionOptions);
+        response.setSourceCodeOptions(sourceCodeOptions);
+        response.setOrganizationOptions(this.toOrganizationOptions(organizations));
+        response.setLocationOptions(this.toLocationOptions(locations));
+        response.setFeeNatureOptions(feeNatureOptions);
+        return response;
+    }
+
+    /**
+     * 明细行 → 导出行。
+     *
+     * @param row 明细行；null 时返回 null
+     * @return 导出行
+     */
+    @Override
+    public InpatientConsumableUsageExportRowDto toExportRowFromDetail(InpatientConsumableUsageDetailRowDto row) {
+        if (row == null) {
+            return null;
+        }
+        InpatientConsumableUsageExportRowDto exportRow = new InpatientConsumableUsageExportRowDto();
+        exportRow.setSourceText(row.getSourceCode_dictText());
+        if (row.getBusinessTime() != null) {
+            exportRow.setBusinessTimeText(row.getBusinessTime().format(GeneralSharedConstants.DATE_TIME_FORMATTER));
+        }
+        exportRow.setPatientName(row.getPatientName());
+        exportRow.setEncounterBusNo(row.getEncounterBusNo());
+        exportRow.setFeeNatureDisplay(row.getFeeNatureDisplay());
+        exportRow.setMedTypeDisplay(row.getMedTypeDisplay());
+        exportRow.setWardName(row.getWardName());
+        exportRow.setBedName(row.getBedName());
+        exportRow.setOrganizationName(row.getOrganizationName());
+        exportRow.setLocationName(row.getLocationName());
+        exportRow.setDeviceName(row.getDeviceName());
+        exportRow.setSpecText(row.getSpecText());
+        exportRow.setQuantity(row.getQuantity());
+        exportRow.setUnitText(row.getUnitCode_dictText());
+        exportRow.setAmount(row.getAmount());
+        exportRow.setPurchaseUnitPrice(row.getPurchaseUnitPrice());
+        exportRow.setPurchaseAmount(row.getPurchaseAmount());
+        exportRow.setSaleUnitPrice(row.getSaleUnitPrice());
+        exportRow.setSaleAmount(row.getSaleAmount());
+        exportRow.setLotNumber(row.getLotNumber());
+        exportRow.setStatusOrTypeText(row.getStatusOrTypeEnum_enumText());
+        return exportRow;
+    }
+
+    /**
+     * 汇总行 → 导出行。
+     *
+     * @param row 汇总行；null 时返回 null
+     * @return 导出行
+     */
+    @Override
+    public InpatientConsumableUsageExportRowDto toExportRowFromSummary(InpatientConsumableUsageSummaryRowDto row) {
+        if (row == null) {
+            return null;
+        }
+        InpatientConsumableUsageExportRowDto exportRow = new InpatientConsumableUsageExportRowDto();
+        exportRow.setPatientName(row.getPatientName());
+        exportRow.setOrganizationName(row.getOrganizationName());
+        exportRow.setLocationName(row.getLocationName());
+        exportRow.setDeviceName(row.getDeviceName());
+        exportRow.setQuantity(row.getNetQuantity());
+        exportRow.setAmount(row.getSaleNetAmount());
+        exportRow.setPurchaseAmount(row.getPurchaseNetAmount());
+        exportRow.setSaleAmount(row.getSaleNetAmount());
+        return exportRow;
+    }
+
+    /**
+     * 装配导出响应。
+     *
+     * @param body             xlsx 字节
+     * @param exportedRowCount 行数
+     * @param truncated        是否截断
+     * @return 导出响应
+     */
+    @Override
+    public ExportInpatientConsumableUsageReportResponse toExportResponse(
+        byte[] body,
+        int exportedRowCount,
+        boolean truncated) {
+        ExportInpatientConsumableUsageReportResponse response = new ExportInpatientConsumableUsageReportResponse();
+        response.setFileName(ConsumableUsageReportConstants.INPATIENT_EXPORT_DEFAULT_FILENAME);
+        response.setContentType(ConsumableUsageReportConstants.XLSX_CONTENT_TYPE);
+        response.setBody(body);
+        response.setExportedRowCount(exportedRowCount);
+        response.setTruncated(truncated);
+        return response;
+    }
+
+    /**
+     * 组织 → OptionDto。
+     *
+     * @param organizations 组织列表
+     * @return 下拉选项
+     */
+    private List<OptionDto> toOrganizationOptions(List<Organization> organizations) {
+        List<OptionDto> options = new ArrayList<>();
+        if (organizations == null) {
+            return options;
+        }
+        for (Organization organization : organizations) {
+            // Asm：跳过无主键组织，避免 Option value 空串
+            if (organization == null || organization.getId() == null) {
+                continue;
+            }
+            OptionDto option = new OptionDto();
+            option.setValue(String.valueOf(organization.getId()));
+            option.setLabel(organization.getName());
+            options.add(option);
+        }
+        return options;
+    }
+
+    /**
+     * 库位 → OptionDto。
+     *
+     * @param locations 库位列表
+     * @return 下拉选项
+     */
+    private List<OptionDto> toLocationOptions(List<Location> locations) {
+        List<OptionDto> options = new ArrayList<>();
+        if (locations == null) {
+            return options;
+        }
+        for (Location location : locations) {
+            // Asm：跳过无主键库位
+            if (location == null || location.getId() == null) {
+                continue;
+            }
+            OptionDto option = new OptionDto();
+            option.setValue(String.valueOf(location.getId()));
+            option.setLabel(location.getName());
+            options.add(option);
+        }
+        return options;
+    }
+}

@@ -8,7 +8,7 @@ package com.openhis.wi.domain.share;
 public final class WorkInjuryConstants {
 
     /** fin_contract.bus_no 样例。 */
-    public static final String CONTRACT_BUS_NO = "H22010402403-GS";
+    public static final String CONTRACT_BUS_NO = "H00000000000-GS";
     /** yb_settlement_record.settle_mode。 */
     public static final String SCHEME_CODE = "WORK_INJURY";
     /** 默认医疗类别 med_type（门诊工伤）。 */

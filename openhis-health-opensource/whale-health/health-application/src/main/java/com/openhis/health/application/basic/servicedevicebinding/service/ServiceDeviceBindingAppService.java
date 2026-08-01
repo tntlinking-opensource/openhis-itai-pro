@@ -103,9 +103,17 @@ public class ServiceDeviceBindingAppService {
             PublicationStatus.INACTIVE.getCode(),
             PublicationStatus.INACTIVE.getDisplay()));
         dto.setStatusOptions(statusOptions);
-        dto.setRangeOptions(List.of(
-            new OptionDto(1L, ServiceDeviceTemplateRangeCode.HOSPITAL.getCode(), "全院")
-        ));
+        // 配置页仅下发门诊/住院；全院为历史兼容码，不作为新建选项
+        List<OptionDto> rangeOptions = new ArrayList<>();
+        rangeOptions.add(new OptionDto(
+            ServiceDeviceTemplateRangeCode.OUTPATIENT.getSortOrder(),
+            ServiceDeviceTemplateRangeCode.OUTPATIENT.getCode(),
+            ServiceDeviceTemplateRangeCode.OUTPATIENT.getDisplay()));
+        rangeOptions.add(new OptionDto(
+            ServiceDeviceTemplateRangeCode.INPATIENT.getSortOrder(),
+            ServiceDeviceTemplateRangeCode.INPATIENT.getCode(),
+            ServiceDeviceTemplateRangeCode.INPATIENT.getDisplay()));
+        dto.setRangeOptions(rangeOptions);
         List<OptionDto> bindTypeOptions = new ArrayList<>();
         for (ServiceDeviceTemplateTypeCode type : ServiceDeviceTemplateTypeCode.values()) {
             bindTypeOptions.add(new OptionDto(type.getSortOrder(), type.getCode(), type.getDisplay()));
@@ -160,9 +168,17 @@ public class ServiceDeviceBindingAppService {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT, "绑定类型不能为空");
         }
-        String rangeCode = ServiceDeviceTemplateRangeCode.HOSPITAL.getCode();
+        // 范围可选：有值则按门诊/住院过滤；空则同一来源下展示全部范围
+        String rangeCode = null;
         if (StringUtils.isNotEmpty(query.getRangeCode())) {
-            rangeCode = query.getRangeCode().trim();
+            String trimmedRange = query.getRangeCode().trim();
+            ServiceDeviceTemplateRangeCode range =
+                EnumUtil.fromCode(ServiceDeviceTemplateRangeCode.class, trimmedRange);
+            if (range == null) {
+                throw new BusinessException(
+                    ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT, "适用范围不合法");
+            }
+            rangeCode = range.getCode();
         }
         int pageIndex = query.springPageIndex();
         int pageSize = query.getBoundedPageSize();
@@ -179,7 +195,7 @@ public class ServiceDeviceBindingAppService {
             }
         }
         Page<ServiceDeviceTemplateQueryModel> page;
-        // Branch：带来源 id 时按来源维度分页；否则按范围+类型浏览
+        // Branch：带来源 id 时按来源维度分页；否则须带范围按类型浏览
         if (StringUtils.isNotEmpty(query.getSourceId())) {
             String itemTable = null;
             if (ServiceDeviceTemplateTypeCode.USAGE.getCode().equals(typeCode)) {
@@ -200,6 +216,11 @@ public class ServiceDeviceBindingAppService {
                     PageRequest.of(pageIndex, pageSize));
             }
         } else {
+            if (StringUtils.isEmpty(rangeCode)) {
+                throw new BusinessException(
+                    ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT,
+                    "未指定来源项时须指定适用范围");
+            }
             if (statusCode == null) {
                 page = serviceDeviceTemplateQueryService.pageBindingsByRangeAndType(
                     rangeCode, typeCode, PageRequest.of(pageIndex, pageSize));
@@ -349,6 +370,23 @@ public class ServiceDeviceBindingAppService {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT, "保存失败：绑定类型不能为空");
         }
+        if (StringUtils.isEmpty(request.getRangeCode())) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT, "保存失败：适用范围不能为空");
+        }
+        ServiceDeviceTemplateRangeCode range =
+            EnumUtil.fromCode(ServiceDeviceTemplateRangeCode.class, request.getRangeCode().trim());
+        if (range == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT, "保存失败：适用范围不合法");
+        }
+        if (ServiceDeviceTemplateRangeCode.HOSPITAL.equals(range)) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT,
+                "保存失败：请选择门诊或住院适用范围");
+        }
+        // 回写规范枚举 code，避免空白或别名落库
+        request.setRangeCode(range.getCode());
         if (StringUtils.isEmpty(request.getSourceId())) {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT, "保存失败：来源项不能为空");

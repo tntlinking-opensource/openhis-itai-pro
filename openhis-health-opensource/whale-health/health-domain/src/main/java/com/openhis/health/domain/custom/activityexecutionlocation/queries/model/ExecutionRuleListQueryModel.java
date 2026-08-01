@@ -20,6 +20,10 @@ public class ExecutionRuleListQueryModel {
      */
     private Long id;
     /**
+     * 开立科室标识。
+     */
+    private Long organizationId;
+    /**
      * 诊疗定义标识。
      */
     private Long activityDefinitionId;

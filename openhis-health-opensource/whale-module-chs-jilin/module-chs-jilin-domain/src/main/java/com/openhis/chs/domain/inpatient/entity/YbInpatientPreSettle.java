@@ -54,7 +54,7 @@ public class YbInpatientPreSettle extends BaseAuditedEntity implements PreSettle
     @Column(name = "mdtrt_cert_type", length = 3)
     private String mdtrtCertType;
 
-    @Column(name = "mdtrt_cert_no", length = 64)
+    @Column(name = "mdtrt_cert_no", length = 2048)
     private String mdtrtCertNo;
 
     @Column(name = "insutype", length = 6)

@@ -64,6 +64,36 @@ public class PaymentChannelGate {
     }
 
     /**
+     * 校验已落库 pay_enum（含医保统筹/个账等非用户可选渠道；仍拒绝 {@link PaymentChannel#SCAN_PAY}）。
+     *
+     * <p>用于退费原路返回：原支付明细可能含服务端写入的 {@link PaymentChannel#INSURANCE_FUND}/
+     * {@link PaymentChannel#INSURANCE_ACCT}，不能按用户可选门控拒绝。</p>
+     *
+     * @param payChannelCode 支付渠道 code
+     * @param errorCode      失败业务码
+     * @param message        失败提示
+     * @return trim 后的已落库渠道 code
+     * @throws BusinessException 非法或 UI-only 渠道
+     */
+    public String requireKnownPersistedPayChannelCode(
+        String payChannelCode,
+        String errorCode,
+        String message) {
+        if (StringUtils.isEmpty(payChannelCode)) {
+            throw new BusinessException(errorCode, message);
+        }
+        String trimmed = payChannelCode.trim();
+        PaymentChannel channel = EnumUtil.fromCode(PaymentChannel.class, trimmed);
+        if (channel == null) {
+            throw new BusinessException(errorCode, message);
+        }
+        if (channel.isUiOnly()) {
+            throw new BusinessException(errorCode, "扫码支付须先完成银联收单后再结算");
+        }
+        return trimmed;
+    }
+
+    /**
      * 支付渠道 Gate：非空、可解析为 {@link PaymentChannel} 且 userSelectable。
      *
      * @param payChannelCode 渠道码

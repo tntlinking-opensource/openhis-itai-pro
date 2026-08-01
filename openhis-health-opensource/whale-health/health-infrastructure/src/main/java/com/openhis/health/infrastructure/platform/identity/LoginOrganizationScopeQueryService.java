@@ -10,24 +10,37 @@ import com.openhis.health.domain.share.enums.OrganizationType;
 import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.whale.core.application.ILoginOrganizationScopeQuery;
 import com.openhis.whale.core.application.dto.LoginOrganizationOption;
+import com.openhis.whale.core.infrastructure.web.RequestScopeCleaner;
 import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
 /**
  * 登录选医院/科室：基于 {@code adm_organization} 树解析医院归属。
+ *
+ * <p>层级为「医院 → 科室」：医院列表仅 {@code HOSPITAL}；科室列表由 Auth 侧组装时排除医院节点。</p>
+ *
+ * <p>本请求内缓存启用组织树：登录拉科室会对每个科室反复 {@code belongsToHospital}，
+ * 避免 N 次 {@code loadOrganizationByIdForDisplay}/父链上翻。</p>
  */
 @Service
 @RequiredArgsConstructor
-public class LoginOrganizationScopeQueryService implements ILoginOrganizationScopeQuery {
+public class LoginOrganizationScopeQueryService implements ILoginOrganizationScopeQuery, RequestScopeCleaner {
 
     private final OrganizationQueryService organizationQueryService;
+
+    /**
+     * 本请求启用组织 id → 实体；{@link ThreadLocal} 防止线程池复用串租户树。
+     */
+    private static final ThreadLocal<Map<Long, Organization>> ORG_BY_ID = new ThreadLocal<>();
 
     /**
      * 列出启用状态的医院级组织，供登录页选院区。
@@ -37,7 +50,7 @@ public class LoginOrganizationScopeQueryService implements ILoginOrganizationSco
     @Override
     public List<LoginOrganizationOption> listActiveHospitalOrganizations() {
         List<LoginOrganizationOption> options = new ArrayList<>();
-        for (Organization organization : organizationQueryService.getOrganizationTree()) {
+        for (Organization organization : this.orgById().values()) {
             // 仅 ACTIVE 且 type=HOSPITAL 的节点进入登录下拉
             if (!isActiveHospital(organization)) {
                 continue;
@@ -58,8 +71,7 @@ public class LoginOrganizationScopeQueryService implements ILoginOrganizationSco
         if (businessOrganizationId == null) {
             return Optional.empty();
         }
-        Organization organization =
-            organizationQueryService.loadOrganizationByIdForDisplay(businessOrganizationId);
+        Organization organization = this.orgById().get(businessOrganizationId);
         return walkToHospital(organization, new LinkedHashSet<>());
     }
 
@@ -75,11 +87,10 @@ public class LoginOrganizationScopeQueryService implements ILoginOrganizationSco
         if (businessOrganizationId == null || hospitalOrganizationId == null) {
             return false;
         }
+        Map<Long, Organization> orgById = this.orgById();
         // 业务 id 即医院 id 时直接校验医院类型与状态
         if (businessOrganizationId.equals(hospitalOrganizationId)) {
-            Organization organization =
-                organizationQueryService.loadOrganizationByIdForDisplay(hospitalOrganizationId);
-            return isActiveHospital(organization);
+            return isActiveHospital(orgById.get(hospitalOrganizationId));
         }
         return resolveHospitalOrganizationId(businessOrganizationId)
             .map(hospitalOrganizationId::equals)
@@ -97,8 +108,7 @@ public class LoginOrganizationScopeQueryService implements ILoginOrganizationSco
         if (businessOrganizationId == null) {
             return Optional.empty();
         }
-        Organization organization =
-            organizationQueryService.loadOrganizationByIdForDisplay(businessOrganizationId);
+        Organization organization = this.orgById().get(businessOrganizationId);
         if (organization == null) {
             return Optional.empty();
         }
@@ -106,7 +116,35 @@ public class LoginOrganizationScopeQueryService implements ILoginOrganizationSco
     }
 
     /**
-     * 自当前组织沿 parent 链向上查找 HOSPITAL 节点（环检测 visited）。
+     * 请求结束释放组织树缓存，避免 Tomcat 线程复用串读上一租户。
+     */
+    @Override
+    public void clearRequestScope() {
+        ORG_BY_ID.remove();
+    }
+
+    /**
+     * 本请求懒加载启用组织映射（一次 {@link OrganizationQueryService#getOrganizationTree()}）。
+     *
+     * @return id → 组织；永不 null
+     */
+    private Map<Long, Organization> orgById() {
+        Map<Long, Organization> cached = ORG_BY_ID.get();
+        if (cached != null) {
+            return cached;
+        }
+        Map<Long, Organization> loaded = new HashMap<>();
+        for (Organization organization : organizationQueryService.getOrganizationTree()) {
+            if (organization != null && organization.getId() != null) {
+                loaded.put(organization.getId(), organization);
+            }
+        }
+        ORG_BY_ID.set(loaded);
+        return loaded;
+    }
+
+    /**
+     * 自当前组织沿 parent 链向上查找 HOSPITAL 节点（环检测 visited；父节点取自本请求缓存）。
      *
      * @param organization 起始组织
      * @param visited      已访问 id 集合（mutate，防环）
@@ -126,8 +164,7 @@ public class LoginOrganizationScopeQueryService implements ILoginOrganizationSco
         if (organization.getParentId() == null) {
             return Optional.empty();
         }
-        Organization parent =
-            organizationQueryService.loadOrganizationByIdForDisplay(organization.getParentId());
+        Organization parent = this.orgById().get(organization.getParentId());
         return walkToHospital(parent, visited);
     }
 

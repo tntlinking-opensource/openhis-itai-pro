@@ -18,8 +18,8 @@ import java.util.Optional;
 /**
  * 异步开票任务仓储（{@code einv_boss_issue_task}）。
  *
- * <p>Worker 轮询 {@link #findByStatusAndIsDeletedFalse} / 失败重试查询，
- * 多实例通过 {@link #claimForProcessing} 原子抢占防重复调博思。</p>
+ * <p>即时唤醒为主；Scheduler 兜底查询 {@link #findByStatusAndIsDeletedFalse} /
+ * 失败重试；多实例通过 {@link #claimForProcessing} 原子抢占防重复调博思。</p>
  */
 public interface EinvBossIssueTaskRepository extends JpaRepository<EinvBossIssueTask, Long> {
 

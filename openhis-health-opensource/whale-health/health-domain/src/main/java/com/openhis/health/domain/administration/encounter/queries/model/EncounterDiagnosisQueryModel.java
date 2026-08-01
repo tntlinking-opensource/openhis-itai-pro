@@ -8,17 +8,17 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 就诊诊断读模型：展示就诊与病情的关联及排序、主诊断标记。
+ * 就诊诊断读模型：展示就诊与诊断目录的关联及排序、主诊断标记。
  */
 @Getter
 @Setter
 public class EncounterDiagnosisQueryModel {
-    /** 就诊诊断关联主键。 */
+    /** 就诊诊断关联主键 {@code adm_encounter_diagnosis.id}。 */
     private Long diagnosisId;
-    /** 就诊主键。 */
+    /** 就诊主键 {@code adm_encounter.id}。 */
     private Long encounterId;
-    /** 病情/条件主键。 */
-    private Long conditionId;
+    /** 诊断目录主键 {@code cln_condition_definition.id}。 */
+    private Long conditionDefinitionId;
     /** 是否主诊断。 */
     private Boolean primaryFlag;
     /** 排序序号。 */

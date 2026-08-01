@@ -19,6 +19,11 @@ public class LoadPendingChargeItemsRequest {
     /** 就诊主键。 */
     private Long encounterId;
 
+    /**
+     * 可选：指定成功支付流水（队列行 paymentId）；空则取就诊最近成功支付。
+     */
+    private Long paymentId;
+
     /** 是否加载定价扩展字段（成本/折扣等）。 */
     private Boolean includePriceExtension;
 }

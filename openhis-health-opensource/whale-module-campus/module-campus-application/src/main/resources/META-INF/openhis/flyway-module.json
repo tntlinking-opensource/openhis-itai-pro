@@ -1,0 +1,6 @@
+{
+  "moduleId": "campus",
+  "enabledProperty": "openhis.modules.campus.enabled",
+  "locations": "classpath:db/migration/campus",
+  "historyTable": "flyway_schema_history_campus"
+}

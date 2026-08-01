@@ -11,9 +11,10 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 /**
- * 出院召回命令（DM-ADM-002 §6.1.25）：将已清床离院（{@code DISCHARGED}）的住院就诊拉回待入科态。
+ * 出院召回命令（DM-ADM-002 §6.1.25）：将已清床离院（{@code DISCHARGED}）的住院就诊拉回已入科态。
  *
- * <p>应用层须在同事务内完成反结（AS-IP-FIN-004，待内嵌）后再调用；本命令只迁移就诊主档与活动 {@code WARD} 轨迹。</p>
+ * <p>应用层须在同事务内完成反结（AS-IP-FIN-004）后再调用；本命令只迁移就诊主档并 INSERT 活动 {@code WARD}，
+ * 不新增活动床、不占物理床。</p>
  */
 @Getter
 @Setter

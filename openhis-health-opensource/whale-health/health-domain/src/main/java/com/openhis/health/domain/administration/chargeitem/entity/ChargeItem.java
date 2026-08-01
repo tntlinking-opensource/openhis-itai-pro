@@ -186,13 +186,11 @@ public class ChargeItem extends BaseAuditedEntity {
     @Column(name = "refund_id")
     private Long refundId;
 
-    /** 病情/诊断条件关联（DM condition_id）。 */
-    @Column(name = "condition_id")
-    private Long conditionId;
-
-    /** 就诊诊断关联主键（DM encounter_diagnosis_id）。 */
-    @Column(name = "encounter_diagnosis_id")
-    private Long encounterDiagnosisId;
+    /**
+     * 绑定就诊诊断主键有序串（有序；首位为主诊断 {@code adm_encounter_diagnosis.id}；挂费自请求拷贝）。
+     */
+    @Column(name = "encounter_diagnosis_ids", length = 2000)
+    private String encounterDiagnosisIds;
 
     /** 是否中医相关标记（DM tcm_flag）。 */
     @Column(name = "tcm_flag")

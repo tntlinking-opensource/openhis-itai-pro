@@ -23,7 +23,8 @@ import org.springframework.stereotype.Service;
 /**
  * 进销存单据详情报表编排（AS-INV-RPT-002 · IF-INV-DDC-01～04）。
  *
- * <p>职责边界：只读分页/合计/导出；药库/药房/科室由请求 {@code domainScope} 区分；固定 {@code AGREE}。</p>
+ * <p>职责边界：只读分页/合计/导出；药库/药房/科室由请求 {@code domainScope} 区分；
+ * 默认 {@code AGREE}，期初显式类型可含 {@code APPROVAL}（BR-INV-DDC-003）。</p>
  * <ul>
  *   <li>{@link DocumentDetailReadLoader}：租户 Gate、Query 装配、enrich、换算与 Excel</li>
  * </ul>

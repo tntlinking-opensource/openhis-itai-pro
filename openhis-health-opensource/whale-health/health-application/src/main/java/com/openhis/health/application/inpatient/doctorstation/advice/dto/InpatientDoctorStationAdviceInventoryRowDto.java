@@ -11,6 +11,7 @@ import lombok.Data;
 import lombok.experimental.Accessors;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 /**
  * IF-IP-DOR-11：医嘱开立目录下的库存可用行（同就诊发放预减后净量）。
@@ -58,6 +59,14 @@ public class InpatientDoctorStationAdviceInventoryRowDto {
     /** 批号。 */
     @Schema(description = "批号")
     private String lotNumber;
+
+    /** 效期截止时刻；空表示未维护。 */
+    @Schema(description = "效期截止时刻")
+    private LocalDateTime expirationDate;
+
+    /** 库存行创建时间。 */
+    @Schema(description = "库存行创建时间")
+    private LocalDateTime createdAt;
 
     /** 库位 id。 */
     @JsonSerialize(using = ToStringSerializer.class)

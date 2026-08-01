@@ -67,6 +67,9 @@ public class InvSelinfo {
     @JSONField(name = "rtal_docno")
     private String rtalDocno;
 
+    @JSONField(name = "rx_circ_flag")
+    private String rxCircFlag;
+
     @JSONField(name = "sel_retn_cnt")
     private BigDecimal selRetnCnt;
 

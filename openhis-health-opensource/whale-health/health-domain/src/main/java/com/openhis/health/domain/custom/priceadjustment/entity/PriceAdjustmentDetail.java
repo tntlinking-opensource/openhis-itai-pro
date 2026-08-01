@@ -16,7 +16,9 @@ import java.math.BigDecimal;
 /**
  * 调价批号明细行（DM-CUS-011 v2，表 {@code cus_price_adjustment_detail}）。
  *
- * <p>药品耗材：按批号多行快照数量与双侧调前价；诊疗：一对一仅存调前售价（占位批号 {@code -}、数量 1）。</p>
+ * <p>药品耗材：按<strong>库房+批号</strong>多行快照数量与双侧调前价（{@code location_id} 可空）；
+ * 诊疗：一对一仅存调前售价（占位批号 {@code -}、数量 1、loc 空）。</p>
+ * <p>{@code location_id} 仅供查询/日结按库过滤；盈亏公式与审批写价不依赖本字段。</p>
  */
 @Getter
 @Setter
@@ -28,11 +30,17 @@ public class PriceAdjustmentDetail extends BaseAuditedEntity {
     @Column(name = "adjustment_id", nullable = false)
     private Long adjustmentId;
 
+    /**
+     * 库位主键；有库存时落库，诊疗/未入库等场景可空。
+     */
+    @Column(name = "location_id")
+    private Long locationId;
+
     /** 批号。 */
     @Column(name = "lot_number", nullable = false)
     private String lotNumber;
 
-    /** 影响数量（拆零）。 */
+    /** 影响数量（拆零；有 loc 时为本库该批数量）。 */
     @Column(name = "quantity", nullable = false)
     private BigDecimal quantity;
 

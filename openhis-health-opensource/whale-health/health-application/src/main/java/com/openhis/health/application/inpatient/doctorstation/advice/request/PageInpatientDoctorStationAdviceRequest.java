@@ -48,8 +48,8 @@ public class PageInpatientDoctorStationAdviceRequest extends AbstractHealthPageR
     @Schema(description = "医嘱查询范围 Tab：CURRENT_ADVICE=当前医嘱（默认），HISTORY=历史医嘱")
     private String adviceScopeTabCode;
 
-    @Schema(description = "长临医嘱筛选：LONG_TERM / TEMPORARY；空表示全部")
-    /** 长临医嘱筛选：LONG_TERM / TEMPORARY；空表示全部。 */
+    /** 治疗类型筛选：LONG_TERM / TEMPORARY / DISCHARGE_MEDICATION；空表示全部。 */
+    @Schema(description = "治疗类型筛选：LONG_TERM / TEMPORARY / DISCHARGE_MEDICATION；空表示全部")
     private String therapyTypeCode;
 
     /**

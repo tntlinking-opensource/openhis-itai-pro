@@ -15,8 +15,8 @@ import java.math.BigDecimal;
 /**
  * IF-IP-DOR-14：诊疗医嘱草稿行载荷（嵌于 {@link InpatientDoctorStationAdviceDraftLineRequest#getServicePayload()}）。
  *
- * <p>锚定 {@code wkf_activity_definition}；签发后可能触发 LIS/PACS 占位外呼。套餐子项可由
- * {@link #childOverridesJson} 覆盖活动定义默认 children_json。</p>
+ * <p>锚定 {@code wkf_activity_definition}。嘱托行须填 {@link #entrustContent}
+ *（BR-IP-ORD-028）；套餐子项可由 {@link #childOverridesJson} 覆盖活动定义默认 children_json。</p>
  */
 @Data
 @Accessors(chain = true)
@@ -42,7 +42,6 @@ public class SaveInpatientServiceAdviceDraftLinePayload {
 
     /** 默认执行科室（组织单元，落库 {@code wkf_service_request.org_id}）。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    /** 执行科室。 */
     @Schema(description = "执行科室")
     private Long performOrgId;
 
@@ -51,21 +50,30 @@ public class SaveInpatientServiceAdviceDraftLinePayload {
     private String childOverridesJson;
 
     /**
-     * 诊断定义主键（落库 {@code wkf_service_request.condition_definition_id}，与药品医嘱语义一致）。
+     * 绑定就诊诊断主键有序串（落库 {@code wkf_service_request.encounter_diagnosis_ids}；有序，首位为主诊断）。
      */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "诊断定义主键")
-    private Long conditionDefinitionId;
+    @Schema(description = "绑定就诊诊断主键有序串")
+    private String encounterDiagnosisIds;
 
-    /**
-     * 就诊诊断主键（落库 {@code wkf_service_request.encounter_diagnosis_id}，与药品医嘱语义一致）。
-     */
-    @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "就诊诊断主键")
-    private Long encounterDiagnosisId;
-
+    /** 频次编码（长期诊疗必填；落库 {@code wkf_service_request.rate_code}）。 */
     @Schema(description = "频次编码（长期诊疗必填）")
     private String rateCode;
+
+    /**
+     * 嘱托医嘱正文（落库 {@code wkf_service_request.entrust_content}）。
+     * 嘱托行（类目 52 / 目录名「嘱托」）必填；常规诊疗可选备注嘱托（AS-IP-DOR-003 · BR-IP-ORD-028）。
+     */
+    @Schema(description = "嘱托正文（嘱托行必填）")
+    private String entrustContent;
+
+    /**
+     * 医嘱备注（展示用；落库 {@code wkf_service_request.remark}）。
+     * <p>与 {@link #entrustContent} 分立；当 {@link #childOverridesJson} 非空时，remark 列优先承载套餐子项覆盖，
+     * 本字段不写入（避免与历史 note=childOverridesJson 口径冲突）。</p>
+     */
+    @Schema(description = "医嘱备注（无套餐子项覆盖时写入）")
+    private String remark;
 
     /** 费用性质/合同覆盖，可空表示走患者默认。 */
     @JsonSerialize(using = ToStringSerializer.class)

@@ -7,10 +7,14 @@ package com.openhis.health.application.inpatient.financial.dailysettlement.respo
 import com.openhis.health.application.inpatient.financial.dailysettlement.dto.InpatientDailySettlementChannelRowDto;
 import com.openhis.health.application.inpatient.financial.dailysettlement.dto.InpatientDailySettlementPaymentItemDto;
 import com.openhis.health.application.inpatient.financial.dailysettlement.dto.InpatientDailySettlementSummaryDto;
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.whale.core.application.dto.OptionDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -44,4 +48,25 @@ public class PreviewInpatientDailySettlementResponse {
     /** 本次待交账合计下半区（仅未交账；BR-IP-DCL-017）。 */
     @Schema(description = "本次待交账合计下半区")
     private InpatientDailySettlementSummaryDto handoverSummary;
+
+    /** 漏交硬栏：截止前窗外最早未交账业务时刻（DD §2.6.5）。 */
+    @JsonFormat(pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    @Schema(description = "漏交硬栏最早时刻；非空时禁止提交")
+    private LocalDateTime gapHardBlockEarliestAt;
+
+    /** 漏交硬栏提示文案。 */
+    @Schema(description = "漏交硬栏提示文案")
+    private String gapHardBlockMessage;
+
+    /** 漏交软提醒：业务时间晚于 dateTo 的未交账条数。 */
+    @Schema(description = "截止后未交账条数（仅提醒）")
+    private Long gapSoftWarnCount;
+
+    /** 业务窗内出现过的 enterer Practitioner 主键（自动带出）。 */
+    @Schema(description = "窗内收费人 Practitioner 主键列表")
+    private List<Long> practitionerIdsInWindow;
+
+    /** 窗内收费人下拉（由 practitionerIdsInWindow 解析）。 */
+    @Schema(description = "窗内收费人选项")
+    private List<OptionDto> practitionerOptions;
 }

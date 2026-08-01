@@ -27,7 +27,7 @@ import java.time.LocalDateTime;
 @Table(name = "med_medication_definition")
 public class MedicationDefinition extends BaseAuditedEntity {
 
-    /** 药品编号（业务编码，机构内唯一）。 */
+    /** 药品编号（业务编码，同租户唯一）。 */
     @Column(name = "bus_no", nullable = false)
     private String busNo;
     /** 药品名称。 */
@@ -84,7 +84,10 @@ public class MedicationDefinition extends BaseAuditedEntity {
     /** 医保编码。 */
     @Column(name = "yb_no")
     private String ybNo;
-    /** 药理作用分类编码。 */
+    /**
+     * 药品性质编码（术语 {@code medicine_properties}：普通/麻醉/毒性/精一/精二等；
+     * 门诊分方特殊管理轨道以此为准，勿与 {@link #partAttributeEnum} 门诊拆分属性混淆）。
+     */
     @Column(name = "pharmacology_category_code")
     private String pharmacologyCategoryCode;
     /** 是否皮试药。 */
@@ -99,14 +102,16 @@ public class MedicationDefinition extends BaseAuditedEntity {
     /** 生产厂商文本。 */
     @Column(name = "manufacturer_text")
     private String manufacturerText;
-    /** 供应商标识。 */
+    /**
+     * 供应商标识（历史列；药品目录维护写路径不再写入，供应商改由进货/退供单据维护）。
+     */
     @Column(name = "supply_id")
     private Long supplyId;
     /** 是否限制使用。 */
     @Column(name = "restricted_flag")
     private Boolean restrictedFlag;
     /** 限制使用范围。 */
-    @Column(name = "restricted_scope")
+    @Column(name = "restricted_scope", columnDefinition = "text")
     private String restrictedScope;
     /** 启用标记（true=启用，false=停用）。 */
     @Column(name = "active_flag")
@@ -201,6 +206,21 @@ public class MedicationDefinition extends BaseAuditedEntity {
     /** 销售单位（5类单位之一）。 */
     @Column(name = "package_unit_code")
     private String packageUnitCode;
+
+    /**
+     * 追溯码所贴包装单位（可游离于五类业务单位之外；药品目录必填）。
+     *
+     * <p>同意入库写入 {@code cus_trace_number.trace_unit_code}；已建码以主档为准，目录变更只影响之后新建的码。</p>
+     */
+    @Column(name = "trace_unit_code", length = 64)
+    private String traceUnitCode;
+
+    /**
+     * 1 个追溯码单位对应的拆零数量；药品目录必填且须 &gt; 0。
+     */
+    @Column(name = "trace_unit_ratio")
+    private BigDecimal traceUnitRatio;
+
     /** 默认用法编码。 */
     @Column(name = "method_code")
     private String methodCode;
@@ -210,6 +230,9 @@ public class MedicationDefinition extends BaseAuditedEntity {
     /** 单次剂量。 */
     @Column(name = "dose")
     private BigDecimal dose;
+    /** 单次最小剂量。 */
+    @Column(name = "min_unit")
+    private BigDecimal minUnit;
     /** 单次最大剂量。 */
     @Column(name = "max_unit")
     private BigDecimal maxUnit;
@@ -229,7 +252,7 @@ public class MedicationDefinition extends BaseAuditedEntity {
     @Column(name = "ingredient_item")
     private String ingredientItem;
     /** 药品说明。 */
-    @Column(name = "medicationdefinition")
+    @Column(name = "definition", columnDefinition = "text")
     private String definition;
     /** DDD（日限定剂量）编码。 */
     @Column(name = "ddd_code")
@@ -261,6 +284,13 @@ public class MedicationDefinition extends BaseAuditedEntity {
         }
         if (this.orgId == null) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DEFINITION_INVALID_ARGUMENT, "机构标识不能为空");
+        }
+        // 追溯码贴码单位+倍数：药品目录必填（同意入库从药典写入主档）
+        if (StringUtils.isEmpty(this.traceUnitCode)) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_DEFINITION_INVALID_ARGUMENT, "追溯码单位不能为空");
+        }
+        if (this.traceUnitRatio == null || this.traceUnitRatio.compareTo(java.math.BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_DEFINITION_INVALID_ARGUMENT, "追溯码单位换算比须大于 0");
         }
     }
 

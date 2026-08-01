@@ -1,0 +1,49 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.openhis.health.domain.peis.encounterext.command;
+
+import lombok.Getter;
+import lombok.Setter;
+
+/**
+ * 登记时创建体检就诊扩展命令。
+ */
+@Getter
+@Setter
+public class CreatePeEncounterExtCommand {
+
+    /** 就诊主键。 */
+    private Long encounterId;
+
+    /** 套餐 ActivityDefinition 主键。 */
+    private Long packageActivityId;
+
+    /** 套餐快照 JSON。 */
+    private String packageSnapshotJson;
+
+    /** 是否团检。 */
+    private Boolean groupFlag;
+
+    /** 团检单位。 */
+    private Long companyId;
+
+    /** 团检合同。 */
+    private Long contractId;
+
+    /** 团检批次。 */
+    private Long groupBatchId;
+
+    /** 预约主键。 */
+    private Long bookingAppointmentId;
+
+    /** 体检流水号。 */
+    private String busNo;
+
+    /** 租户标识。 */
+    private Long tenantId;
+
+    /** 院区标识。 */
+    private Long orgId;
+}

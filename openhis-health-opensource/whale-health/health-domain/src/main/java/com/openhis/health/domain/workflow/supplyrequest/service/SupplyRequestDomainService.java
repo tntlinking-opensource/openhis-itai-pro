@@ -22,9 +22,11 @@ import com.openhis.health.domain.workflow.supplyrequest.command.AgreeRequestComm
 import com.openhis.health.domain.workflow.supplyrequest.command.CancelSummarySupplyRequestCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreateDeptIssueCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreateDeptIssueReturnCommand;
+import com.openhis.health.domain.workflow.supplyrequest.command.CreateDeptPurchaseRequestCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreateDeviceSummarySupplyRequestCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreateGainLossCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreateInboundReceiptCommand;
+import com.openhis.health.domain.workflow.supplyrequest.command.CreateOpeningCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreatePurchaseOrderCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreateRequisitionCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreateReturnCommand;
@@ -36,6 +38,7 @@ import com.openhis.health.domain.workflow.supplyrequest.command.CreateTransferCo
 import com.openhis.health.domain.workflow.supplyrequest.command.RemoveByBusNoCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.RejectRequestCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.SubmitApprovalCommand;
+import com.openhis.health.domain.workflow.supplyrequest.command.VoidOpeningCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.WithdrawApprovalCommand;
 import com.openhis.health.domain.workflow.supplyrequest.entity.SupplyRequest;
 import com.openhis.health.domain.workflow.supplyrequest.repository.SupplyRequestRepository;
@@ -69,7 +72,7 @@ public class SupplyRequestDomainService {
     private final BusinessSequenceService businessSequenceService;
     /** 写路径行级金额门禁（BR-MON-001）；持久化前强制重算或刻度协商单价。 */
     private final SupplyRequestWritePricingSupport writePricingSupport;
-    /** 动账类供应单 agree/reject 须持有财务审批岗位（实现由 module-support 装配）。 */
+    /** 财务审批族供应单 agree/reject 须持有财务审批岗位（实现由 platform/authorization 装配）。 */
     private final FinanceApprovalAuthorizer financeApprovalAuthorizer;
 
 
@@ -94,10 +97,14 @@ public class SupplyRequestDomainService {
      * <p><b>与进货单边界</b>：本方法<strong>不</strong>创建进货单（{@link #createInboundReceipt(CreateInboundReceiptCommand)}），
      * 订货同意后的进货编排见其它应用服务（AS WHS-SDD-R-001）。</p>
      *
+     * <p><b>可选上游科室采购申请</b>：命令行 {@code originalBusNo} 可空（手工直建）；非空须为已同意
+     * {@link SupplyType#DEPT_PURCHASE_REQUEST}，且未被其它未删除订货占用（BR-WHS-PO-010/012）；修订路径自存量保留，禁止切换。</p>
+     *
      * @param command 订货命令；须已通过 {@link CreatePurchaseOrderCommand#resolveItems()} 可用的批量语义，
      *                内含 {@code operatorId} 用于新建路径事件载荷；每行 item 须携带位置、品类、数量等业务字段
      * @return 最终生效的业务单号 {@code busNo}（新建为新分配号码，修订为入参既有号码）
-     * @throws BusinessException 命令解析失败、修订时单号不存在、类型或状态不允许修订、乐观锁版本不匹配（{@link ErrorCodeConstants#WHS_PO_105}）、或子实体校验失败
+     * @throws BusinessException 命令解析失败、修订时单号不存在、类型或状态不允许修订、乐观锁版本不匹配（{@link ErrorCodeConstants#WHS_PO_105}）、
+     *                            来源申请不可引用（{@link ErrorCodeConstants#WHS_PO_106}）、或子实体校验失败
      */
     public String createPurchaseOrder(CreatePurchaseOrderCommand command) {
         // 前置：协商单价刻度与行总额（订货例外，BR-MON-001）
@@ -131,6 +138,15 @@ public class SupplyRequestDomainService {
                 }
             }
 
+            // 修订禁止切换来源申请：以存量首行 original_bus_no 为准写回命令行
+            String preservedOriginalBusNo = existingLines.get(0).getOriginalBusNo();
+            for (CreatePurchaseOrderCommand.CreatePurchaseOrderItemCommand item : items) {
+                if (item == null) {
+                    continue;
+                }
+                item.setOriginalBusNo(preservedOriginalBusNo);
+            }
+
             // 先删后增：逻辑删除旧行并 flush，再由后续 saveAll 重插同号明细
             this.softDeleteExistingLinesForRevision(existingLines);
 
@@ -147,6 +163,17 @@ public class SupplyRequestDomainService {
         }
 
         // ---------- 新建路径 ----------
+        // 可选拉源：校验科室采购申请 AGREE 且未被其它未删除订货占用
+        String linkOriginalBusNo = head.getOriginalBusNo();
+        this.assertOptionalDeptPurchaseRequestLinkForPurchaseOrder(linkOriginalBusNo, null);
+        // 同一张订货单各行共享同一 original_bus_no（可空）
+        for (CreatePurchaseOrderCommand.CreatePurchaseOrderItemCommand item : items) {
+            if (item == null) {
+                continue;
+            }
+            item.setOriginalBusNo(linkOriginalBusNo);
+        }
+
         // 首行未带来 busNo：生成当日流水号，保证与「业务发生日」归档口径一致（见通用规范 busNo 按日策略）。
         String typeForBusNo = head.getTypeEnum();
         if (typeForBusNo == null || typeForBusNo.isBlank()) {
@@ -186,6 +213,10 @@ public class SupplyRequestDomainService {
         SupplyRequest entity = this.buildCommonEntity(busNo, typeForRow, item.getItemTable(), item.getItemId(),
             item.getItemQuantity(), item.getUnitCode(), item.getCategoryEnum(), item.getSourceTypeEnum(), item.getSourceLocationId(),
             item.getPurposeTypeEnum(), item.getPurposeLocationId(), item.getApplicantId(), item.getApplyTime());
+        // 可选上游：科室采购申请单号；空白表示手工直建
+        if (item.getOriginalBusNo() != null && !item.getOriginalBusNo().trim().isEmpty()) {
+            entity.setOriginalBusNo(item.getOriginalBusNo().trim());
+        }
         entity.setSupplierId(item.getSupplierId());
         entity.setOccurrenceTime(item.getOccurrenceTime());
         entity.setPractitionerId(item.getPractitionerId());
@@ -193,6 +224,195 @@ public class SupplyRequestDomainService {
         entity.setRemake(item.getRemake());
         entity.setPrice(item.getPrice());
         entity.setTotalPrice(item.getTotalPrice());
+        entity.setStatusEnum(SupplyStatus.PENDING_APPROVAL.getCode());
+        return entity;
+    }
+
+    /**
+     * 新建订货时校验可选 {@code original_bus_no}：空白跳过；非空须为已同意科室采购申请且未被未删除订货占用。
+     *
+     * @param originalBusNo            来源科室采购申请单号；可 blank
+     * @param excludePurchaseOrderBusNo 改单占用复检时排除的本订货单号；新建传 null
+     * @throws BusinessException {@link ErrorCodeConstants#WHS_PO_106} 不可引用时
+     */
+    private void assertOptionalDeptPurchaseRequestLinkForPurchaseOrder(
+        String originalBusNo,
+        String excludePurchaseOrderBusNo) {
+
+        if (originalBusNo == null || originalBusNo.trim().isEmpty()) {
+            return;
+        }
+        String trimmedOriginal = originalBusNo.trim();
+        List<SupplyRequest> upstreamLines = supplyRequestRepository.findByBusNoAndIsDeletedFalse(trimmedOriginal);
+        if (upstreamLines == null || upstreamLines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.WHS_PO_106, "科室采购申请不存在或已删除，无法关联订货");
+        }
+        for (SupplyRequest upstream : upstreamLines) {
+            if (upstream == null) {
+                continue;
+            }
+            // 类型须为科室采购申请
+            if (!SupplyType.isDeptPurchaseRequestTypeCode(upstream.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.WHS_PO_106, "来源单不是科室采购申请，无法关联订货");
+            }
+            // 仅已同意申请可被订货拉源
+            if (!SupplyStatus.AGREE.getCode().equals(upstream.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.WHS_PO_106, "科室采购申请未同意，无法关联订货");
+            }
+        }
+        boolean occupied;
+        if (excludePurchaseOrderBusNo != null && !excludePurchaseOrderBusNo.trim().isEmpty()) {
+            occupied = supplyRequestRepository.existsByOriginalBusNoAndTypeEnumAndBusNoNot(
+                trimmedOriginal,
+                SupplyType.CABINET_PURCHASE_ORDER.getCode(),
+                excludePurchaseOrderBusNo.trim());
+        } else {
+            occupied = supplyRequestRepository.existsByOriginalBusNoAndTypeEnum(
+                trimmedOriginal,
+                SupplyType.CABINET_PURCHASE_ORDER.getCode());
+        }
+        // 一申请至多一张未删除订货（BR-WHS-PO-012）
+        if (occupied) {
+            throw new BusinessException(ErrorCodeConstants.WHS_PO_106, "科室采购申请已被其它订货单引用");
+        }
+    }
+
+    /**
+     * 创建或修订科室采购申请单（{@link SupplyType#DEPT_PURCHASE_REQUEST}）：产品定义级明细、单端点科室药房、同意仅终态。
+     *
+     * <p><b>修订路径</b>：首行既有 {@code busNo} → {@link SupplyRequest#assertDeptPurchaseRequestLinesRevisable(List)}
+     * + 乐观锁 → 软删旧行后全量重插；<strong>不</strong>发布 {@link SupplyRequestCreatedEvent}。</p>
+     *
+     * <p>不写供应商、不写 {@code source_*}；不编排订货/库存。</p>
+     *
+     * @param command 申请明细与操作人
+     * @return 业务单号（新建为新号，修订为既有号）
+     * @throws BusinessException 类型/状态/乐观锁/必填位置不满足时
+     */
+    public String createDeptPurchaseRequest(CreateDeptPurchaseRequestCommand command) {
+        // 前置：协商/参考单价刻度与行总额（与订货申请同构，BR-MON-001）
+        this.writePricingSupport.applyDeptPurchaseRequestCommand(command);
+        List<CreateDeptPurchaseRequestCommand.CreateDeptPurchaseRequestItemCommand> items = command.resolveItems();
+        CreateDeptPurchaseRequestCommand.CreateDeptPurchaseRequestItemCommand head = items.get(0);
+        String requestedBusNo = head.getBusNo();
+        boolean revisionRequested = requestedBusNo != null && !requestedBusNo.trim().isEmpty();
+
+        if (revisionRequested) {
+            // 修订路径：首行带 busNo，逻辑删旧行后全量重插
+            String busNo = requestedBusNo.trim();
+            List<SupplyRequest> existingLines = supplyRequestRepository.findByBusNoAndIsDeletedFalse(busNo);
+            SupplyRequest.assertDeptPurchaseRequestLinesRevisable(existingLines);
+
+            Integer expectedVer = command.getExpectedRowVersionForRevision();
+            if (expectedVer == null) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                    "修订科室采购申请必须携带乐观锁版本 expectedRowVersionForRevision");
+            }
+            for (SupplyRequest existingLine : existingLines) {
+                if (existingLine == null) {
+                    continue;
+                }
+                Integer ver = existingLine.getVersion();
+                if (ver == null || !expectedVer.equals(ver)) {
+                    throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                        "科室采购申请已被修改或版本不匹配，请刷新后重试");
+                }
+            }
+
+            this.softDeleteExistingLinesForRevision(existingLines);
+
+            List<SupplyRequest> toInsert = new ArrayList<>();
+            for (CreateDeptPurchaseRequestCommand.CreateDeptPurchaseRequestItemCommand item : items) {
+                // 空白 type 由领域固定为科室采购申请，禁止其它类型混入
+                if (item.getTypeEnum() == null || item.getTypeEnum().trim().isEmpty()) {
+                    item.setTypeEnum(SupplyType.DEPT_PURCHASE_REQUEST.getCode());
+                }
+                if (!SupplyType.isDeptPurchaseRequestTypeCode(item.getTypeEnum())) {
+                    throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                        "createDeptPurchaseRequest 仅允许科室采购申请类 type_enum");
+                }
+                SupplyRequest entity = this.buildDeptPurchaseRequestEntityFromItem(busNo, item);
+                entity.assertCreatableMinimumFields();
+                toInsert.add(entity);
+            }
+            supplyRequestRepository.saveAll(toInsert);
+            return busNo;
+        }
+
+        String typeForBusNo = head.getTypeEnum();
+        if (typeForBusNo == null || typeForBusNo.isBlank()) {
+            typeForBusNo = SupplyType.DEPT_PURCHASE_REQUEST.getCode();
+        }
+        String busNo = this.generateSupplyBusNo(typeForBusNo);
+
+        // 新建路径：生成新 busNo 并批量插入待审核行
+        List<SupplyRequest> toSave = new ArrayList<>();
+        for (CreateDeptPurchaseRequestCommand.CreateDeptPurchaseRequestItemCommand item : items) {
+            if (item.getTypeEnum() == null || item.getTypeEnum().trim().isEmpty()) {
+                item.setTypeEnum(SupplyType.DEPT_PURCHASE_REQUEST.getCode());
+            }
+            if (!SupplyType.isDeptPurchaseRequestTypeCode(item.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                    "createDeptPurchaseRequest 仅允许科室采购申请类 type_enum");
+            }
+            SupplyRequest entity = this.buildDeptPurchaseRequestEntityFromItem(busNo, item);
+            entity.assertCreatableMinimumFields();
+            toSave.add(entity);
+        }
+
+        List<SupplyRequest> saved = supplyRequestRepository.saveAll(toSave);
+        this.publishCreated(saved.get(0), command.getOperatorId(), items.size());
+        return busNo;
+    }
+
+    /**
+     * 由科室采购申请命令行组装供应请求实体（单端点 purpose；禁止 supplier / source_*）。
+     *
+     * @param busNo 业务单号
+     * @param item  命令行
+     * @return 待持久化实体（未保存）
+     * @throws BusinessException 科室药房或类型非法
+     */
+    private SupplyRequest buildDeptPurchaseRequestEntityFromItem(
+        String busNo,
+        CreateDeptPurchaseRequestCommand.CreateDeptPurchaseRequestItemCommand item) {
+
+        if (item.getPurposeTypeEnum() == null || item.getPurposeTypeEnum().trim().isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "科室药房类型不能为空");
+        }
+        if (item.getPurposeLocationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "科室药房不能为空");
+        }
+
+        String typeForRow = item.getTypeEnum();
+        if (typeForRow == null || typeForRow.trim().isEmpty()) {
+            typeForRow = SupplyType.DEPT_PURCHASE_REQUEST.getCode();
+        }
+
+        SupplyRequest entity = new SupplyRequest();
+        entity.setBusNo(busNo);
+        entity.setTypeEnum(typeForRow);
+        entity.setItemTable(item.getItemTable());
+        entity.setItemId(item.getItemId());
+        entity.setItemQuantity(item.getItemQuantity());
+        entity.setUnitCode(item.getUnitCode());
+        entity.setPrice(item.getPrice());
+        entity.setTotalPrice(item.getTotalPrice());
+
+        if (item.getCategoryEnum() == null) {
+            entity.setCategoryEnum(SupplyCategory.STOCK_SUPPLY.getCode());
+        } else {
+            entity.setCategoryEnum(item.getCategoryEnum());
+        }
+
+        entity.setPurposeTypeEnum(item.getPurposeTypeEnum().trim());
+        entity.setPurposeLocationId(item.getPurposeLocationId());
+        entity.setApplicantId(item.getApplicantId());
+        entity.setPractitionerId(item.getPractitionerId());
+        entity.setApplyTime(item.getApplyTime());
+        entity.setOccurrenceTime(item.getOccurrenceTime());
+        entity.setReason(item.getReason());
+        entity.setRemake(item.getRemake());
         entity.setStatusEnum(SupplyStatus.PENDING_APPROVAL.getCode());
         return entity;
     }
@@ -305,6 +525,7 @@ public class SupplyRequestDomainService {
         entity.setEndTime(item.getEndTime());
         entity.setReason(item.getReason());
         entity.setRemake(item.getRemake());
+        entity.setInvoiceNo(item.getInvoiceNo());
         entity.setStatusEnum(SupplyStatus.PENDING_APPROVAL.getCode());
         return entity;
     }
@@ -346,6 +567,8 @@ public class SupplyRequestDomainService {
      * @throws BusinessException 明细为空、修订态不符或 {@code originalBusNo} 缺失时
      */
     public String createReturnToSupplier(CreateReturnToSupplierCommand command) {
+        // 前置：进货落库价或批号/目录权威单价重算行金额（BR-MON-001 / BR-PRICE-SRC-001）
+        this.writePricingSupport.applyReturnToSupplierCommand(command);
         List<CreateReturnToSupplierCommand.CreateReturnToSupplierItemCommand> items = command.resolveItems();
         CreateReturnToSupplierCommand.CreateReturnToSupplierItemCommand head = items.get(0);
         String requestedBusNo = head.getBusNo();
@@ -410,8 +633,12 @@ public class SupplyRequestDomainService {
         entity.setOccurrenceTime(item.getOccurrenceTime());
         entity.setReason(item.getReason());
         entity.setRemake(item.getRemake());
+        entity.setInvoiceNo(item.getInvoiceNo());
         entity.setLotNumber(item.getLotNumber());
         entity.setTraceNo(item.getTraceNo());
+        // —— 写价门禁已写入命令行 price/totalPrice，随实体落库供列表合计与详情槽价。——
+        entity.setPrice(item.getPrice());
+        entity.setTotalPrice(item.getTotalPrice());
         entity.setStatusEnum(SupplyStatus.PENDING_APPROVAL.getCode());
         if (entity.getOriginalBusNo() == null || entity.getOriginalBusNo().trim().isEmpty()) {
             // 退货必须绑定来源进货单，禁止无 original 的自由选品落库
@@ -575,8 +802,20 @@ public class SupplyRequestDomainService {
         entity.setTotalPrice(item.getTotalPrice());
         entity.setOccurrenceTime(item.getOccurrenceTime());
         entity.setReason(item.getReason());
+        // 经手人：与制单人（applicantId）分离，由应用层从请求经手人下拉写入
+        entity.setPractitionerId(item.getPractitionerId());
         entity.setStatusEnum(SupplyStatus.PENDING_APPROVAL.getCode());
+        // 退库入库壳单：审批人/审批时刻随命令带入（bootstrap AGREE 不走 approvalToAgree）
+        if (item.getApproverId() != null) {
+            // 壳单 bootstrap：与下游退库同意人对齐，供侧栏审批人回显
+            entity.setApproverId(item.getApproverId());
+        }
+        if (item.getApprovalTime() != null) {
+            // 壳单 bootstrap：审批时刻随命令写入，避免 AGREE 行审批时间为空
+            entity.setApprovalTime(item.getApprovalTime());
+        }
 
+        // 前置校验：退库/壳单 originalBusNo 必填（主动退库绑入库单；壳单绑退库单）
         if (entity.getOriginalBusNo() == null || entity.getOriginalBusNo().trim().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "退库单 originalBusNo 必填");
         }
@@ -854,13 +1093,141 @@ public class SupplyRequestDomainService {
     }
 
     /**
+     * 创建或修订库存期初执行单（AS-BAS-INV-001 · GAP-OPN-001）。
+     *
+     * <p>对齐 {@link #createGainLoss}/{@link #createStocktake}：免申请执行单据；仅写 {@code purpose_*}；
+     * 初态待审核；同意后由应用层编排库存与追溯。允许空明细新建（仅预分配 {@code bus_no}，列表在补行后可见）。</p>
+     *
+     * <p><b>修订</b>：首行或命令携带既有 {@code busNo} 时软删旧行全量重插；若库中尚无行（空草稿首次补明细）则直接插入。</p>
+     *
+     * @param command 期初明细与操作人；空草稿须顶层 {@code typeEnum}/{@code purpose*}
+     * @return 业务单号
+     * @throws BusinessException 类型非 OPENING、字段非法或修订门控失败
+     */
+    public String createOpening(CreateOpeningCommand command) {
+        // 前置：允许空明细（空草稿）；与 BatchCommand.resolveItems 双空拒绝区分
+        List<CreateOpeningCommand.CreateOpeningItemCommand> items = command.resolveOpeningItemsAllowEmpty();
+        String requestedBusNo = null;
+        if (!items.isEmpty()) {
+            CreateOpeningCommand.CreateOpeningItemCommand head = items.get(0);
+            if (head.getBusNo() != null && !head.getBusNo().trim().isEmpty()) {
+                requestedBusNo = head.getBusNo().trim();
+            }
+        }
+        boolean revisionRequested = requestedBusNo != null;
+
+        if (revisionRequested) {
+            // 修订/空草稿补明细：同号全量替换
+            String busNo = requestedBusNo;
+            List<SupplyRequest> existingLines = supplyRequestRepository.findByBusNoAndIsDeletedFalse(busNo);
+            if (!existingLines.isEmpty()) {
+                SupplyRequest.assertOpeningLinesRevisable(existingLines);
+                this.softDeleteExistingLinesForRevision(existingLines);
+            }
+            if (items.isEmpty()) {
+                // 修订为空明细：仅清空行，保留单号供后续再编
+                return busNo;
+            }
+            List<SupplyRequest> toInsert = new ArrayList<>();
+            for (CreateOpeningCommand.CreateOpeningItemCommand item : items) {
+                if (!SupplyType.isOpeningTypeCode(item.getTypeEnum())) {
+                    throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                        "createOpening 仅允许期初类 type_enum");
+                }
+                SupplyRequest entity = this.buildOpeningEntityFromItem(busNo, item, command.getOperatorId());
+                entity.assertCreatableMinimumFields();
+                toInsert.add(entity);
+            }
+            List<SupplyRequest> saved = supplyRequestRepository.saveAll(toInsert);
+            // 空草稿首次落行：补发创建事件，便于列表/审计感知
+            if (existingLines.isEmpty()) {
+                this.publishCreated(saved.get(0), command.getOperatorId(), items.size());
+            }
+            return busNo;
+        }
+
+        // 新建：从首行或命令顶层解析类型
+        String typeForSeq = command.getTypeEnum();
+        if (typeForSeq == null || typeForSeq.isBlank()) {
+            if (!items.isEmpty()) {
+                typeForSeq = items.get(0).getTypeEnum();
+            }
+        }
+        if (typeForSeq == null || typeForSeq.isBlank()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                "createOpening 须指定 typeEnum（空草稿顶层或明细首行）");
+        }
+        if (!SupplyType.isOpeningTypeCode(typeForSeq)) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                "createOpening 仅允许期初类 type_enum");
+        }
+
+        String busNo = this.generateSupplyBusNo(typeForSeq);
+        if (items.isEmpty()) {
+            // 空草稿：仅预留单号，不落行（补明细走修订路径）
+            return busNo;
+        }
+
+        List<SupplyRequest> toSave = new ArrayList<>();
+        for (CreateOpeningCommand.CreateOpeningItemCommand item : items) {
+            if (!SupplyType.isOpeningTypeCode(item.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                    "createOpening 仅允许期初类 type_enum");
+            }
+            SupplyRequest entity = this.buildOpeningEntityFromItem(busNo, item, command.getOperatorId());
+            entity.assertCreatableMinimumFields();
+            toSave.add(entity);
+        }
+        List<SupplyRequest> saved = supplyRequestRepository.saveAll(toSave);
+        this.publishCreated(saved.get(0), command.getOperatorId(), items.size());
+        return busNo;
+    }
+
+    /**
+     * 将已同意期初单全行置为 {@link SupplyStatus#EXPIRED_INVALIDATED}（GAP-OPN-003 供应侧）。
+     *
+     * <p>不回滚库存/追溯；由应用层 {@code InventoryOpeningVoidOrchestrator} 先 decrease + T1 冲销再调本方法
+     * （DOC-CONFLICT：AS 写 Domain 内聚门面；本方法仅本聚合状态迁移，符合 B.6）。</p>
+     *
+     * @param command 含 busNo 的作废命令
+     * @return 业务单号
+     * @throws BusinessException 非 AGREE 期初或单号不存在
+     */
+    public String voidOpening(VoidOpeningCommand command) {
+        List<VoidOpeningCommand.VoidOpeningItemCommand> items = command.resolveItems();
+        if (items.size() != 1) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                "作废期初一次仅允许一张单据");
+        }
+        VoidOpeningCommand.VoidOpeningItemCommand item = items.get(0);
+        if (item.getBusNo() == null || item.getBusNo().trim().isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "busNo 不能为空");
+        }
+        String busNo = item.getBusNo().trim();
+        List<SupplyRequest> entities = supplyRequestRepository.findByBusNoAndIsDeletedFalse(busNo);
+        if (entities.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "期初单不存在");
+        }
+        for (SupplyRequest entity : entities) {
+            // 前置：仅当前有效 AGREE 期初可作废
+            entity.markOpeningExpiredInvalidated();
+            if (item.getReason() != null && !item.getReason().isBlank()) {
+                entity.setReason(item.getReason().trim());
+            }
+        }
+        supplyRequestRepository.saveAll(entities);
+        return busNo;
+    }
+
+    /**
      * 创建调拨执行单多行：源库位与目的库位须不同；默认初态待审核。
      *
      * <p><b>修订</b>：首行 {@code busNo} 非空且存量为 {@link SupplyType#CABINET_TRANSFER_OUT} 时同号全量替换（
      * {@link SupplyRequest#assertCabinetTransferOutLinesRevisable}），不发布 Created 事件。</p>
      *
      * <p><b>壳单</b>：命令 {@link CreateTransferCommand#getBootstrapFinalStatusCode()} 为 {@code AGREE} 时直接落已同意态，
-     * 供调出 agree 后生成对侧调入台账（库存不在此二次落账）。</p>
+     * 供调出 agree 后生成对侧调入台账（库存不在此二次落账）。
+     * 壳单行须携带 {@code approverId}/{@code approvalTime}（与调出同意人对齐；bootstrap 不走 {@code approvalToAgree}）。</p>
      *
      * @param command 调拨明细与操作人
      * @return 业务单号（新建为新号，修订/壳单为命令语义下的单号）
@@ -960,6 +1327,15 @@ public class SupplyRequestDomainService {
         entity.setTotalPrice(item.getTotalPrice());
         entity.setPractitionerId(item.getPractitionerId());
         entity.setStatusEnum(SupplyStatus.PENDING_APPROVAL.getCode());
+        // 调出 agree 生成调入壳单：审批人/审批时刻随命令带入，与调出头对齐（bootstrap AGREE 不走 approvalToAgree）。
+        if (item.getApproverId() != null) {
+            // 壳单 bootstrap：与调出同意人对齐，供侧栏审批人回显
+            entity.setApproverId(item.getApproverId());
+        }
+        if (item.getApprovalTime() != null) {
+            // 壳单 bootstrap：审批时刻随命令写入，避免 AGREE 行审批时间为空
+            entity.setApprovalTime(item.getApprovalTime());
+        }
 
         if (entity.getSourceLocationId() != null && entity.getPurposeLocationId() != null) {
             if (entity.getSourceLocationId().equals(entity.getPurposeLocationId())) {
@@ -1070,8 +1446,18 @@ public class SupplyRequestDomainService {
         entity.setTotalPrice(item.getTotalPrice());
         entity.setOccurrenceTime(item.getOccurrenceTime());
         entity.setPractitionerId(item.getPractitionerId());
+        // 批号效期：与药库进货/出库明细同构，保存选品带回的生产日期与失效日期
+        entity.setStartTime(item.getStartTime());
+        entity.setEndTime(item.getEndTime());
         entity.setReason(item.getReason());
         entity.setStatusEnum(SupplyStatus.PENDING_APPROVAL.getCode());
+        // 出库 agree 生成入库壳单：审批人/审批时刻随命令带入，与出库头对齐（bootstrap AGREE 不走 approvalToAgree）。
+        if (item.getApproverId() != null) {
+            entity.setApproverId(item.getApproverId());
+        }
+        if (item.getApprovalTime() != null) {
+            entity.setApprovalTime(item.getApprovalTime());
+        }
 
         // 手工药房入库（PHARMACY_STOCK_IN）允许 originalBusNo 为空；科室入库（DEPT_STOCK_IN）仍须绑定上游执行单号（AS-INV-PHA-001 / DM 口径）。
         if (SupplyType.DEPT_STOCK_IN.getCode().equals(entity.getTypeEnum())) {
@@ -1279,7 +1665,7 @@ public class SupplyRequestDomainService {
 
         // 防重：任一行已 AGREE 则拒绝（幂等门控由读侧 supplyRequestValidation 承接）。
         boolean hasAgreed = supplyRequestRepository.existsByBusNoAndStatusEnum(item.getBusNo().trim(), SupplyStatus.AGREE.getCode());
-        // 动账类单据须校验财务审批岗位授权
+        // 财务审批族单据须校验财务审批岗位授权
         if (hasAgreed) {
             throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "单据已同意，禁止重复同意");
         }
@@ -1290,7 +1676,7 @@ public class SupplyRequestDomainService {
             throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "单据不存在");
         }
 
-        // Gate：动账类 type_enum 须持有财务审批岗位（纯物流调拨/出入库等不在白名单内）
+        // Gate：财务审批族 type_enum 须持有财务审批岗位（订货/退库入库/调拨等不在白名单内）
         SupplyRequest firstForGate = entities.get(0);
         financeApprovalAuthorizer.assertFinanceApprovalForSupplyType(firstForGate.getTypeEnum());
 
@@ -1342,7 +1728,7 @@ public class SupplyRequestDomainService {
             throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "单据不存在");
         }
 
-        // Gate：动账类 type_enum 须持有财务审批岗位
+        // Gate：财务审批族 type_enum 须持有财务审批岗位
         SupplyRequest firstForGate = entities.get(0);
         financeApprovalAuthorizer.assertFinanceApprovalForSupplyType(firstForGate.getTypeEnum());
 
@@ -1608,6 +1994,11 @@ public class SupplyRequestDomainService {
 
         entity.setPurposeTypeEnum(item.getPurposeTypeEnum().trim());
         entity.setPurposeLocationId(item.getPurposeLocationId());
+        // 领用科室：与药房解耦，须由应用层传入非空 Organization 主键
+        if (item.getConsumingOrganizationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "领用科室不能为空");
+        }
+        entity.setConsumingOrganizationId(item.getConsumingOrganizationId());
         entity.setApplicantId(item.getApplicantId());
         entity.setPractitionerId(item.getPractitionerId());
         entity.setApplyTime(item.getApplyTime());
@@ -1616,6 +2007,8 @@ public class SupplyRequestDomainService {
         entity.setOccurrenceTime(item.getOccurrenceTime());
         entity.setReason(item.getReason());
         entity.setRemake(item.getRemake());
+        // 批号效期：与请领同构落 end_time，供领用明细「有效期」回显
+        entity.setEndTime(item.getEndTime());
         entity.setStatusEnum(SupplyStatus.PENDING_APPROVAL.getCode());
         return entity;
     }
@@ -1661,7 +2054,77 @@ public class SupplyRequestDomainService {
 
         entity.setPurposeTypeEnum(item.getPurposeTypeEnum().trim());
         entity.setPurposeLocationId(item.getPurposeLocationId());
+        // 领用科室：须自源领用单带出，与药房解耦
+        if (item.getConsumingOrganizationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "退领领用科室不能为空");
+        }
+        entity.setConsumingOrganizationId(item.getConsumingOrganizationId());
         entity.setApplicantId(item.getApplicantId());
+        entity.setPractitionerId(item.getPractitionerId());
+        entity.setApplyTime(item.getApplyTime());
+        entity.setLotNumber(item.getLotNumber());
+        entity.setTraceNo(item.getTraceNo());
+        entity.setOccurrenceTime(item.getOccurrenceTime());
+        entity.setReason(item.getReason());
+        entity.setRemake(item.getRemake());
+        // 批号效期：自源领用或前端带回落 end_time，供退领明细「有效期」回显
+        entity.setEndTime(item.getEndTime());
+        entity.setStatusEnum(SupplyStatus.PENDING_APPROVAL.getCode());
+        return entity;
+    }
+
+    /**
+     * 由期初命令行组装供应请求实体（单端点 purpose；效期写 {@code end_time}）。
+     *
+     * @param busNo      业务单号
+     * @param item       期初命令行
+     * @param operatorId 操作人（行上 applicant 缺省时回落）
+     * @return 待持久化实体（未保存）
+     */
+    private SupplyRequest buildOpeningEntityFromItem(
+        String busNo,
+        CreateOpeningCommand.CreateOpeningItemCommand item,
+        Long operatorId) {
+
+        if (item.getPurposeTypeEnum() == null || item.getPurposeTypeEnum().trim().isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "期初库房类型不能为空");
+        }
+        if (item.getPurposeLocationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "期初库房不能为空");
+        }
+
+        SupplyRequest entity = new SupplyRequest();
+        entity.setBusNo(busNo);
+        entity.setTypeEnum(item.getTypeEnum());
+        entity.setItemTable(item.getItemTable());
+        entity.setItemId(item.getItemId());
+        entity.setItemQuantity(item.getItemQuantity());
+        entity.setUnitCode(item.getUnitCode());
+        entity.setPrice(item.getPrice());
+        entity.setTotalPrice(item.getTotalPrice());
+        // OPENING 裁决 3C：售价借用 profit_loss_price 持久化（损益单语义不占用本类型）
+        entity.setProfitLossPrice(item.getSalePrice());
+        entity.setSupplierId(item.getSupplierId());
+        entity.setStartTime(item.getStartTime());
+        entity.setEndTime(item.getEndTime());
+
+        if (item.getCategoryEnum() == null) {
+            entity.setCategoryEnum(SupplyCategory.STOCK_SUPPLY.getCode());
+        } else {
+            entity.setCategoryEnum(item.getCategoryEnum());
+        }
+
+        entity.setPurposeTypeEnum(item.getPurposeTypeEnum().trim());
+        entity.setPurposeLocationId(item.getPurposeLocationId());
+
+        Long applicantId = item.getApplicantId();
+        if (applicantId == null) {
+            applicantId = operatorId;
+        }
+        if (applicantId == null) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "applicantId 不能为空");
+        }
+        entity.setApplicantId(applicantId);
         entity.setPractitionerId(item.getPractitionerId());
         entity.setApplyTime(item.getApplyTime());
         entity.setLotNumber(item.getLotNumber());

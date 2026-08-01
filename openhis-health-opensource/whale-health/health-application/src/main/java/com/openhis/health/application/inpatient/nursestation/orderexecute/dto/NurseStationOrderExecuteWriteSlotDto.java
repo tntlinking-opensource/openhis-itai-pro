@@ -47,8 +47,8 @@ public class NurseStationOrderExecuteWriteSlotDto {
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime planTime;
 
-    /** 护士实际执行时刻。 */
-    @Schema(description = "护士实际执行时刻")
+    /** 护士实际执行时刻（→ recorded_time；默认同 planTime；仅允许同日改时分；展示用，逻辑锚点仍为 planTime）。 */
+    @Schema(description = "护士实际执行时刻（默认同计划时点，仅允许同日调整时分）")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime actualTime;
 

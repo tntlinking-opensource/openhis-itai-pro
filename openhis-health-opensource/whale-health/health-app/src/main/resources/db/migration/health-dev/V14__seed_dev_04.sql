@@ -1,9 +1,12 @@
 -- Dev seed part 4
+-- 诊疗耗材绑定：原 HOSPITAL 改为 OUTPATIENT，并镜像一份 INPATIENT（id 首位 3→4）
 
 INSERT INTO "cus_service_device_template" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "range_code", "type_code", "item_table", "item_id", "dev_act_table", "dev_act_id", "quantity", "unit_code", "status_enum")
 VALUES
-('323023695509983232', '1', '2026-06-10 09:00:50.499+00', '2026-06-10 09:00:50.499+00', '1', '1', false, NULL, NULL, 0, 'HOSPITAL', 'USAGE', 'ter_concept', '405', 'wkf_activity_definition', '323001764504670208', '1.00', '6', 'ACTIVE'),
-('323023732398886912', '1', '2026-06-10 09:00:59.294+00', '2026-06-10 09:00:59.294+00', '1', '1', false, NULL, NULL, 0, 'HOSPITAL', 'USAGE', 'ter_concept', '405', 'adm_device_definition', '322999285465485312', '1.00', '9', 'ACTIVE')
+('323023695509983232', '1', '2026-06-10 09:00:50.499+00', '2026-06-10 09:00:50.499+00', '1', '1', false, NULL, NULL, 0, 'OUTPATIENT', 'USAGE', 'ter_concept', '405', 'wkf_activity_definition', '323001764504670208', '1.00', '6', 'ACTIVE'),
+('323023732398886912', '1', '2026-06-10 09:00:59.294+00', '2026-06-10 09:00:59.294+00', '1', '1', false, NULL, NULL, 0, 'OUTPATIENT', 'USAGE', 'ter_concept', '405', 'adm_device_definition', '322999285465485312', '1.00', '9', 'ACTIVE'),
+('423023695509983232', '1', '2026-06-10 09:00:50.499+00', '2026-06-10 09:00:50.499+00', '1', '1', false, NULL, NULL, 0, 'INPATIENT', 'USAGE', 'ter_concept', '405', 'wkf_activity_definition', '323001764504670208', '1.00', '6', 'ACTIVE'),
+('423023732398886912', '1', '2026-06-10 09:00:59.294+00', '2026-06-10 09:00:59.294+00', '1', '1', false, NULL, NULL, 0, 'INPATIENT', 'USAGE', 'ter_concept', '405', 'adm_device_definition', '322999285465485312', '1.00', '9', 'ACTIVE')
 ON CONFLICT ("id") DO NOTHING;
 
 INSERT INTO "cus_service_location_template" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "organization_id", "item_table", "distribution_category_code", "def_location_id", "item_definition_id", "method_code", "start_time", "end_time", "priority", "display_order", "remark")

@@ -160,6 +160,7 @@ public class EinvoiceBossDocumentAppService {
                 line.setLineNo(++maxLineNo);
                 line.setChargeCode(StringUtils.hasText(item.getChargeCode()) ? item.getChargeCode() : BALANCE_CHARGE_CODE);
                 line.setChargeName(StringUtils.hasText(item.getChargeName()) ? item.getChargeName() : "金额调平");
+                line.setItemName(line.getChargeName());
                 line.setStdAmount(scale2(item.getStdAmount() != null ? item.getStdAmount() : item.getAmount()));
                 line.setAmount(scale2(item.getAmount()));
                 line.setQuantity(item.getQuantity() != null ? item.getQuantity() : BigDecimal.ONE);
@@ -255,9 +256,14 @@ public class EinvoiceBossDocumentAppService {
                 writeOffStatusSupport.resolve(document, invoiceStatus);
         dto.setWriteOffStatus(writeOff.getWriteOffStatus());
         dto.setWriteOffStatusLabel(writeOff.getWriteOffStatusLabel());
-        dto.setWriteOffBillNo(writeOff.getWriteOffBillNo());
-        dto.setWriteOffAt(writeOff.getWriteOffAt());
-        dto.setWriteOffMessage(writeOff.getWriteOffMessage());
+        dto.setWriteOffBillNo(writeOff.getWriteOffBillNo() != null
+                ? writeOff.getWriteOffBillNo()
+                : document.getWriteOffBillNo());
+        dto.setWriteOffAt(writeOff.getWriteOffAt() != null ? writeOff.getWriteOffAt() : document.getWriteOffAt());
+        dto.setWriteOffMessage(writeOff.getWriteOffMessage() != null
+                ? writeOff.getWriteOffMessage()
+                : document.getWriteOffMessage());
+        dto.setWriteOffBatchCode(document.getWriteOffBatchCode());
         return dto;
     }
 

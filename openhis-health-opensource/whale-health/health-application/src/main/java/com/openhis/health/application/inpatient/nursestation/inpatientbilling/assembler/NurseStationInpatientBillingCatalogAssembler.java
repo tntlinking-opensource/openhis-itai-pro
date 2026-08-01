@@ -8,6 +8,7 @@ import com.openhis.health.application.shared.product.ClinicalCatalogDispenseLoca
 import com.openhis.health.application.shared.product.ClinicalCatalogPriceResolver;
 import com.openhis.health.application.shared.product.ClinicalCatalogUnitPriceQuery;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingCatalogRowDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingPackageChildDto;
@@ -17,6 +18,7 @@ import com.openhis.health.application.inpatient.nursestation.inpatientbilling.re
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.administration.chargeitemdefinition.query.ChargeItemDefinitionQueryCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
+import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
@@ -45,6 +47,7 @@ public class NurseStationInpatientBillingCatalogAssembler {
     private final ActivityDefinitionQueryService activityDefinitionQueryService;
     private final ClinicalCatalogPriceResolver clinicalCatalogPriceResolver;
     private final ClinicalCatalogDispenseLocationResolver clinicalCatalogDispenseLocationResolver;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
 
     /**
      * 装配划价选品当前页行。
@@ -182,6 +185,9 @@ public class NurseStationInpatientBillingCatalogAssembler {
     /**
      * 按子诊疗 id 解析 SALE 定价并回填写行（皮试划价等；**非**套餐写路径子项展开）。
      *
+     * <p>计价单位取子诊疗目录包装单位（{@code packageUnitCode}），**禁止**沿用父皮试药 {@code unitCode}
+     *（对齐 BR-IP-PRC-007 / 滚费 {@code resolveActivityOrderUnitCode}）。</p>
+     *
      * @param childRow        待写入行（父就诊/账户/数量等已由调用方填充）
      * @param childActivityId 子诊疗活动定义 id
      */
@@ -213,6 +219,28 @@ public class NurseStationInpatientBillingCatalogAssembler {
         childRow.setProductTableName(TableNameConstants.WKF_ACTIVITY_DEFINITION);
         childRow.setProductDefinitionId(childActivityId);
         childRow.setActivityId(childActivityId);
+        // Pre：覆盖为单位为子诊疗包装单位，避免皮试写行误带药品单位
+        String activityUnitCode = this.resolveActivityCatalogUnitCode(childActivityId);
+        if (StringUtils.isNotEmpty(activityUnitCode)) {
+            childRow.setUnitCode(activityUnitCode);
+        }
+    }
+
+    /**
+     * 解析诊疗活动目录主计价单位（包装单位 code）。
+     *
+     * @param activityId 活动定义主键
+     * @return 单位 code；未维护时 null
+     */
+    private String resolveActivityCatalogUnitCode(Long activityId) {
+        ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+        lookup.setProductTableName(TableNameConstants.WKF_ACTIVITY_DEFINITION);
+        lookup.setProductDefinitionId(activityId);
+        Map<String, ProductDefinitionDisplayDto> loaded =
+            productDefinitionDisplayTerminologyAssembler.loadAsMap(List.of(lookup));
+        ProductDefinitionDisplayDto product = loaded.get(ProductDefinitionKeyUtil.buildCompositeKey(
+            TableNameConstants.WKF_ACTIVITY_DEFINITION, activityId));
+        return ProductDefinitionCatalogUnitBandsAssembler.resolveCatalogPrimaryUnitCode(product);
     }
 
     /**

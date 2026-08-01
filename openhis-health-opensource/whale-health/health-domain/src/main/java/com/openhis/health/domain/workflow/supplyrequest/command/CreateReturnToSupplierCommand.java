@@ -67,9 +67,21 @@ public class CreateReturnToSupplierCommand extends BatchCommand<CreateReturnToSu
         private String reason;
         /** 行备注。 */
         private String remake;
+        /**
+         * 采购发票号（与来源进货单一致或业务重填；3504 {@code purc_invo_no}）。
+         */
+        private String invoiceNo;
         /** 批号。 */
         private String lotNumber;
         /** 追溯码。 */
         private String traceNo;
+        /**
+         * 行单价（包装锚）；落库前由 {@code SupplyRequestWritePricingSupport} 按进货落库价或批号/目录价权威重算。
+         */
+        private BigDecimal price;
+        /**
+         * 行合计金额；落库前由写价门禁按拆零数量重算（BR-MON-001）。
+         */
+        private BigDecimal totalPrice;
     }
 }

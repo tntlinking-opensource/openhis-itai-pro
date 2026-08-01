@@ -21,7 +21,7 @@ public class PagePendingCatalogMappingCommand {
     @Schema(description = "产品表：med_medication_definition / wkf_activity_definition / adm_device_definition；空=全部")
     private String productTable;
 
-    @Schema(description = "对码状态：PENDING_UPLOAD（默认）/ MATCHED / NO_YB_NO")
+    @Schema(description = "对码状态：NOT_ON_PLATFORM（默认，平台无对照）/ PENDING_UPLOAD（有码可上传）/ NO_YB_NO（未选码）")
     private String mappingStatus;
 
     @Schema(description = "名称/编码关键词")

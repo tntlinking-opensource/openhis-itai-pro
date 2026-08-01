@@ -64,6 +64,10 @@ public class CreateRequisitionCommand extends BatchCommand<CreateRequisitionComm
         private Long supplierId;
         /** 批号。 */
         private String lotNumber;
+        /** 生产日期。 */
+        private LocalDateTime startTime;
+        /** 有效期/失效日期。 */
+        private LocalDateTime endTime;
         /** 追溯码。 */
         private String traceNo;
         /** 单价。 */
@@ -78,6 +82,14 @@ public class CreateRequisitionCommand extends BatchCommand<CreateRequisitionComm
         private Long practitionerId;
         /** 申请时间。 */
         private LocalDateTime applyTime;
+        /**
+         * 审批人主键（出库 agree 生成入库壳单时沿用出库审批人；普通请领新建可空）。
+         */
+        private Long approverId;
+        /**
+         * 审批时间（壳单引导 AGREE 时与出库审批时刻对齐；普通请领新建可空）。
+         */
+        private LocalDateTime approvalTime;
         /** 原因说明。 */
         private String reason;
     }

@@ -75,4 +75,46 @@ public class InpatientPharmacySummarySlipLineDto {
     /** 追溯码（汇总核发后来自 SupplyDelivery；待发时由前端暂存）。 */
     @Schema(description = "追溯码")
     private String traceNo;
+
+    /**
+     * 包装单位码（产品定义；待扫换算用）。
+     */
+    @Schema(description = "包装单位码")
+    private String packageUnitCode;
+
+    /**
+     * 包装相对拆零倍数。
+     */
+    @Schema(description = "包装相对拆零倍数")
+    private BigDecimal packageUnitRatio;
+
+    /**
+     * 拆零单位码。
+     */
+    @Schema(description = "拆零单位码")
+    private String splitUnitCode;
+
+    /**
+     * 追溯码主档贴码单位（cus_trace_number；非目录）。
+     */
+    @Schema(description = "追溯码主档贴码单位")
+    private String traceUnitCode;
+
+    /**
+     * 追溯码主档贴码比例快照（1 码对应拆零量）。
+     */
+    @Schema(description = "追溯码主档贴码比例快照")
+    private BigDecimal traceUnitRatio;
+
+    /**
+     * 主表该品批是否已有追溯码（有码批=true；无码批仅业务行、软提示）。
+     */
+    @Schema(description = "主表该品批是否已有追溯码")
+    private Boolean lotHasTraceMaster;
+
+    /**
+     * 回填待扫用的代表批号（合并行本身禁止输出多批号列表；取首个发放行批号）。
+     */
+    @Schema(description = "代表批号（待扫换算/匹配）")
+    private String representativeLotNumber;
 }

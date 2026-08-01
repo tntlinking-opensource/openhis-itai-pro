@@ -11,6 +11,7 @@ import com.openhis.health.application.shared.advice.ServiceAdviceDraftCommandHel
 import com.openhis.health.application.outpatient.doctorstation.advice.support.ServiceApplyFormOrchestrator;
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.domain.share.constants.DoctorStationAdviceConstants;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.ServiceRequestCategoryConstants;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.CancelStopLongTermAdviceLineRequest;
@@ -26,16 +27,19 @@ import com.openhis.health.domain.medication.medicationrequest.command.RemoveMedi
 import com.openhis.health.domain.medication.medicationrequest.command.SignMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.SignOffMedicationOrderCommand;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.StopLongTermAdviceLineRequest;
+import com.openhis.health.application.inpatient.doctorstation.advice.request.ChangeInpatientDoctorStationAdviceBusinessTimeRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.request.CreateDischargeInpatientDoctorStationAdviceRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.response.CreateDischargeInpatientDoctorStationAdviceResponse;
 import com.openhis.health.domain.custom.encounterhistory.command.RecordDischargeMilestoneCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.CancelStopLongTermMedicationOrderCommand;
+import com.openhis.health.domain.medication.medicationrequest.command.ChangeMedicationRequestBusinessTimeCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.StopLongTermMedicationOrderCommand;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.workflow.servicerequest.command.CancelStopServiceRequestCommand;
+import com.openhis.health.domain.workflow.servicerequest.command.ChangeServiceRequestBusinessTimeCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.CreateDischargeRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.StopServiceRequestCommand;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
@@ -258,12 +262,34 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
         cmd.setGroupId(line.getMedicationPayload().getGroupId());
         cmd.setDose(line.getMedicationPayload().getDose());
         cmd.setDoseUnitCode(line.getMedicationPayload().getDoseUnitCode());
+        // 首日用量仅长期可写；临时/出院带药强制清空（BR-IP-ORD-030 / BR-MRQ-010）
+        this.applyFirstDoseToCreateCommand(cmd, line);
         cmd.setDispensePerDuration(line.getMedicationPayload().getDispensePerDuration());
         cmd.setSkinTestFlag(line.getMedicationPayload().getSkinTestFlag());
-        cmd.setConditionDefinitionId(line.getMedicationPayload().getConditionDefinitionId());
-        cmd.setEncounterDiagnosisId(line.getMedicationPayload().getEncounterDiagnosisId());
+        cmd.setEncounterDiagnosisIds(line.getMedicationPayload().getEncounterDiagnosisIds());
         cmd.setContractId(line.getMedicationPayload().getContractId());
+        // 医嘱备注：原样透传（可空；空串由域层按「显式传入」覆盖）
+        cmd.setRemark(line.getMedicationPayload().getRemark());
         return cmd;
+    }
+
+    /**
+     * 按 therapy 写入或清空首日用量（创建草稿）。
+     *
+     * @param cmd  创建命令
+     * @param line 草稿行
+     */
+    private void applyFirstDoseToCreateCommand(
+        CreateMedicationOrderDraftCommand cmd,
+        InpatientDoctorStationAdviceDraftLineRequest line) {
+        if (TherapyType.LONG_TERM.getCode().equals(this.resolveTherapyTypeCode(line))) {
+            cmd.setFirstDose(line.getMedicationPayload().getFirstDose());
+            cmd.setFirstDoseUnitCode(line.getMedicationPayload().getFirstDoseUnitCode());
+            return;
+        }
+        // 非长期：显式清空，防止前端误传
+        cmd.setFirstDose(null);
+        cmd.setFirstDoseUnitCode(null);
     }
 
     /**
@@ -294,12 +320,33 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
         cmd.setGroupId(line.getMedicationPayload().getGroupId());
         cmd.setDose(line.getMedicationPayload().getDose());
         cmd.setDoseUnitCode(line.getMedicationPayload().getDoseUnitCode());
+        // 首日用量仅长期可写；非长期清空（BR-IP-ORD-030）
+        this.applyFirstDoseToChangeCommand(cmd, line);
         cmd.setDispensePerDuration(line.getMedicationPayload().getDispensePerDuration());
         cmd.setSkinTestFlag(line.getMedicationPayload().getSkinTestFlag());
-        cmd.setConditionDefinitionId(line.getMedicationPayload().getConditionDefinitionId());
-        cmd.setEncounterDiagnosisId(line.getMedicationPayload().getEncounterDiagnosisId());
+        cmd.setEncounterDiagnosisIds(line.getMedicationPayload().getEncounterDiagnosisIds());
         cmd.setContractId(line.getMedicationPayload().getContractId());
+        // 医嘱备注：原样透传（可空；空串由域层按「显式传入」覆盖）
+        cmd.setRemark(line.getMedicationPayload().getRemark());
         return cmd;
+    }
+
+    /**
+     * 按 therapy 写入或清空首日用量（修改草稿）。
+     *
+     * @param cmd  修改命令
+     * @param line 草稿行
+     */
+    private void applyFirstDoseToChangeCommand(
+        ChangeMedicationOrderDraftCommand cmd,
+        InpatientDoctorStationAdviceDraftLineRequest line) {
+        if (TherapyType.LONG_TERM.getCode().equals(this.resolveTherapyTypeCode(line))) {
+            cmd.setFirstDose(line.getMedicationPayload().getFirstDose());
+            cmd.setFirstDoseUnitCode(line.getMedicationPayload().getFirstDoseUnitCode());
+            return;
+        }
+        cmd.setFirstDose(null);
+        cmd.setFirstDoseUnitCode(null);
     }
 
     /**
@@ -320,6 +367,9 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
     /**
      * 装配「新建诊疗医嘱草稿」领域命令（暂存批次 CREATE / 诊疗分支）。
      *
+     * <p>嘱托行：强制 {@code category_enum=52}，并透传 {@code entrustContent}
+     *（AS-IP-DOR-003 · BR-IP-ORD-028；正文必填由 {@code InpatientEntrustOrderGateSupport} 前置）。</p>
+     *
      * @param parent     批次父上下文
      * @param line       单行请求，须含 {@code servicePayload}
      * @param productRm  活动定义对应的产品读模型行（单价/单位/分类等展示与计价元数据）
@@ -334,9 +384,11 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
         ProductDefinitionDisplayDto productRm,
         Long operatorId
     ) {
+        // 诊疗 CREATE 须有 servicePayload
         if (line.getServicePayload() == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_SERVICE_DRAFT_PAYLOAD_REQUIRED);
         }
+        // 活动定义读模型须已由 AppService 预加载
         if (productRm == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_SERVICE_ACTIVITY_READ_MODEL_REQUIRED);
         }
@@ -355,16 +407,24 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
         item.setTherapyEnum(therapyEnum);
         item.setExecutionCount(ServiceAdviceDraftCommandHelper.requireExecutionCount(
             servicePayload.getExecutionCount(), servicePayload.getChildOverridesJson(), therapyEnum));
-        item.setCategoryEnum(StringUtils.firstNonBlank(productRm.getCategoryCode(), "1"));
+        // 嘱托：类目强制 52，与目录名「嘱托」双锚一致（BR-IP-ORD-028①/⑥）
+        String categoryEnum = StringUtils.firstNonBlank(productRm.getCategoryCode(), "1");
+        if (ServiceRequestCategoryConstants.SERVICE_CATEGORY_ENTRUST.equals(StringUtils.trimToNull(categoryEnum))
+            || GeneralSharedConstants.ENTRUST_ACTIVITY_NAME.equals(StringUtils.trimToNull(productRm.getProductName()))) {
+            categoryEnum = ServiceRequestCategoryConstants.SERVICE_CATEGORY_ENTRUST;
+        }
+        item.setCategoryEnum(categoryEnum);
         item.setRateCode(this.resolveServiceRateCodeForTherapy(therapyEnum, servicePayload.getRateCode()));
         item.setOrgId(servicePayload.getPerformOrgId());
         item.setContractId(servicePayload.getContractId());
         item.setRequesterId(operatorId);
         item.setGenerateSourceEnum(GenerateSource.DOCTOR_PRESCRIPTION.getCode());
-        item.setNote(servicePayload.getChildOverridesJson());
+        // note：套餐子项覆盖优先；无覆盖时写入用户医嘱备注（与嘱托正文 entrustContent 分立）
+        item.setNote(this.resolveServiceDraftNote(servicePayload));
+        // 嘱托正文透传 entrust_content；常规诊疗可选备注嘱托
+        item.setEntrustContent(StringUtils.trimToNull(servicePayload.getEntrustContent()));
         item.setSortNumber(line.getSortNumber());
-        item.setConditionDefinitionId(servicePayload.getConditionDefinitionId());
-        item.setEncounterDiagnosisId(servicePayload.getEncounterDiagnosisId());
+        item.setEncounterDiagnosisIds(servicePayload.getEncounterDiagnosisIds());
         cmd.setItem(item);
         return cmd;
     }
@@ -372,13 +432,17 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
     /**
      * 装配「修改诊疗医嘱草稿」领域命令（暂存批次 UPDATE / 诊疗分支）。
      *
-     * @param line       单行请求，须含 {@code requestId}；备注来自 {@code servicePayload.childOverridesJson}
+     * <p>透传 {@code entrustContent}；域层仅在非 null 时覆盖 {@code entrust_content}
+     *（嘱托空正文由 Gate 拒绝，见 BR-IP-ORD-028）。</p>
+     *
+     * @param line       单行请求，须含 {@code requestId}；备注来自套餐覆盖或 {@code servicePayload.remark}
      * @param operatorId 操作人
      * @return {@link ModifyServiceRequestDraftCommand}
      * @throws com.openhis.whale.core.application.exception.BusinessException {@code requestId} 为空时抛出
      */
     @Override
     public ModifyServiceRequestDraftCommand toModifyServiceRequestDraftCommand(InpatientDoctorStationAdviceDraftLineRequest line, Long operatorId) {
+        // UPDATE 须锚定已有 ServiceRequest 主键
         if (line.getRequestId() == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_SERVICE_UPDATE_REQUEST_ID_REQUIRED);
         }
@@ -388,15 +452,19 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
         item.setId(line.getRequestId());
         String therapyEnum = this.resolveTherapyTypeCode(line);
         item.setTherapyEnum(therapyEnum);
+        // 仅当携带诊疗载荷时覆盖可改字段；空载荷表示仅改 therapy/排序等行级字段
         if (line.getServicePayload() != null) {
             SaveInpatientServiceAdviceDraftLinePayload servicePayload = line.getServicePayload();
-            item.setRemark(servicePayload.getChildOverridesJson());
-            item.setConditionDefinitionId(servicePayload.getConditionDefinitionId());
-            item.setEncounterDiagnosisId(servicePayload.getEncounterDiagnosisId());
+            // 套餐覆盖优先；否则用户备注（null 表示本字段不变更）
+            item.setRemark(this.resolveServiceDraftNote(servicePayload));
+            // 嘱托正文透传；域层仅在非 null 时覆盖 entrust_content
+            item.setEntrustContent(StringUtils.trimToNull(servicePayload.getEntrustContent()));
+            item.setEncounterDiagnosisIds(servicePayload.getEncounterDiagnosisIds());
             item.setRateCode(this.resolveServiceRateCodeForTherapy(therapyEnum, servicePayload.getRateCode()));
             item.setOrgId(servicePayload.getPerformOrgId());
             BigDecimal quantity = ServiceAdviceDraftCommandHelper.resolveQuantityForModify(
                 servicePayload.getQuantity(), servicePayload.getChildOverridesJson());
+            // 数量显式且为正才覆盖，避免 0/负值误写
             if (quantity != null && quantity.compareTo(BigDecimal.ZERO) > 0) {
                 item.setQuantity(quantity);
             }
@@ -414,6 +482,27 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
         item.setSortNumber(line.getSortNumber());
         cmd.setItem(item);
         return cmd;
+    }
+
+    /**
+     * 诊疗草稿 note/remark：套餐子项覆盖 JSON 优先；否则用户医嘱备注。
+     *
+     * @param servicePayload 诊疗草稿载荷
+     * @return 落库 note/remark；均空时 null（修改路径表示不覆盖）
+     */
+    private String resolveServiceDraftNote(SaveInpatientServiceAdviceDraftLinePayload servicePayload) {
+        if (servicePayload == null) {
+            return null;
+        }
+        String overrides = StringUtils.trimToNull(servicePayload.getChildOverridesJson());
+        if (overrides != null) {
+            return overrides;
+        }
+        // 显式传空串时保留，供修改路径清空备注
+        if (servicePayload.getRemark() != null) {
+            return servicePayload.getRemark();
+        }
+        return null;
     }
 
     /**
@@ -607,6 +696,48 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
     }
 
     /**
+     * 装配药品改业务时间命令（IF-IP-DOR-26）。
+     *
+     * @param request    改时请求
+     * @param operatorId 操作人（审计；不落「改时人」列）
+     * @return 领域命令
+     */
+    @Override
+    public ChangeMedicationRequestBusinessTimeCommand toChangeMedicationRequestBusinessTimeCommand(
+        ChangeInpatientDoctorStationAdviceBusinessTimeRequest request,
+        Long operatorId
+    ) {
+        ChangeMedicationRequestBusinessTimeCommand cmd = new ChangeMedicationRequestBusinessTimeCommand();
+        // 审计操作人；领域仅写开立/停嘱列，不改开立人/停嘱人。
+        cmd.setOperatorId(operatorId);
+        cmd.setId(request.getRequestId());
+        cmd.setTimeKind(request.getTimeKind());
+        cmd.setNewTime(request.getNewTime());
+        return cmd;
+    }
+
+    /**
+     * 装配诊疗改业务时间命令（IF-IP-DOR-26）。
+     *
+     * @param request    改时请求
+     * @param operatorId 操作人（审计；不落「改时人」列）
+     * @return 领域命令
+     */
+    @Override
+    public ChangeServiceRequestBusinessTimeCommand toChangeServiceRequestBusinessTimeCommand(
+        ChangeInpatientDoctorStationAdviceBusinessTimeRequest request,
+        Long operatorId
+    ) {
+        ChangeServiceRequestBusinessTimeCommand cmd = new ChangeServiceRequestBusinessTimeCommand();
+        // 审计操作人；领域仅写开立/停嘱列，不改开立人/停嘱人。
+        cmd.setOperatorId(operatorId);
+        cmd.setId(request.getRequestId());
+        cmd.setTimeKind(request.getTimeKind());
+        cmd.setNewTime(request.getNewTime());
+        return cmd;
+    }
+
+    /**
      * 装配出院服务申请命令（IF-IP-DOR-21）。
      *
      * @param request    出院请求
@@ -692,7 +823,7 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
         if (StringUtils.isEmpty(code)) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_THERAPY_TYPE_REQUIRED);
         }
-        // 仅接受域枚举已注册的 LONG_TERM / TEMPORARY code，禁止前端自造字面量落库。
+        // 仅接受域枚举已注册的 LONG_TERM / TEMPORARY / DISCHARGE_MEDICATION code，禁止前端自造字面量落库。
         TherapyType therapyType = EnumUtil.fromCode(TherapyType.class, code);
         if (therapyType == null) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_INVALID_THERAPY_TYPE_PREFIX + code);

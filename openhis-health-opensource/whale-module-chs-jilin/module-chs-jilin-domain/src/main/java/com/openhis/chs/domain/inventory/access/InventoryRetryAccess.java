@@ -4,7 +4,9 @@
  */
 package com.openhis.chs.domain.inventory.access;
 
+import com.openhis.chs.domain.inventory.command.RetryInvUploadWithRequestCommand;
 import com.openhis.chs.domain.inventory.command.RetryPendingInvUploadsCommand;
+import com.openhis.chs.domain.inventory.result.RetryInvUploadWithRequestResult;
 import com.openhis.chs.domain.inventory.result.RetryPendingInvUploadsResult;
 
 /**
@@ -25,4 +27,12 @@ public interface InventoryRetryAccess {
      * @return 重试结果摘要
      */
     RetryPendingInvUploadsResult retry(RetryPendingInvUploadsCommand command);
+
+    /**
+     * 单条补传：可选覆盖 request_json 后重放持久化报文（不从业务表重建）。
+     *
+     * @param command 含 uploadId 与可选 requestJson 覆盖
+     * @return 补传结果
+     */
+    RetryInvUploadWithRequestResult retryOne(RetryInvUploadWithRequestCommand command);
 }

@@ -19,9 +19,11 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 开票任务定时调度：消费 PENDING/可重试 FAILED + 扫描 orphan DRAFT。
+ * 开票任务定时兜底：消费滞留 PENDING / 可重试 FAILED + 扫描 orphan DRAFT。
  *
- * <p>多实例下并发抢占失败（{@link EinvBossErrorCodes#EINV_TASK_CONCURRENT}）记 debug 日志，不视为故障。</p>
+ * <p>主路径由 {@link BossIssueWorkerWakeBridge} 在入队后即时唤醒；本调度仅作
+ * 进程崩溃、唤醒失败、退避重试的补偿。多实例下并发抢占失败
+ *（{@link EinvBossErrorCodes#EINV_TASK_CONCURRENT}）记 debug，不视为故障。</p>
  */
 @Slf4j
 @Component
@@ -35,9 +37,11 @@ public class BossIssueScheduler {
     private final EinvoiceIssueSnapshotContextLoader issueSnapshotContextLoader;
 
     /**
-     * 每 30 秒拉取可重试任务并消费。
+     * 低频扫表兜底：滞留 PENDING + 到达重试点的 FAILED。
+     *
+     * <p>默认 2 分钟；主开票延迟由入队唤醒承担，不必再 30 秒空转。</p>
      */
-    @Scheduled(fixedDelayString = "${einvoice.boss.scheduler.poll-ms:30000}")
+    @Scheduled(fixedDelayString = "${einvoice.boss.scheduler.poll-ms:120000}")
     public void pollRetryableTasks() {
         List<EinvBossIssueTask> pending = taskRepository.findByStatusAndIsDeletedFalse(TaskStatus.PENDING.getCode());
         List<EinvBossIssueTask> failed = taskRepository.findByStatusAndIsDeletedFalseAndNextRetryAtBefore(
@@ -67,7 +71,7 @@ public class BossIssueScheduler {
     }
 
     /**
-     * 每 5 分钟扫描 orphan DRAFT（事件丢失兜底）。
+     * 每 5 分钟扫描 orphan DRAFT（事件丢失兜底）；入队后会即时唤醒。
      */
     @Scheduled(fixedDelayString = "${einvoice.boss.scheduler.orphan-scan-ms:300000}")
     public void scanOrphanDrafts() {

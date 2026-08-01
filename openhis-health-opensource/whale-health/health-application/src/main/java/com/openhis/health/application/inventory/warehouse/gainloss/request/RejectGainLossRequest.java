@@ -24,11 +24,7 @@ public class RejectGainLossRequest {
     @Schema(description = "业务单号 busNo", requiredMode = Schema.RequiredMode.REQUIRED)
     private String busNo;
 
-    /** 驳回原因码 changeReasonCode，可空。 */
-    @Schema(description = "驳回原因码 changeReasonCode，可空")
-    private String changeReasonCode;
-
-    /** 驳回原因 changeReason，可空。 */
-    @Schema(description = "驳回原因 changeReason，可空")
-    private String changeReason;
+    /** 驳回原因 rejectReason。 */
+    @Schema(description = "驳回原因 rejectReason")
+    private String rejectReason;
 }

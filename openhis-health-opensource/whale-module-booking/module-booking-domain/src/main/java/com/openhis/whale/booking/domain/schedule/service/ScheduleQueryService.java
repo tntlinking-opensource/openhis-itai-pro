@@ -6,6 +6,7 @@ package com.openhis.whale.booking.domain.schedule.service;
 
 
 import com.openhis.health.domain.share.constants.FieldNameConstants;
+import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.ScheduleStatus;
@@ -26,6 +27,7 @@ import com.openhis.whale.booking.domain.slot.repository.SlotRepository;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import lombok.RequiredArgsConstructor;
@@ -265,21 +267,53 @@ public class ScheduleQueryService {
         if (organizationId == null) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "organizationId 不能为空");
         }
+        // 日程名称关键字：空白不做模糊；非空时 Spec 精确优先（B.2.1）
+        String trimmedKeyword = null;
+        if (query != null && StringUtils.isNotEmpty(query.getKeyword())) {
+            trimmedKeyword = query.getKeyword().trim();
+        }
+        String keywordForSpec = trimmedKeyword;
+        // 关键字非空时剥掉 Pageable Sort，保留 Spec 内精确优先 ORDER BY
+        Pageable effectivePageable = this.unsortPageableIfKeyword(StringUtils.isNotEmpty(trimmedKeyword), pageable);
         Specification<Schedule> specification = (root, cq, cb) -> {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
             predicates.add(cb.equal(root.get(FieldNameConstants.ORGANIZATION_ID), organizationId));
             predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), ScheduleStatus.ACTIVE.getCode()));
-            if (query != null && StringUtils.isNotBlank(query.getKeyword())) {
-                String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getKeyword().trim());
+            // 按日程名称模糊；全等名称须排在仅子串命中之前
+            if (StringUtils.isNotEmpty(keywordForSpec)) {
+                String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(keywordForSpec);
                 predicates.add(cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc));
+                KeywordExactFirstOrderSupport.applyExactFirstOrder(
+                    cq,
+                    cb,
+                    keywordForSpec,
+                    List.of(cb.desc(root.get(FieldNameConstants.ID))),
+                    root.get(FieldNameConstants.NAME));
             }
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
         };
-        return scheduleRepository.findAll(specification, pageable).map(s -> {
+        return scheduleRepository.findAll(specification, effectivePageable).map(s -> {
             List<ScheduleActor> actors = scheduleActorRepository.findByScheduleIdOrderBySortNoAsc(s.getId());
             return this.toDetailModel(s, actors);
         });
+    }
+
+    /**
+     * 关键字非空且 Pageable 带 Sort 时剥掉 Sort，避免覆盖 Specification 精确优先 ORDER BY。
+     *
+     * @param keywordPresent 是否带非空关键字
+     * @param pageable       原始分页
+     * @return 关键字场景下的无 Sort Pageable；否则原 pageable
+     */
+    private Pageable unsortPageableIfKeyword(boolean keywordPresent, Pageable pageable) {
+        if (!keywordPresent || pageable == null) {
+            return pageable;
+        }
+        if (!pageable.getSort().isSorted()) {
+            return pageable;
+        }
+        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
     }
 
     /**

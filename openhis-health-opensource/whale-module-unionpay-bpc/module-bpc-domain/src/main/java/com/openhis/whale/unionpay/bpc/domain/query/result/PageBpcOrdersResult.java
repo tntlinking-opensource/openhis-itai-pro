@@ -53,6 +53,11 @@ public class PageBpcOrdersResult {
         /** BPC SUCCESS + C 且 payment 仍为 DRAFT */
         private Boolean pendingSettle;
 
+        /**
+         * HIS 已完成逆向退费，但本笔 BPC 消费单仍为 SUCCESS（银联未退）。
+         */
+        private Boolean orphanRefund;
+
         private String createdAt;
 
         private String updatedAt;

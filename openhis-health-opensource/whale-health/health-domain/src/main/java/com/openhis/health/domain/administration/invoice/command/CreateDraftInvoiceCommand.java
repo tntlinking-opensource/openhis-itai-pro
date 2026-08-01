@@ -23,7 +23,7 @@ public class CreateDraftInvoiceCommand {
     private Long paymentId;
     /** 发票类型字典编码。 */
     private String typeCode;
-    /** 发票金额。 */
+    /** 票面金额（收费项合计，结算刻度；含医保已付，非患者现金 displayAmount）。 */
     private BigDecimal amount;
     /** 创建草稿的操作人标识。 */
     private Long operatorId;

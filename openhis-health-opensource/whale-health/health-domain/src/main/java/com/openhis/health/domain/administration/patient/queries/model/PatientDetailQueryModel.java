@@ -20,6 +20,4 @@ public class PatientDetailQueryModel {
     private PatientCoreQueryModel patient;
     /** 非身份证证件集合。 */
     private List<PatientIdentifierQueryModel> identifiers;
-    /** 学籍记录集合。 */
-    private List<PatientStudentQueryModel> students;
 }

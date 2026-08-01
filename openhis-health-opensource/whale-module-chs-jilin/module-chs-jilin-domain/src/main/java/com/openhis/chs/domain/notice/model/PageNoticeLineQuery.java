@@ -1,0 +1,59 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.openhis.chs.domain.notice.model;
+
+import lombok.Data;
+
+/**
+ * 明细行分页查询条件。
+ */
+@Data
+public class PageNoticeLineQuery {
+
+    /** 租户主键。 */
+    private Long tenantId;
+
+    /** 文件头主键（必填）。 */
+    private Long docId;
+
+    /** 页码（从 1 开始）。 */
+    private int page = 1;
+
+    /** 每页条数。 */
+    private int size = 20;
+
+    /** 动作过滤。 */
+    private String action;
+
+    /** 对照状态过滤。 */
+    private String matchStatus;
+
+    /**
+     * Spring Data 0-based 页码。
+     *
+     * @return 页索引
+     */
+    public int springPageIndex() {
+        if (page < 1) {
+            return 0;
+        }
+        return page - 1;
+    }
+
+    /**
+     * 有界页大小。
+     *
+     * @return 1～200
+     */
+    public int boundedPageSize() {
+        if (size < 1) {
+            return 20;
+        }
+        if (size > 200) {
+            return 200;
+        }
+        return size;
+    }
+}

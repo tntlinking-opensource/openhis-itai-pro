@@ -404,7 +404,15 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
             WarehouseDocumentDetailRowDto dto = new WarehouseDocumentDetailRowDto();
             dto.setBusNo(busNo);
             dto.setPurposeLocationId(row.getPurposeLocationId());
-            dto.setApplyTime(row.getApplyTime());
+            // —— 选单「制单时间」优先 occurrence，其次 apply，最后 approval（对偶 IF-WHS-RT-12）。——
+            LocalDateTime displayApplyTime = row.getOccurrenceTime();
+            if (displayApplyTime == null) {
+                displayApplyTime = row.getApplyTime();
+            }
+            if (displayApplyTime == null) {
+                displayApplyTime = row.getApprovalTime();
+            }
+            dto.setApplyTime(displayApplyTime);
             dto.setApprovalTime(row.getApprovalTime());
             dto.setTypeEnum(SupplyType.CABINET_PURCHASE_ORDER.getCode());
             dto.setStatusEnum(row.getStatusEnum());
@@ -634,6 +642,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         res.setSourceTypeEnum(head.getSourceTypeEnum());
         res.setPurposeTypeEnum(head.getPurposeTypeEnum());
         res.setCategoryEnum(head.getCategoryEnum());
+        res.setInvoiceNo(head.getInvoiceNo());
         res.setRowVersion(this.resolveInboundReceiptDocumentRowVersion(lines, head));
         List<InboundReceiptDetailLineDto> detailLines = new ArrayList<>();
         for (SupplyRequestModel line : lines) {
@@ -760,6 +769,8 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
                 item.setEndTime(line.getEndTime());
                 item.setReason(null);
                 item.setRemake(line.getRemake());
+                // 单头发票号写入每一行（同号多行共享）
+                item.setInvoiceNo(request.getInvoiceNo());
                 item.setApplicantId(applicantId);
                 item.setPractitionerId(request.getPractitionerId());
                 item.setApplyTime(null);
@@ -843,6 +854,8 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
                 item.setEndTime(line.getEndTime());
                 item.setReason(null);
                 item.setRemake(line.getRemake());
+                // 单头发票号写入每一行（同号多行共享）
+                item.setInvoiceNo(request.getInvoiceNo());
                 item.setApplicantId(applicantId);
                 item.setPractitionerId(request.getPractitionerId());
                 item.setApplyTime(null);
@@ -1258,6 +1271,9 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         dto.setTotalVolume(pr.getTotalVolume());
         dto.setPyStr(pr.getPyStr());
         dto.setWbStr(pr.getWbStr());
+        // 选品透出药典追溯单位+比，供前端扫码应扫数（单据不再采集）
+        dto.setTraceUnitCode(pr.getTraceUnitCode());
+        dto.setTraceUnitRatio(pr.getTraceUnitRatio());
         dto.setUnitBands(ProductDefinitionCatalogUnitBandsAssembler.buildInboundSelectionBands(pr));
         dto.setAvailableQuantity(null);
         return dto;

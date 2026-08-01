@@ -10,8 +10,6 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDiagnosisQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.domain.clinical.condition.queries.model.ConditionBatchItemQueryModel;
-import com.openhis.health.domain.clinical.condition.service.ConditionQueryService;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.ConditionDefinitionBatchItemQueryModel;
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
 import com.openhis.whale.emr.domain.document.entity.Document;
@@ -49,7 +47,6 @@ public class EmrDiagnosisSyncOrchestrator {
     private final DocumentManager documentManager;
     private final DocumentStructureManager documentStructureManager;
     private final EncounterQueryService encounterQueryService;
-    private final ConditionQueryService conditionQueryService;
     private final ConditionDefinitionQueryService conditionDefinitionQueryService;
     private final ObjectMapper objectMapper;
 
@@ -89,41 +86,28 @@ public class EmrDiagnosisSyncOrchestrator {
                 .comparing(EncounterDiagnosisQueryModel::getRank, Comparator.nullsLast(Comparator.naturalOrder()))
                 .thenComparing(EncounterDiagnosisQueryModel::getDiagnosisId, Comparator.nullsLast(Comparator.naturalOrder())));
 
-        List<Long> conditionIds = new ArrayList<>();
+        Set<Long> definitionIds = new LinkedHashSet<>();
         for (EncounterDiagnosisQueryModel row : associations) {
-            if (row.getConditionId() != null) {
-                conditionIds.add(row.getConditionId());
+            if (row.getConditionDefinitionId() != null) {
+                definitionIds.add(row.getConditionDefinitionId());
             }
         }
-        if (conditionIds.isEmpty()) {
+        if (definitionIds.isEmpty()) {
             return "[]";
         }
 
-        Map<Long, ConditionBatchItemQueryModel> conditionById = new HashMap<>();
-        for (ConditionBatchItemQueryModel item : conditionQueryService.getConditionListById(conditionIds)) {
-            conditionById.put(item.getId(), item);
-        }
-        Set<Long> definitionIds = new LinkedHashSet<>();
-        for (ConditionBatchItemQueryModel item : conditionById.values()) {
-            if (item.getDefinitionId() != null) {
-                definitionIds.add(item.getDefinitionId());
-            }
-        }
         Map<Long, ConditionDefinitionBatchItemQueryModel> definitionById = new HashMap<>();
-        if (!definitionIds.isEmpty()) {
-            for (ConditionDefinitionBatchItemQueryModel def
-                    : conditionDefinitionQueryService.getConditionDefinitionListByIds(new ArrayList<>(definitionIds))) {
-                definitionById.put(def.getId(), def);
-            }
+        for (ConditionDefinitionBatchItemQueryModel def
+                : conditionDefinitionQueryService.getConditionDefinitionListByIds(new ArrayList<>(definitionIds))) {
+            definitionById.put(def.getId(), def);
         }
 
         ArrayNode rows = objectMapper.createArrayNode();
         for (EncounterDiagnosisQueryModel association : associations) {
-            ConditionBatchItemQueryModel condition = conditionById.get(association.getConditionId());
-            if (condition == null || condition.getDefinitionId() == null) {
+            if (association.getConditionDefinitionId() == null) {
                 continue;
             }
-            ConditionDefinitionBatchItemQueryModel definition = definitionById.get(condition.getDefinitionId());
+            ConditionDefinitionBatchItemQueryModel definition = definitionById.get(association.getConditionDefinitionId());
             if (definition == null) {
                 continue;
             }

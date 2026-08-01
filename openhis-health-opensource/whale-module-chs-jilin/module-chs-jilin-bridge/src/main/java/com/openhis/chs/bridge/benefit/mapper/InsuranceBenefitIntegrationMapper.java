@@ -61,6 +61,8 @@ public class InsuranceBenefitIntegrationMapper {
         platformCommand.setInsuplcAdmdvs(command.getInsurancePoolAreaCode());
         platformCommand.setOperatorId(operatorId);
         platformCommand.setTenantId(TenantUtils.getCurrentTenantId());
+        // 挂号读卡须取平台最新 balc，跳过当日人员缓存。
+        platformCommand.setForceRefresh(true);
         return platformCommand;
     }
 

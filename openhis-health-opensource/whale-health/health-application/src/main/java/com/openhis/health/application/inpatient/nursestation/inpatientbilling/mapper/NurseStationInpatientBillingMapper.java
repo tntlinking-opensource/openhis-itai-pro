@@ -10,7 +10,7 @@ import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dt
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationSupplementParentOrderRowDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.PageNurseStationPricingCatalogRequest;
 import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemCommand;
-import com.openhis.health.domain.administration.chargeitem.command.VoidNursePricingChargeItemsByServiceAnchorsCommand;
+import com.openhis.health.domain.administration.chargeitem.command.OffsetNursePricingChargeItemsByServiceAnchorsCommand;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.clinical.procedure.command.CancelProcedureRecordCommand;
 import com.openhis.health.domain.clinical.procedure.command.CompleteProcedureRecordCommand;
@@ -272,7 +272,7 @@ public interface NurseStationInpatientBillingMapper {
     RevokeExecutedDeviceOrderCommand toRevokeExecutedDeviceOrderCommand(List<Long> deviceRequestIds, Long operatorId);
 
     /**
-     * 按单锚点撤销护士划价待结算费用命令。
+     * 按单锚点冲销护士划价待结算费用命令。
      *
      * @param encounterId  就诊
      * @param serviceTable 上游表
@@ -280,7 +280,7 @@ public interface NurseStationInpatientBillingMapper {
      * @param operatorId   操作人
      * @return 领域命令
      */
-    VoidNursePricingChargeItemsByServiceAnchorsCommand toVoidNursePricingChargeItemsByServiceAnchorsCommand(
+    OffsetNursePricingChargeItemsByServiceAnchorsCommand toOffsetNursePricingChargeItemsByServiceAnchorsCommand(
         Long encounterId,
         String serviceTable,
         Long serviceId,

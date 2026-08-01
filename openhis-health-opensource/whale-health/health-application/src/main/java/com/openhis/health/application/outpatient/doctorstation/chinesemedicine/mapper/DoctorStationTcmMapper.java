@@ -10,7 +10,6 @@ import com.openhis.health.application.outpatient.doctorstation.chinesemedicine.r
 import com.openhis.health.application.outpatient.doctorstation.chinesemedicine.response.*;
 import com.openhis.health.domain.administration.encounter.command.BatchUpsertEncounterDiagnosisAssociationCommand;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
-import com.openhis.health.domain.clinical.condition.command.SaveDoctorDiagnosisTcmCommand;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.DoctorStationConditionDefinitionRowModel;
 import com.openhis.health.domain.medication.medicationrequest.command.ChangeHerbalMedicationOrderDraftCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.CreateHerbalMedicationOrderDraftCommand;
@@ -52,27 +51,23 @@ public interface DoctorStationTcmMapper {
         Page<DoctorStationConditionDefinitionRowModel> page, List<TcmDiagnosisCatalogRowDto> rows);
 
     /**
-     * 将全量病证组保存请求转为 {@link SaveDoctorDiagnosisTcmCommand}。
+     * 将全量病证组保存请求转为中医就诊关联 batchUpsert 命令（直挂 conditionDefinitionId）。
      *
-     * @param request         全量批次请求
-     * @param groupKeyByItem  稳定键 → 组号
-     * @param operatorId      操作人
-     * @return 中医诊断事实 upsert 命令
-     */
-    SaveDoctorDiagnosisTcmCommand toSaveDoctorDiagnosisTcmCommand(
-        SaveTcmDiagnosisGroupsBatchRequest request, Map<String, String> groupKeyByItem, Long operatorId);
-
-    /**
-     * 将保存结果转为中医就诊关联 batchUpsert 命令（仅 tcm_flag 子集）。
-     *
-     * @param request           全量批次请求
-     * @param savedConditionIds 领域返回的事实 id 列表（每组 2 条）
-     * @param groupKeyByItem    稳定键 → 组号
-     * @param operatorId        操作人
+     * @param request        全量批次请求
+     * @param groupKeyByItem 稳定键 → 组号
+     * @param operatorId     操作人
      * @return 中医批次 upsert 命令
      */
     BatchUpsertEncounterDiagnosisAssociationCommand toBatchUpsertTcmEncounterDiagnosisAssociationCommand(
-        SaveTcmDiagnosisGroupsBatchRequest request, List<Long> savedConditionIds, Map<String, String> groupKeyByItem, Long operatorId);
+        SaveTcmDiagnosisGroupsBatchRequest request, Map<String, String> groupKeyByItem, Long operatorId);
+
+    /**
+     * 病证组稳定键：双侧为 {@code diseaseId:syndromeId}；单侧为 {@code d:{id}} / {@code s:{id}}。
+     *
+     * @param group 组项请求
+     * @return 稳定键
+     */
+    String resolveTcmGroupStableKey(TcmDiagnosisGroupItemRequest group);
 
     /**
      * 对比快照与入参，找出需删除的历史中医组号。

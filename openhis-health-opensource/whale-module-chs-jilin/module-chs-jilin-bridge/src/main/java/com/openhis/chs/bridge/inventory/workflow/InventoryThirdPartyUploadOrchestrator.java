@@ -9,12 +9,16 @@ import static com.openhis.whale.core.application.util.StringUtils.isNotEmpty;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.openhis.chs.bridge.inventory.assembler.InventoryPurchaseCompanion3502LineAssembler;
+import com.openhis.chs.bridge.inventory.assembler.InventorySaleCompanion3502LineAssembler;
+import com.openhis.chs.bridge.inventory.assembler.InventoryUploadBatchNoAssembler;
 import com.openhis.chs.bridge.inventory.invoker.Inv3501Invoker;
 import com.openhis.chs.bridge.inventory.invoker.Inv3502Invoker;
 import com.openhis.chs.bridge.inventory.invoker.Inv3503Invoker;
 import com.openhis.chs.bridge.inventory.invoker.Inv3504Invoker;
 import com.openhis.chs.bridge.inventory.invoker.Inv3505Invoker;
 import com.openhis.chs.bridge.inventory.invoker.Inv3506Invoker;
+import com.openhis.chs.bridge.inventory.support.InventoryUploadSaleRequiredFieldSupport;
 import com.openhis.chs.bridge.inventory.support.InventoryUploadTraceLineSupport;
 import com.openhis.chs.domain.catalog.access.ChsInsuranceContractReader;
 import com.openhis.chs.domain.contract.ChsContractSnapshot;
@@ -47,12 +51,14 @@ import com.openhis.chs.gateway.scheme.inventory.model.Inv3504Input;
 import com.openhis.chs.gateway.scheme.inventory.model.Inv3505Input;
 import com.openhis.chs.gateway.scheme.inventory.model.Inv3506Input;
 import com.openhis.chs.gateway.scheme.inventory.assembler.InvPlatformInputAssembler;
+import com.openhis.chs.gateway.scheme.inventory.parser.InvPlatformOutputParser;
 import com.openhis.chs.gateway.session.ChsSignCredentialResolver;
 import com.openhis.chs.gateway.support.ChsCurrentOperatorResolver;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -61,7 +67,13 @@ import java.util.Optional;
  * <p>逐行调用对应 Invoker，管理幂等（已成功跳过）、无医保编码跳过、追溯码数量校验、
  * 上报审计落库（{@code yb_inv_upload}）及追溯码子表持久化。</p>
  *
- * <p>3505/3506 额外解析平台 output.result.retRslt 业务结果码。</p>
+ * <p>3505/3506 解析平台业务结果：有 {@code ret_rslt} 按码判定；省本级空 output 无码时，
+ * 在协议成功（{@code infcode=0}）下落 SUCCESS。</p>
+ *
+ * <p><b>采购伴生</b>：3503/3504 平台 SUCCESS（含幂等）后跟 3502（108 正 / 109 负）；
+ * 伴生失败仅落 3502 FAILED，不回写采购侧。</p>
+ * <p><b>销售配对</b>：3505 前先试 3502（107 负），再调 3505；3502 失败仍继续 3505（两条互不阻塞）。
+ * 3506 SUCCESS 后再 3502（106 正，批次=退药单号）；伴生失败不回写 3506 SUCCESS。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -99,10 +111,10 @@ public class InventoryThirdPartyUploadOrchestrator {
      * @param request 契约、来源单据（就诊）、销售行
      */
     public void uploadSale3505(InvUpload3505Command request) {
-        // Pre：契约、租户、操作人
+        // Pre：契约、租户、操作人（异步路径命令已带 operatorId，对齐发票快照）
         ContractContext ctx = resolveContract(request.getContractBusNo(), request.getContractId());
         Long tenantId = TenantUtils.getCurrentTenantId();
-        Long operatorId = currentOperatorResolver.requireOperatorId("请先登录");
+        Long operatorId = resolveOperatorId(request.getOperatorId());
         if (request.getLines() == null) {
             return;
         }
@@ -122,7 +134,7 @@ public class InventoryThirdPartyUploadOrchestrator {
         // Pre：契约、租户、操作人
         ContractContext ctx = resolveContract(request.getContractBusNo(), request.getContractId());
         Long tenantId = TenantUtils.getCurrentTenantId();
-        Long operatorId = currentOperatorResolver.requireOperatorId("请先登录");
+        Long operatorId = resolveOperatorId(request.getOperatorId());
         if (request.getLines() == null) {
             return;
         }
@@ -142,7 +154,7 @@ public class InventoryThirdPartyUploadOrchestrator {
         // Pre：契约、租户、操作人
         ContractContext ctx = resolveContract(request.getContractBusNo(), request.getContractId());
         Long tenantId = TenantUtils.getCurrentTenantId();
-        Long operatorId = currentOperatorResolver.requireOperatorId("请先登录");
+        Long operatorId = resolveOperatorId(request.getOperatorId());
         if (request.getLines() == null) {
             return;
         }
@@ -162,7 +174,7 @@ public class InventoryThirdPartyUploadOrchestrator {
         // Pre：契约、租户、操作人
         ContractContext ctx = resolveContract(request.getContractBusNo(), request.getContractId());
         Long tenantId = TenantUtils.getCurrentTenantId();
-        Long operatorId = currentOperatorResolver.requireOperatorId("请先登录");
+        Long operatorId = resolveOperatorId(request.getOperatorId());
         if (request.getLines() == null) {
             return;
         }
@@ -182,7 +194,7 @@ public class InventoryThirdPartyUploadOrchestrator {
         // Pre：契约、租户、操作人
         ContractContext ctx = resolveContract(request.getContractBusNo(), request.getContractId());
         Long tenantId = TenantUtils.getCurrentTenantId();
-        Long operatorId = currentOperatorResolver.requireOperatorId("请先登录");
+        Long operatorId = resolveOperatorId(request.getOperatorId());
         if (request.getLines() == null) {
             return;
         }
@@ -203,7 +215,7 @@ public class InventoryThirdPartyUploadOrchestrator {
         // Pre：契约、租户、操作人，sourceType 缺省为 MANUAL
         ContractContext ctx = resolveContract(request.getContractBusNo(), request.getContractId());
         Long tenantId = TenantUtils.getCurrentTenantId();
-        Long operatorId = currentOperatorResolver.requireOperatorId("请先登录");
+        Long operatorId = resolveOperatorId(request.getOperatorId());
         String sourceType;
         if (isNotEmpty(request.getSourceType())) {
             sourceType = request.getSourceType().trim();
@@ -220,14 +232,14 @@ public class InventoryThirdPartyUploadOrchestrator {
     }
 
     /**
-     * 处理单行 3505 商品销售上报。
+     * 处理单行 3505 商品销售上报：校验通过后先试 3502(107)，再调 3505；3502 成败不影响 3505。
      *
      * @param request    3505 上报命令
      * @param line       销售行
      * @param ctx        契约上下文
      * @param tenantId   租户 ID
      * @param operatorId 操作人 ID
-     * @return 单行上报结果
+     * @return 单行 3505 上报结果（不含前置 3502 状态）
      */
     private InvUpload3505Result processSaleLine3505(
         InvUpload3505Command request,
@@ -239,12 +251,14 @@ public class InventoryThirdPartyUploadOrchestrator {
         InvUpload3505Result result = new InvUpload3505Result();
         result.setSourceLineId(line.getSourceLineId());
         result.setFixmedinsBchno(line.getFixmedinsBchno());
+        String sourceType = this.resolveSaleSourceType(request.getSourceType());
 
+        // Pre：未对码不调平台，仅记 SKIPPED（不落 request_json）
         if (inventoryProperties.isSkipWithoutYbNo()
             && (ChsInventoryConstants.TRACE_POLICY_NO_YB_NO.equals(line.getTracePolicy())
                 || isEmpty(line.getMedListCodg()))) {
             YbInvUpload skipped = uploadDomainService.upsertUploadRecord(
-                null, ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_SALE, line, ChsInventoryConstants.SOURCE_TYPE_DISPENSE, request.getSourceId(),
+                null, ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_SALE, line, sourceType, request.getSourceId(),
                 ChsInventoryConstants.UPLOAD_STATUS_SKIPPED_NO_YB_NO,
                 null, null, null, null, operatorId, tenantId, false);
             return result.setUploadId(skipped.getId()).setUploadStatus(skipped.getUploadStatus());
@@ -252,6 +266,7 @@ public class InventoryThirdPartyUploadOrchestrator {
 
         Optional<YbInvUpload> existing = uploadDomainService.findExistingLine(
             tenantId, ChsInfNo.INVENTORY_SALE, line.getFixmedinsBchno(), line.getSourceLineId());
+        // 幂等：3505 已成功则不再调 3502 / 3505
         if (existing.isPresent()
             && ChsInventoryConstants.UPLOAD_STATUS_SUCCESS.equals(existing.get().getUploadStatus())) {
             YbInvUpload row = existing.get();
@@ -259,29 +274,48 @@ public class InventoryThirdPartyUploadOrchestrator {
                 .setPlatformRetRslt(row.getPlatformRetRslt()).setPlatformMsg(row.getPlatformMsg());
         }
 
-        String traceFailureMessage = uploadTraceLineSupport.resolveUploadTraceFailureMessage(line, true);
+        String traceFailureMessage = uploadTraceLineSupport.resolveUploadTraceFailureMessage(line, true, null, null);
         if (isNotEmpty(traceFailureMessage)) {
+            // 出站前失败也落草稿，运维台可回显编辑后补传（此时尚未调 3502）
+            String draftRequestJson = tryAssembleRequestJson(() -> InvPlatformInputAssembler.assemble3505(line));
             YbInvUpload failed = uploadDomainService.upsertUploadRecord(
-                existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_SALE, line, ChsInventoryConstants.SOURCE_TYPE_DISPENSE, request.getSourceId(),
+                existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_SALE, line, sourceType, request.getSourceId(),
                 ChsInventoryConstants.UPLOAD_STATUS_FAILED,
-                ChsInventoryConstants.PLATFORM_RET_RSLT_FAILED, traceFailureMessage, null, null, operatorId, tenantId, true);
+                ChsInventoryConstants.PLATFORM_RET_RSLT_FAILED, traceFailureMessage, draftRequestJson, null, operatorId, tenantId, true);
+            return result.setUploadId(failed.getId()).setUploadStatus(failed.getUploadStatus())
+                .setPlatformRetRslt(ChsInventoryConstants.PLATFORM_RET_RSLT_FAILED).setPlatformMsg(failed.getPlatformMsg());
+        }
+        // 规范必填项：缺则记失败（主数据应齐全）；尚未调 3502
+        String requiredFailureMessage = InventoryUploadSaleRequiredFieldSupport.resolveMissingRequiredMessage(line, true);
+        if (isNotEmpty(requiredFailureMessage)) {
+            String draftRequestJson = tryAssembleRequestJson(() -> InvPlatformInputAssembler.assemble3505(line));
+            YbInvUpload failed = uploadDomainService.upsertUploadRecord(
+                existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_SALE, line, sourceType, request.getSourceId(),
+                ChsInventoryConstants.UPLOAD_STATUS_FAILED,
+                ChsInventoryConstants.PLATFORM_RET_RSLT_FAILED, requiredFailureMessage, draftRequestJson, null, operatorId, tenantId, true);
             return result.setUploadId(failed.getId()).setUploadStatus(failed.getUploadStatus())
                 .setPlatformRetRslt(ChsInventoryConstants.PLATFORM_RET_RSLT_FAILED).setPlatformMsg(failed.getPlatformMsg());
         }
 
+        // Cmd：先试 3502 其他出库(107)；失败仅落 3502 审计，不阻塞后续 3505
+        uploadPrecedingSaleOutbound3502(request, line, ctx, tenantId, operatorId, sourceType);
+
+        // Cmd：无论前置 3502 成败，均出站 3505
         Inv3505Input input = InvPlatformInputAssembler.assemble3505(line);
-        PlatformUploadOutcome outcome = invokeSalePlatform(ctx.busNo(), ChsInfNo.INVENTORY_SALE, input);
+        PlatformUploadOutcome outcome = invokeSalePlatform(
+            ctx.busNo(), ChsInfNo.INVENTORY_SALE, input, operatorId, request.getOperatorName());
         if (outcome.invokeOk()) {
             YbInvUpload saved = uploadDomainService.upsertUploadRecord(
-                existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_SALE, line, ChsInventoryConstants.SOURCE_TYPE_DISPENSE, request.getSourceId(),
+                existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_SALE, line, sourceType, request.getSourceId(),
                 outcome.uploadStatus(), outcome.retRslt(), outcome.msgRslt(), outcome.requestJson(), outcome.responseJson(),
                 operatorId, tenantId, ChsInventoryConstants.UPLOAD_STATUS_FAILED.equals(outcome.uploadStatus()));
             uploadDomainService.saveTraceRows(saved, line, tenantId);
             return result.setUploadId(saved.getId()).setUploadStatus(saved.getUploadStatus())
                 .setPlatformRetRslt(outcome.retRslt()).setPlatformMsg(outcome.msgRslt());
         }
+        // 3505 失败：不回写前置 3502 SUCCESS
         YbInvUpload failed = uploadDomainService.upsertUploadRecord(
-            existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_SALE, line, ChsInventoryConstants.SOURCE_TYPE_DISPENSE, request.getSourceId(),
+            existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_SALE, line, sourceType, request.getSourceId(),
             ChsInventoryConstants.UPLOAD_STATUS_FAILED,
             outcome.retRslt(), outcome.errorMessage(), outcome.requestJson(), null, operatorId, tenantId, true);
         return result.setUploadId(failed.getId()).setUploadStatus(failed.getUploadStatus())
@@ -289,14 +323,14 @@ public class InventoryThirdPartyUploadOrchestrator {
     }
 
     /**
-     * 处理单行 3506 商品销售退货上报。
+     * 处理单行 3506 商品销售退货上报：SUCCESS（含幂等）后再伴生 3502(106，批次=退药单号)。
      *
      * @param request    3506 上报命令
      * @param line       退货行
      * @param ctx        契约上下文
      * @param tenantId   租户 ID
      * @param operatorId 操作人 ID
-     * @return 单行上报结果
+     * @return 单行 3506 上报结果（不含伴生 3502 状态）
      */
     private InvUpload3506Result processReturnLine3506(
         InvUpload3506Command request,
@@ -308,12 +342,14 @@ public class InventoryThirdPartyUploadOrchestrator {
         InvUpload3506Result result = new InvUpload3506Result();
         result.setSourceLineId(line.getSourceLineId());
         result.setFixmedinsBchno(line.getFixmedinsBchno());
+        String sourceType = this.resolveSaleSourceType(request.getSourceType());
 
+        // Pre：未对码不调平台，仅记 SKIPPED（不落 request_json）
         if (inventoryProperties.isSkipWithoutYbNo()
             && (ChsInventoryConstants.TRACE_POLICY_NO_YB_NO.equals(line.getTracePolicy())
                 || isEmpty(line.getMedListCodg()))) {
             YbInvUpload skipped = uploadDomainService.upsertUploadRecord(
-                null, ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_SALE_RETURN, line, ChsInventoryConstants.SOURCE_TYPE_DISPENSE, request.getSourceId(),
+                null, ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_SALE_RETURN, line, sourceType, request.getSourceId(),
                 ChsInventoryConstants.UPLOAD_STATUS_SKIPPED_NO_YB_NO,
                 null, null, null, null, operatorId, tenantId, false);
             return result.setUploadId(skipped.getId()).setUploadStatus(skipped.getUploadStatus());
@@ -321,36 +357,60 @@ public class InventoryThirdPartyUploadOrchestrator {
 
         Optional<YbInvUpload> existing = uploadDomainService.findExistingLine(
             tenantId, ChsInfNo.INVENTORY_SALE_RETURN, line.getFixmedinsBchno(), line.getSourceLineId());
+        // 幂等：3506 已成功仍尝试伴生 3502（3502 自身再幂等）
         if (existing.isPresent()
             && ChsInventoryConstants.UPLOAD_STATUS_SUCCESS.equals(existing.get().getUploadStatus())) {
             YbInvUpload row = existing.get();
+            // 幂等短路时仍尝试标删配对 3505（兼容上次冲销成功但未标删）
+            this.markClearBedSummarySaleDeletedIfNeeded(tenantId, sourceType, row, line);
+            followUpCompanion3502AfterSaleReturn(request, line, ctx, tenantId, operatorId, sourceType);
             return result.setUploadId(row.getId()).setUploadStatus(row.getUploadStatus())
                 .setPlatformRetRslt(row.getPlatformRetRslt()).setPlatformMsg(row.getPlatformMsg());
         }
 
-        String traceFailureMessage = uploadTraceLineSupport.resolveUploadTraceFailureMessage(line, true);
+        String traceFailureMessage = uploadTraceLineSupport.resolveUploadTraceFailureMessage(line, true, null, null);
         if (isNotEmpty(traceFailureMessage)) {
+            // 出站前失败也落草稿，运维台可回显编辑后补传
+            String draftRequestJson = tryAssembleRequestJson(() -> InvPlatformInputAssembler.assemble3506(line));
             YbInvUpload failed = uploadDomainService.upsertUploadRecord(
-                existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_SALE_RETURN, line, ChsInventoryConstants.SOURCE_TYPE_DISPENSE, request.getSourceId(),
+                existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_SALE_RETURN, line, sourceType, request.getSourceId(),
                 ChsInventoryConstants.UPLOAD_STATUS_FAILED,
-                ChsInventoryConstants.PLATFORM_RET_RSLT_FAILED, traceFailureMessage, null, null, operatorId, tenantId, true);
+                ChsInventoryConstants.PLATFORM_RET_RSLT_FAILED, traceFailureMessage, draftRequestJson, null, operatorId, tenantId, true);
+            return result.setUploadId(failed.getId()).setUploadStatus(failed.getUploadStatus())
+                .setPlatformRetRslt(ChsInventoryConstants.PLATFORM_RET_RSLT_FAILED).setPlatformMsg(failed.getPlatformMsg());
+        }
+        String requiredFailureMessage = InventoryUploadSaleRequiredFieldSupport.resolveMissingRequiredMessage(line, false);
+        if (isNotEmpty(requiredFailureMessage)) {
+            String draftRequestJson = tryAssembleRequestJson(() -> InvPlatformInputAssembler.assemble3506(line));
+            YbInvUpload failed = uploadDomainService.upsertUploadRecord(
+                existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_SALE_RETURN, line, sourceType, request.getSourceId(),
+                ChsInventoryConstants.UPLOAD_STATUS_FAILED,
+                ChsInventoryConstants.PLATFORM_RET_RSLT_FAILED, requiredFailureMessage, draftRequestJson, null, operatorId, tenantId, true);
             return result.setUploadId(failed.getId()).setUploadStatus(failed.getUploadStatus())
                 .setPlatformRetRslt(ChsInventoryConstants.PLATFORM_RET_RSLT_FAILED).setPlatformMsg(failed.getPlatformMsg());
         }
 
         Inv3506Input input = InvPlatformInputAssembler.assemble3506(line);
-        PlatformUploadOutcome outcome = invokeSalePlatform(ctx.busNo(), ChsInfNo.INVENTORY_SALE_RETURN, input);
+        PlatformUploadOutcome outcome = invokeSalePlatform(
+            ctx.busNo(), ChsInfNo.INVENTORY_SALE_RETURN, input, operatorId, request.getOperatorName());
         if (outcome.invokeOk()) {
             YbInvUpload saved = uploadDomainService.upsertUploadRecord(
-                existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_SALE_RETURN, line, ChsInventoryConstants.SOURCE_TYPE_DISPENSE, request.getSourceId(),
+                existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_SALE_RETURN, line, sourceType, request.getSourceId(),
                 outcome.uploadStatus(), outcome.retRslt(), outcome.msgRslt(), outcome.requestJson(), outcome.responseJson(),
                 operatorId, tenantId, ChsInventoryConstants.UPLOAD_STATUS_FAILED.equals(outcome.uploadStatus()));
             uploadDomainService.saveTraceRows(saved, line, tenantId);
-            return result.setUploadId(saved.getId()).setUploadStatus(saved.getUploadStatus())
+            // 清床汇总冲销成功：配对 3505 标 DELETED，便于再清床重报净量
+            this.markClearBedSummarySaleDeletedIfNeeded(tenantId, sourceType, saved, line);
+            result.setUploadId(saved.getId()).setUploadStatus(saved.getUploadStatus())
                 .setPlatformRetRslt(outcome.retRslt()).setPlatformMsg(outcome.msgRslt());
+            // Cmd：仅业务 SUCCESS 后伴生 3502；失败不回写 3506
+            if (ChsInventoryConstants.UPLOAD_STATUS_SUCCESS.equals(saved.getUploadStatus())) {
+                followUpCompanion3502AfterSaleReturn(request, line, ctx, tenantId, operatorId, sourceType);
+            }
+            return result;
         }
         YbInvUpload failed = uploadDomainService.upsertUploadRecord(
-            existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_SALE_RETURN, line, ChsInventoryConstants.SOURCE_TYPE_DISPENSE, request.getSourceId(),
+            existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_SALE_RETURN, line, sourceType, request.getSourceId(),
             ChsInventoryConstants.UPLOAD_STATUS_FAILED,
             outcome.retRslt(), outcome.errorMessage(), outcome.requestJson(), null, operatorId, tenantId, true);
         return result.setUploadId(failed.getId()).setUploadStatus(failed.getUploadStatus())
@@ -358,14 +418,58 @@ public class InventoryThirdPartyUploadOrchestrator {
     }
 
     /**
-     * 处理单行 3503 商品采购入库上报。
+     * 清床汇总 3506 成功时，将配对 SUCCESS 3505 标为 DELETED。
+     *
+     * @param tenantId   租户
+     * @param sourceType 来源类型
+     * @param saved      已落库 3506
+     * @param line       退货行
+     */
+    private void markClearBedSummarySaleDeletedIfNeeded(
+        Long tenantId,
+        String sourceType,
+        YbInvUpload saved,
+        InvUploadLineCommand line
+    ) {
+        if (saved == null || line == null) {
+            return;
+        }
+        if (!ChsInventoryConstants.SOURCE_TYPE_CLEAR_BED_SUMMARY.equals(sourceType)) {
+            return;
+        }
+        if (!ChsInventoryConstants.UPLOAD_STATUS_SUCCESS.equals(saved.getUploadStatus())) {
+            return;
+        }
+        // 配对 3505：用原销售批次（fixmedinsBchno）；originalFixmedinsBchno 是退药单号，仅给伴生 3502
+        if (isEmpty(line.getFixmedinsBchno())) {
+            return;
+        }
+        uploadDomainService.markClearBedSummarySaleDeletedAfterReverse(
+            tenantId, line.getFixmedinsBchno());
+    }
+
+    /**
+     * 解析 3505/3506 本地来源类型；空则回落发药核发。
+     *
+     * @param sourceType 命令携带的来源类型
+     * @return 非空来源类型
+     */
+    private String resolveSaleSourceType(String sourceType) {
+        if (isNotEmpty(sourceType)) {
+            return sourceType.trim();
+        }
+        return ChsInventoryConstants.SOURCE_TYPE_DISPENSE;
+    }
+
+    /**
+     * 处理单行 3503 商品采购入库上报；平台 SUCCESS（含幂等）后伴生 3502（108）。
      *
      * @param request    3503 上报命令
      * @param line       采购行
      * @param ctx        契约上下文
      * @param tenantId   租户 ID
      * @param operatorId 操作人 ID
-     * @return 单行上报结果
+     * @return 单行 3503 上报结果（不含伴生 3502 状态）
      */
     private InvUpload3503Result processPurchaseLine3503(
         InvUpload3503Command request,
@@ -378,6 +482,7 @@ public class InventoryThirdPartyUploadOrchestrator {
         result.setSourceLineId(line.getSourceLineId());
         result.setFixmedinsBchno(line.getFixmedinsBchno());
 
+        // Pre：未对码不调平台，仅记 SKIPPED（不落 request_json）
         if (inventoryProperties.isSkipWithoutYbNo()
             && (ChsInventoryConstants.TRACE_POLICY_NO_YB_NO.equals(line.getTracePolicy())
                 || isEmpty(line.getMedListCodg()))) {
@@ -390,19 +495,30 @@ public class InventoryThirdPartyUploadOrchestrator {
 
         Optional<YbInvUpload> existing = uploadDomainService.findExistingLine(
             tenantId, ChsInfNo.INVENTORY_PURCHASE, line.getFixmedinsBchno(), line.getSourceLineId());
+        // 幂等：3503 已成功仍尝试伴生 3502（3502 自身再幂等，便于补传失败伴生）
         if (existing.isPresent()
             && ChsInventoryConstants.UPLOAD_STATUS_SUCCESS.equals(existing.get().getUploadStatus())) {
             YbInvUpload row = existing.get();
+            followUpCompanion3502AfterPurchase(
+                request.getContractBusNo(),
+                request.getContractId(),
+                request.getSourceId(),
+                request.getOperatorName(),
+                InventoryPurchaseCompanion3502LineAssembler.fromPurchaseInbound(line),
+                ctx,
+                tenantId,
+                operatorId);
             return result.setUploadId(row.getId()).setUploadStatus(row.getUploadStatus())
                 .setPlatformMsg(row.getPlatformMsg());
         }
 
-        String traceFailureMessage = uploadTraceLineSupport.resolveUploadTraceFailureMessage(line, false);
+        String traceFailureMessage = uploadTraceLineSupport.resolveUploadTraceFailureMessage(line, false, null, null);
         if (isNotEmpty(traceFailureMessage)) {
+            String draftRequestJson = tryAssembleRequestJson(() -> InvPlatformInputAssembler.assemble3503(line));
             YbInvUpload failed = uploadDomainService.upsertUploadRecord(
                 existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_PURCHASE, line, ChsInventoryConstants.SOURCE_TYPE_INBOUND,
                 request.getSourceId(), ChsInventoryConstants.UPLOAD_STATUS_FAILED,
-                ChsInventoryConstants.PLATFORM_RET_RSLT_FAILED, traceFailureMessage, null, null, operatorId, tenantId, true);
+                ChsInventoryConstants.PLATFORM_RET_RSLT_FAILED, traceFailureMessage, draftRequestJson, null, operatorId, tenantId, true);
             return result.setUploadId(failed.getId()).setUploadStatus(failed.getUploadStatus())
                 .setPlatformMsg(failed.getPlatformMsg());
         }
@@ -410,12 +526,13 @@ public class InventoryThirdPartyUploadOrchestrator {
         Inv3503Input input = InvPlatformInputAssembler.assemble3503(line);
         String requestJson = JSON.toJSONString(input);
         try {
-            ResultBody body = inv3503Invoker.invoke(ctx.busNo(), input, buildInvokeContext());
+            ResultBody body = inv3503Invoker.invoke(
+                ctx.busNo(), input, buildInvokeContext(operatorId, request.getOperatorName()));
             YbInvUpload saved = uploadDomainService.upsertUploadRecord(
                 existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_PURCHASE, line, ChsInventoryConstants.SOURCE_TYPE_INBOUND,
                 request.getSourceId(), ChsInventoryConstants.UPLOAD_STATUS_SUCCESS,
                 ChsInventoryConstants.PLATFORM_RET_RSLT_SUCCESS, null, requestJson, JSON.toJSONString(body), operatorId, tenantId, false);
-            return result.setUploadId(saved.getId()).setUploadStatus(saved.getUploadStatus());
+            result.setUploadId(saved.getId()).setUploadStatus(saved.getUploadStatus());
         } catch (RuntimeException ex) {
             YbInvUpload failed = uploadDomainService.upsertUploadRecord(
                 existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_PURCHASE, line, ChsInventoryConstants.SOURCE_TYPE_INBOUND,
@@ -424,6 +541,17 @@ public class InventoryThirdPartyUploadOrchestrator {
             return result.setUploadId(failed.getId()).setUploadStatus(failed.getUploadStatus())
                 .setPlatformMsg(ex.getMessage());
         }
+        // Cmd：3503 已 SUCCESS——伴生须在 try 外，避免 3502 异常把 3503 回写成 FAILED
+        followUpCompanion3502AfterPurchase(
+            request.getContractBusNo(),
+            request.getContractId(),
+            request.getSourceId(),
+            request.getOperatorName(),
+            InventoryPurchaseCompanion3502LineAssembler.fromPurchaseInbound(line),
+            ctx,
+            tenantId,
+            operatorId);
+        return result;
     }
 
     /**
@@ -449,6 +577,7 @@ public class InventoryThirdPartyUploadOrchestrator {
         result.setSourceLineId(line.getSourceLineId());
         result.setFixmedinsBchno(line.getFixmedinsBchno());
 
+        // Pre：未对码不调平台，仅记 SKIPPED（不落 request_json）
         if (inventoryProperties.isSkipWithoutYbNo() && isEmpty(line.getMedListCodg())) {
             YbInvUpload skipped = uploadDomainService.upsertUploadRecord(
                 null, ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_STOCKTAKE, line, sourceType,
@@ -466,12 +595,13 @@ public class InventoryThirdPartyUploadOrchestrator {
                 .setPlatformMsg(row.getPlatformMsg());
         }
 
-        String traceFailureMessage = uploadTraceLineSupport.resolveUploadTraceFailureMessage(line, false);
+        String traceFailureMessage = uploadTraceLineSupport.resolveUploadTraceFailureMessage(line, false, null, null);
         if (isNotEmpty(traceFailureMessage)) {
+            String draftRequestJson = tryAssembleRequestJson(() -> InvPlatformInputAssembler.assemble3501(line));
             YbInvUpload failed = uploadDomainService.upsertUploadRecord(
                 existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_STOCKTAKE, line, sourceType,
                 request.getSourceId(), ChsInventoryConstants.UPLOAD_STATUS_FAILED,
-                ChsInventoryConstants.PLATFORM_RET_RSLT_FAILED, traceFailureMessage, null, null, operatorId, tenantId, true);
+                ChsInventoryConstants.PLATFORM_RET_RSLT_FAILED, traceFailureMessage, draftRequestJson, null, operatorId, tenantId, true);
             return result.setUploadId(failed.getId()).setUploadStatus(failed.getUploadStatus())
                 .setPlatformMsg(failed.getPlatformMsg());
         }
@@ -479,7 +609,8 @@ public class InventoryThirdPartyUploadOrchestrator {
         Inv3501Input input = InvPlatformInputAssembler.assemble3501(line);
         String requestJson = JSON.toJSONString(input);
         try {
-            ResultBody body = inv3501Invoker.invoke(ctx.busNo(), input, buildInvokeContext());
+            ResultBody body = inv3501Invoker.invoke(
+                ctx.busNo(), input, buildInvokeContext(operatorId, request.getOperatorName()));
             YbInvUpload saved = uploadDomainService.upsertUploadRecord(
                 existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_STOCKTAKE, line, sourceType,
                 request.getSourceId(), ChsInventoryConstants.UPLOAD_STATUS_SUCCESS,
@@ -520,6 +651,7 @@ public class InventoryThirdPartyUploadOrchestrator {
         result.setFixmedinsBchno(line.getFixmedinsBchno());
         result.setInvChgType(line.getInvChgType());
 
+        // Pre：未对码不调平台，仅记 SKIPPED（不落 request_json）
         if (inventoryProperties.isSkipWithoutYbNo() && isEmpty(line.getMedListCodg())) {
             YbInvUpload skipped = uploadDomainService.upsertUploadRecord(
                 null, ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_CHANGE, line, sourceType,
@@ -537,20 +669,24 @@ public class InventoryThirdPartyUploadOrchestrator {
                 .setPlatformMsg(row.getPlatformMsg());
         }
 
-        String traceFailureMessage = uploadTraceLineSupport.resolveUploadTraceFailureMessage(line, false);
+        String traceFailureMessage = uploadTraceLineSupport.resolveUploadTraceFailureMessage(line, false, null, null);
         if (isNotEmpty(traceFailureMessage)) {
+            String draftRequestJson = tryAssembleRequestJson(() -> InvPlatformInputAssembler.assemble3502(line));
             YbInvUpload failed = uploadDomainService.upsertUploadRecord(
                 existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_CHANGE, line, sourceType,
                 request.getSourceId(), ChsInventoryConstants.UPLOAD_STATUS_FAILED,
-                ChsInventoryConstants.PLATFORM_RET_RSLT_FAILED, traceFailureMessage, null, null, operatorId, tenantId, true);
+                ChsInventoryConstants.PLATFORM_RET_RSLT_FAILED, traceFailureMessage, draftRequestJson, null, operatorId, tenantId, true);
             return result.setUploadId(failed.getId()).setUploadStatus(failed.getUploadStatus())
                 .setPlatformMsg(failed.getPlatformMsg());
         }
 
-        Inv3502Input input = InvPlatformInputAssembler.assemble3502(line);
-        String requestJson = JSON.toJSONString(input);
+        // Pre：组装放 try 内——符号校验失败记 FAILED，不向上抛（避免打坏 3503/3504 伴生调用方）
+        String requestJson = null;
         try {
-            ResultBody body = inv3502Invoker.invoke(ctx.busNo(), input, buildInvokeContext());
+            Inv3502Input input = InvPlatformInputAssembler.assemble3502(line);
+            requestJson = JSON.toJSONString(input);
+            ResultBody body = inv3502Invoker.invoke(
+                ctx.busNo(), input, buildInvokeContext(operatorId, request.getOperatorName()));
             YbInvUpload saved = uploadDomainService.upsertUploadRecord(
                 existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_CHANGE, line, sourceType,
                 request.getSourceId(), ChsInventoryConstants.UPLOAD_STATUS_SUCCESS,
@@ -570,14 +706,14 @@ public class InventoryThirdPartyUploadOrchestrator {
     }
 
     /**
-     * 处理单行 3504 商品采购退货上报。
+     * 处理单行 3504 商品采购退货上报；平台 SUCCESS（含幂等）后伴生 3502（109，批次=退供单号）。
      *
-     * @param request    3504 上报命令
+     * @param request    3504 上报命令（{@code inboundBusNo} 实际为退供单号）
      * @param line       采购退货行
      * @param ctx        契约上下文
      * @param tenantId   租户 ID
      * @param operatorId 操作人 ID
-     * @return 单行上报结果
+     * @return 单行 3504 上报结果（不含伴生 3502 状态）
      */
     private InvUpload3504Result processPurchaseReturnLine3504(
         InvUpload3504Command request,
@@ -590,6 +726,7 @@ public class InventoryThirdPartyUploadOrchestrator {
         result.setSourceLineId(line.getSourceLineId());
         result.setFixmedinsBchno(line.getFixmedinsBchno());
 
+        // Pre：未对码不调平台，仅记 SKIPPED（不落 request_json）
         if (inventoryProperties.isSkipWithoutYbNo()
             && (ChsInventoryConstants.TRACE_POLICY_NO_YB_NO.equals(line.getTracePolicy())
                 || isEmpty(line.getMedListCodg()))) {
@@ -602,19 +739,22 @@ public class InventoryThirdPartyUploadOrchestrator {
 
         Optional<YbInvUpload> existing = uploadDomainService.findExistingLine(
             tenantId, ChsInfNo.INVENTORY_PURCHASE_RETURN, line.getFixmedinsBchno(), line.getSourceLineId());
+        // 幂等：3504 已成功仍尝试伴生 3502（批次=退供单号）
         if (existing.isPresent()
             && ChsInventoryConstants.UPLOAD_STATUS_SUCCESS.equals(existing.get().getUploadStatus())) {
             YbInvUpload row = existing.get();
+            followUpCompanion3502AfterPurchaseReturn(request, line, ctx, tenantId, operatorId);
             return result.setUploadId(row.getId()).setUploadStatus(row.getUploadStatus())
                 .setPlatformMsg(row.getPlatformMsg());
         }
 
-        String traceFailureMessage = uploadTraceLineSupport.resolveUploadTraceFailureMessage(line, false);
+        String traceFailureMessage = uploadTraceLineSupport.resolveUploadTraceFailureMessage(line, false, null, null);
         if (isNotEmpty(traceFailureMessage)) {
+            String draftRequestJson = tryAssembleRequestJson(() -> InvPlatformInputAssembler.assemble3504(line));
             YbInvUpload failed = uploadDomainService.upsertUploadRecord(
                 existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_PURCHASE_RETURN, line, ChsInventoryConstants.SOURCE_TYPE_INBOUND,
                 request.getSourceId(), ChsInventoryConstants.UPLOAD_STATUS_FAILED,
-                ChsInventoryConstants.PLATFORM_RET_RSLT_FAILED, traceFailureMessage, null, null, operatorId, tenantId, true);
+                ChsInventoryConstants.PLATFORM_RET_RSLT_FAILED, traceFailureMessage, draftRequestJson, null, operatorId, tenantId, true);
             return result.setUploadId(failed.getId()).setUploadStatus(failed.getUploadStatus())
                 .setPlatformMsg(failed.getPlatformMsg());
         }
@@ -622,12 +762,13 @@ public class InventoryThirdPartyUploadOrchestrator {
         Inv3504Input input = InvPlatformInputAssembler.assemble3504(line);
         String requestJson = JSON.toJSONString(input);
         try {
-            ResultBody body = inv3504Invoker.invoke(ctx.busNo(), input, buildInvokeContext());
+            ResultBody body = inv3504Invoker.invoke(
+                ctx.busNo(), input, buildInvokeContext(operatorId, request.getOperatorName()));
             YbInvUpload saved = uploadDomainService.upsertUploadRecord(
                 existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_PURCHASE_RETURN, line, ChsInventoryConstants.SOURCE_TYPE_INBOUND,
                 request.getSourceId(), ChsInventoryConstants.UPLOAD_STATUS_SUCCESS,
                 ChsInventoryConstants.PLATFORM_RET_RSLT_SUCCESS, null, requestJson, JSON.toJSONString(body), operatorId, tenantId, false);
-            return result.setUploadId(saved.getId()).setUploadStatus(saved.getUploadStatus());
+            result.setUploadId(saved.getId()).setUploadStatus(saved.getUploadStatus());
         } catch (RuntimeException ex) {
             YbInvUpload failed = uploadDomainService.upsertUploadRecord(
                 existing.orElse(null), ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_PURCHASE_RETURN, line, ChsInventoryConstants.SOURCE_TYPE_INBOUND,
@@ -635,6 +776,187 @@ public class InventoryThirdPartyUploadOrchestrator {
                 ChsInventoryConstants.PLATFORM_RET_RSLT_FAILED, ex.getMessage(), requestJson, null, operatorId, tenantId, true);
             return result.setUploadId(failed.getId()).setUploadStatus(failed.getUploadStatus())
                 .setPlatformMsg(ex.getMessage());
+        }
+        // Cmd：3504 已 SUCCESS——伴生须在 try 外，避免 3502 异常把 3504 回写成 FAILED
+        followUpCompanion3502AfterPurchaseReturn(request, line, ctx, tenantId, operatorId);
+        return result;
+    }
+
+    /**
+     * 3504 成功后组装并以退供单号为批次出站伴生 3502。
+     *
+     * @param request    3504 命令（inboundBusNo=退供单号）
+     * @param line       3504 源行
+     * @param ctx        契约上下文
+     * @param tenantId   租户
+     * @param operatorId 操作人
+     */
+    private void followUpCompanion3502AfterPurchaseReturn(
+        InvUpload3504Command request,
+        InvUploadLineCommand line,
+        ContractContext ctx,
+        Long tenantId,
+        Long operatorId
+    ) {
+        // 伴生 3502 批次取退供单号，不用 3504 行上的原进货批次
+        String returnBchno = InventoryUploadBatchNoAssembler.buildFixmedinsBchno(request.getInboundBusNo());
+        followUpCompanion3502AfterPurchase(
+            request.getContractBusNo(),
+            request.getContractId(),
+            request.getSourceId(),
+            request.getOperatorName(),
+            InventoryPurchaseCompanion3502LineAssembler.fromPurchaseReturn(line, returnBchno),
+            ctx,
+            tenantId,
+            operatorId);
+    }
+
+    /**
+     * 采购/退供平台成功后出站伴生 3502；失败仅落 3502 审计，不抛回调用方。
+     *
+     * @param contractBusNo 契约编号
+     * @param contractId    契约主键
+     * @param sourceId      来源单据主键
+     * @param operatorName  操作人姓名
+     * @param line3502      已组装的伴生 3502 行
+     * @param ctx           契约上下文
+     * @param tenantId      租户
+     * @param operatorId    操作人主键
+     */
+    private void followUpCompanion3502AfterPurchase(
+        String contractBusNo,
+        Long contractId,
+        Long sourceId,
+        String operatorName,
+        InvUploadLineCommand line3502,
+        ContractContext ctx,
+        Long tenantId,
+        Long operatorId
+    ) {
+        runPaired3502(
+            contractBusNo,
+            contractId,
+            sourceId,
+            operatorName,
+            line3502,
+            ctx,
+            tenantId,
+            operatorId,
+            ChsInventoryConstants.SOURCE_TYPE_INBOUND);
+    }
+
+    /**
+     * 3505 出站前：先试上报 3502 其他出库(107)；成败由调用方忽略，仅作库存配对尽力而为。
+     *
+     * @param request    3505 命令
+     * @param line       销售行
+     * @param ctx        契约上下文
+     * @param tenantId   租户
+     * @param operatorId 操作人
+     * @param sourceType 与 3505 相同的 source_type
+     * @return 3502 SUCCESS 时 true；组装失败或平台失败时 false（调用方仍继续 3505）
+     */
+    private boolean uploadPrecedingSaleOutbound3502(
+        InvUpload3505Command request,
+        InvUploadLineCommand line,
+        ContractContext ctx,
+        Long tenantId,
+        Long operatorId,
+        String sourceType
+    ) {
+        return runPaired3502(
+            request.getContractBusNo(),
+            request.getContractId(),
+            request.getSourceId(),
+            request.getOperatorName(),
+            InventorySaleCompanion3502LineAssembler.fromSaleOutbound(line),
+            ctx,
+            tenantId,
+            operatorId,
+            sourceType);
+    }
+
+    /**
+     * 3506 SUCCESS 后伴生 3502 其他入库(106，批次=退药单号)；失败不回写 3506。
+     *
+     * @param request    3506 命令
+     * @param line       退药行
+     * @param ctx        契约上下文
+     * @param tenantId   租户
+     * @param operatorId 操作人
+     * @param sourceType 与 3506 相同的 source_type
+     */
+    private void followUpCompanion3502AfterSaleReturn(
+        InvUpload3506Command request,
+        InvUploadLineCommand line,
+        ContractContext ctx,
+        Long tenantId,
+        Long operatorId,
+        String sourceType
+    ) {
+        runPaired3502(
+            request.getContractBusNo(),
+            request.getContractId(),
+            request.getSourceId(),
+            request.getOperatorName(),
+            InventorySaleCompanion3502LineAssembler.fromSaleReturnInbound(line),
+            ctx,
+            tenantId,
+            operatorId,
+            sourceType);
+    }
+
+    /**
+     * 配对/前置 3502 出站：行空返回 false；异常吞掉返回 false；SUCCESS 返回 true。
+     *
+     * <p>供采购伴生、销售前置出库、退药后置入库共用，保证 3502 失败不冒泡打坏 3503–3506。</p>
+     *
+     * @param contractBusNo 契约编号
+     * @param contractId    契约主键
+     * @param sourceId      来源单据主键
+     * @param operatorName  操作人姓名
+     * @param line3502      已组装 3502 行
+     * @param ctx           契约上下文
+     * @param tenantId      租户
+     * @param operatorId    操作人主键
+     * @param sourceType    yb_inv_upload.source_type
+     * @return 平台 SUCCESS 时 true
+     */
+    private boolean runPaired3502(
+        String contractBusNo,
+        Long contractId,
+        Long sourceId,
+        String operatorName,
+        InvUploadLineCommand line3502,
+        ContractContext ctx,
+        Long tenantId,
+        Long operatorId,
+        String sourceType
+    ) {
+        // 无数量/无批次等：视为未成功，调用方决定是否继续后续 infno
+        if (line3502 == null) {
+            return false;
+        }
+        // 经办人回落：行未填时用异步捕获的操作人姓名
+        if (isEmpty(line3502.getInvChgOpterName()) && isNotEmpty(operatorName)) {
+            line3502.setInvChgOpterName(operatorName);
+        }
+        InvUpload3502Command companion = new InvUpload3502Command()
+            .setContractBusNo(contractBusNo)
+            .setContractId(contractId)
+            .setSourceId(sourceId)
+            .setSourceType(sourceType)
+            .setOperatorId(operatorId)
+            .setOperatorName(operatorName)
+            .setLines(List.of(line3502));
+        try {
+            InvUpload3502Result r3502 = processInvChangeLine3502(
+                companion, line3502, ctx, tenantId, operatorId, sourceType);
+            return r3502 != null
+                && ChsInventoryConstants.UPLOAD_STATUS_SUCCESS.equals(r3502.getUploadStatus());
+        } catch (RuntimeException ignored) {
+            // 3502 失败已尽量落 FAILED；此处仅防未捕获异常冒泡
+            return false;
         }
     }
 
@@ -644,31 +966,33 @@ public class InventoryThirdPartyUploadOrchestrator {
      * @param contractBusNo 契约业务编号
      * @param infno         接口编号
      * @param input         平台入参
+     * @param operatorId    已解析操作人主键（可来自异步命令）
+     * @param operatorName  操作人姓名；可空
      * @return 平台上报结果
      */
-    private PlatformUploadOutcome invokeSalePlatform(String contractBusNo, String infno, Object input) {
+    private PlatformUploadOutcome invokeSalePlatform(
+        String contractBusNo,
+        String infno,
+        Object input,
+        Long operatorId,
+        String operatorName
+    ) {
         String requestJson = JSON.toJSONString(input);
         try {
             ResultBody body;
+            InvokeContext invokeContext = buildInvokeContext(operatorId, operatorName);
+            // 3505 / 3506 分 Invoker
             if (ChsInfNo.INVENTORY_SALE.equals(infno)) {
-                body = inv3505Invoker.invoke(contractBusNo, (Inv3505Input) input, buildInvokeContext());
+                body = inv3505Invoker.invoke(contractBusNo, (Inv3505Input) input, invokeContext);
             } else {
-                body = inv3506Invoker.invoke(contractBusNo, (Inv3506Input) input, buildInvokeContext());
+                body = inv3506Invoker.invoke(contractBusNo, (Inv3506Input) input, invokeContext);
             }
             JSONObject output = parseOutputObject(body);
-            JSONObject platformResult = output.getJSONObject("result");
-            if (platformResult == null) {
-                platformResult = output;
-            }
-            String retRslt = readPlatformField(platformResult, "retRslt", "ret_rslt");
-            String msgRslt = readPlatformField(platformResult, "msgRslt", "msg_rslt");
-            String uploadStatus;
-            if (ChsInventoryConstants.PLATFORM_RET_RSLT_SUCCESS.equals(retRslt)) {
-                uploadStatus = ChsInventoryConstants.UPLOAD_STATUS_SUCCESS;
-            } else {
-                uploadStatus = ChsInventoryConstants.UPLOAD_STATUS_FAILED;
-            }
-            return PlatformUploadOutcome.success(uploadStatus, retRslt, msgRslt, requestJson, JSON.toJSONString(body));
+            // 省本级可能 output={} 无 ret_rslt；协议成功则落 SUCCESS
+            InvPlatformOutputParser.SaleUploadBizResult biz =
+                InvPlatformOutputParser.resolveSaleUploadBizResult(output);
+            return PlatformUploadOutcome.success(
+                biz.uploadStatus(), biz.retRslt(), biz.msgRslt(), requestJson, JSON.toJSONString(body));
         } catch (RuntimeException ex) {
             return PlatformUploadOutcome.failure(ex.getMessage(), requestJson);
         }
@@ -725,35 +1049,6 @@ public class InventoryThirdPartyUploadOrchestrator {
     }
 
     /**
-     * 判断接口是否需要解析平台 retRslt 业务结果码。
-     *
-     * @param infno 接口编号
-     * @return 3505/3506 时返回 true
-     */
-    private static boolean requiresPlatformRetRslt(String infno) {
-        return ChsInfNo.INVENTORY_SALE.equals(infno) || ChsInfNo.INVENTORY_SALE_RETURN.equals(infno);
-    }
-
-    /**
-     * 从平台结果 JSON 读取字段（兼容驼峰与下划线命名）。
-     *
-     * @param platformResult 平台结果 JSON
-     * @param camelKey       驼峰字段名
-     * @param snakeKey       下划线字段名
-     * @return 字段值
-     */
-    private static String readPlatformField(JSONObject platformResult, String camelKey, String snakeKey) {
-        if (platformResult == null) {
-            return null;
-        }
-        String value = platformResult.getString(camelKey);
-        if (isEmpty(value)) {
-            value = platformResult.getString(snakeKey);
-        }
-        return value;
-    }
-
-    /**
      * 解析契约上下文（契约快照、业务编号及配置）。
      *
      * @param contractBusNo 契约业务编号
@@ -768,19 +1063,61 @@ public class InventoryThirdPartyUploadOrchestrator {
     }
 
     /**
+     * 解析操作人：命令已带则用命令（异步/发票同构）；否则回落当前登录态（运维台同步）。
+     *
+     * @param preferredOperatorId 命令上的操作人主键；可空
+     * @return 非空操作人主键
+     */
+    private Long resolveOperatorId(Long preferredOperatorId) {
+        // 异步路径：调用线程已写入
+        if (preferredOperatorId != null) {
+            return preferredOperatorId;
+        }
+        // 同步运维台：仍从 SecurityContext 取
+        return currentOperatorResolver.requireOperatorId("请先登录");
+    }
+
+    /**
      * 构建平台调用上下文（操作人 ID 与姓名）。
      *
+     * @param operatorId   已解析操作人主键；可空则再 require
+     * @param operatorName 操作人姓名；可空则签到解析回落 admin/登录名
      * @return 调用上下文
      */
-    private InvokeContext buildInvokeContext() {
-        Long operatorId = currentOperatorResolver.requireOperatorId("请先登录");
-        InvokeContext partial = InvokeContext.builder()
-            .operatorId(String.valueOf(operatorId))
-            .build();
+    private InvokeContext buildInvokeContext(Long operatorId, String operatorName) {
+        Long resolvedOperatorId = resolveOperatorId(operatorId);
+        InvokeContext.InvokeContextBuilder partialBuilder = InvokeContext.builder()
+            .operatorId(String.valueOf(resolvedOperatorId));
+        // 异步路径带入姓名，避免异步线程无登录名时误用默认 admin
+        if (isNotEmpty(operatorName)) {
+            partialBuilder.operatorName(operatorName.trim());
+        }
+        InvokeContext partial = partialBuilder.build();
         return InvokeContext.builder()
             .operatorId(signCredentialResolver.resolveOperatorId(partial))
             .operatorName(signCredentialResolver.resolveOperatorName(partial))
             .build();
+    }
+
+    /**
+     * 出站前校验失败时尽量组装平台 input 草稿 JSON，供运维台回显编辑。
+     *
+     * @param assembler 组装器（如 assemble3505）
+     * @return 草稿 JSON；组装异常时 null
+     */
+    private static String tryAssembleRequestJson(java.util.function.Supplier<Object> assembler) {
+        if (assembler == null) {
+            return null;
+        }
+        try {
+            Object input = assembler.get();
+            if (input == null) {
+                return null;
+            }
+            return JSON.toJSONString(input);
+        } catch (RuntimeException ex) {
+            return null;
+        }
     }
 
     /** 契约上下文（契约快照、业务编号、契约配置）。 */

@@ -4,6 +4,7 @@
  */
 package com.openhis.health.application.inpatient.nursestation.temperaturesheet.support;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.util.StringUtils;
@@ -11,6 +12,8 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.DateTimeParseException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -18,7 +21,7 @@ import java.util.List;
 /**
  * 体温单记录时点与三测槽辅助（AS-IP-NUR-007 · BR-IP-TMP-003）。
  *
- * <p>固定 6 槽 {@code 02/06/10/14/18/22}；{@code recorded_at = recordDate + timeSlot 整点}。</p>
+ * <p>图表仍按固定 6 槽 {@code 02/06/10/14/18/22} 分列；保存允许 {@code HH:mm} 或历史槽 code。
  */
 @Component
 public class TemperatureSheetRecordedAtResolver {
@@ -28,33 +31,37 @@ public class TemperatureSheetRecordedAtResolver {
         Arrays.asList("02", "06", "10", "14", "18", "22"));
 
     /**
-     * 将业务日期与时点槽组装为记录时点。
+     * 将业务日期与时点组装为记录时点。
      *
      * @param recordDate 业务日期
-     * @param timeSlot   时点槽（02～22）
-     * @return 本地日期时间（整点）
-     * @throws BusinessException 槽非法
+     * @param timeSlot   历史槽 code（02～22）或 {@code HH:mm}
+     * @return 本地日期时间（可含分钟）
+     * @throws BusinessException 时点非法
      */
     public LocalDateTime toRecordedAt(LocalDate recordDate, String timeSlot) {
-        // Gate：日期与时点槽均必填
+        // Gate：日期与时点均必填
         if (recordDate == null || StringUtils.isEmpty(timeSlot)) {
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_TMP_201,
                 "请检查日期与测量时点");
         }
-        String normalizedSlot = timeSlot.trim();
-        // 业务分支：仅允许固定 6 槽，与老系统三测单口径一致
-        if (!TIME_SLOTS.contains(normalizedSlot)) {
+        String normalized = timeSlot.trim();
+        // 业务分支：兼容历史固定 6 槽 code（整点）
+        if (TIME_SLOTS.contains(normalized)) {
+            int hour = Integer.parseInt(normalized);
+            return recordDate.atTime(hour, 0);
+        }
+        LocalTime clock = parseClockTime(normalized);
+        if (clock == null) {
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_TMP_201,
                 "请检查日期与测量时点");
         }
-        int hour = Integer.parseInt(normalizedSlot);
-        return recordDate.atTime(hour, 0);
+        return recordDate.atTime(clock.getHour(), clock.getMinute(), 0);
     }
 
     /**
-     * 从记录时点反推时点槽字符串。
+     * 从记录时点反推图表三测槽（按测量区间归桶）。
      *
      * @param recordedAt 记录时点
      * @return 槽 code；无法匹配时返回 {@code null}
@@ -63,21 +70,26 @@ public class TemperatureSheetRecordedAtResolver {
         if (recordedAt == null) {
             return null;
         }
-        // 业务分支：仅整点且分钟为 0 的时点参与槽匹配
-        if (recordedAt.getMinute() != 0 || recordedAt.getSecond() != 0 || recordedAt.getNano() != 0) {
+        return resolveChartTimeSlotFromHour(recordedAt.getHour());
+    }
+
+    /**
+     * 将记录时点格式化为 {@code HH:mm}（录入回显用）。
+     *
+     * @param recordedAt 记录时点
+     * @return 时分；空时返回 {@code null}
+     */
+    public String formatRecordTimeHm(LocalDateTime recordedAt) {
+        if (recordedAt == null) {
             return null;
         }
-        String slot = String.format("%02d", recordedAt.getHour());
-        if (TIME_SLOTS.contains(slot)) {
-            return slot;
-        }
-        return null;
+        return recordedAt.toLocalTime().format(GeneralSharedConstants.TIME_HH_MM_FORMATTER);
     }
 
     /**
      * 返回当前槽在固定序列中的下一槽（最后一槽返回 {@code null}）。
      *
-     * @param currentTimeSlot 当前槽
+     * @param currentTimeSlot 当前槽 code 或 {@code HH:mm}
      * @return 下一槽或 {@code null}
      */
     public String resolveNextTimeSlot(String currentTimeSlot) {
@@ -85,9 +97,18 @@ public class TemperatureSheetRecordedAtResolver {
             return null;
         }
         String normalized = currentTimeSlot.trim();
+        String chartSlot = normalized;
+        // 业务分支：若传入时分，先归到图表槽再取下一槽
+        if (!TIME_SLOTS.contains(normalized)) {
+            LocalTime clock = parseClockTime(normalized);
+            if (clock == null) {
+                return null;
+            }
+            chartSlot = resolveChartTimeSlotFromHour(clock.getHour());
+        }
         for (int index = 0; index < TIME_SLOTS.size(); index++) {
-            if (TIME_SLOTS.get(index).equals(normalized)) {
-                // 业务分支：22:00 为末槽，前端不再自动聚焦
+            if (TIME_SLOTS.get(index).equals(chartSlot)) {
+                // 业务分支：22 槽为末槽，前端不再自动聚焦
                 if (index + 1 >= TIME_SLOTS.size()) {
                     return null;
                 }
@@ -117,5 +138,50 @@ public class TemperatureSheetRecordedAtResolver {
         throw new BusinessException(
             InpatientNurseStationConstants.EX_IP_TMP_201,
             "请检查日期与测量时点");
+    }
+
+    /**
+     * 小时映射到三测图表槽（与前端测量区间一致）。
+     *
+     * @param hour 小时 0～23
+     * @return 槽 code
+     */
+    public String resolveChartTimeSlotFromHour(int hour) {
+        if (hour >= 2 && hour <= 5) {
+            return "02";
+        }
+        if (hour >= 6 && hour <= 9) {
+            return "06";
+        }
+        if (hour >= 10 && hour <= 13) {
+            return "10";
+        }
+        if (hour >= 14 && hour <= 17) {
+            return "14";
+        }
+        if (hour >= 18 && hour <= 21) {
+            return "18";
+        }
+        return "22";
+    }
+
+    /**
+     * 解析 {@code HH:mm}（兼容误传 {@code HH:mm:ss}，秒忽略）。
+     *
+     * @param text 时点文本
+     * @return 本地时间；非法返回 {@code null}
+     */
+    private LocalTime parseClockTime(String text) {
+        try {
+            return LocalTime.parse(text, GeneralSharedConstants.TIME_HH_MM_FORMATTER);
+        } catch (DateTimeParseException ignored) {
+            // 继续尝试 HH:mm:ss
+        }
+        try {
+            LocalTime withSeconds = LocalTime.parse(text, GeneralSharedConstants.TIME_HH_MM_SS_FORMATTER);
+            return LocalTime.of(withSeconds.getHour(), withSeconds.getMinute());
+        } catch (DateTimeParseException ignored) {
+            return null;
+        }
     }
 }

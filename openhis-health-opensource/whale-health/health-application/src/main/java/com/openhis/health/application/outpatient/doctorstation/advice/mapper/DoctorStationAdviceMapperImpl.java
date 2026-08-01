@@ -28,6 +28,7 @@ import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.ServiceRequestCategoryConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.TherapyType;
@@ -126,6 +127,8 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
         if (request.getExcludeMedicationCategoryCodes() != null && !request.getExcludeMedicationCategoryCodes().isEmpty()) {
             q.setExcludeMedicationCategoryCodes(new ArrayList<>(request.getExcludeMedicationCategoryCodes()));
         }
+        // Pre：门诊目录恒排除嘱托（category_code=52；BR-ORD-032 / BR-IP-ORD-028②）
+        q.setExcludeCategoryCodes(List.of(ServiceRequestCategoryConstants.SERVICE_CATEGORY_ENTRUST));
         if (StringUtils.isNotEmpty(request.getCategoryEnum())) {
             q.setCategoryCode(ServiceApplyFormOrchestrator.resolveApplyFormCategoryCode(request.getCategoryEnum()));
         }
@@ -177,8 +180,7 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
         cmd.setDoseUnitCode(line.getMedicationPayload().getDoseUnitCode());
         cmd.setDispensePerDuration(line.getMedicationPayload().getDispensePerDuration());
         cmd.setSkinTestFlag(line.getMedicationPayload().getSkinTestFlag());
-        cmd.setConditionDefinitionId(line.getMedicationPayload().getConditionDefinitionId());
-        cmd.setEncounterDiagnosisId(line.getMedicationPayload().getEncounterDiagnosisId());
+        cmd.setEncounterDiagnosisIds(line.getMedicationPayload().getEncounterDiagnosisIds());
         cmd.setContractId(line.getMedicationPayload().getContractId());
         return cmd;
     }
@@ -213,8 +215,7 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
         cmd.setDoseUnitCode(line.getMedicationPayload().getDoseUnitCode());
         cmd.setDispensePerDuration(line.getMedicationPayload().getDispensePerDuration());
         cmd.setSkinTestFlag(line.getMedicationPayload().getSkinTestFlag());
-        cmd.setConditionDefinitionId(line.getMedicationPayload().getConditionDefinitionId());
-        cmd.setEncounterDiagnosisId(line.getMedicationPayload().getEncounterDiagnosisId());
+        cmd.setEncounterDiagnosisIds(line.getMedicationPayload().getEncounterDiagnosisIds());
         cmd.setContractId(line.getMedicationPayload().getContractId());
         return cmd;
     }
@@ -267,8 +268,15 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
         item.setPerformLocation(line.getDevicePayload().getPerformOrgId());
         item.setGenerateSourceEnum(GenerateSource.DOCTOR_PRESCRIPTION.getCode());
         item.setSortNumber(line.getSortNumber());
-        item.setConditionDefinitionId(line.getDevicePayload().getConditionDefinitionId());
-        item.setEncounterDiagnosisId(line.getDevicePayload().getEncounterDiagnosisId());
+        item.setEncounterDiagnosisIds(line.getDevicePayload().getEncounterDiagnosisIds());
+        // Pre：用法绑定派生耗材落 based_on + 成组 package_id（BR-ORD-031）。
+        if (StringUtils.isNotEmpty(line.getBasedOnTable()) && line.getBasedOnId() != null) {
+            item.setBasedOnTable(line.getBasedOnTable().trim());
+            item.setBasedOnId(line.getBasedOnId());
+        }
+        if (line.getPackageId() != null) {
+            item.setPackageId(line.getPackageId());
+        }
         cmd.setItem(item);
         return cmd;
     }
@@ -294,8 +302,7 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
             item.setQuantity(line.getDevicePayload().getQuantity());
             item.setUnitCode(line.getDevicePayload().getUnitCode());
             item.setPerformLocation(line.getDevicePayload().getPerformOrgId());
-            item.setConditionDefinitionId(line.getDevicePayload().getConditionDefinitionId());
-            item.setEncounterDiagnosisId(line.getDevicePayload().getEncounterDiagnosisId());
+            item.setEncounterDiagnosisIds(line.getDevicePayload().getEncounterDiagnosisIds());
         }
         item.setSortNumber(line.getSortNumber());
         cmd.setItem(item);
@@ -363,8 +370,12 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
         item.setGenerateSourceEnum(GenerateSource.DOCTOR_PRESCRIPTION.getCode());
         item.setNote(servicePayload.getChildOverridesJson());
         item.setSortNumber(line.getSortNumber());
-        item.setConditionDefinitionId(servicePayload.getConditionDefinitionId());
-        item.setEncounterDiagnosisId(servicePayload.getEncounterDiagnosisId());
+        item.setEncounterDiagnosisIds(servicePayload.getEncounterDiagnosisIds());
+        // Pre：用法/诊疗绑定派生 SR 落 based_on（成组可任取组内药嘱 id；BR-ORD-031）。
+        if (StringUtils.isNotEmpty(line.getBasedOnTable()) && line.getBasedOnId() != null) {
+            item.setBasedOnTable(line.getBasedOnTable().trim());
+            item.setBasedOnId(line.getBasedOnId());
+        }
         cmd.setItem(item);
         return cmd;
     }
@@ -389,8 +400,7 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
         if (line.getServicePayload() != null) {
             SaveServiceAdviceDraftLinePayload servicePayload = line.getServicePayload();
             item.setRemark(servicePayload.getChildOverridesJson());
-            item.setConditionDefinitionId(servicePayload.getConditionDefinitionId());
-            item.setEncounterDiagnosisId(servicePayload.getEncounterDiagnosisId());
+            item.setEncounterDiagnosisIds(servicePayload.getEncounterDiagnosisIds());
             item.setOrgId(servicePayload.getPerformOrgId());
             BigDecimal quantity = ServiceAdviceDraftCommandHelper.resolveQuantityForModify(
                 servicePayload.getQuantity(), servicePayload.getChildOverridesJson());

@@ -24,7 +24,6 @@ import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.share.enums.AdministrativeGender;
-import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -163,7 +162,8 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
         query.setHouseId(request.getHouseId());
         query.setNurseStationTaskFilter(request.getNurseStationTaskFilter());
         query.setNurseStationExecutionDate(request.getNurseStationExecutionDate());
-        query.setNurseStationStatusFilter(request.getNurseStationStatusFilter());
+        // 列表状态筛选已废止，始终走默认在院并集。
+        query.setNurseStationStatusFilter(null);
         if (managedWardIds != null && !managedWardIds.isEmpty()) {
             query.setManagedWardIds(managedWardIds);
         }
@@ -242,6 +242,10 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
         dto.setBedName(firstNonBlank(row.getBedName(), overlayBedName));
         dto.setOrganizationId(row.getOrganizationId());
         dto.setOrganizationName(firstNonBlank(row.getOrganizationName(), overlayOrgName));
+        // 费用性质：overlay 由账户优先合同号解析，禁止用科室名冒充
+        if (displayOverlay != null) {
+            dto.setContractDisplay(displayOverlay.getContractDisplay());
+        }
         dto.setPriorityEnum(priorityEnum);
         dto.setStartTime(row.getStartTime());
         // 入科时间：读模型未单独投影时与入院时间同源，供详情/表单回显。
@@ -271,19 +275,7 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
             admissionPrimaryDiagnosisAssembler.joinDiagnosisDisplayLines(diagnosisLines));
         dto.setPinyinCode(enrichmentPinyin);
         dto.setWubiCode(enrichmentWubi);
-        // 已出院结算列表行展示召回入口（BR-IP-NUR-013）。
-        dto.setRecallEnabled(this.resolveRecallEnabled(row.getStatusEnum()));
         return dto;
-    }
-
-    /**
-     * 判断是否展示出院召回行操作（BR-IP-NUR-013）。
-     *
-     * @param statusEnum 就诊状态 code
-     * @return 仅 {@code DISCHARGED}（已清床离院）时为 true；{@code COMPLETED} 须收银台反结
-     */
-    private boolean resolveRecallEnabled(String statusEnum) {
-        return EncounterStatus.DISCHARGED.getCode().equals(statusEnum);
     }
 
     /**

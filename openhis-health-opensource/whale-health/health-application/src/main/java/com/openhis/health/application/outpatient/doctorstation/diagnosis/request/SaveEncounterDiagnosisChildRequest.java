@@ -20,14 +20,8 @@ import lombok.experimental.Accessors;
 @Schema(description = "医生站-就诊诊断保存子项")
 public class SaveEncounterDiagnosisChildRequest {
 
-    /** 诊断事实标识；空=新增。 */
-    @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "诊断事实标识；空=新增")
-    private Long conditionId;
-
-    /** 就诊诊断关联主键；空表示新增关联。 */
-    @JsonSerialize(using = ToStringSerializer.class)
     /** 就诊诊断关联标识；空=新增。 */
+    @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊诊断关联标识；空=新增")
     private Long encounterDiagnosisId;
 

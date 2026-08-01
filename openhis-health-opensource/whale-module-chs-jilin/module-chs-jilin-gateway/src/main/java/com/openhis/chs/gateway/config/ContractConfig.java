@@ -28,7 +28,7 @@ public class ContractConfig {
     private String clientId;
     private String fixmedinsCode;
     private String fixmedinsName;
-    /** 医保网关根地址，如 http://ddjk.jlhs.gov.cn:20215（与 path 拼接；若已配完整 URL 则优先用下方 *\_url） */
+    /** 医保网关根地址，如 http://chs-gateway.example:20215（与 path 拼接；若已配完整 URL 则优先用下方 *\_url） */
     private String baseUrl;
     /** OAuth Token 完整地址，如 /auth/oauth/token */
     private String tokenUrl;
@@ -36,7 +36,7 @@ public class ContractConfig {
     private String callServiceUrl;
     /** 文件上传下载完整地址，如 /mbs/fsi/api/fileupload */
     private String fileUploadUrl;
-    /** 读卡服务主机（无协议），如 ddjk.jlhs.gov.cn */
+    /** 读卡服务主机（无协议），如 chs-gateway.example */
     private String cardReaderHost;
     /** 读卡服务端口，如 20215 */
     private Integer cardReaderPort;
@@ -51,4 +51,16 @@ public class ContractConfig {
     /** OpenHIS.Win 读卡插件地址，默认 http://127.0.0.1:5000/api/data/ */
     private String ybPluginUrl;
     private int httpTimeoutMs = 40_000;
+
+    /**
+     * 挂号费（med_type=12）尚无临床诊断时 2203 默认诊断编码；空则用领域默认 {@code Z00.001}。
+     * 配置键：{@code contract.{busNo}.register_fee_default_diag_code}
+     */
+    private String registerFeeDefaultDiagCode;
+
+    /**
+     * 挂号费默认诊断名称；空则用领域默认「一般医学检查」。
+     * 配置键：{@code contract.{busNo}.register_fee_default_diag_name}
+     */
+    private String registerFeeDefaultDiagName;
 }

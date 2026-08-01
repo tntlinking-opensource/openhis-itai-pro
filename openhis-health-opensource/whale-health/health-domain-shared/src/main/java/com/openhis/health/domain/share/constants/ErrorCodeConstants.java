@@ -74,6 +74,10 @@ public interface ErrorCodeConstants {
      * 位置错误码：规则冲突。
      */
     String LOCATION_RULE_CONFLICT = "LOCATION_005";
+    /**
+     * 位置错误码：层级编码（busNo）冲突。
+     */
+    String LOCATION_BUS_NO_CONFLICT = "LOCATION_006";
 
     /**
      * 机构错误码：参数非法。
@@ -95,6 +99,10 @@ public interface ErrorCodeConstants {
      * 机构错误码：规则冲突。
      */
     String ORGANIZATION_RULE_CONFLICT = "ORGANIZATION_005";
+    /**
+     * 机构错误码：层级编码（busNo）冲突。
+     */
+    String ORGANIZATION_BUS_NO_CONFLICT = "ORGANIZATION_006";
 
     /**
      * 医务人员错误码：参数非法。
@@ -380,6 +388,9 @@ public interface ErrorCodeConstants {
      */
     String CASHIER_SETTLEMENT_BUS_NO_CONFLICT = "CASHIER_SETTLEMENT_004";
 
+    /** 交账状态不允许当前写动作（非 SUBMITTED 等）。 */
+    String CASHIER_SETTLEMENT_INVALID_STATUS = "CASHIER_SETTLEMENT_005";
+
     /**
      * 药品发放错误码：参数非法。
      */
@@ -637,9 +648,32 @@ public interface ErrorCodeConstants {
      */
     String WHS_PO_105 = "WHS_PO_105";
     /**
+     * 药库订货单：科室采购申请不可引用（未同意、类型不符或已被未删除订货占用，AS WHS_PO_106 / BR-WHS-PO-012）。
+     */
+    String WHS_PO_106 = "WHS_PO_106";
+    /**
      * 药库订货单：机构上下文缺失或无权限（AS WHS_PO_101）。
      */
     String WHS_PO_101 = "WHS_PO_101";
+
+    /** 科室采购申请单：参数或明细校验失败（AS DEP_CPR_001 / EX-DEP-CPR-001）。 */
+    String DEP_CPR_001 = "DEP_CPR_001";
+    /** 科室采购申请单：状态不允许提交、撤回、同意或驳回（AS DEP_CPR_003 / EX-DEP-CPR-003）。 */
+    String DEP_CPR_003 = "DEP_CPR_003";
+    /** 科室采购申请单：禁止编辑（AS DEP_CPR_004 / EX-DEP-CPR-004）。 */
+    String DEP_CPR_004 = "DEP_CPR_004";
+    /** 科室采购申请单：删除被拒绝（AS DEP_CPR_005 / EX-DEP-CPR-005）。 */
+    String DEP_CPR_005 = "DEP_CPR_005";
+    /** 科室采购申请单：机构上下文缺失或主数据加载失败（AS DEP_CPR_101 / EX-DEP-CPR-101）。 */
+    String DEP_CPR_101 = "DEP_CPR_101";
+    /** 科室采购申请单：列表或选品查询失败（AS DEP_CPR_102 / EX-DEP-CPR-102）。 */
+    String DEP_CPR_102 = "DEP_CPR_102";
+    /** 科室采购申请单：单据不存在或类型不匹配（AS DEP_CPR_103 / EX-DEP-CPR-103）。 */
+    String DEP_CPR_103 = "DEP_CPR_103";
+    /** 科室采购申请单：重复同意（AS DEP_CPR_104）。 */
+    String DEP_CPR_104 = "DEP_CPR_104";
+    /** 科室采购申请单：并发或乐观锁冲突（AS DEP_CPR_105 / EX-DEP-CPR-105）。 */
+    String DEP_CPR_105 = "DEP_CPR_105";
 
     /** 药库进货单：建单或复制校验失败（AS WHS_IN_001）。 */
     String WHS_IN_001 = "WHS_IN_001";
@@ -723,6 +757,55 @@ public interface ErrorCodeConstants {
     String WHS_GL_104 = "WHS_GL_104";
     /** 药库损益单：并发或乐观锁冲突（AS WHS_GL_105）。 */
     String WHS_GL_105 = "WHS_GL_105";
+
+    /** 库存期初：已关闭或业务封锁仍试图写期初（AS EX-BAS-INV-OPN-001）。 */
+    String BAS_INV_OPN_001 = "BAS_INV_OPN_001";
+    /** 库存期初：建单/行字段校验失败（AS EX-BAS-INV-OPN-002）。 */
+    String BAS_INV_OPN_002 = "BAS_INV_OPN_002";
+    /** 库存期初：编辑态非法（AS EX-BAS-INV-OPN-003）。 */
+    String BAS_INV_OPN_003 = "BAS_INV_OPN_003";
+    /** 库存期初：提交审批失败（AS EX-BAS-INV-OPN-004）。 */
+    String BAS_INV_OPN_004 = "BAS_INV_OPN_004";
+    /** 库存期初：撤回审批失败（AS EX-BAS-INV-OPN-005）。 */
+    String BAS_INV_OPN_005 = "BAS_INV_OPN_005";
+    /** 库存期初：同意闸门失败（已关闭/已封锁）（AS EX-BAS-INV-OPN-006）。 */
+    String BAS_INV_OPN_006 = "BAS_INV_OPN_006";
+    /** 库存期初：码已在院等冲突（AS EX-BAS-INV-OPN-007；不再用于码数硬拒）。 */
+    String BAS_INV_OPN_007 = "BAS_INV_OPN_007";
+    /** 库存期初：追溯码单内重复或格式非法（AS EX-BAS-INV-OPN-008）。 */
+    String BAS_INV_OPN_008 = "BAS_INV_OPN_008";
+    /** 库存期初：库存入账失败（AS EX-BAS-INV-OPN-009）。 */
+    String BAS_INV_OPN_009 = "BAS_INV_OPN_009";
+    /** 库存期初：驳回失败（AS EX-BAS-INV-OPN-010）。 */
+    String BAS_INV_OPN_010 = "BAS_INV_OPN_010";
+    /** 库存期初：删除失败（AS EX-BAS-INV-OPN-011）。 */
+    String BAS_INV_OPN_011 = "BAS_INV_OPN_011";
+    /** 库存期初：Excel 整单失败（AS EX-BAS-INV-OPN-012）。 */
+    String BAS_INV_OPN_012 = "BAS_INV_OPN_012";
+    /** 库存期初：关闭失败（AS EX-BAS-INV-OPN-013）。 */
+    String BAS_INV_OPN_013 = "BAS_INV_OPN_013";
+    /** 库存期初：关闭后禁止作废（AS EX-BAS-INV-OPN-014）。 */
+    String BAS_INV_OPN_014 = "BAS_INV_OPN_014";
+    /** 库存期初：作废回滚失败（AS EX-BAS-INV-OPN-015）。 */
+    String BAS_INV_OPN_015 = "BAS_INV_OPN_015";
+    /** 库存期初：复制失败（AS EX-BAS-INV-OPN-016）。 */
+    String BAS_INV_OPN_016 = "BAS_INV_OPN_016";
+    /** 库存期初：同库已有审核中单仍提交（AS EX-BAS-INV-OPN-017）。 */
+    String BAS_INV_OPN_017 = "BAS_INV_OPN_017";
+    /** 库存期初：关闭时仍有审核中单（AS EX-BAS-INV-OPN-018）。 */
+    String BAS_INV_OPN_018 = "BAS_INV_OPN_018";
+    /** 库存期初：提交时无明细行（AS EX-BAS-INV-OPN-019）。 */
+    String BAS_INV_OPN_019 = "BAS_INV_OPN_019";
+    /** 库存期初：页初始化主数据失败（AS EX-BAS-INV-OPN-101）。 */
+    String BAS_INV_OPN_101 = "BAS_INV_OPN_101";
+    /** 库存期初：列表查询失败（AS EX-BAS-INV-OPN-102）。 */
+    String BAS_INV_OPN_102 = "BAS_INV_OPN_102";
+    /** 库存期初：单据不存在或类型不符（AS EX-BAS-INV-OPN-103）。 */
+    String BAS_INV_OPN_103 = "BAS_INV_OPN_103";
+    /** 库存期初：选品检索失败（AS EX-BAS-INV-OPN-104）。 */
+    String BAS_INV_OPN_104 = "BAS_INV_OPN_104";
+    /** 库存期初：模板下载失败（AS EX-BAS-INV-OPN-105）。 */
+    String BAS_INV_OPN_105 = "BAS_INV_OPN_105";
 
     /** 药库调出单：参数或明细校验失败（AS WHS_TR_001）。 */
     String WHS_TR_001 = "WHS_TR_001";
@@ -925,17 +1008,17 @@ public interface ErrorCodeConstants {
     /** 库存明细：并发或乐观锁冲突（AS-SDD §6.2）。 */
     String WHS_DTL_105 = "WHS_DTL_105";
 
-    /** 库房日结：页面初始化失败（AS EX-INV-SET-201）。 */
+    /** 库房期初期末明细：页面初始化失败（AS EX-INV-SET-201）。 */
     String INV_SET_201 = "INV_SET_201";
-    /** 库房日结：未选择库房（AS EX-INV-SET-202）。 */
+    /** 库房期初期末明细：未选择库房（AS EX-INV-SET-202）。 */
     String INV_SET_202 = "INV_SET_202";
-    /** 库房日结：未选择期初备份单号（AS EX-INV-SET-203）。 */
+    /** 库房期初期末明细：未选择期初备份单号（AS EX-INV-SET-203）。 */
     String INV_SET_203 = "INV_SET_203";
-    /** 库房日结：期初备份无该库位数据（AS EX-INV-SET-204）。 */
+    /** 库房期初期末明细：期初备份无该库位数据（AS EX-INV-SET-204）。 */
     String INV_SET_204 = "INV_SET_204";
-    /** 库房日结：查询或导出装配失败（AS EX-INV-SET-205）。 */
+    /** 库房期初期末明细：查询或导出装配失败（AS EX-INV-SET-205）。 */
     String INV_SET_205 = "INV_SET_205";
-    /** 库房日结：无权查看该库房（AS EX-INV-SET-206）。 */
+    /** 库房期初期末明细：无权查看该库房（AS EX-INV-SET-206）。 */
     String INV_SET_206 = "INV_SET_206";
 
     /** 护士工作量：页面初始化失败（AS EX-RPT-NWL-101）。 */
@@ -1498,9 +1581,19 @@ public interface ErrorCodeConstants {
     String SERVICE_DEVICE_TEMPLATE_INVALID_STATUS = "SERVICE_DEVICE_TEMPLATE_003";
 
     /**
-     * 财务审批角色缺失：动账类供应单或调价单 agree/reject 时当前用户无 {@code ROLE_FINANCE_APPROVER} 系统角色。
+     * 财务审批角色缺失：财务审批族供应单或调价单 agree/reject 时当前用户无 {@code ROLE_FINANCE_APPROVER} 系统角色。
      */
     String FINANCE_APPROVAL_ROLE_REQUIRED = "FINANCE_APPROVAL_001";
+
+    /**
+     * 财务审批错误码：筛选参数非法、documentKind/type 非法、缺必填等。
+     */
+    String FINANCE_APPROVAL_INVALID_ARGUMENT = "FINANCE_APPROVAL_002";
+
+    /**
+     * 财务审批错误码：单据不存在或非待审态不可审驳。
+     */
+    String FINANCE_APPROVAL_INVALID_STATUS = "FINANCE_APPROVAL_003";
 
     /**
      * 价格调整错误码：参数非法。
@@ -1578,6 +1671,125 @@ public interface ErrorCodeConstants {
      */
     String CONDITION_DEFINITION_INVALID_STATUS = "CONDITION_DEFINITION_004";
 
+    /** 临床观察定义（OD）错误码：参数非法。 */
+    String OBSERVATION_DEFINITION_INVALID_ARGUMENT = "OBSERVATION_DEFINITION_001";
+    /** 临床观察定义（OD）错误码：资源不存在。 */
+    String OBSERVATION_DEFINITION_NOT_FOUND = "OBSERVATION_DEFINITION_002";
+    /** 临床观察定义（OD）错误码：编码冲突。 */
+    String OBSERVATION_DEFINITION_CODE_CONFLICT = "OBSERVATION_DEFINITION_003";
+    /** 临床观察定义（OD）错误码：状态不允许。 */
+    String OBSERVATION_DEFINITION_INVALID_STATUS = "OBSERVATION_DEFINITION_004";
+    /** 临床观察定义（OD）错误码：分类编码非法。 */
+    String OBSERVATION_DEFINITION_INVALID_CATEGORY = "OBSERVATION_DEFINITION_005";
+
+    /** 临床观察实例错误码：参数非法。 */
+    String OBSERVATION_INVALID_ARGUMENT = "OBSERVATION_001";
+    /** 临床观察实例错误码：资源不存在。 */
+    String OBSERVATION_NOT_FOUND = "OBSERVATION_002";
+    /** 临床观察实例错误码：状态不允许。 */
+    String OBSERVATION_INVALID_STATUS = "OBSERVATION_003";
+    /** 临床观察实例错误码：观察定义已停用。 */
+    String OBSERVATION_DEFINITION_INACTIVE = "OBSERVATION_004";
+    /** 临床观察实例错误码：服务申请不属于当前科室。 */
+    String OBSERVATION_SR_NOT_IN_DEPT = "OBSERVATION_005";
+
+    /** 临床总检报告错误码：参数非法。 */
+    String DIAGNOSTIC_REPORT_INVALID_ARGUMENT = "DIAGNOSTIC_REPORT_001";
+    /** 临床总检报告错误码：资源不存在。 */
+    String DIAGNOSTIC_REPORT_NOT_FOUND = "DIAGNOSTIC_REPORT_002";
+    /** 临床总检报告错误码：状态不允许。 */
+    String DIAGNOSTIC_REPORT_INVALID_STATUS = "DIAGNOSTIC_REPORT_003";
+
+    /** 报告读侧索引错误码：参数非法。 */
+    String DIAGNOSTIC_REPORT_INDEX_INVALID_ARGUMENT = "DIAGNOSTIC_REPORT_INDEX_001";
+
+    /** 总检诊台：分科未完成（AS-PEIS-MAS-001）。 */
+    String DEPT_NOT_COMPLETE = "DEPT_NOT_COMPLETE";
+    /** 总检诊台：已总检定稿不可再改。 */
+    String MASTER_ALREADY_FINAL = "MASTER_ALREADY_FINAL";
+
+    /** 报告打印/发放：总检报告未定稿（AS-PEIS-REP-001/002）。 */
+    String REPORT_NOT_FINAL = "REPORT_NOT_FINAL";
+
+    /** 报告发放错误码：参数非法。 */
+    String PEIS_GRANT_INVALID_ARGUMENT = "PEIS_GRANT_001";
+    /** 报告发放错误码：记录不存在。 */
+    String PEIS_GRANT_NOT_FOUND = "GRANT_NOT_FOUND";
+    /** 报告发放错误码：重复登记。 */
+    String PEIS_GRANT_ALREADY_REGISTERED = "GRANT_ALREADY_REGISTERED";
+    /** 报告发放错误码：状态不可签收/邮寄。 */
+    String PEIS_GRANT_NOT_PENDING = "GRANT_NOT_PENDING";
+    /** 报告发放错误码：已签收不可再打印。 */
+    String PEIS_GRANT_ALREADY_SIGNED = "ALREADY_SIGNED";
+
+    /** 复查管理错误码：参数非法。 */
+    String PEIS_RECHECK_INVALID_ARGUMENT = "PEIS_RECHECK_001";
+    /** 复查管理错误码：任务不存在。 */
+    String PEIS_RECHECK_NOT_FOUND = "PEIS_RECHECK_002";
+    /** 复查管理错误码：已有未关闭复查。 */
+    String PEIS_RECHECK_ALREADY_OPEN = "RECHECK_ALREADY_OPEN";
+    /** 复查管理错误码：状态不允许。 */
+    String PEIS_RECHECK_INVALID_STATUS = "PEIS_RECHECK_003";
+    /** 复查管理错误码：原检未完成/无定稿报告。 */
+    String PEIS_RECHECK_ENCOUNTER_NOT_FINISHED = "ENCOUNTER_NOT_FINISHED";
+
+    /** 项目↔小项绑定（AOL）错误码：参数非法。 */
+    String ACTIVITY_OBSERVATION_LINK_INVALID_ARGUMENT = "ACTIVITY_OBSERVATION_LINK_001";
+    /** 项目↔小项绑定（AOL）错误码：项目 AD 不存在或不可绑定。 */
+    String ACTIVITY_OBSERVATION_LINK_ACTIVITY_NOT_FOUND = "ACTIVITY_OBSERVATION_LINK_002";
+    /** 项目↔小项绑定（AOL）错误码：小项 OD 不存在。 */
+    String ACTIVITY_OBSERVATION_LINK_OD_NOT_FOUND = "ACTIVITY_OBSERVATION_LINK_003";
+    /** 项目↔小项绑定（AOL）错误码：入参小项重复。 */
+    String ACTIVITY_OBSERVATION_LINK_DUPLICATE_OD = "ACTIVITY_OBSERVATION_LINK_004";
+
+    /** PEIS 模块参数错误码：参数非法。 */
+    String PEIS_CONFIG_INVALID_ARGUMENT = "PEIS_CONFIG_001";
+    /** PEIS 模块参数错误码：配置键前缀禁止占用。 */
+    String PEIS_CONFIG_KEY_FORBIDDEN = "PEIS_CONFIG_002";
+    /** PEIS 模块参数错误码：配置键未知或不在白名单。 */
+    String PEIS_CONFIG_KEY_UNKNOWN = "PEIS_CONFIG_003";
+    /** PEIS 模块参数错误码：资源不存在。 */
+    String PEIS_CONFIG_NOT_FOUND = "PEIS_CONFIG_004";
+
+    /** PEIS 常见结果错误码：参数非法。 */
+    String PEIS_COMMON_RESULT_INVALID_ARGUMENT = "PEIS_COMMON_RESULT_001";
+    /** PEIS 常见结果错误码：资源不存在。 */
+    String PEIS_COMMON_RESULT_NOT_FOUND = "PEIS_COMMON_RESULT_002";
+    /** PEIS 常见结果错误码：名称冲突。 */
+    String PEIS_COMMON_RESULT_DISPLAY_CONFLICT = "PEIS_COMMON_RESULT_003";
+
+    /** PEIS 服务申请执行扩展错误码：参数非法。 */
+    String PEIS_SR_EXT_INVALID_ARGUMENT = "PEIS_SR_EXT_001";
+    /** PEIS 服务申请执行扩展错误码：资源不存在。 */
+    String PEIS_SR_EXT_NOT_FOUND = "PEIS_SR_EXT_002";
+
+    /** PEIS 就诊扩展错误码：参数非法。 */
+    String PEIS_ENC_EXT_INVALID_ARGUMENT = "PEIS_ENC_EXT_001";
+    /** PEIS 就诊扩展错误码：资源不存在。 */
+    String PEIS_ENC_EXT_NOT_FOUND = "PEIS_ENC_EXT_002";
+    /** PEIS 就诊扩展错误码：已存在。 */
+    String PEIS_ENC_EXT_ALREADY_EXISTS = "PEIS_ENC_EXT_003";
+
+    /** PEIS 登记错误码：套餐未启用。 */
+    String PEIS_REG_PACKAGE_INACTIVE = "PEIS_REG_001";
+    /** PEIS 登记错误码：患者不存在。 */
+    String PEIS_REG_PATIENT_NOT_FOUND = "PEIS_REG_002";
+    /** PEIS 登记错误码：就诊已在检。 */
+    String PEIS_REG_ENCOUNTER_ALREADY_ACTIVE = "PEIS_REG_003";
+    /** PEIS 登记错误码：参数非法。 */
+    String PEIS_REG_INVALID_ARGUMENT = "PEIS_REG_004";
+    /** PEIS 登记错误码：项目已执行不可减项。 */
+    String PEIS_REG_SR_ALREADY_EXECUTED = "PEIS_REG_005";
+    /** PEIS 登记错误码：就诊状态不允许调整项目。 */
+    String PEIS_REG_ENCOUNTER_STATUS_INVALID = "PEIS_REG_006";
+
+    /** 手术定义错误码：参数非法。 */
+    String PROCEDURE_DEFINITION_INVALID_ARGUMENT = "PROCEDURE_DEFINITION_001";
+    /** 手术定义错误码：资源不存在。 */
+    String PROCEDURE_DEFINITION_NOT_FOUND = "PROCEDURE_DEFINITION_002";
+    /** 手术定义错误码：编码冲突。 */
+    String PROCEDURE_DEFINITION_CODE_CONFLICT = "PROCEDURE_DEFINITION_003";
+
     /**
      * 诊断记录错误码：参数非法。
      */
@@ -1590,6 +1802,26 @@ public interface ErrorCodeConstants {
      * 诊断记录错误码：规则冲突。
      */
     String CONDITION_RULE_CONFLICT = "CONDITION_003";
+
+    /**
+     * 就诊诊断绑定：{@code encounter_diagnosis_ids} 非法（非本就诊、软删、格式错误等）。
+     */
+    String ENCOUNTER_DIAGNOSIS_BINDING_INVALID = "ENC_DX_BIND_001";
+
+    /**
+     * 就诊诊断绑定：普通族与慢病族混绑。
+     */
+    String ENCOUNTER_DIAGNOSIS_BINDING_FAMILY_MIXED = "ENC_DX_BIND_002";
+
+    /**
+     * 就诊诊断绑定：主诊未入选或未置于 ids 串首位。
+     */
+    String ENCOUNTER_DIAGNOSIS_BINDING_PRIMARY_REQUIRED = "ENC_DX_BIND_003";
+
+    /**
+     * 就诊诊断绑定：已被医嘱/账单引用，禁止改内容或删除。
+     */
+    String ENCOUNTER_DIAGNOSIS_BINDING_REFERENCED = "ENC_DX_BIND_004";
 
     /**
      * 执行记录错误码：参数非法。

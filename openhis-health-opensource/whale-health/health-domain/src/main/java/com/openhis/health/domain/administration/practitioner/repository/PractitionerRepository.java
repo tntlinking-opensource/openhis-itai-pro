@@ -10,6 +10,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -57,11 +58,24 @@ public interface PractitionerRepository extends JpaRepository<Practitioner, Long
     List<Practitioner> findAllByUserIdInAndIsDeletedFalse(Collection<Long> userIds);
 
     /**
-     * 按业务号查询。
+     * 按业务号判断是否已占用（含软删，与工号全局唯一约束一致）。
+     *
      * @param busNo 条件
      * @return 查询结果
      */
+    @SkipSoftDeleteFilter
     boolean existsByBusNo(String busNo);
+
+    /**
+     * 查询标准采番格式（{@code PR} + 纯数字）工号的最大数字后缀（含软删）。
+     * <p>用于创建前抬升 {@code whale_sequence}，避免序号落后于库内已有工号时撞号。</p>
+     *
+     * @return 最大后缀；无匹配行时为 {@code null}
+     */
+    @SkipSoftDeleteFilter
+    @Query(value = "SELECT MAX(CAST(substring(bus_no FROM '[0-9]+$') AS BIGINT)) "
+        + "FROM adm_practitioner WHERE bus_no ~ '^PR[0-9]+$'", nativeQuery = true)
+    Long findMaxPrBusNoSuffix();
 
     /**
      * 按业务号查询。

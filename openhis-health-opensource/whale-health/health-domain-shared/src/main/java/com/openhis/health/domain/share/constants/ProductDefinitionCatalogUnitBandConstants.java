@@ -30,4 +30,11 @@ public interface ProductDefinitionCatalogUnitBandConstants {
 
 /** ProductDefinitionCatalogUnitBand 共享常量：dose，值 {@code DOSE}。 */
     String BAND_DOSE = "DOSE";
+
+    /**
+     * 追溯码贴码单位槽（可游离于五类业务单位；同源读模型 {@code trace_unit_code}/{@code trace_unit_ratio}）。
+     *
+     * <p>仅供扫码应扫数换算，不参与进销存开单与定价槽。</p>
+     */
+    String BAND_TRACE = "TRACE";
 }

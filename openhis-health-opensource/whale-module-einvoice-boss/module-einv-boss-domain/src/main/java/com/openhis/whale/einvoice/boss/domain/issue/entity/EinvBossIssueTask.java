@@ -17,8 +17,9 @@ import java.time.LocalDateTime;
  * 异步开票任务实体（表 {@code einv_boss_issue_task}）。
  *
  * <p>每张 invoice 仅允许一条活跃任务（唯一索引 {@code uk_einv_task_invoice_active}）。
- * 由 {@link com.openhis.whale.einvoice.boss.application.internal.issue.BossIssueScheduler} 轮询
- * PENDING/退避到期的 FAILED，{@link com.openhis.whale.einvoice.boss.application.internal.issue.BossIssueWorkerService} 消费。</p>
+ * 入队后由 {@code BossIssueWorkerWakeBridge} 即时唤醒；
+ * {@code BossIssueScheduler} 低频兜底 PENDING/退避到期 FAILED，
+ * {@code BossIssueWorkerService} 消费。</p>
  */
 @Getter
 @Setter

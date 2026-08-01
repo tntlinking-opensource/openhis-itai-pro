@@ -53,4 +53,16 @@ public interface YbClinicPreSettleRepository extends JpaRepository<YbClinicPreSe
      */
     List<YbClinicPreSettle> findAllByEncounterIdInAndTenantIdAndIsDeletedFalseOrderByCreatedAtDesc(
         Collection<Long> encounterIds, Long tenantId);
+
+    /**
+     * 列出指定就诊、契约与状态下的预结算快照（按创建时间升序）。
+     *
+     * @param encounterId 就诊 ID
+     * @param contractId  契约 ID
+     * @param status      快照状态
+     * @param tenantId    租户 ID
+     * @return 预结算快照列表
+     */
+    List<YbClinicPreSettle> findAllByEncounterIdAndContractIdAndStatusAndTenantIdAndIsDeletedFalseOrderByCreatedAtAsc(
+        Long encounterId, Long contractId, String status, Long tenantId);
 }

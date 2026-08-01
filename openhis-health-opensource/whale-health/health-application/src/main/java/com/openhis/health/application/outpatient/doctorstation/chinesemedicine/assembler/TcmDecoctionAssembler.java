@@ -19,6 +19,7 @@ import com.openhis.health.domain.medication.medicationrequest.queries.model.Medi
 import com.openhis.health.domain.share.constants.DoctorStationTcmConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.PriceType;
 import com.openhis.health.domain.share.enums.RequestStatus;
@@ -119,6 +120,54 @@ public class TcmDecoctionAssembler {
         chargeItemDomainService.createDraftChargeItemFromOrder(chargeCmd);
         chargeItemDomainService.planDraftChargeItemsAfterAdviceSigned(
             encounterId, TableNameConstants.WKF_SERVICE_REQUEST, serviceRequestId);
+    }
+
+    /**
+     * 取消代煎费前门控：若同方代煎费用已进入待结算/已结算/退费中，则拒绝。
+     *
+     * @param encounterId    就诊主键
+     * @param prescriptionNo 中药处方号
+     * @throws BusinessException 代煎费已结算或不可取消时
+     */
+    public void assertDecoctionChargeVoidable(Long encounterId, String prescriptionNo) {
+        if (encounterId == null || StringUtils.isEmpty(prescriptionNo)) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "取消代煎费时就诊或处方号不能为空");
+        }
+        Long activityId;
+        try {
+            activityId = requireDecoctionActivityId();
+        } catch (RuntimeException ex) {
+            return;
+        }
+        List<ServiceRequestListModel> decoctionRows =
+            findDecoctionServiceRequests(encounterId, prescriptionNo, activityId);
+        if (decoctionRows.isEmpty()) {
+            return;
+        }
+        List<Long> serviceIds = new ArrayList<>();
+        for (ServiceRequestListModel row : decoctionRows) {
+            if (row != null && row.getId() != null) {
+                serviceIds.add(row.getId());
+            }
+        }
+        if (serviceIds.isEmpty()) {
+            return;
+        }
+        List<ChargeItem> chargeItems = chargeItemQueryService.listByEncounterAndServiceAnchors(
+            encounterId, TableNameConstants.WKF_SERVICE_REQUEST, serviceIds);
+        for (ChargeItem chargeItem : chargeItems) {
+            if (chargeItem == null || Boolean.TRUE.equals(chargeItem.getIsDeleted())) {
+                continue;
+            }
+            String status = StringUtils.trimToEmpty(chargeItem.getStatusEnum());
+            if (ChargeItemStatus.PENDING_SETTLEMENT.getCode().equals(status)
+                || ChargeItemStatus.SETTLED.getCode().equals(status)
+                || ChargeItemStatus.REFUNDING.getCode().equals(status)) {
+                throw new BusinessException(
+                    ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT,
+                    "代煎费已进入收费/结算流程，不能直接取消，请走退费流程");
+            }
+        }
     }
 
     /**
@@ -237,8 +286,7 @@ public class TcmDecoctionAssembler {
         item.setPrescriptionNo(trimToNull(prescriptionNo));
         if (anchorRow != null) {
             // 诊断与执行科室与代表药行对齐，便于护士站/收银展示
-            item.setConditionDefinitionId(anchorRow.getConditionDefinitionId());
-            item.setEncounterDiagnosisId(anchorRow.getEncounterDiagnosisId());
+            item.setEncounterDiagnosisIds(anchorRow.getEncounterDiagnosisIds());
             if (anchorRow.getOrgId() != null) {
                 item.setOrgId(anchorRow.getOrgId());
             }

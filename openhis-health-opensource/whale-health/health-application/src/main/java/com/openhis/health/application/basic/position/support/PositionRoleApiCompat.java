@@ -93,7 +93,11 @@ public final class PositionRoleApiCompat {
     }
 
     /**
-     * 按人员管辖范围（staffScope）推断默认岗位角色 id，供登录/岗位初始化缺省值。
+     * 按人员管辖范围（staffScope）推断默认岗位角色 id。
+     *
+     * <p><strong>已降级</strong>：人员保存写 {@code adm_pr_assign} 须按「勾选角色实际声明的 StaffScope」
+     * 落对应 {@code role_id}，禁止再用本方法把「管理药房→药师 / 管理病区→护士」等能力硬映射到载体岗。
+     * 仅保留给仍依赖旧推断的兼容调用。</p>
      *
      * @param staffScope        {@link RoleStaffScopeConstants} 中的范围码
      * @param whaleRoleLookup   平台角色查表

@@ -8,14 +8,18 @@ import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.MedicationSummarySlipLineQueryModel;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
+import com.openhis.health.domain.share.constants.DeptIssueReportConstants;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.workflow.supplyrequest.entity.SupplyRequest;
+import com.openhis.health.domain.workflow.supplyrequest.query.DeptIssueReportPageQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyRequestDocumentListQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyByBusNoBatchQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyByBusNoQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyByOriginalBusNoQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyRequestIdListQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.VerifyAbleEditQuery;
+import com.openhis.health.domain.workflow.supplyrequest.queries.model.DeptIssueReportLineQueryModel;
+import com.openhis.health.domain.workflow.supplyrequest.queries.model.DeptIssueReportSummaryRow;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestValidationModel;
 import com.openhis.health.domain.workflow.supplyrequest.queries.WarehouseDocumentDetailPageQuery;
@@ -37,16 +41,22 @@ import jakarta.persistence.criteria.Root;
 import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -56,7 +66,7 @@ import java.util.Set;
  *
  * <p>另提供 {@code wkf_supply_request} 上「按 {@code bus_no} 聚合」的通用单据列表能力（{@link #countDistinctBusNo}、{@link #listDistinctBusNoPage}、
  * {@link #listByBusNosWithFilter}），进货/订货/退货等各 AS 通过 {@link com.openhis.health.domain.workflow.supplyrequest.queries.SupplyRequestDocumentListQuery}
- * 收窄 {@code type_enum} 与位置等条件后复用；库房日结期间动账见 {@link #listAgreedLinesByWarehouseAndApprovalWindow}。</p>
+ * 收窄 {@code type_enum} 与位置等条件后复用；库房期初期末明细期间动账见 {@link #listAgreedLinesByWarehouseAndApprovalWindow}。</p>
  *
  * <p>读模型 {@link com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel} 中 {@code typeEnum}/{@code statusEnum} 等字段
  * 与实体列一致，均为持久化 {@code getCode()} 字符串（B.10.8.1）；本服务内与 {@link com.openhis.health.domain.share.enums.SupplyStatus} 比对时使用
@@ -362,6 +372,8 @@ public class SupplyRequestQueryService {
 
     /**
      * 库房单据明细分页（替代 {@code WarehouseDocumentDetailRMQueryService#pageWarehouseDocumentDetail}；查 {@code wkf_supply_request} 明细行）。
+     *
+     * <p>默认按审批时间倒序；有主 keyword 时 Spec 内精确优先 + 审批时间倒序。</p>
      */
     public Page<WarehouseDocumentDetailQueryModel> pageWarehouseDocumentDetail(WarehouseDocumentDetailPageQuery query) {
         int springIndex = 0;
@@ -370,9 +382,17 @@ public class SupplyRequestQueryService {
             springIndex = query.springPageIndex();
             pageSize = query.getBoundedPageSize();
         }
-        Pageable pageable = PageRequest.of(springIndex, pageSize, Sort.by(Sort.Order.desc(FieldNameConstants.APPLY_TIME)));
+        // 有关键字时无 Sort，保留 Spec 内「精确优先 + approvalTime」ORDER BY（B.2.1）
+        Pageable pageable;
+        if (query != null && StringUtils.isNotEmpty(query.getKeyword())) {
+            pageable = PageRequest.of(springIndex, pageSize);
+        } else {
+            pageable = PageRequest.of(springIndex, pageSize,
+                Sort.by(Sort.Order.desc(FieldNameConstants.APPROVAL_TIME)));
+        }
         Specification<SupplyRequest> specification = (root, criteriaQuery, cb) -> cb.and(
-            WarehouseDocumentDetailPagePredicateSupport.collectPagePredicates(root, cb, query).toArray(new Predicate[0]));
+            WarehouseDocumentDetailPagePredicateSupport.collectPagePredicates(root, criteriaQuery, cb, query)
+                .toArray(new Predicate[0]));
         return this.supplyRequestRepository.findAll(specification, pageable).map(this::mapToWarehouseDocumentDetailQueryModel);
     }
 
@@ -420,6 +440,7 @@ public class SupplyRequestQueryService {
         model.setSourceLocationId(entity.getSourceLocationId());
         model.setPurposeTypeEnum(entity.getPurposeTypeEnum());
         model.setPurposeLocationId(entity.getPurposeLocationId());
+        model.setConsumingOrganizationId(entity.getConsumingOrganizationId());
         model.setSupplierId(entity.getSupplierId());
         model.setItemTable(entity.getItemTable());
         model.setItemId(entity.getItemId());
@@ -441,6 +462,7 @@ public class SupplyRequestQueryService {
         model.setLotNumber(entity.getLotNumber());
         model.setTraceNo(entity.getTraceNo());
         model.setRemake(entity.getRemake());
+        model.setInvoiceNo(entity.getInvoiceNo());
         model.setOriginalBusNo(entity.getOriginalBusNo());
         model.setSummaryId(entity.getSummaryId());
         model.setPatientId(entity.getPatientId());
@@ -468,6 +490,8 @@ public class SupplyRequestQueryService {
         model.setSourceLocationId(entity.getSourceLocationId());
         model.setPurposeTypeEnum(entity.getPurposeTypeEnum());
         model.setPurposeLocationId(entity.getPurposeLocationId());
+        // 领用/退领：落库领用科室带出，供单据详情报表回显
+        model.setConsumingOrganizationId(entity.getConsumingOrganizationId());
         model.setItemTable(entity.getItemTable());
         model.setItemId(entity.getItemId());
         model.setItemQuantity(entity.getItemQuantity());
@@ -538,7 +562,7 @@ public class SupplyRequestQueryService {
     }
 
     /**
-     * 库房日结期间供应动账批量读（**AS-INV-RPT-001** · **DM-WKF-006 §6.2.12**）。
+     * 库房期初期末明细期间供应动账批量读（**AS-INV-RPT-001** · **DM-WKF-006 §6.2.12**）。
      *
      * <p>仅返回 {@link SupplyStatus#AGREE} 明细行；源/目的 ± 与品种汇总由应用层完成。</p>
      *
@@ -565,7 +589,7 @@ public class SupplyRequestQueryService {
     }
 
     /**
-     * 供应实体列表映射为库房日结行读模型。
+     * 供应实体列表映射为库房期初期末明细行读模型。
      *
      * @param entities 持久化行
      * @return 日结行列表
@@ -606,5 +630,391 @@ public class SupplyRequestQueryService {
         model.setLotNumber(entity.getLotNumber());
         model.setApprovalTime(entity.getApprovalTime());
         return model;
+    }
+
+    /**
+     * 科室领用/退领报表明细分页（AS-RPT-003～006 科室侧；DM-WKF-006 §6.2.15）。
+     *
+     * <p>仅已同意 {@code DEPT_ISSUE}/{@code DEPT_ISSUE_RETURN}；按 {@code item_table} 收窄药品或耗材；
+     * 业务时间优先 {@code approval_time}。仅本聚合 Repository。
+     * 门诊/住院域库位由应用层预写 {@code resolvedPurposeLocationIds}。</p>
+     *
+     * @param query 分页与筛选；{@code itemTable} 为空时返回空页
+     * @return 明细分页；业务时间倒序
+     */
+    public Page<DeptIssueReportLineQueryModel> pageDeptIssueReportLines(DeptIssueReportPageQuery query) {
+        if (query == null) {
+            query = new DeptIssueReportPageQuery();
+        }
+        int pageNo = query.springPageIndex();
+        int pageSize = query.getBoundedPageSize();
+        // Gate：缺品规表拒查，避免药品/耗材混页
+        if (StringUtils.isEmpty(query.getItemTable())) {
+            Pageable emptyPageable = PageRequest.of(pageNo, pageSize);
+            return new PageImpl<>(Collections.emptyList(), emptyPageable, 0L);
+        }
+        // Pre：规约 + 仓储分页
+        Specification<SupplyRequest> specification = this.buildDeptIssueReportSpecification(query);
+        Sort sort = Sort.by(
+            Sort.Order.desc(FieldNameConstants.APPROVAL_TIME),
+            Sort.Order.desc(FieldNameConstants.ID));
+        Pageable pageable = PageRequest.of(pageNo, pageSize, sort);
+        Page<SupplyRequest> page = supplyRequestRepository.findAll(specification, pageable);
+        // Asm：行字段直映；科室组织名由应用层 enrich
+        List<DeptIssueReportLineQueryModel> models = new ArrayList<>();
+        for (SupplyRequest row : page.getContent()) {
+            models.add(this.toDeptIssueReportLineModel(row));
+        }
+        return new PageImpl<>(models, pageable, page.getTotalElements());
+    }
+
+    /**
+     * 科室领用/退领报表全量列表（导出；行数受 {@link DeptIssueReportPageQuery#getBoundedPageSize()} 约束）。
+     *
+     * @param query 与分页同筛选
+     * @return 明细行列表
+     */
+    public List<DeptIssueReportLineQueryModel> listDeptIssueReportLines(DeptIssueReportPageQuery query) {
+        if (query == null) {
+            query = new DeptIssueReportPageQuery();
+        }
+        // Gate：缺品规表拒查
+        if (StringUtils.isEmpty(query.getItemTable())) {
+            return Collections.emptyList();
+        }
+        int maxRows = query.getBoundedPageSize();
+        Specification<SupplyRequest> specification = this.buildDeptIssueReportSpecification(query);
+        Sort sort = Sort.by(
+            Sort.Order.desc(FieldNameConstants.APPROVAL_TIME),
+            Sort.Order.desc(FieldNameConstants.ID));
+        Pageable pageable = PageRequest.of(0, maxRows, sort);
+        Page<SupplyRequest> page = supplyRequestRepository.findAll(specification, pageable);
+        List<DeptIssueReportLineQueryModel> models = new ArrayList<>();
+        for (SupplyRequest row : page.getContent()) {
+            models.add(this.toDeptIssueReportLineModel(row));
+        }
+        return models;
+    }
+
+    /**
+     * 科室领用/退领净汇总（按科室/药房/品规；DM-WKF-006 §6.2.15）。
+     *
+     * @param query 筛选 + {@code summaryDimension}；DEPARTMENT 维须预解析组织映射
+     * @return 净汇总行
+     */
+    public List<DeptIssueReportSummaryRow> summarizeDeptIssueReport(DeptIssueReportPageQuery query) {
+        if (query == null) {
+            query = new DeptIssueReportPageQuery();
+        }
+        // Gate：缺品规表拒查
+        if (StringUtils.isEmpty(query.getItemTable())) {
+            return Collections.emptyList();
+        }
+        // Pre：全量命中后按维分桶
+        Specification<SupplyRequest> specification = this.buildDeptIssueReportSpecification(query);
+        Sort sort = Sort.by(Sort.Order.desc(FieldNameConstants.APPROVAL_TIME));
+        List<SupplyRequest> rows = supplyRequestRepository.findAll(specification, sort);
+        String dimension = StringUtils.trimToNull(query.getSummaryDimension());
+        if (dimension == null) {
+            dimension = DeptIssueReportConstants.SUMMARY_DIMENSION_DEPARTMENT;
+        }
+        Map<Long, Long> orgByLocation = query.getOrganizationIdByPurposeLocationId();
+        if (orgByLocation == null) {
+            orgByLocation = Map.of();
+        }
+        // Asm：退领数量取负
+        Map<String, DeptIssueReportSummaryRow> bucketByKey = new LinkedHashMap<>();
+        for (SupplyRequest row : rows) {
+            if (row == null) {
+                continue;
+            }
+            String bucketKey = this.resolveDeptIssueReportBucketKey(row, dimension, orgByLocation);
+            DeptIssueReportSummaryRow summary = bucketByKey.get(bucketKey);
+            if (summary == null) {
+                summary = new DeptIssueReportSummaryRow();
+                summary.setDimensionKey(bucketKey);
+                summary.setSummaryDimension(dimension);
+                summary.setNetQuantity(BigDecimal.ZERO);
+                summary.setLineCount(0L);
+                this.fillDeptIssueReportSummaryIds(summary, row, dimension, orgByLocation);
+                bucketByKey.put(bucketKey, summary);
+            }
+            BigDecimal signedQty = this.resolveDeptIssueReportSignedQuantity(row);
+            summary.setNetQuantity(summary.getNetQuantity().add(signedQty));
+            summary.setLineCount(summary.getLineCount() + 1L);
+        }
+        return new ArrayList<>(bucketByKey.values());
+    }
+
+    /**
+     * 组装科室领用/退领报表规约。
+     *
+     * @param query 筛选入参
+     * @return JPA Specification
+     */
+    private Specification<SupplyRequest> buildDeptIssueReportSpecification(DeptIssueReportPageQuery query) {
+        return (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), SupplyStatus.AGREE.getCode()));
+            predicates.add(root.get(FieldNameConstants.TYPE_ENUM).in(
+                SupplyType.DEPT_ISSUE.getCode(),
+                SupplyType.DEPT_ISSUE_RETURN.getCode()));
+            predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_TABLE), query.getItemTable()));
+            if (query.getPurposeLocationId() != null) {
+                predicates.add(cb.equal(
+                    root.get(FieldNameConstants.PURPOSE_LOCATION_ID),
+                    query.getPurposeLocationId()));
+            } else {
+                this.applyResolvedPurposeLocationIds(
+                    predicates, root, cb, query.getResolvedPurposeLocationIds());
+            }
+            this.applyResolvedItemIds(predicates, root, cb, query.getResolvedItemIds());
+            this.applyDeptIssueBusinessTimeWindow(predicates, root, cb, query);
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+    }
+
+    /**
+     * 预解析科室药房主键 IN；空列表拒查。
+     */
+    private void applyResolvedPurposeLocationIds(
+        List<Predicate> predicates,
+        Root<SupplyRequest> root,
+        CriteriaBuilder cb,
+        List<Long> resolvedPurposeLocationIds) {
+        if (resolvedPurposeLocationIds == null) {
+            return;
+        }
+        if (resolvedPurposeLocationIds.isEmpty()) {
+            predicates.add(cb.equal(cb.literal(1), cb.literal(0)));
+            return;
+        }
+        predicates.add(root.get(FieldNameConstants.PURPOSE_LOCATION_ID).in(resolvedPurposeLocationIds));
+    }
+
+    /**
+     * 预解析品规主键 IN；空列表拒查。
+     */
+    private void applyResolvedItemIds(
+        List<Predicate> predicates,
+        Root<SupplyRequest> root,
+        CriteriaBuilder cb,
+        List<Long> resolvedItemIds) {
+        if (resolvedItemIds == null) {
+            return;
+        }
+        if (resolvedItemIds.isEmpty()) {
+            predicates.add(cb.equal(cb.literal(1), cb.literal(0)));
+            return;
+        }
+        predicates.add(root.get(FieldNameConstants.ITEM_ID).in(resolvedItemIds));
+    }
+
+    /**
+     * 业务时间窗：优先审批时间，缺失时不入窗（与发药报表空时间口径一致）。
+     */
+    private void applyDeptIssueBusinessTimeWindow(
+        List<Predicate> predicates,
+        Root<SupplyRequest> root,
+        CriteriaBuilder cb,
+        DeptIssueReportPageQuery query) {
+        if (query.getBusinessTimeFrom() != null) {
+            predicates.add(cb.greaterThanOrEqualTo(
+                root.get(FieldNameConstants.APPROVAL_TIME),
+                query.getBusinessTimeFrom()));
+        }
+        if (query.getBusinessTimeTo() != null) {
+            predicates.add(cb.lessThanOrEqualTo(
+                root.get(FieldNameConstants.APPROVAL_TIME),
+                query.getBusinessTimeTo()));
+        }
+        // 有时间窗时排除审批时间为空的历史脏行
+        if (query.getBusinessTimeFrom() != null || query.getBusinessTimeTo() != null) {
+            predicates.add(cb.isNotNull(root.get(FieldNameConstants.APPROVAL_TIME)));
+        }
+    }
+
+    /**
+     * 实体 → 领用报表明细读模型。
+     */
+    private DeptIssueReportLineQueryModel toDeptIssueReportLineModel(SupplyRequest row) {
+        DeptIssueReportLineQueryModel model = new DeptIssueReportLineQueryModel();
+        model.setSupplyRequestId(row.getId());
+        model.setBusNo(row.getBusNo());
+        model.setTypeEnum(row.getTypeEnum());
+        model.setStatusEnum(row.getStatusEnum());
+        model.setItemTable(row.getItemTable());
+        model.setItemId(row.getItemId());
+        model.setItemQuantity(row.getItemQuantity());
+        model.setUnitCode(row.getUnitCode());
+        model.setPurposeLocationId(row.getPurposeLocationId());
+        model.setConsumingOrganizationId(row.getConsumingOrganizationId());
+        model.setLotNumber(row.getLotNumber());
+        model.setPrice(row.getPrice());
+        model.setTotalPrice(row.getTotalPrice());
+        LocalDateTime businessTime = row.getApprovalTime();
+        if (businessTime == null) {
+            businessTime = row.getOccurrenceTime();
+        }
+        model.setBusinessTime(businessTime);
+        return model;
+    }
+
+    /**
+     * 领用报表分桶键。
+     */
+    private String resolveDeptIssueReportBucketKey(
+        SupplyRequest row,
+        String dimension,
+        Map<Long, Long> orgByLocation) {
+        if (DeptIssueReportConstants.SUMMARY_DIMENSION_ITEM.equals(dimension)) {
+            Long itemId = row.getItemId();
+            if (itemId == null) {
+                return "ITEM:";
+            }
+            return "ITEM:" + itemId;
+        }
+        if (DeptIssueReportConstants.SUMMARY_DIMENSION_PHARMACY.equals(dimension)) {
+            Long locationId = row.getPurposeLocationId();
+            if (locationId == null) {
+                return "PHARMACY:";
+            }
+            return "PHARMACY:" + locationId;
+        }
+        Long orgId = this.resolveDeptIssueConsumingOrganizationId(row, orgByLocation);
+        if (orgId == null) {
+            return "DEPARTMENT:";
+        }
+        return "DEPARTMENT:" + orgId;
+    }
+
+    /**
+     * 回填领用汇总维度主键。
+     */
+    private void fillDeptIssueReportSummaryIds(
+        DeptIssueReportSummaryRow summary,
+        SupplyRequest row,
+        String dimension,
+        Map<Long, Long> orgByLocation) {
+        if (DeptIssueReportConstants.SUMMARY_DIMENSION_ITEM.equals(dimension)) {
+            summary.setItemId(row.getItemId());
+            return;
+        }
+        if (DeptIssueReportConstants.SUMMARY_DIMENSION_PHARMACY.equals(dimension)) {
+            summary.setPurposeLocationId(row.getPurposeLocationId());
+            return;
+        }
+        summary.setOrganizationId(this.resolveDeptIssueConsumingOrganizationId(row, orgByLocation));
+        summary.setPurposeLocationId(row.getPurposeLocationId());
+    }
+
+    /**
+     * 解析领用科室主键：优先落库 {@code consuming_organization_id}，历史单回落药房上级科室映射。
+     *
+     * @param row           供应请求行
+     * @param orgByLocation 应用层预写：purposeLocationId → organizationId
+     * @return 领用科室主键；均无则 null
+     */
+    private Long resolveDeptIssueConsumingOrganizationId(SupplyRequest row, Map<Long, Long> orgByLocation) {
+        if (row == null) {
+            return null;
+        }
+        // 新单：直接用落库领用科室
+        if (row.getConsumingOrganizationId() != null) {
+            return row.getConsumingOrganizationId();
+        }
+        // 历史单：回落药房 Location.organization_id（由应用层预写映射）
+        if (row.getPurposeLocationId() == null || orgByLocation == null) {
+            return null;
+        }
+        return orgByLocation.get(row.getPurposeLocationId());
+    }
+
+    /**
+     * 领用为正、退领为负。
+     *
+     * @param row 供应请求行
+     * @return 带符号数量
+     */
+    private BigDecimal resolveDeptIssueReportSignedQuantity(SupplyRequest row) {
+        BigDecimal quantity = row.getItemQuantity();
+        if (quantity == null) {
+            quantity = BigDecimal.ZERO;
+        }
+        // 退领对冲净用量
+        if (SupplyType.DEPT_ISSUE_RETURN.getCode().equals(row.getTypeEnum())) {
+            return quantity.negate();
+        }
+        return quantity;
+    }
+
+    /**
+     * 三类 OPENING 类型码列表。
+     *
+     * @return 不可变列表
+     */
+    public static List<String> openingTypeCodes() {
+        return List.of(
+            SupplyType.CABINET_OPENING.getCode(),
+            SupplyType.PHARMACY_OPENING.getCode(),
+            SupplyType.DEPT_OPENING.getCode());
+    }
+
+    /**
+     * 同库是否存在非期初业务供应单（已提交及以上：审核中/已同意）（GAP-OPN-004 供应侧）。
+     *
+     * @param purposeLocationId 目的库房
+     * @return 存在则为 true
+     */
+    public boolean existsNonOpeningBusinessForLocation(Long purposeLocationId) {
+        if (purposeLocationId == null) {
+            return false;
+        }
+        List<String> openingTypes = openingTypeCodes();
+        List<String> blockingStatuses = List.of(
+            SupplyStatus.APPROVAL.getCode(),
+            SupplyStatus.AGREE.getCode());
+        return supplyRequestRepository
+            .existsByPurposeLocationIdAndTypeEnumNotInAndStatusEnumInAndIsDeletedFalse(
+                purposeLocationId, openingTypes, blockingStatuses);
+    }
+
+    /**
+     * 同库是否存在审核中的期初单（提交闸门 / 关闭前校验）。
+     *
+     * @param purposeLocationId 目的库房
+     * @return 存在则为 true
+     */
+    public boolean existsOpeningInApprovalForLocation(Long purposeLocationId) {
+        if (purposeLocationId == null) {
+            return false;
+        }
+        return supplyRequestRepository
+            .existsByPurposeLocationIdAndTypeEnumInAndStatusEnumAndIsDeletedFalse(
+                purposeLocationId, openingTypeCodes(), SupplyStatus.APPROVAL.getCode());
+    }
+
+    /**
+     * 同库当前有效 AGREE 期初单号（多行同号取首条 busNo）。
+     *
+     * @param purposeLocationId 目的库房
+     * @return 单号；无则 empty
+     */
+    public Optional<String> findCurrentAgreedOpeningBusNo(Long purposeLocationId) {
+        if (purposeLocationId == null) {
+            return Optional.empty();
+        }
+        List<SupplyRequest> rows = supplyRequestRepository
+            .findByPurposeLocationIdAndTypeEnumInAndStatusEnumAndIsDeletedFalse(
+                purposeLocationId, openingTypeCodes(), SupplyStatus.AGREE.getCode());
+        if (rows == null || rows.isEmpty()) {
+            return Optional.empty();
+        }
+        SupplyRequest first = rows.get(0);
+        if (first.getBusNo() == null || first.getBusNo().isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.of(first.getBusNo().trim());
     }
 }

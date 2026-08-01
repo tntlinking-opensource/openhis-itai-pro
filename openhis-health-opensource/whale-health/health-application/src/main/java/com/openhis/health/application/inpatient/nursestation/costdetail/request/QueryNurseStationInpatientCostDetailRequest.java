@@ -64,4 +64,11 @@ public class QueryNurseStationInpatientCostDetailRequest {
     /** 费用状态筛选 code。 */
     @Schema(description = "费用状态筛选：PENDING_SETTLEMENT 或 SETTLED", requiredMode = Schema.RequiredMode.REQUIRED)
     private String statusEnum;
+
+    /**
+     * 项目关键字（可选）：对展示用产品名称、院内编码（productBusNo）做包含匹配（忽略大小写）；
+     * 命中任一即可；空白表示不过滤（BR-IP-CDT-019）。
+     */
+    @Schema(description = "项目关键字：名称或院内编码模糊（可选）")
+    private String keyword;
 }

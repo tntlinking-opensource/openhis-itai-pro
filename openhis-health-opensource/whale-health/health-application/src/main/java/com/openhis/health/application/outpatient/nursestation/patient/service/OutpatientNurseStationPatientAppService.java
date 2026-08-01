@@ -4,10 +4,12 @@
  */
 package com.openhis.health.application.outpatient.nursestation.patient.service;
 
+import com.openhis.health.application.outpatient.nursestation.patient.dto.NurseStationPatientQueueItemDto;
 import com.openhis.health.application.outpatient.nursestation.patient.mapper.OutpatientNurseStationPatientMapper;
 import com.openhis.health.application.outpatient.nursestation.patient.request.PageNurseStationPatientQueueRequest;
 import com.openhis.health.application.outpatient.nursestation.patient.response.PageNurseStationPatientQueueResponse;
 import com.openhis.health.application.shared.encounter.EncounterContextReader;
+import com.openhis.health.application.shared.financial.EncounterContractDisplayAssembler;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -15,6 +17,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
+
+import java.util.LinkedHashSet;
+import java.util.Map;
 
 /**
  * 门诊护士站患者队列应用编排（IF-NUR-01）。
@@ -29,12 +34,14 @@ public class OutpatientNurseStationPatientAppService {
 
     private final EncounterContextReader EncounterContextReader;
     private final OutpatientNurseStationPatientMapper outpatientNurseStationPatientMapper;
+    /** 费用性质展示：有医保账户优先合同名，供患者卡片区分医保/自费。 */
+    private final EncounterContractDisplayAssembler encounterContractDisplayAssembler;
 
     /**
      * IF-NUR-01：分页查询门诊护士站患者队列。
      *
      * @param request 队列筛选与分页条件
-     * @return 当前页队列与总数
+     * @return 当前页队列与总数（行内带 {@code contractDisplay}）
      */
     public PageNurseStationPatientQueueResponse pageNurseStationPatientQueue(PageNurseStationPatientQueueRequest request) {
         // Gate：请求体非空
@@ -45,6 +52,39 @@ public class OutpatientNurseStationPatientAppService {
         com.openhis.health.domain.share.query.AbstractPageQuery queueQuery =
             this.outpatientNurseStationPatientMapper.toNurseStationOutpatientQueueQuery(request);
         Page<OutpatientEncounterContextQueryModel> page =
-            this.EncounterContextReader.pageNurseStationOutpatientQueue(queueQuery);        return this.outpatientNurseStationPatientMapper.toPageNurseStationPatientQueueResponse(page);
+            this.EncounterContextReader.pageNurseStationOutpatientQueue(queueQuery);
+        PageNurseStationPatientQueueResponse resp =
+            this.outpatientNurseStationPatientMapper.toPageNurseStationPatientQueueResponse(page);
+        // Asm：本页就诊批量回填费用性质（有医保账户优先，禁止前端写死自费）
+        this.applyContractDisplayLabels(resp);
+        return resp;
+    }
+
+    /**
+     * 门诊护士站队列：按就诊优先合同批量回填 {@code contractDisplay}。
+     *
+     * @param resp 分页响应
+     */
+    private void applyContractDisplayLabels(PageNurseStationPatientQueueResponse resp) {
+        if (resp == null || resp.getContent() == null || resp.getContent().isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
+        for (NurseStationPatientQueueItemDto row : resp.getContent()) {
+            if (row != null && row.getEncounterId() != null) {
+                encounterIds.add(row.getEncounterId());
+            }
+        }
+        if (encounterIds.isEmpty()) {
+            return;
+        }
+        Map<Long, String> contractDisplayByEncounterId =
+            encounterContractDisplayAssembler.mapContractDisplayByEncounterIds(encounterIds);
+        for (NurseStationPatientQueueItemDto row : resp.getContent()) {
+            if (row == null || row.getEncounterId() == null) {
+                continue;
+            }
+            row.setContractDisplay(contractDisplayByEncounterId.get(row.getEncounterId()));
+        }
     }
 }

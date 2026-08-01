@@ -12,6 +12,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * CRB adapter 自动配置（推送 Client、事件监听、Mapper 注册）。
@@ -19,6 +20,7 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 @ConditionalOnProperty(name = "openhis.modules.crb.enabled", havingValue = "true")
 @AutoConfigureBefore(name = "com.openhis.whale.crb.application.config.CrbAutoConfiguration")
+@EnableScheduling
 @ComponentScan(basePackages = "com.openhis.whale.crb.bridge")
 public class CrbBridgeAutoConfiguration {
 

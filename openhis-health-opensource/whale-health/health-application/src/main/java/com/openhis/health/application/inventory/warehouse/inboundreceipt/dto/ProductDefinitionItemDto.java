@@ -92,4 +92,16 @@ public class ProductDefinitionItemDto {
     /** 五笔 wbStr。 */
     @Schema(description = "五笔 wbStr")
     private String wbStr;
+
+    /**
+     * 追溯码贴码单位（药典；可游离于五类业务单位）。
+     */
+    @Schema(description = "追溯码贴码单位")
+    private String traceUnitCode;
+
+    /**
+     * 1 个追溯码单位对应的拆零数量。
+     */
+    @Schema(description = "追溯码单位→拆零倍数")
+    private BigDecimal traceUnitRatio;
 }

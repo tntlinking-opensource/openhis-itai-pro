@@ -41,6 +41,12 @@ public final class MedicationProductQuantityToSplitUnitConverter {
                 return quantity;
             }
         }
+        // 追溯贴码单位优先于包装/采购：发退可注入主档快照比，避免与现药典包装比同码冲突
+        if (StringUtils.isNotEmpty(product.getTraceUnitCode())) {
+            if (unitTrimmed.equals(product.getTraceUnitCode().trim())) {
+                return multiplyQuantityByRatio(quantity, product.getTraceUnitRatio(), "追溯码单位");
+            }
+        }
         if (StringUtils.isNotEmpty(product.getDoseUnitCode())) {
             if (unitTrimmed.equals(product.getDoseUnitCode().trim())) {
                 return multiplyQuantityByRatio(quantity, product.getDoseUnitRatio(), "剂量单位");
@@ -63,7 +69,7 @@ public final class MedicationProductQuantityToSplitUnitConverter {
         }
         throw new BusinessException(
             ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT,
-            "发放单位不在目录拆零/剂量/采购/库存/销售五类单位内，无法换算库存最小单位数量");
+            "发放单位不在目录拆零/追溯码/剂量/采购/库存/销售单位内，无法换算库存最小单位数量");
     }
 
     /**

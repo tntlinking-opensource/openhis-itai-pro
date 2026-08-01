@@ -42,6 +42,7 @@ import com.openhis.health.domain.administration.invoice.entity.Invoice;
 import com.openhis.health.domain.administration.invoice.query.InvoiceQueryCommand;
 import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.patient.command.RegisterPatientCommand;
+import com.openhis.health.domain.administration.patient.command.UpdatePatientPhoneCommand;
 import com.openhis.health.domain.administration.patient.entity.Patient;
 import com.openhis.health.domain.administration.patient.queries.DuplicatePatientCheckQuery;
 import com.openhis.health.domain.administration.patient.queries.model.PatientCoreQueryModel;
@@ -54,6 +55,7 @@ import com.openhis.health.domain.financial.paymentreconciliation.command.Payment
 import com.openhis.health.domain.financial.paymentreconciliation.command.RefreshRegistrationPaymentDraftCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.RequestOutpatientRefundCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.SettleOutpatientPaymentCommand;
+import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentRecDetailQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.ClinicRegisterQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.ClinicRegisterPageQuery;
@@ -304,6 +306,15 @@ public interface OutpatientRegistrationMapper {
     RegisterPatientCommand toRegisterPatientCommand(PreRegisterSettlementRequest request);
 
     /**
+     * 将复用患者主键与表单联系电话映射为更新手机号命令。
+     *
+     * @param patientId 既有患者主键
+     * @param phone 挂号表单联系电话（须非空，领域层再校验格式）
+     * @return 更新手机号命令
+     */
+    UpdatePatientPhoneCommand toUpdatePatientPhoneCommand(Long patientId, String phone);
+
+    /**
      * 将预结算请求映射为收费项创建命令。
      *
      * @param request 预结算请求
@@ -418,11 +429,15 @@ public interface OutpatientRegistrationMapper {
     /**
      * 构建支付后开票草稿命令。
      *
-     * @param paymentDraft 支付草稿
-     * @param paymentId 支付记录 ID
+     * @param paymentDraft      支付草稿
+     * @param paymentId         支付记录 ID
+     * @param invoiceFaceAmount 票面金额（收费项合计结算刻度；含医保已付）
      * @return 开票草稿命令
      */
-    CreateDraftInvoiceCommand toCreateDraftInvoiceCommand(PaymentReconciliationQueryModel paymentDraft, Long paymentId);
+    CreateDraftInvoiceCommand toCreateDraftInvoiceCommand(
+        PaymentReconciliationQueryModel paymentDraft,
+        Long paymentId,
+        BigDecimal invoiceFaceAmount);
 
     /**
      * 构建电子发票开具命令。
@@ -457,13 +472,26 @@ public interface OutpatientRegistrationMapper {
     CancelOutpatientRegistrationCommand toCancelOutpatientRegistrationCommand(CancelWithRefundRequest request);
 
     /**
-     * 构建门诊退费申请命令。
+     * 构建门诊退号联动退费申请命令（原路返回：须带原单合同号与渠道明细）。
      *
-     * @param request 退号退费请求
-     * @param payment 原支付记录
+     * @param request         退号退费请求
+     * @param payment         原支付记录
+     * @param paymentDetails  原单渠道明细拷贝（含统筹/个账/自付）；禁止传空导致日结支付方式缺失
      * @return 退费申请命令
      */
-    RequestOutpatientRefundCommand toRequestOutpatientRefundCommand(CancelWithRefundRequest request, PaymentReconciliationQueryModel payment);
+    RequestOutpatientRefundCommand toRequestOutpatientRefundCommand(
+        CancelWithRefundRequest request,
+        PaymentReconciliationQueryModel payment,
+        List<PaymentDetailItemCommand> paymentDetails);
+
+    /**
+     * 原挂号支付明细 → 退号逆向单渠道明细（整单原路返回，对齐 IF-REF-05 / BR-REF-011 口径）。
+     *
+     * @param originalPaymentDetails 原支付 {@code fin_payment_rec_detail} 读模型
+     * @return 领域明细命令；入参空时返回空列表（由调用方门禁）
+     */
+    List<PaymentDetailItemCommand> toRegistrationCancelRefundPaymentDetails(
+        List<PaymentRecDetailQueryModel> originalPaymentDetails);
 
     /**
      * 构建退号联动退费完成命令（原单 + 逆向单一并收口）。

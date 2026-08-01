@@ -76,7 +76,7 @@ public class ServiceApplyFormAssembler {
             dto.setCategoryEnum(model.getCategoryEnum());
             dto.setOrgId(model.getOrgId());
             dto.setOrgName(model.getOrgName());
-            dto.setAuthoredAt(model.getAuthoredAt());
+            dto.setReqOpenedTime(model.getReqOpenedTime());
             dto.setStatusSummary(model.getStatusSummary());
             dto.setLines(toLineDtos(model.getLines()));
             dtos.add(dto);

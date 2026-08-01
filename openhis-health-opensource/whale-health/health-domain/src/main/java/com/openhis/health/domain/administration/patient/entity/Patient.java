@@ -430,30 +430,6 @@ public class Patient extends BaseAuditedEntity {
     }
 
     /**
-     * 校验是否允许维护学生资质。
-     *
-     * @param studentIdCard 学籍身份证号
-     */
-    public void assertStudentRecordUpsertable(String studentIdCard) {
-        if (!PatientStatus.ACTIVE.getCode().equals(this.statusEnum)) {
-            throw new BusinessException(ErrorCodeConstants.PATIENT_INVALID_STATUS, "仅活跃患者允许维护学生资质");
-        }
-        if (StringUtils.isNotEmpty(studentIdCard) && StringUtils.isNotEmpty(this.idCard)
-            && !studentIdCard.equals(this.idCard)) {
-            throw new BusinessException(ErrorCodeConstants.PATIENT_INVALID_ARGUMENT, "学生身份证号必须与主档一致");
-        }
-    }
-
-    /**
-     * 校验是否允许停用学生资质。
-     */
-    public void assertStudentRecordDisableAllowed() {
-        if (!PatientStatus.ACTIVE.getCode().equals(this.statusEnum)) {
-            throw new BusinessException(ErrorCodeConstants.PATIENT_INVALID_STATUS, "仅活跃患者允许停用学生资质");
-        }
-    }
-
-    /**
      * 标记逻辑删除。
      *
      * @param operatorId 操作人标识

@@ -79,13 +79,13 @@ public class MedicationDto {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long manufacturerId;
 
-    /** 供应商 ID（以字符串形式序列化）。 */
-    @Schema(description = "供应商 ID（以字符串形式序列化）", example = "300", type = "string")
+    /** 供应商标识（历史字段；列表页不再回填展示名）。 */
+    @Schema(description = "供应商标识（目录维护已废弃）", example = "300", type = "string")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long supplyId;
 
-    /** 供应商文本。 */
-    @Schema(description = "供应商文本", example = "某某医药有限公司")
+    /** 供应商文本（历史字段；列表页不再回填）。 */
+    @Schema(description = "供应商文本（已废弃）", example = "某某医药有限公司")
     private String supplyId_dictText;
 
     /** 抗生素分类代码（字典值）。 */
@@ -100,14 +100,15 @@ public class MedicationDto {
     @Schema(description = "生产厂商文本", example = "某某制药厂")
     private String manufacturerText;
 
-    /** 售价。 */
-    @Schema(description = "售价", example = "12.50", type = "number", format = "double")
+    /** 销售参考价（维护态 {@code SALE}，元/包装单位）。 */
+    @Schema(description = "销售参考价（元/包装单位）", example = "12.50", type = "number", format = "double")
     private BigDecimal retailPrice;
 
     /**
-     * 采购价（元）。
+     * 采购参考价（元/包装单位）。
      *
-     * <p>属性名为历史遗留 PascalCase（{@code PurchasePrice}），与 JSON/JavaBean 约定一致，不宜在本轮单独改名。</p>
+     * <p>属性名为历史遗留 PascalCase（{@code PurchasePrice}），与 JSON/JavaBean 约定一致，不宜在本轮单独改名。
+     * 维护态价类为 {@code PURCHASE}；真正进价见批号 {@code LOT_NUMBER_COST}。</p>
      */
     private BigDecimal PurchasePrice;
 
@@ -118,7 +119,10 @@ public class MedicationDto {
     @Schema(description = "医保是否已对码", example = "true")
     private Boolean ybMatchFlag;
 
-    /** 医保是否已对码。 */
+    /** 单次最小用药剂量。 */
+    private BigDecimal minUnit;
+
+    /** 单次最大用药剂量。 */
     private BigDecimal maxUnit;
 
     /** 医保是否已对码。 */
@@ -167,7 +171,23 @@ public class MedicationDto {
     @Schema(description = "销售单位换算比", example = "10")
     private BigDecimal packageUnitRatio;
 
-    /** 销售单位换算比。 */
+    /**
+     * 追溯码所贴单位编码（术语 {@code unit_code}）。
+     */
+    @Schema(description = "追溯码单位编码", example = "DW003")
+    private String traceUnitCode;
+
+    /** 追溯码单位字典展示文案。 */
+    @Schema(description = "追溯码单位展示名", example = "盒")
+    private String traceUnitCode_dictText;
+
+    /**
+     * 1 个追溯码单位对应的拆零数量。
+     */
+    @Schema(description = "追溯码单位→拆零倍数", example = "10")
+    private BigDecimal traceUnitRatio;
+
+    /** 版本号。 */
     private String version;
 
     /**

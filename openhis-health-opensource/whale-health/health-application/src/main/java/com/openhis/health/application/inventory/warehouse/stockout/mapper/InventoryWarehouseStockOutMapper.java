@@ -227,10 +227,13 @@ public interface InventoryWarehouseStockOutMapper {
     /**
      * 将已同意出库行装配为对侧入库壳单 CreateRequisition 命令（药房入库或科室入库）。
      *
+     * <p>壳单须完整沿用出库头：制单人（行 applicant 优先）、申请时刻、审批人、审批时刻；
+     * {@code applicantId} 仅在出库行缺申请人时回落。</p>
+     *
      * @param agreedOutLines      已同意的出库明细行
      * @param outboundBusNo       出库业务单号（写入 original_bus_no）
      * @param operatorId          操作人主键
-     * @param applicantId         申请人主键
+     * @param applicantId         申请人主键回落（出库行缺 applicant 时使用）
      * @param inboundTypeEnumCode 壳单类型：{@link com.openhis.health.domain.share.enums.SupplyType#PHARMACY_STOCK_IN}
      *                            或 {@link com.openhis.health.domain.share.enums.SupplyType#DEPT_STOCK_IN}
      * @return 壳单创建命令（引导态 AGREE）

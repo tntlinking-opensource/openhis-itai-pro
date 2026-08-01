@@ -6,18 +6,13 @@ package com.openhis.health.application.basic.patient.service;
 
 import com.openhis.health.application.basic.patient.dto.PatientDto;
 import com.openhis.health.application.basic.patient.dto.PatientInitDto;
-import com.openhis.health.application.basic.patient.dto.PatientStudentDto;
 import com.openhis.health.application.basic.patient.mapper.PatientMapper;
-import com.openhis.health.application.basic.patient.mapper.PatientStudentMapper;
 import com.openhis.health.application.basic.patient.request.CreatePatientRequest;
 import com.openhis.health.application.basic.patient.request.PatientQueryRequest;
-import com.openhis.health.application.basic.patient.request.SavePatientStudentRequest;
 import com.openhis.health.application.basic.patient.request.UpdatePatientRequest;
 import com.openhis.health.domain.administration.patient.command.DeletePatientCommand;
-import com.openhis.health.domain.administration.patient.command.DisablePatientStudentRecordCommand;
 import com.openhis.health.domain.administration.patient.command.ModifyPatientProfileCommand;
 import com.openhis.health.domain.administration.patient.command.RegisterPatientCommand;
-import com.openhis.health.domain.administration.patient.command.UpsertPatientStudentRecordCommand;
 import com.openhis.health.domain.administration.patient.queries.PatientPagedQuery;
 import com.openhis.health.domain.administration.patient.queries.model.PatientDetailQueryModel;
 import com.openhis.health.domain.administration.patient.queries.model.PatientPageItemQueryModel;
@@ -31,8 +26,6 @@ import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.exception.EntityNotFoundException;
 import com.openhis.whale.core.application.exception.ValidationException;
-import com.openhis.whale.setting.domain.SettingDefinitionEnum;
-import com.openhis.whale.setting.domain.service.SettingManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import com.openhis.whale.core.application.util.StringUtils;
@@ -61,10 +54,6 @@ public class PatientAppService {
     private final CodeSystemQueryService codeSystemQueryService;
     /** dto ↔ Request ↔ Command 的标准映射。 */
     private final PatientMapper patientMapper;
-    /** 学籍与患者详情合并展示映射。 */
-    private final PatientStudentMapper patientStudentMapper;
-    /** 全局开关：是否启用学籍维护（与前端表单显隐联动）。 */
-    private final SettingManager settingManager;
     /** 写路径会话机构（B.6.5），禁止 AppService 直读 {@link com.openhis.whale.core.infrastructure.security.ICurrentUser}。 */
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
 
@@ -75,7 +64,7 @@ public class PatientAppService {
      */
     public PatientInitDto init() {
         // Gate：只读页初始化，不写库
-        // Pre：加载人口学、学籍与业务开关下拉
+        // Pre：加载人口学与学籍相关枚举下拉
         // Asm：映射页初始化响应
         PatientInitDto dto = new PatientInitDto();
         // 人口学与健康相关枚举：婚姻、职业、性别、血型、亲属关系、证件类型、是否类。
@@ -92,123 +81,7 @@ public class PatientAppService {
         dto.setStudyModeOptions(codeSystemQueryService.getOptionListByEnum(StudyMode.class));
         dto.setStudentStatusOptions(codeSystemQueryService.getOptionListByEnum(StudentStatus.class));
         dto.setPhysicalExamResultOptions(codeSystemQueryService.getOptionListByEnum(PhysicalExamResult.class));
-        // 业务开关：当前租户是否开放学籍维护入口。
-        dto.setStudentSwitchValue(settingManager.getEffectiveValue(SettingDefinitionEnum.STUDENT_SWITCH.getName()));
         return dto;
-    }
-
-
-    /**
-     * 保存学籍：同一患者仅保留一条未删除记录，已存在则更新，否则新增。
-     * <p>
-     * 姓名、性别、证件号、拼音码、五笔码始终从当前患者主表重新计算并写入，与请求体无关。
-     * </p>
-     *
-     * @param req 学籍可编辑字段（患者 ID、学号、学院等），不含姓名/证件号等由患者主档决定的字段
-     * @return 保存后的学籍 DTO（含同步后的姓名、证件号等）
-     * @throws ValidationException 请求体或必填字段不合法
-     * @throws EntityNotFoundException 患者主档不存在或不可见
-     */
-    public PatientStudentDto savePatientStudent(SavePatientStudentRequest req) {
-        // Gate：学籍维护至少需要患者主键与学号
-        if (req == null) {
-            throw new ValidationException("保存学籍失败：请求体不能为空");
-        }
-        if (req.getPatientId() == null) {
-            throw new ValidationException("保存学籍失败：patientId 不能为空");
-        }
-        if (req.getStudentId() == null || req.getStudentId().trim().isEmpty()) {
-            throw new ValidationException("保存学籍失败：studentId（学号）不能为空");
-        }
-
-        // Pre：读取患者主档作为姓名/证件号权威来源
-        PatientDetailQueryModel detail = patientQueryService.loadPatientDetail(req.getPatientId());
-        if (detail == null || detail.getPatient() == null) {
-            throw new EntityNotFoundException("患者不存在或已删除");
-        }
-
-        // Pre：同一患者仅保留一条有效学籍
-        Long existedStudentId = this.resolveExistingStudentId(detail);
-
-        // Cmd：组装并下发学籍 upsert 命令
-        UpsertPatientStudentRecordCommand command =
-            patientStudentMapper.toUpsertCommand(req, detail, existedStudentId);
-
-        patientDomainService.upsertPatientStudentRecord(command);
-
-        // Pre：回读最新学籍
-        PatientDetailQueryModel refreshed = patientQueryService.loadPatientDetail(req.getPatientId());
-        // Asm：映射学籍 DTO
-        return patientStudentMapper.toStudentDto(refreshed);
-    }
-
-    /**
-     * 从患者详情中解析当前有效学籍记录标识。
-     *
-     * <p>说明：本方法体现“一患一学籍”的业务选择规则（取 students 首条），不属于对象字段映射职责，故不下沉到 mapper。</p>
-     *
-     * @param detail 患者详情（含 students 列表）
-     * @return 已存在返回学籍主键；不存在返回 null
-     */
-    private Long resolveExistingStudentId(PatientDetailQueryModel detail) {
-        // 无学籍记录时按新增语义处理。
-        if (detail == null || detail.getStudents() == null || detail.getStudents().isEmpty()) {
-            return null;
-        }
-        // 按「一患者一学籍」约束取首条；若历史数据存在多条，应在数据治理中收敛。
-        if (detail.getStudents().get(0) == null) {
-            return null;
-        }
-        return detail.getStudents().get(0).getId();
-    }
-
-    /**
-     * 删除指定患者下当前有效的学籍记录（逻辑删除 is_deleted=true）。
-     * <p>
-     * 若该患者无有效学籍，则静默成功，不抛错。
-     * </p>
-     *
-     * @param patientId 患者主键
-     * @throws ValidationException {@code patientId} 为空
-     * @throws EntityNotFoundException 患者主档不存在或不可见
-     */
-    public void deletePatientStudent(Long patientId) {
-        // Gate：患者主键非空
-        if (patientId == null) {
-            throw new ValidationException("删除学籍失败：patientId 不能为空");
-        }
-
-        PatientDetailQueryModel detail = patientQueryService.loadPatientDetail(patientId);
-        // Branch：患者不存在时明确抛错
-        if (detail == null || detail.getPatient() == null) {
-            throw new EntityNotFoundException("患者不存在或已删除");
-        }
-
-        Long studentId = this.resolveExistingStudentId(detail);
-        // Branch：无有效学籍时静默成功
-        if (studentId == null) {
-            return;
-        }
-
-        DisablePatientStudentRecordCommand command = new DisablePatientStudentRecordCommand();
-        DisablePatientStudentRecordCommand.DisablePatientStudentRecordItemCommand item =
-            new DisablePatientStudentRecordCommand.DisablePatientStudentRecordItemCommand();
-        item.setPatientId(patientId);
-        item.setStudentId(studentId);
-        item.setReason("删除学籍");
-        command.setItems(java.util.Collections.singletonList(item));
-        // 操作人由底层框架自动获取，本层不在命令中透传。
-
-        try {
-            // Cmd：逻辑删除学籍
-            patientDomainService.disablePatientStudentRecord(command);
-        } catch (BusinessException ex) {
-            // Branch：并发下可能已被停用，视为幂等成功
-            if (ErrorCodeConstants.PATIENT_INVALID_STATUS.equals(ex.getErrorCode())) {
-                return;
-            }
-            throw ex;
-        }
     }
 
     /**

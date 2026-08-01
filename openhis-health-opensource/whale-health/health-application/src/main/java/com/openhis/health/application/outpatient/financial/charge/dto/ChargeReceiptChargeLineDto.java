@@ -28,7 +28,7 @@ public class ChargeReceiptChargeLineDto {
     @Schema(description = "金额展示文本")
     private String amountText;
 
-    /** 费用类别展示文本。 */
-    @Schema(description = "费用类别展示文本")
+    /** 医保类别展示文本（甲类/乙类/自费等，术语 CHRGITM_LV）。 */
+    @Schema(description = "医保类别展示文本（甲类/乙类/自费等）")
     private String chargeCategoryText;
 }

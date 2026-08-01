@@ -4,12 +4,17 @@
  */
 package com.openhis.health.application.inpatient.financial.dailysettlement.dto;
 
+import com.openhis.health.application.shared.financial.dto.DailySettlementExpenseNatureSummaryDto;
+import com.openhis.health.application.shared.financial.dto.DailySettlementSummaryRowDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
- * 住院日结收入汇总（IF-IP-DCL-02）；下半区字段对齐老日结单固定项，含住院特有预交金。
+ * 住院日结收入汇总（IF-IP-DCL-02）；公共头 + 费用性质动态块；含住院特有预交金。
  */
 @Data
 @Accessors(chain = true)
@@ -44,83 +49,39 @@ public class InpatientDailySettlementSummaryDto {
     @Schema(description = "支付宝小计")
     private String alipayAmount;
 
-    /** 网银/银行卡小计。 */
-    @Schema(description = "网银小计")
+    /** 银行卡小计。 */
+    @Schema(description = "银行卡小计")
     private String onlineBankAmount;
 
     /** 现金小计。 */
     @Schema(description = "现金小计")
     private String cashAmount;
 
+    /**
+     * 应交现金（应上交现金；与现金渠道小计同口径）。
+     */
+    @Schema(description = "应交现金（与现金渠道同口径）")
+    private String cashDueAmount;
+
+    /**
+     * 医保补偿合计（各医保费用性质统筹/基金支出代数和）。
+     */
+    @Schema(description = "医保补偿合计")
+    private String insuranceCompensationAmount;
+
     /** 预交金小计（住院特有；独立汇总，不参与 totalIncome 及其他下半区加和）。 */
     @Schema(description = "预交金小计（独立展示，不参与总收入加和）")
     private String depositAmount;
 
-    /** 自费现金总额。 */
-    @Schema(description = "自费现金总额")
-    private String selfPayCashTotal;
-
-    /** 自费 payment 条数。 */
-    @Schema(description = "自费条数")
-    private Integer selfPayCount;
-
-    /** 省医保 payment 条数。 */
-    @Schema(description = "省医保人次")
-    private Integer provincialInsuranceCount;
-
-    /** 市医保 payment 条数。 */
-    @Schema(description = "市医保人次")
-    private Integer municipalInsuranceCount;
-
-    /** 省医保现金。 */
-    @Schema(description = "省医保现金")
-    private String provincialInsuranceCash;
-
-    /** 省医保统筹。 */
-    @Schema(description = "省医保统筹")
-    private String provincialInsuranceFund;
-
-    /** 省医保账户。 */
-    @Schema(description = "省医保账户")
-    private String provincialInsuranceAccount;
-
-    /** 省医保基金。 */
-    @Schema(description = "省医保基金")
-    private String provincialInsuranceFundTotal;
-
-    /** 省医保总额（基金+账户）。 */
-    @Schema(description = "省医保总额")
-    private String provincialInsuranceTotal;
-
-    /** 市医保现金。 */
-    @Schema(description = "市医保现金")
-    private String municipalInsuranceCash;
-
-    /** 市医保统筹。 */
-    @Schema(description = "市医保统筹")
-    private String municipalInsuranceFund;
-
-    /** 市医保账户。 */
-    @Schema(description = "市医保账户")
-    private String municipalInsuranceAccount;
-
-    /** 市医保基金。 */
-    @Schema(description = "市医保基金")
-    private String municipalInsuranceFundTotal;
-
-    /** 市医保总额（基金+账户）。 */
-    @Schema(description = "市医保总额")
-    private String municipalInsuranceTotal;
-
-    /** 自费总额（接口字段名 totalCashIncome，对齐老日结单展示项；含微信/现金等全渠道净额）。 */
-    @Schema(description = "自费总额")
-    private String totalCashIncome;
-
-    /** 含医保关联 payment 条数（兼容旧字段）。 */
-    @Schema(description = "医保条数")
-    private Integer insuranceCount;
-
     /** 退还合计。 */
     @Schema(description = "退还合计")
     private String refundTotal;
+
+    /** 按费用性质（fin_contract）动态汇总块。 */
+    @Schema(description = "费用性质汇总")
+    private List<DailySettlementExpenseNatureSummaryDto> expenseNatureSummaries = new ArrayList<>();
+
+    /** 下半区扁平展示行（前端主渲染源）。 */
+    @Schema(description = "下半区展示行")
+    private List<DailySettlementSummaryRowDto> summaryRows = new ArrayList<>();
 }

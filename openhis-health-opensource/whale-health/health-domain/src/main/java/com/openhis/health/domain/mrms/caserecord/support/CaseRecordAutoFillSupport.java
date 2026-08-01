@@ -15,8 +15,6 @@ import com.openhis.health.domain.administration.patient.entity.Patient;
 import com.openhis.health.domain.administration.patient.service.PatientQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
-import com.openhis.health.domain.clinical.condition.queries.model.ConditionBatchItemQueryModel;
-import com.openhis.health.domain.clinical.condition.service.ConditionQueryService;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.ConditionDefinitionBatchItemQueryModel;
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
 import com.openhis.health.domain.clinical.procedure.entity.Procedure;
@@ -75,7 +73,6 @@ public class CaseRecordAutoFillSupport {
     private final LocationQueryService locationQueryService;
     private final OrganizationQueryService organizationQueryService;
     private final EncounterHistoryQueryService encounterHistoryQueryService;
-    private final ConditionQueryService conditionQueryService;
     private final ConditionDefinitionQueryService conditionDefinitionQueryService;
     private final ProcedureQueryService procedureQueryService;
     private final ServiceRequestQueryService serviceRequestQueryService;
@@ -453,39 +450,13 @@ public class CaseRecordAutoFillSupport {
     }
 
     /**
-     * 加载就诊有效诊断关联；空时从 condition 事实表合成 rank/主诊断标记。
+     * 加载就诊有效诊断关联。
      *
      * @param encounterId 就诊主键
      * @return 诊断关联列表
      */
     private List<EncounterDiagnosisQueryModel> resolveActiveAssociations(Long encounterId) {
-        List<EncounterDiagnosisQueryModel> active = new ArrayList<>(
-                encounterQueryService.listEncounterDiagnoses(encounterId));
-        if (!active.isEmpty()) {
-            return active;
-        }
-        // 就诊诊断关联为空时回落 condition 事实表合成（B.6.4：经 Condition QS）
-        List<com.openhis.health.domain.clinical.condition.queries.model.EncounterDiagnosisQueryModel> facts =
-                conditionQueryService.getEncounterDiagnosis(encounterId);
-        if (facts.isEmpty()) {
-            return active;
-        }
-        List<EncounterDiagnosisQueryModel> synthesized = new ArrayList<>(facts.size());
-        int rank = 1;
-        for (com.openhis.health.domain.clinical.condition.queries.model.EncounterDiagnosisQueryModel fact : facts) {
-            if (fact.getConditionId() == null) {
-                continue;
-            }
-            EncounterDiagnosisQueryModel model = new EncounterDiagnosisQueryModel();
-            model.setEncounterId(encounterId);
-            model.setConditionId(fact.getConditionId());
-            model.setDescription(fact.getDescription());
-            model.setPrimaryFlag(rank == 1);
-            model.setRank(rank);
-            synthesized.add(model);
-            rank++;
-        }
-        return synthesized;
+        return new ArrayList<>(encounterQueryService.listEncounterDiagnoses(encounterId));
     }
 
     /**
@@ -578,26 +549,16 @@ public class CaseRecordAutoFillSupport {
     }
 
     /**
-     * 批量加载 condition 与 conditionDefinition 上下文（诊断编码/名称装配用）。
+     * 批量加载 conditionDefinition 上下文（诊断编码/名称装配用，不经 Condition）。
      *
      * @param scoped 范围内诊断关联
-     * @return condition 与 definition 索引上下文
+     * @return definition 索引上下文
      */
     private DiagnosisContext loadDiagnosisContext(List<EncounterDiagnosisQueryModel> scoped) {
-        List<Long> conditionIds = new ArrayList<>();
-        for (EncounterDiagnosisQueryModel row : scoped) {
-            if (row.getConditionId() != null) {
-                conditionIds.add(row.getConditionId());
-            }
-        }
-        Map<Long, ConditionBatchItemQueryModel> condById = new HashMap<>();
-        for (ConditionBatchItemQueryModel item : conditionQueryService.getConditionListById(conditionIds)) {
-            condById.put(item.getId(), item);
-        }
         Set<Long> defIdSet = new LinkedHashSet<>();
-        for (ConditionBatchItemQueryModel item : condById.values()) {
-            if (item.getDefinitionId() != null) {
-                defIdSet.add(item.getDefinitionId());
+        for (EncounterDiagnosisQueryModel row : scoped) {
+            if (row.getConditionDefinitionId() != null) {
+                defIdSet.add(row.getConditionDefinitionId());
             }
         }
         Map<Long, ConditionDefinitionBatchItemQueryModel> defById = new HashMap<>();
@@ -607,7 +568,7 @@ public class CaseRecordAutoFillSupport {
                 defById.put(def.getId(), def);
             }
         }
-        return new DiagnosisContext(condById, defById);
+        return new DiagnosisContext(defById);
     }
 
     /**
@@ -618,14 +579,20 @@ public class CaseRecordAutoFillSupport {
      * @return 诊断行；编码名称均缺失时 null
      */
     private DiagnosisLineSnapshot toDiagnosisSnapshot(EncounterDiagnosisQueryModel row, DiagnosisContext ctx) {
-        ConditionBatchItemQueryModel condition = ctx.condById.get(row.getConditionId());
-        // 条件实例缺失时无法组装诊断行
-        if (condition == null) {
-            return null;
-        }
         ConditionDefinitionBatchItemQueryModel definition = null;
-        if (condition.getDefinitionId() != null) {
-            definition = ctx.defById.get(condition.getDefinitionId());
+        if (row.getConditionDefinitionId() != null) {
+            definition = ctx.defById.get(row.getConditionDefinitionId());
+        }
+        // 目录定义缺失时无法组装编码/名称
+        if (definition == null) {
+            String fallbackName = trimToNull(row.getDescription());
+            if (fallbackName == null) {
+                return null;
+            }
+            DiagnosisLineSnapshot snap = new DiagnosisLineSnapshot();
+            snap.setDiagName(fallbackName);
+            snap.setMain(Boolean.TRUE.equals(row.getPrimaryFlag()));
+            return snap;
         }
         String diagCode = null;
         String diagName = null;
@@ -635,9 +602,6 @@ public class CaseRecordAutoFillSupport {
         }
         if (diagName == null) {
             diagName = trimToNull(row.getDescription());
-        }
-        if (diagName == null && condition.getDescription() != null) {
-            diagName = trimToNull(condition.getDescription());
         }
         // 编码与名称均为空时丢弃该行
         if (diagCode == null && diagName == null) {
@@ -790,21 +754,15 @@ public class CaseRecordAutoFillSupport {
         ADMISSION
     }
 
-    /** 诊断批量读模型上下文（condition + definition 索引）。 */
+    /** 诊断批量读模型上下文（definition 索引，不经 Condition）。 */
     private static final class DiagnosisContext {
-        /** conditionId → 批量 condition 行。 */
-        private final Map<Long, ConditionBatchItemQueryModel> condById;
         /** definitionId → 批量 definition 行。 */
         private final Map<Long, ConditionDefinitionBatchItemQueryModel> defById;
 
         /**
-         * @param condById condition 索引
-         * @param defById  definition 索引
+         * @param defById definition 索引
          */
-        private DiagnosisContext(
-                Map<Long, ConditionBatchItemQueryModel> condById,
-                Map<Long, ConditionDefinitionBatchItemQueryModel> defById) {
-            this.condById = condById;
+        private DiagnosisContext(Map<Long, ConditionDefinitionBatchItemQueryModel> defById) {
             this.defById = defById;
         }
     }

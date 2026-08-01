@@ -176,6 +176,44 @@ public class Encounter extends BaseAuditedEntity {
     }
 
     /**
+     * 初始化体检在检状态（EncounterClass.PE + IN_PROGRESS，BR-REG-04）。
+     */
+    public void initPhysicalExamInProgress() {
+        this.classEnum = EncounterClass.PE.getCode();
+        this.statusEnum = EncounterStatus.IN_PROGRESS.getCode();
+    }
+
+    /**
+     * 体检总检完成后结束就诊：{@code PE + IN_PROGRESS} → {@code COMPLETED}（BR-MAS-05）。
+     *
+     * <p>枚举无 FINISHED；通用 finished 语义落地为 {@link EncounterStatus#COMPLETED}。</p>
+     */
+    public void finishPhysicalExam() {
+        this.assertClass(EncounterClass.PE.getCode());
+        if (!EncounterStatus.IN_PROGRESS.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(
+                ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "仅在检中的体检就诊可结束");
+        }
+        this.statusEnum = EncounterStatus.COMPLETED.getCode();
+        this.endTime = LocalDateTime.now();
+    }
+
+    /**
+     * 校验体检登记必填字段（不要求号源类型）。
+     */
+    public void assertPhysicalExamRegistrationRequiredFields() {
+        if (this.patientId == null) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "患者标识不能为空");
+        }
+        if (this.organizationId == null) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "体检中心机构标识不能为空");
+        }
+        if (StringUtils.isEmpty(this.busNo)) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "就诊业务号不能为空");
+        }
+    }
+
+    /**
      * 初始化住院已计划状态。
      */
     public void initInpatientPlanned() {
@@ -423,18 +461,18 @@ public class Encounter extends BaseAuditedEntity {
     }
 
     /**
-     * 出院召回（已清床轨）：已出院 → 待入科，清空出院时间与离院方式（DM-ADM-002 §6.1.25）。
+     * 出院召回（已清床轨）：已离院 → 已入科，清空出院时间与离院方式（DM-ADM-002 §6.1.25）。
      *
-     * <p>豁免 BR-ENC-003：{@code DISCHARGED} 为业务终态，仅本方法允许拉回 {@code REGISTERED}；
-     * 活动病区由领域服务 INSERT，床/参与者须护士二次分床补齐。</p>
+     * <p>豁免 BR-ENC-003：{@code DISCHARGED} 为业务终态，仅本方法允许拉回 {@code IN_PROGRESS}；
+     * 活动病区由领域服务 INSERT 新行，不新增活动床、不占物理床。</p>
      */
-    public void recallFromDischargedToRegistered() {
+    public void recallFromDischargedToInProgress() {
         this.assertClass(EncounterClass.IMP.getCode());
         if (!EncounterStatus.DISCHARGED.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS,
                 "仅已出院状态允许已清床轨出院召回");
         }
-        this.statusEnum = EncounterStatus.REGISTERED.getCode();
+        this.statusEnum = EncounterStatus.IN_PROGRESS.getCode();
         this.endTime = null;
         this.outWayCode = null;
     }
@@ -465,6 +503,23 @@ public class Encounter extends BaseAuditedEntity {
             }
         }
         this.statusEnum = EncounterStatus.CANCELLED.getCode();
+    }
+
+    /**
+     * 迁移到错误录入终止态。
+     *
+     * <p>门诊待挂号（PLANNED）窗口「取消」专用：与退号 {@link #transitToCancelled()} 区分，
+     * 表示未收费挂单作废而非已挂号后退号。</p>
+     */
+    public void transitToEnteredInError() {
+        if (this.statusEnum != null) {
+            EncounterStatus current = EnumUtil.fromCode(EncounterStatus.class, this.statusEnum);
+            if (current != null && current.isTerminal()) {
+                throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS,
+                    "就诊已处于终止态（" + current.name() + "），不允许再次状态迁移");
+            }
+        }
+        this.statusEnum = EncounterStatus.ENTERED_IN_ERROR.getCode();
     }
 
     /**

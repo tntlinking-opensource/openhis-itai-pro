@@ -71,6 +71,10 @@ public class CreateMedicationCatalogRequest {
     @Schema(description = "剂量单位编码对应的文本值", example = "克")
     private String doseUnitCode_dictText;
 
+    /** 单次最小用药剂量。 */
+    @Schema(description = "单次最小用药剂量", example = "0.5")
+    private BigDecimal minUnit;
+
     /** 单次最大用药剂量。 */
     @Schema(description = "单次最大用药剂量", example = "1.0")
     private BigDecimal maxUnit;
@@ -187,8 +191,10 @@ public class CreateMedicationCatalogRequest {
     @Schema(description = "生产厂家名称", example = "广州白云山医药集团股份有限公司")
     private String manufacturerText;
 
-    /** 供应商ID。 */
-    @Schema(description = "供应商ID", example = "60001", type = "string")
+    /**
+     * 供应商标识（历史字段；药品目录创建/编辑写路径忽略并清空，供应商改由进货等单据维护）。
+     */
+    @Schema(description = "供应商标识（目录维护已废弃，写路径忽略）", example = "60001", type = "string")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long supplyId;
 
@@ -201,12 +207,16 @@ public class CreateMedicationCatalogRequest {
     @Schema(description = "产品特性枚举 1-处方药 2-非处方药 3-特殊管理药品", example = "1", allowableValues = {"1", "2", "3"})
     private Integer characteristic;
 
-    /** 药品购入价格。 */
-    @Schema(description = "药品购入价格", example = "10.5")
+    /**
+     * 采购参考价（维护态 {@code PURCHASE}，元/包装单位）。
+     */
+    @Schema(description = "采购参考价（元/包装单位）", example = "10.5")
     private BigDecimal purchasePrice;
 
-    /** 药品零售价格。 */
-    @Schema(description = "药品零售价格", example = "15.8")
+    /**
+     * 销售参考价（维护态 {@code SALE}，元/包装单位）。
+     */
+    @Schema(description = "销售参考价（元/包装单位）", example = "15.8")
     private BigDecimal retailPrice;
 
     /** 药品最高零售限价。 */
@@ -305,8 +315,22 @@ public class CreateMedicationCatalogRequest {
     @Schema(description = "销售单位到拆零单位换算比例", example = "10")
     private BigDecimal packageUnitRatio;
 
-    /** 医保等级 1-甲类 2-乙类 3-丙类。 */
-    @Schema(description = "医保等级 1-甲类 2-乙类 3-丙类", example = "2", allowableValues = {"1", "2", "3"})
+    /**
+     * 追溯码所贴单位编码（术语 {@code unit_code}；可游离于五类业务单位之外）。
+     *
+     * <p>药品目录新建/编辑必填；同意入库写入 {@code cus_trace_number.trace_unit_code}。</p>
+     */
+    @Schema(description = "追溯码单位编码", example = "DW003", maxLength = 64)
+    private String traceUnitCode;
+
+    /**
+     * 1 个追溯码单位对应的拆零数量；与 {@link #traceUnitCode} 成对，必填且须 &gt; 0。
+     */
+    @Schema(description = "追溯码单位→拆零倍数", example = "10")
+    private BigDecimal traceUnitRatio;
+
+    /** 医保等级（与 yb_type 一致：1自费 2甲类 3乙类 4丙类）。 */
+    @Schema(description = "医保等级（与 yb_type 一致：1自费 2甲类 3乙类 4丙类）", example = "2", allowableValues = {"1", "2", "3", "4"})
     private Integer chrgitmLv;
 
     /** 病案结算类型编码（术语 mr_settlement_type_code）。 */

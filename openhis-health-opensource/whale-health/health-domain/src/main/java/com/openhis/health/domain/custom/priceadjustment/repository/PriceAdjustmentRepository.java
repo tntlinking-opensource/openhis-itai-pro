@@ -38,6 +38,20 @@ public interface PriceAdjustmentRepository extends JpaRepository<PriceAdjustment
     boolean existsByItemTableAndItemIdAndStatusEnumAndIsDeletedFalse(String itemTable, Long itemId, String statusEnum);
 
     /**
+     * 批量判断项目是否存在指定状态的调价单（大单提交 pending 互斥，避免逐条 exists）。
+     *
+     * @param itemTable  项目物理表
+     * @param itemIds    项目定义主键集合
+     * @param statusEnum 状态 code（如 pending）
+     * @return 命中的未删行；无命中为空列表
+     */
+    List<PriceAdjustment> findByItemTableAndItemIdInAndStatusEnumAndIsDeletedFalse(
+        String itemTable,
+        List<Long> itemIds,
+        String statusEnum
+    );
+
+    /**
      * 按机构与提交时间区间查询。
      *
      * @param orgId      机构

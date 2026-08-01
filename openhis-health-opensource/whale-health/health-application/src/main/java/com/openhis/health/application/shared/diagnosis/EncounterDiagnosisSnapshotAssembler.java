@@ -8,27 +8,27 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDiagnosisQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.domain.clinical.condition.queries.model.ConditionBatchItemQueryModel;
-import com.openhis.health.domain.clinical.condition.service.ConditionQueryService;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.ConditionDefinitionBatchItemQueryModel;
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
 import com.openhis.health.domain.share.constants.DoctorStationDiagnosisConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.utils.DiagnosisKindPresentationUtil;
-import lombok.RequiredArgsConstructor;
+import com.openhis.health.domain.share.utils.EncounterDiagnosisIdsSupport;
 import com.openhis.whale.core.application.util.StringUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * Bridge 共享：就诊诊断快照读侧组装（经各领域 {@code *QueryService} 批量读，拼装 {@code diagnosisJson}）。
+ * Bridge 共享：就诊诊断快照读侧组装（经 Encounter / ConditionDefinition QueryService 批量读，拼装 {@code diagnosisJson}）。
  */
 @Component("integrationEncounterDiagnosisSnapshotAssembler")
 @RequiredArgsConstructor
@@ -36,8 +36,7 @@ public class EncounterDiagnosisSnapshotAssembler {
 
     /** 就诊读侧：加载 adm 就诊诊断关联。 */
     private final EncounterQueryService encounterQueryService;
-    /** 病情事实读侧：批量读 condition 与合成关联。 */
-    private final ConditionQueryService conditionQueryService;
+
     /** 诊断目录读侧：批量读 condition_definition 展示名与来源。 */
     private final ConditionDefinitionQueryService conditionDefinitionQueryService;
 
@@ -53,7 +52,7 @@ public class EncounterDiagnosisSnapshotAssembler {
     /**
      * 按就诊主键组装诊断快照 JSON 与主诊断展示名。
      *
-     * <p>经 Encounter / Condition / ConditionDefinition 三个 QS 批量读（B.6.4 跨聚合读侧编排）。</p>
+     * <p>经 Encounter / ConditionDefinition 两个 QS 批量读（B.6.4 跨聚合读侧编排）；不经 {@code cln_condition}。</p>
      *
      * @param encounterId 就诊主键；null 时返回空数组快照
      * @return 快照 JSON 与主诊断名
@@ -63,29 +62,19 @@ public class EncounterDiagnosisSnapshotAssembler {
         if (encounterId == null) {
             return new DiagnosisSnapshot(DoctorStationDiagnosisConstants.DIAGNOSIS_SNAPSHOT_EMPTY_ARRAY, null);
         }
-        // Pre：加载就诊诊断关联（adm 优先，无关联时从 condition 事实合成）
-        List<EncounterDiagnosisQueryModel> active = resolveActiveAssociations(encounterId);
+        // Pre：加载就诊诊断关联（adm_encounter_diagnosis，直挂 condition_definition_id）
+        List<EncounterDiagnosisQueryModel> active = new ArrayList<>(
+            this.encounterQueryService.listEncounterDiagnoses(encounterId));
         active.sort(Comparator
-                .comparing(EncounterDiagnosisQueryModel::getRank, Comparator.nullsLast(Comparator.naturalOrder()))
-                .thenComparing(EncounterDiagnosisQueryModel::getDiagnosisId, Comparator.nullsLast(Comparator.naturalOrder())));
+            .comparing(EncounterDiagnosisQueryModel::getRank, Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(EncounterDiagnosisQueryModel::getDiagnosisId, Comparator.nullsLast(Comparator.naturalOrder())));
         if (active.isEmpty()) {
             return new DiagnosisSnapshot(DoctorStationDiagnosisConstants.DIAGNOSIS_SNAPSHOT_EMPTY_ARRAY, null);
         }
-        List<Long> conditionIds = new ArrayList<>();
-        for (EncounterDiagnosisQueryModel ed : active) {
-            if (ed.getConditionId() != null) {
-                conditionIds.add(ed.getConditionId());
-            }
-        }
-        // Pre：经 Condition QS 批量读病情事实（B.6.4）
-        Map<Long, ConditionBatchItemQueryModel> condById = new HashMap<>();
-        for (ConditionBatchItemQueryModel c : conditionQueryService.getConditionListById(conditionIds)) {
-            condById.put(c.getId(), c);
-        }
         Set<Long> defIdSet = new LinkedHashSet<>();
-        for (ConditionBatchItemQueryModel c : condById.values()) {
-            if (c.getDefinitionId() != null) {
-                defIdSet.add(c.getDefinitionId());
+        for (EncounterDiagnosisQueryModel ed : active) {
+            if (ed.getConditionDefinitionId() != null) {
+                defIdSet.add(ed.getConditionDefinitionId());
             }
         }
         // Pre：经 ConditionDefinition QS 批量读目录名与来源（B.6.4）
@@ -101,18 +90,13 @@ public class EncounterDiagnosisSnapshotAssembler {
         JSONArray array = new JSONArray();
         String primaryName = null;
         for (EncounterDiagnosisQueryModel ed : active) {
-            ConditionBatchItemQueryModel c = condById.get(ed.getConditionId());
-            if (c == null) {
+            if (ed.getConditionDefinitionId() == null) {
                 continue;
             }
-            ConditionDefinitionBatchItemQueryModel def = null;
-            if (c.getDefinitionId() != null) {
-                def = defById.get(c.getDefinitionId());
-            }
+            ConditionDefinitionBatchItemQueryModel def = defById.get(ed.getConditionDefinitionId());
             JSONObject row = new JSONObject();
             row.put(FieldNameConstants.ENCOUNTER_DIAGNOSIS_ID, ed.getDiagnosisId());
-            row.put(FieldNameConstants.CONDITION_ID, c.getId());
-            row.put(FieldNameConstants.CONDITION_DEFINITION_ID, c.getDefinitionId());
+            row.put(FieldNameConstants.CONDITION_DEFINITION_ID, ed.getConditionDefinitionId());
             if (def != null) {
                 row.put(FieldNameConstants.CONDITION_CODE, def.getConditionCode());
                 row.put(FieldNameConstants.CONDITION_DEFINITION_NAME, def.getName());
@@ -127,7 +111,7 @@ public class EncounterDiagnosisSnapshotAssembler {
             String diagnosisKind = DoctorStationDiagnosisConstants.resolveDiagnosisKindFromSource(sourceForKind);
             row.put(FieldNameConstants.DIAGNOSIS_KIND, diagnosisKind);
             row.put(FieldNameConstants.DIAGNOSIS_KIND_TEXT, DiagnosisKindPresentationUtil.toDisplay(diagnosisKind));
-            row.put(FieldNameConstants.VERIFICATION_STATUS_ENUM, verificationStatusToUiCode(c.getVerificationStatusEnum()));
+            row.put(FieldNameConstants.VERIFICATION_STATUS_ENUM, DoctorStationDiagnosisConstants.VerificationUiCode.CONFIRMED);
             int mainDiagnosisFlagValue;
             // 主诊断标记写入 UI 整数码（1=是，0=否）
             if (Boolean.TRUE.equals(ed.getPrimaryFlag())) {
@@ -138,11 +122,7 @@ public class EncounterDiagnosisSnapshotAssembler {
             row.put(FieldNameConstants.MAIN_DIAGNOSIS_FLAG, mainDiagnosisFlagValue);
             row.put(FieldNameConstants.DIAGNOSIS_SORT_NO, ed.getRank());
             row.put(FieldNameConstants.MEDICAL_TYPE_CODE, ed.getMedType());
-            String desc = ed.getDescription();
-            if (StringUtils.isEmpty(desc)) {
-                desc = c.getDescription();
-            }
-            row.put(FieldNameConstants.DIAGNOSIS_DESC, desc);
+            row.put(FieldNameConstants.DIAGNOSIS_DESC, ed.getDescription());
             if (StringUtils.isNotEmpty(ed.getDiagTypeCode())) {
                 row.put(FieldNameConstants.IPT_DISEASE_TYPE_CODE, ed.getDiagTypeCode());
             }
@@ -152,7 +132,11 @@ public class EncounterDiagnosisSnapshotAssembler {
             if (def != null && StringUtils.isNotEmpty(def.getSourceEnum())) {
                 row.put(FieldNameConstants.SOURCE_ENUM, def.getSourceEnum());
             }
-            row.put(FieldNameConstants.YB_NO, c.getYbNo());
+            String ybNo = null;
+            if (def != null) {
+                ybNo = def.getYbNo();
+            }
+            row.put(FieldNameConstants.YB_NO, ybNo);
             array.add(row);
             if (Boolean.TRUE.equals(ed.getPrimaryFlag()) && def != null && primaryName == null) {
                 primaryName = def.getName();
@@ -170,71 +154,75 @@ public class EncounterDiagnosisSnapshotAssembler {
     }
 
     /**
-     * 解析就诊有效诊断关联：adm 关联表优先，无行时从 condition 事实合成。
+     * 按分组键汇总多段 {@code encounter_diagnosis_ids} 并集展示名（方头诊断全集）。
      *
-     * @param encounterId 就诊主键
-     * @return 有效诊断关联列表
+     * <p>发药 slip / 处方查询等同处方号多药行场景：先并集 ids，再解析顿号病名。</p>
+     *
+     * @param idsTextsByGroupKey 分组键（通常 prescription_no）→ 各药行 ids 串列表
+     * @return 分组键 → 顿号拼接病名；无有效名的键不入表
      */
-    private List<EncounterDiagnosisQueryModel> resolveActiveAssociations(Long encounterId) {
-        // Pre：经 Encounter QS 读 adm 就诊诊断关联（B.6.4）
-        List<EncounterDiagnosisQueryModel> active = new ArrayList<>(
-                encounterQueryService.listEncounterDiagnoses(encounterId));
-        if (!active.isEmpty()) {
-            return active;
+    public Map<String, String> mapUnionDisplayNameByGroupKey(Map<String, List<String>> idsTextsByGroupKey) {
+        Map<String, String> result = new LinkedHashMap<>();
+        // Gate：无分组则无方头文案
+        if (idsTextsByGroupKey == null || idsTextsByGroupKey.isEmpty()) {
+            return result;
         }
-        // Pre：adm 无关联时经 Condition QS 反查事实并合成关联行（B.6.4）
-        List<com.openhis.health.domain.clinical.condition.queries.model.EncounterDiagnosisQueryModel> facts =
-                conditionQueryService.getEncounterDiagnosis(encounterId);
-        if (facts.isEmpty()) {
-            return active;
-        }
-        List<EncounterDiagnosisQueryModel> synthesized = new ArrayList<>(facts.size());
-        int rank = 1;
-        for (com.openhis.health.domain.clinical.condition.queries.model.EncounterDiagnosisQueryModel fact : facts) {
-            if (fact.getConditionId() == null) {
+        // Loop：各组 ids 并集 → 展示名
+        for (Map.Entry<String, List<String>> entry : idsTextsByGroupKey.entrySet()) {
+            if (entry == null || StringUtils.isEmpty(entry.getKey())) {
                 continue;
             }
-            EncounterDiagnosisQueryModel model = new EncounterDiagnosisQueryModel();
-            model.setEncounterId(encounterId);
-            model.setConditionId(fact.getConditionId());
-            model.setDescription(fact.getDescription());
-            // 合成关联：首条事实视为主诊断
-            if (rank == 1) {
-                model.setPrimaryFlag(Boolean.TRUE);
-            } else {
-                model.setPrimaryFlag(Boolean.FALSE);
+            String unionIds = EncounterDiagnosisIdsSupport.unionOrderedIdsTexts(entry.getValue());
+            String summary = this.joinDisplayNamesByEncounterDiagnosisIdsText(unionIds);
+            if (StringUtils.isNotEmpty(summary)) {
+                result.put(entry.getKey(), summary);
             }
-            model.setRank(rank);
-            synthesized.add(model);
-            rank++;
         }
-        return synthesized;
+        return result;
     }
 
     /**
-     * FHIR verification_status code → 医生站 UI 整数码。
+     * 按就诊诊断 ids 串（可已是并集）解析目录展示名并以顿号拼接，供处方方头诊断全集。
      *
-     * @param verificationStatusEnum 持久化验证状态码
-     * @return UI 码；空输入默认 CONFIRMED
+     * @param encounterDiagnosisIdsText {@code encounter_diagnosis_ids} 或并集串；可空
+     * @return 顿号拼接病名；无有效名时 null
      */
-    private int verificationStatusToUiCode(String verificationStatusEnum) {
-        if (StringUtils.isEmpty(verificationStatusEnum)) {
-            return DoctorStationDiagnosisConstants.VerificationUiCode.CONFIRMED;
+    public String joinDisplayNamesByEncounterDiagnosisIdsText(String encounterDiagnosisIdsText) {
+        List<Long> orderedIds = EncounterDiagnosisIdsSupport.parseUniqueOrderedIds(encounterDiagnosisIdsText, true);
+        // Gate：无 id 则无方头诊断文案
+        if (orderedIds.isEmpty()) {
+            return null;
         }
-        return switch (verificationStatusEnum.trim()) {
-            case DoctorStationDiagnosisConstants.ConditionVerificationStatusCode.UNCONFIRMED ->
-                    DoctorStationDiagnosisConstants.VerificationUiCode.UNCONFIRMED;
-            case DoctorStationDiagnosisConstants.ConditionVerificationStatusCode.PROVISIONAL ->
-                    DoctorStationDiagnosisConstants.VerificationUiCode.PROVISIONAL;
-            case DoctorStationDiagnosisConstants.ConditionVerificationStatusCode.DIFFERENTIAL ->
-                    DoctorStationDiagnosisConstants.VerificationUiCode.DIFFERENTIAL;
-            case DoctorStationDiagnosisConstants.ConditionVerificationStatusCode.CONFIRMED ->
-                    DoctorStationDiagnosisConstants.VerificationUiCode.CONFIRMED;
-            case DoctorStationDiagnosisConstants.ConditionVerificationStatusCode.REFUTED ->
-                    DoctorStationDiagnosisConstants.VerificationUiCode.REFUTED;
-            case DoctorStationDiagnosisConstants.ConditionVerificationStatusCode.ENTERED_IN_ERROR ->
-                    DoctorStationDiagnosisConstants.VerificationUiCode.ENTERED_IN_ERROR;
-            default -> DoctorStationDiagnosisConstants.VerificationUiCode.CONFIRMED;
-        };
+        // Pre：批量读就诊诊断行 → 目录定义 id
+        Map<Long, Long> definitionIdByEncounterDiagnosisId = new HashMap<>();
+        Set<Long> definitionIds = new LinkedHashSet<>();
+        for (var ed : this.encounterQueryService.listEncounterDiagnosisEntitiesByIds(orderedIds)) {
+            if (ed == null || ed.getId() == null || ed.getConditionDefinitionId() == null) {
+                continue;
+            }
+            definitionIdByEncounterDiagnosisId.put(ed.getId(), ed.getConditionDefinitionId());
+            definitionIds.add(ed.getConditionDefinitionId());
+        }
+        if (definitionIds.isEmpty()) {
+            return null;
+        }
+        // Pre：批量读目录名
+        Map<Long, String> nameByDefinitionId = new HashMap<>();
+        for (ConditionDefinitionBatchItemQueryModel def
+            : this.conditionDefinitionQueryService.getConditionDefinitionListByIds(new ArrayList<>(definitionIds))) {
+            if (def != null && def.getId() != null && StringUtils.isNotEmpty(def.getName())) {
+                nameByDefinitionId.put(def.getId(), def.getName().trim());
+            }
+        }
+        // Asm：按 ids 有序拼展示名
+        return EncounterDiagnosisIdsSupport.joinOrderedDisplayNames(
+            EncounterDiagnosisIdsSupport.joinOrderedIds(orderedIds),
+            encounterDiagnosisId -> {
+                Long definitionId = definitionIdByEncounterDiagnosisId.get(encounterDiagnosisId);
+                if (definitionId == null) {
+                    return null;
+                }
+                return nameByDefinitionId.get(definitionId);
+            });
     }
 }

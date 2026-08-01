@@ -4,6 +4,7 @@
  */
 package com.openhis.health.application.inventory.pharmacy.transferin.service;
 
+import com.openhis.health.application.shared.inventory.InventoryListPractitionerNameResolver;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogEditorHintsAssembler;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
@@ -42,6 +43,7 @@ import com.openhis.health.domain.workflow.inventoryitem.queries.InventoryItemPag
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryCatalogAvailabilityRowModel;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryItemModel;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
+import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyByBusNoBatchQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyByBusNoQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyRequestDocumentListQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
@@ -82,6 +84,7 @@ public class InventoryPharmacyTransferInAppService {
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
     private final InventoryPharmacyTransferInMapper transferInMapper;
+    private final InventoryListPractitionerNameResolver inventoryListPractitionerNameResolver;
 
     /**
      * 加载药房调入页主数据（管辖药房/药库、枚举选项、药师等）。
@@ -100,9 +103,9 @@ public class InventoryPharmacyTransferInAppService {
             List<Location> gatedPharmacies = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(pharmacies);
             List<Location> warehouses = locationQueryService.listAllActiveWarehouses();
             List<Location> gatedWarehouses = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(warehouses);
-            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
                 WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
-            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
                 WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE, resolvedOrg);
             return transferInMapper.toLoadTransferInFormInitResponse(
                 transferInMapper.toOptionDtoListFromLocations(gatedPharmacies),
@@ -180,6 +183,9 @@ public class InventoryPharmacyTransferInAppService {
             List<TransferInListRowDto> records = this.transferInMapper.toTransferInListAggregated(busNos, lines);
             this.enrichTransferInListSourceLocationNames(records);
             this.enrichTransferInListStatusEnumText(records);
+            // Pre：历史壳单可能未落 approverId，按 originalBusNo 回填调出审批人
+            this.fillMissingApproverFromOriginalTransferOut(records);
+            this.enrichTransferInListDisplayNames(records, lines);
             int pageNo = request.getPageNo();
             int pageSize = listQuery.getBoundedPageSize();
             // Asm：聚合 busNo 行并映射分页响应
@@ -247,6 +253,8 @@ public class InventoryPharmacyTransferInAppService {
         // Asm：补齐产品展示名与历史落库槽价（BR-PRICE-SRC-001）
         this.enrichTransferInDetailProductDisplay(res.getLines(), products, terminologyMaps);
         this.enrichTransferInDetailLines(res.getLines());
+        this.enrichTransferInDetailAvailableQuantity(res.getLines(), res.getSourceLocationId());
+        this.enrichTransferInDetailPractitionerName(res);
         return res;
     }
 
@@ -347,6 +355,8 @@ public class InventoryPharmacyTransferInAppService {
         InventoryItemPageQuery invQuery = new InventoryItemPageQuery();
         invQuery.setLocationId(request.getSourceLocationId());
         invQuery.setItemTable(request.getProductTableName().trim());
+        // —— 前台可选：true 仅返回选品库位账面量>0 的批号行；false/未传不过滤数量。——
+        invQuery.setPositiveQuantityOnly(request.getPositiveQuantityOnly());
         PageQueryBinder.bind(request, invQuery);
         Pageable pageable = PageRequest.of(request.springPageIndex(), request.getBoundedPageSize(), Sort.by(Sort.Direction.ASC, FieldNameConstants.ID));
         try {
@@ -504,6 +514,115 @@ public class InventoryPharmacyTransferInAppService {
         }
     }
 
+
+    /**
+     * 历史调入壳单可能未落 {@code approverId}：按 {@code originalBusNo}（调出单）头行审批人回填侧栏展示。
+     *
+     * <p>仅影响本页列表出参，不写库；新生成壳单已在调出 agree 编排写入审批人。</p>
+     *
+     * @param rows 当前页聚合列表行
+     */
+    private void fillMissingApproverFromOriginalTransferOut(List<TransferInListRowDto> rows) {
+        // Gate：空列表无需回填
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        // Pre：收集缺审批人且带关联调出单号的壳单
+        List<String> originalBusNos = new ArrayList<>();
+        for (TransferInListRowDto row : rows) {
+            if (row == null || row.getApproverId() != null) {
+                // 已有审批人或空行：跳过
+                continue;
+            }
+            if (StringUtils.isEmpty(row.getOriginalBusNo())) {
+                // 无关联调出单号：无法回填
+                continue;
+            }
+            originalBusNos.add(row.getOriginalBusNo().trim());
+        }
+        if (originalBusNos.isEmpty()) {
+            return;
+        }
+        // Pre：批量回读调出单（B.6.4：经本聚合 SupplyRequestQueryService）
+        SupplyByBusNoBatchQuery batchQuery = new SupplyByBusNoBatchQuery();
+        batchQuery.setBusNoList(originalBusNos);
+        List<SupplyRequestModel> originalLines;
+        try {
+            originalLines = this.supplyRequestQueryService.getSupplyByBusNoBatch(batchQuery);
+        } catch (RuntimeException ex) {
+            // 读库批读失败：降级为空审批人，不阻断列表
+            log.warn("fillMissingApproverFromOriginalTransferOut degraded", ex);
+            return;
+        }
+        // Pre：按调出单号取首行审批人（同号多行共享 approverId）
+        Map<String, Long> approverByOriginalBusNo = new HashMap<>();
+        for (SupplyRequestModel line : originalLines) {
+            if (line == null || StringUtils.isEmpty(line.getBusNo()) || line.getApproverId() == null) {
+                continue;
+            }
+            String busNo = line.getBusNo().trim();
+            if (!approverByOriginalBusNo.containsKey(busNo)) {
+                // 同号仅取首个非空审批人，避免后行覆盖
+                approverByOriginalBusNo.put(busNo, line.getApproverId());
+            }
+        }
+        // Asm：写回列表行 approverId，供后续 practitioner 名富化
+        for (TransferInListRowDto row : rows) {
+            if (row == null || row.getApproverId() != null || StringUtils.isEmpty(row.getOriginalBusNo())) {
+                continue;
+            }
+            Long approverId = approverByOriginalBusNo.get(row.getOriginalBusNo().trim());
+            if (approverId != null) {
+                row.setApproverId(approverId);
+            }
+        }
+    }
+
+    /**
+     * 药房调入列表行 enrich：批量解析制单人/审批人姓名（IF-PHA-TI-02 侧栏卡片展示）。
+     *
+     * @param rows        当前页聚合列表行
+     * @param detailLines 当前页供应请求明细（非空门禁；主键以 rows 为准）
+     */
+    private void enrichTransferInListDisplayNames(List<TransferInListRowDto> rows, List<SupplyRequestModel> detailLines) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        if (detailLines == null || detailLines.isEmpty()) {
+            return;
+        }
+        Set<Long> practitionerIds = new HashSet<>();
+        for (TransferInListRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getApplicantId() != null) {
+                practitionerIds.add(row.getApplicantId());
+            }
+            if (row.getApproverId() != null) {
+                practitionerIds.add(row.getApproverId());
+            }
+        }
+        Map<Long, String> practitionerNameById = this.inventoryListPractitionerNameResolver.resolveNamesByIds(practitionerIds);
+        for (TransferInListRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getApplicantId() != null) {
+                String creatorName = practitionerNameById.get(row.getApplicantId());
+                if (creatorName != null) {
+                    row.setCreatorName(creatorName);
+                }
+            }
+            if (row.getApproverId() != null) {
+                String approverName = practitionerNameById.get(row.getApproverId());
+                if (approverName != null) {
+                    row.setApproverName(approverName);
+                }
+            }
+        }
+    }
+
     /**
      * 药房调入详情：补齐项目名称、规格、厂家与行单位展示名（与药库调出 IF-PHA-TI-03 同构）。
      *
@@ -569,6 +688,94 @@ public class InventoryPharmacyTransferInAppService {
             }
             ProductDefinitionCatalogUnitBandsAssembler.enrichWarehouseDetailCatalogFromPersistedSupplyLinePrice(
                 cat, dto.getPrice(), dto.getUnitCode(), null);
+        }
+    }
+
+    /**
+     * 详情回填源库可用量（拆零），与选品 {@code availableQuantity} 同口径。
+     *
+     * @param lines            详情明细行
+     * @param sourceLocationId 调出源库位
+     */
+    private void enrichTransferInDetailAvailableQuantity(
+        List<TransferInDetailLineDto> lines, Long sourceLocationId) {
+        if (lines == null || lines.isEmpty() || sourceLocationId == null) {
+            return;
+        }
+        // —— 按物品表分组批量取可用行，避免按明细行 N 次查库。——
+        Map<String, List<Long>> itemIdsByTable = new HashMap<>();
+        for (TransferInDetailLineDto line : lines) {
+            if (line == null || line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
+                continue;
+            }
+            String table = line.getItemTable().trim();
+            itemIdsByTable.computeIfAbsent(table, k -> new ArrayList<>()).add(line.getItemId());
+        }
+        Map<String, Map<Long, Map<String, BigDecimal>>> availableByTableItemLot = new HashMap<>();
+        for (Map.Entry<String, List<Long>> entry : itemIdsByTable.entrySet()) {
+            String table = entry.getKey();
+            List<Long> itemIds = entry.getValue();
+            if (itemIds.isEmpty()) {
+                continue;
+            }
+            List<InventoryCatalogAvailabilityRowModel> availRows =
+                this.inventoryItemQueryService.findAvailableCatalogRowsForOrder(
+                    table, itemIds, List.of(sourceLocationId));
+            Map<Long, Map<String, BigDecimal>> byItem =
+                availableByTableItemLot.computeIfAbsent(table, k -> new HashMap<>());
+            for (InventoryCatalogAvailabilityRowModel ar : availRows) {
+                if (ar == null || ar.getItemId() == null || ar.getQuantity() == null) {
+                    continue;
+                }
+                if (!Objects.equals(ar.getLocationId(), sourceLocationId)) {
+                    continue;
+                }
+                String normLot =
+                    InventoryItemQueryService.normalizeLotNumberForAvailabilityMatch(ar.getLotNumber());
+                byItem.computeIfAbsent(ar.getItemId(), k -> new HashMap<>())
+                    .merge(normLot, ar.getQuantity(), BigDecimal::add);
+            }
+        }
+        for (TransferInDetailLineDto line : lines) {
+            if (line == null) {
+                continue;
+            }
+            if (line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
+                line.setAvailableQuantity(BigDecimal.ZERO);
+                continue;
+            }
+            String table = line.getItemTable().trim();
+            Map<Long, Map<String, BigDecimal>> byItem = availableByTableItemLot.get(table);
+            BigDecimal avail = BigDecimal.ZERO;
+            if (byItem != null) {
+                Map<String, BigDecimal> byLot = byItem.get(line.getItemId());
+                if (byLot != null) {
+                    String normLot =
+                        InventoryItemQueryService.normalizeLotNumberForAvailabilityMatch(line.getLotNumber());
+                    BigDecimal v = byLot.get(normLot);
+                    if (v != null) {
+                        avail = v;
+                    }
+                }
+            }
+            line.setAvailableQuantity(avail);
+        }
+    }
+
+    /**
+     * 详情头回填经手人姓名，供前端下拉 pin 展示。
+     *
+     * @param res 详情响应
+     */
+    private void enrichTransferInDetailPractitionerName(GetTransferInDetailResponse res) {
+        if (res == null || res.getPractitionerId() == null) {
+            return;
+        }
+        Map<Long, String> nameById =
+            this.inventoryListPractitionerNameResolver.resolveNamesByIds(List.of(res.getPractitionerId()));
+        String name = nameById.get(res.getPractitionerId());
+        if (name != null) {
+            res.setPractitionerName(name);
         }
     }
 

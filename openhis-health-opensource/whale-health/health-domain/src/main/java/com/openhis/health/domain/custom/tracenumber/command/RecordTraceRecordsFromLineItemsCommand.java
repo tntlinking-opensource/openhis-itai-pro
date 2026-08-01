@@ -46,6 +46,11 @@ public class RecordTraceRecordsFromLineItemsCommand {
         /** 追溯码单位。 */
         private String traceUnitCode;
 
+        /**
+         * 建主档时写入的追溯→拆零倍数快照；须 &gt; 0。
+         */
+        private BigDecimal traceUnitRatio;
+
         /** 业务数量。 */
         private BigDecimal quantity;
 

@@ -28,6 +28,7 @@ import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestQue
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.DispenseStatus;
+import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 import lombok.Getter;
@@ -41,6 +42,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -282,7 +284,7 @@ public class NurseStationInpatientBillingListAssembler {
     }
 
     /**
-     * 补费父医嘱分组列表（按 encounter 分组，组内 sortNumber/authoredTime 排序）。
+     * 补费父医嘱分组列表（按 encounter 分组，组内按开立时间倒序）。
      *
      * @param skeleton       OrderInfo 父医嘱骨架
      * @param medByEncounter 就诊 → 药品明细
@@ -427,9 +429,12 @@ public class NurseStationInpatientBillingListAssembler {
         row.setDosageDisplay(core.getDosageDisplay());
         row.setUsageDisplay(core.getUsageDisplay());
         row.setFrequencyDisplay(core.getFrequencyDisplay());
-        row.setAuthoredTime(core.getAuthoredTime());
+        row.setReqOpenedTime(core.getReqOpenedTime());
+        row.setReqAuthoredTime(core.getReqAuthoredTime());
         row.setStopTime(core.getStopTime());
         row.setRequesterName(core.getRequesterName());
+        row.setStopperId(core.getStopperId());
+        row.setStopperName(core.getStopperName());
         row.setPerformerLocationDisplay(core.getPerformerLocationDisplay());
         row.setCategoryEnum(core.getCategoryEnum());
         row.setGroupId(core.getGroupId());
@@ -460,6 +465,10 @@ public class NurseStationInpatientBillingListAssembler {
         }
         // Charge 与 service_request / device_request 同 id 关联；读侧已 excludeSupersededSettledLines，此处仅按状态择优
         List<ChargeItem> charges = chargeByServiceId.get(serviceId);
+        // 净额已冲销为 0 的划价行不进已划价列表（BR-IP-PRC-024 冲销后剔除）
+        if (this.isNursePricingFullyOffset(charges)) {
+            return null;
+        }
         ChargeItem charge = this.resolvePrimaryLinkedCharge(charges);
         NurseStationPricedOrderRowDto row = new NurseStationPricedOrderRowDto();
         row.setListRowKey(String.valueOf(order.getOrderId()) + GeneralSharedConstants.PRODUCT_DEFINITION_COMPOSITE_KEY_SEPARATOR
@@ -567,11 +576,41 @@ public class NurseStationInpatientBillingListAssembler {
      * @param charges 同 service_id 关联费用
      * @return 展示用费用行；无有效行时 null
      */
+    /**
+     * 择优关联费用：优先未冲销的正向待结算护士划价行，其次任意待结算行。
+     *
+     * @param charges 同锚点费用列表
+     * @return 主展示费用；无则 null
+     */
     private ChargeItem resolvePrimaryLinkedCharge(List<ChargeItem> charges) {
         if (charges == null || charges.isEmpty()) {
             return null;
         }
         String pendingCode = ChargeItemStatus.PENDING_SETTLEMENT.getCode();
+        String nursePricing = GenerateSource.NURSE_PRICING.getCode();
+        Set<Long> offsetSourceIds = new HashSet<>();
+        for (ChargeItem row : charges) {
+            if (row == null || row.getRefundId() == null) {
+                continue;
+            }
+            if (!pendingCode.equals(row.getStatusEnum())) {
+                continue;
+            }
+            offsetSourceIds.add(row.getRefundId());
+        }
+        for (ChargeItem row : charges) {
+            if (row == null || !pendingCode.equals(row.getStatusEnum())) {
+                continue;
+            }
+            // 优先正向未冲销 nurse-pricing 行，避免冲销负行抢占展示
+            if (nursePricing.equals(row.getGenerateSourceEnum())
+                && row.getRefundId() == null
+                && row.getQuantityValue() != null
+                && row.getQuantityValue().signum() > 0
+                && !offsetSourceIds.contains(row.getId())) {
+                return row;
+            }
+        }
         for (ChargeItem row : charges) {
             if (row != null && pendingCode.equals(row.getStatusEnum())) {
                 return row;
@@ -583,6 +622,42 @@ public class NurseStationInpatientBillingListAssembler {
             }
         }
         return null;
+    }
+
+    /**
+     * 判定护士划价锚点费用是否已整行冲销（待结算 nurse-pricing 净额为 0）。
+     *
+     * @param charges 同锚点费用列表
+     * @return true 表示已完全冲销，应从已划价列表剔除
+     */
+    private boolean isNursePricingFullyOffset(List<ChargeItem> charges) {
+        if (charges == null || charges.isEmpty()) {
+            return false;
+        }
+        String pendingCode = ChargeItemStatus.PENDING_SETTLEMENT.getCode();
+        String nursePricing = GenerateSource.NURSE_PRICING.getCode();
+        BigDecimal netTotal = BigDecimal.ZERO;
+        boolean hasNursePricingPending = false;
+        for (ChargeItem row : charges) {
+            if (row == null) {
+                continue;
+            }
+            if (!pendingCode.equals(row.getStatusEnum())) {
+                continue;
+            }
+            if (row.getGenerateSourceEnum() == null || !nursePricing.equals(row.getGenerateSourceEnum())) {
+                continue;
+            }
+            hasNursePricingPending = true;
+            if (row.getTotalPrice() != null) {
+                netTotal = netTotal.add(row.getTotalPrice());
+            }
+        }
+        // 无 nurse-pricing 待结算行则不按冲销剔除（可能仅有其他来源）
+        if (!hasNursePricingPending) {
+            return false;
+        }
+        return netTotal.signum() == 0;
     }
 
     /**
@@ -598,18 +673,34 @@ public class NurseStationInpatientBillingListAssembler {
         if (charge != null && charge.getOccurrenceTime() != null) {
             return charge.getOccurrenceTime();
         }
-        return order.getAuthoredTime();
+        return order.resolveOrderOpenedTime();
     }
 
     /**
-     * 补费父医嘱组内排序：sortNumber 升序，开立时间降序。
+     * 补费父医嘱组内排序：开立时间（{@code reqOpenedTime}，空回落签发）倒序。
      */
     private List<NurseStationSupplementParentOrderRowDto> sortSupplementRows(List<NurseStationSupplementParentOrderRowDto> rows) {
         List<NurseStationSupplementParentOrderRowDto> copy = new ArrayList<>(rows);
         copy.sort(Comparator
-            .comparing(NurseStationSupplementParentOrderRowDto::getSortNumber, Comparator.nullsLast(Comparator.naturalOrder()))
-            .thenComparing(NurseStationSupplementParentOrderRowDto::getAuthoredTime, Comparator.nullsLast(Comparator.reverseOrder())));
+            .comparing(this::resolveSupplementSortTime, Comparator.nullsLast(Comparator.reverseOrder()))
+            .thenComparing(NurseStationSupplementParentOrderRowDto::getRequestId, Comparator.nullsLast(Comparator.naturalOrder())));
         return copy;
+    }
+
+    /**
+     * 补费父医嘱排序时刻：优先开立，回落签发。
+     *
+     * @param row 父医嘱行
+     * @return 排序时刻；均空时 null
+     */
+    private LocalDateTime resolveSupplementSortTime(NurseStationSupplementParentOrderRowDto row) {
+        if (row == null) {
+            return null;
+        }
+        if (row.getReqOpenedTime() != null) {
+            return row.getReqOpenedTime();
+        }
+        return row.getReqAuthoredTime();
     }
 
     /**

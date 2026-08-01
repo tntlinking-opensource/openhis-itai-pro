@@ -13,31 +13,42 @@ import com.openhis.health.application.outpatient.financial.dailysettlement.respo
 import com.openhis.health.application.outpatient.financial.dailysettlement.response.PreviewOutpatientDailySettlementResponse;
 import com.openhis.health.application.outpatient.financial.dailysettlement.response.SubmitOutpatientDailySettlementResponse;
 import com.openhis.health.application.outpatient.financial.dailysettlement.support.DailySettlementPaymentDetailLoader;
+import com.openhis.health.application.shared.financial.ContractExpenseNatureAssembler;
+import com.openhis.health.application.shared.financial.DailySettlementExpenseNatureSummarySupport;
+import com.openhis.health.application.shared.financial.DailySettlementExpenseNatureSummarySupport.InsutypeBucket;
+import com.openhis.health.application.shared.financial.DailySettlementExpenseNatureSummarySupport.NatureBucket;
+import com.openhis.health.application.shared.financial.DailySettlementFinTypeAmountLoader;
+import com.openhis.health.application.shared.financial.PaymentChannelDisplayAssembler;
+import com.openhis.health.application.shared.financial.dto.DailySettlementExpenseNatureSummaryDto;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.financial.cashiersettlement.command.SubmitCashierSettlementCommand;
 import com.openhis.health.domain.financial.cashiersettlement.queries.PreviewCashierSettlementQuery;
 import com.openhis.health.domain.financial.cashiersettlement.queries.model.PreviewCashierSettlementQueryModel;
 import com.openhis.health.domain.financial.cashiersettlement.queries.model.UnsettledPaymentPreviewItemQueryModel;
+import com.openhis.health.domain.financial.contract.service.ContractQueryService;
+import com.openhis.health.domain.financial.paymentreconciliation.PaymentYbSettlementStatus;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentRecDetailQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentStaticSnapshotQueryModel;
+import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentYbSettlementQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationQueryService;
+import com.openhis.health.domain.financial.paymentreconciliation.support.PaymentYbSettlementSupport;
 import com.openhis.health.domain.share.constants.DailySettlementSharedConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientDailySettlementConstants;
-import com.openhis.health.domain.share.financial.DailySettlementRefundPaymentRules;
 import com.openhis.health.domain.share.enums.PaymentChannel;
+import com.openhis.health.domain.share.financial.DailySettlementRefundPaymentRules;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
-import com.openhis.health.application.shared.financial.ContractExpenseNatureAssembler;
-import com.openhis.health.application.shared.financial.PaymentChannelDisplayAssembler;
-import com.openhis.health.application.shared.financial.DailySettlementFinTypeAmountLoader;
+import com.openhis.health.infrastructure.integration.insurance.platformdict.InsurancePlatformDictDisplayExtension;
+import com.openhis.health.infrastructure.integration.insurance.settlement.InsuranceSettlementRecordLookupExtension;
 import com.openhis.whale.core.application.dto.OptionDto;
-import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -72,6 +83,15 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
     /** items 项目行与支付方式 enrichment。 */
     private final DailySettlementPaymentDetailLoader dailySettlementPaymentDetailLoader;
 
+    /** 费用性质名称（bus_no → name）。 */
+    private final ContractQueryService contractQueryService;
+
+    /** 结算回执 id → insutype。 */
+    private final InsuranceSettlementRecordLookupExtension settlementRecordLookupExtension;
+
+    /** insutype → 展示名。 */
+    private final InsurancePlatformDictDisplayExtension platformDictDisplayExtension;
+
     /**
      * 装配门诊日结页初始化响应（IF-OP-DCL-01）。
      *
@@ -90,9 +110,11 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
         List<OptionDto> cashierOptions,
         Long currentCashierId) {
         LoadOutpatientDailySettlementPageInitResponse response = new LoadOutpatientDailySettlementPageInitResponse();
-        String dateText = defaultDate.format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
-        response.setDefaultDateFrom(dateText);
-        response.setDefaultDateTo(dateText);
+        String fromText = defaultDate.atStartOfDay().format(GeneralSharedConstants.DATE_TIME_FORMATTER);
+        // DD §8.E 默认窗结束时刻 now
+        String toText = LocalDateTime.now().format(GeneralSharedConstants.DATE_TIME_FORMATTER);
+        response.setDefaultDateFrom(fromText);
+        response.setDefaultDateTo(toText);
         response.setExpensePropertyOptions(expensePropertyOptions);
         response.setFinancialDelegateEnabled(financialDelegateEnabled);
         response.setCashierOptions(cashierOptions);
@@ -103,19 +125,20 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
     /**
      * 预览请求转领域查询条件（IF-OP-DCL-02 Pre）。
      *
-     * @param request   HTTP 请求
-     * @param typeEnum  交账类型 code（门诊固定 OUTPATIENT）
-     * @param cashierId 已解析经办人 Practitioner 主键
+     * @param request     HTTP 请求
+     * @param typeEnum    交账类型 code
+     * @param locationIds 科室下 location 白名单
      * @return 领域预览查询
      */
     @Override
     public PreviewCashierSettlementQuery toPreviewCashierSettlementQuery(
         PreviewOutpatientDailySettlementRequest request,
         String typeEnum,
-        Long cashierId) {
+        List<Long> locationIds) {
         PreviewCashierSettlementQuery query = new PreviewCashierSettlementQuery();
         query.setTypeEnum(typeEnum);
-        query.setCashierId(cashierId);
+        query.setOrgId(request.getOrgId());
+        query.setLocationIds(locationIds);
         query.setDateFrom(request.getDateFrom());
         query.setDateTo(request.getDateTo());
         return query;
@@ -244,29 +267,77 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
     /**
      * 提交请求转领域命令（IF-OP-DCL-03 Pre）。
      *
-     * @param request    HTTP 请求
-     * @param typeEnum   交账类型 code
-     * @param cashierId  已解析经办人 Practitioner 主键
-     * @param operatorId 当前操作员用户主键
+     * @param request            HTTP 请求
+     * @param typeEnum           交账类型 code
+     * @param submitterId        提交人 Practitioner 主键
+     * @param operatorId         当前操作员用户主键
+     * @param selectedPaymentIds 勾选挂载 payment 主键
+     * @param locationIds        科室下 location 白名单
+     * @param practitionerIds    窗内 enterer 快照
+     * @param paymentCount       挂载笔数
+     * @param totalIncome        勾选集合日结「总收入」（与预览 handoverSummary 同管线）
      * @return 提交命令
      */
     @Override
     public SubmitCashierSettlementCommand toSubmitCashierSettlementCommand(
         SubmitOutpatientDailySettlementRequest request,
         String typeEnum,
-        Long cashierId,
+        Long submitterId,
         Long operatorId,
-        List<Long> selectedPaymentIds) {
+        List<Long> selectedPaymentIds,
+        List<Long> locationIds,
+        String practitionerIds,
+        Integer paymentCount,
+        BigDecimal totalIncome) {
         SubmitCashierSettlementCommand command = new SubmitCashierSettlementCommand();
         command.setTypeEnum(typeEnum);
         command.setOrgId(request.getOrgId());
+        command.setLocationIds(locationIds);
         command.setLocationId(request.getLocationId());
-        command.setCashierId(cashierId);
+        command.setSubmitterId(submitterId);
         command.setDateFrom(request.getDateFrom());
         command.setDateTo(request.getDateTo());
         command.setOperatorId(operatorId);
         command.setSelectedPaymentIds(selectedPaymentIds);
+        command.setPractitionerIds(practitionerIds);
+        command.setPaymentCount(paymentCount);
+        command.setTotalIncome(totalIncome);
         return command;
+    }
+
+    /**
+     * 按勾选 payment 现算日结「总收入」（与 IF-OP-DCL-02 {@code handoverSummary.totalIncome} 同管线）。
+     *
+     * <p>无费用性质筛、无自付渠道明细：仅复用 {@link #buildDisplayBundle} 产出 summary.totalIncome，
+     * 保证交账头表与日结预览「总收入」口径一致（**BR-OP-DCL-011**）。</p>
+     *
+     * @param lockedItems        提交前锁定的未交账预览行
+     * @param selectedPaymentIds 本次勾选挂载 payment 主键
+     * @return 展示刻度总收入；空选为 0
+     */
+    @Override
+    public BigDecimal resolveSelectedSettlementTotalIncome(
+        List<UnsettledPaymentPreviewItemQueryModel> lockedItems,
+        List<Long> selectedPaymentIds) {
+        if (selectedPaymentIds == null || selectedPaymentIds.isEmpty()) {
+            return MonetaryAmountSupport.scaleDisplay(BigDecimal.ZERO);
+        }
+        // Pre：仅保留勾选行，与弹窗分批交账集合一致
+        List<UnsettledPaymentPreviewItemQueryModel> selectedPreviewItems =
+            this.filterLockedItemsBySelectedPaymentIds(lockedItems, selectedPaymentIds);
+        List<DailySettlementPaymentItemDto> selectedItems =
+            this.buildPaymentItems(selectedPreviewItems, Map.of());
+        List<PaymentReconciliationQueryModel> paymentModels =
+            this.paymentReconciliationQueryService.findPaymentQueryModelsByIds(selectedPaymentIds);
+        Map<Long, PaymentReconciliationQueryModel> paymentById = this.buildPaymentById(paymentModels);
+        // Pre：expenseProperty=null、finTypeOptions 空列表——总收入不依赖字典行展示，仍走 fin_type 代数和/净额回落
+        DailySettlementDisplayBundle displayBundle = this.buildDisplayBundle(
+            selectedItems,
+            null,
+            paymentById,
+            Map.of(),
+            List.of());
+        return this.parseSummaryTotalIncome(displayBundle.summary().getTotalIncome());
     }
 
     /**
@@ -287,6 +358,46 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
         response.setBusNo(busNo);
         response.setPaymentCount(paymentCount);
         return response;
+    }
+
+    /**
+     * 从锁定预览行中筛出本次勾选的 payment 行（保序）。
+     *
+     * @param lockedItems        提交前锁定的未交账预览行
+     * @param selectedPaymentIds 勾选主键
+     * @return 勾选子集；入参空时返回空列表
+     */
+    private List<UnsettledPaymentPreviewItemQueryModel> filterLockedItemsBySelectedPaymentIds(
+        List<UnsettledPaymentPreviewItemQueryModel> lockedItems,
+        List<Long> selectedPaymentIds) {
+        List<UnsettledPaymentPreviewItemQueryModel> selected = new ArrayList<>();
+        if (lockedItems == null || selectedPaymentIds == null || selectedPaymentIds.isEmpty()) {
+            return selected;
+        }
+        Set<Long> selectedSet = new LinkedHashSet<>(selectedPaymentIds);
+        for (UnsettledPaymentPreviewItemQueryModel item : lockedItems) {
+            if (item == null || item.getPaymentId() == null) {
+                continue;
+            }
+            if (!selectedSet.contains(item.getPaymentId())) {
+                continue;
+            }
+            selected.add(item);
+        }
+        return selected;
+    }
+
+    /**
+     * 解析日结 summary 总收入展示串为落库 BigDecimal（展示 2 位刻度）。
+     *
+     * @param totalIncomeText {@link DailySettlementSummaryDto#getTotalIncome()} 两位小数字符串
+     * @return 展示刻度金额；空串为 0
+     */
+    private BigDecimal parseSummaryTotalIncome(String totalIncomeText) {
+        if (StringUtils.isEmpty(totalIncomeText)) {
+            return MonetaryAmountSupport.scaleDisplay(BigDecimal.ZERO);
+        }
+        return MonetaryAmountSupport.scaleDisplay(new BigDecimal(totalIncomeText.trim()));
     }
 
     /**
@@ -663,7 +774,7 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
     }
 
     /**
-     * 解析 fin_type 汇总用 payment 读模型：展示行 + 各正向单关联的逆向 UN_PAY（同窗成对抵净）。
+     * 解析 fin_type 汇总用 payment 读模型：仅日窗内展示行本身（正负各自带快照，禁止跨窗拉逆向单）。
      *
      * @param displayItems 费用性质过滤后的展示行
      * @param paymentById  同日窗 payment 读模型索引
@@ -681,15 +792,6 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
                 PaymentReconciliationQueryModel paymentModel = paymentById.get(item.getPaymentId());
                 if (paymentModel != null && paymentModel.getId() != null) {
                     merged.put(paymentModel.getId(), paymentModel);
-                }
-                if (this.isReversePayment(item)) {
-                    continue;
-                }
-                // Pre：正向单须拉取 relation 逆向单，避免仅快照/回落正向导致退费未扣减
-                PaymentReconciliationQueryModel reversePayment =
-                    this.paymentReconciliationQueryService.findReturnPayment(item.getPaymentId());
-                if (reversePayment != null && reversePayment.getId() != null) {
-                    merged.putIfAbsent(reversePayment.getId(), reversePayment);
                 }
             }
         }
@@ -716,7 +818,7 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
     }
 
     /**
-     * 装配下半区固定汇总项（对齐老日结单；BR-OP-DCL-010/011）。
+     * 装配下半区汇总（公共头 + 费用性质动态块；BR-OP-DCL-010/011）。
      *
      * @param displayItems            展示过滤后的候选行
      * @param paymentById             paymentId → 支付读模型（人次去重取 patientId）
@@ -734,15 +836,16 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
         DailySettlementSummaryDto summary = new DailySettlementSummaryDto();
         BigDecimal totalIncome = BigDecimal.ZERO;
         BigDecimal refundTotal = BigDecimal.ZERO;
-        Set<Long> selfPayPersonKeys = new LinkedHashSet<>();
-        Set<Long> insurancePersonKeys = new LinkedHashSet<>();
-        Set<Long> provincialInsurancePersonKeys = new LinkedHashSet<>();
-        Set<Long> municipalInsurancePersonKeys = new LinkedHashSet<>();
-        ContractSummaryAccumulator provincialAccumulator = new ContractSummaryAccumulator();
-        ContractSummaryAccumulator municipalAccumulator = new ContractSummaryAccumulator();
-        ContractSummaryAccumulator selfPayAccumulator = new ContractSummaryAccumulator();
-        // 自费桶净额代数和：与 selfPayCashTotal 同源循环，含微信/现金等全渠道（BR-OP-DCL-010）
-        BigDecimal selfPayNetTotal = BigDecimal.ZERO;
+        Set<String> contractBusNos = this.collectContractBusNosFromPaymentItems(displayItems);
+        Map<String, String> contractNameByBusNo =
+            this.contractQueryService.mapContractNameByBusNoIn(contractBusNos);
+        Map<Long, String> insutypeBySettlementRecordId =
+            this.loadInsutypeBySettlementRecordId(displayItems, paymentById);
+        Map<Long, String> insutypeByPaymentId =
+            this.loadInsutypeByPaymentId(displayItems, paymentById);
+        Map<String, String> insutypeLabelByCode = this.loadInsutypeLabels(
+            this.mergeInsutypeCodes(insutypeBySettlementRecordId.values(), insutypeByPaymentId.values()));
+        Map<String, NatureBucket> natureByContractNo = new LinkedHashMap<>();
         for (DailySettlementPaymentItemDto item : displayItems) {
             if (item == null) {
                 continue;
@@ -766,46 +869,50 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
             if (item.getHasInsurance() != null) {
                 hasInsurance = item.getHasInsurance();
             }
-            Long personKey = this.resolveSettlementPersonKey(item, paymentById);
-            if (personKey != null) {
-                if (hasInsurance) {
-                    insurancePersonKeys.add(personKey);
-                } else {
-                    // 非医保判定流水计入自费人次（按 patientId 去重，非流水条数）
-                    selfPayPersonKeys.add(personKey);
-                }
+            PaymentReconciliationQueryModel paymentModel = null;
+            if (paymentById != null && item.getPaymentId() != null) {
+                paymentModel = paymentById.get(item.getPaymentId());
             }
+            boolean activeInsuranceSettlement = this.hasActiveInsuranceSettlement(paymentModel, paymentById);
+            Long personKey = this.resolveSettlementPersonKey(item, paymentById);
             String contractBusNo = item.getContractNo();
             if (contractBusNo != null) {
                 contractBusNo = contractBusNo.trim();
             }
-            if (personKey != null
-                && DailySettlementSharedConstants.PROVINCIAL_INSURANCE_CONTRACT_BUS_NO.equals(contractBusNo)) {
-                provincialInsurancePersonKeys.add(personKey);
-            } else if (personKey != null
-                && (DailySettlementSharedConstants.MUNICIPAL_INSURANCE_CONTRACT_BUS_NO.equals(contractBusNo)
-                || DailySettlementSharedConstants.MUNICIPAL_INSURANCE_SUPPLEMENT_CONTRACT_BUS_NO.equals(contractBusNo))) {
-                municipalInsurancePersonKeys.add(personKey);
+            String contractName = null;
+            if (StringUtils.isNotEmpty(contractBusNo)) {
+                contractName = contractNameByBusNo.get(contractBusNo);
             }
-            ContractSummaryAccumulator target = selfPayAccumulator;
-            if (DailySettlementSharedConstants.PROVINCIAL_INSURANCE_CONTRACT_BUS_NO.equals(contractBusNo)) {
-                // 省医保合同：现金/基金/个账归入省医保桶
-                target = provincialAccumulator;
-            } else if (DailySettlementSharedConstants.MUNICIPAL_INSURANCE_CONTRACT_BUS_NO.equals(contractBusNo)
-                || DailySettlementSharedConstants.MUNICIPAL_INSURANCE_SUPPLEMENT_CONTRACT_BUS_NO.equals(contractBusNo)) {
-                // 市医保（含补充）合同：归入市医保桶
-                target = municipalAccumulator;
-            } else if (hasInsurance) {
-                // 其他医保合同无专用 bus_no 时，回落省医保桶展示
-                target = provincialAccumulator;
+            NatureBucket natureBucket = DailySettlementExpenseNatureSummarySupport.ensureNature(
+                natureByContractNo, contractBusNo, contractName, hasInsurance);
+            if (personKey != null) {
+                if (hasInsurance && activeInsuranceSettlement) {
+                    natureBucket.getPersonKeys().add(personKey);
+                } else if (!hasInsurance) {
+                    natureBucket.getPersonKeys().add(personKey);
+                }
+                // 医保合同但桥表已全部 REVOKED：不计人次，避免冲销虚增
             }
-            if (target == selfPayAccumulator) {
-                // 自费总额：非医保判定流水 netAmount 代数和（展示项 totalCashIncome）
-                selfPayNetTotal = selfPayNetTotal.add(netAmount);
+            if (!hasInsurance) {
+                natureBucket.addNetTotal(netAmount);
             }
-            this.accumulateContractPaymentSummary(
-                target,
+            InsutypeBucket insutypeBucket = null;
+            if (hasInsurance && activeInsuranceSettlement) {
+                String insutype = this.resolvePaymentInsutype(
+                    paymentModel, paymentById, insutypeBySettlementRecordId, insutypeByPaymentId);
+                String insutypeName = DailySettlementExpenseNatureSummarySupport.resolveInsutypeDisplayName(
+                    insutype, insutypeLabelByCode);
+                insutypeBucket = natureBucket.ensureInsutype(insutype, insutypeName);
+                if (personKey != null) {
+                    insutypeBucket.getPersonKeys().add(personKey);
+                }
+            }
+            this.accumulateExpenseNaturePaymentSummary(
+                natureBucket,
+                insutypeBucket,
                 item,
+                paymentModel,
+                paymentById,
                 recDetailsByPaymentId);
         }
         BigDecimal finTypeTotal = this.sumFinTypeAmounts(finTypeAmounts);
@@ -814,34 +921,38 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
             totalIncome = finTypeTotal;
         }
         String totalIncomeText = this.formatAmount(totalIncome);
+        String wechatText = this.formatAmount(this.resolveChannelAmount(channelAmounts, PaymentChannel.WECHAT.getDisplay()));
+        String alipayText = this.formatAmount(this.resolveChannelAmount(channelAmounts, PaymentChannel.ALIPAY.getDisplay()));
+        String onlineBankText = this.formatAmount(this.resolveChannelAmount(channelAmounts, PaymentChannel.BANK_CARD.getDisplay()));
+        String cashText = this.formatAmount(this.resolveChannelAmount(channelAmounts, PaymentChannel.CASH.getDisplay()));
         summary.setTotalIncome(totalIncomeText);
         summary.setReceivableAmount(totalIncomeText);
         summary.setActualAmount(totalIncomeText);
         summary.setDiscountAmount(DailySettlementSharedConstants.DISCOUNT_AMOUNT_ZERO);
-        summary.setWechatAmount(this.formatAmount(this.resolveChannelAmount(channelAmounts, PaymentChannel.WECHAT.getDisplay())));
-        summary.setAlipayAmount(this.formatAmount(this.resolveChannelAmount(channelAmounts, PaymentChannel.ALIPAY.getDisplay())));
-        summary.setOnlineBankAmount(this.formatAmount(this.resolveChannelAmount(channelAmounts, PaymentChannel.BANK_CARD.getDisplay())));
-        summary.setCashAmount(this.formatAmount(this.resolveChannelAmount(channelAmounts, PaymentChannel.CASH.getDisplay())));
-        summary.setSelfPayCashTotal(this.formatAmount(selfPayAccumulator.cashAmount));
-        summary.setSelfPayCount(selfPayPersonKeys.size());
-        summary.setProvincialInsuranceCount(provincialInsurancePersonKeys.size());
-        summary.setMunicipalInsuranceCount(municipalInsurancePersonKeys.size());
-        summary.setProvincialInsuranceCash(this.formatAmount(provincialAccumulator.cashAmount));
-        summary.setProvincialInsuranceFund(this.formatAmount(provincialAccumulator.fundAmount));
-        summary.setProvincialInsuranceAccount(this.formatAmount(provincialAccumulator.accountAmount));
-        summary.setProvincialInsuranceFundTotal(this.formatAmount(provincialAccumulator.fundTotalAmount));
-        summary.setProvincialInsuranceTotal(this.formatAmount(
-            provincialAccumulator.fundAmount.add(provincialAccumulator.accountAmount)));
-        summary.setMunicipalInsuranceCash(this.formatAmount(municipalAccumulator.cashAmount));
-        summary.setMunicipalInsuranceFund(this.formatAmount(municipalAccumulator.fundAmount));
-        summary.setMunicipalInsuranceAccount(this.formatAmount(municipalAccumulator.accountAmount));
-        summary.setMunicipalInsuranceFundTotal(this.formatAmount(municipalAccumulator.fundTotalAmount));
-        summary.setMunicipalInsuranceTotal(this.formatAmount(
-            municipalAccumulator.fundAmount.add(municipalAccumulator.accountAmount)));
-        summary.setTotalCashIncome(this.formatAmount(selfPayNetTotal));
-        summary.setPhysicalExamCount(this.resolvePhysicalExamCount(finTypeAmounts));
-        summary.setInsuranceCount(insurancePersonKeys.size());
+        summary.setWechatAmount(wechatText);
+        summary.setAlipayAmount(alipayText);
+        summary.setOnlineBankAmount(onlineBankText);
+        summary.setCashAmount(cashText);
+        String insuranceCompensationText =
+            DailySettlementExpenseNatureSummarySupport.sumInsuranceCompensationAmount(natureByContractNo);
+        summary.setCashDueAmount(cashText);
+        summary.setInsuranceCompensationAmount(insuranceCompensationText);
+        Integer physicalExamCount = this.resolvePhysicalExamCount(finTypeAmounts);
+        summary.setPhysicalExamCount(physicalExamCount);
         summary.setRefundTotal(this.formatAmount(refundTotal));
+        List<DailySettlementExpenseNatureSummaryDto> expenseNatureSummaries =
+            DailySettlementExpenseNatureSummarySupport.toExpenseNatureSummaries(natureByContractNo);
+        summary.setExpenseNatureSummaries(expenseNatureSummaries);
+        summary.setSummaryRows(DailySettlementExpenseNatureSummarySupport.buildSummaryRows(
+            totalIncomeText,
+            wechatText,
+            alipayText,
+            onlineBankText,
+            cashText,
+            insuranceCompensationText,
+            null,
+            expenseNatureSummaries,
+            physicalExamCount));
         return summary;
     }
 
@@ -872,17 +983,242 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
     }
 
     /**
-     * 按合同桶累加现金/医保基金/个账；逆向 UN_PAY 子明细取负（BR-OP-DCL-011）。
+     * 是否存在有效（非全部撤销）的支付侧医保桥表行。
      *
-     * @param accumulator             合同维度累加器
-     * @param item                    所属 payment 候选行
-     * @param recDetailsByPaymentId   paymentId → 自付子明细
+     * <p>逆向单以原单桥表为准；逆向自身空桥表不再兼容为「可计」（避免成对退费虚增人次/个账）。</p>
+     *
+     * @param paymentModel 支付读模型
+     * @param paymentById  同日窗 payment 索引（解析 relation_id）
+     * @return 有 CONFIRMED 桥表时 true
      */
-    private void accumulateContractPaymentSummary(
-        ContractSummaryAccumulator accumulator,
+    private boolean hasActiveInsuranceSettlement(
+        PaymentReconciliationQueryModel paymentModel,
+        Map<Long, PaymentReconciliationQueryModel> paymentById) {
+        PaymentReconciliationQueryModel authority =
+            this.resolveInsuranceAuthorityPayment(paymentModel, paymentById);
+        if (authority == null) {
+            return false;
+        }
+        List<PaymentYbSettlementQueryModel> ybRows = authority.getYbSettlements();
+        if (ybRows == null || ybRows.isEmpty()) {
+            // 空桥表：仅正向历史兼容为可计；逆向空桥表不计
+            return !this.isReversePaymentModel(paymentModel);
+        }
+        return PaymentYbSettlementSupport.hasConfirmed(ybRows);
+    }
+
+    /**
+     * 医保基金/个账明细是否计入日结桶。
+     *
+     * <p>逆向单对照原单桥表：原单 setl 已 REVOKED 则正负均不计；逆向空桥表默认不计。</p>
+     *
+     * @param detail       支付子明细
+     * @param paymentModel 支付读模型
+     * @param paymentById  同日窗 payment 索引
+     * @return false=桥表全撤销或本行 pay_trans_no 命中已撤销 setl
+     */
+    private boolean shouldCountInsuranceDetail(
+        PaymentRecDetailQueryModel detail,
+        PaymentReconciliationQueryModel paymentModel,
+        Map<Long, PaymentReconciliationQueryModel> paymentById) {
+        boolean reverse = this.isReversePaymentModel(paymentModel);
+        PaymentReconciliationQueryModel authority =
+            this.resolveInsuranceAuthorityPayment(paymentModel, paymentById);
+        if (authority == null) {
+            // 逆向且原单不在日窗、自身亦无桥表权威：不计
+            return !reverse;
+        }
+        List<PaymentYbSettlementQueryModel> ybRows = authority.getYbSettlements();
+        if (ybRows == null || ybRows.isEmpty()) {
+            // 空桥表兼容仅保留给历史无桥表的正向单
+            return !reverse;
+        }
+        if (!PaymentYbSettlementSupport.hasConfirmed(ybRows)) {
+            return false;
+        }
+        if (detail == null || StringUtils.isEmpty(detail.getPayTransNo())) {
+            return true;
+        }
+        String transNo = detail.getPayTransNo().trim();
+        boolean matchedRevoked = false;
+        boolean matchedActive = false;
+        // Loop：本行交易号若仅对应已撤销 setl，则跳过该行
+        for (PaymentYbSettlementQueryModel ybRow : ybRows) {
+            if (ybRow == null || StringUtils.isEmpty(ybRow.getSetlId())) {
+                continue;
+            }
+            if (!transNo.equals(ybRow.getSetlId().trim())) {
+                continue;
+            }
+            if (PaymentYbSettlementStatus.REVOKED.equals(ybRow.getStatus())) {
+                matchedRevoked = true;
+            } else {
+                matchedActive = true;
+            }
+        }
+        if (matchedRevoked && !matchedActive) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 批量加载 settlementRecordId → insutype。
+     */
+    private Map<Long, String> loadInsutypeBySettlementRecordId(
+        List<DailySettlementPaymentItemDto> displayItems,
+        Map<Long, PaymentReconciliationQueryModel> paymentById) {
+        Set<Long> recordIds = new LinkedHashSet<>();
+        if (displayItems == null || paymentById == null) {
+            return this.settlementRecordLookupExtension.mapInsutypeBySettlementRecordIds(recordIds);
+        }
+        for (DailySettlementPaymentItemDto item : displayItems) {
+            if (item == null || item.getPaymentId() == null) {
+                continue;
+            }
+            PaymentReconciliationQueryModel paymentModel = paymentById.get(item.getPaymentId());
+            PaymentReconciliationQueryModel authority =
+                this.resolveInsuranceAuthorityPayment(paymentModel, paymentById);
+            if (authority == null || authority.getYbSettlements() == null) {
+                continue;
+            }
+            for (PaymentYbSettlementQueryModel ybRow : authority.getYbSettlements()) {
+                if (ybRow == null || ybRow.getSettlementRecordId() == null) {
+                    continue;
+                }
+                if (PaymentYbSettlementStatus.REVOKED.equals(ybRow.getStatus())) {
+                    continue;
+                }
+                recordIds.add(ybRow.getSettlementRecordId());
+            }
+        }
+        return this.settlementRecordLookupExtension.mapInsutypeBySettlementRecordIds(recordIds);
+    }
+
+    /**
+     * 批量加载 paymentId → insutype（桥表缺 settlement_record_id 时回落）。
+     */
+    private Map<Long, String> loadInsutypeByPaymentId(
+        List<DailySettlementPaymentItemDto> displayItems,
+        Map<Long, PaymentReconciliationQueryModel> paymentById) {
+        Set<Long> paymentIds = new LinkedHashSet<>();
+        if (displayItems == null) {
+            return this.settlementRecordLookupExtension.mapInsutypeByPaymentIds(paymentIds);
+        }
+        for (DailySettlementPaymentItemDto item : displayItems) {
+            if (item == null || item.getPaymentId() == null) {
+                continue;
+            }
+            paymentIds.add(item.getPaymentId());
+            // 逆向单以原单权威 payment 再试一次
+            if (paymentById != null) {
+                PaymentReconciliationQueryModel paymentModel = paymentById.get(item.getPaymentId());
+                PaymentReconciliationQueryModel authority =
+                    this.resolveInsuranceAuthorityPayment(paymentModel, paymentById);
+                if (authority != null && authority.getId() != null) {
+                    paymentIds.add(authority.getId());
+                }
+            }
+        }
+        return this.settlementRecordLookupExtension.mapInsutypeByPaymentIds(paymentIds);
+    }
+
+    /**
+     * 合并多路险种码集合，供字典批量翻译。
+     */
+    private Iterable<String> mergeInsutypeCodes(Iterable<String> first, Iterable<String> second) {
+        LinkedHashSet<String> codes = new LinkedHashSet<>();
+        if (first != null) {
+            for (String code : first) {
+                if (StringUtils.isNotEmpty(code)) {
+                    codes.add(code.trim());
+                }
+            }
+        }
+        if (second != null) {
+            for (String code : second) {
+                if (StringUtils.isNotEmpty(code)) {
+                    codes.add(code.trim());
+                }
+            }
+        }
+        return codes;
+    }
+
+    /**
+     * 批量解析险种展示名。
+     */
+    private Map<String, String> loadInsutypeLabels(Iterable<String> insutypeCodes) {
+        Set<String> codes = new LinkedHashSet<>();
+        if (insutypeCodes != null) {
+            for (String code : insutypeCodes) {
+                if (StringUtils.isNotEmpty(code)) {
+                    codes.add(code.trim());
+                }
+            }
+        }
+        if (codes.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> labels = this.platformDictDisplayExtension.lookupInsutypeLabels(codes);
+        return labels == null ? Map.of() : labels;
+    }
+
+    /**
+     * 解析 payment 主险种：桥表 settlement_record_id → 回落 paymentId 查回执。
+     */
+    private String resolvePaymentInsutype(
+        PaymentReconciliationQueryModel paymentModel,
+        Map<Long, PaymentReconciliationQueryModel> paymentById,
+        Map<Long, String> insutypeBySettlementRecordId,
+        Map<Long, String> insutypeByPaymentId) {
+        PaymentReconciliationQueryModel authority =
+            this.resolveInsuranceAuthorityPayment(paymentModel, paymentById);
+        if (authority != null && authority.getYbSettlements() != null
+            && insutypeBySettlementRecordId != null) {
+            for (PaymentYbSettlementQueryModel ybRow : authority.getYbSettlements()) {
+                if (ybRow == null || ybRow.getSettlementRecordId() == null) {
+                    continue;
+                }
+                if (PaymentYbSettlementStatus.REVOKED.equals(ybRow.getStatus())) {
+                    continue;
+                }
+                String insutype = insutypeBySettlementRecordId.get(ybRow.getSettlementRecordId());
+                // 本行未命中：继续试后续桥表行，禁止首 miss 即放弃
+                if (StringUtils.isNotEmpty(insutype)) {
+                    return insutype.trim();
+                }
+            }
+        }
+        // 桥表缺 settlement_record_id / 未命中：按支付单回落 yb_settlement_record
+        if (insutypeByPaymentId != null) {
+            if (authority != null && authority.getId() != null) {
+                String byAuthority = insutypeByPaymentId.get(authority.getId());
+                if (StringUtils.isNotEmpty(byAuthority)) {
+                    return byAuthority.trim();
+                }
+            }
+            if (paymentModel != null && paymentModel.getId() != null) {
+                String byPayment = insutypeByPaymentId.get(paymentModel.getId());
+                if (StringUtils.isNotEmpty(byPayment)) {
+                    return byPayment.trim();
+                }
+            }
+        }
+        return "";
+    }
+
+    /**
+     * 按费用性质 / 险种桶累加现金与医保分项（复用 BUG-1 计入规则）。
+     */
+    private void accumulateExpenseNaturePaymentSummary(
+        NatureBucket natureBucket,
+        InsutypeBucket insutypeBucket,
         DailySettlementPaymentItemDto item,
+        PaymentReconciliationQueryModel paymentModel,
+        Map<Long, PaymentReconciliationQueryModel> paymentById,
         Map<Long, List<PaymentRecDetailQueryModel>> recDetailsByPaymentId) {
-        if (accumulator == null || item == null || item.getPaymentId() == null || recDetailsByPaymentId == null) {
+        if (natureBucket == null || item == null || item.getPaymentId() == null || recDetailsByPaymentId == null) {
             return;
         }
         List<PaymentRecDetailQueryModel> details = recDetailsByPaymentId.get(item.getPaymentId());
@@ -899,18 +1235,85 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
                 continue;
             }
             if (PaymentChannel.CASH.equals(channel)) {
-                accumulator.cashAmount = accumulator.cashAmount.add(lineAmount);
+                natureBucket.addCash(lineAmount);
+                if (insutypeBucket != null) {
+                    insutypeBucket.addCash(lineAmount);
+                }
                 continue;
             }
             if (PaymentChannel.INSURANCE_FUND.equals(channel)) {
-                accumulator.fundAmount = accumulator.fundAmount.add(lineAmount);
-                accumulator.fundTotalAmount = accumulator.fundTotalAmount.add(lineAmount);
+                if (!this.shouldCountInsuranceDetail(detail, paymentModel, paymentById)) {
+                    continue;
+                }
+                natureBucket.addFund(lineAmount);
+                if (insutypeBucket != null) {
+                    insutypeBucket.addFund(lineAmount);
+                }
                 continue;
             }
             if (PaymentChannel.INSURANCE_ACCT.equals(channel)) {
-                accumulator.accountAmount = accumulator.accountAmount.add(lineAmount);
+                if (!this.shouldCountInsuranceDetail(detail, paymentModel, paymentById)) {
+                    continue;
+                }
+                natureBucket.addAccount(lineAmount);
+                if (insutypeBucket != null) {
+                    insutypeBucket.addAccount(lineAmount);
+                }
             }
         }
+    }
+
+    /**
+     * 解析医保桥表权威 payment：逆向取原单；原单不在索引时回落自身。
+     */
+    private PaymentReconciliationQueryModel resolveInsuranceAuthorityPayment(
+        PaymentReconciliationQueryModel paymentModel,
+        Map<Long, PaymentReconciliationQueryModel> paymentById) {
+        if (paymentModel == null) {
+            return null;
+        }
+        if (this.isReversePaymentModel(paymentModel) && paymentModel.getRelationId() != null
+            && paymentById != null) {
+            PaymentReconciliationQueryModel original = paymentById.get(paymentModel.getRelationId());
+            if (original != null) {
+                return original;
+            }
+        }
+        return paymentModel;
+    }
+
+    /**
+     * 读模型是否逆向退费单。
+     */
+    private boolean isReversePaymentModel(PaymentReconciliationQueryModel paymentModel) {
+        if (paymentModel == null) {
+            return false;
+        }
+        return DailySettlementRefundPaymentRules.isRefundPaymentForSettlement(
+            paymentModel.getPaymentEnum(),
+            paymentModel.getRelationId(),
+            paymentModel.getStatusEnum());
+    }
+
+    /**
+     * 从展示 payment 行收集合同业务号（供费用性质名称批量解析）。
+     *
+     * @param displayItems 日结展示行
+     * @return 去重后的 contract_no
+     */
+    private Set<String> collectContractBusNosFromPaymentItems(List<DailySettlementPaymentItemDto> displayItems) {
+        Set<String> busNos = new LinkedHashSet<>();
+        if (displayItems == null) {
+            return busNos;
+        }
+        // Loop：收集非空 contract_no
+        for (DailySettlementPaymentItemDto item : displayItems) {
+            if (item == null || StringUtils.isEmpty(item.getContractNo())) {
+                continue;
+            }
+            busNos.add(item.getContractNo().trim());
+        }
+        return busNos;
     }
 
     /**
@@ -948,22 +1351,6 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
             return 0;
         }
         return amount.intValue();
-    }
-
-    /** 按合同维度累加现金、统筹、个账等下半区分项。 */
-    private static final class ContractSummaryAccumulator {
-
-        /** 现金渠道合计。 */
-        private BigDecimal cashAmount = BigDecimal.ZERO;
-
-        /** 医保统筹基金合计。 */
-        private BigDecimal fundAmount = BigDecimal.ZERO;
-
-        /** 医保个人账户合计。 */
-        private BigDecimal accountAmount = BigDecimal.ZERO;
-
-        /** 医保基金总额（统筹口径）。 */
-        private BigDecimal fundTotalAmount = BigDecimal.ZERO;
     }
 
     /**

@@ -23,6 +23,13 @@ public interface YbCatalogDownloadCursorRepository extends JpaRepository<YbCatal
     Optional<YbCatalogDownloadCursor> findFirstByContractIdAndInfnoAndTenantIdAndIsDeletedFalseOrderByLastSuccessAtDescIdDesc(
         Long contractId, String infno, Long tenantId);
 
+    /**
+     * 1305 按版本分支前缀取最新游标（如 {@code F002} / {@code F003}，含 {@code F002_…}）。
+     */
+    Optional<YbCatalogDownloadCursor>
+        findFirstByContractIdAndInfnoAndTenantIdAndIsDeletedFalseAndLocalVerStartingWithOrderByLastSuccessAtDescIdDesc(
+            Long contractId, String infno, Long tenantId, String localVerPrefix);
+
     List<YbCatalogDownloadCursor> findByContractIdAndTenantIdAndIsDeletedFalseOrderByLastSuccessAtDescIdDesc(
         Long contractId, Long tenantId);
 

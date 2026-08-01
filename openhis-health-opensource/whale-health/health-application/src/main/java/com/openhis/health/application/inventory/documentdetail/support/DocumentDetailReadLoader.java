@@ -51,7 +51,7 @@ public class DocumentDetailReadLoader {
     private final SupplyRequestQueryService supplyRequestQueryService;
     /** 库位 init 下拉与行 enrich。 */
     private final LocationQueryService locationQueryService;
-    /** 各域 SupplyType 白名单与默认类型。 */
+    /** 各域 SupplyType 白名单；init 建议默认类型仅供前端回填。 */
     private final DocumentDetailTypeWhitelistHelper typeWhitelistSupport;
     /** Request → {@code WarehouseDocumentDetailPageQuery} 单一真源。 */
     private final DocumentDetailQueryAssembler queryAssemblySupport;
@@ -76,7 +76,7 @@ public class DocumentDetailReadLoader {
         this.requireTenantId();
         LoadDocumentDetailFormInitResponse response = new LoadDocumentDetailFormInitResponse();
         try {
-            // Asm：本域类型白名单与默认类型
+            // Asm：本域类型白名单；defaultTypeEnum 仅建议前端初始选中，查询不强制回落
             response.setTypeEnumOptions(this.typeWhitelistSupport.buildTypeEnumOptions(scope));
             response.setDefaultTypeEnum(this.typeWhitelistSupport.defaultTypeEnum(scope));
             // Pre：租户内活跃库位并集（不做管辖 Gate）
@@ -111,7 +111,7 @@ public class DocumentDetailReadLoader {
         // Gate：租户上下文
         Long tenantId = this.requireTenantId();
         DocumentDetailFilterRequest filter = this.documentDetailMapper.toFilter(request);
-        // Gate：typeEnum 白名单与审批时间闭区间
+        // Gate：typeEnum（已传才校验白名单）与审批时间闭区间
         this.assertFilterGates(scope, filter);
         // Pre：装配领域 Query（含品名 enrich）
         WarehouseDocumentDetailPageQuery query = this.queryAssemblySupport.buildPageQuery(
@@ -155,7 +155,7 @@ public class DocumentDetailReadLoader {
         if (filter == null) {
             filter = new DocumentDetailFilterRequest();
         }
-        // Gate：typeEnum 白名单与审批时间
+        // Gate：typeEnum（已传才校验）与审批时间
         this.assertFilterGates(scope, filter);
         try {
             // Pre：与导出共用全量拉取链（步长 500）
@@ -202,7 +202,7 @@ public class DocumentDetailReadLoader {
         if (filter == null) {
             filter = new DocumentDetailFilterRequest();
         }
-        // Gate：typeEnum 白名单与审批时间
+        // Gate：typeEnum（已传才校验）与审批时间
         this.assertFilterGates(scope, filter);
         try {
             // Pre：全量拉取（与合计同链）
@@ -239,10 +239,14 @@ public class DocumentDetailReadLoader {
                 throw new BusinessException(ErrorCodeConstants.INV_DDC_202, "业务域 domainScope 无效");
             }
         }
-        // Gate：typeEnum 落在本域白名单
-        String typeEnum = this.typeWhitelistSupport.resolveTypeEnumOrDefault(scope, filter.getTypeEnum());
-        this.typeWhitelistSupport.assertTypeInDomain(scope, typeEnum);
-        filter.setTypeEnum(typeEnum);
+        // Gate：已传 typeEnum 须落在本域白名单；未传则保持空（查本域全部，不写回默认类型）
+        String typeEnum = this.typeWhitelistSupport.normalizeOptionalTypeEnum(filter.getTypeEnum());
+        if (StringUtils.isNotEmpty(typeEnum)) {
+            this.typeWhitelistSupport.assertTypeInDomain(scope, typeEnum);
+            filter.setTypeEnum(typeEnum);
+        } else {
+            filter.setTypeEnum(null);
+        }
         // Gate：审批时间闭区间 start ≤ end
         LocalDateTime[] window = this.queryAssemblySupport.resolveApprovalTimeWindow(
             filter.getApprovalTimeStart(), filter.getApprovalTimeEnd());

@@ -39,6 +39,9 @@ public class DeviceDefinitionDomainService {
     private final IDomainEventPublisher domainEventPublisher;
     private final BusinessSequenceService businessSequenceService;
 
+    /** 采番撞号时单条最大重试次数（序号落后或并发占用）。 */
+    private static final int BUS_NO_ALLOCATE_MAX_ATTEMPTS = 32;
+
 
     /**
      * 批量创建器材定义：校验 busNo 唯一、聚合可创建，自动生成缺失业务号并发创建事件。
@@ -55,7 +58,7 @@ public class DeviceDefinitionDomainService {
         List<DeviceDefinition> toSave = new ArrayList<>();
         for (CreateDeviceDefinitionCommand.Item item : items) {
             DeviceDefinition row = new DeviceDefinition();
-            row.setBusNo(this.generateBusNo());
+            row.setBusNo(this.allocateUniqueBusNo());
             row.setName(item.getName());
             row.setMerchandiseName(item.getMerchandiseName());
             row.setCategoryCode(item.getCategoryCode());
@@ -67,10 +70,12 @@ public class DeviceDefinitionDomainService {
             row.setStockUnitCode(item.getStockUnitCode());
             row.setDoseUnitCode(item.getDoseUnitCode());
 
-            row.setDoseUnitRatio(item.getDoseUnitRatio());
+row.setDoseUnitRatio(item.getDoseUnitRatio());
             row.setPurchaseUnitRatio(item.getPurchaseUnitRatio());
             row.setStockUnitRatio(item.getStockUnitRatio());
             row.setPackageUnitRatio(item.getPackageUnitRatio());
+            row.setTraceUnitCode(item.getTraceUnitCode());
+            row.setTraceUnitRatio(item.getTraceUnitRatio());
             row.setOrgId(item.getOrgId());
             row.setLocationId(item.getLocationId());
             row.setModelNumber(item.getModelNumber());
@@ -80,7 +85,6 @@ public class DeviceDefinitionDomainService {
             row.setApprovalNumber(item.getApprovalNumber());
             row.setYbFlag(item.getYbFlag() != null && item.getYbFlag() == 1);
             row.setYbNo(item.getYbNo());
-            row.setYbOrgNo(item.getYbOrgNo());
             row.setYbMatchFlag(item.getYbMatchFlag() != null && item.getYbMatchFlag() == 1);
             row.setChrgitmLv(item.getChrgitmLv());
             row.setSubstanceText(item.getSubstanceText());
@@ -98,10 +102,6 @@ public class DeviceDefinitionDomainService {
 
             // 聚合内前置校验：必填字段。
             row.assertCreatable();
-            // BR-DEVDEF-001：busNo 唯一（须与落库值一致；自动生成时 item.busNo 仍为空）。
-            if (repository.existsByBusNo(row.getBusNo())) {
-                throw new BusinessException(ErrorCodeConstants.DEVICE_DEFINITION_RULE_CONFLICT, "器材业务编码已存在，busNo=" + row.getBusNo());
-            }
 
             // 初始化为启用状态；拼音/五笔优先采用请求值，否则按名称生成（BR-DEVDEF-002）。
             row.initAsActive();
@@ -132,7 +132,7 @@ public class DeviceDefinitionDomainService {
             // 记录名称变更，以决定是否重算检索码（BR-DEVDEF-002）。
             String originName = row.getName();
 
-            row.setName(item.getName());
+row.setName(item.getName());
             row.setMerchandiseName(item.getMerchandiseName());
             row.setCategoryCode(item.getCategoryCode());
             row.setTypeCode(item.getTypeCode());
@@ -143,10 +143,12 @@ public class DeviceDefinitionDomainService {
             row.setStockUnitCode(item.getStockUnitCode());
             row.setDoseUnitCode(item.getDoseUnitCode());
 
-            row.setDoseUnitRatio(item.getDoseUnitRatio());
+row.setDoseUnitRatio(item.getDoseUnitRatio());
             row.setPurchaseUnitRatio(item.getPurchaseUnitRatio());
             row.setStockUnitRatio(item.getStockUnitRatio());
             row.setPackageUnitRatio(item.getPackageUnitRatio());
+            row.setTraceUnitCode(item.getTraceUnitCode());
+            row.setTraceUnitRatio(item.getTraceUnitRatio());
             row.setModelNumber(item.getModelNumber());
             row.setHvcmFlag(item.getHvcmFlag() != null && item.getHvcmFlag() == 1);
             row.setChargeableFlag(item.getChargeableFlag() != null && item.getChargeableFlag() == 1);
@@ -156,7 +158,6 @@ public class DeviceDefinitionDomainService {
             row.setLocationId(item.getLocationId());
             row.setYbFlag(item.getYbFlag() != null && item.getYbFlag() == 1);
             row.setYbNo(item.getYbNo());
-            row.setYbOrgNo(item.getYbOrgNo());
             row.setYbMatchFlag(item.getYbMatchFlag() != null && item.getYbMatchFlag() == 1);
             row.setChrgitmLv(item.getChrgitmLv());
             row.setSubstanceText(item.getSubstanceText());
@@ -339,9 +340,9 @@ public class DeviceDefinitionDomainService {
 
                 // 库内不存在同 busNo 记录时走新增路径。
                 if (target == null) {
-                    // 新增路径：初始化为启用；业务编码由领域层生成，忽略导入行 busNo（B.10.9）。
+                    // 新增路径：初始化为启用；业务编码由领域层采番（冲突自动跳号），忽略导入行 busNo（B.10.9）。
                     DeviceDefinition created = new DeviceDefinition();
-                    String generatedBusNo = this.generateBusNo();
+                    String generatedBusNo = this.allocateUniqueBusNo();
                     created.setBusNo(generatedBusNo);
                     created.setName(item.getName());
                     created.setMerchandiseName(item.getName());
@@ -354,8 +355,7 @@ public class DeviceDefinitionDomainService {
                     created.setLocationId(item.getLocationId());
                     created.setYbFlag(item.getYbFlag());
                     created.setYbNo(item.getYbNo());
-                    created.setYbOrgNo(item.getYbOrgNo());
-                    created.setYbMatchFlag(item.getYbMatchFlag());
+                                        created.setYbMatchFlag(item.getYbMatchFlag());
                     created.setChrgitmLv(item.getChrgitmLv());
                     created.setDescription(item.getDescription());
 
@@ -382,8 +382,7 @@ public class DeviceDefinitionDomainService {
                     target.setLocationId(item.getLocationId());
                     target.setYbFlag(item.getYbFlag());
                     target.setYbNo(item.getYbNo());
-                    target.setYbOrgNo(item.getYbOrgNo());
-                    target.setYbMatchFlag(item.getYbMatchFlag());
+                                        target.setYbMatchFlag(item.getYbMatchFlag());
                     target.setChrgitmLv(item.getChrgitmLv());
                     target.setDescription(item.getDescription());
 
@@ -420,8 +419,7 @@ public class DeviceDefinitionDomainService {
                 changed.add(FieldNameConstants.LOCATION_ID);
                 changed.add(FieldNameConstants.YB_FLAG);
                 changed.add(FieldNameConstants.YB_NO);
-                changed.add(FieldNameConstants.YB_ORG_NO);
-                changed.add(FieldNameConstants.YB_MATCH_FLAG);
+                    changed.add(FieldNameConstants.YB_MATCH_FLAG);
                 changed.add(FieldNameConstants.CHRGITM_LV);
                 changed.add("description");
                 domainEventPublisher.publish(new DeviceDefinitionUpdateEvent(row.getId(), changed));
@@ -450,7 +448,6 @@ public class DeviceDefinitionDomainService {
             // 医保回写：按 SDD 字段全集更新；保留 ybMappingCode 兼容存量。
             row.setYbFlag(item.getYbFlag());
             row.setYbNo(item.getYbNo());
-            row.setYbOrgNo(item.getYbOrgNo());
             row.setYbMatchFlag(item.getYbMatchFlag());
             row.setChrgitmLv(item.getChrgitmLv());
             row.setYbMappingCode(item.getYbMappingCode());
@@ -463,7 +460,6 @@ public class DeviceDefinitionDomainService {
             List<String> changed = new ArrayList<>();
             changed.add(FieldNameConstants.YB_FLAG);
             changed.add(FieldNameConstants.YB_NO);
-            changed.add(FieldNameConstants.YB_ORG_NO);
             changed.add(FieldNameConstants.YB_MATCH_FLAG);
             changed.add(FieldNameConstants.CHRGITM_LV);
             changed.add("ybMappingCode");
@@ -523,6 +519,21 @@ public class DeviceDefinitionDomainService {
         } else {
             row.setWbStr(SearchCodeUtil.toWbStr(row.getName()));
         }
+    }
+
+    /**
+     * 采番一条未被占用的器材业务编码；冲突则继续取下一号。
+     *
+     * @return 未占用的业务编码
+     */
+    private String allocateUniqueBusNo() {
+        for (int attempt = 0; attempt < BUS_NO_ALLOCATE_MAX_ATTEMPTS; attempt++) {
+            String busNo = this.generateBusNo();
+            if (!repository.existsByBusNo(busNo)) {
+                return busNo;
+            }
+        }
+        throw new BusinessException(ErrorCodeConstants.DEVICE_DEFINITION_RULE_CONFLICT, "器材业务编码采番冲突，请稍后重试");
     }
 
     /**

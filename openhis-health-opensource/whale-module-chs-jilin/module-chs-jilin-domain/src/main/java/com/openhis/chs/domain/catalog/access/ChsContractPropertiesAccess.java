@@ -17,6 +17,9 @@ public interface ChsContractPropertiesAccess {
     /** 定点医疗机构编码（9102 文件下载、msgid 前缀等） */
     Optional<String> findFixmedinsCode(String contractBusNo);
 
+    /** 定点医疗机构名称（3101 {@code medins_name} 等） */
+    Optional<String> findFixmedinsName(String contractBusNo);
+
     /** 就医地医保区划（1312 {@code insu_admdvs}、TransBody {@code mdtrtarea_admvs} 等） */
     Optional<String> findAdmVs(String contractBusNo);
 }

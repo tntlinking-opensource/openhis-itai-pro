@@ -29,24 +29,28 @@ public class NurseStationSkinTestListAssemblyInput {
     /** 已校对皮试药医嘱行（BR-IP-STK-002 过滤后，且须存在 doctor 皮试检查 SR）。 */
     private List<MedicationRequestListQueryModel> skinTestMedicationRequests;
 
-    /** doctor-prescription 皮试检查 SR：皮试药医嘱 id → SR 列表模型（IF-IP-STK-02 索引口径）。 */
-    private Map<Long, ServiceRequestListModel> doctorPrescriptionSkinTestSrByMedicationRequestId;
+    /**
+     * doctor-prescription 皮试检查 SR：皮试药医嘱 id → companion SR 列表（一行一 SR，BR-IP-STK-002）。
+     */
+    private Map<Long, List<ServiceRequestListModel>> doctorPrescriptionSkinTestSrByMedicationRequestId;
 
     /** 过敏记录：皮试检查 SR id → 记录（request_id 锚定 SR）。 */
     private Map<Long, AllergyIntoleranceRecordQueryModel> allergyBySkinTestServiceRequestId;
 
-    /** 皮试药医嘱 id → 发放意向库房 locationId。 */
+    /** 皮试药医嘱 id → 发放意向库房 locationId（行上 performLocationId 展示）。 */
     private Map<Long, Long> locationIdByMedicationRequestId;
 
     /** 药品定义 id → 展示名称。 */
     private Map<Long, String> medicationNameById;
 
-    /** 批号候选：{@code medicationId|locationId} → 选项列表。 */
-    private Map<String, List<NurseStationSkinTestLotOptionDto>> lotOptionsByMedLocationKey;
+    /**
+     * 批号候选：皮试药医嘱 id → 选项列表（MedicationDispense 去重 lot_number，BR-IP-STK-013）。
+     */
+    private Map<Long, List<NurseStationSkinTestLotOptionDto>> lotOptionsByMedicationRequestId;
 
     /** 医务人员 id → 展示名称（开立医生、双签护士）。 */
     private Map<Long, String> practitionerNameById;
 
-    /** 皮试检查 SR id → 是否已存在费用行（pricedFlag 来源）。 */
-    private Map<Long, Boolean> pricedBySkinTestServiceRequestId;
+    /** 皮试检查 SR id → 是否已执行（executedFlag 来源）。 */
+    private Map<Long, Boolean> executedBySkinTestServiceRequestId;
 }

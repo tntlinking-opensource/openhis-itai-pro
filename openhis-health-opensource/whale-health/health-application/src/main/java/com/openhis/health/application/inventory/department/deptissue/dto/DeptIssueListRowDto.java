@@ -13,6 +13,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -38,11 +39,13 @@ public class DeptIssueListRowDto {
     @Schema(description = "科室药房名称 purposeLocationName")
     private String purposeLocationName;
 
-    /** 领用科室 consumingOrganizationId。 */
+    /**
+     * 领用科室行政 Organization 主键（库列 {@code consuming_organization_id}；与科室药房解耦）。
+     */
     @Schema(description = "领用科室 consumingOrganizationId")
     private String consumingOrganizationId;
 
-    /** 领用科室名称 consumingOrganizationName。 */
+    /** 领用科室展示名（由 organization 主数据解析）。 */
     @Schema(description = "领用科室名称 consumingOrganizationName")
     private String consumingOrganizationName;
 
@@ -57,6 +60,18 @@ public class DeptIssueListRowDto {
     /** 驳回原因（status=REJECT 时取供应行 reason；其它态可空）。 */
     @Schema(description = "驳回原因")
     private String rejectReason;
+
+    /**
+     * 整单金额合计（明细 totalPrice 之和；侧栏「总金额」）。
+     *
+     * <p>与 {@link #totalAmount} 同值写入，兼容侧栏读 {@code totalPrice}/{@code totalAmount}。</p>
+     */
+    @Schema(description = "整单金额合计 totalPrice")
+    private BigDecimal totalPrice;
+
+    /** 整单金额合计（与 totalPrice 同口径）。 */
+    @Schema(description = "整单金额合计 totalAmount")
+    private BigDecimal totalAmount;
 
     /** 申请人 applicantId。 */
     @JsonSerialize(using = ToStringSerializer.class)

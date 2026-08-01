@@ -67,6 +67,7 @@ class ChsPlatformShareMigrationCompletenessTest {
     @Test
     void chsInventoryInternalConstantsPreserved() {
         assertThat(ChsInventoryConstants.SOURCE_TYPE_DISPENSE).isEqualTo("DISPENSE");
+        assertThat(ChsInventoryConstants.SOURCE_TYPE_CLEAR_BED_SUMMARY).isEqualTo("CLEAR_BED_SUMMARY");
         assertThat(ChsInventoryConstants.SOURCE_TYPE_DEPT_ISSUE).isEqualTo("DEPT_ISSUE");
         assertThat(ChsInventoryConstants.SOURCE_TYPE_DEPT_ISSUE_RETURN).isEqualTo("DEPT_ISSUE_RETURN");
         assertThat(ChsInventoryConstants.COMPARE_DIFF_MATCH).isEqualTo("MATCH");

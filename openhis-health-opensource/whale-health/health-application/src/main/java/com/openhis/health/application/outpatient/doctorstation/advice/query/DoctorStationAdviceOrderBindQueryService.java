@@ -43,7 +43,7 @@ import java.util.Set;
  *
  * <p>与住院 {@code InpatientDoctorStationAdviceOrderBindQueryService} 同构：用法来源键为
  * {@code method_code} 术语 code；诊疗来源键为活动定义主键字符串。经
- * {@link ServiceDeviceTemplateQueryService} 查询全院启用态模板，批量解析展示名（A.9.1）。</p>
+ * {@link ServiceDeviceTemplateQueryService} 查询门诊范围启用态模板，批量解析展示名（A.9.1）。</p>
  *
  * <p>应用层读服务：跨聚合读经域 {@code *QueryService} 与 {@code ProductDefinitionDisplayTerminologyAssembler}，
  * 不直接注入 Repository（B.6.4）。</p>
@@ -297,7 +297,8 @@ public class DoctorStationAdviceOrderBindQueryService {
             return rows;
         }
         BindQueryContext context = contextOpt.get();
-        String rangeCode = ServiceDeviceTemplateRangeCode.HOSPITAL.getCode();
+        // 门诊医嘱仅匹配门诊范围绑定模板
+        String rangeCode = ServiceDeviceTemplateRangeCode.OUTPATIENT.getCode();
         String itemIdKey = sourceItemKey.trim();
         List<ServiceDeviceTemplateQueryModel> bindings = serviceDeviceTemplateQueryService.listBindingsByRangeTypeAndSource(
             rangeCode,

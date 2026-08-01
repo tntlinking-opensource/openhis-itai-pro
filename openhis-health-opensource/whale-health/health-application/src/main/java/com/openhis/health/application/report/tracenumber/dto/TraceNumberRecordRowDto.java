@@ -20,17 +20,17 @@ public class TraceNumberRecordRowDto {
     /** 记录主键。 */
     private Long id;
 
-    /** 记录类别 code。 */
-    private String recordCategoryEnum;
+    /** 记录类别 code（对客字段名对齐 IF-TRC-RPT-04）。 */
+    private String flowCategoryEnum;
 
     /** 记录类别展示名。 */
-    private String recordCategoryLabel;
+    private String flowCategoryLabel;
 
     /** 记录方向 code。 */
-    private String recordDirectionEnum;
+    private String flowDirectionEnum;
 
     /** 记录方向展示名。 */
-    private String recordDirectionLabel;
+    private String flowDirectionLabel;
 
     /** 库位主键。 */
     private Long locationId;

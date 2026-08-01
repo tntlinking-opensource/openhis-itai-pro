@@ -14,6 +14,8 @@ public class UpdateExecuteLocationRequest {
 
     /** 执行规则主键。 */
     private Long id;
+    /** 开立科室主键。 */
+    private Long organizationId;
     /** 诊疗活动定义主键。 */
     private Long activityDefinitionId;
     /** 诊疗大类业务码。 */

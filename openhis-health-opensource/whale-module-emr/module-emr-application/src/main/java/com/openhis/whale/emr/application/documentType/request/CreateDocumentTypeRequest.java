@@ -21,4 +21,6 @@ public class CreateDocumentTypeRequest {
     private Boolean isEnabled = true;
     /** 排序序号 */
     private Integer sortOrder;
+    /** 文书分类：OUTPATIENT / INPATIENT / NOTICE / SURGERY / OTHER */
+    private String categoryCode;
 }

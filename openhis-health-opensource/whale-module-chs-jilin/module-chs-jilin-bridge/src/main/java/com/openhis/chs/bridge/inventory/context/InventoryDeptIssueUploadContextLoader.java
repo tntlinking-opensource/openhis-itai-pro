@@ -11,6 +11,8 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 import com.openhis.chs.bridge.catalog.ChsInsuranceContractReaderImpl;
 import com.openhis.chs.bridge.inventory.assembler.InventoryPlatformFieldAssembler;
 import com.openhis.chs.bridge.inventory.assembler.InventoryUploadBatchNoAssembler;
+import com.openhis.chs.bridge.inventory.assembler.InventoryUploadLotPriceSupport;
+import com.openhis.chs.bridge.inventory.assembler.InventoryUploadQuantityAssembler;
 import com.openhis.chs.bridge.inventory.support.InventoryUploadTraceLineSupport;
 import com.openhis.chs.domain.share.constants.ChsInventoryConstants;
 import com.openhis.chs.domain.share.enums.InvChgType;
@@ -36,7 +38,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -53,17 +54,13 @@ import java.util.Set;
 @ConditionalOnProperty(name = "openhis.modules.chs.enabled", havingValue = "true")
 public class InventoryDeptIssueUploadContextLoader {
 
-    private static final DateTimeFormatter DATE_FMT =
-        DateTimeFormatter.ofPattern(GeneralSharedConstants.DATE_DISPLAY_PATTERN);
-    private static final DateTimeFormatter DATE_TIME_FMT =
-        DateTimeFormatter.ofPattern(GeneralSharedConstants.DATE_TIME_PATTERN);
-
     private final SupplyRequestQueryService supplyRequestQueryService;
     private final MedicationDefinitionQueryService medicationDefinitionQueryService;
     private final PractitionerQueryService practitionerQueryService;
     private final InventoryItemQueryService inventoryItemQueryService;
     private final ChsInsuranceContractReaderImpl contractReader;
     private final InventoryUploadTraceLineSupport uploadTraceLineSupport;
+    private final InventoryUploadLotPriceSupport uploadLotPriceSupport;
 
     /**
      * 组装科室领用 3502 其他出库上报命令。
@@ -158,6 +155,7 @@ public class InventoryDeptIssueUploadContextLoader {
         if (qty == null || qty.compareTo(BigDecimal.ZERO) <= 0) {
             return null;
         }
+        InvChgType typed = InvChgType.requireCode(invChgType);
         MedicationDefinition medication = medicationDefinitionQueryService
             .findOptionalMedicationDefinitionEntityById(line.getItemId())
             .orElseThrow(() -> new IllegalStateException("药品定义不存在 " + line.getItemId()));
@@ -166,18 +164,22 @@ public class InventoryDeptIssueUploadContextLoader {
         cmd.setMedListCodg(trimToNull(medication.getYbNo()));
         cmd.setFixmedinsHilistId(medication.getBusNo());
         cmd.setFixmedinsHilistName(medication.getName());
-        cmd.setFixmedinsBchno(InventoryUploadBatchNoAssembler.buildFixmedinsBchno(
-            medication.getBusNo(), line.getLotNumber()));
+        // fixmedins_bchno：领用/退领单据头 busNo（supply_request 行上的单据号）
+        cmd.setFixmedinsBchno(InventoryUploadBatchNoAssembler.buildFixmedinsBchno(line.getBusNo()));
         cmd.setManuLotnum(line.getLotNumber());
-        cmd.setCnt(qty);
-        cmd.setPric(line.getPrice());
-        cmd.setInvChgType(invChgType);
+        // 数量：拆零 → 操作单位绝对值；再按类型赋符号（107 领用为负、106 退领为正）
+        BigDecimal opQtyAbs = InventoryUploadQuantityAssembler.splitQuantityToOperationUnit(
+            medication, line.getUnitCode(), qty);
+        cmd.setCnt(typed.toSignedCnt(opQtyAbs));
+        cmd.setPric(uploadLotPriceSupport.resolve3502OperationUnitPrice(
+            medication, line.getLotNumber(), line.getUnitCode(), line.getPrice()));
+        cmd.setInvChgType(typed.getCode());
         cmd.setInvChgTime(resolveChangeDateTime(line));
         cmd.setInvChgOpterName(resolveOperatorName(line));
         cmd.setRxFlag(InventoryPlatformFieldAssembler.toRxFlagCode(medication.getRxFlag()));
         cmd.setMemo(line.getRemake());
         uploadTraceLineSupport.applyMedicationSupplyLineTrace(
-            medication, line.getUnitCode(), line.getTraceNo(), cmd);
+            medication, line.getUnitCode(), line.getTraceNo(), qty, cmd);
         fillInventoryDates(cmd, line);
         return cmd;
     }
@@ -196,21 +198,21 @@ public class InventoryDeptIssueUploadContextLoader {
         }
         InventoryItem item = items.get(0);
         if (item.getProductionDate() != null) {
-            cmd.setManuDate(item.getProductionDate().toLocalDate().format(DATE_FMT));
+            cmd.setManuDate(item.getProductionDate().toLocalDate().format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
         }
         if (item.getExpirationDate() != null) {
-            cmd.setExpyEnd(item.getExpirationDate().toLocalDate().format(DATE_FMT));
+            cmd.setExpyEnd(item.getExpirationDate().toLocalDate().format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
         }
     }
 
     private String resolveChangeDateTime(SupplyRequestModel line) {
         if (line.getApprovalTime() != null) {
-            return line.getApprovalTime().format(DATE_TIME_FMT);
+            return line.getApprovalTime().format(GeneralSharedConstants.DATE_TIME_FORMATTER);
         }
         if (line.getOccurrenceTime() != null) {
-            return line.getOccurrenceTime().format(DATE_TIME_FMT);
+            return line.getOccurrenceTime().format(GeneralSharedConstants.DATE_TIME_FORMATTER);
         }
-        return DATE_TIME_FMT.format(java.time.LocalDateTime.now());
+        return GeneralSharedConstants.DATE_TIME_FORMATTER.format(java.time.LocalDateTime.now());
     }
 
     private String resolveOperatorName(SupplyRequestModel line) {

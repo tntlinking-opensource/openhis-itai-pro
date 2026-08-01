@@ -10,7 +10,10 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.nio.file.StandardWatchEventKinds;
@@ -137,8 +140,10 @@ public final class ContractConfigLoader {
         String source;
         try {
             if (file != null && file.isFile()) {
-                try (InputStream is = new FileInputStream(file)) {
-                    props.load(is);
+                try (InputStream is = new FileInputStream(file);
+                     Reader reader = new InputStreamReader(is, StandardCharsets.UTF_8)) {
+                    // Pre：chs-contract.properties 为 UTF-8；Properties#load(InputStream) 按 ISO-8859-1 会把院名读成乱码
+                    props.load(reader);
                 }
                 lastLoadedMtime = file.lastModified();
                 source = file.getAbsolutePath();
@@ -150,7 +155,9 @@ public final class ContractConfigLoader {
                         log.warn("未找到 chs-contract 配置文件: {}", CONFIG_FILE);
                         return;
                     }
-                    props.load(is);
+                    try (Reader reader = new InputStreamReader(is, StandardCharsets.UTF_8)) {
+                        props.load(reader);
+                    }
                 }
                 lastLoadedMtime = 0L;
                 source = "classpath:" + CONFIG_FILE;
@@ -227,6 +234,9 @@ public final class ContractConfigLoader {
                     // 可选
                 }
             }
+            // 挂号费 2203 默认诊断（可选；覆盖 ChsOutpatientRegisterFeeConstants）
+            c.setRegisterFeeDefaultDiagCode(getProp(props, busNo, "register_fee_default_diag_code"));
+            c.setRegisterFeeDefaultDiagName(getProp(props, busNo, "register_fee_default_diag_name"));
             result.put(busNo, c);
         }
         return Map.copyOf(result);

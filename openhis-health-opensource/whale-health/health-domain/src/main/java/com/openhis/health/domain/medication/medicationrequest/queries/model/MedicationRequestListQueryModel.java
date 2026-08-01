@@ -28,6 +28,10 @@ public class MedicationRequestListQueryModel {
     private Long refundMedicineId;
     /** 分组主键。 */
     private Long groupId;
+    /**
+     * 组套标识（{@code med_medication_request.package_id}；成组输液绑定耗材派生时可回写同源值）。
+     */
+    private Long packageId;
     /** 就诊主键。 */
     private Long encounterId;
     /** 患者主键。 */
@@ -42,7 +46,9 @@ public class MedicationRequestListQueryModel {
      * 开嘱人（申请方医师）主键，与写模型 {@code med_medication_request.requester_id} 对齐；未落库时由装配层回落 {@link #recorderId}。
      */
     private Long requesterId;
-    /** 开立时间。 */
+    /** 开立时间（{@code req_opened_time}）。 */
+    private LocalDateTime reqOpenedTime;
+    /** 签发时间（{@code req_authored_time}）。 */
     private LocalDateTime reqAuthoredTime;
     /** 医生站列表展示排序号。 */
     private Integer sortNumber;
@@ -58,6 +64,10 @@ public class MedicationRequestListQueryModel {
     private BigDecimal dose;
     /** 剂量单位编码。 */
     private String doseUnitCode;
+    /** 首日/首次用量（仅长期；可空；BR-IP-ORD-030 / BR-MRQ-010）。 */
+    private BigDecimal firstDose;
+    /** 首日/首次用量单位编码（与 {@link #firstDose} 成对）。 */
+    private String firstDoseUnitCode;
     /** 产品批号。 */
     private String lotNumber;
     /** 用药天数。 */
@@ -66,16 +76,16 @@ public class MedicationRequestListQueryModel {
     private Long orgId;
     /** 发放药房库位主键（持久化 {@code perform_location}，{@code adm_location.id}）。 */
     private Long performLocation;
-    /** 诊断定义主键（持久化 {@code med_medication_request.condition_definition_id}）。 */
-    private Long conditionDefinitionId;
-    /** 就诊诊断主键（持久化 {@code med_medication_request.encounter_diagnosis_id}）。 */
-    private Long encounterDiagnosisId;
+    /** 绑定就诊诊断主键有序串（持久化 {@code med_medication_request.encounter_diagnosis_ids}；有序，首位为主诊断）。 */
+    private String encounterDiagnosisIds;
     /** 备注。 */
     private String remark;
     /** 请求扩展 JSON（编辑卡片回填）。 */
     private String contentJson;
     /** 处方类别编码。 */
     private String rxTypeCode;
+    /** 费用性质主键（持久化 {@code med_medication_request.contract_id}）。 */
+    private Long contractId;
     /** 用药说明编码（与定义/域列对齐）。 */
     private String dosageInstruction;
     /** 滴速编码。 */
@@ -98,8 +108,12 @@ public class MedicationRequestListQueryModel {
     private LocalDateTime checkTime;
     /** 用药开始时间（持久化 effective_dose_start）。 */
     private LocalDateTime effectiveDoseStart;
-    /** 停嘱/结束时刻（仅 STOPPED 时写入 effective_dose_end）。 */
+    /** 服药计划结束时间（临床计划窗；非停嘱）。 */
     private LocalDateTime effectiveDoseEnd;
+    /** 停嘱时间（{@code stop_time}；STOPPED 时有值）。 */
+    private LocalDateTime stopTime;
+    /** 停嘱人主键（{@code stopper_id}；未停 null）。 */
+    private Long stopperId;
     /** 是否中医相关（付数等场景）。 */
     private Boolean tcmFlag;
     /** 治疗类型枚举编码（持久化 therapy_enum，与 {@code TherapyType#getCode()} 对齐）。 */

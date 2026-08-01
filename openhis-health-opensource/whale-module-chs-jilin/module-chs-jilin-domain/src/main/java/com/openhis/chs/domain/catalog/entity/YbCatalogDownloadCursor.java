@@ -5,6 +5,7 @@
 package com.openhis.chs.domain.catalog.entity;
 
 import com.openhis.whale.core.domain.BaseAuditedEntity;
+import com.openhis.whale.core.domain.IExcludeFromAudit;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
@@ -14,12 +15,14 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 /**
- * 医保目录下载游标 301/1305 等文件型接口） */
+ * 医保目录下载游标（1301/1305 等文件型接口）。
+ * <p>每版本快照追加，排除框架审计。</p>
+ */
 @Getter
 @Setter
 @Entity
 @Table(name = "yb_catalog_download_cursor")
-public class YbCatalogDownloadCursor extends BaseAuditedEntity {
+public class YbCatalogDownloadCursor extends BaseAuditedEntity implements IExcludeFromAudit {
 
     @Column(name = "contract_id", nullable = false)
     private Long contractId;

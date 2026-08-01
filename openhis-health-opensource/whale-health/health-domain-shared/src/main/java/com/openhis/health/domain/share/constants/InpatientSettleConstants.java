@@ -51,7 +51,7 @@ public interface InpatientSettleConstants {
     /** 本批费用非已结算态（EX-IP-RVS-002）。 */
     String EX_IP_RVS_002 = "EX-IP-RVS-002";
 
-    /** 就诊已清床离院，须护士站召回内嵌反结（EX-IP-RVS-003）。 */
+    /** 就诊已清床离院，须先召回（内嵌反结），禁止本页直接反结（EX-IP-RVS-003）。 */
     String EX_IP_RVS_003 = "EX-IP-RVS-003";
 
     /** 须撤出院嘱但未找到可退回医嘱（EX-IP-RVS-004）。 */
@@ -59,6 +59,18 @@ public interface InpatientSettleConstants {
 
     /** 反结持久化失败（EX-IP-RVS-005）。 */
     String EX_IP_RVS_005 = "EX-IP-RVS-005";
+
+    /** 召回：就诊非已离院 DISCHARGED（EX-IP-RCL-001）。 */
+    String EX_IP_RCL_001 = "EX-IP-RCL-001";
+
+    /** 召回：内嵌反结失败（EX-IP-RCL-002）。 */
+    String EX_IP_RCL_002 = "EX-IP-RCL-002";
+
+    /** 召回：无出院嘱可撤回（EX-IP-RCL-003）。 */
+    String EX_IP_RCL_003 = "EX-IP-RCL-003";
+
+    /** 召回：领域持久化失败（EX-IP-RCL-004）。 */
+    String EX_IP_RCL_004 = "EX-IP-RCL-004";
 
     /** 队列或初始化失败（EX-IP-STL-101）。 */
     String EX_IP_STL_101 = "EX-IP-STL-101";
@@ -87,8 +99,8 @@ public interface InpatientSettleConstants {
     /** 不可反结：当前行为逆向记录。 */
     String REVERSE_DISABLED_REASON_REVERSE_RECORD = "逆向记录不可反结";
 
-    /** 不可反结：就诊已清床离院。 */
-    String REVERSE_DISABLED_REASON_DISCHARGED = "已清床请至护士站召回";
+    /** 不可反结：就诊已清床离院（须点召回）。 */
+    String REVERSE_DISABLED_REASON_DISCHARGED = "已离院请先召回";
 
     /** 不可反结：原单非成功态。 */
     String REVERSE_DISABLED_REASON_NOT_SUCCESS = "非成功结算单";

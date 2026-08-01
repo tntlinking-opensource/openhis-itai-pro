@@ -22,4 +22,15 @@ public interface EinvoiceInvoiceWritebackLoader {
      * @param operatorId 操作人主键；查票补偿等场景可传 {@code null}
      */
     void issueElectronicInvoice(Long invoiceId, BossInvoiceIssueResult result, Long operatorId);
+
+    /**
+     * 本地冲红 health 票据（ISSUED → CANCELLED），供财务「手动冲红」页在调博思前对齐主档。
+     *
+     * <p>幂等：已是 CANCELLED 时静默跳过；非 ISSUED/CANCELLED 时由领域服务抛业务异常。</p>
+     *
+     * @param invoiceId 票据主键
+     * @param reason 冲红原因
+     * @param operatorId 操作人主键；可空
+     */
+    void writeoffLocalInvoice(Long invoiceId, String reason, Long operatorId);
 }

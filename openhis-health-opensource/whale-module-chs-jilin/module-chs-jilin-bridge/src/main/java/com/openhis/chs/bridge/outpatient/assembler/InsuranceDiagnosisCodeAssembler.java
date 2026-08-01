@@ -4,41 +4,253 @@
  */
 package com.openhis.chs.bridge.outpatient.assembler;
 
+import static com.openhis.whale.core.application.util.StringUtils.isEmpty;
 import static com.openhis.whale.core.application.util.StringUtils.isNotEmpty;
 
+import com.openhis.chs.domain.outpatient.command.OpClinicDiagnosisLine;
+import com.openhis.chs.domain.share.constants.ChsOutpatientRegisterFeeConstants;
+import com.openhis.chs.domain.share.enums.DiagType;
+import com.openhis.health.domain.administration.encounter.queries.model.EncounterDiagnosisQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.domain.clinical.condition.service.ConditionQueryService;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.ConditionDefinitionBatchItemQueryModel;
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
+import com.openhis.whale.core.application.exception.BusinessException;
 
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 
 /**
- * 就诊主诊断 → 国家医保病种编码映射（{@code cln_condition_definition.yb_no}）。
+ * 就诊诊断 → 国家医保诊断编码映射（{@code cln_condition_definition.yb_no}，不经 Condition）。
  *
- * <p>读 health-domain 诊断定义；纯内存转换，无 IO。</p>
+ * <p>Wave B：支持全量临床诊断列表；未对码（无 yb_no）整单失败并提示。</p>
  */
 public final class InsuranceDiagnosisCodeAssembler {
 
     private InsuranceDiagnosisCodeAssembler() {
     }
 
+    /** 主诊编码/名称载体（兼容旧调用）。 */
     public record MainDiagnosis(String code, String name) {
     }
 
+    /**
+     * 解析主诊断（全量列表中的主诊行；无诊断时 code/name 为空）。
+     *
+     * @param encounterId                     就诊 id
+     * @param encounterQueryService           就诊查询
+     * @param conditionDefinitionQueryService 诊断定义查询
+     * @return 主诊；无关联时 code/name 为 null
+     */
     public static MainDiagnosis resolveMainDiagnosis(
         Long encounterId,
         EncounterQueryService encounterQueryService,
-        ConditionQueryService conditionQueryService,
         ConditionDefinitionQueryService conditionDefinitionQueryService) {
-        Long definitionId = resolvePrimaryDefinitionId(encounterId, encounterQueryService, conditionQueryService);
-        if (definitionId == null) {
+        List<OpClinicDiagnosisLine> lines = resolveClinicDiagnoses(
+            encounterId,
+            encounterQueryService,
+            conditionDefinitionQueryService,
+            false);
+        if (lines.isEmpty()) {
             return new MainDiagnosis(null, null);
         }
-        String code = resolveNationalDiagCodeForDefinitionId(definitionId, conditionDefinitionQueryService);
-        String name = resolveDefinitionNameForDefinitionId(definitionId, conditionDefinitionQueryService, null);
-        return new MainDiagnosis(code, name);
+        OpClinicDiagnosisLine primary = lines.get(0);
+        return new MainDiagnosis(primary.getDiagCode(), primary.getDiagName());
+    }
+
+    /**
+     * 装载本诊次全部有效诊断（主诊优先，其余按 rank 升序），供 2203 diseinfo。
+     *
+     * <p>挂号/兼容路径可继续用；诊疗结算优先走 {@link #resolveClinicDiagnosesByOrderedIds}，
+     * 以账单 {@code encounter_diagnosis_ids} 为上传真源。</p>
+     *
+     * @param encounterId                     就诊 id
+     * @param encounterQueryService           就诊查询
+     * @param conditionDefinitionQueryService 诊断定义查询
+     * @param requireNonEmpty                 true 时无诊断抛业务异常（诊疗结算）
+     * @return 诊断行列表；requireNonEmpty=false 且无关联时返回空列表
+     */
+    public static List<OpClinicDiagnosisLine> resolveClinicDiagnoses(
+        Long encounterId,
+        EncounterQueryService encounterQueryService,
+        ConditionDefinitionQueryService conditionDefinitionQueryService,
+        boolean requireNonEmpty) {
+        // Pre：读就诊诊断关联
+        List<EncounterDiagnosisQueryModel> associations =
+            encounterQueryService.listEncounterDiagnoses(encounterId);
+        if (associations == null || associations.isEmpty()) {
+            if (requireNonEmpty) {
+                throw new BusinessException(
+                    "INS-012",
+                    "诊疗费医保结算须先在医生站下达诊断，请下诊断后再收费");
+            }
+            return List.of();
+        }
+        // Pre：主诊优先，其余按 rank（空 rank 靠后），稳定次序
+        List<EncounterDiagnosisQueryModel> ordered = new ArrayList<>(associations);
+        ordered.sort(Comparator
+            .comparing((EncounterDiagnosisQueryModel row) -> !Boolean.TRUE.equals(row.getPrimaryFlag()))
+            .thenComparing(
+                EncounterDiagnosisQueryModel::getRank,
+                Comparator.nullsLast(Comparator.naturalOrder())));
+        return toClinicDiagnosisLines(ordered, conditionDefinitionQueryService, requireNonEmpty);
+    }
+
+    /**
+     * 按账单绑定的有序就诊诊断 id 装载 2203 diseinfo（多诊断全量上传）。
+     *
+     * <p>顺序与 ids 串一致：首位标记 {@code maindiag_flag=1}（便于统计/展示），
+     * <b>不是</b>「结算只取主诊」——其后各位一并上传。</p>
+     *
+     * @param orderedEncounterDiagnosisIds    有序就诊诊断行主键（去重后仍保序）
+     * @param encounterQueryService           就诊查询
+     * @param conditionDefinitionQueryService 诊断定义查询
+     * @param requireNonEmpty                 true 时无有效行抛业务异常
+     * @return diseinfo 行列表
+     */
+    public static List<OpClinicDiagnosisLine> resolveClinicDiagnosesByOrderedIds(
+        List<Long> orderedEncounterDiagnosisIds,
+        EncounterQueryService encounterQueryService,
+        ConditionDefinitionQueryService conditionDefinitionQueryService,
+        boolean requireNonEmpty) {
+        if (orderedEncounterDiagnosisIds == null || orderedEncounterDiagnosisIds.isEmpty()) {
+            if (requireNonEmpty) {
+                throw new BusinessException(
+                    "INS-012",
+                    "诊疗费医保结算须先在医生站下达诊断，请下诊断后再收费");
+            }
+            return List.of();
+        }
+        // Pre：按 id 批量加载就诊诊断行，再按入参顺序重排（保留 ids 串主诊首位）
+        List<EncounterDiagnosisQueryModel> all =
+            encounterQueryService.listEncounterDiagnosesByIds(orderedEncounterDiagnosisIds);
+        Map<Long, EncounterDiagnosisQueryModel> byId = new HashMap<>(all.size() * 2);
+        for (EncounterDiagnosisQueryModel row : all) {
+            if (row != null && row.getDiagnosisId() != null) {
+                byId.put(row.getDiagnosisId(), row);
+            }
+        }
+        List<EncounterDiagnosisQueryModel> ordered = new ArrayList<>(orderedEncounterDiagnosisIds.size());
+        LinkedHashSet<Long> seen = new LinkedHashSet<>();
+        for (Long id : orderedEncounterDiagnosisIds) {
+            if (id == null || !seen.add(id)) {
+                continue;
+            }
+            EncounterDiagnosisQueryModel row = byId.get(id);
+            if (row != null) {
+                ordered.add(row);
+            }
+        }
+        return toClinicDiagnosisLines(ordered, conditionDefinitionQueryService, requireNonEmpty);
+    }
+
+    /**
+     * 将已排序的就诊诊断关联映射为平台 diseinfo 行（须 yb_no；首位 maindiag_flag=1）。
+     *
+     * @param ordered                         有序关联行
+     * @param conditionDefinitionQueryService 目录查询
+     * @param requireNonEmpty                 无有效行是否抛错
+     * @return 临床诊断行
+     */
+    private static List<OpClinicDiagnosisLine> toClinicDiagnosisLines(
+        List<EncounterDiagnosisQueryModel> ordered,
+        ConditionDefinitionQueryService conditionDefinitionQueryService,
+        boolean requireNonEmpty) {
+        LinkedHashSet<Long> definitionIds = new LinkedHashSet<>();
+        for (EncounterDiagnosisQueryModel row : ordered) {
+            if (row != null && row.getConditionDefinitionId() != null) {
+                definitionIds.add(row.getConditionDefinitionId());
+            }
+        }
+        if (definitionIds.isEmpty()) {
+            if (requireNonEmpty) {
+                throw new BusinessException(
+                    "INS-012",
+                    "诊疗费医保结算须先在医生站下达诊断，请下诊断后再收费");
+            }
+            return List.of();
+        }
+        Map<Long, ConditionDefinitionBatchItemQueryModel> definitionById = new HashMap<>();
+        if (conditionDefinitionQueryService != null) {
+            List<ConditionDefinitionBatchItemQueryModel> definitions =
+                conditionDefinitionQueryService.getConditionDefinitionListByIds(
+                    new ArrayList<>(definitionIds));
+            for (ConditionDefinitionBatchItemQueryModel definition : definitions) {
+                if (definition != null && definition.getId() != null) {
+                    definitionById.put(definition.getId(), definition);
+                }
+            }
+        }
+
+        List<OpClinicDiagnosisLine> lines = new ArrayList<>();
+        int srtNo = 1;
+        for (EncounterDiagnosisQueryModel association : ordered) {
+            if (association == null || association.getConditionDefinitionId() == null) {
+                continue;
+            }
+            ConditionDefinitionBatchItemQueryModel definition =
+                definitionById.get(association.getConditionDefinitionId());
+            String ybNo = null;
+            String name = null;
+            if (definition != null) {
+                ybNo = resolveNationalDiagCode(definition.getYbNo(), definition.getConditionCode());
+                if (isNotEmpty(definition.getName())) {
+                    name = definition.getName().trim();
+                }
+            }
+            if (isEmpty(name) && isNotEmpty(association.getDescription())) {
+                name = association.getDescription().trim();
+            }
+            if (isEmpty(ybNo) || isEmpty(name) || "-".equals(ybNo.trim())) {
+                String hint = name;
+                if (isEmpty(hint)) {
+                    hint = association.getDescription();
+                }
+                if (isEmpty(hint)) {
+                    hint = String.valueOf(association.getConditionDefinitionId());
+                }
+                throw new BusinessException(
+                    "INS-012",
+                    "诊断未对码（缺少国家医保诊断编码 yb_no），请先完成目录对照后再收费：" + hint);
+            }
+            // 首位固定主诊标记（ids 串协议 / 统计口径）；其余一律次诊——上传仍含全部行
+            String mainFlag;
+            if (srtNo == 1) {
+                mainFlag = ChsOutpatientRegisterFeeConstants.DIAG_MAINDIAG_FLAG_YES;
+            } else {
+                mainFlag = "0";
+            }
+            OpClinicDiagnosisLine line = new OpClinicDiagnosisLine()
+                .setDiagSrtNo(srtNo)
+                .setDiagCode(ybNo.trim())
+                .setDiagName(name.trim())
+                .setDiagType(resolveDiagTypeCode(association))
+                .setMaindiagFlag(mainFlag);
+            lines.add(line);
+            srtNo++;
+        }
+        if (lines.isEmpty() && requireNonEmpty) {
+            throw new BusinessException(
+                "INS-012",
+                "诊疗费医保结算须先在医生站下达诊断，请下诊断后再收费");
+        }
+        return lines;
+    }
+
+    /**
+     * 将就诊关联的中西医标记映射为平台 diag_type。
+     *
+     * @param association 就诊诊断关联
+     * @return 平台诊断类别码
+     */
+    public static String resolveDiagTypeCode(EncounterDiagnosisQueryModel association) {
+        if (association != null && Boolean.TRUE.equals(association.getTcmFlag())) {
+            return DiagType.TCM_MAIN.getCode();
+        }
+        return DiagType.WESTERN.getCode();
     }
 
     public static String resolveNationalDiagCodeForDefinitionId(
@@ -71,28 +283,30 @@ public final class InsuranceDiagnosisCodeAssembler {
         return fallbackDescription;
     }
 
+    /**
+     * 解析主诊对应诊断定义 id。
+     *
+     * @param encounterId           就诊 id
+     * @param encounterQueryService 就诊查询
+     * @return 诊断定义 id；无主诊时 null
+     */
     public static Long resolvePrimaryDefinitionId(
         Long encounterId,
-        EncounterQueryService encounterQueryService,
-        ConditionQueryService conditionQueryService) {
-        List<com.openhis.health.domain.administration.encounter.queries.model.EncounterDiagnosisQueryModel> associations =
+        EncounterQueryService encounterQueryService) {
+        List<EncounterDiagnosisQueryModel> associations =
             encounterQueryService.listEncounterDiagnoses(encounterId);
         if (associations.isEmpty()) {
             return null;
         }
-        com.openhis.health.domain.administration.encounter.queries.model.EncounterDiagnosisQueryModel chosen =
-            associations.stream()
+        EncounterDiagnosisQueryModel chosen = associations.stream()
             .filter(row -> Boolean.TRUE.equals(row.getPrimaryFlag()))
             .findFirst()
             .orElseGet(() -> associations.stream()
                 .min(Comparator.comparing(
-                    com.openhis.health.domain.administration.encounter.queries.model.EncounterDiagnosisQueryModel::getRank,
+                    EncounterDiagnosisQueryModel::getRank,
                     Comparator.nullsLast(Comparator.naturalOrder())))
                 .orElse(associations.get(0)));
-        if (chosen.getConditionId() == null) {
-            return null;
-        }
-        return conditionQueryService.findDefinitionIdByConditionId(chosen.getConditionId());
+        return chosen.getConditionDefinitionId();
     }
 
     public static String resolveNationalDiagCode(String ybNo, String conditionCode) {

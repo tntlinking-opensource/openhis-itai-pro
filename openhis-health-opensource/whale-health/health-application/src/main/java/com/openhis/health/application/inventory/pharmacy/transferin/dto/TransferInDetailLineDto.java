@@ -94,6 +94,14 @@ public class TransferInDetailLineDto {
     @Schema(description = "行总价")
     private BigDecimal totalPrice;
 
+    /**
+     * 源库当前可用量（拆零单位）。
+     *
+     * <p>与选品 {@code availableQuantity} 同口径：可用状态、未过期、未锁定；按物品 + 归一化批号聚合。</p>
+     */
+    @Schema(description = "源库可用量（拆零）")
+    private BigDecimal availableQuantity;
+
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 业务发生时间。 */
     @Schema(description = "业务发生时间")

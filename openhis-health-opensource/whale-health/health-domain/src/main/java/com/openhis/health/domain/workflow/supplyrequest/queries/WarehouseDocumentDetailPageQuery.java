@@ -22,7 +22,7 @@ public class WarehouseDocumentDetailPageQuery extends AbstractPageQuery {
 
     private static final long serialVersionUID = 1L;
 
-    /** 单据号精确匹配（可选）。 */
+    /** 单据号模糊匹配（可选；大小写不敏感 LIKE）。 */
     private String busNo;
 
     /** 单据类型筛选（可选）；与 {@link #typeEnums} 互斥，本字段非空时优先。 */
@@ -33,8 +33,15 @@ public class WarehouseDocumentDetailPageQuery extends AbstractPageQuery {
      */
     private List<String> typeEnums;
 
-    /** 单据状态筛选（可选）。 */
+    /** 单据状态筛选（可选）；与 {@link #statusEnums} 互斥，本字段非空时优先。 */
     private String statusEnum;
+
+    /**
+     * 单据状态多选（IN）；与 {@link #statusEnum} 互斥。
+     *
+     * <p>期初单据详情（BR-INV-DDC-003）：{@code AGREE}+{@code APPROVAL} 同查。</p>
+     */
+    private List<String> statusEnums;
 
     /** 源位置 ID 筛选（可选）。 */
     private Long sourceLocationId;

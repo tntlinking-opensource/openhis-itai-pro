@@ -19,8 +19,7 @@ import org.springframework.stereotype.Service;
 import java.util.Optional;
 
 /**
- * 开票任务入队 AppService：初始化 document/line 并创建 task。
- * <p>由 {@link com.openhis.whale.core.infrastructure.transaction.AppServiceAspect} 管理 UoW。</p>
+ * 开票任务入队：初始化 document/line 并创建 PENDING task。
  */
 @Slf4j
 @Service
@@ -36,8 +35,9 @@ public class BossIssueTaskEnqueueService {
      *
      * @param invoiceId 票据主键
      * @param triggerSource 触发来源码
+     * @return 新建任务主键；唯一约束冲突（已有活跃任务）时为空
      */
-    public void enqueue(Long invoiceId, String triggerSource) {
+    public Optional<Long> enqueue(Long invoiceId, String triggerSource) {
         EinvBossDocument document = resolveDocument(invoiceId);
         EinvBossIssueTask task = new EinvBossIssueTask();
         task.setTenantId(document.getTenantId());
@@ -49,9 +49,11 @@ public class BossIssueTaskEnqueueService {
         task.setIsDeleted(false);
         try {
             taskRepository.saveAndFlush(task);
+            return Optional.ofNullable(task.getId());
         } catch (DataIntegrityViolationException ex) {
             // 蓝绿/重复事件：uk_einv_task_invoice_active 保证仅一条活跃任务
             log.debug("Issue task already enqueued, invoiceId={}", invoiceId);
+            return Optional.empty();
         }
     }
 

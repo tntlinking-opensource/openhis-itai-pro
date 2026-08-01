@@ -22,6 +22,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -356,6 +357,10 @@ public class EncounterMedicationDispenseSlipReadAssembler {
             row.setMedicationCategoryCode(product.getCategoryCode());
             row.setMedicationCategoryText(product.getCategoryCodeDictText());
             row.setSplitRatio(product.getDoseUnitRatio());
+            // 包装/拆零单位：住院发药应扫码数换算（与门诊同口径）
+            row.setPackageUnitCode(product.getPackageUnitCode());
+            row.setPackageUnitRatio(product.getPackageUnitRatio());
+            row.setSplitUnitCode(product.getSplitUnitCode());
             if (StringUtils.isNotEmpty(product.getPartAttributeEnum())) {
                 row.setPartAttributeCode(product.getPartAttributeEnum());
                 row.setPartAttributeText(
@@ -376,7 +381,12 @@ public class EncounterMedicationDispenseSlipReadAssembler {
             row.setDoseUnitCode(req.getDoseUnitCode());
             row.setDispensePerSupplyDays(req.getDispensePerDuration());
             row.setPrescriptionGroupId(req.getGroupId());
-            row.setRequestAuthoredTime(req.getReqAuthoredTime());
+            LocalDateTime requestOpenedTime = req.getReqOpenedTime();
+            // 发药 slip 展示主轴：开立时刻优先，空回落签发追溯列。
+            if (requestOpenedTime == null) {
+                requestOpenedTime = req.getReqAuthoredTime();
+            }
+            row.setRequestOpenedTime(requestOpenedTime);
             row.setEncounterMedicationTypeCode(req.getRxTypeCode());
             row.setEncounterMedicationTypeText(
                 OrderCatalogDisplayAssembler.resolveCategoryDisplay(context.rxLabels(), req.getRxTypeCode()));

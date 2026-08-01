@@ -17,9 +17,14 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * 混合结算「部分 2207 成功」后的自动补偿（2208 → 失败则 2601）。
+ * 医保正式结算成功后的自动补偿（2208 → 失败则 2601）。
  *
- * <p>触发点：{@code OutpatientChargeAppService#collectInsuranceConfirmResults} 任一组 confirm 抛异常时。</p>
+ * <p>触发点：
+ * <ul>
+ *   <li>{@code OutpatientChargeAppService#collectInsuranceConfirmResults} 多批 2207 中途失败；</li>
+ *   <li>{@code OutpatientChargeAppService#confirmOutpatientChargeSettlement} 全部 2207 成功后本地落账失败。</li>
+ * </ul>
+ * </p>
  */
 @Slf4j
 @Component

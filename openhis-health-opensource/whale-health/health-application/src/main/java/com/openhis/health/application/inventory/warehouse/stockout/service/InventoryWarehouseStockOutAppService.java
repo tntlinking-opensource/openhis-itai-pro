@@ -142,13 +142,14 @@ public class InventoryWarehouseStockOutAppService {
             // Pre：装载管辖范围内启用位置与角色人员
             // Asm：Mapper 映射页初始化响应
             // —— 门控：管辖库位非空时与启用位置求交；管辖 empty 时不拼 location_id 谓词。——
-            List<Location> pharmacies = locationQueryService.listAllActivePharmacies();
+            // 出库目的显式并集：药房 + 科室药房（可分别生成药房/科室入库壳单）
+            List<Location> pharmacies = locationQueryService.listAllActivePharmacyPartyLocations();
             List<Location> warehouses = locationQueryService.listAllActiveWarehouses();
             List<Location> gatedPharmacies = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(pharmacies);
             List<Location> gatedWarehouses = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(warehouses);
-            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
                 WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
-            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
                 WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE, resolvedOrg);
             return stockOutMapper.toLoadStockOutFormInitResponse(
                 stockOutMapper.toOptionDtoListFromLocations(gatedWarehouses),
@@ -802,8 +803,8 @@ public class InventoryWarehouseStockOutAppService {
         InventoryItemPageQuery invQuery = new InventoryItemPageQuery();
         invQuery.setLocationId(request.getSourceLocationId());
         invQuery.setItemTable(request.getProductTableName().trim());
-        // —— 仅展示账面量大于零的批号行，与请领选品 / 库存明细「有库存」列表口径一致。——
-        invQuery.setPositiveQuantityOnly(true);
+        // —— 前台可选：true 仅返回选品库位账面量>0 的批号行；false/未传不过滤数量。——
+        invQuery.setPositiveQuantityOnly(request.getPositiveQuantityOnly());
         PageQueryBinder.bind(request, invQuery);
         Pageable pageable = PageRequest.of(
             request.springPageIndex(), request.getBoundedPageSize(), Sort.by(Sort.Direction.ASC, FieldNameConstants.ID));
@@ -1273,7 +1274,7 @@ public class InventoryWarehouseStockOutAppService {
      */
     private Set<Long> resolveGatedPharmacyPartyLocationIdsForStockOutGate() {
         return this.managedLocationIdsResolver.gatedLocationIdsFromActive(
-            this.locationQueryService.listAllActivePharmacies());
+            this.locationQueryService.listAllActivePharmacyPartyLocations());
     }
 
     /**

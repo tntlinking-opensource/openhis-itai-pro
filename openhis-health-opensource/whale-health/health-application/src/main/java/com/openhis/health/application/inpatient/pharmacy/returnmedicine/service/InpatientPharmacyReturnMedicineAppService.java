@@ -6,6 +6,7 @@ package com.openhis.health.application.inpatient.pharmacy.returnmedicine.service
 
 import com.openhis.health.application.shared.option.OptionDtoAssembler;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.financial.EncounterContractDisplayAssembler;
 import com.openhis.health.application.shared.validator.CurrentManagedLocationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
@@ -62,6 +63,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -72,6 +74,7 @@ import java.util.Map;
  * <ul>
  *   <li>读侧：{@link PharmacyReturnEncounterQueueLoader} 预解析在院就诊；{@link EncounterContextReader} 住院上下文</li>
  *   <li>写侧：{@link MedicationDispenseDomainService#refundDispensedMedication} 推进发放态；库存/追溯补偿</li>
+ *   <li>医保 3506：仅按患者直发产生的退药行上报；汇总发药对冲行（{@code summary_no} 非空）不上报</li>
  *   <li>不写 ChargeItem、不完成负向药嘱、不提供拒绝退药</li>
  * </ul>
  *
@@ -115,6 +118,8 @@ public class InpatientPharmacyReturnMedicineAppService {
     private final InpatientReturnMedicinePatientQueueAssembler inpatientReturnMedicinePatientQueueAssembler;
     /** 请求/响应映射。 */
     private final InpatientPharmacyReturnMedicineMapper returnMedicineMapper;
+    /** 就诊费用性质（优先合同名）批量回填队列卡片，与门诊发药同口径。 */
+    private final EncounterContractDisplayAssembler encounterContractDisplayAssembler;
 
     /**
      * 加载住院退药页初始化元数据（IF-IPR-01）。
@@ -195,12 +200,45 @@ public class InpatientPharmacyReturnMedicineAppService {
                 String refundCode = refundCodeByEncounter.get(ctx.getEncounterId());
                 content.add(returnMedicineMapper.toReturnPatientRow(ctx, refundCode));
             }
+            // Asm：回填费用性质后封装分页（与门诊发药/医生站卡片同口径）。
+            this.applyQueueContractDisplayLabels(content);
             PageInpatientReturnPatientResponse response = new PageInpatientReturnPatientResponse();
             return PagedResultBuilder.build(response, content, encounterIdPage);
         } catch (BusinessException ex) {
             throw ex;
         } catch (RuntimeException ex) {
             throw new BusinessException(ErrorCodeConstants.EX_IPR_102_QUERY_FAILED, "列表加载失败，请稍后重试");
+        }
+    }
+
+    /**
+     * 住院退药队列行批量回填 {@code contractDisplay}（与门诊发药/医生站患者卡片费用性质同口径）。
+     *
+     * @param patientRows 本页已映射的队列 DTO；空或无就诊主键时直接返回
+     */
+    private void applyQueueContractDisplayLabels(List<InpatientReturnPatientRowDto> patientRows) {
+        if (patientRows == null || patientRows.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
+        // Loop：收集本页就诊主键，供合同展示一次批量解析
+        for (InpatientReturnPatientRowDto row : patientRows) {
+            if (row != null && row.getEncounterId() != null) {
+                encounterIds.add(row.getEncounterId());
+            }
+        }
+        // 本页无有效就诊时跳过合同装配
+        if (encounterIds.isEmpty()) {
+            return;
+        }
+        Map<Long, String> contractDisplayByEncounterId =
+            this.encounterContractDisplayAssembler.mapContractDisplayByEncounterIds(encounterIds);
+        // Loop：逐行写回费用性质展示名；无合同时留空，前端回落「自费」
+        for (InpatientReturnPatientRowDto row : patientRows) {
+            if (row == null || row.getEncounterId() == null) {
+                continue;
+            }
+            row.setContractDisplay(contractDisplayByEncounterId.get(row.getEncounterId()));
         }
     }
 
@@ -264,7 +302,6 @@ public class InpatientPharmacyReturnMedicineAppService {
         List<MedicationDispense> confirmedDispenses = new ArrayList<>();
         Map<Long, BigDecimal> inventoryIncreaseMerged = new HashMap<>();
         Map<Long, ProductDefinitionDisplayDto> productByMedicationId = new HashMap<>();
-        List<Long> confirmedDispenseIds = new ArrayList<>();
         Long encounterIdForUpload = null;
         for (InpatientReturnMedicineItemRequest item : request.getItems()) {
             if (item == null || item.getDispenseId() == null) {
@@ -275,7 +312,6 @@ public class InpatientPharmacyReturnMedicineAppService {
             if (encounterIdForUpload == null && md.getEncounterId() != null) {
                 encounterIdForUpload = md.getEncounterId();
             }
-            confirmedDispenseIds.add(md.getId());
             assertPendingRefundDispense(md.getStatusEnum(), item.getDispenseId());
             RefundDispensedMedicationCommand.Item refundItem = new RefundDispensedMedicationCommand.Item();
             refundItem.setId(md.getId());
@@ -313,44 +349,42 @@ public class InpatientPharmacyReturnMedicineAppService {
         ConfirmInpatientMedicineReturnResponse response = new ConfirmInpatientMedicineReturnResponse();
         response.setSuccess(Boolean.TRUE);
         response.setMessage(MedicationCommonConstants.INPATIENT_PHARMACY_RETURN_CONFIRM_SUCCESS_MESSAGE);
-        String medicareUploadWarning = tryUploadMedicareInventoryAfterReturn(
-            request, encounterIdForUpload, confirmedDispenseIds, operatorId);
-        if (StringUtils.isNotEmpty(medicareUploadWarning)) {
-            response.setMessage(medicareUploadWarning);
-        }
+        // Asm：可选医保 3506（afterCommit + 异步；仅非汇总径退药行）
+        tryUploadMedicareInventoryAfterReturn(encounterIdForUpload, confirmedDispenses);
         return response;
     }
 
     /**
-     * 退药本地事实提交后触发 3506；失败仅告警，不回滚退药。
-     *
-     * @return 需合并进响应的告警文案；无告警时 {@code null}
+     * 退药本地事实提交后触发 3506（afterCommit + 异步）；汇总发药对冲行（{@code summary_no} 非空）跳过。
      */
-    private String tryUploadMedicareInventoryAfterReturn(
-        ConfirmInpatientMedicineReturnRequest request,
+    private void tryUploadMedicareInventoryAfterReturn(
         Long encounterId,
-        List<Long> dispenseIds,
-        Long operatorId
+        List<MedicationDispense> confirmedDispenses
     ) {
-        if (encounterId == null || dispenseIds == null || dispenseIds.isEmpty()) {
-            return null;
+        if (encounterId == null || confirmedDispenses == null || confirmedDispenses.isEmpty()) {
+            return;
         }
-        try {
-            if (inventoryUploadExtension.isEnabled()) {
-                InventoryUploadAfterReturnExtensionIn uploadCommand = new InventoryUploadAfterReturnExtensionIn()
-                    .setEncounterId(encounterId)
-                    .setDispenseIds(dispenseIds);
-                inventoryUploadExtension.uploadAfterReturn(uploadCommand);
+        // Pre：仅保留无汇总单号的退药行（按患者直发路径）；汇总径整批跳过 3506
+        List<Long> uploadDispenseIds = new ArrayList<>();
+        for (MedicationDispense md : confirmedDispenses) {
+            if (md == null || md.getId() == null) {
+                continue;
             }
-        } catch (RuntimeException ex) {
-            log.warn("医保进销存3506上传失败（本地住院退药已成功）", ex);
-            return MedicationCommonConstants.INPATIENT_PHARMACY_RETURN_CONFIRM_SUCCESS_MESSAGE
-                + "；"
-                + ErrorCodeConstants.EX_OPP_207_MEDICARE_PARTIAL_FAILURE
-                + "："
-                + ex.getMessage();
+            // 汇总发药产生的对冲行：createPendingRefund 已复制 summary_no，不上报以免与未报 3505 不成对
+            if (StringUtils.isNotEmpty(md.getSummaryNo())) {
+                continue;
+            }
+            uploadDispenseIds.add(md.getId());
         }
-        return null;
+        if (uploadDispenseIds.isEmpty()) {
+            return;
+        }
+        inventoryUploadExtension.runUploadIfEnabled(() -> {
+            InventoryUploadAfterReturnExtensionIn uploadCommand = new InventoryUploadAfterReturnExtensionIn()
+                .setEncounterId(encounterId)
+                .setDispenseIds(uploadDispenseIds);
+            inventoryUploadExtension.uploadAfterReturn(uploadCommand);
+        });
     }
 
     /**

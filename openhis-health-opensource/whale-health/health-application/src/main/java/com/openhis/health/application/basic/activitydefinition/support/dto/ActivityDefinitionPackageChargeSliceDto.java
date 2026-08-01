@@ -11,10 +11,11 @@ import lombok.Setter;
 import java.math.BigDecimal;
 
 /**
- * 父项 {@link com.openhis.health.domain.administration.chargeitem.entity.ChargeItem} 按套餐子项拆分后的逻辑行。
+ * 父项 {@link com.openhis.health.domain.administration.chargeitem.entity.ChargeItem} 按套餐子项展开后的逻辑行。
  *
- * <p>院内全局仅落父 charge 一条；需要按子项表达数量/金额/目录时调用
+ * <p>院内全局仅落父 charge 一条；需要按子项对外表达时调用
  * {@link com.openhis.health.application.basic.activitydefinition.support.ActivityDefinitionPackageChildResolver#allocateChargeSlices}。
+ * 有子项时仅返回子项行：金额取子项目录 {@code SALE} 价（不分摊父项），各行之和等于父 {@code totalPrice}；
  * 消费方自行映射医保编码、feedetl_sn 等对外字段。</p>
  */
 @Getter
@@ -39,9 +40,9 @@ public class ActivityDefinitionPackageChargeSliceDto {
     /** 行数量（父数量 × children_num 或父项原数量）。 */
     private BigDecimal quantity;
 
-    /** 行单价（分摊后）。 */
+    /** 行单价（子项 SALE 或父项原单价）。 */
     private BigDecimal unitPrice;
 
-    /** 行金额（分摊后；多行之和等于父 charge totalPrice）。 */
+    /** 行金额（子项 SALE×数量或父项原金额；多子项之和等于父 charge totalPrice）。 */
     private BigDecimal lineAmount;
 }

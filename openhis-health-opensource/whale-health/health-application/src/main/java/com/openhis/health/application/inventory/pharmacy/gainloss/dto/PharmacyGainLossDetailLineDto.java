@@ -54,8 +54,8 @@ public class PharmacyGainLossDetailLineDto {
     @Schema(description = "批号 lotNumber")
     private String lotNumber;
 
-    /** 剩余追溯码 traceNo。 */
-    @Schema(description = "剩余追溯码 traceNo")
+    /** 损益扫码 traceNo（报溢 IN / 报损 OUT，与盈亏正负同向）。 */
+    @Schema(description = "损益扫码 traceNo（与盈亏正负同向直接加减）")
     private String traceNo;
     /** 效期 expirationDate。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)

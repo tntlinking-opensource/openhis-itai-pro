@@ -11,13 +11,12 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 import com.openhis.chs.domain.share.constants.ChsInventoryConstants;
 import com.openhis.chs.domain.inventory.command.InvUploadLineCommand;
 import com.openhis.chs.domain.inventory.command.InvUpload3502Command;
-import com.openhis.health.domain.administration.devicedefinition.entity.DeviceDefinition;
-import com.openhis.health.domain.administration.devicedefinition.service.DeviceDefinitionQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.financial.contract.entity.Contract;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.workflow.inventoryitem.entity.InventoryItem;
@@ -29,14 +28,16 @@ import com.openhis.chs.bridge.catalog.ChsInsuranceContractReaderImpl;
 import com.openhis.chs.bridge.inventory.assembler.InventoryInvChgTypeResolver;
 import com.openhis.chs.bridge.inventory.assembler.InventoryPlatformFieldAssembler;
 import com.openhis.chs.bridge.inventory.assembler.InventoryUploadBatchNoAssembler;
+import com.openhis.chs.bridge.inventory.assembler.InventoryUploadLotPriceSupport;
+import com.openhis.chs.bridge.inventory.assembler.InventoryUploadQuantityAssembler;
 import com.openhis.chs.bridge.inventory.support.InventoryUploadTraceLineSupport;
 import com.openhis.chs.domain.inventory.command.UploadAfterStocktakeCommand;
+import com.openhis.chs.domain.share.enums.InvChgType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -46,8 +47,9 @@ import java.util.Set;
  * HIS 主数据组装盘点盈亏上报请求（药房/科室盘点 supply_request → CHS 3502）。
  *
  * <p>加载来源：{@link com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel}
- * 盘点单行（{@code CABINET_STOCKTAKE}）、药品/耗材定义、
- * {@link com.openhis.health.domain.workflow.inventoryitem.entity.InventoryItem} 批号效期及操作员信息。</p>
+ * 盘点单行（{@code CABINET_STOCKTAKE}）、药品定义、
+ * {@link com.openhis.health.domain.workflow.inventoryitem.entity.InventoryItem} 批号效期及操作员信息。
+ * 耗材（{@code adm_device_definition}）不纳入医保进销存上报，加载时直接跳过。</p>
  *
  * <p>日常盘点仅上报 3502 盘盈/盘损变动；3501 盘存总量由运维批初始化 {@code initializeInventory} 一次性上报。</p>
  */
@@ -56,16 +58,13 @@ import java.util.Set;
 @ConditionalOnProperty(name = "openhis.modules.chs.enabled", havingValue = "true")
 public class InventoryStocktakeUploadContextLoader {
 
-    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    private static final DateTimeFormatter DATE_TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
     private final SupplyRequestQueryService supplyRequestQueryService;
     private final MedicationDefinitionQueryService medicationDefinitionQueryService;
-    private final DeviceDefinitionQueryService deviceDefinitionQueryService;
     private final PractitionerQueryService practitionerQueryService;
     private final InventoryItemQueryService inventoryItemQueryService;
     private final ChsInsuranceContractReaderImpl contractReader;
     private final InventoryUploadTraceLineSupport uploadTraceLineSupport;
+    private final InventoryUploadLotPriceSupport uploadLotPriceSupport;
 
     /** 组装 3502 盘盈盘亏库存变更上报命令。 */
     public InvUpload3502Command build3502Request(UploadAfterStocktakeCommand command) {
@@ -128,11 +127,10 @@ public class InventoryStocktakeUploadContextLoader {
      * 判断品种表是否支持进销存上报。
      *
      * @param itemTable 品种表名
-     * @return 药品或耗材定义表时返回 true
+     * @return 仅药品定义表返回 true（耗材不上报进销存）
      */
     private static boolean isUploadableItemTable(String itemTable) {
-        return TableNameConstants.MED_MEDICATION_DEFINITION.equals(itemTable)
-            || TableNameConstants.ADM_DEVICE_DEFINITION.equals(itemTable);
+        return TableNameConstants.MED_MEDICATION_DEFINITION.equals(itemTable);
     }
 
     /**
@@ -172,18 +170,38 @@ public class InventoryStocktakeUploadContextLoader {
         if (profitLossQty == null || profitLossQty.compareTo(BigDecimal.ZERO) == 0) {
             return null;
         }
-        StocktakeProductSnapshot product = resolveProduct(line);
+        // Pre：先解析 inv_chg_type（103/104 或行 reason），再对 cnt 赋符号
+        String invChgTypeCode = InventoryInvChgTypeResolver.resolveInvChgType(line);
+        if (isEmpty(invChgTypeCode)) {
+            return null;
+        }
+        InvChgType invChgType = InvChgType.requireCode(invChgTypeCode);
+        StocktakeProductSnapshot product = resolveMedicationProduct(line);
         InvUploadLineCommand cmd = new InvUploadLineCommand();
         cmd.setSourceLineId(line.getId());
         cmd.setMedListCodg(trimToNull(product.ybNo()));
         cmd.setFixmedinsHilistId(product.busNo());
         cmd.setFixmedinsHilistName(product.name());
-        cmd.setFixmedinsBchno(InventoryUploadBatchNoAssembler.buildFixmedinsBchno(
-            product.busNo(), line.getLotNumber()));
+        // fixmedins_bchno：盘点/损益单据头 busNo（supply_request 行上的单据号）
+        cmd.setFixmedinsBchno(InventoryUploadBatchNoAssembler.buildFixmedinsBchno(line.getBusNo()));
         cmd.setManuLotnum(line.getLotNumber());
-        cmd.setCnt(profitLossQty.abs());
-        cmd.setPric(line.getPrice());
-        cmd.setInvChgType(InventoryInvChgTypeResolver.resolveInvChgType(line));
+        MedicationDefinition medicationForQty = medicationDefinitionQueryService
+            .findOptionalMedicationDefinitionEntityById(line.getItemId())
+            .orElse(null);
+        if (medicationForQty != null) {
+            // 数量：页面报损/盘亏可为负 → 先 abs 做单位换算，再 toSignedCnt 按类型赋符号（不会负负得正）
+            BigDecimal opQtyAbs = InventoryUploadQuantityAssembler.splitQuantityToOperationUnit(
+                medicationForQty, line.getUnitCode(), profitLossQty.abs());
+            BigDecimal opPrice = uploadLotPriceSupport.resolve3502OperationUnitPrice(
+                medicationForQty, line.getLotNumber(), line.getUnitCode(), line.getPrice());
+            cmd.setCnt(invChgType.toSignedCnt(opQtyAbs));
+            cmd.setPric(opPrice);
+        } else {
+            // 药品定义缺失时回落：同样 abs → 按类型赋符号
+            cmd.setCnt(invChgType.toSignedCnt(profitLossQty.abs()));
+            cmd.setPric(line.getPrice());
+        }
+        cmd.setInvChgType(invChgType.getCode());
         cmd.setInvChgTime(resolveStocktakeDateTime(line));
         cmd.setInvChgOpterName(resolveOperatorName(line));
         cmd.setRxFlag(InventoryPlatformFieldAssembler.toRxFlagCode(product.rxFlag()));
@@ -194,56 +212,39 @@ public class InventoryStocktakeUploadContextLoader {
     }
 
     /**
-     * 药品盘点行填充追溯策略与码列表；非药品仅标记无医保码策略。
+     * 药品盘点行填充追溯策略与码列表。
      *
      * @param line 盘点行
      * @param cmd  上报行命令
      */
     private void applyMedicationTraceIfPresent(SupplyRequestModel line, InvUploadLineCommand cmd) {
-        if (!TableNameConstants.MED_MEDICATION_DEFINITION.equals(line.getItemTable())) {
+        MedicationDefinition medication = medicationDefinitionQueryService
+            .findOptionalMedicationDefinitionEntityById(line.getItemId())
+            .orElse(null);
+        if (medication == null) {
             if (isEmpty(cmd.getMedListCodg())) {
                 cmd.setTracePolicy(ChsInventoryConstants.TRACE_POLICY_NO_YB_NO);
             }
             return;
         }
-        MedicationDefinition medication = medicationDefinitionQueryService
-            .findOptionalMedicationDefinitionEntityById(line.getItemId())
-            .orElse(null);
-        if (medication == null) {
-            return;
-        }
         uploadTraceLineSupport.applyMedicationSupplyLineTrace(
-            medication, line.getUnitCode(), line.getTraceNo(), cmd);
+            medication, line.getUnitCode(), line.getTraceNo(), line.getItemQuantity(), cmd);
     }
 
     /**
-     * 按品种表解析盘点品种快照信息。
+     * 解析药品盘点品种快照信息。
      *
      * @param line 盘点行
      * @return 品种业务编码、名称、医保编码及处方药标志
      */
-    private StocktakeProductSnapshot resolveProduct(SupplyRequestModel line) {
-        if (TableNameConstants.MED_MEDICATION_DEFINITION.equals(line.getItemTable())) {
-            MedicationDefinition medication = medicationDefinitionQueryService.findOptionalMedicationDefinitionEntityById(line.getItemId())
-                .orElseThrow(() -> new IllegalStateException("药品定义不存 " + line.getItemId()));
-            return new StocktakeProductSnapshot(
-                medication.getBusNo(),
-                medication.getName(),
-                medication.getYbNo(),
-                medication.getRxFlag());
-        }
-        if (TableNameConstants.ADM_DEVICE_DEFINITION.equals(line.getItemTable())) {
-            DeviceDefinition device = deviceDefinitionQueryService.getDeviceDefinition(line.getItemId());
-            if (device == null) {
-                throw new IllegalStateException("耗材定义不存 " + line.getItemId());
-            }
-            return new StocktakeProductSnapshot(
-                device.getBusNo(),
-                device.getName(),
-                device.getYbNo(),
-                device.getRxFlag());
-        }
-        throw new IllegalStateException("不支持的盘点品种 " + line.getItemTable());
+    private StocktakeProductSnapshot resolveMedicationProduct(SupplyRequestModel line) {
+        MedicationDefinition medication = medicationDefinitionQueryService.findOptionalMedicationDefinitionEntityById(line.getItemId())
+            .orElseThrow(() -> new IllegalStateException("药品定义不存 " + line.getItemId()));
+        return new StocktakeProductSnapshot(
+            medication.getBusNo(),
+            medication.getName(),
+            medication.getYbNo(),
+            medication.getRxFlag());
     }
 
     /** 盘点品种快照（业务编码、名称、医保编码、处方药标志）。 */
@@ -258,12 +259,12 @@ public class InventoryStocktakeUploadContextLoader {
      */
     private String resolveStocktakeDateTime(SupplyRequestModel line) {
         if (line.getApprovalTime() != null) {
-            return line.getApprovalTime().format(DATE_TIME_FMT);
+            return line.getApprovalTime().format(GeneralSharedConstants.DATE_TIME_FORMATTER);
         }
         if (line.getOccurrenceTime() != null) {
-            return line.getOccurrenceTime().format(DATE_TIME_FMT);
+            return line.getOccurrenceTime().format(GeneralSharedConstants.DATE_TIME_FORMATTER);
         }
-        return DATE_TIME_FMT.format(java.time.LocalDateTime.now());
+        return GeneralSharedConstants.DATE_TIME_FORMATTER.format(java.time.LocalDateTime.now());
     }
 
     /**
@@ -300,10 +301,10 @@ public class InventoryStocktakeUploadContextLoader {
         }
         InventoryItem item = items.get(0);
         if (item.getProductionDate() != null) {
-            cmd.setManuDate(item.getProductionDate().toLocalDate().format(DATE_FMT));
+            cmd.setManuDate(item.getProductionDate().toLocalDate().format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
         }
         if (item.getExpirationDate() != null) {
-            cmd.setExpyEnd(item.getExpirationDate().toLocalDate().format(DATE_FMT));
+            cmd.setExpyEnd(item.getExpirationDate().toLocalDate().format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
         }
     }
 

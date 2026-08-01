@@ -16,6 +16,7 @@ import com.openhis.health.domain.financial.contract.entity.Contract;
 import com.openhis.health.domain.financial.contract.queries.model.ContractListItemQueryModel;
 import com.openhis.health.domain.financial.contract.service.ContractQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.enums.ChargeTypeCategory;
 import com.openhis.health.domain.share.enums.ContractCategory;
 import com.openhis.health.domain.share.utils.InsuranceContractCategorySupport;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -121,25 +122,63 @@ public class ChsInsuranceContractReaderImpl implements ChsInsuranceContractReade
     }
 
     /**
-     * 查找租户首条非自费医保契约实体。
+     * 查找库房进销存默认医保契约：有省医保优先省，仅市则市（区划跟契约 admVs）。
      *
-     * @return 首条符合条件的契约实体；未找到时返回 {@code null}
+     * @return 优先省医保、否则市医保、再否则首条非自费契约；未找到 null
      */
     private Contract findFirstInsuranceContract() {
         List<ContractListItemQueryModel> contracts = contractQueryService.listAllContracts();
+        Contract provincial = null;
+        Contract municipal = null;
+        Contract otherInsurance = null;
         for (ContractListItemQueryModel item : contracts) {
             if (item == null || isEmpty(item.getBusNo())) {
                 continue;
             }
-            if (ContractCategory.SELF_CHARGE.getCode().equals(item.getCategoryEnum())) {
+            String category = item.getCategoryEnum();
+            if (ContractCategory.SELF_CHARGE.getCode().equals(category)
+                || ChargeTypeCategory.SELF_PAY.getCode().equals(category)) {
                 continue;
             }
-            if ("1".equals(item.getCategoryEnum())) {
-                continue;
-            }
-            return contractQueryService.findOptionalContractEntityByBusNo(item.getBusNo().trim())
+            Contract entity = contractQueryService.findOptionalContractEntityByBusNo(item.getBusNo().trim())
                 .orElse(null);
+            if (entity == null) {
+                continue;
+            }
+            if (isProvincialCategory(category)) {
+                if (provincial == null) {
+                    provincial = entity;
+                }
+                continue;
+            }
+            if (isMunicipalCategory(category)) {
+                if (municipal == null) {
+                    municipal = entity;
+                }
+                continue;
+            }
+            if (otherInsurance == null
+                && InsuranceContractCategorySupport.isInsuranceContract(entity.getYbFlag(), category)) {
+                otherInsurance = entity;
+            }
         }
-        return null;
+        // 库房：省市都有 → 传省
+        if (provincial != null) {
+            return provincial;
+        }
+        if (municipal != null) {
+            return municipal;
+        }
+        return otherInsurance;
+    }
+
+    private static boolean isProvincialCategory(String categoryEnum) {
+        return ContractCategory.PROVINCIAL_INSURANCE.getCode().equals(categoryEnum)
+            || ChargeTypeCategory.PROVINCIAL_INSURANCE.getCode().equals(categoryEnum);
+    }
+
+    private static boolean isMunicipalCategory(String categoryEnum) {
+        return ContractCategory.MUNICIPAL_INSURANCE.getCode().equals(categoryEnum)
+            || ChargeTypeCategory.MUNICIPAL_INSURANCE.getCode().equals(categoryEnum);
     }
 }

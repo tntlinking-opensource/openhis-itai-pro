@@ -30,6 +30,7 @@ import com.openhis.chs.domain.inpatient.entity.YbInpatientPreSettle;
 import com.openhis.chs.domain.inpatient.loader.IpSettleContextLoader;
 import com.openhis.chs.domain.inpatient.service.YbInpatientPreSettleQueryService;
 import com.openhis.chs.gateway.support.ChsCurrentOperatorResolver;
+import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationDomainService;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.InpatientChargeInsuranceExtension;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientChargeAdmissionExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientChargeAdmissionPlatformQueryExtensionIn;
@@ -83,6 +84,8 @@ public class InpatientChargeInsuranceExtensionImpl implements InpatientChargeIns
     private final Ip2405Invoker ip2405Invoker;
     private final YbInpatientPreSettleQueryService inpatientPreSettleQueryService;
     private final ChsCurrentOperatorResolver currentOperatorResolver;
+    /** 支付侧医保桥表写：2305 后与 yb_settlement_record 同态标 REVOKED。 */
+    private final PaymentReconciliationDomainService paymentReconciliationDomainService;
 
     /** 本地：返回 Extension 已启用。 */
     @Override
@@ -176,7 +179,7 @@ public class InpatientChargeInsuranceExtensionImpl implements InpatientChargeIns
             .orElse(null);
     }
 
-    /** 【2305】撤销住院结算，标记回执已撤销。 */
+    /** 【2305】撤销住院结算，标记回执已撤销，并同步支付侧桥表 REVOKED。 */
     @Override
     public InpatientChargeRevokeSettleExtensionOut revokeSettle(InpatientChargeRevokeSettleExtensionIn command) {
         IpRevokeSettleCommand domainCommand = new IpRevokeSettleCommand();
@@ -186,7 +189,14 @@ public class InpatientChargeInsuranceExtensionImpl implements InpatientChargeIns
         domainCommand.setSetlId(command.getSettlementId());
         domainCommand.setOperatorId(currentOperatorResolver.requireOperatorId("AUTH_REQUIRED", "请先登录"));
         domainCommand.setTenantId(TenantUtils.getCurrentTenantId());
-        return toNeutralRevokeSettleResult(ip2305Invoker.invoke(domainCommand));
+        IpRevokeSettleResult revokeResult = ip2305Invoker.invoke(domainCommand);
+        if (revokeResult != null) {
+            // Cmd：fin_payment_yb_settlement 与 yb 凭证同态
+            this.paymentReconciliationDomainService.markYbSettlementsRevoked(
+                revokeResult.getSettlementRecordId(),
+                revokeResult.getSetlId());
+        }
+        return toNeutralRevokeSettleResult(revokeResult);
     }
 
     /** 【2302】撤销住院费用明细上传。 */

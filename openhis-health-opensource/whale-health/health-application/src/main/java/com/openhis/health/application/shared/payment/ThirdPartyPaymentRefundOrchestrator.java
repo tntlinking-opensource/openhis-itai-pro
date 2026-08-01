@@ -17,6 +17,9 @@ import org.springframework.stereotype.Component;
 /**
  * 退费前银联退货挂接：{@code clientRefundResult} → {@code applyClientRefundResult}；
  * Win R 失败则不进入本地退费。
+ *
+ * <p>强制门控：原支付仍有 BPC SUCCESS 被扫单时，禁止 {@code clientRefundResult} 为空就本地退
+ * （防止「HIS 已退、银联未退」）。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -40,7 +43,16 @@ public class ThirdPartyPaymentRefundOrchestrator {
         ClientRefundResultDto clientRefundResult,
         Long operatorId) {
 
+        boolean requiresClientRefund = thirdPartyPaymentExtension.isEnabled()
+            && paymentId != null
+            && thirdPartyPaymentExtension.hasSuccessfulConsumerScanOrder(paymentId);
+
         if (clientRefundResult == null) {
+            if (requiresClientRefund) {
+                throw new BusinessException(
+                    ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                    "原支付为银联扫码收单，须先完成银联退货后再本地退费（请启动 OpenHIS.Win）");
+            }
             return;
         }
 

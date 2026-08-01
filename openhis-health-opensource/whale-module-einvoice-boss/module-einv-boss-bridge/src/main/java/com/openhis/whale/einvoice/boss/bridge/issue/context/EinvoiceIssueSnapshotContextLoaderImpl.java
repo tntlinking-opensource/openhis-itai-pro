@@ -11,6 +11,7 @@ import com.openhis.health.domain.administration.organization.entity.Organization
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.patient.entity.Patient;
 import com.openhis.health.domain.administration.patient.service.PatientQueryService;
+import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.financial.paymentreconciliation.entity.PaymentReconciliation;
 import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationQueryService;
 import com.openhis.health.domain.share.enums.InvoiceStatus;
@@ -57,6 +58,7 @@ public class EinvoiceIssueSnapshotContextLoaderImpl implements EinvoiceIssueSnap
     private final OrganizationQueryService organizationQueryService;
     private final InvoiceQueryService invoiceQueryService;
     private final PatientQueryService patientQueryService;
+    private final PractitionerQueryService practitionerQueryService;
     private final PaymentReconciliationQueryService paymentQueryService;
     private final EinvBossDocumentRepository documentRepository;
     private final EinvBossIssueTaskRepository issueTaskRepository;
@@ -93,10 +95,12 @@ public class EinvoiceIssueSnapshotContextLoaderImpl implements EinvoiceIssueSnap
         snapshot.setIdCard(patient.getIdCard());
         snapshot.setPhone(patient.getPhone());
         snapshot.setEncounterBusNo(encounter.getBusNo());
+        snapshot.setCaseNumber(encounter.getBusNo());
         snapshot.setHospitalNo(encounter.getBusNo());
         snapshot.setVisitNo(encounter.getBusNo());
         snapshot.setBillDateTime(payment.getBillDate() != null ? payment.getBillDate() : payment.getCreatedAt());
         snapshot.setOperatorId(payment.getEntererId());
+        snapshot.setOperatorName(resolveOperatorName(payment.getEntererId()));
 
         BossMedicalCareMapping.MedCare medCare = BossMedicalCareMapping.resolve(
                 encounter.getYbClassEnum() != null ? encounter.getYbClassEnum() : encounter.getYbClassText());
@@ -113,6 +117,19 @@ public class EinvoiceIssueSnapshotContextLoaderImpl implements EinvoiceIssueSnap
         List<BossChargeLineSnapshot> lines = chargeItemContextLoader.loadByIds(chargeItemIds, registration);
         snapshot.setChargeLines(lines);
         return snapshot;
+    }
+
+    /**
+     * 解析收费员展示名（entererId 多为 practitionerId，存量可能为 userId）。
+     *
+     * @param entererId 支付录入人
+     * @return 姓名；未命中返回 null
+     */
+    private String resolveOperatorName(Long entererId) {
+        if (entererId == null) {
+            return null;
+        }
+        return practitionerQueryService.mapDisplayNameByEntererIds(List.of(entererId)).get(entererId);
     }
 
     /** {@inheritDoc} — 事件丢失兜底：DRAFT 且无活跃 task。 */

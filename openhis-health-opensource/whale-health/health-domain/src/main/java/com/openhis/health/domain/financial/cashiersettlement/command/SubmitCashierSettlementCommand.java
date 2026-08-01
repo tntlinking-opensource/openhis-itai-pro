@@ -7,46 +7,66 @@ package com.openhis.health.domain.financial.cashiersettlement.command;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.time.LocalDate;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 提交收费员交账命令。
+ * 提交交账命令（DM-FIN-003 · submitCashierSettlement）。
  */
 @Getter
 @Setter
 public class SubmitCashierSettlementCommand {
 
-    /** 交账类型：OUTPATIENT / INPATIENT。 */
+    /** 交账类型：OP_PAYMENT / IP_PAYMENT / OP_PHARMACY / IP_PHARMACY。 */
     private String typeEnum;
 
-    /** 交账所属科室。 */
+    /** 交账科室；收款必填，药房可空。 */
     private Long orgId;
 
-    /** 收费窗口，可空。 */
+    /**
+     * 科室下 location 主键白名单（收款提交锁候选；由应用层解析 org 下 location 后写入，可选）。
+     */
+    private List<Long> locationIds;
+
+    /** 交账药房；药房必填，收款侧不用。 */
     private Long locationId;
 
-    /** 交账经办人（默认纳入 enterer_id 等于该值的 payment）。 */
-    private Long cashierId;
+    /** 提交人（必填）。 */
+    private Long submitterId;
 
     /**
-     * payment {@code enterer_id} 匹配白名单（Practitioner 主键 + 绑定用户主键）；提交锁单与预览共用。
+     * payment {@code enterer_id} 匹配白名单（可选软筛；漏交硬栏不按人）。
      */
     private List<Long> entererMatchIds;
 
-    /** 业务日起（查询窗，不落库）。 */
-    private LocalDate dateFrom;
+    /** 业务窗起（时分秒，落库）。 */
+    private LocalDateTime dateFrom;
 
-    /** 业务日止（查询窗，不落库）。 */
-    private LocalDate dateTo;
+    /** 业务窗止（时分秒，落库）。 */
+    private LocalDateTime dateTo;
 
     /** 当前操作人（审计）。 */
     private Long operatorId;
 
     /**
-     * 本次勾选挂载的 payment 主键集合（去重后须 ⊆ 锁定候选集）。
+     * 勾选挂载源行主键（payment 或 dispense）。
      *
-     * <p>{@code null} 时回落挂载全量未交账候选（兼容存量应用层整批交账）；非空且空列表拒绝提交。</p>
+     * <p>{@code null} 回落全量候选；非空空列表拒绝。</p>
      */
     private List<Long> selectedPaymentIds;
+
+    /**
+     * 同 {@link #selectedPaymentIds} 语义别名（药房日结可读性）。
+     */
+    private List<Long> selectedSourceIds;
+
+    /** 人员快照（逗号分隔）。 */
+    private String practitionerIds;
+
+    /** 本次挂载笔数快照。 */
+    private Integer paymentCount;
+
+    /** 列表金额快照。 */
+    private BigDecimal totalIncome;
 }

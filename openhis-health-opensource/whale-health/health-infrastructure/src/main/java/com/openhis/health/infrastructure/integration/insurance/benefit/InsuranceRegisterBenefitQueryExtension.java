@@ -9,6 +9,7 @@ import com.openhis.health.infrastructure.integration.insurance.benefit.Extension
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionIn.InsurancePersonQueryExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionIn.InsuranceTreatmentCheckExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsuranceCumulativeQueryExtensionOut;
+import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsuranceOpspFilingEncounterSnapshot;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsuranceOpspFilingQueryExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsurancePersonQueryExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsuranceTreatmentCheckExtensionOut;
@@ -54,6 +55,19 @@ public interface InsuranceRegisterBenefitQueryExtension {
      */
     default InsuranceOpspFilingQueryExtensionOut queryOpspFiling(InsuranceOpspFilingQueryExtensionIn command) {
         throw new UnsupportedOperationException("第三方慢特病备案查询未装配");
+    }
+
+    /**
+     * 解析就诊侧 5301 所需人员编号与费用性质（医生站 IF-DOR-06B）。
+     *
+     * <p>实现可依次回退：平台就诊映射 → 预结算快照 → 读卡当日人员缓存；
+     * 均不可用时返回 {@code null}（自费/未读卡）。</p>
+     *
+     * @param encounterId 就诊主键
+     * @return 上下文；未启用或无可用人员编号时 {@code null}
+     */
+    default InsuranceOpspFilingEncounterSnapshot resolveOpspFilingEncounter(Long encounterId) {
+        return null;
     }
 
     /**

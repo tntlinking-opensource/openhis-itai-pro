@@ -372,7 +372,7 @@ public interface PriceAdjustmentMapper {
     List<OptionDto> toItemTableTabOptions();
 
     /**
-     * 项目行读模型转 DTO。
+     * 项目行读模型转 DTO（含目录 enrich：种类/单位与选品同口径；子表批号明细）。
      *
      * @param line         行读模型；null 时返回 null
      * @param productByKey 产品展示映射；可 null

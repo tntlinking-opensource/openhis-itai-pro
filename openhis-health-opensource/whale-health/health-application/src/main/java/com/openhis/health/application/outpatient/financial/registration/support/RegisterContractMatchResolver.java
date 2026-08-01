@@ -59,7 +59,46 @@ public class RegisterContractMatchResolver {
                 }
             }
         }
+        // 推荐费用性质与当前不同：提示聚焦「通道选错」，避免被理解成「把参保人识别成省医保」
+        if (recommendedId != null
+            && selectedContractId != null
+            && !recommendedId.equals(selectedContractId)
+            && StringUtils.isNotEmpty(dto.getRecommendedContractName())) {
+            dto.setHintMessage(buildContractMismatchHint(
+                dto.getPatientInsuplcAdmdvs(),
+                dto.getSelectedTreatmentAreaCode(),
+                dto.getRecommendedContractName()));
+        }
         return dto;
+    }
+
+    /**
+     * 费用性质通道与参保地不匹配时的窗口文案。
+     *
+     * @param insuplcAdmdvs           患者参保地
+     * @param selectedTreatmentArea   当前费用性质就医地/统筹区
+     * @param recommendedContractName 推荐费用性质名称
+     * @return 提示文案
+     */
+    private static String buildContractMismatchHint(
+        String insuplcAdmdvs,
+        String selectedTreatmentArea,
+        String recommendedContractName) {
+        return "费用性质与参保地不匹配：参保地 "
+            + nullToDash(insuplcAdmdvs)
+            + "，当前通道就医地 "
+            + nullToDash(selectedTreatmentArea)
+            + "；建议改用「"
+            + recommendedContractName
+            + "」";
+    }
+
+    private static String nullToDash(String value) {
+        // 空参保地/通道文案用破折号占位，避免拼接出「null」
+        if (StringUtils.isEmpty(value)) {
+            return "—";
+        }
+        return value.trim();
     }
 
     public Long recommendContractId(String insuplcAdmdvs, List<ContractListItemQueryModel> availableContracts) {
@@ -78,7 +117,15 @@ public class RegisterContractMatchResolver {
         return findByLongestTreatmentAreaPrefix(insu, availableContracts);
     }
 
+    /**
+     * 解析费用性质就医地/通道区划：优先 chs 扩展，否则回退 {@code contractAdmVsFallback}（列表项 adm_vs）。
+     *
+     * @param contractId              费用性质主键
+     * @param contractAdmVsFallback   合同实体/列表项上的 adm_vs；扩展未命中时使用，避免再查库
+     * @return 通道区划；皆空则 null
+     */
     public String resolveTreatmentAreaCode(Long contractId, String contractAdmVsFallback) {
+        // Pre：扩展启用时先问 chs 通道；未装配或空串则用列表已带的 adm_vs
         if (contractId != null
             && registerBenefitQueryExtension.isEnabled()) {
             String fromChs = registerBenefitQueryExtension.resolveTreatmentAreaCode(contractId);
@@ -106,7 +153,7 @@ public class RegisterContractMatchResolver {
             .filter(row -> categoryCode.equals(StringUtils.trimToNull(row.getCategoryEnum())))
             .filter(row -> InsuranceContractCategorySupport.isInsuranceCategoryEnum(row.getCategoryEnum()))
             .filter(row -> preferredAdmVs == null
-                || preferredAdmVs.equals(normalizeAdmdvs(resolveTreatmentAreaCode(row.getId(), null))))
+                || preferredAdmVs.equals(normalizeAdmdvs(resolveTreatmentAreaCode(row.getId(), row.getAdmVs()))))
             .sorted(Comparator.comparing(row -> {
                 if (row.getDisplayOrder() != null) {
                     return row.getDisplayOrder();
@@ -137,7 +184,7 @@ public class RegisterContractMatchResolver {
             if (!InsuranceContractCategorySupport.isInsuranceCategoryEnum(row.getCategoryEnum())) {
                 continue;
             }
-            String treatment = normalizeAdmdvs(resolveTreatmentAreaCode(row.getId(), null));
+            String treatment = normalizeAdmdvs(resolveTreatmentAreaCode(row.getId(), row.getAdmVs()));
             if (treatment.isEmpty()) {
                 continue;
             }

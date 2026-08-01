@@ -127,6 +127,15 @@ public class SupplyRequest extends BaseAuditedEntity {
     @Column(name = "purpose_location_id")
     private Long purposeLocationId;
 
+    /**
+     * 领用科室（行政 {@code Organization.id}）。
+     *
+     * <p>{@code DEPT_ISSUE} 由客户端选择并落库；{@code DEPT_ISSUE_RETURN} 自源领用单带出；
+     * 历史单可空，读侧可回落 {@code Location.organization_id}。</p>
+     */
+    @Column(name = "consuming_organization_id")
+    private Long consumingOrganizationId;
+
     @Column(name = "approver_id")
     private Long approverId;
 
@@ -158,6 +167,13 @@ public class SupplyRequest extends BaseAuditedEntity {
 
     @Column(name = "remake")
     private String remake;
+
+    /**
+     * 采购发票号（同号多行共享；进销存 3503/3504 {@code purc_invo_no} 真源）。
+     * <p>业务未填时库默认 {@code 0}；上报侧空值亦回落该占位，不拦进退货。</p>
+     */
+    @Column(name = "invoice_no")
+    private String invoiceNo;
 
     /** 乐观锁版本（与表 {@code version} 列对齐）。 */
     @Version
@@ -194,6 +210,17 @@ public class SupplyRequest extends BaseAuditedEntity {
             }
             if (this.purposeLocationId == null) {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "盘点库房不能为空");
+            }
+        } else if (SupplyType.isGainLossTypeCode(this.typeEnum)) {
+            // 损益：正数报溢、负数报损；禁止空与 0（与盘点「可零」口径区分）。
+            if (this.itemQuantity == null || this.itemQuantity.compareTo(BigDecimal.ZERO) == 0) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "损益数量不能为空或为 0");
+            }
+            if (this.purposeTypeEnum == null || this.purposeTypeEnum.trim().isEmpty()) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "损益库房类型不能为空");
+            }
+            if (this.purposeLocationId == null) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "损益库房不能为空");
             }
         } else if (SupplyType.isPurposeOnlyLocationTypeCode(this.typeEnum)) {
             if (this.purposeTypeEnum == null || this.purposeTypeEnum.trim().isEmpty()) {
@@ -562,6 +589,55 @@ public class SupplyRequest extends BaseAuditedEntity {
     }
 
     /**
+     * 门控：库存期初执行单（{@link SupplyType#isOpeningTypeCode(String)}）同号全量修订。
+     *
+     * <p>待审核/驳回/已撤回允许软删旧行后按命令全量重插（AS-BAS-INV-001 IF-05）。</p>
+     *
+     * @param lines 同一 {@code bus_no} 下已存在的未删除行
+     * @throws BusinessException 单号不存在、非期初类型或存在不可修订状态行
+     */
+    public static void assertOpeningLinesRevisable(List<SupplyRequest> lines) {
+        if (lines == null || lines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "期初单不存在，无法修订");
+        }
+        for (SupplyRequest row : lines) {
+            if (row == null) {
+                continue;
+            }
+            if (!SupplyType.isOpeningTypeCode(row.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                    "非期初单不可按同号全量修订");
+            }
+            if (!SupplyRequest.isRevisableSupplyStatusCode(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                    "仅待审核/驳回/已撤回状态允许修订期初明细");
+            }
+        }
+    }
+
+    /**
+     * 断言本行为当前有效已同意期初行，可作废为 {@link SupplyStatus#EXPIRED_INVALIDATED}。
+     *
+     * @throws BusinessException 非 OPENING、非 AGREE
+     */
+    public void assertOpeningAgreedVoidable() {
+        if (!SupplyType.isOpeningTypeCode(this.typeEnum)) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅期初单允许作废回滚");
+        }
+        if (!SupplyStatus.AGREE.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅已同意的期初单允许作废");
+        }
+    }
+
+    /**
+     * 将已同意期初行置为失效（覆盖/手工作废共用；不改库存，库存由编排层回滚）。
+     */
+    public void markOpeningExpiredInvalidated() {
+        this.assertOpeningAgreedVoidable();
+        this.statusEnum = SupplyStatus.EXPIRED_INVALIDATED.getCode();
+    }
+
+    /**
      * 门控：科室领用执行单（{@link com.openhis.health.domain.share.enums.SupplyType#DEPT_ISSUE}）同号全量修订。
      *
      * <p>与损益修订一致：待审核/驳回/已撤回允许软删旧行后按命令全量重插。</p>
@@ -611,6 +687,33 @@ public class SupplyRequest extends BaseAuditedEntity {
             if (!SupplyRequest.isRevisableSupplyStatusCode(row.getStatusEnum())) {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
                     "仅待审核/驳回/已撤回状态允许修订科室退领明细");
+            }
+        }
+    }
+
+    /**
+     * 门控：科室采购申请单（{@link com.openhis.health.domain.share.enums.SupplyType#DEPT_PURCHASE_REQUEST}）同号全量修订。
+     *
+     * <p>与订货修订一致：待审核/驳回/已撤回允许软删旧行后按命令全量重插。</p>
+     *
+     * @param lines 同一 {@code bus_no} 下已存在的未删除行
+     * @throws BusinessException 单号不存在、非采购申请类型或存在不可修订状态行
+     */
+    public static void assertDeptPurchaseRequestLinesRevisable(List<SupplyRequest> lines) {
+        if (lines == null || lines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "科室采购申请单不存在，无法修订");
+        }
+        for (SupplyRequest row : lines) {
+            if (row == null) {
+                continue;
+            }
+            if (!SupplyType.isDeptPurchaseRequestTypeCode(row.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                    "非科室采购申请单不可按同号全量修订");
+            }
+            if (!SupplyRequest.isRevisableSupplyStatusCode(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                    "仅待审核/驳回/已撤回状态允许修订科室采购申请明细");
             }
         }
     }

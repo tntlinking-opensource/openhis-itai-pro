@@ -52,6 +52,55 @@ public class BusinessSequenceService {
     }
 
     /**
+     * 确保序号当前值至少为 {@code minValue}（不小于既有最大值时抬升；已更高则保持）。
+     *
+     * <p>用于主数据导入前对齐：库内已有 bus_no 后缀大于 {@code whale_sequence.current_value} 时，
+     * 避免下一次 {@link #getSeq} 撞号。</p>
+     *
+     * @param key      序号键（租户前缀由框架自动加上）
+     * @param minValue 下限（含）；≤0 时不改动并返回当前值（无行则为 0）
+     * @return 对齐后的当前值
+     */
+    public long ensureAtLeast(String key, long minValue) {
+        String effectiveKey = resolveKey(key);
+        if (minValue <= 0) {
+            return readCurrentValue(effectiveKey);
+        }
+        String sql =
+                "INSERT INTO whale_sequence (seq_key, current_value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+                        + "ON CONFLICT (seq_key) DO UPDATE SET "
+                        + "current_value = GREATEST(whale_sequence.current_value, EXCLUDED.current_value), "
+                        + "updated_at = CURRENT_TIMESTAMP "
+                        + "RETURNING current_value";
+        Long result =
+                jdbcTemplate.execute(
+                        (Connection conn) -> {
+                            PreparedStatement ps = conn.prepareStatement(sql);
+                            ps.setString(1, effectiveKey);
+                            ps.setLong(2, minValue);
+                            ps.execute();
+                            ResultSet rs = ps.getResultSet();
+                            if (rs != null && rs.next()) {
+                                return rs.getLong(1);
+                            }
+                            throw new BusinessException("SEQUENCE_ERROR", "序号对齐失败");
+                        });
+        return result != null ? result : 0L;
+    }
+
+    /**
+     * 读取序号当前值；无行时返回 0。
+     */
+    private long readCurrentValue(String effectiveKey) {
+        Long value =
+                jdbcTemplate.query(
+                        "SELECT current_value FROM whale_sequence WHERE seq_key = ?",
+                        rs -> rs.next() ? rs.getLong(1) : null,
+                        effectiveKey);
+        return value != null ? value : 0L;
+    }
+
+    /**
      * 原子递增并返回新值（数据库实现）。key 会按当前租户自动隔离。
      *
      * @param key   序号键（业务前缀或 prefix:date，租户前缀由框架自动加上）

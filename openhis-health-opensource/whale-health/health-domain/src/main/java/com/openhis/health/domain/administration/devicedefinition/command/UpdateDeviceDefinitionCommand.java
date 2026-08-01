@@ -57,6 +57,14 @@ public class UpdateDeviceDefinitionCommand extends BatchCommand<UpdateDeviceDefi
         private java.math.BigDecimal stockUnitRatio;
         /** 销售单位→拆零单位换算倍数。 */
         private java.math.BigDecimal packageUnitRatio;
+        /**
+         * 追溯码贴码单位（可空；有码时须与 ratio 同时维护）。
+         */
+        private String traceUnitCode;
+        /**
+         * 1 个追溯码单位对应的拆零数量；可空；有值时须 &gt; 0。
+         */
+        private java.math.BigDecimal traceUnitRatio;
         /** 产品型号。 */
         private String modelNumber;
         /** 高值器材标志（0/1）。 */
@@ -73,8 +81,6 @@ public class UpdateDeviceDefinitionCommand extends BatchCommand<UpdateDeviceDefi
         private Long locationId;
         /** 医保编码。 */
         private String ybNo;
-        /** 医药机构目录编码。 */
-        private String ybOrgNo;
         /** 医保标记（0/1）。 */
         private Integer ybFlag;
         /** 医保对码标记（0/1）。 */

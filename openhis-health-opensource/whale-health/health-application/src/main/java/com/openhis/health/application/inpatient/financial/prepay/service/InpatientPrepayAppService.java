@@ -524,17 +524,16 @@ public class InpatientPrepayAppService {
                 account.getId(),
                 operatorId);
         try {
-            // Pre：扫码原路退须先 Win 退货并落 BPC 逆向单，失败则不进入本地退预交金。
-            if (request.getClientRefundResult() != null) {
-                if (request.getOriginalPaymentId() == null) {
-                    throw new BusinessException(
-                        InpatientPrepayConstants.EX_IP_PREP_001,
-                        "扫码原路退须指定原支付单");
-                }
+            // Pre：有原支付单则走退货门控（BPC SUCCESS 时强制要求 clientRefundResult）；失败不进入本地退预交金。
+            if (request.getOriginalPaymentId() != null) {
                 thirdPartyPaymentRefundOrchestrator.applyRefundBeforeLocalRefund(
                     request.getOriginalPaymentId(),
                     request.getClientRefundResult(),
                     operatorId);
+            } else if (request.getClientRefundResult() != null) {
+                throw new BusinessException(
+                    InpatientPrepayConstants.EX_IP_PREP_001,
+                    "扫码原路退须指定原支付单");
             }
             // Cmd：落预交金退款 DRAFT（无 relation_id）。
             Long paymentId = paymentReconciliationDomainService.refundAdvanceDeposit(refundCommand);

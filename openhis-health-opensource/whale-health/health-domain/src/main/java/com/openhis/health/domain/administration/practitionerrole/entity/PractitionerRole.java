@@ -18,7 +18,8 @@ import java.time.LocalDateTime;
 /**
  * 岗位分配聚合根（{@code adm_pr_assign}）。
  *
- * <p>平台角色真源 {@code whale_roles.id}；科室/库房/病区范围由 {@code org_id}/{@code location_id} 表达。</p>
+ * <p>平台角色真源 {@code whale_roles.id}；科室/库房/病区范围由 {@code org_id}/{@code location_id} 表达，
+ * 二者可双空——表示已挂角色但尚未配置管辖范围。</p>
  */
 @Getter
 @Setter
@@ -55,15 +56,15 @@ public class PractitionerRole extends BaseAuditedEntity {
         this.activeFlag = Boolean.TRUE;
     }
 
+    /**
+     * 断言可新建：医务人员与平台角色必填；科室/位置均可空（仅挂角色、尚未配置管辖范围时允许双空）。
+     */
     public void assertAssignable() {
         if (this.practitionerId == null) {
             throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_INVALID_ARGUMENT, "医务人员标识不能为空");
         }
         if (this.roleId == null) {
             throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_INVALID_ARGUMENT, "平台角色不能为空");
-        }
-        if (this.orgId == null && this.locationId == null) {
-            throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_RULE_CONFLICT, "科室与位置不可同时为空");
         }
     }
 

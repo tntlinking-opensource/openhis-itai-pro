@@ -14,7 +14,7 @@ import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dt
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationSupplementParentOrderRowDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.PageNurseStationPricingCatalogRequest;
 import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemCommand;
-import com.openhis.health.domain.administration.chargeitem.command.VoidNursePricingChargeItemsByServiceAnchorsCommand;
+import com.openhis.health.domain.administration.chargeitem.command.OffsetNursePricingChargeItemsByServiceAnchorsCommand;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.clinical.procedure.command.CancelProcedureRecordCommand;
 import com.openhis.health.domain.clinical.procedure.command.CompleteProcedureRecordCommand;
@@ -596,7 +596,7 @@ public class NurseStationInpatientBillingMapperImpl implements NurseStationInpat
     }
 
     /**
-     * 按单锚点撤销护士划价待结算费用命令。
+     * 按单锚点冲销护士划价待结算费用命令。
      *
      * @param encounterId  就诊
      * @param serviceTable 上游表
@@ -605,13 +605,13 @@ public class NurseStationInpatientBillingMapperImpl implements NurseStationInpat
      * @return 领域命令
      */
     @Override
-    public VoidNursePricingChargeItemsByServiceAnchorsCommand toVoidNursePricingChargeItemsByServiceAnchorsCommand(
+    public OffsetNursePricingChargeItemsByServiceAnchorsCommand toOffsetNursePricingChargeItemsByServiceAnchorsCommand(
         Long encounterId,
         String serviceTable,
         Long serviceId,
         Long operatorId) {
-        VoidNursePricingChargeItemsByServiceAnchorsCommand command =
-            new VoidNursePricingChargeItemsByServiceAnchorsCommand();
+        OffsetNursePricingChargeItemsByServiceAnchorsCommand command =
+            new OffsetNursePricingChargeItemsByServiceAnchorsCommand();
         command.setOperatorId(operatorId);
         command.setEncounterId(encounterId);
         command.setServiceTable(serviceTable);
@@ -719,6 +719,8 @@ public class NurseStationInpatientBillingMapperImpl implements NurseStationInpat
         CreateProcedureRecordCommand command = new CreateProcedureRecordCommand();
         command.setOperatorId(operatorId);
         command.setSkipDuplicateRequestAnchorCheck(Boolean.TRUE);
+        // CANCEL 对冲须继承 COMPLETED occurrence；被对冲行仍占槽，建单阶段跳过占用 Gate（与取消执行同构）
+        command.setSkipOccurrenceSlotCheck(Boolean.TRUE);
         if (completedRow == null) {
             return command;
         }

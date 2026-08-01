@@ -58,4 +58,8 @@ public class LoadOutpatientFeeDetailPageInitResponse {
     /** 收费员下拉。 */
     @Schema(description = "收费员选项")
     private List<OptionDto> cashierOptions;
+
+    /** 费用性质下拉（value=fin_contract.bus_no）。 */
+    @Schema(description = "费用性质选项")
+    private List<OptionDto> feeNatureOptions;
 }

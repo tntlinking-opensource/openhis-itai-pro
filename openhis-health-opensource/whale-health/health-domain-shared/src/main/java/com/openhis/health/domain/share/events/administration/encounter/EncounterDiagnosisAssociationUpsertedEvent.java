@@ -10,17 +10,19 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 就诊诊断关联维护事件。
+ * 就诊诊断关联维护事件：供门诊信息/挂号读模型投影诊断快照。
  */
 @Getter
 @Setter
 public class EncounterDiagnosisAssociationUpsertedEvent extends DomainEvent {
 
-    /** condition主键（EncounterDiagnosisAssociationUpsertedEvent）。 */
-    private Long conditionId;
-    /** primaryFlag（EncounterDiagnosisAssociationUpsertedEvent）。 */
+    /** 就诊诊断关联行主键 {@code adm_encounter_diagnosis.id}。 */
+    private Long encounterDiagnosisId;
+    /** 诊断目录主键 {@code cln_condition_definition.id}。 */
+    private Long conditionDefinitionId;
+    /** 是否主诊断。 */
     private Boolean primaryFlag;
-    /** rank（EncounterDiagnosisAssociationUpsertedEvent）。 */
+    /** 排序序号。 */
     private Integer rank;
 
     /**
@@ -33,21 +35,29 @@ public class EncounterDiagnosisAssociationUpsertedEvent extends DomainEvent {
      */
     private String conditionDefinitionName;
 
-    /**
-     * 处理逻辑。
-     * @return 返回结果
-     */
+    /** 无参构造，供序列化框架使用。 */
     public EncounterDiagnosisAssociationUpsertedEvent() {
         super();
     }
 
     /**
-     * 处理Long encounterId, Long conditionId, Boolean primaryFlag, Integer rank逻辑。
-     * @return 返回结果
+     * 构造就诊诊断关联 upsert 事件载荷。
+     *
+     * @param encounterId 就诊主键
+     * @param encounterDiagnosisId 就诊诊断关联行主键
+     * @param conditionDefinitionId 诊断目录主键
+     * @param primaryFlag 是否主诊断
+     * @param rank 排序序号
      */
-    public EncounterDiagnosisAssociationUpsertedEvent(Long encounterId, Long conditionId, Boolean primaryFlag, Integer rank) {
+    public EncounterDiagnosisAssociationUpsertedEvent(
+        Long encounterId,
+        Long encounterDiagnosisId,
+        Long conditionDefinitionId,
+        Boolean primaryFlag,
+        Integer rank) {
         super(encounterId, AggregateTypeConstants.ENCOUNTER);
-        this.conditionId = conditionId;
+        this.encounterDiagnosisId = encounterDiagnosisId;
+        this.conditionDefinitionId = conditionDefinitionId;
         this.primaryFlag = primaryFlag;
         this.rank = rank;
     }

@@ -5,19 +5,33 @@
 package com.openhis.health.application.basic.medicationcatalog.service;
 
 import com.openhis.health.domain.share.constants.FieldNameConstants;
+import com.openhis.health.domain.share.constants.CatalogEditabilityConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.PriceType;
+import com.openhis.health.application.basic.catalog.dto.CatalogLotPriceRowDto;
 import com.openhis.health.application.basic.catalog.support.CatalogEditWriteGate;
+import com.openhis.health.application.basic.catalog.support.CatalogLotPriceAssembler;
+import com.openhis.health.application.basic.medicationcatalog.dto.ExportMedicationCatalogResponse;
+import com.openhis.health.application.basic.medicationcatalog.dto.ImportMedicationCatalogErrorItemDto;
 import com.openhis.health.application.basic.medicationcatalog.dto.ImportMedicationCatalogResponse;
+import com.openhis.health.application.basic.medicationcatalog.dto.MedicationCatalogImportFileResponse;
+import com.openhis.health.application.basic.medicationcatalog.dto.MedicationCatalogImportProgressResponse;
 import com.openhis.health.application.basic.medicationcatalog.dto.MedicationDetailDto;
 import com.openhis.health.application.basic.medicationcatalog.dto.MedicationDto;
 import com.openhis.health.application.basic.medicationcatalog.dto.MedicationManageInitDto;
+import com.openhis.health.application.basic.medicationcatalog.dto.StartMedicationCatalogImportResponse;
 import com.openhis.health.application.basic.medicationcatalog.mapper.MedicationCatalogMapper;
 import com.openhis.health.application.basic.medicationcatalog.request.CreateMedicationCatalogRequest;
+import com.openhis.health.application.basic.medicationcatalog.request.DownloadMedicationCatalogImportErrorRequest;
+import com.openhis.health.application.basic.medicationcatalog.request.ExportMedicationCatalogRequest;
+import com.openhis.health.application.basic.medicationcatalog.request.GetMedicationCatalogImportProgressRequest;
+import com.openhis.health.application.basic.medicationcatalog.request.ImportMedicationCatalogRequest;
+import com.openhis.health.application.basic.medicationcatalog.request.ListMedicationLotPriceRequest;
 import com.openhis.health.application.basic.medicationcatalog.request.QueryMedicationCatalogRequest;
 import com.openhis.health.application.basic.medicationcatalog.request.UpdateMedicationCatalogRequest;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.MedicationCatalogImportConstants;
 import com.openhis.health.domain.share.utils.GatewayIdParseUtil;
 import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
@@ -30,8 +44,18 @@ import com.openhis.health.application.shared.pricing.ChargePricingCommandAssembl
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogUnitBandDto;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.application.shared.converter.TextValueConverter;
-import com.openhis.health.application.basic.medicationcatalog.support.MedicationDefinitionExternalReferenceGuard;
+import com.openhis.health.application.basic.medicationcatalog.support.MedicationCatalogBusNoSequenceSync;
+import com.openhis.health.application.basic.medicationcatalog.support.MedicationCatalogExportRowAssembler;
+import com.openhis.health.application.basic.medicationcatalog.support.MedicationCatalogImportAsyncWorkflow;
+import com.openhis.health.application.basic.medicationcatalog.support.MedicationCatalogImportConceptEnsureService;
+import com.openhis.health.application.basic.medicationcatalog.support.MedicationCatalogImportErrorFileService;
+import com.openhis.health.application.basic.medicationcatalog.support.MedicationCatalogImportJob;
+import com.openhis.health.application.basic.medicationcatalog.support.MedicationCatalogImportRow;
+import com.openhis.health.application.basic.medicationcatalog.support.MedicationCatalogImportRowValidator;
+import com.openhis.health.application.basic.medicationcatalog.support.MedicationCatalogImportTemplateBuilder;
+import com.openhis.health.application.basic.medicationcatalog.support.MedicationCatalogImportTerminologyIndex;
+import com.openhis.health.application.basic.medicationcatalog.support.MedicationCatalogImportWorkbookParser;
+import com.openhis.health.application.basic.medicationcatalog.support.MedicationCatalogImportWriteSupport;
 import com.openhis.health.domain.administration.chargeitemdefinition.command.RemovePricingByInstanceCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.command.SaveAllChargeItemDefinitionsCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
@@ -40,15 +64,11 @@ import com.openhis.health.domain.administration.chargeitemdefinition.service.Cha
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
-import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel;
-import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
-import com.openhis.health.domain.medication.medicationdefinition.command.ImportMedicationCatalogCommand;
-import com.openhis.health.domain.medication.medicationdefinition.command.ImportMedicationCatalogResult;
-import com.openhis.health.domain.medication.medicationdefinition.queries.model.MedicationDefinitionTemplateQueryModel;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionDomainService;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
 import com.openhis.health.domain.medication.medicationdefinition.queries.MedicationDefinitionCatalogPageQuery;
+import com.openhis.health.domain.medication.medicationdefinition.queries.model.MedicationDefinitionDetailQueryModel;
 import com.openhis.health.domain.medication.medicationdefinition.queries.model.MedicationDefinitionPageQueryModel;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.OrderCalcRuleEnum;
@@ -56,8 +76,8 @@ import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.share.utils.FinTypeCodeMappingSupport;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.dto.PagedResult;
+import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.exception.ValidationException;
-import jakarta.servlet.http.HttpServletResponse;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import com.openhis.whale.core.application.util.StringUtils;
@@ -66,15 +86,13 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -82,10 +100,12 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * 药品目录管理应用编排：分页列表（读主表）、详情回填定价、增删改与批量启停、导入导出辅助。
+ * 药品目录管理应用编排：分页列表（读主表）、详情回填维护态参考价、批号真实进价/售价查询、增删改与批量启停、
+ * 导入（AS-BAS-CAT-002 IMP）与按筛选导出（IF-BAS-CAT-EXP-01，同导入模板列）。
  *
  * <p>职责边界：Request/DTO ↔ 领域 Command；列表查询走 {@link MedicationDefinitionQueryService} 读主表；
- * 定价行维护模式与耗材目录一致（先清实例维度旧定价再批量写入）。不做计费规则计算。</p>
+ * 定价行维护模式与耗材目录一致（先清实例维度旧定价再批量写入）。不做计费规则计算。
+ * 维护态 {@code PURCHASE}/{@code SALE} 为采购参考价/销售参考价；真实售卖价见 {@link #listMedicationLotPrices}。</p>
  *
  * <p>说明：库房维度下拉依赖机构上下文，当前 {@link #loadLocationOptions(Long)} 在 {@code orgId} 为空时返回空列表，
  * 与前端「库房联动」后续 story 对齐时再扩展初始化入口。</p>
@@ -104,7 +124,7 @@ public class MedicationCatalogAppService {
     private final MedicationDefinitionQueryService medicationDefinitionQueryService;
     /** 请求/读模型 ↔ 领域命令与 DTO 映射。 */
     private final MedicationCatalogMapper medicationCatalogMapper;
-    /** 收费定价行读侧：按实例加载采购/零售/限价行。 */
+    /** 收费定价行读侧：按实例加载采购参考价/销售参考价/限价及批号进价售价行。 */
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
     /** 收费定价行写侧：实例维度删旧建新与批量保存。 */
     private final ChargeItemDefinitionDomainService chargeItemDefinitionDomainService;
@@ -112,38 +132,54 @@ public class MedicationCatalogAppService {
     private final TerminologyOptionLoader terminologyOptionLoader;
     /** 用药频次下拉：读 cus_frequency 启用态。 */
     private final FrequencyOptionLoader frequencyOptionLoader;
-    /** 供应商主数据列表 → 下拉 Option。 */
-    private final SupplierQueryService supplierQueryService;
     /** 库房/药房点位：机构上下文下拉（可为空列表）。 */
     private final LocationQueryService locationQueryService;
     /** 会话科室收窄（读/写路径，{@code adm_organization.id}）。 */
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
-    /** 废弃前跨聚合引用守卫。 */
-    private final MedicationDefinitionExternalReferenceGuard medicationDefinitionExternalReferenceGuard;
     /** 写路径操作人门控（B.6.5）。 */
     private final CurrentPractitionerResolver currentPractitionerResolver;
     /** 目录编辑业务码读侧编排。 */
     private final CatalogEditabilityResolver catalogEditabilityResolver;
     /** 目录写侧 immutable 字段门禁。 */
     private final CatalogEditWriteGate catalogEditWriteGate;
+    /** 导入模板生成（AS-BAS-CAT-002 IMP-01 / EXP-01 共用列骨架）。 */
+    private final MedicationCatalogImportTemplateBuilder medicationCatalogImportTemplateBuilder;
+    /** 导出行：详情+维护态价 → 模板 54 列中文。 */
+    private final MedicationCatalogExportRowAssembler medicationCatalogExportRowAssembler;
+    /** 导入 xlsx 解析。 */
+    private final MedicationCatalogImportWorkbookParser medicationCatalogImportWorkbookParser;
+    /** 导入行校验。 */
+    private final MedicationCatalogImportRowValidator medicationCatalogImportRowValidator;
+    /** 导入术语索引。 */
+    private final MedicationCatalogImportTerminologyIndex medicationCatalogImportTerminologyIndex;
+    /** 导入前按 Excel 补齐缺失单位/用法术语。 */
+    private final MedicationCatalogImportConceptEnsureService medicationCatalogImportConceptEnsureService;
+    /** 导入失败标注文件。 */
+    private final MedicationCatalogImportErrorFileService medicationCatalogImportErrorFileService;
+    /** 导入事务写段。 */
+    private final MedicationCatalogImportWriteSupport medicationCatalogImportWriteSupport;
+    /** 异步导入工作流（进度轮询）。 */
+    private final MedicationCatalogImportAsyncWorkflow medicationCatalogImportAsyncWorkflow;
+    /** 手工新建前对齐 MD 业务序号。 */
+    private final MedicationCatalogBusNoSequenceSync medicationCatalogBusNoSequenceSync;
 
     /**
-     * 药品目录维护页初始化：返回各字典下拉项（术语编码系统）及供应商、库房等选项。
+     * 药品目录维护页初始化：返回各字典下拉项（术语编码系统）及频次、库房等选项。
+     *
+     * <p>供应商改由进货/退供等业务单据维护，本初始化不再下发供应商下拉。</p>
      *
      * @return 初始化 DTO，供前端表单渲染
      */
     public MedicationManageInitDto getMedicationInit() {
         // Gate：只读页初始化，无写侧操作人
         MedicationManageInitDto dto = new MedicationManageInitDto();
-        // Pre：加载术语下拉、供应商、频次与库房选项
+        // Pre：加载术语下拉、频次与库房选项（不含供应商）
         dto.setMedicationCategoryCodeOptions(
             terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.MEDICATION_CATEGORY_CODE));
         dto.setStatusFlagOptions(
             terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.PUBLICATION_STATUS));
         dto.setDomainFlagOptions(
             terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.MEDICATION_DOMAIN));
-        // 主数据关联：供应商下拉来自自定义供应商查询（非术语表）。
-        dto.setSupplierListOptions(this.loadSupplierOptions());
         dto.setStatusWeatherOptions(
             terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.YES_NO_FLAG));
         dto.setStatusRestrictedOptions(
@@ -172,6 +208,8 @@ public class MedicationCatalogAppService {
             terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.ANTIBIOTIC_TYPE_CODE));
         dto.setDddCodeOptions(
             terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.DDD_CODE));
+        dto.setDddUnitCodeOptions(
+            terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.DDD_UNIT));
         dto.setDoseFromCodeOptions(
             terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.DOSE_FROM_CODE));
         dto.setRxFlagOptions(
@@ -180,6 +218,8 @@ public class MedicationCatalogAppService {
             terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.DOSAGE_INSTRUCTION));
         dto.setUnitCodeOptions(
             terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.UNIT_CODE));
+        dto.setDoseUnitCodeOptions(
+            terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.DOSE_UNIT));
         dto.setRateCodeOptions(frequencyOptionLoader.loadActiveRateOptions());
         // 库房/药房选项：依赖机构 id；未传入时返回空，避免误列全库点位。
         dto.setLocationOptions(this.loadLocationOptions(managedOrganizationIdsResolver.resolveOrganizationUnitIdForQuery()));
@@ -257,6 +297,30 @@ public class MedicationCatalogAppService {
     }
 
     /**
+     * 查询药品批号维真实进价/售价（当前 ACTIVE 价）。
+     *
+     * <p>与详情回填的维护态 {@code PURCHASE}/{@code SALE}（采购参考价/销售参考价）分离：
+     * 本接口仅返回 {@code LOT_NUMBER_COST}（进价）与 {@code LOT_NUMBER_PRICE}（售价），金额为每包装单位。</p>
+     *
+     * @param request 药品主键；{@code lotNumber} 可空（空=全部批号）
+     * @return 批号价行列表；无批号定价时为空列表
+     * @throws ValidationException {@code id} 为空或药品不存在
+     */
+    public List<CatalogLotPriceRowDto> listMedicationLotPrices(ListMedicationLotPriceRequest request) {
+        // Gate：请求与药品主键非空
+        if (request == null || request.getId() == null) {
+            throw new ValidationException("查询药品批号价格失败：id 不能为空");
+        }
+        Long medicationId = request.getId();
+        // Pre：确认药品主档存在，避免对已删定义返回假空列表
+        medicationDefinitionQueryService.findOptionalMedicationDefinitionEntityById(medicationId)
+            .orElseThrow(() -> new ValidationException("查询药品批号价格失败：记录不存在或已删除"));
+        // Asm：当前价定价行 → 按批号归并进价/售价
+        return CatalogLotPriceAssembler.assembleFromActivePriceLines(
+            this.loadPriceLines(medicationId), request.getLotNumber());
+    }
+
+    /**
      * 新增药品目录定义并写入关联定价行。
      *
      * @param request 新建请求体
@@ -264,20 +328,10 @@ public class MedicationCatalogAppService {
      * @throws ValidationException 必填项校验失败
      */
     public MedicationDetailDto createMedicationCatalog(CreateMedicationCatalogRequest request) {
-        // Gate：创建入参校验
-        this.validateCreateRequest(request);
-        // Pre：未传 orgId 时绑定会话科室
-        this.applyDefaultOrganizationIdForCreate(request);
-        // Cmd：领域建档
-        Long createdId = medicationDefinitionDomainService.createMedicationDefinition(medicationCatalogMapper.toCreateCommand(request));
-        // Cmd 续：实例维度定价行替换
-        this.replacePriceLines(
-            createdId,
-            this.resolveMedicationFinTypeCodeForPricing(request.getTypeCode(), request.getCategoryCode()),
-            request.getYbType(),
-            request.getPurchasePrice(),
-            request.getRetailPrice(),
-            request.getMaximumRetailPrice());
+        // Pre：对齐 MD 序号，避免与库内已有 bus_no 撞号
+        medicationCatalogBusNoSequenceSync.syncFromExistingDefinitions();
+        // Cmd：与导入共用单行创建路径（建档 + 维护态定价）
+        Long createdId = this.createOneForImport(request);
         // Asm：回读新建详情
         return this.getMedicationCatalog(createdId);
     }
@@ -306,6 +360,8 @@ public class MedicationCatalogAppService {
             this.loadPriceLines(request.getId()),
             request,
             editability.getEditabilityCode());
+        // Pre：药品目录不再采集供应商，写路径清空 supplyId（忽略请求入参与历史回显）
+        request.setSupplyId(null);
         // Cmd：领域更新主数据（编辑路径不维护定价行）
         medicationDefinitionDomainService.editMedicationDefinition(medicationCatalogMapper.toEditCommand(request));
         // Asm：回读最新详情
@@ -347,68 +403,318 @@ public class MedicationCatalogAppService {
     public void deleteMedicationCatalog(List<Long> ids) {
         // Gate：批量主键非空
         GatewayIdParseUtil.requireNonEmptyLongIds(ids, "删除药品目录失败：ids 不能为空");
-        // Gate 续：跨聚合引用守卫，有引用则阻断废弃
-        medicationDefinitionExternalReferenceGuard.assertNoExternalReference(ids);
+        // Gate 续：删除与编辑不同——任一业务引用（临床或入库）即整单禁删；编辑才分二级/一级与字段裁剪
+        for (Long medicationId : ids) {
+            CatalogEditabilityQueryModel editability =
+                catalogEditabilityResolver.resolveMedicationEditability(medicationId);
+            if (CatalogEditabilityConstants.isLocked(editability.getEditabilityCode())) {
+                throw new ValidationException("删除药品目录失败：已发生业务引用，不允许删除");
+            }
+        }
         // Cmd：领域批量废弃
         medicationDefinitionDomainService.discardMedicationDefinition(medicationCatalogMapper.toDiscardCommand(ids));
     }
 
     /**
-     * 导入药品目录
+     * 启动药品目录异步导入（含进度轮询，AS-BAS-CAT-002 进度条）。
      *
-     * @param file 导入文件（CSV，首行为表头）
-     * @return 导入批次统计
-     * @throws ValidationException 文件为空或解析失败
+     * @param request 含 fileBytes
+     * @return jobId
      */
-    public ImportMedicationCatalogResponse importMedicationCatalog(MultipartFile file) {
-        // Gate：上传文件非空
-        if (file == null || file.isEmpty()) {
+    public StartMedicationCatalogImportResponse startImportMedicationCatalog(
+        ImportMedicationCatalogRequest request) {
+        // Gate：上传字节
+        if (request == null || request.getFileBytes() == null || request.getFileBytes().length == 0) {
             throw new ValidationException("导入药品目录失败：文件不能为空");
         }
-        // Gate 续：写路径操作人
+        // Gate 续：操作人与机构（启动线程捕获，异步还原）
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.MEDICATION_DEFINITION_INVALID_ARGUMENT, "请先登录后再导入药品目录");
-        // Pre：组装导入命令并解析 CSV 行
-        ImportMedicationCatalogCommand command = new ImportMedicationCatalogCommand();
-        command.setBatchNo("MED-IMPORT-" + UUID.randomUUID().toString().substring(0, 8));
-        command.setOperatorId(operatorId);
-        command.setFileId(file.getOriginalFilename());
-        try {
-            command.setRows(this.parseImportRows(file));
-        } catch (IOException e) {
-            throw new ValidationException("导入药品目录失败：文件内容解析失败");
-        }
-        ImportMedicationCatalogResult result = medicationDefinitionDomainService.importMedicationCatalog(command);
-        log.info("药品目录导入完成 batchNo={}, success={}, fail={}",
-            command.getBatchNo(), result.getSuccessCount(), result.getFailCount());
-        // Asm：映射导入统计响应
-        ImportMedicationCatalogResponse response = new ImportMedicationCatalogResponse();
-        response.setBatchNo(command.getBatchNo());
-        response.setTotalCount(command.getRows().size());
-        response.setSuccessCount(result.getSuccessCount());
-        response.setFailCount(result.getFailCount());
+        Long orgId = managedOrganizationIdsResolver.requireSessionHospitalId(
+            "MED-CAT-IMP-ORG",
+            "导入药品目录失败：未选择医院上下文，请先登录并选择医院");
+        // Cmd：提交异步任务
+        String jobId = medicationCatalogImportAsyncWorkflow.startImport(
+            request.getFileBytes(),
+            request.getFileName(),
+            orgId,
+            operatorId,
+            this::createOneForImport);
+        // Asm
+        StartMedicationCatalogImportResponse response = new StartMedicationCatalogImportResponse();
+        response.setJobId(jobId);
         return response;
     }
 
     /**
-     * 获取导入模板
+     * 轮询药品目录导入进度。
      *
-     * @param response HTTP 响应（流式写出 CSV 字节）
-     * @throws ValidationException 模板查询或写出失败
+     * @param request 含 jobId
+     * @return 进度快照
      */
-    public void downloadMedicationCatalog(HttpServletResponse response) {
-        // Pre：读侧加载 CSV 模板
-        MedicationDefinitionTemplateQueryModel template = medicationDefinitionQueryService.downloadMedicationCatalog();
-        // Asm：流式写出附件响应
-        response.setContentType("text/csv;charset=UTF-8");
-        response.setCharacterEncoding("UTF-8");
-        response.setHeader("Content-Disposition", "attachment; filename=\"" + template.getTemplateName() + ".csv\"");
-        try {
-            response.getOutputStream().write(template.getContent());
-            response.getOutputStream().flush();
-        } catch (IOException e) {
-            throw new ValidationException("下载药品目录模板失败：响应输出异常");
+    public MedicationCatalogImportProgressResponse getImportMedicationCatalogProgress(
+        GetMedicationCatalogImportProgressRequest request) {
+        // Gate
+        if (request == null || StringUtils.isEmpty(request.getJobId())) {
+            throw new BusinessException(
+                MedicationCatalogImportConstants.ERR_TOKEN,
+                "查询导入进度失败：jobId 不能为空");
         }
+        // Pre
+        MedicationCatalogImportJob job = medicationCatalogImportAsyncWorkflow.getJob(request.getJobId());
+        // Asm
+        MedicationCatalogImportProgressResponse response = new MedicationCatalogImportProgressResponse();
+        response.setJobId(job.getJobId());
+        response.setStatus(job.getStatus());
+        response.setStage(job.getStage());
+        response.setPercent(job.getPercent());
+        response.setTotal(job.getTotal());
+        response.setProcessed(job.getProcessed());
+        response.setMessage(job.getMessage());
+        response.setBatchNo(job.getBatchNo());
+        response.setSuccessCount(job.getSuccessCount());
+        response.setErrorFileToken(job.getErrorFileToken());
+        response.setErrorCount(job.getErrorCount());
+        response.setErrorMessages(job.copyErrorMessages());
+        return response;
+    }
+
+    /**
+     * 批量导入药品目录（同步；兼容旧调用。页面推荐 {@link #startImportMedicationCatalog} + 进度轮询）。
+     *
+     * <p>网关无法注入 {@code MultipartFile}，入参为 xlsx 字节。先全量校验；失败整批不落库并返回
+     * {@link ValidationException#getErrors()}（含 {@code errorFileToken} 与分行错误）。通过后事务内逐行复用创建+定价。</p>
+     *
+     * @param request 含 fileBytes 的导入请求
+     * @return 批次号与成功条数
+     * @throws ValidationException 校验失败（errors 含行错误与 token）
+     * @throws BusinessException   模板/文件 Gate 失败
+     */
+    public ImportMedicationCatalogResponse importMedicationCatalog(ImportMedicationCatalogRequest request) {
+        // Gate：上传字节非空且体积受限
+        if (request == null || request.getFileBytes() == null || request.getFileBytes().length == 0) {
+            throw new ValidationException("导入药品目录失败：文件不能为空");
+        }
+        if (request.getFileBytes().length > MedicationCatalogImportConstants.ERROR_FILE_MAX_BYTES) {
+            throw new ValidationException("导入药品目录失败：文件过大，请拆分后重试");
+        }
+        // Gate 续：写路径操作人与机构
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
+            ErrorCodeConstants.MEDICATION_DEFINITION_INVALID_ARGUMENT, "请先登录后再导入药品目录");
+        Long orgId = managedOrganizationIdsResolver.requireSessionHospitalId(
+            "MED-CAT-IMP-ORG",
+            "导入药品目录失败：未选择医院上下文，请先登录并选择医院");
+        // Pre：解析 xlsx
+        MedicationCatalogImportWorkbookParser.ParseResult parseResult =
+            medicationCatalogImportWorkbookParser.parse(request.getFileBytes());
+        // Pre 续：按 Excel 补齐缺失单位/用法术语，再全量行校验（不写目录主数据）
+        medicationCatalogImportConceptEnsureService.ensureMissingConcepts(
+            parseResult.getRows(), medicationCatalogImportTerminologyIndex);
+        List<ImportMedicationCatalogErrorItemDto> errors = medicationCatalogImportRowValidator.validate(
+            parseResult.getRows(),
+            orgId,
+            medicationCatalogImportTerminologyIndex,
+            medicationDefinitionQueryService);
+        // Gate：任一行失败则生成标注文件并拒绝整批
+        if (errors != null && !errors.isEmpty()) {
+            String token = medicationCatalogImportErrorFileService.buildAndStore(
+                parseResult.getOriginalBytes(), errors);
+            Map<String, String> errorMap = new LinkedHashMap<>();
+            errorMap.put("errorFileToken", token);
+            int index = 0;
+            for (ImportMedicationCatalogErrorItemDto item : errors) {
+                String key = "e" + index;
+                StringBuilder line = new StringBuilder();
+                if (item.getExcelRowNum() != null) {
+                    line.append("第").append(item.getExcelRowNum()).append("行");
+                }
+                if (StringUtils.isNotEmpty(item.getColumnName())) {
+                    if (line.length() > 0) {
+                        line.append(" ");
+                    }
+                    line.append("[").append(item.getColumnName()).append("]");
+                }
+                if (line.length() > 0) {
+                    line.append("：");
+                }
+                line.append(item.getMessage());
+                errorMap.put(key, line.toString());
+                index = index + 1;
+            }
+            throw new ValidationException(
+                "导入失败，共 " + errors.size() + " 处错误，已全部回滚", errorMap);
+        }
+        // Cmd：事务内逐行创建（ACTIVE + 维护态价）
+        String batchNo = MedicationCatalogImportConstants.BATCH_NO_PREFIX
+            + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
+            + "-"
+            + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+        List<MedicationCatalogImportRow> rows = parseResult.getRows();
+        int created = medicationCatalogImportWriteSupport.importRows(
+            batchNo, operatorId, orgId, rows, this::createOneForImport, null);
+        int skipped = rows.size() - created;
+        log.info("药品目录导入完成 batchNo={}, success={}, skippedExisting={}", batchNo, created, skipped);
+        // Asm：成功响应
+        ImportMedicationCatalogResponse response = new ImportMedicationCatalogResponse();
+        response.setBatchNo(batchNo);
+        response.setTotalCount(rows.size());
+        response.setSuccessCount(created);
+        response.setFailCount(0);
+        return response;
+    }
+
+    /**
+     * 下载药品目录导入模板（AS-BAS-CAT-002 · IF-BAS-CAT-IMP-01）。
+     *
+     * <p>返回 xlsx 字节包装，供前端 base64 下载；替代旧 CSV 流式写出。</p>
+     *
+     * @return 模板文件响应
+     */
+    public MedicationCatalogImportFileResponse downloadImportTemplate() {
+        // Pre：生成易用型 xlsx 模板
+        byte[] bytes = medicationCatalogImportTemplateBuilder.build();
+        // Asm：包装下载响应
+        MedicationCatalogImportFileResponse response = new MedicationCatalogImportFileResponse();
+        response.setFileName(MedicationCatalogImportConstants.TEMPLATE_FILE_NAME);
+        response.setContentType(MedicationCatalogImportConstants.XLSX_CONTENT_TYPE);
+        response.setFileBytes(bytes);
+        return response;
+    }
+
+    /**
+     * 按筛选条件导出药品目录（AS-BAS-CAT-002 · IF-BAS-CAT-EXP-01）。
+     *
+     * <p>列序与导入模板 v1.6 字段名一致，但版式为<strong>单 Sheet</strong>（表头 + 数据紧挨，无示例/指导页）；
+     * 维护态价经 {@code findPriceLinesByProjects} 批量回填（§2.2.3 目录维护当前价）。
+     * 触达 {@link MedicationCatalogImportConstants#EXPORT_MAX_ROWS} 时截断并标记 truncated。</p>
+     *
+     * @param request 关键字与分类；可空（空=当前租户未删除全量，仍受行数上限）
+     * @return xlsx 文件响应
+     */
+    public ExportMedicationCatalogResponse exportMedicationCatalog(ExportMedicationCatalogRequest request) {
+        // Gate：空请求视为无筛选，仍允许导出
+        ExportMedicationCatalogRequest safeRequest = request;
+        if (safeRequest == null) {
+            // 无 body 时按「不限关键字/分类」导出，避免网关空 JSON 拒答
+            safeRequest = new ExportMedicationCatalogRequest();
+        }
+        // Pre：组装与列表同口径的领域查询（多取 1 条用于判定是否截断）
+        MedicationDefinitionCatalogPageQuery pageQuery = new MedicationDefinitionCatalogPageQuery();
+        pageQuery.setKeyword(safeRequest.getKeyword());
+        pageQuery.setCategoryCode(safeRequest.getCategoryCode());
+        int fetchLimit = MedicationCatalogImportConstants.EXPORT_MAX_ROWS + 1;
+        List<MedicationDefinitionDetailQueryModel> details =
+            medicationDefinitionQueryService.listMedicationCatalogForExport(pageQuery, fetchLimit);
+        boolean truncated = false;
+        List<MedicationDefinitionDetailQueryModel> exportDetails = details;
+        if (details.size() > MedicationCatalogImportConstants.EXPORT_MAX_ROWS) {
+            // 触顶：截断后仍交付文件，由 truncated 提示前端缩小筛选
+            truncated = true;
+            exportDetails = details.subList(0, MedicationCatalogImportConstants.EXPORT_MAX_ROWS);
+        }
+        // Pre 续：收集主键后批量加载维护态定价行（目录导出合法当前价场景）
+        List<Long> ids = new ArrayList<>();
+        for (MedicationDefinitionDetailQueryModel detail : exportDetails) {
+            if (detail != null && detail.getId() != null) {
+                ids.add(detail.getId());
+            }
+        }
+        Map<Long, List<ChargeItemDefinition>> priceMap;
+        if (ids.isEmpty()) {
+            // 无命中行：跳过定价查询，避免空 instanceIds 无意义往返
+            priceMap = new HashMap<>();
+        } else {
+            priceMap = this.loadMedicationPriceMap(ids);
+        }
+        medicationCatalogImportTerminologyIndex.load();
+        // Asm：详情 + 价 → 模板列 → xlsx
+        List<String[]> dataRows = new ArrayList<>();
+        for (MedicationDefinitionDetailQueryModel detail : exportDetails) {
+            if (detail == null) {
+                // 跳过空元素，保证列行数与有效药品一致
+                continue;
+            }
+            List<ChargeItemDefinition> priceLines = priceMap.get(detail.getId());
+            dataRows.add(medicationCatalogExportRowAssembler.toColumnValues(
+                detail, priceLines, medicationCatalogImportTerminologyIndex));
+        }
+        byte[] bytes = medicationCatalogImportTemplateBuilder.buildExport(dataRows);
+        String fileName = MedicationCatalogImportConstants.EXPORT_FILE_NAME_PREFIX
+            + LocalDateTime.now().format(
+                DateTimeFormatter.ofPattern(MedicationCatalogImportConstants.EXPORT_FILE_NAME_TIME_PATTERN))
+            + ".xlsx";
+        ExportMedicationCatalogResponse response = new ExportMedicationCatalogResponse();
+        response.setFileName(fileName);
+        response.setContentType(MedicationCatalogImportConstants.XLSX_CONTENT_TYPE);
+        response.setFileBytes(bytes);
+        response.setExportedRowCount(dataRows.size());
+        response.setTruncated(truncated);
+        log.info("药品目录导出完成 rows={}, truncated={}, keyword={}, categoryCode={}",
+            dataRows.size(), truncated, safeRequest.getKeyword(), safeRequest.getCategoryCode());
+        return response;
+    }
+
+    /**
+     * 兼容旧方法名：下载导入模板（同 {@link #downloadImportTemplate()}）。
+     *
+     * @return 模板文件响应
+     */
+    public MedicationCatalogImportFileResponse downloadMedicationCatalog() {
+        return this.downloadImportTemplate();
+    }
+
+    /**
+     * 下载导入失败标注文件（AS-BAS-CAT-002 · IF-BAS-CAT-IMP-03）。
+     *
+     * @param request 含 errorFileToken
+     * @return 标注后的 xlsx
+     * @throws BusinessException token 无效或过期
+     */
+    public MedicationCatalogImportFileResponse downloadImportErrorFile(
+        DownloadMedicationCatalogImportErrorRequest request) {
+        // Gate：token 必填
+        if (request == null || StringUtils.isEmpty(request.getToken())) {
+            throw new BusinessException(
+                MedicationCatalogImportConstants.ERR_TOKEN,
+                "下载错误标注文件失败：token 不能为空");
+        }
+        // Pre：按 token 取临时文件
+        byte[] bytes = medicationCatalogImportErrorFileService.getBytes(request.getToken().trim());
+        // Asm：包装下载响应
+        MedicationCatalogImportFileResponse response = new MedicationCatalogImportFileResponse();
+        response.setFileName(
+            "药品目录导入_错误标注_"
+                + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
+                + ".xlsx");
+        response.setContentType(MedicationCatalogImportConstants.XLSX_CONTENT_TYPE);
+        response.setFileBytes(bytes);
+        return response;
+    }
+
+    /**
+     * 导入/新建单行创建：领域建档 + 维护态定价，供写段回调与 {@link #createMedicationCatalog} 共用。
+     *
+     * @param request 已映射的新建请求
+     * @return 新建药品定义主键
+     */
+    Long createOneForImport(CreateMedicationCatalogRequest request) {
+        // Gate：创建入参校验（含单位倍数与定价财务类型）
+        this.validateCreateRequest(request);
+        // Pre：绑定会话机构；清空供应商
+        this.applyDefaultOrganizationIdForCreate(request);
+        request.setSupplyId(null);
+        // Cmd：领域建档（默认 ACTIVE）
+        Long createdId = medicationDefinitionDomainService.createMedicationDefinition(
+            medicationCatalogMapper.toCreateCommand(request));
+        // Cmd 续：维护态 PURCHASE/SALE/LIMIT
+        this.replacePriceLines(
+            createdId,
+            this.resolveMedicationFinTypeCodeForPricing(request.getTypeCode(), request.getCategoryCode()),
+            request.getYbType(),
+            request.getPurchasePrice(),
+            request.getRetailPrice(),
+            request.getMaximumRetailPrice());
+        return createdId;
     }
 
     /**
@@ -443,7 +749,7 @@ public class MedicationCatalogAppService {
     }
 
     /**
-     * 列表页批量回填定价与供应商展示名（避免 N+1，口径对齐耗材目录 {@code enrichPageFields}）。
+     * 列表页批量回填定价与分类/单位展示名（避免 N+1，口径对齐耗材目录 {@code enrichPageFields}）。
      */
     private void enrichMedicationCatalogPageRows(List<MedicationDto> rows) {
         if (rows == null || rows.isEmpty()) {
@@ -455,13 +761,9 @@ public class MedicationCatalogAppService {
         }
         Map<String, String> categoryLabelMap = terminologyOptionLoader.buildLabelMap(
             TerminologyCodeSystemNameConstants.MEDICATION_CATEGORY_CODE);
-        Map<String, String> unitCodeMap = terminologyOptionLoader.buildLabelMap(
-            TerminologyCodeSystemNameConstants.UNIT_CODE);
+        // 计量/剂量/DDD 合并映射，避免 code 回显不到中文名
+        Map<String, String> unitCodeMap = this.buildMedicationUnitLabelMap();
         Map<Long, List<ChargeItemDefinition>> priceMap = this.loadMedicationPriceMap(ids);
-        Map<Long, String> supplierNameById = supplierQueryService.listSuppliers().stream()
-            .filter(Objects::nonNull)
-            .filter(s -> s.getId() != null)
-            .collect(Collectors.toMap(SupplierListItemQueryModel::getId, SupplierListItemQueryModel::getName, (a, b) -> a));
         for (MedicationDto dto : rows) {
             if (dto == null || dto.getId() == null) {
                 continue;
@@ -478,10 +780,14 @@ public class MedicationCatalogAppService {
                     dto.setPackageUnitCode_dictText(packageUnitLabel);
                 }
             }
-            this.enrichPriceFields(dto, priceMap.get(dto.getId()));
-            if (dto.getSupplyId() != null) {
-                dto.setSupplyId_dictText(supplierNameById.get(dto.getSupplyId()));
+            // 追溯码单位与包装等同属 unit_code 术语
+            if (dto.getTraceUnitCode() != null) {
+                String traceUnitLabel = unitCodeMap.get(dto.getTraceUnitCode());
+                if (traceUnitLabel != null) {
+                    dto.setTraceUnitCode_dictText(traceUnitLabel);
+                }
             }
+            this.enrichPriceFields(dto, priceMap.get(dto.getId()));
             dto.setUnitBands(this.buildMedicationCatalogUnitBands(dto, unitCodeMap));
         }
     }
@@ -538,6 +844,25 @@ public class MedicationCatalogAppService {
             return null;
         }
         return unitCodeMap.get(unitCode.trim());
+    }
+
+    /**
+     * 药品单位展示名：合并 {@code unit_code} + {@code dose_unit} + {@code ddd_unit}。
+     */
+    private Map<String, String> buildMedicationUnitLabelMap() {
+        Map<String, String> merged = new HashMap<>();
+        this.putAllUnitLabels(merged, TerminologyCodeSystemNameConstants.UNIT_CODE);
+        this.putAllUnitLabels(merged, TerminologyCodeSystemNameConstants.DOSE_UNIT);
+        this.putAllUnitLabels(merged, TerminologyCodeSystemNameConstants.DDD_UNIT);
+        return merged;
+    }
+
+    private void putAllUnitLabels(Map<String, String> target, String codeSystemName) {
+        Map<String, String> labels = terminologyOptionLoader.buildLabelMap(codeSystemName);
+        if (labels == null || labels.isEmpty()) {
+            return;
+        }
+        target.putAll(labels);
     }
 
     /**
@@ -620,8 +945,8 @@ public class MedicationCatalogAppService {
      * @param instanceId         药品定义主键
      * @param typeCode           财务分类编码
      * @param ybType             医保类别
-     * @param purchasePrice      采购价
-     * @param retailPrice        零售价
+     * @param purchasePrice      采购参考价（维护态 {@code PURCHASE}）
+     * @param retailPrice        销售参考价（维护态 {@code SALE}）
      * @param maximumRetailPrice 限价
      */
     private void replacePriceLines(
@@ -653,60 +978,6 @@ public class MedicationCatalogAppService {
         SaveAllChargeItemDefinitionsCommand saveCommand = new SaveAllChargeItemDefinitionsCommand();
         saveCommand.setItems(items);
         chargeItemDefinitionDomainService.saveAllChargeItemDefinitions(saveCommand);
-    }
-
-    /**
-     * 解析 CSV：跳过首行表头，至少五列（业务号、名称、分类、单位、机构）才视为有效数据行。
-     *
-     * <p>CSV 格式约定：首行为表头，从第二行开始解析；列顺序固定为 busNo,name,categoryCode,purchaseUnitCode,orgId。</p>
-     *
-     * @param file 上传文件
-     * @return 领域导入行命令列表
-     * @throws IOException 流读取异常
-     */
-    private List<ImportMedicationCatalogCommand.MedicationDefinitionImportRowCommand> parseImportRows(MultipartFile file) throws IOException {
-        List<ImportMedicationCatalogCommand.MedicationDefinitionImportRowCommand> rows = new ArrayList<>();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8))) {
-            String line;
-            boolean headerSkipped = false;
-            // Loop：逐行读取 CSV 内容
-            while ((line = reader.readLine()) != null) {
-                if (line.isBlank()) {
-                    continue;
-                }
-                if (!headerSkipped) {
-                    headerSkipped = true;
-                    continue;
-                }
-                String[] columns = line.split(",", -1);
-                if (columns.length < 5) {
-                    continue;
-                }
-                ImportMedicationCatalogCommand.MedicationDefinitionImportRowCommand row =
-                    new ImportMedicationCatalogCommand.MedicationDefinitionImportRowCommand();
-                row.setBusNo(TextValueConverter.nullIfBlank(columns[0]));
-                row.setName(TextValueConverter.nullIfBlank(columns[1]));
-                row.setCategoryCode(TextValueConverter.nullIfBlank(columns[2]));
-                row.setPurchaseUnitCode(TextValueConverter.nullIfBlank(columns[3]));
-                row.setOrgId(TextValueConverter.toNullableLong(columns[4]));
-                rows.add(row);
-            }
-        }
-        return rows;
-    }
-
-    /**
-     * 加载供应商列表为 {@link OptionDto}（value 为供应商 id 字符串）。
-     *
-     * @return 下拉选项列表
-     */
-    private List<OptionDto> loadSupplierOptions() {
-        List<SupplierListItemQueryModel> suppliers = supplierQueryService.listSuppliers();
-        return OptionDtoAssembler.toOptions(
-            suppliers,
-            SupplierListItemQueryModel::getId,
-            SupplierListItemQueryModel::getName,
-            0L);
     }
 
     /**
@@ -792,6 +1063,7 @@ public class MedicationCatalogAppService {
             throw new ValidationException("新增药品目录失败：包装单位不能为空");
         }
         this.assertMedicationUnitRatiosPositive(request, "新增药品目录失败");
+        this.assertMedicationTraceUnitRequired(request, "新增药品目录失败");
         this.assertFinTypeCodeWhenPricingPresent(
             request.getTypeCode(),
             request.getCategoryCode(),
@@ -801,14 +1073,12 @@ public class MedicationCatalogAppService {
     }
 
     /**
-     * 所属机构：请求未显式传入时，与当前登录用户所选组织单元一致（口径同 {@link #getMedicationInit()} 库房下拉）。
+     * 所属机构：目录主数据统一挂当前会话医院（不使用会话科室）。
      */
     private void applyDefaultOrganizationIdForCreate(CreateMedicationCatalogRequest request) {
-        if (request.getOrgId() == null) {
-            request.setOrgId(managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
-                "MED-CAT-VAL-ORG",
-                "新增药品目录失败：未选择机构上下文，请先在系统中选择科室/机构"));
-        }
+        request.setOrgId(managedOrganizationIdsResolver.requireSessionHospitalId(
+            "MED-CAT-VAL-ORG",
+            "新增药品目录失败：未选择医院上下文，请先登录并选择医院"));
     }
 
     /**
@@ -834,6 +1104,7 @@ public class MedicationCatalogAppService {
             throw new ValidationException("更新药品目录失败：包装单位不能为空");
         }
         this.assertMedicationUnitRatiosPositive(request, "更新药品目录失败");
+        this.assertMedicationTraceUnitRequired(request, "更新药品目录失败");
     }
 
     /**
@@ -855,8 +1126,8 @@ public class MedicationCatalogAppService {
      *
      * @param typeCode       财务类型
      * @param categoryCode   药品分类
-     * @param purchasePrice  进价
-     * @param retailPrice    零售价
+     * @param purchasePrice  采购参考价
+     * @param retailPrice    销售参考价
      * @param messagePrefix  校验失败前缀
      */
     private void assertFinTypeCodeWhenPricingPresent(
@@ -882,6 +1153,24 @@ public class MedicationCatalogAppService {
         MedicationCatalogAppService.assertPositiveUnitRatio(errPrefix, "库存→拆零倍数", request.getStockUnitRatio());
         MedicationCatalogAppService.assertPositiveUnitRatio(errPrefix, "销售→拆零倍数", request.getPackageUnitRatio());
         MedicationCatalogAppService.assertPositiveUnitRatio(errPrefix, "剂量→拆零倍数", request.getDoseUnitRatio());
+    }
+
+    /**
+     * 药品追溯码单位闸门：{@code traceUnitCode} 与 {@code traceUnitRatio} 均必填，且倍数须 &gt; 0。
+     *
+     * <p>贴码单位可游离于五类业务单位；同意入库/期初扫码按药典该字段计码。</p>
+     *
+     * @param request   创建或更新请求
+     * @param errPrefix 异常前缀（新建/更新场景）
+     * @throws ValidationException 缺字段或倍数非正
+     */
+    private void assertMedicationTraceUnitRequired(CreateMedicationCatalogRequest request, String errPrefix) {
+        String traceUnitCode = request.getTraceUnitCode();
+        // 缺追溯码单位则无法在入库/发药侧解析贴码口径
+        if (StringUtils.isEmpty(traceUnitCode) || traceUnitCode.isBlank()) {
+            throw new ValidationException(errPrefix + "：追溯码单位不能为空");
+        }
+        MedicationCatalogAppService.assertPositiveUnitRatio(errPrefix, "追溯码单位→拆零倍数", request.getTraceUnitRatio());
     }
 
     /**

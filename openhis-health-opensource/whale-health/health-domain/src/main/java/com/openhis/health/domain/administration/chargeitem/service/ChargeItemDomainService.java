@@ -15,15 +15,22 @@ import com.openhis.health.domain.administration.chargeitem.command.CreateChargeI
 import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemCommand;
 import com.openhis.health.domain.administration.chargeitem.command.SwitchChargeItemAccountCommand;
 import com.openhis.health.domain.administration.chargeitem.command.DeactivateChargeByExeCommand;
-import com.openhis.health.domain.administration.chargeitem.command.VoidNursePricingChargeItemsByServiceAnchorsCommand;
+import com.openhis.health.domain.administration.chargeitem.command.OffsetNursePricingChargeItemsByServiceAnchorsCommand;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.administration.chargeitem.command.VoidOrderExecuteChargeItemsByProcedureIdsCommand;
 import com.openhis.health.domain.administration.chargeitem.command.VoidUnbilledDraftChargeItemsByServiceAnchorCommand;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.repository.ChargeItemRepository;
+import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
+import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.ChargeItemEventType;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.events.administration.chargeitem.ChargeItemDomainEvents;
+import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestListModel;
+import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestQueryService;
+import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
+import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
@@ -42,7 +49,8 @@ import java.util.*;
  * <p>管理收费明细的创建、状态批量迁移（激活/结算/退款等）和账户切换全流程。
  * 所有写操作均遵循「先落库后发事件」时序（通用规范 B.14 硬门禁），确保事件与数据一致性。</p>
  *
- * <p>对应 DM-ADM-011 §6.1 写侧方法集；仅注入本聚合 {@link ChargeItemRepository}。</p>
+ * <p>对应 DM-ADM-011 §6.1 写侧方法集；写库仅经本聚合 {@link ChargeItemRepository}。
+ * 挂费拷贝诊断有序 ids 串 时经药品/诊疗/耗材 {@code *QueryService} 读上游请求（B.6.4 读路径）。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -52,6 +60,12 @@ public class ChargeItemDomainService {
     /** 收费明细 busNo：业务流水按日递增，前缀 {@link AggregateTypeConstants#CHARGE_ITEM}。 */
     private final BusinessSequenceService businessSequenceService;
     private final ChargeItemRegenerationChainSupport regenerationChainSupport;
+    /** 加载候选：药品请求诊断有序 ids 串（B.6.4）。 */
+    private final MedicationRequestQueryService medicationRequestQueryService;
+    /** 加载候选：诊疗请求诊断有序 ids 串（B.6.4）。 */
+    private final ServiceRequestQueryService serviceRequestQueryService;
+    /** 加载候选：耗材请求诊断有序 ids 串（B.6.4）。 */
+    private final DeviceRequestQueryService deviceRequestQueryService;
 
     /**
      * 创建挂号收费明细，初始状态为已计划（statusEnum=PLANNED），并发布 REGISTRATION_CREATED 事件。
@@ -539,16 +553,17 @@ public class ChargeItemDomainService {
     }
 
     /**
-     * 按上游请求锚点逻辑删除护士划价待结算收费明细（generate_source=nurse-pricing，AS-IP-NUR-005 IF-IP-PRC-06）。
+     * 按上游请求锚点冲销护士划价待结算收费明细（generate_source=nurse-pricing，AS-IP-NUR-005 IF-IP-PRC-06）。
      *
-     * <p>同锚点下若存在已结算/退费链路行则整批拒绝（BR-CHG-002）；无命中待结算行时静默跳过。</p>
+     * <p>保留原正向 {@code PENDING_SETTLEMENT} 行；对尚未冲销的正向行插入数量/金额取反的冲销行，
+     * {@code refund_id} 链回原行。同锚点下若存在已结算/退费链路行则整批拒绝（BR-CHG-002）；无待冲销行时静默跳过。</p>
      *
      * @param cmd 就诊、上游表名与主键集合
      */
-    public void voidNursePricingChargeItemsByServiceAnchors(VoidNursePricingChargeItemsByServiceAnchorsCommand cmd) {
+    public void offsetNursePricingChargeItemsByServiceAnchors(OffsetNursePricingChargeItemsByServiceAnchorsCommand cmd) {
         if (cmd == null || cmd.getEncounterId() == null || StringUtils.isEmpty(cmd.getServiceTable())
             || cmd.getServiceIds() == null || cmd.getServiceIds().isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "撤销护士划价费用锚点参数不完整");
+            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "冲销护士划价费用锚点参数不完整");
         }
         LinkedHashSet<Long> distinctIds = new LinkedHashSet<>();
         for (Long serviceId : cmd.getServiceIds()) {
@@ -560,7 +575,7 @@ public class ChargeItemDomainService {
         if (distinctIds.isEmpty()) {
             return;
         }
-        // Pre：加载本就诊、本表、多锚点下全部费用行，用于结算 Gate。
+        // Pre：加载本就诊、本表、多锚点下全部费用行，用于结算 Gate 与冲销候选筛选。
         List<ChargeItem> linkedRows = repository.findAllByEncounterIdAndServiceTableAndServiceIdIn(
             cmd.getEncounterId(), cmd.getServiceTable(), distinctIds);
         Set<Long> supersededSettledSourceIds =
@@ -576,8 +591,12 @@ public class ChargeItemDomainService {
                     "划价锚点关联费用已结算或退费中，不允许取消划价");
             }
         }
-        List<ChargeItem> toDelete = new ArrayList<>();
+        // Pre：收集已被冲销行指向的源 id，避免对同一正向行重复冲销。
+        Set<Long> alreadyOffsetSourceIds = new HashSet<>();
         for (ChargeItem row : linkedRows) {
+            if (row == null || row.getRefundId() == null) {
+                continue;
+            }
             if (!ChargeItemStatus.PENDING_SETTLEMENT.getCode().equals(row.getStatusEnum())) {
                 continue;
             }
@@ -585,18 +604,122 @@ public class ChargeItemDomainService {
                 || !GenerateSource.NURSE_PRICING.getCode().equals(row.getGenerateSourceEnum())) {
                 continue;
             }
-            toDelete.add(row);
+            alreadyOffsetSourceIds.add(row.getRefundId());
         }
-        // 无待结算护士划价行时静默跳过，撤销划价可能已无命中行。
-        if (toDelete.isEmpty()) {
+        List<ChargeItem> sourcesToOffset = new ArrayList<>();
+        for (ChargeItem row : linkedRows) {
+            if (row == null || row.getId() == null) {
+                continue;
+            }
+            if (!ChargeItemStatus.PENDING_SETTLEMENT.getCode().equals(row.getStatusEnum())) {
+                continue;
+            }
+            if (row.getGenerateSourceEnum() == null
+                || !GenerateSource.NURSE_PRICING.getCode().equals(row.getGenerateSourceEnum())) {
+                continue;
+            }
+            // 冲销行本身（refund_id 非空）不再作为冲销源。
+            if (row.getRefundId() != null) {
+                continue;
+            }
+            // 数量非正（已是负向事实）不冲销。
+            if (row.getQuantityValue() == null || row.getQuantityValue().signum() <= 0) {
+                continue;
+            }
+            // 已被冲销过的正向行跳过，保证整行冲销幂等。
+            if (alreadyOffsetSourceIds.contains(row.getId())) {
+                continue;
+            }
+            sourcesToOffset.add(row);
+        }
+        // 无待冲销正向护士划价行时静默跳过（可能已整行冲销）。
+        if (sourcesToOffset.isEmpty()) {
             return;
         }
-        repository.deleteAll(toDelete);
-        // 发布事件：save 完成后逐条通知读侧剔除待结算占用。
-        for (ChargeItem row : toDelete) {
-            domainEventPublisher.publish(
-                new ChargeItemDomainEvents.NursePricingChargeItemRemovedEvent(row.getId(), row.getEncounterId()));
+        List<String> busNos = businessSequenceService.getSeqByDay(
+            AggregateTypeConstants.CHARGE_ITEM, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH, sourcesToOffset.size());
+        LocalDateTime now = LocalDateTime.now();
+        List<ChargeItem> offsetRows = new ArrayList<>();
+        for (int index = 0; index < sourcesToOffset.size(); index++) {
+            offsetRows.add(this.cloneChargeItemForNursePricingOffset(
+                sourcesToOffset.get(index), busNos.get(index), cmd.getOperatorId(), now));
         }
+        // 持久化：先落库冲销行，再发事件（B.14）。
+        List<ChargeItem> saved = repository.saveAll(offsetRows);
+        for (ChargeItem savedRow : saved) {
+            domainEventPublisher.publish(
+                new ChargeItemDomainEvents.NursePricingChargeItemOffsetEvent(
+                    savedRow.getId(), savedRow.getRefundId(), savedRow.getEncounterId()));
+        }
+    }
+
+    /**
+     * 组装护士划价冲销行：复刻锚点与单价，数量/金额取反，{@code refund_id} 链回原正向行。
+     *
+     * @param src        原正向待结算护士划价行
+     * @param busNo      冲销行业务流水号
+     * @param operatorId 操作人（录入人）
+     * @param now        冲销发生时刻（写入 occurrence/entered）
+     * @return 可落库的冲销行实体
+     */
+    private ChargeItem cloneChargeItemForNursePricingOffset(
+        ChargeItem src,
+        String busNo,
+        Long operatorId,
+        LocalDateTime now) {
+        ChargeItem row = new ChargeItem();
+        row.setPatientId(src.getPatientId());
+        row.setEncounterId(src.getEncounterId());
+        row.setAccountId(src.getAccountId());
+        row.setDefinitionId(src.getDefinitionId());
+        row.setDefDetailId(src.getDefDetailId());
+        // 单价保持原值；数量与金额取反形成净额轧差。
+        row.setUnitPrice(src.getUnitPrice());
+        row.setQuantityValue(MonetaryAmountSupport.nullToZero(src.getQuantityValue()).negate());
+        row.setQuantityUnit(src.getQuantityUnit());
+        row.setTotalPrice(MonetaryAmountSupport.scaleCalc(MonetaryAmountSupport.nullToZero(src.getTotalPrice()).negate()));
+        row.setBaseAmount(MonetaryAmountSupport.scaleCalc(MonetaryAmountSupport.nullToZero(src.getBaseAmount()).negate()));
+        row.setDiscountAmount(MonetaryAmountSupport.scaleCalc(MonetaryAmountSupport.nullToZero(src.getDiscountAmount()).negate()));
+        row.setSurchargeAmount(MonetaryAmountSupport.scaleCalc(MonetaryAmountSupport.nullToZero(src.getSurchargeAmount()).negate()));
+        if (src.getSystemDiscountPrice() != null) {
+            row.setSystemDiscountPrice(MonetaryAmountSupport.scaleCalc(src.getSystemDiscountPrice().negate()));
+        }
+        if (src.getManualAdjustedPrice() != null) {
+            row.setManualAdjustedPrice(MonetaryAmountSupport.scaleCalc(src.getManualAdjustedPrice().negate()));
+        }
+        row.setOverrideReasonCode(src.getOverrideReasonCode());
+        row.setOverrideReasonText(src.getOverrideReasonText());
+        // 冲销业务时刻取当前，便于费用明细按取消日可见。
+        row.setOccurrenceTime(now);
+        row.setServiceTable(src.getServiceTable());
+        row.setServiceId(src.getServiceId());
+        row.setProductTable(src.getProductTable());
+        row.setProductId(src.getProductId());
+        row.setProcedureId(src.getProcedureId());
+        row.setDispenseTable(src.getDispenseTable());
+        row.setDispenseId(src.getDispenseId());
+        row.setPrescriptionNo(src.getPrescriptionNo());
+        row.setParentId(src.getParentId());
+        row.setPerformerId(src.getPerformerId());
+        row.setPerformingOrgId(src.getPerformingOrgId());
+        row.setCostOrgId(src.getCostOrgId());
+        row.setOrgId(src.getOrgId());
+        row.setRequestingOrgId(src.getRequestingOrgId());
+        row.setGenerateSourceEnum(src.getGenerateSourceEnum());
+        row.setContextEnum(src.getContextEnum());
+        row.setEncounterDiagnosisIds(src.getEncounterDiagnosisIds());
+        row.setTcmFlag(src.getTcmFlag());
+        row.setClaimStateEnum(src.getClaimStateEnum());
+        row.setPrintCount(src.getPrintCount());
+        row.setRefundId(src.getId());
+        row.setStatusEnum(ChargeItemStatus.PENDING_SETTLEMENT.getCode());
+        row.setBusNo(busNo);
+        if (operatorId != null) {
+            row.setEntererId(operatorId);
+            row.setEnteredDate(now);
+        }
+        row.assertPersistableNewRow();
+        return row;
     }
 
     /**
@@ -1065,6 +1188,14 @@ public class ChargeItemDomainService {
             if (refundRootChargeItemId != null) {
                 row.setRefundId(refundRootChargeItemId);
             }
+            // 挂费诊断：命令显式传入优先；否则按上游请求表锚点拷贝 encounter_diagnosis_ids（DD §7.1）
+            String encounterDiagnosisIds = item.getEncounterDiagnosisIds();
+            if (StringUtils.isEmpty(encounterDiagnosisIds)) {
+                encounterDiagnosisIds = this.resolveEncounterDiagnosisIdsFromServiceAnchor(serviceTable, serviceId);
+            }
+            if (StringUtils.isNotEmpty(encounterDiagnosisIds)) {
+                row.setEncounterDiagnosisIds(encounterDiagnosisIds.trim());
+            }
             row.setOrgId(item.getOrgId());
             row.setRequestingOrgId(item.getRequestingOrgId());
             // 开立人：预结算/工作站传入操作者时写入，开立时刻与费用发生时刻对齐（DM entered_date）。
@@ -1105,6 +1236,57 @@ public class ChargeItemDomainService {
             }
         }
         return saved.get(0).getId();
+    }
+
+    /**
+     * 按上游请求表锚点回查 {@code encounter_diagnosis_ids}（挂费拷贝；挂号等非请求锚点返回 null）。
+     *
+     * @param serviceTable 上游表名
+     * @param serviceId    上游主键
+     * @return 有序 ids 串；无法解析时 null
+     */
+    private String resolveEncounterDiagnosisIdsFromServiceAnchor(String serviceTable, Long serviceId) {
+        if (serviceId == null || StringUtils.isEmpty(serviceTable)) {
+            return null;
+        }
+        String table = serviceTable.trim();
+        // 药品请求：签发/暂存挂费主路径
+        if (TableNameConstants.MED_MEDICATION_REQUEST.equals(table)) {
+            try {
+                MedicationRequestListQueryModel med = medicationRequestQueryService.mustGetListModelById(serviceId);
+                if (med != null) {
+                    return med.getEncounterDiagnosisIds();
+                }
+            } catch (BusinessException ex) {
+                return null;
+            }
+            return null;
+        }
+        // 诊疗请求
+        if (TableNameConstants.WKF_SERVICE_REQUEST.equals(table)) {
+            try {
+                ServiceRequestListModel svc = serviceRequestQueryService.mustGetListModelById(serviceId);
+                if (svc != null) {
+                    return svc.getEncounterDiagnosisIds();
+                }
+            } catch (BusinessException ex) {
+                return null;
+            }
+            return null;
+        }
+        // 耗材请求
+        if (TableNameConstants.WKF_DEVICE_REQUEST.equals(table)) {
+            try {
+                DeviceRequestListModel device = deviceRequestQueryService.mustGetListModelById(serviceId);
+                if (device != null) {
+                    return device.getEncounterDiagnosisIds();
+                }
+            } catch (BusinessException ex) {
+                return null;
+            }
+            return null;
+        }
+        return null;
     }
 
     /**
@@ -1349,8 +1531,7 @@ public class ChargeItemDomainService {
         row.setRequestingOrgId(src.getRequestingOrgId());
         row.setGenerateSourceEnum(src.getGenerateSourceEnum());
         row.setContextEnum(src.getContextEnum());
-        row.setConditionId(src.getConditionId());
-        row.setEncounterDiagnosisId(src.getEncounterDiagnosisId());
+        row.setEncounterDiagnosisIds(src.getEncounterDiagnosisIds());
         row.setTcmFlag(src.getTcmFlag());
         row.setClaimStateEnum(src.getClaimStateEnum());
         row.setPrintCount(src.getPrintCount());

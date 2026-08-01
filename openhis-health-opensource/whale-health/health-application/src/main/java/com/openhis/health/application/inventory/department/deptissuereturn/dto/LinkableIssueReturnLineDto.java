@@ -11,10 +11,16 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.fasterxml.jackson.annotation.JsonFormat;
+
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 /**
  * 可退领用行（拉取预填 IF-DEP-TL-13）。
+ *
+ * <p>展示列与领用明细网格对齐：名称、规格、厂家、金额、有效期、备注等，便于带入后直接回显。</p>
  */
 @Getter
 @Setter
@@ -55,6 +61,12 @@ public class LinkableIssueReturnLineDto {
     @Schema(description = "单价 price")
     private BigDecimal price;
 
+    /**
+     * 行金额预览（单价 × 可退余量，计算刻度；前端金额列初值）。
+     */
+    @Schema(description = "行金额预览 totalPrice")
+    private BigDecimal totalPrice;
+
     /** 产品名称 productName。 */
     @Schema(description = "产品名称 productName")
     private String productName;
@@ -63,7 +75,22 @@ public class LinkableIssueReturnLineDto {
     @Schema(description = "规格 specification")
     private String specification;
 
+    /** 厂家 manufacturer。 */
+    @Schema(description = "厂家 manufacturer")
+    private String manufacturer;
+
     /** 计量单位展示名 unitCodeDictText。 */
     @Schema(description = "计量单位展示名 unitCodeDictText")
     private String unitCodeDictText;
+
+    /**
+     * 批号效期止点（自源领用行 {@code end_time}）。
+     */
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    @Schema(description = "批号效期止点 endTime")
+    private LocalDateTime endTime;
+
+    /** 源领用行备注 remake。 */
+    @Schema(description = "源领用行备注 remake")
+    private String remake;
 }

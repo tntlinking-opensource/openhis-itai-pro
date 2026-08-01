@@ -54,6 +54,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -255,10 +256,15 @@ public class InventoryDepartmentStockInMapperImpl implements InventoryDepartment
                         ErrorCodeConstants.DEPT_IN_102, "同号科室入库单目的科室药房头字段不一致: " + busNo);
                 }
             }
+            // —— 列表金额与出库同构：同号各行 total_price 之和；申请时间取最晚上界。——
+            BigDecimal totalAmount = BigDecimal.ZERO;
             LocalDateTime maxApply = null;
             for (SupplyRequestModel line : lines) {
                 if (line == null) {
                     continue;
+                }
+                if (line.getTotalPrice() != null) {
+                    totalAmount = totalAmount.add(line.getTotalPrice());
                 }
                 if (line.getApplyTime() != null) {
                     // 列表申请时间取同号下最晚申请时刻，表示「单据活跃时间」上界。
@@ -292,6 +298,7 @@ public class InventoryDepartmentStockInMapperImpl implements InventoryDepartment
             dto.setOriginalBusNo(head.getOriginalBusNo());
             dto.setApprovalTime(approvalTime);
             dto.setApplyTime(maxApply);
+            dto.setTotalAmount(totalAmount);
             out.add(dto);
         }
         return out;

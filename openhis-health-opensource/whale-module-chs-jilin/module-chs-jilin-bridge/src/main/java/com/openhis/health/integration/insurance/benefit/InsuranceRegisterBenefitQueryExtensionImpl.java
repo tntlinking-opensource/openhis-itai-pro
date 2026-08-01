@@ -15,6 +15,17 @@ import com.openhis.chs.domain.medicalinfo.access.Med5301QueryInvoker;
 import com.openhis.chs.domain.medicalinfo.command.QueryCum5206Command;
 import com.openhis.chs.domain.medicalinfo.command.QueryOpspFiling5301Command;
 import com.openhis.chs.domain.medicalinfo.result.MedicalInfoQueryResult;
+import com.openhis.chs.domain.outpatient.entity.YbClinicPreSettle;
+import com.openhis.chs.domain.outpatient.entity.YbEncounterPlatformMap;
+import com.openhis.chs.domain.outpatient.entity.YbPersonCache;
+import com.openhis.chs.domain.outpatient.service.YbClinicPreSettleQueryService;
+import com.openhis.chs.domain.outpatient.service.YbEncounterPlatformMapQueryService;
+import com.openhis.chs.domain.outpatient.service.YbPersonCacheDomainService;
+import com.openhis.health.domain.administration.account.service.AccountQueryService;
+import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
+import com.openhis.health.domain.administration.encounter.service.EncounterContextQueryService;
+import com.openhis.health.domain.financial.contract.entity.Contract;
+import com.openhis.health.domain.financial.contract.service.ContractQueryService;
 import com.openhis.health.infrastructure.integration.insurance.benefit.InsuranceRegisterBenefitQueryExtension;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionIn.InsuranceCumulativeQueryExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionIn.InsuranceOpspFilingQueryExtensionIn;
@@ -22,11 +33,13 @@ import com.openhis.health.infrastructure.integration.insurance.benefit.Extension
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionIn.InsuranceTreatmentCheckExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsuranceCumulativeLineSnapshot;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsuranceCumulativeQueryExtensionOut;
+import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsuranceOpspFilingEncounterSnapshot;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsuranceOpspFilingLineSnapshot;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsuranceOpspFilingQueryExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsurancePersonQueryExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsuranceTreatmentCheckExtensionOut;
 import com.openhis.whale.core.application.session.CurrentOperatorResolver;
+import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -62,6 +75,12 @@ public class InsuranceRegisterBenefitQueryExtensionImpl implements InsuranceRegi
     private final ChsInsuranceContractReader contractReader;
     private final CurrentOperatorResolver currentOperatorResolver;
     private final ChsContractPropertiesAccess contractPropertiesAccess;
+    private final YbEncounterPlatformMapQueryService encounterPlatformMapQueryService;
+    private final YbClinicPreSettleQueryService clinicPreSettleQueryService;
+    private final YbPersonCacheDomainService personCacheDomainService;
+    private final EncounterContextQueryService encounterContextQueryService;
+    private final AccountQueryService accountQueryService;
+    private final ContractQueryService contractQueryService;
 
     /** 本地：返回 Extension 已启用。 */
     @Override
@@ -102,6 +121,110 @@ public class InsuranceRegisterBenefitQueryExtensionImpl implements InsuranceRegi
         platformRequest.setContractBusNo(contractReader.requireContractBusNo(contract));
         platformRequest.setPsnNo(command.getPsnNo());
         return toOpspFilingResult(med5301Invoker.invoke(platformRequest));
+    }
+
+    /**
+     * 本地：解析就诊侧 5301 所需 psn_no 与 contractId。
+     *
+     * <p>优先级：{@code yb_encounter_platform_map}（2201 后）→ {@code yb_clinic_pre_settle}
+     * （医保预结算后）→ 就诊费用性质 + 读卡当日 {@code yb_person_cache}（挂号读卡后、尚未平台建档）。</p>
+     *
+     * @param encounterId 就诊主键
+     * @return 上下文；无可用人员编号时 {@code null}
+     */
+    @Override
+    public InsuranceOpspFilingEncounterSnapshot resolveOpspFilingEncounter(Long encounterId) {
+        if (encounterId == null) {
+            return null;
+        }
+        Long tenantId = TenantUtils.getCurrentTenantId();
+        if (tenantId == null) {
+            return null;
+        }
+        // ① 平台就诊映射（2201 之后最完整）。
+        InsuranceOpspFilingEncounterSnapshot fromMap = resolveOpspFromPlatformMap(encounterId, tenantId);
+        if (fromMap != null) {
+            return fromMap;
+        }
+        // ② 门诊预结算快照（挂号费/诊间医保预结算后）。
+        InsuranceOpspFilingEncounterSnapshot fromPreSettle = resolveOpspFromPreSettle(encounterId, tenantId);
+        if (fromPreSettle != null) {
+            return fromPreSettle;
+        }
+        // ③ 读卡缓存：挂号读卡已写 yb_person_cache，但自费挂号费未触发 2201 时仍可查 5301。
+        return resolveOpspFromPersonCache(encounterId, tenantId);
+    }
+
+    /**
+     * 自 {@code yb_encounter_platform_map} 取首条有效 contractId+psnNo。
+     */
+    private InsuranceOpspFilingEncounterSnapshot resolveOpspFromPlatformMap(Long encounterId, Long tenantId) {
+        List<YbEncounterPlatformMap> maps =
+            encounterPlatformMapQueryService.listByEncounterIds(List.of(encounterId), tenantId);
+        if (maps == null || maps.isEmpty()) {
+            return null;
+        }
+        for (YbEncounterPlatformMap row : maps) {
+            if (row.getContractId() == null || !isNotEmpty(row.getPsnNo())) {
+                continue;
+            }
+            return toOpspFilingEncounterSnapshot(row.getContractId(), row.getPsnNo());
+        }
+        return null;
+    }
+
+    /**
+     * 自 {@code yb_clinic_pre_settle} 取最新一条有效 contractId+psnNo。
+     */
+    private InsuranceOpspFilingEncounterSnapshot resolveOpspFromPreSettle(Long encounterId, Long tenantId) {
+        List<YbClinicPreSettle> rows =
+            clinicPreSettleQueryService.listByEncounterIds(List.of(encounterId), tenantId);
+        if (rows == null || rows.isEmpty()) {
+            return null;
+        }
+        for (YbClinicPreSettle row : rows) {
+            if (row == null || row.getContractId() == null || !isNotEmpty(row.getPsnNo())) {
+                continue;
+            }
+            return toOpspFilingEncounterSnapshot(row.getContractId(), row.getPsnNo());
+        }
+        return null;
+    }
+
+    /**
+     * 自就诊费用性质 + 患者身份证命中读卡当日人员缓存。
+     */
+    private InsuranceOpspFilingEncounterSnapshot resolveOpspFromPersonCache(Long encounterId, Long tenantId) {
+        OutpatientEncounterContextQueryModel encounter =
+            encounterContextQueryService.getOutpatientContextByEncounterId(encounterId).orElse(null);
+        if (encounter == null || !isNotEmpty(encounter.getIdCard())) {
+            return null;
+        }
+        String contractBusNo =
+            accountQueryService.mapPreferredContractNoByEncounterIds(List.of(encounterId)).get(encounterId);
+        if (!isNotEmpty(contractBusNo)) {
+            return null;
+        }
+        Contract contract = contractQueryService.findOptionalContractEntityByBusNo(contractBusNo.trim()).orElse(null);
+        if (contract == null || contract.getId() == null
+            || !contractReader.isInsuranceContract(contract.getId())) {
+            return null;
+        }
+        YbPersonCache cache = personCacheDomainService
+            .findValidByContractIdAndIdCard(contract.getId(), encounter.getIdCard().trim(), tenantId)
+            .orElse(null);
+        if (cache == null || !isNotEmpty(cache.getPsnNo())) {
+            return null;
+        }
+        return toOpspFilingEncounterSnapshot(contract.getId(), cache.getPsnNo());
+    }
+
+    private static InsuranceOpspFilingEncounterSnapshot toOpspFilingEncounterSnapshot(
+        Long contractId, String psnNo) {
+        InsuranceOpspFilingEncounterSnapshot snapshot = new InsuranceOpspFilingEncounterSnapshot();
+        snapshot.setContractId(contractId);
+        snapshot.setPsnNo(psnNo.trim());
+        return snapshot;
     }
 
     /** 【5206】查询人员累计信息（年度/月度累计）。 */

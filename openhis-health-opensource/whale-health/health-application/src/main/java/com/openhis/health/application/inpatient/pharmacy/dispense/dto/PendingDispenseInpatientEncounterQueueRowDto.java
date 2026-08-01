@@ -83,4 +83,11 @@ public class PendingDispenseInpatientEncounterQueueRowDto {
     @Schema(description = "入院时间")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime startTime;
+
+    /**
+     * 费用性质展示名（就诊优先合同名；与门诊发药/医生站卡片 {@code contractDisplay} 同口径）。
+     * <p>无合同时为空，前端回落「自费」。</p>
+     */
+    @Schema(description = "费用性质展示名")
+    private String contractDisplay;
 }

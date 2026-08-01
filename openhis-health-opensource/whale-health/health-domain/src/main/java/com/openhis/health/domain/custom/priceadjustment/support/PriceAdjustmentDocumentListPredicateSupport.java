@@ -7,8 +7,11 @@ package com.openhis.health.domain.custom.priceadjustment.support;
 import com.openhis.health.domain.custom.priceadjustment.entity.PriceAdjustment;
 import com.openhis.health.domain.custom.priceadjustment.queries.PriceAdjustmentDocumentListQuery;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
+import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Order;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import com.openhis.whale.core.application.util.StringUtils;
@@ -28,7 +31,7 @@ public final class PriceAdjustmentDocumentListPredicateSupport {
     }
 
     /**
-     * 组装软删、机构、状态、列表时刻窗、关键字（单号）谓词。
+     * 组装软删、机构、状态、列表 coalesce 时刻窗、制单/审批时刻窗、制单人/审批人、品类、关键字与单号模糊谓词。
      *
      * @param root  调价主行根
      * @param cb    条件构建器
@@ -50,6 +53,15 @@ public final class PriceAdjustmentDocumentListPredicateSupport {
         if (StringUtils.isNotEmpty(query.getStatusEnum())) {
             predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), query.getStatusEnum().trim()));
         }
+        if (StringUtils.isNotEmpty(query.getItemTable())) {
+            predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_TABLE), query.getItemTable().trim()));
+        }
+        if (query.getOperatorId() != null) {
+            predicates.add(cb.equal(root.get(FieldNameConstants.OPERATOR_ID), query.getOperatorId()));
+        }
+        if (query.getApproverId() != null) {
+            predicates.add(cb.equal(root.get(FieldNameConstants.APPROVER_ID), query.getApproverId()));
+        }
         Date start = toDate(query.getStartDate());
         Date end = toDate(query.getEndDate());
         if (start != null || end != null) {
@@ -63,11 +75,69 @@ public final class PriceAdjustmentDocumentListPredicateSupport {
                 predicates.add(cb.lessThanOrEqualTo(listTime, end));
             }
         }
+        Date adjustmentFrom = toDate(query.getAdjustmentTimeFrom());
+        Date adjustmentTo = toDate(query.getAdjustmentTimeTo());
+        if (adjustmentFrom != null) {
+            predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.ADJUSTMENT_TIME), adjustmentFrom));
+        }
+        if (adjustmentTo != null) {
+            predicates.add(cb.lessThanOrEqualTo(root.get(FieldNameConstants.ADJUSTMENT_TIME), adjustmentTo));
+        }
+        Date approveFrom = toDate(query.getApproveTimeFrom());
+        Date approveTo = toDate(query.getApproveTimeTo());
+        if (approveFrom != null) {
+            predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.APPROVE_TIME), approveFrom));
+        }
+        if (approveTo != null) {
+            predicates.add(cb.lessThanOrEqualTo(root.get(FieldNameConstants.APPROVE_TIME), approveTo));
+        }
         if (StringUtils.isNotEmpty(query.getKeyword())) {
             String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getKeyword().trim());
             predicates.add(cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), likeIc));
         }
+        if (StringUtils.isNotEmpty(query.getBusNoLike())) {
+            // 财务审批单号专用模糊（与 keyword 可 AND）
+            String busLikeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getBusNoLike().trim());
+            predicates.add(cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), busLikeIc));
+        }
         return predicates;
+    }
+
+    /**
+     * 调价单列表关键字：SQL 层「单号精确全等在前」（与 LIKE 列 busNo 同集合）。
+     *
+     * <p>优先使用 {@code keyword}；为空时回退 {@code busNoLike}（财务审批单号模糊）。</p>
+     *
+     * @param cq              CriteriaQuery；null 或 count 时工具内部跳过
+     * @param root            调价主行根
+     * @param cb              CriteriaBuilder
+     * @param query           列表查询；无 keyword/busNoLike 时不写排序
+     * @param secondaryOrders 次级排序（如列表时刻降序）；不可为 null
+     */
+    public static void applyKeywordExactFirstOrder(
+        CriteriaQuery<?> cq,
+        Root<PriceAdjustment> root,
+        CriteriaBuilder cb,
+        PriceAdjustmentDocumentListQuery query,
+        List<Order> secondaryOrders) {
+        if (query == null) {
+            return;
+        }
+        String trimmed = null;
+        if (StringUtils.isNotEmpty(query.getKeyword())) {
+            trimmed = query.getKeyword().trim();
+        } else if (StringUtils.isNotEmpty(query.getBusNoLike())) {
+            trimmed = query.getBusNoLike().trim();
+        }
+        if (StringUtils.isEmpty(trimmed)) {
+            return;
+        }
+        KeywordExactFirstOrderSupport.applyExactFirstOrder(
+            cq,
+            cb,
+            trimmed,
+            secondaryOrders,
+            root.get(FieldNameConstants.BUS_NO));
     }
 
     /**

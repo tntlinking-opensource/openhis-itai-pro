@@ -239,7 +239,42 @@ public class YbInvUploadDomainService {
     }
 
     /**
-     * 按查询条件列出本地上报流水（优先按来源、其次按 infno、否则取最近记录）。
+     * 清床汇总 3506 冲销成功后：将配对的成功 3505 标为 DELETED。
+     *
+     * <p>按原清床销售 {@code fixmedins_bchno} + {@code CLEAR_BED_SUMMARY} + SUCCESS 定位，
+     * 不用 3506 行的退药 {@code source_line_id}/退药单号（与 3505 幂等键不同）。</p>
+     *
+     * @param tenantId       租户主键
+     * @param fixmedinsBchno 原清床 3505 定点批次号（非退药单号）
+     */
+    @Transactional
+    public void markClearBedSummarySaleDeletedAfterReverse(
+        Long tenantId,
+        String fixmedinsBchno
+    ) {
+        if (tenantId == null || isEmpty(fixmedinsBchno)) {
+            return;
+        }
+        // 冲销行 source_line_id 为退药单，不能与 3505 行键混用；按销售批次 + 来源类型定位
+        Optional<YbInvUpload> sale =
+            uploadRepository.findFirstByTenantIdAndInfnoAndFixmedinsBchnoAndSourceTypeAndUploadStatusOrderByIdDesc(
+                tenantId,
+                ChsInfNo.INVENTORY_SALE,
+                fixmedinsBchno.trim(),
+                ChsInventoryConstants.SOURCE_TYPE_CLEAR_BED_SUMMARY,
+                ChsInventoryConstants.UPLOAD_STATUS_SUCCESS);
+        if (sale.isEmpty()) {
+            return;
+        }
+        YbInvUpload row = sale.get();
+        // 冲销成功：销售行本地标删除，再清床可重新出站 3505
+        row.setUploadStatus(ChsInventoryConstants.UPLOAD_STATUS_DELETED);
+        row.setUpdatedAt(LocalDateTime.now());
+        uploadRepository.save(row);
+    }
+
+    /**
+     * 按查询条件列出本地上报流水（多条件 AND：契约/交易号/来源/状态/批次号）。
      *
      * @param request  查询条件，可空
      * @param tenantId 租户主键
@@ -250,16 +285,61 @@ public class YbInvUploadDomainService {
         if (request != null) {
             safeRequest = request;
         }
-        if (isNotEmpty(safeRequest.getSourceType()) && safeRequest.getSourceId() != null) {
-            return uploadRepository.findAllByTenantIdAndSourceTypeAndSourceIdOrderByIdAsc(
-                    tenantId, safeRequest.getSourceType().trim(), safeRequest.getSourceId());
-        }
         PageRequest page = PageRequest.of(0, ChsInventoryConstants.LOCAL_UPLOAD_LIST_DEFAULT_LIMIT);
-        if (isNotEmpty(safeRequest.getInfno())) {
-            return uploadRepository.findAllByTenantIdAndInfnoOrderByIdDesc(
-                    tenantId, safeRequest.getInfno().trim(), page);
+        // Cmd：Jdbc AND 筛选，避免互斥优先级导致 UI 组合条件失效
+        return uploadLookup.findLocalRecords(
+            tenantId,
+            safeRequest.getContractBusNo(),
+            safeRequest.getInfno(),
+            safeRequest.getSourceType(),
+            safeRequest.getSourceId(),
+            safeRequest.getUploadStatus(),
+            safeRequest.getFixmedinsBchno(),
+            safeRequest.getCreatedFrom(),
+            safeRequest.getCreatedTo(),
+            page);
+    }
+
+    /**
+     * 按主键加载本租户上报流水。
+     *
+     * @param uploadId 上报流水主键
+     * @param tenantId 租户主键
+     * @return 上报流水，未找到时 empty
+     */
+    public Optional<YbInvUpload> findByIdForTenant(Long uploadId, Long tenantId) {
+        if (uploadId == null || tenantId == null) {
+            return Optional.empty();
         }
-        return uploadRepository.findAllByTenantIdOrderByIdDesc(tenantId, page);
+        Optional<YbInvUpload> row = uploadRepository.findById(uploadId);
+        if (row.isEmpty()) {
+            return Optional.empty();
+        }
+        YbInvUpload upload = row.get();
+        if (!tenantId.equals(upload.getTenantId())) {
+            return Optional.empty();
+        }
+        return Optional.of(upload);
+    }
+
+    /**
+     * 运维补传前覆盖持久化的 request_json（不从业务表重建）。
+     *
+     * @param row         待补传的上报流水
+     * @param requestJson 新的请求 JSON
+     * @return 持久化后的上报流水
+     */
+    @Transactional
+    public YbInvUpload updateRequestJson(YbInvUpload row, String requestJson) {
+        if (row == null || row.getId() == null) {
+            return row;
+        }
+        if (requestJson != null) {
+            row.setRequestJson(requestJson);
+            row.setUpdatedAt(LocalDateTime.now());
+            return uploadRepository.save(row);
+        }
+        return row;
     }
 
     /**
@@ -330,6 +410,8 @@ public class YbInvUploadDomainService {
         row.setUploadStatus(ChsInventoryConstants.UPLOAD_STATUS_FAILED);
         row.setPlatformRetRslt(ChsInventoryConstants.PLATFORM_RET_RSLT_FAILED);
         row.setPlatformMsg(errorMessage);
+        // 本次出站未拿到响应体，清空旧 response 避免运维误读
+        row.setResponseJson(null);
         row.setUpdatedAt(LocalDateTime.now());
         applyNextRetrySchedule(row);
         return uploadRepository.save(row);
@@ -354,8 +436,20 @@ public class YbInvUploadDomainService {
         dto.setUploadStatus(row.getUploadStatus());
         dto.setPlatformRetRslt(row.getPlatformRetRslt());
         dto.setPlatformMsg(row.getPlatformMsg());
+        dto.setRequestJson(row.getRequestJson());
+        dto.setResponseJson(row.getResponseJson());
+        dto.setRetryCount(row.getRetryCount());
         if (row.getCreatedAt() != null) {
-            dto.setCreatedAt(row.getCreatedAt().toString());
+            // 运维台展示：去掉 T/小数秒，固定到秒
+            String raw = row.getCreatedAt().toString().replace('T', ' ');
+            int dot = raw.indexOf('.');
+            if (dot > 0) {
+                dto.setCreatedAt(raw.substring(0, Math.min(dot, 19)));
+            } else if (raw.length() >= 19) {
+                dto.setCreatedAt(raw.substring(0, 19));
+            } else {
+                dto.setCreatedAt(raw);
+            }
         }
         return dto;
     }

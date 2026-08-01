@@ -57,4 +57,13 @@ public interface EncounterLocationRepository extends JpaRepository<EncounterLoca
      */
     List<EncounterLocation> findAllByLocationIdInAndFormEnumAndStatusEnum(
         Collection<Long> locationIds, String formEnum, String statusEnum);
+
+    /**
+     * 按位置主键 + 形态批量查轨迹（含已收口；住院入出明细入院病区 scope，AS-RPT-010）。
+     *
+     * @param locationIds 位置主键集合（通常为 WARD）
+     * @param formEnum 位置形态编码
+     * @return 匹配轨迹行
+     */
+    List<EncounterLocation> findAllByLocationIdInAndFormEnum(Collection<Long> locationIds, String formEnum);
 }

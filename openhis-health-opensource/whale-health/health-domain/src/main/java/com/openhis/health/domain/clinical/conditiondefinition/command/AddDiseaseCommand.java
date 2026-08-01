@@ -32,10 +32,10 @@ public class AddDiseaseCommand {
 
     /** 是否纳入医保目录（主数据维护页勾选）。 */
     private Boolean ybFlag;
-    /** 国家/地方疾病编码（与 {@link #conditionCode} 可不同，医保对照用）。 */
-    private String diseaseCode;
     /** 医保目录编号或对照码。 */
     private String ybNo;
     /** 是否已完成医保编码匹配（对照状态，非业务准入）。 */
     private Boolean ybMatchFlag;
+    /** 国家临床版诊断编码（国临码）。 */
+    private String clinicCode;
 }

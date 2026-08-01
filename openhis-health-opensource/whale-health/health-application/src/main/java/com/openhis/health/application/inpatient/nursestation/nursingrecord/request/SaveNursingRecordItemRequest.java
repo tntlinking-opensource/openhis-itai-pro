@@ -123,4 +123,9 @@ public class SaveNursingRecordItemRequest {
     /** 病情观察及护理。 */
     @Schema(description = "病情观察及护理")
     private String conditionMeasure;
+
+    /** 记录人（护士签名对应医务人员 id；空则取当前登录人）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "记录人医务人员 id")
+    private Long recorderId;
 }

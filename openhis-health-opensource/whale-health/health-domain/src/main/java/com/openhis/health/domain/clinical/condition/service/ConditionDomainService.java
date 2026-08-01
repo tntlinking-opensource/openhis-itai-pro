@@ -27,12 +27,11 @@ import lombok.RequiredArgsConstructor;
 /**
  * 诊断（Condition）病情事实写侧领域服务。
  *
- * <p>职责：医生站/就诊维度的西医与中医诊断批量落库、软删与领域事件发布；不承载目录检索（见
- * {@link ConditionQueryService} 与 {@link com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService}）。</p>
+ * <p><b>DD 退役</b>：禁止业务调用；写路径改经 {@code EncounterDomainService.batchUpsertEncounterDiagnosisAssociation}。</p>
  *
- * <p>不变量：BR-CND-001/002 在实体上断言；BR-CND-003 依赖仓储提供的医嘱引用计数（当前占位实现见
- * {@link ConditionRepository#countAdviceRefByConditionId} 文档）。落库与事件顺序遵循 B.14。</p>
+ * @deprecated DD 退役，禁止业务调用
  */
+@Deprecated
 @Service
 @RequiredArgsConstructor
 public class ConditionDomainService {

@@ -18,7 +18,7 @@ public class ServiceDeviceBindingInitDto {
     /** 发布状态：ACTIVE / INACTIVE。 */
     private List<OptionDto> statusOptions;
 
-    /** 绑定范围（如全院），码值对齐 {@link com.openhis.health.domain.share.enums.ServiceDeviceTemplateRangeCode}。 */
+    /** 绑定范围：门诊 / 住院（与 ServiceDeviceTemplateRangeCode 一致；不含历史 HOSPITAL）。 */
     private List<OptionDto> rangeOptions;
 
     /** 绑定类型：USAGE / ACTIVITY。 */

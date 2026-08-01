@@ -39,9 +39,11 @@ public class InpatientNursingOrderGate {
         String errorCode,
         String message
     ) {
+        // 非护理级别行：不约束长临，检验/嘱托等不受本 Gate 影响
         if (!ServiceRequestCategoryConstants.SERVICE_CATEGORY_NURSING.equals(StringUtils.trimToNull(categoryEnum))) {
             return;
         }
+        // 护理级别须长期：临嘱护理级别会导致滚费与换级口径混乱（BR-IP-ORD-026①）
         if (!TherapyType.LONG_TERM.getCode().equals(therapyEnum)) {
             throw new BusinessException(errorCode, message);
         }
@@ -50,18 +52,28 @@ public class InpatientNursingOrderGate {
     /**
      * 同就诊仅允许一条有效护理级别医嘱；换级须先停旧再开新。
      *
-     * @param encounterId            就诊主键
+     * <p>仅当当前行类目为护理级别（{@code categoryEnum=26}）时校验；其它诊疗（检验/检查/嘱托等）
+     * 不因患者已有护理级别而被拒（BR-IP-ORD-026②）。</p>
+     *
+     * @param categoryEnum            当前行诊疗类目（活动定义 category_code / SR.category_enum）
+     * @param encounterId             就诊主键
      * @param excludeServiceRequestId 排除的护理级别医嘱主键（修改/签发自身）；新建传 null
-     * @param errorCode              业务语义码
-     * @param message                用户提示
-     * @throws BusinessException 存在其它有效护理级别医嘱时抛出
+     * @param errorCode               业务语义码
+     * @param message                 用户提示
+     * @throws BusinessException 当前行为护理级别且存在其它有效护理级别医嘱时抛出
      */
     public void assertNoConcurrentNursingLevelOrder(
+        String categoryEnum,
         Long encounterId,
         Long excludeServiceRequestId,
         String errorCode,
         String message
     ) {
+        // 非护理级别行：不跑并发 Gate，避免签发检验/嘱托等被已有护理级别误拦
+        if (!ServiceRequestCategoryConstants.SERVICE_CATEGORY_NURSING.equals(StringUtils.trimToNull(categoryEnum))) {
+            return;
+        }
+        // 同就诊已有其它有效护理级别：须先停旧再开新，禁止并行换级
         if (serviceRequestQueryService.existsConcurrentNursingLevelOrder(encounterId, excludeServiceRequestId)) {
             throw new BusinessException(errorCode, message);
         }

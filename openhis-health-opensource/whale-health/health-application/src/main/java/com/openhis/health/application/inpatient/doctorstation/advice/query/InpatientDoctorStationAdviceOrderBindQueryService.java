@@ -42,9 +42,9 @@ import java.util.Set;
 /**
  * IF-IP-DOR-12：住院医嘱绑定行只读装载（Asm，无写库）。
  *
- * <p>经 {@link ServiceDeviceTemplateQueryService} 按全院范围与绑定类型查询启用态模板行，
- * 批量解析源项与目标项展示名（A.9.1）。{@code organizationUnitId} 预留机构维度过滤，当前模板域仅
- * {@link ServiceDeviceTemplateRangeCode#HOSPITAL} 全院码，未下推 SQL。</p>
+ * <p>经 {@link ServiceDeviceTemplateQueryService} 按住院范围与绑定类型查询启用态模板行，
+ * 批量解析源项与目标项展示名（A.9.1）。{@code organizationUnitId} 预留机构维度过滤，当前模板域使用
+ * {@link ServiceDeviceTemplateRangeCode#INPATIENT}，未下推机构 SQL。</p>
  *
  * <p>绑定类型：用法→关联耗材、诊疗套餐子项（常量见 {@link DoctorStationAdviceConstants}）。</p>
  */
@@ -109,7 +109,8 @@ public class InpatientDoctorStationAdviceOrderBindQueryService {
             return rows;
         }
         BindQueryContext context = contextOpt.get();
-        String rangeCode = ServiceDeviceTemplateRangeCode.HOSPITAL.getCode();
+        // 住院医嘱/护士执行仅匹配住院范围绑定模板
+        String rangeCode = ServiceDeviceTemplateRangeCode.INPATIENT.getCode();
         String itemIdKey = sourceItemKey.trim();
         List<ServiceDeviceTemplateQueryModel> bindings = serviceDeviceTemplateQueryService.listBindingsByRangeTypeAndSource(
             rangeCode,

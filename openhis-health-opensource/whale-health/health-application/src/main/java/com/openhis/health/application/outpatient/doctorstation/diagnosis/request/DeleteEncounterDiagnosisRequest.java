@@ -19,11 +19,11 @@ import lombok.experimental.Accessors;
 @Schema(description = "医生站-删除就诊诊断请求")
 public class DeleteEncounterDiagnosisRequest {
 
-    /** 诊断事实标识。 */
+    /** 就诊诊断行主键（adm_encounter_diagnosis.id）。 */
     @NotNull(message = "诊断标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "诊断事实标识", requiredMode = Schema.RequiredMode.REQUIRED)
-    private Long conditionId;
+    @Schema(description = "就诊诊断行主键", requiredMode = Schema.RequiredMode.REQUIRED)
+    private Long encounterDiagnosisId;
 
     /** 当前就诊主键（用于解除关联与上下文校验）。 */
     @NotNull(message = "就诊标识不能为空")

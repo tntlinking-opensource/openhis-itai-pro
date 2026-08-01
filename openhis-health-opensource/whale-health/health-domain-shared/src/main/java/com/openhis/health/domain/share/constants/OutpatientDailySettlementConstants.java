@@ -21,6 +21,12 @@ public interface OutpatientDailySettlementConstants {
     /** 勾选 payment 非法（EX-OP-DCL-105）。 */
     String EX_OP_DCL_105 = "EX-OP-DCL-105";
 
+    /** 漏交硬栏：截止前存在窗外更早未交账（EX-OP-DCL-106）。 */
+    String EX_OP_DCL_106 = "EX-OP-DCL-106";
+
+    /** 撤回交账权限不足（EX-OP-DCL-107）。 */
+    String EX_OP_DCL_107 = "EX-OP-DCL-107";
+
     /** 无可交账流水（EX-OP-DCL-201）。 */
     String EX_OP_DCL_201 = "EX-OP-DCL-201";
 

@@ -53,6 +53,22 @@ public interface ServiceDeviceTemplateRepository extends JpaRepository<ServiceDe
     );
 
     /**
+     * 按类型与业务项分页查询（不限范围），按主键降序。
+     *
+     * @param typeCode 类型编码
+     * @param itemTable 业务表名
+     * @param itemId 业务主键
+     * @param pageable 分页
+     * @return 分页结果
+     */
+    Page<ServiceDeviceTemplate> findAllByTypeCodeAndItemTableAndItemIdOrderByIdDesc(
+        String typeCode,
+        String itemTable,
+        String itemId,
+        Pageable pageable
+    );
+
+    /**
      * 按范围、类型、业务项与状态分页查询，按主键降序。
      *
      * @param rangeCode 范围编码
@@ -65,6 +81,24 @@ public interface ServiceDeviceTemplateRepository extends JpaRepository<ServiceDe
      */
     Page<ServiceDeviceTemplate> findAllByRangeCodeAndTypeCodeAndItemTableAndItemIdAndStatusEnumOrderByIdDesc(
         String rangeCode,
+        String typeCode,
+        String itemTable,
+        String itemId,
+        String statusEnum,
+        Pageable pageable
+    );
+
+    /**
+     * 按类型、业务项与状态分页查询（不限范围），按主键降序。
+     *
+     * @param typeCode 类型编码
+     * @param itemTable 业务表名
+     * @param itemId 业务主键
+     * @param statusEnum 状态枚举编码
+     * @param pageable 分页
+     * @return 分页结果
+     */
+    Page<ServiceDeviceTemplate> findAllByTypeCodeAndItemTableAndItemIdAndStatusEnumOrderByIdDesc(
         String typeCode,
         String itemTable,
         String itemId,

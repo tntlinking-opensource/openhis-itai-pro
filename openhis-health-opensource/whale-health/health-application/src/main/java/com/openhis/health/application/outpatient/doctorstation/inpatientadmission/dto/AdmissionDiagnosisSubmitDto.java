@@ -21,15 +21,15 @@ import lombok.experimental.Accessors;
 public class AdmissionDiagnosisSubmitDto
     implements AdmissionDiagnosisSubmitGate.AdmissionDiagnosisRowView {
 
-    /** 已有病情事实主键；新开诊断时可空。 */
+    /** 已有就诊诊断行主键；更新时携带。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "已有病情事实主键；新开诊断时可空")
-    private Long conditionId;
+    @Schema(description = "已有就诊诊断行主键；更新时携带")
+    private Long encounterDiagnosisId;
 
     /** 新开诊断时必填：诊断目录主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    /** 诊断目录主键；引用已有病情时可空。 */
-    @Schema(description = "诊断目录主键；引用已有病情时可空")
+    /** 诊断目录主键；引用已有就诊诊断时可空。 */
+    @Schema(description = "诊断目录主键；引用已有就诊诊断时可空")
     private Long conditionDefinitionId;
 
     /** 是否主诊断。 */

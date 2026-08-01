@@ -66,4 +66,11 @@ public class InpatientReturnPatientRowDto implements Serializable {
     /** 聚合退药态展示。 */
     @Schema(description = "聚合退药态展示")
     private String refundEnumText;
+
+    /**
+     * 费用性质展示名（就诊优先合同名；与门诊发药/医生站卡片 {@code contractDisplay} 同口径）。
+     * <p>无合同时为空，前端回落「自费」。</p>
+     */
+    @Schema(description = "费用性质展示名")
+    private String contractDisplay;
 }

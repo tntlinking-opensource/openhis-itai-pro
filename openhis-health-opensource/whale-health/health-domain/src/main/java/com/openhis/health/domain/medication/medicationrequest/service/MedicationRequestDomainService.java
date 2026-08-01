@@ -9,6 +9,7 @@ import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.MedicationCommonConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.medication.medicationrequest.command.*;
 import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
 import com.openhis.health.domain.medication.medicationrequest.prescriptionsplit.OutpatientPrescriptionSplitPlanner;
@@ -40,6 +41,7 @@ import java.util.Objects;
  * <p>职责：西药/中成药/中药医嘱草稿维护、签发/签退、执行回写与护士划价来源建单。</p>
  * <p>不变量：状态迁移门禁、处方拆分与数量语义；持久化先于 {@code MedicationRequest} 领域事件（B.14）。</p>
  * <p>仅注入本聚合 {@link MedicationRequestRepository}；库存/发放/收费编排由应用层完成。</p>
+ * <p>跨聚合读：经 {@link EncounterQueryService} 校验就诊诊断绑定（B.6.4）。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -49,6 +51,8 @@ public class MedicationRequestDomainService {
     private final IDomainEventPublisher domainEventPublisher;
     /** 药品申请 busNo：业务流水按日递增，前缀 {@link AggregateTypeConstants#MEDICATION_REQUEST}。 */
     private final BusinessSequenceService businessSequenceService;
+    /** 加载候选：经 Encounter QS 断言绑定 ids 属本就诊且同族/主诊首位（B.6.4）。 */
+    private final EncounterQueryService encounterQueryService;
 
     /**
      * 创建西药/中成药医嘱草稿。
@@ -97,6 +101,8 @@ public class MedicationRequestDomainService {
         // Pre：医生站暂存扩展（单次用量/天数/皮试/诊断绑定/成组号），与列表 IF-DOR-10 回显字段对齐。
         if (command.getGroupId() != null) {
             request.setGroupId(command.getGroupId());
+            // Pre：成组药嘱 package_id 与 group_id 同源，供绑定耗材 package_id 对齐（AS BR-ORD-031）。
+            request.setPackageId(command.getGroupId());
         }
         if (command.getDose() != null) {
             request.setDose(command.getDose());
@@ -110,20 +116,23 @@ public class MedicationRequestDomainService {
         if (command.getSkinTestFlag() != null) {
             request.setSkinTestFlag(command.getSkinTestFlag());
         }
-        if (command.getConditionDefinitionId() != null) {
-            request.setConditionDefinitionId(command.getConditionDefinitionId());
-        }
-        // Pre：绑定就诊诊断行，供收费/医保按 encounter_diagnosis_id 解析医疗类别。
-        if (command.getEncounterDiagnosisId() != null) {
-            request.setEncounterDiagnosisId(command.getEncounterDiagnosisId());
+        if (command.getEncounterDiagnosisIds() != null) {
+            // 前置校验：非空绑定时须属本就诊、同族、主诊首位（DD §4.2）
+            encounterQueryService.assertBindableEncounterDiagnosisIds(
+                command.getEncounterId(), command.getEncounterDiagnosisIds());
+            request.setEncounterDiagnosisIds(command.getEncounterDiagnosisIds());
         }
         // Pre：费用性质覆盖，与诊疗服务申请 contract_id 口径一致。
         if (command.getContractId() != null) {
             request.setContractId(command.getContractId());
         }
+        // Pre：医嘱备注（护士站随医嘱展示；可空）。
+        if (command.getRemark() != null) {
+            request.setRemark(command.getRemark());
+        }
         request.validateDosageSemantics();
-        // Pre：医生站列表「开立时间」与耗材草稿一致：首次暂存即落库 req_authored_time；正式签发时在 sign 路径覆盖为签发时刻。
-        request.setReqAuthoredTime(LocalDateTime.now());
+        // Pre：开立时间仅首次暂存写入 req_opened_time；签发时刻由 sign 写 req_authored_time，二者不得混用。
+        request.setReqOpenedTime(LocalDateTime.now());
         request.initDraft();
         MedicationRequest saved = medicationRequestRepository.save(request);
         domainEventPublisher.publish(new MedicationOrderDraftCreatedEvent(saved.getId(), saved.getEncounterId(), saved.getPatientId(), command.getOperatorId()));
@@ -177,6 +186,8 @@ public class MedicationRequestDomainService {
         }
         if (command.getGroupId() != null && !Objects.equals(command.getGroupId(), request.getGroupId())) {
             request.setGroupId(command.getGroupId());
+            // 成组号变更时同步 package_id，保持绑定耗材组套对齐口径。
+            request.setPackageId(command.getGroupId());
             changedFields.add(FieldNameConstants.GROUP_ID);
         }
         if (command.getDose() != null) {
@@ -197,20 +208,23 @@ public class MedicationRequestDomainService {
             request.setSkinTestFlag(command.getSkinTestFlag());
             changedFields.add(FieldNameConstants.SKIN_TEST_FLAG);
         }
-        if (command.getConditionDefinitionId() != null
-            && !Objects.equals(command.getConditionDefinitionId(), request.getConditionDefinitionId())) {
-            request.setConditionDefinitionId(command.getConditionDefinitionId());
-            changedFields.add(FieldNameConstants.CONDITION_DEFINITION_ID);
-        }
-        if (command.getEncounterDiagnosisId() != null
-            && !Objects.equals(command.getEncounterDiagnosisId(), request.getEncounterDiagnosisId())) {
-            request.setEncounterDiagnosisId(command.getEncounterDiagnosisId());
-            changedFields.add(FieldNameConstants.ENCOUNTER_DIAGNOSIS_ID);
+        if (command.getEncounterDiagnosisIds() != null
+            && !Objects.equals(command.getEncounterDiagnosisIds(), request.getEncounterDiagnosisIds())) {
+            // 前置校验：改绑诊断时同样执行同族/主诊/归属门禁
+            encounterQueryService.assertBindableEncounterDiagnosisIds(
+                request.getEncounterId(), command.getEncounterDiagnosisIds());
+            request.setEncounterDiagnosisIds(command.getEncounterDiagnosisIds());
+            changedFields.add(FieldNameConstants.ENCOUNTER_DIAGNOSIS_IDS);
         }
         if (command.getContractId() != null
             && !Objects.equals(command.getContractId(), request.getContractId())) {
             request.setContractId(command.getContractId());
             changedFields.add(FieldNameConstants.CONTRACT_ID);
+        }
+        // Pre：备注非空才覆盖（含空串清空），与中药草稿 remark 变更口径一致。
+        if (command.getRemark() != null && !Objects.equals(command.getRemark(), request.getRemark())) {
+            request.setRemark(command.getRemark());
+            changedFields.add(FieldNameConstants.REMARK);
         }
         request.validateDosageSemantics();
         medicationRequestRepository.save(request);
@@ -240,7 +254,7 @@ public class MedicationRequestDomainService {
     public String signMedicationOrder(SignMedicationOrderCommand command) {
         MedicationRequest request = this.mustGet(command.getId());
         request.ensureSignable();
-        // Pre：与诊疗服务申请签发写入 authored_time 口径一致：开立时间取签发时刻，供医生站统一列表排序与展示。
+        // Pre：签发时间写 req_authored_time（不覆盖 req_opened_time），与诊疗/耗材签发口径一致。
         request.setReqAuthoredTime(LocalDateTime.now());
         request.draftToActive(command.getPrescriptionNo());
         medicationRequestRepository.save(request);
@@ -267,21 +281,30 @@ public class MedicationRequestDomainService {
     }
 
     /**
-     * 停止长期医嘱。
+     * 停止长期医嘱：写 {@code stop_time} 与停嘱人 {@code stopper_id}（操作人）。
      *
-     * @param command 停嘱命令
+     * @param command 停嘱命令（id、stopTime、operatorId）
      */
     public void stopLongTermMedicationOrder(StopLongTermMedicationOrderCommand command) {
+        // 加载：按主键取药品申请聚合根。
         MedicationRequest request = this.mustGet(command.getId());
+        // 前置校验：仅长期可停嘱。
         request.ensureLongTermForStop();
-        request.toStopped(command.getStopTime());
+        // 停嘱时间未传则取当前时刻。
+        LocalDateTime stopTime = command.getStopTime();
+        if (stopTime == null) {
+            stopTime = LocalDateTime.now();
+        }
+        // 状态迁移：STOPPED + stop_time + stopper_id（开立人不变）。
+        request.toStopped(stopTime, command.getOperatorId());
+        // 持久化：先落库再发事件。
         medicationRequestRepository.save(request);
         domainEventPublisher.publish(new LongTermMedicationOrderStoppedEvent(
-            request.getId(), request.getEffectiveDoseEnd(), command.getOperatorId(), request.getStatusEnum()));
+            request.getId(), request.getStopTime(), command.getOperatorId(), request.getStatusEnum()));
     }
 
     /**
-     * 取消长期医嘱停嘱：恢复为已校对或已发送，并清空结束时间（IF-IP-DOR-25 / BR-MRQ-006a）。
+     * 取消长期医嘱停嘱：恢复为已校对或已发送，并清空停嘱时间与停嘱人（IF-IP-DOR-25 / BR-MRQ-006a）。
      *
      * @param command 取消停嘱命令，须含 id 与 operatorId
      * @throws BusinessException 命令为空、非长期或非 STOPPED 时
@@ -296,12 +319,32 @@ public class MedicationRequestDomainService {
         MedicationRequest request = this.mustGet(command.getId());
         // 前置校验：须为长期且当前 STOPPED。
         request.ensureLongTermStoppedForCancelStop();
-        // 状态迁移：performer_check_id 非空→VERIFIED，否则→ACTIVE，并清空 effective_dose_end。
+        // 状态迁移：performer_check_id 非空→VERIFIED，否则→ACTIVE，并清空 stop_time/stopper_id。
         request.fromStopped();
         // 持久化：先落库再发事件，避免投影读到旧态。
         medicationRequestRepository.save(request);
         domainEventPublisher.publish(new LongTermMedicationOrderStopCancelledEvent(
             request.getId(), command.getOperatorId(), request.getStatusEnum()));
+    }
+
+    /**
+     * 改药品申请开立或停嘱时间；禁止改签发；不改开立人/停嘱人（IF-IP-DOR-26 / BR-MRQ-006b）。
+     *
+     * @param command 改时命令（id、timeKind、newTime）
+     * @throws BusinessException 种类非法、非已停嘱改停嘱、新时间为空时
+     */
+    public void changeMedicationRequestBusinessTime(ChangeMedicationRequestBusinessTimeCommand command) {
+        if (command == null || command.getId() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
+                "改业务时间时 id 不能为空");
+        }
+        // 加载：按主键取药品申请聚合根。
+        MedicationRequest request = this.mustGet(command.getId());
+        // 状态迁移：仅写开立或停嘱列（实体内校验种类与门禁）。
+        request.changeBusinessTime(command.getTimeKind(), command.getNewTime());
+        // 持久化：列更新无独立领域事件时仍先落库供读侧刷新。
+        medicationRequestRepository.save(request);
     }
 
     /**
@@ -387,7 +430,9 @@ public class MedicationRequestDomainService {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_NOT_FOUND, "待调整医嘱不存在");
         }
         for (MedicationRequest request : requests) {
+            // 成组：group_id 与 package_id 同步；拆组（groupId 空）时一并清空 package_id，避免绑定耗材误对齐旧组套。
             request.setGroupId(command.getGroupId());
+            request.setPackageId(command.getGroupId());
         }
         medicationRequestRepository.saveAll(requests);
         domainEventPublisher.publish(new MedicationOrderGroupAdjustedEvent(requests.get(0).getId(), command.getIds(), command.getGroupId(), command.getOperatorId()));
@@ -408,14 +453,25 @@ public class MedicationRequestDomainService {
 
     /**
      * 创建负向退药请求单。
+     * <p>
+     * <b>BR-MRQ-013 幂等</b>：同一原正向单已有未完结负向单时返回已有主键，不抛「已申请退药」。
+     * 门诊同一药嘱可对应多条收费行（{@code BR-CHG-001} FIFO 分段），本批多行共锚同一原单时须复用负向单而非误拦。
+     * </p>
      *
      * @param command 退药请求创建命令
-     * @return 新建负向单标识
+     * @return 新建或已存在的未完结负向单标识
      */
     public Long createRefundMedicationOrder(CreateRefundMedicationOrderCommand command) {
         MedicationRequest origin = this.mustGet(command.getOriginRequestId());
-        // Pre：同一原单仅允许一条未完成负向退药申请（BR-MRQ-013 幂等）。
-        this.assertNoOpenRefundMedicationOrder(origin.getId());
+        // Pre：原单本身已是负向退药单时拒绝（不可对退药单再退，对齐 openhis / EX-DRA-301）。
+        if (origin.getRefundMedicineId() != null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT, "已申请退药，请勿重复申请");
+        }
+        // Pre：已有未完结负向单则幂等返回（BR-MRQ-013）；避免本批多收费行共锚同一药嘱时第二条误抛。
+        Long existingOpenId = this.findOpenRefundMedicationOrderId(origin.getId());
+        if (existingOpenId != null) {
+            return existingOpenId;
+        }
         MedicationRequest refund = new MedicationRequest();
         refund.setBusNo(businessSequenceService.getSeqByDay(AggregateTypeConstants.MEDICATION_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
         refund.setRefundMedicineId(origin.getId());
@@ -479,8 +535,7 @@ public class MedicationRequestDomainService {
         refund.setInfusionFlag(origin.getInfusionFlag());
         refund.setSpeedCode(origin.getSpeedCode());
         refund.setContractId(origin.getContractId());
-        refund.setConditionDefinitionId(origin.getConditionDefinitionId());
-        refund.setEncounterDiagnosisId(origin.getEncounterDiagnosisId());
+        refund.setEncounterDiagnosisIds(origin.getEncounterDiagnosisIds());
         refund.setPerformerCheckId(origin.getPerformerCheckId());
         refund.setCheckTime(origin.getCheckTime());
         refund.setRxTypeCode(origin.getRxTypeCode());
@@ -498,21 +553,29 @@ public class MedicationRequestDomainService {
     }
 
     /**
-     * 断言原药品申请不存在未完结的负向退药单（BR-MRQ-013 幂等）。
+     * 查找原药品申请上未完结的负向退药单主键（BR-MRQ-013 幂等读）。
+     * <p>
+     * 「未完结」= 未软删且状态非 {@link RequestStatus#COMPLETED}（负向单入口为 {@code CANCELLED}，
+     * 药房退药闭环后才 {@code COMPLETED}）。本方法<b>不</b>按患者/就诊扫全表，仅按
+     * {@code refund_medicine_id = originRequestId} 定位，故他支付单、他药嘱的既有退药申请不会误拦本原单。
+     * </p>
      *
-     * @param originRequestId 原药品申请主键
+     * @param originRequestId 原正向药品申请主键
+     * @return 已有未完结负向单主键；无则 {@code null}
      */
-    private void assertNoOpenRefundMedicationOrder(Long originRequestId) {
+    private Long findOpenRefundMedicationOrderId(Long originRequestId) {
         List<MedicationRequest> existing = this.medicationRequestRepository.findByRefundMedicineIdIn(
             Collections.singletonList(originRequestId));
         for (MedicationRequest row : existing) {
             if (Boolean.TRUE.equals(row.getIsDeleted())) {
                 continue;
             }
+            // 已药房闭环的负向单不算「开放中」，允许业务上再开（若收费侧仍可见 SETTLED）。
             if (!RequestStatus.COMPLETED.getCode().equals(row.getStatusEnum())) {
-                throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT, "已申请退药，请勿重复申请");
+                return row.getId();
             }
         }
+        return null;
     }
 
     /**
@@ -548,6 +611,8 @@ public class MedicationRequestDomainService {
         reopened.setUnitCode(origin.getUnitCode());
         reopened.setMethodCode(origin.getMethodCode());
         reopened.setRateCode(origin.getRateCode());
+        // 重开新草稿：开立取当前；签发列待正式签发再写。
+        reopened.setReqOpenedTime(LocalDateTime.now());
         reopened.initDraft();
         MedicationRequest saved = medicationRequestRepository.save(reopened);
         domainEventPublisher.publish(new MedicationOrderReopenedEvent(saved.getId(), origin.getId(), command.getOperatorId()));
@@ -578,13 +643,46 @@ public class MedicationRequestDomainService {
         request.setPatientId(command.getPatientId());
         this.applyHerbalDraftFieldsFromCreateCommand(request, command);
         request.validateDosageSemantics();
-        // Pre：中药草稿首次保存记录开立时刻；正式签发时由 sign 覆盖。
-        request.setReqAuthoredTime(LocalDateTime.now());
+        // Pre：中药草稿首次保存只写开立时刻；签发时刻由 sign 写 req_authored_time。
+        request.setReqOpenedTime(LocalDateTime.now());
         request.initDraft();
         // 持久化：先落库再发事件（B.14）。
         MedicationRequest saved = medicationRequestRepository.save(request);
         domainEventPublisher.publish(new HerbalMedicationOrderDraftCreatedEvent(saved.getId(), command.getOperatorId()));
         return saved.getId();
+    }
+
+    /**
+     * 取消代煎费后：将方内饮片行 {@code sufferingFlag} 置为否（允许已签发态）。
+     *
+     * @param command 方内行主键与操作人
+     * @throws BusinessException 行不存在或非中药路径时
+     */
+    public void clearSufferingFlagAfterDecoctionVoided(ClearHerbalSufferingFlagCommand command) {
+        if (command == null || command.getMedicationRequestIds() == null || command.getMedicationRequestIds().isEmpty()) {
+            return;
+        }
+        if (command.getOperatorId() == null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, "取消代煎时操作人不能为空");
+        }
+        LinkedHashSet<Long> distinctIds = new LinkedHashSet<>();
+        for (Long id : command.getMedicationRequestIds()) {
+            if (id != null) {
+                distinctIds.add(id);
+            }
+        }
+        if (distinctIds.isEmpty()) {
+            return;
+        }
+        List<MedicationRequest> entities = medicationRequestRepository.findByIdIn(new ArrayList<>(distinctIds));
+        if (entities.size() != distinctIds.size()) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_NOT_FOUND, "取消代煎时药品申请不存在");
+        }
+        for (MedicationRequest request : entities) {
+            this.assertHerbalMedicationRequestPath(request);
+            request.setSufferingFlag(Boolean.FALSE);
+        }
+        medicationRequestRepository.saveAll(entities);
     }
 
     /**
@@ -770,11 +868,11 @@ public class MedicationRequestDomainService {
         if (command.getDispensePerDuration() != null) {
             request.setDispensePerDuration(command.getDispensePerDuration());
         }
-        if (command.getConditionDefinitionId() != null) {
-            request.setConditionDefinitionId(command.getConditionDefinitionId());
-        }
-        if (command.getEncounterDiagnosisId() != null) {
-            request.setEncounterDiagnosisId(command.getEncounterDiagnosisId());
+        if (command.getEncounterDiagnosisIds() != null) {
+            // 前置校验：非空绑定时须属本就诊、同族、主诊首位（DD §4.2）
+            encounterQueryService.assertBindableEncounterDiagnosisIds(
+                command.getEncounterId(), command.getEncounterDiagnosisIds());
+            request.setEncounterDiagnosisIds(command.getEncounterDiagnosisIds());
         }
         if (command.getContractId() != null) {
             request.setContractId(command.getContractId());
@@ -875,15 +973,13 @@ public class MedicationRequestDomainService {
             request.setRemark(command.getRemark());
             changedFields.add("remark");
         }
-        if (command.getConditionDefinitionId() != null
-            && !Objects.equals(command.getConditionDefinitionId(), request.getConditionDefinitionId())) {
-            request.setConditionDefinitionId(command.getConditionDefinitionId());
-            changedFields.add(FieldNameConstants.CONDITION_DEFINITION_ID);
-        }
-        if (command.getEncounterDiagnosisId() != null
-            && !Objects.equals(command.getEncounterDiagnosisId(), request.getEncounterDiagnosisId())) {
-            request.setEncounterDiagnosisId(command.getEncounterDiagnosisId());
-            changedFields.add(FieldNameConstants.ENCOUNTER_DIAGNOSIS_ID);
+        if (command.getEncounterDiagnosisIds() != null
+            && !Objects.equals(command.getEncounterDiagnosisIds(), request.getEncounterDiagnosisIds())) {
+            // 前置校验：改绑诊断时同样执行同族/主诊/归属门禁
+            encounterQueryService.assertBindableEncounterDiagnosisIds(
+                request.getEncounterId(), command.getEncounterDiagnosisIds());
+            request.setEncounterDiagnosisIds(command.getEncounterDiagnosisIds());
+            changedFields.add(FieldNameConstants.ENCOUNTER_DIAGNOSIS_IDS);
         }
         if (command.getContractId() != null && !Objects.equals(command.getContractId(), request.getContractId())) {
             request.setContractId(command.getContractId());
@@ -985,8 +1081,7 @@ public class MedicationRequestDomainService {
         out.setInfusionFlag(source.getInfusionFlag());
         out.setSpeedCode(source.getSpeedCode());
         out.setContractId(source.getContractId());
-        out.setConditionDefinitionId(source.getConditionDefinitionId());
-        out.setEncounterDiagnosisId(source.getEncounterDiagnosisId());
+        out.setEncounterDiagnosisIds(source.getEncounterDiagnosisIds());
         out.setEffectiveDoseStart(source.getEffectiveDoseStart());
         out.setEffectiveDoseEnd(source.getEffectiveDoseEnd());
         out.setRxTypeCode(source.getRxTypeCode());
@@ -1010,7 +1105,12 @@ public class MedicationRequestDomainService {
         out.setBasedOnId(source.getId());
         out.setRecorderId(operatorId);
         out.setRequesterId(operatorId);
-        out.setReqAuthoredTime(LocalDateTime.now());
+        // 复制/退药重开：新行开立时刻取当前；签发列待正式签发再写。
+        out.setReqOpenedTime(LocalDateTime.now());
+        out.setReqAuthoredTime(null);
+        out.setStopTime(null);
+        // 复制/退药重开新行不得继承源行停嘱人。
+        out.setStopperId(null);
         out.setIsDeleted(Boolean.FALSE);
         out.initDraft();
         return out;

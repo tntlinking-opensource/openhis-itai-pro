@@ -10,6 +10,7 @@ import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEdito
 import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogUnitBandDto;
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.inventory.InventoryListPractitionerNameResolver;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.application.shared.validator.CurrentManagedLocationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
@@ -93,6 +94,7 @@ public class InventoryPharmacyRequisitionAppService {
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
     private final InventoryPharmacyRequisitionMapper pharmacyRequisitionMapper;
+    private final InventoryListPractitionerNameResolver inventoryListPractitionerNameResolver;
 
     /**
      * 药房请领页初始化（IF-PHA-QL-01）：目的药房、来源药库与单据状态下拉。
@@ -181,6 +183,7 @@ public class InventoryPharmacyRequisitionAppService {
             List<PharmacyRequisitionListRowDto> records = pharmacyRequisitionMapper.toPharmacyRequisitionListAggregated(busNos, lines);
             this.enrichPharmacyRequisitionListSourceLocationNames(records);
             this.enrichPharmacyRequisitionListStatusEnumText(records);
+            this.enrichPharmacyRequisitionListDisplayNames(records);
             int pageNo = request.getPageNo().intValue();
             int pageSize = listQuery.getBoundedPageSize();
             return pharmacyRequisitionMapper.toPagePharmacyRequisitionsResponse(mergedTotal, pageNo, pageSize, records);
@@ -506,8 +509,8 @@ public class InventoryPharmacyRequisitionAppService {
         InventoryItemPageQuery invQuery = new InventoryItemPageQuery();
         invQuery.setLocationId(request.getSourceLocationId());
         invQuery.setItemTable(request.getProductTableName().trim());
-        // —— 仅展示账面量大于零的批号行，与库存明细「有库存」列表口径一致。——
-        invQuery.setPositiveQuantityOnly(true);
+        // —— 前台可选：true 仅返回选品库位账面量>0 的批号行；false/未传不过滤数量。——
+        invQuery.setPositiveQuantityOnly(request.getPositiveQuantityOnly());
         PageQueryBinder.bind(request, invQuery);
         Pageable pageable = PageRequest.of(request.springPageIndex(), request.getBoundedPageSize(), Sort.by(Sort.Direction.ASC, FieldNameConstants.ID));
         try {
@@ -653,6 +656,47 @@ public class InventoryPharmacyRequisitionAppService {
             SupplyStatus st = EnumUtil.fromCode(SupplyStatus.class, row.getStatusEnum().trim());
             if (st != null) {
                 row.setStatusEnumText(st.getDisplay());
+            }
+        }
+    }
+
+    /**
+     * 药房请领列表：批量解析制单人/审批人展示名。
+     *
+     * @param rows 列表行
+     */
+    private void enrichPharmacyRequisitionListDisplayNames(List<PharmacyRequisitionListRowDto> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        Set<Long> practitionerIds = new HashSet<>();
+        for (PharmacyRequisitionListRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getApplicantId() != null) {
+                practitionerIds.add(row.getApplicantId());
+            }
+            if (row.getApproverId() != null) {
+                practitionerIds.add(row.getApproverId());
+            }
+        }
+        Map<Long, String> nameById = this.inventoryListPractitionerNameResolver.resolveNamesByIds(practitionerIds);
+        for (PharmacyRequisitionListRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getApplicantId() != null) {
+                String name = nameById.get(row.getApplicantId());
+                if (name != null) {
+                    row.setCreatorName(name);
+                }
+            }
+            if (row.getApproverId() != null) {
+                String name = nameById.get(row.getApproverId());
+                if (name != null) {
+                    row.setApproverName(name);
+                }
             }
         }
     }

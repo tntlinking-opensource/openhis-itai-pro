@@ -9,12 +9,14 @@ import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.JsonDeserializer;
 
 import java.io.IOException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 
 /**
- * 反序列化 LocalDateTime：兼容全局约定的 {@code yyyy-MM-dd HH:mm:ss} 与常见 ISO-8601（含 {@code T} 分隔）。
+ * 反序列化 LocalDateTime：兼容全局约定的 {@code yyyy-MM-dd HH:mm:ss}、ISO-8601（含 {@code T}）
+ * 以及前端日期选择器常见的纯日期 {@code yyyy-MM-dd}（按当天 00:00:00）。
  */
 public class FlexibleLocalDateTimeDeserializer extends JsonDeserializer<LocalDateTime> {
 
@@ -35,6 +37,11 @@ public class FlexibleLocalDateTimeDeserializer extends JsonDeserializer<LocalDat
         }
         try {
             return LocalDateTime.parse(text, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+        } catch (DateTimeParseException ignored) {
+            // try date-only
+        }
+        try {
+            return LocalDate.parse(text, DateTimeFormatter.ISO_LOCAL_DATE).atStartOfDay();
         } catch (DateTimeParseException e) {
             throw ctxt.weirdStringException(text, LocalDateTime.class, e.getMessage());
         }

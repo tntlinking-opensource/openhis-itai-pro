@@ -19,5 +19,18 @@ public class InvUpload3506Command {
     private Long contractId;
     private Long encounterId;
     private Long sourceId;
+    /**
+     * 本地来源类型（写入 {@code yb_inv_upload.source_type}）；
+     * 空则编排器回落 {@code DISPENSE}。
+     */
+    private String sourceType;
+    /**
+     * 操作人主键：异步出站由调用线程写入（对齐发票快照）；空则编排器回落登录态。
+     */
+    private Long operatorId;
+    /**
+     * 操作人姓名：异步出站由调用线程写入；空则签到解析回落。
+     */
+    private String operatorName;
     private List<InvUploadLineCommand> lines = new ArrayList<>();
 }

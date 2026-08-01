@@ -102,7 +102,7 @@ COMMENT ON COLUMN yb_settlement_reversal.tenant_id IS '租户标识';
 CREATE TABLE IF NOT EXISTS yb_catalog_upload_record (
     id                      BIGINT       NOT NULL PRIMARY KEY,
     contract_id             BIGINT       NOT NULL,
-    operation               VARCHAR(8)   NOT NULL,
+    operation               VARCHAR(16)  NOT NULL,
     product_table           VARCHAR(64)  NOT NULL,
     product_id              BIGINT       NOT NULL,
     list_type               VARCHAR(30)  NOT NULL,
@@ -302,7 +302,7 @@ CREATE TABLE IF NOT EXISTS yb_person_cache (
     id                  BIGINT       NOT NULL PRIMARY KEY,
     contract_id         BIGINT       NOT NULL,
     mdtrt_cert_type     VARCHAR(3)   NOT NULL,
-    mdtrt_cert_no       VARCHAR(64)  NOT NULL,
+    mdtrt_cert_no       VARCHAR(2048) NOT NULL,
     psn_no              VARCHAR(30)  NOT NULL,
     insuplc_admdvs      VARCHAR(6),
     insutype            VARCHAR(6),
@@ -321,8 +321,9 @@ CREATE TABLE IF NOT EXISTS yb_person_cache (
     tenant_id           BIGINT       NOT NULL
 );
 
+-- md5(mdtrt_cert_no)：社保卡 BusiCardInfo 超长时避免 btree 索引页限制
 CREATE UNIQUE INDEX IF NOT EXISTS uk_yb_person_cache_cert
-    ON yb_person_cache (contract_id, mdtrt_cert_type, mdtrt_cert_no, tenant_id)
+    ON yb_person_cache (contract_id, mdtrt_cert_type, md5(mdtrt_cert_no), tenant_id)
     WHERE is_deleted = FALSE;
 
 CREATE TABLE IF NOT EXISTS yb_encounter_platform_map (
@@ -375,7 +376,7 @@ CREATE TABLE IF NOT EXISTS yb_clinic_pre_settle (
     deleted_at              TIMESTAMP,
     deleted_by              BIGINT,
     mdtrt_cert_type VARCHAR(3),
-    mdtrt_cert_no VARCHAR(64),
+    mdtrt_cert_no VARCHAR(2048),
     insutype VARCHAR(6),
     acct_used_flag VARCHAR(1),
     psn_setlway VARCHAR(6),
@@ -627,7 +628,7 @@ CREATE TABLE IF NOT EXISTS yb_inpatient_pre_settle (
     deleted_by              BIGINT,
     insuplc_admdvs VARCHAR(6),
     mdtrt_cert_type VARCHAR(3),
-    mdtrt_cert_no VARCHAR(64),
+    mdtrt_cert_no VARCHAR(2048),
     insutype VARCHAR(6),
     acct_used_flag VARCHAR(1),
     psn_setlway VARCHAR(6),

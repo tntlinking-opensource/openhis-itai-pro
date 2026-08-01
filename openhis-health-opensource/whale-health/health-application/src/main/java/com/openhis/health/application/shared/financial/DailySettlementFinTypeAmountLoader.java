@@ -5,8 +5,6 @@
 package com.openhis.health.application.shared.financial;
 
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
-import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
-import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
@@ -15,6 +13,7 @@ import com.openhis.health.domain.share.constants.DailySettlementSharedConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
+import com.openhis.health.domain.share.enums.PaymentKind;
 import com.openhis.health.domain.share.financial.DailySettlementRefundPaymentRules;
 import com.openhis.health.domain.share.utils.FinTypeCodeMappingSupport;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -23,7 +22,6 @@ import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -33,29 +31,25 @@ import java.util.Set;
 /**
  * 门/住院日结：按 {@code fin_type_code} 汇总展示金额（只读 enrich，B.6.1 querysupport）。
  *
- * <p>优先读取 {@code fin_payment_rec_static} 快照；快照未覆盖的收费项回落 payment {@code charge_item_ids}。
- * fin_type 解析：仅锚 {@link ChargeItem#getDefinitionId()} 对应历史定价行 {@code type_code}；
- * {@code unit_price}/{@code total_price} 或 {@code definition_id} 缺失时直接 {@link BusinessException}，
- * 禁止回落当前目录定价行。号源/挂号收费强制归入
+ * <p>仅读取 {@code fin_payment_rec_static} 快照；禁止回落 {@code charge_item.total_price}。
+ * 结算时分类快照由 {@link PaymentFinTypeStaticSnapshotWriter} 写入。
+ * 号源/挂号收费在写快照时已强制归入
  * {@link DailySettlementSharedConstants#CONSULTATION_FEE_FIN_TYPE_CODE}（诊察费 1012）。</p>
  */
 @Component
 @RequiredArgsConstructor
 public class DailySettlementFinTypeAmountLoader {
 
-    /** 收费明细读侧：回落汇总时批量加载 charge_item。 */
-    private final ChargeItemQueryService chargeItemQueryService;
-
-    /** 定价行读侧：解析 charge_item.definition_id 对应历史 type_code。 */
+    /** 定价行读侧：解析 charge_item.definition_id 对应历史 type_code（写快照时复用）。 */
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
 
     /**
      * 汇总展示用 payment 在 fin_type_code 各字典码下的金额。
      *
      * @param paymentModels           展示过滤后的 payment 读模型
-     * @param staticRowsByPaymentId   paymentId → 统计快照（可空 map）
+     * @param staticRowsByPaymentId   paymentId → 统计快照
      * @return fin_type_code value → 合计金额
-     * @throws BusinessException 回落 charge_item 时单价/总额或 definition_id 缺失，或定价锚点无法解析 fin_type
+     * @throws BusinessException 业务收费流水缺少分类快照时
      */
     public Map<String, BigDecimal> aggregateFinTypeAmounts(
         List<PaymentReconciliationQueryModel> paymentModels,
@@ -64,41 +58,29 @@ public class DailySettlementFinTypeAmountLoader {
         if (paymentModels == null || paymentModels.isEmpty()) {
             return totals;
         }
-        Map<Long, Set<Long>> fallbackChargeItemIdsByPaymentId = new LinkedHashMap<>();
         for (PaymentReconciliationQueryModel paymentModel : paymentModels) {
             if (paymentModel == null || paymentModel.getId() == null) {
+                continue;
+            }
+            if (this.isDepositPayment(paymentModel)) {
                 continue;
             }
             List<PaymentStaticSnapshotQueryModel> staticRows = null;
             if (staticRowsByPaymentId != null) {
                 staticRows = staticRowsByPaymentId.get(paymentModel.getId());
             }
-            Set<Long> staticCoveredChargeItemIds = new LinkedHashSet<>();
-            boolean hasStaticRows = staticRows != null && !staticRows.isEmpty();
-            if (hasStaticRows) {
-                // Pre：快照行先入账；同时收集快照已覆盖的 charge_item，避免回落重复计数
-                this.mergeStaticRows(totals, staticRows, this.isRefundPayment(paymentModel));
-                for (PaymentStaticSnapshotQueryModel staticRow : staticRows) {
-                    staticCoveredChargeItemIds.addAll(this.parseChargeItemIds(staticRow.getChargeItemIds()));
-                }
-                // Pre：已有 static 时整单禁止回落 charge_item（快照未带 charge_item_ids 时亦如此，BR-OP-DCL-011）
-                continue;
+            if (staticRows == null || staticRows.isEmpty()) {
+                throw new BusinessException(
+                    ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
+                    "支付流水缺少费用分类快照，无法汇总日结财务类型，paymentId=" + paymentModel.getId());
             }
-            LinkedHashSet<Long> fallbackChargeItemIds = new LinkedHashSet<>(
-                this.parseChargeItemIds(paymentModel.getChargeItemIds()));
-            fallbackChargeItemIds.removeAll(staticCoveredChargeItemIds);
-            if (!fallbackChargeItemIds.isEmpty()) {
-                fallbackChargeItemIdsByPaymentId.put(paymentModel.getId(), fallbackChargeItemIds);
-            }
-        }
-        if (!fallbackChargeItemIdsByPaymentId.isEmpty()) {
-            this.mergeChargeItemFallback(totals, paymentModels, fallbackChargeItemIdsByPaymentId);
+            this.mergeStaticRows(totals, staticRows, this.isRefundPayment(paymentModel));
         }
         return totals;
     }
 
     /**
-     * 批量解析收费明细 fin_type_code（与日结汇总、费用明细细分类口径一致）。
+     * 批量解析收费明细 fin_type_code（结算写快照、费用明细细分类口径一致）。
      *
      * @param chargeItems 收费明细列表；空时返回空 Map
      * @return chargeItemId → fin_type_code
@@ -161,73 +143,6 @@ public class DailySettlementFinTypeAmountLoader {
                 existing = BigDecimal.ZERO;
             }
             totals.put(typeCode, existing.add(lineAmount));
-        }
-    }
-
-    /**
-     * 快照未覆盖的 payment 按 charge_item 回落汇总：批量读明细后按 fin_type 入账。
-     *
-     * @param totals                          fin_type 累加目标（就地修改）
-     * @param paymentModels                   展示过滤后的 payment 读模型
-     * @param fallbackChargeItemIdsByPaymentId paymentId → 待回落 charge_item 集合
-     */
-    private void mergeChargeItemFallback(
-        Map<String, BigDecimal> totals,
-        List<PaymentReconciliationQueryModel> paymentModels,
-        Map<Long, Set<Long>> fallbackChargeItemIdsByPaymentId) {
-        Map<Long, PaymentReconciliationQueryModel> paymentById = new LinkedHashMap<>();
-        Set<Long> chargeItemIds = new LinkedHashSet<>();
-        for (PaymentReconciliationQueryModel paymentModel : paymentModels) {
-            if (paymentModel == null || paymentModel.getId() == null) {
-                continue;
-            }
-            Set<Long> fallbackIds = fallbackChargeItemIdsByPaymentId.get(paymentModel.getId());
-            if (fallbackIds == null || fallbackIds.isEmpty()) {
-                continue;
-            }
-            paymentById.put(paymentModel.getId(), paymentModel);
-            chargeItemIds.addAll(fallbackIds);
-        }
-        if (chargeItemIds.isEmpty()) {
-            return;
-        }
-        ChargeItemQueryCommand chargeItemQueryCommand = new ChargeItemQueryCommand();
-        chargeItemQueryCommand.setIds(new ArrayList<>(chargeItemIds));
-        List<ChargeItem> chargeItems = this.chargeItemQueryService.loadChargeItemsByIds(chargeItemQueryCommand);
-        Map<Long, ChargeItem> chargeItemById = new LinkedHashMap<>();
-        for (ChargeItem chargeItem : chargeItems) {
-            if (chargeItem != null && chargeItem.getId() != null) {
-                chargeItemById.put(chargeItem.getId(), chargeItem);
-            }
-        }
-        Map<Long, String> finTypeByChargeItemId = this.mapFinTypeCodeByChargeItemId(chargeItems);
-        // Pre：各 payment 独立回落，正向/逆向各自带符号入账（与费用明细逐 payment 取负一致）
-        for (Map.Entry<Long, Set<Long>> entry : fallbackChargeItemIdsByPaymentId.entrySet()) {
-            PaymentReconciliationQueryModel paymentModel = paymentById.get(entry.getKey());
-            if (paymentModel == null) {
-                continue;
-            }
-            boolean refundPayment = this.isRefundPayment(paymentModel);
-            for (Long chargeItemId : entry.getValue()) {
-                ChargeItem chargeItem = chargeItemById.get(chargeItemId);
-                if (chargeItem == null) {
-                    continue;
-                }
-                String finTypeCode = finTypeByChargeItemId.get(chargeItemId);
-                BigDecimal lineAmount = chargeItem.getTotalPrice();
-                if (lineAmount == null) {
-                    lineAmount = BigDecimal.ZERO;
-                }
-                lineAmount = lineAmount.abs();
-                if (refundPayment) {
-                    lineAmount = lineAmount.negate();
-                }
-                BigDecimal existing = totals.get(finTypeCode);
-                if (existing == null) {
-                    existing = BigDecimal.ZERO;
-                }
-                totals.put(finTypeCode, existing.add(lineAmount));
-            }
         }
     }
 
@@ -295,22 +210,10 @@ public class DailySettlementFinTypeAmountLoader {
         return finTypeCode;
     }
 
-    /**
-     * 定价行 {@code type_code} 归一化为 fin_type 字典码（含历史药品短码 1/2/3/4 映射）。
-     *
-     * @param categoryCode 定价行 type_code 或快照 type_code
-     * @return fin_type_code；空白时返回 null
-     */
     private String normalizeCategoryCodeToFinType(String categoryCode) {
         return FinTypeCodeMappingSupport.normalizeCategoryCodeToFinType(categoryCode);
     }
 
-    /**
-     * 号源/挂号收费须强制归入诊察费 fin_type（1012），与 BR-OP-DCL-011 口径一致。
-     *
-     * @param chargeItem 收费明细
-     * @return 挂号类收费为 true
-     */
     private boolean isRegistrationChargeItem(ChargeItem chargeItem) {
         if (chargeItem == null) {
             return false;
@@ -321,12 +224,6 @@ public class DailySettlementFinTypeAmountLoader {
         return TableNameConstants.ADM_HEALTHCARE_SERVICE.equals(chargeItem.getServiceTable());
     }
 
-    /**
-     * 逆向退费单须在日结 fin_type 汇总中取负（**BR-OP-DCL-011** / **BR-OP-FDT-012**）。
-     *
-     * @param paymentModel payment 读模型
-     * @return 是否退费单
-     */
     private boolean isRefundPayment(PaymentReconciliationQueryModel paymentModel) {
         if (paymentModel == null) {
             return false;
@@ -337,29 +234,10 @@ public class DailySettlementFinTypeAmountLoader {
             paymentModel.getStatusEnum());
     }
 
-    /**
-     * 解析 payment/charge_item 逗号分隔 ID 串；非法数字跳过不阻断整单。
-     *
-     * @param chargeItemIds 逗号分隔 charge_item 主键串
-     * @return 解析成功的 ID 列表
-     */
-    private List<Long> parseChargeItemIds(String chargeItemIds) {
-        List<Long> result = new ArrayList<>();
-        if (StringUtils.isEmpty(chargeItemIds)) {
-            return result;
+    private boolean isDepositPayment(PaymentReconciliationQueryModel paymentModel) {
+        if (paymentModel == null) {
+            return false;
         }
-        String[] parts = chargeItemIds.split(",");
-        for (String part : parts) {
-            if (StringUtils.isEmpty(part)) {
-                continue;
-            }
-            String trimmed = part.trim();
-            try {
-                result.add(Long.valueOf(trimmed));
-            } catch (NumberFormatException numberFormatException) {
-                // 脏数据跳过，避免整单查询失败
-            }
-        }
-        return result;
+        return PaymentKind.HOSPITAL_DEPOSIT.equals(paymentModel.getKindEnum());
     }
 }

@@ -5,7 +5,13 @@
 package com.openhis.health.domain.share.enums;
 
 /**
- * 活动类型枚举（迁移自旧模型 ActivityType）。
+ * 诊疗活动类型（{@code ActivityDefinition.type_enum} / 目录维护下拉）。
+ *
+ * <p>持久化存 {@link #getCode()} 字符串；展示名见 {@link #getDisplay()}。
+ * 与 {@code DM-WKF-001} §4.2 对齐；初始化接口 {@code typeEnumOptions} 由本枚举直接生成。</p>
+ *
+ * <p>住院嘱托医嘱<strong>不</strong>使用本枚举新增值，而以
+ * {@code ActivityDefinition.category_code=52}（{@code ServiceRequestCategoryConstants.SERVICE_CATEGORY_ENTRUST}）识别。</p>
  */
 public enum ActivityType implements EnumInterface {
     /** 检验（ActivityType，编码 {@code 1}）。 */

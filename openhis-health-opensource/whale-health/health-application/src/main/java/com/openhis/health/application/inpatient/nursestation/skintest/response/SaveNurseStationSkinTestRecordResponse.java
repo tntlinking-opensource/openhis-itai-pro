@@ -19,7 +19,4 @@ public class SaveNurseStationSkinTestRecordResponse {
 
     /** 皮试检查服务申请主键。 */
     private Long skinTestServiceRequestId;
-
-    /** 本次是否新产生补费划价。 */
-    private Boolean firstTimePriced;
 }

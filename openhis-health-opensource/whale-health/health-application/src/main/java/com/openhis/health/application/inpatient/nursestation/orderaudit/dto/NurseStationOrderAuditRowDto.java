@@ -65,6 +65,12 @@ public class NurseStationOrderAuditRowDto {
     @Schema(description = "医嘱名称摘要")
     private String adviceDisplayName;
 
+    /**
+     * 医嘱备注（药嘱/诊嘱 {@code remark}；护士站随医嘱内容展示）。
+     */
+    @Schema(description = "医嘱备注")
+    private String remark;
+
     /** 规格/大小；诊疗可为 null。 */
     @Schema(description = "规格/大小；诊疗可为 null")
     private String specificationText;
@@ -81,19 +87,37 @@ public class NurseStationOrderAuditRowDto {
     @Schema(description = "频次展示")
     private String frequencyDisplay;
 
-    /** 开立时间。 */
-    @Schema(description = "开立时间")
+    /** 开立时间（{@code req_opened_time}）。 */
+    @Schema(description = "开立时间（req_opened_time）")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
-    private LocalDateTime authoredTime;
+    private LocalDateTime reqOpenedTime;
 
-    /** 停嘱时间；未停为 null。 */
-    @Schema(description = "停嘱时间；未停为 null")
+    /** 签发时间（{@code req_authored_time}；仅追溯，列表按开立倒序）。 */
+    @Schema(description = "签发时间（req_authored_time）")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    private LocalDateTime reqAuthoredTime;
+
+    /** 停嘱时间（{@code stop_time}）；未停为 null。 */
+    @Schema(description = "停嘱时间（stop_time）；未停为 null")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime stopTime;
 
     /** 开立医生姓名。 */
     @Schema(description = "开立医生姓名")
     private String requesterName;
+
+    /** 停嘱人主键（{@code stopper_id}）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "停嘱人主键")
+    private Long stopperId;
+
+    /** 停嘱人姓名。 */
+    @Schema(description = "停嘱人姓名")
+    private String stopperName;
+
+    /** 校对人姓名（已校对及后续 Tab 展示）。 */
+    @Schema(description = "校对人姓名（已校对及后续 Tab 展示）")
+    private String performerCheckName;
 
     /** 执行/发药位置展示。 */
     @Schema(description = "执行/发药位置展示")
@@ -103,8 +127,8 @@ public class NurseStationOrderAuditRowDto {
     @Schema(description = "诊疗类目；药品行 null")
     private String categoryEnum;
 
-    /** 类型列展示：药品/诊疗/出院/转科/护理（IF-IP-AUD-01，与 medicineCategoryTab 无关）。 */
-    @Schema(description = "类型列展示：药品/诊疗/出院/转科/护理")
+    /** 类型列展示：药品/诊疗/出院/转科/护理/嘱托（IF-IP-AUD-01，与 medicineCategoryTab 无关；嘱托见 BR-IP-ORD-028）。 */
+    @Schema(description = "类型列展示：药品/诊疗/出院/转科/护理/嘱托")
     private String orderKindDisplay;
 
     /**
@@ -143,4 +167,18 @@ public class NurseStationOrderAuditRowDto {
     /** 中药付数。 */
     @Schema(description = "中药付数")
     private java.math.BigDecimal chineseHerbsDoseQuantity;
+
+    /**
+     * 是否皮试药（仅药嘱；{@code med_medication_request.skin_test_flag}）。
+     * <p>true 时前端校对列表提示护士需皮试登记；诊疗行恒为 null。</p>
+     */
+    @Schema(description = "是否皮试药（仅药嘱）")
+    private Boolean skinTestFlag;
+
+    /**
+     * companion「皮试检查」锚定的皮试药主键；药品行与无关诊疗为 null。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "皮试检查关联的皮试药 requestId")
+    private Long basedOnMedicationRequestId;
 }

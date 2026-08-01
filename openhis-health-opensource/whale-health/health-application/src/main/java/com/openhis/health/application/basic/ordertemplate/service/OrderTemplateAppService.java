@@ -401,17 +401,17 @@ public class OrderTemplateAppService {
     /**
      * IF-BAS-OTL-08：加载组套/模板明细（快捷开嘱/划价数据源）。
      *
-     * <p>仅返回头行结构（定义 id、数量、用法等）；<strong>不</strong>做目录 enrich 与实时定价（性能）。
-     * 前端以行内定义 id 调 IF-DOR-11 {@code prepickedProductKeys}（与历史医嘱/历史处方同套路）补齐展示名、
-     * {@code unitPrice}、{@code defaultDispenseLocationId}；暂存 IF-DOR-14 回传 {@code dispenseLocationId}，
+     * <p>返回头行结构（定义 id、数量、用法等），并回填目录展示名（{@code productName} 等），便于套用失败时提示具体项目。
+     * <strong>不</strong>做实时定价与库位解析（性能）；前端以行内定义 id 调 IF-DOR-11 {@code prepickedProductKeys}
+     * 补齐 {@code unitPrice}、{@code defaultDispenseLocationId}；暂存 IF-DOR-14 回传 {@code dispenseLocationId}，
      * 写路径不再二次 match 取药科室模板。</p>
      *
      * @param request 模板 id、上下文与就诊
-     * @return 头行预览（无 enrich、无价字段）
+     * @return 头行预览（含目录展示名；无价/库位字段）
      */
     public PreviewOrderTemplateApplyResponse previewOrderTemplateApply(PreviewOrderTemplateApplyRequest request) {
         String applyContext = normalizeApplyContextCode(request.getApplyContextCode());
-        // Gate：加载组套头行（QueryService 只读，不做 catalog enrich / 定价）
+        // Gate：加载组套头行（QueryService 只读；展示名 enrich 在映射后执行，不做定价）
         OrderTemplateWithLinesQueryModel model = orderTemplateQueryService.getOrderTemplateWithLines(
             request.getOrderTemplateId()
         );
@@ -439,6 +439,8 @@ public class OrderTemplateAppService {
         if (response == null) {
             throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_NOT_FOUND, "组套不存在或已删除");
         }
+        // Asm：回填 productName 等展示列（含已停用/停供定义），供套用失败友好提示
+        enrichOrderTemplateDetailLines(response.getLines());
         return response;
     }
 

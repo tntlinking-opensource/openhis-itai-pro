@@ -22,7 +22,12 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * 三大目录写侧 immutable 字段门禁：存在业务引用时禁止修改分类/单位/拆零倍数/维护态价格等关键字段。
+ * 三大目录写侧 immutable 字段门禁：存在业务引用时禁止修改名称/分类/单位/拆零倍数等关键字段。
+ *
+ * <p>入库（{@code LOCK_INVENTORY}）与开立（{@code LOCK_CLINICAL}）均锁名称/分类/业务单位/拆零/病案结算类型；
+ * 药品性质/规格/剂型/剂量单位与倍数仅在开立后锁定。锁定态仍允许改拆分属性、医保等级。
+ * 药品/耗材编辑路径不维护定价行（见各 AppService {@code edit*}），请求侧通常不传参考价；
+ * 门禁不得把「未传价格」误判为改价。诊疗编辑在非锁定态仍可改维护态价格，故保留价格比对。</p>
  */
 @Component
 public class CatalogEditWriteGate {
@@ -30,8 +35,12 @@ public class CatalogEditWriteGate {
     /**
      * 写侧断言：药品目录更新不得越权修改已锁定字段。
      *
+     * <p>不比对采购/销售参考价：编辑接口不落价，前端更新时也不传价格字段。
+     * 不比对拆分属性与医保等级：发生业务后仍允许改。
+     * 临床与规格段（药品性质/规格/剂型/剂量）仅 {@code LOCK_CLINICAL} 时比对。</p>
+     *
      * @param existing    库内聚合快照
-     * @param pricing     实例维度定价行
+     * @param pricing     实例维度定价行（财务/医保类别仍从此快照读取）
      * @param request     更新请求
      * @param editability 服务端解析的业务码
      */
@@ -47,37 +56,41 @@ public class CatalogEditWriteGate {
             return;
         }
         CatalogPricingSnapshot priceSnapshot = CatalogPricingSnapshot.fromChargeLines(pricing);
+        // 入库或开立：名称/分类/业务单位/拆零倍数/病案结算类型不可改
+        this.assertStringUnchanged("通用名称", existing.getName(), request.getName());
+        this.assertStringUnchanged("商品名称", existing.getMerchandiseName(), request.getMerchandiseName());
         this.assertStringUnchanged("业务编码", existing.getBusNo(), request.getBusNo());
         this.assertStringUnchanged("药品分类", existing.getCategoryCode(), request.getCategoryCode());
         this.assertStringUnchanged("财务类别", priceSnapshot.itemTypeCode, request.getTypeCode());
         this.assertStringUnchanged("医保类别", priceSnapshot.ybType, request.getYbType());
-        this.assertStringUnchanged("规格", existing.getTotalVolume(), request.getTotalVolume());
-        this.assertIntegerUnchanged("剂型", existing.getDoseFrom(), request.getDoseFrom());
-        this.assertStringUnchanged("剂量单位", existing.getDoseUnitCode(), request.getDoseUnitCode());
         this.assertStringUnchanged("采购单位", existing.getPurchaseUnitCode(), request.getPurchaseUnitCode());
         this.assertStringUnchanged("拆零单位", existing.getSplitUnitCode(), request.getSplitUnitCode());
         this.assertStringUnchanged("销售单位", existing.getPackageUnitCode(), request.getPackageUnitCode());
         this.assertStringUnchanged("库存单位", existing.getStockUnitCode(), request.getStockUnitCode());
-        this.assertDecimalUnchanged("剂量→拆零倍数", existing.getDoseUnitRatio(), request.getDoseUnitRatio());
         this.assertDecimalUnchanged("采购→拆零倍数", existing.getPurchaseUnitRatio(), request.getPurchaseUnitRatio());
         this.assertDecimalUnchanged("库存→拆零倍数", existing.getStockUnitRatio(), request.getStockUnitRatio());
         this.assertDecimalUnchanged("销售→拆零倍数", existing.getPackageUnitRatio(), request.getPackageUnitRatio());
-        this.assertStringUnchanged("拆分属性", existing.getPartAttributeEnum(), request.getPartAttributeEnum());
-        this.assertStringUnchanged(
-            "住院临时医嘱拆分属性", existing.getThoPartAttributeEnum(), request.getThoPartAttributeEnum());
-        this.assertDecimalUnchanged("购入价", priceSnapshot.purchasePrice, request.getPurchasePrice());
-        this.assertDecimalUnchanged("零售价", priceSnapshot.retailPrice, request.getRetailPrice());
         this.assertStringUnchanged("病案结算类型", existing.getMrSettlementTypeCode(), request.getMrSettlementTypeCode());
-        if (CatalogEditabilityConstants.LOCK_CLINICAL.equalsIgnoreCase(StringUtils.trimToEmpty(editability))) {
-            this.assertIntegerUnchanged("医保等级", existing.getChrgitmLv(), request.getChrgitmLv());
+        // 仅医生开立后锁定临床与规格段（入库未开立仍可改）
+        if (!CatalogEditabilityConstants.LOCK_CLINICAL.equalsIgnoreCase(editability.trim())) {
+            return;
         }
+        this.assertStringUnchanged(
+            "药品性质", existing.getPharmacologyCategoryCode(), request.getPharmacologyCategoryCode());
+        this.assertStringUnchanged("规格", existing.getTotalVolume(), request.getTotalVolume());
+        this.assertIntegerUnchanged("剂型", existing.getDoseFrom(), request.getDoseFrom());
+        this.assertStringUnchanged("剂量单位", existing.getDoseUnitCode(), request.getDoseUnitCode());
+        this.assertDecimalUnchanged("剂量→拆零倍数", existing.getDoseUnitRatio(), request.getDoseUnitRatio());
     }
 
     /**
      * 写侧断言：器材目录更新不得越权修改已锁定字段。
      *
+     * <p>不比对采购/销售参考价：编辑接口不落价，前端更新时也不传价格字段。
+     * 不比对医保等级：发生业务后仍允许改。</p>
+     *
      * @param existing    库内聚合快照
-     * @param pricing     实例维度定价行
+     * @param pricing     实例维度定价行（财务/医保类别仍从此快照读取）
      * @param request     更新请求
      * @param editability 服务端解析的业务码
      */
@@ -95,6 +108,9 @@ public class CatalogEditWriteGate {
         CatalogPricingSnapshot priceSnapshot = CatalogPricingSnapshot.fromChargeLines(pricing);
         String requestPurchaseUnit = this.resolveDevicePurchaseUnitCode(request);
         String requestSplitUnit = this.resolveDeviceSplitUnitCode(request);
+        // 名称：发生业务后不可改
+        this.assertStringUnchanged("耗材名称", existing.getName(), request.getName());
+        this.assertStringUnchanged("商品名称", existing.getMerchandiseName(), request.getMerchandiseName());
         this.assertStringUnchanged("业务编码", existing.getBusNo(), request.getBusNo());
         this.assertStringUnchanged("耗材分类", existing.getCategoryCode(), request.getCategoryCode());
         this.assertStringUnchanged("耗材类型", existing.getTypeCode(), request.getTypeCode());
@@ -110,12 +126,7 @@ public class CatalogEditWriteGate {
         this.assertDecimalUnchanged("采购→拆零倍数", existing.getPurchaseUnitRatio(), request.getPurchaseUnitRatio());
         this.assertDecimalUnchanged("库存→拆零倍数", existing.getStockUnitRatio(), request.getStockUnitRatio());
         this.assertDecimalUnchanged("包装→拆零倍数", existing.getPackageUnitRatio(), request.getPackageUnitRatio());
-        this.assertDecimalUnchanged("购入价", priceSnapshot.purchasePrice, request.getPurchasePrice());
-        this.assertDecimalUnchanged("零售价", priceSnapshot.retailPrice, request.getRetailPrice());
         this.assertStringUnchanged("病案结算类型", existing.getMrSettlementTypeCode(), request.getMrSettlementTypeCode());
-        if (CatalogEditabilityConstants.LOCK_CLINICAL.equalsIgnoreCase(StringUtils.trimToEmpty(editability))) {
-            this.assertIntegerUnchanged("医保等级", existing.getChrgitmLv(), request.getChrgitmLv());
-        }
     }
 
     /**
@@ -144,15 +155,17 @@ public class CatalogEditWriteGate {
         } else {
             requestTypeEnum = String.valueOf(request.getTypeEnum());
         }
+        // 名称：发生业务后不可改；医保等级仍可改
+        this.assertStringUnchanged("诊疗名称", existing.getName(), request.getName());
         this.assertStringUnchanged("业务编码", existing.getBusNo(), request.getBusNo());
         this.assertStringUnchanged("目录分类", existing.getCategoryCode(), request.getCategoryCode());
         this.assertStringUnchanged("诊疗类型", existing.getTypeEnum(), requestTypeEnum);
         this.assertStringUnchanged("销售/计价单位", existing.getPackageUnitCode(), request.getPackageUnitCode());
         this.assertStringUnchanged("财务类别", priceSnapshot.itemTypeCode, request.getItemTypeCode());
         this.assertStringUnchanged("医保类别", priceSnapshot.ybType, request.getYbType());
-        this.assertDecimalUnchanged("购入价", priceSnapshot.purchasePrice, request.getPurchasePrice());
-        this.assertDecimalUnchanged("零售价", priceSnapshot.retailPrice, request.getRetailPrice());
-        this.assertIntegerUnchanged("医保等级", existing.getChrgitmLv(), request.getChrgitmLv());
+        // 锁定态跳过 replacePriceLines；未传价格视为不改价，勿把 null 误判为改价
+        // 诊疗目录无进价，仅校验售价（SALE）
+        this.assertDecimalUnchangedIfPresent("售价", priceSnapshot.retailPrice, request.getRetailPrice());
         this.assertStringUnchanged("病案结算类型", existing.getMrSettlementTypeCode(), request.getMrSettlementTypeCode());
     }
 
@@ -225,6 +238,21 @@ public class CatalogEditWriteGate {
             return;
         }
         throw new ValidationException("更新目录失败：" + fieldLabel + "已发生业务引用，不允许修改");
+    }
+
+    /**
+     * 目录写 Guard：请求未带金额时跳过（视为不改价）；有值则与库内比对。
+     *
+     * @param fieldLabel 字段中文名（异常文案）
+     * @param before     变更前
+     * @param after      变更后；{@code null} 表示未传
+     * @throws ValidationException 请求带了金额且与库内不一致时
+     */
+    private void assertDecimalUnchangedIfPresent(String fieldLabel, BigDecimal before, BigDecimal after) {
+        if (after == null) {
+            return;
+        }
+        this.assertDecimalUnchanged(fieldLabel, before, after);
     }
 
     /**

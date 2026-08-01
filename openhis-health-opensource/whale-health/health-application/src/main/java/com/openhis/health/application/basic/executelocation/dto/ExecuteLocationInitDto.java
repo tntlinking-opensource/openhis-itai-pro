@@ -10,12 +10,14 @@ import lombok.Data;
 import java.util.List;
 
 /**
- * 执行地点配置页初始化数据：执行科室树、诊疗大类下拉；执行地点下拉由页面按科室再加载（初始可为空列表）。
+ * 执行地点配置页初始化数据：开立科室树、执行科室（仅科室节点）下拉、诊疗大类。
  */
 @Data
 public class ExecuteLocationInitDto {
 
-    /** 执行科室（组织机构）树形下拉，value 为机构 id 字符串。 */
+    /** 开立科室（组织机构）树形下拉，value 为机构 id 字符串；配置页左侧树（可含医院根作层级）。 */
+    private List<OptionDto> organizationOptions;
+    /** 执行科室下拉：仅 {@code DEPARTMENT}，排除医院根；供规则行与医生站无配置回落。 */
     private List<OptionDto> executionOrgOptions;
     /** 执行地点候选；当前入口占位为空列表，由业务二次查询填充。 */
     private List<OptionDto> executionLocationOptions;

@@ -113,6 +113,12 @@ public class OutpatientInfoItemDto {
     @Schema(description = "服务类型名称")
     private String serviceTypeName;
 
+    /**
+     * 费用性质展示名：有医保账户优先其合同名，否则登记个人现金户合同名（与住院队列 contractDisplay 同口径）。
+     */
+    @Schema(description = "费用性质/医保类型展示")
+    private String contractDisplay;
+
     /** 就诊开始时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 就诊开始时间（挂号/预约）。 */

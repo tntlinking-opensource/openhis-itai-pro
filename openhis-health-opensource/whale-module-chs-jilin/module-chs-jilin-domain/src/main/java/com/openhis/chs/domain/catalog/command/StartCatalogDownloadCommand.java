@@ -37,6 +37,6 @@ public class StartCatalogDownloadCommand {
     @Schema(description = "显式指定本次 data.ver 起点（优先于游标与 force 默认）")
     private String startLocalVer;
 
-    @Schema(description = "1305 版本分支：F002 或 F003（仅 infno=1305 且全量重拉时生效）")
+    @Schema(description = "1305 版本分支：F002 或 F003（infno=1305 时用于选链：全量起点或本分支游标）")
     private String verBranch;
 }

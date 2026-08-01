@@ -352,6 +352,7 @@ public class InventoryDepartmentTransferOutMapperImpl implements InventoryDepart
         res.setSourceTypeEnum(head.getSourceTypeEnum());
         res.setPurposeTypeEnum(head.getPurposeTypeEnum());
         res.setCategoryEnum(head.getCategoryEnum());
+        res.setPractitionerId(head.getPractitionerId());
         List<TransferOutDetailLineDto> detailLines = new ArrayList<>();
         // —— 明细行顺序与查询返回一致（不在此重排）；头字段单独按申请时刻降序稳定选取，与列表聚合口径一致。——
         for (SupplyRequestModel line : lines) {
@@ -661,8 +662,8 @@ public class InventoryDepartmentTransferOutMapperImpl implements InventoryDepart
      * @param outboundBusNo    调出单 busNo（写入壳单 {@code originalBusNo}）
      * @param counterpartyType 对侧调入 type 持久化码
      * @param operatorId       操作人用户主键
-     * @param applicantId      壳单制单人医务人员主键
-     * @return 领域创建命令（初态 AGREE）
+     * @param applicantId      壳单制单人医务人员主键（调出行 applicant 缺省时回落）
+     * @return 领域创建命令（初态 AGREE；含 approverId/approvalTime）
      */
     @Override
     public CreateTransferCommand toCreateTransferCommandForShellCounterpartyTransferIn(
@@ -683,9 +684,33 @@ public class InventoryDepartmentTransferOutMapperImpl implements InventoryDepart
         if (shellType != null) {
             shellType = shellType.trim();
         }
-        // 壳单须带非空 apply_time：列表按 apply_time 做时刻窗比较，NULL 会导致「已生成壳单但列表查不到」。
+        // 壳单头沿用调出：申请时刻/审批人/审批时刻；缺省时 apply_time 回落 now（列表时刻窗谓词）。
         LocalDateTime shellApplyTime = LocalDateTime.now();
+        Long shellApproverId = null;
+        LocalDateTime shellApprovalTime = null;
         if (agreedOutLines != null) {
+            for (SupplyRequestModel headLine : agreedOutLines) {
+                if (headLine == null) {
+                    continue;
+                }
+                if (headLine.getApplyTime() != null) {
+                    shellApplyTime = headLine.getApplyTime();
+                }
+                if (headLine.getApproverId() != null) {
+                    shellApproverId = headLine.getApproverId();
+                }
+                if (headLine.getApprovalTime() != null) {
+                    shellApprovalTime = headLine.getApprovalTime();
+                }
+                break;
+            }
+        }
+        // 调出行尚未落审批时刻时，回落壳单申请时刻，避免 AGREE 行审批时间为空
+        if (shellApprovalTime == null) {
+            shellApprovalTime = shellApplyTime;
+        }
+        if (agreedOutLines != null) {
+            // —— 壳单：original_bus_no 绑定调出单号；制单/审批人与调出头一致。——
             for (SupplyRequestModel line : agreedOutLines) {
                 if (line == null) {
                     continue;
@@ -709,8 +734,16 @@ public class InventoryDepartmentTransferOutMapperImpl implements InventoryDepart
                 item.setPrice(line.getPrice());
                 item.setTotalPrice(line.getTotalPrice());
                 item.setOccurrenceTime(line.getOccurrenceTime());
-                item.setApplicantId(applicantId);
+                // 制单人：优先调出行申请人，缺省用调用方回落的医务人员主键
+                Long lineApplicantId = line.getApplicantId();
+                if (lineApplicantId != null) {
+                    item.setApplicantId(lineApplicantId);
+                } else {
+                    item.setApplicantId(applicantId);
+                }
                 item.setApplyTime(shellApplyTime);
+                item.setApproverId(shellApproverId);
+                item.setApprovalTime(shellApprovalTime);
                 item.setReason(null);
                 items.add(item);
             }

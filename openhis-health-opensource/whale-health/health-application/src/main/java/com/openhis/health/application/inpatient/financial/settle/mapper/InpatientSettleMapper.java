@@ -15,6 +15,7 @@ import com.openhis.health.application.inpatient.financial.settle.request.PageInp
 import com.openhis.health.application.inpatient.financial.settle.request.PreSettleInpatientChargesRequest;
 import com.openhis.health.application.inpatient.financial.settle.request.QueryInpatientSettleChargesRequest;
 import com.openhis.health.application.inpatient.financial.settle.response.ReverseInpatientSettleResponse;
+import com.openhis.health.application.inpatient.financial.settle.response.RecallInpatientDischargeResponse;
 import com.openhis.health.application.inpatient.financial.settle.response.ConfirmInpatientSettleResponse;
 import com.openhis.health.application.inpatient.financial.settle.response.LoadInpatientSettlePageInitResponse;
 import com.openhis.health.application.inpatient.financial.settle.response.LoadInpatientSettleSummaryResponse;
@@ -27,6 +28,7 @@ import com.openhis.health.domain.administration.chargeitem.command.BatchChargeIt
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.encounter.command.CompleteInpatientFinancialSettlementCommand;
+import com.openhis.health.domain.administration.encounter.command.RecallInpatientDischargeCommand;
 import com.openhis.health.domain.administration.invoice.command.CancelInvoiceCommand;
 import com.openhis.health.domain.administration.invoice.command.CreateDraftInvoiceCommand;
 import com.openhis.health.domain.administration.invoice.query.InvoiceQueryCommand;
@@ -235,13 +237,15 @@ public interface InpatientSettleMapper {
     /**
      * 支付流水 + 支付 ID → 发票草稿命令。
      *
-     * @param payment   支付流水读模型
-     * @param paymentId 支付主键
+     * @param payment           支付流水读模型
+     * @param paymentId         支付主键
+     * @param invoiceFaceAmount 票面金额（收费项合计结算刻度；含医保已付）
      * @return 发票草稿命令
      */
     CreateDraftInvoiceCommand toCreateDraftInvoiceCommand(
         PaymentReconciliationQueryModel payment,
-        Long paymentId);
+        Long paymentId,
+        BigDecimal invoiceFaceAmount);
 
     /**
      * 出院全结 → 就诊财务终态命令。
@@ -369,6 +373,34 @@ public interface InpatientSettleMapper {
      * @return 住院反结响应
      */
     ReverseInpatientSettleResponse toReverseInpatientSettleResponse(Long refundPaymentId);
+
+    /**
+     * 召回请求 → 领域出院召回命令。
+     *
+     * @param encounterId    就诊主键
+     * @param operatorId     操作人主键
+     * @param wardLocationId 末次已完成病区位置主键
+     * @return 领域召回命令
+     */
+    RecallInpatientDischargeCommand toRecallInpatientDischargeCommand(
+        Long encounterId,
+        Long operatorId,
+        Long wardLocationId);
+
+    /**
+     * 召回成功 → 响应。
+     *
+     * @param encounterId           就诊主键
+     * @param targetStatusEnum      召回后状态 code
+     * @param requiresBedAssignment 是否须二次分床
+     * @param refundPaymentId       内嵌反结逆向支付单 ID
+     * @return 召回响应
+     */
+    RecallInpatientDischargeResponse toRecallInpatientDischargeResponse(
+        Long encounterId,
+        String targetStatusEnum,
+        boolean requiresBedAssignment,
+        Long refundPaymentId);
 
     /**
      * 出院嘱退回草稿 → 领域命令（BR-IP-RVS-007）。

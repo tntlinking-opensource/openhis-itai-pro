@@ -61,6 +61,14 @@ public class EditMedicationDefinitionCommand
         private java.math.BigDecimal stockUnitRatio;
         /** 销售单位 -> 拆零单位换算倍数。 */
         private java.math.BigDecimal packageUnitRatio;
+        /**
+         * 追溯码贴码单位（可游离于五类业务单位；药品必填）。
+         */
+        private String traceUnitCode;
+        /**
+         * 1 个追溯码单位对应的拆零数量；药品必填且须 &gt; 0。
+         */
+        private java.math.BigDecimal traceUnitRatio;
         /** 默认库房。 */
         private Long locationId;
         /** 剂型编码。 */
@@ -85,7 +93,9 @@ public class EditMedicationDefinitionCommand
         private Long manufacturerId;
         /** 生产厂家文本。 */
         private String manufacturerText;
-        /** 供应商ID。 */
+        /**
+         * 供应商标识（历史字段；目录维护写路径由应用层强制置 null）。
+         */
         private Long supplyId;
         /** 批准文号。 */
         private String approvalNumber;
@@ -97,6 +107,8 @@ public class EditMedicationDefinitionCommand
         private java.math.BigDecimal usageLimit;
         /** 单次剂量。 */
         private java.math.BigDecimal dose;
+        /** 单次最小剂量。 */
+        private java.math.BigDecimal minUnit;
         /** 单次最大剂量。 */
         private java.math.BigDecimal maxUnit;
         /** 限制范围。 */

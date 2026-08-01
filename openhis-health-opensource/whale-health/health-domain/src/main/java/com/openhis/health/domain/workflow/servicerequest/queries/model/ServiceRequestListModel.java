@@ -36,7 +36,11 @@ public class ServiceRequestListModel {
     private String generateSourceEnum;
     /** 申请人主键。 */
     private Long requesterId;
-    /** 开立时间（与实体 {@code authored_time}、统一口径 {@code reqAuthoredTime} 对齐）。 */
+    /** 校对人主键（持久化 performer_check_id，BR-SRQ-022）。 */
+    private Long performerCheckId;
+    /** 开立时间（{@code req_opened_time}）。 */
+    private LocalDateTime reqOpenedTime;
+    /** 签发时间（{@code req_authored_time}）。 */
     private LocalDateTime reqAuthoredTime;
     /** 医生站列表展示排序号。 */
     private Integer sortNumber;
@@ -70,12 +74,14 @@ public class ServiceRequestListModel {
     private Long basedOnId;
     /** 父级诊疗请求主键（套餐子项等；出院门禁须 parent 为空）。 */
     private Long parentId;
-    /** 计划结束/停嘱时刻（列表停嘱展示候选）。 */
+    /** 计划结束时间（临床计划窗；非停嘱）。 */
     private LocalDateTime occurrenceEndTime;
-    /** 诊断定义主键（持久化 {@code wkf_service_request.condition_definition_id}）。 */
-    private Long conditionDefinitionId;
-    /** 就诊诊断主键（持久化 {@code wkf_service_request.encounter_diagnosis_id}）。 */
-    private Long encounterDiagnosisId;
+    /** 停嘱时间（{@code stop_time}；STOPPED 时有值）。 */
+    private LocalDateTime stopTime;
+    /** 停嘱人主键（{@code stopper_id}；未停 null）。 */
+    private Long stopperId;
+    /** 绑定就诊诊断主键有序串（持久化 {@code wkf_service_request.encounter_diagnosis_ids}；有序，首位为主诊断）。 */
+    private String encounterDiagnosisIds;
     /** 处方/申请单号（持久化 {@code wkf_service_request.prescription_no}）。 */
     private String prescriptionNo;
 }

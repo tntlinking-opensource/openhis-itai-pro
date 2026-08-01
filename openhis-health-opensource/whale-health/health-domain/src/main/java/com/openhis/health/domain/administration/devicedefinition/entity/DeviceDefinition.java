@@ -126,6 +126,20 @@ public class DeviceDefinition extends BaseAuditedEntity {
     @Column(name = "package_unit_ratio")
     private BigDecimal packageUnitRatio;
 
+    /**
+     * 追溯码所贴包装单位（可游离于五类业务单位之外；耗材目录可空）。
+     *
+     * <p>有码入库时须已维护；同意入库写入 {@code cus_trace_number.trace_unit_code}。</p>
+     */
+    @Column(name = "trace_unit_code", length = 64)
+    private String traceUnitCode;
+
+    /**
+     * 1 个追溯码单位对应的拆零数量；与 {@link #traceUnitCode} 成对；有值时须 &gt; 0。
+     */
+    @Column(name = "trace_unit_ratio")
+    private BigDecimal traceUnitRatio;
+
     /** 批准文号。 */
     @Column(name = "approval_number")
     private String approvalNumber;
@@ -162,9 +176,6 @@ public class DeviceDefinition extends BaseAuditedEntity {
     /** 医保编码。 */
     @Column(name = "yb_no")
     private String ybNo;
-    /** 医药机构目录编码。 */
-    @Column(name = "yb_org_no")
-    private String ybOrgNo;
     /** 医保对码标记。 */
     @Column(name = "yb_match_flag")
     private Boolean ybMatchFlag;
@@ -186,7 +197,8 @@ public class DeviceDefinition extends BaseAuditedEntity {
     /**
      * 医保对码标识。
      *
-     * <p>DOC-CONFLICT：DM/SDD 定义的医保回写字段为 ybFlag/ybNo/ybOrgNo/ybMatchFlag/chrgitmLv；
+     * <p>DOC-CONFLICT：DM/SDD 定义的医保回写字段为 ybFlag/ybNo/ybMatchFlag/chrgitmLv；
+     * 院内已废弃 ybOrgNo（医药机构目录编码），结算/对照仅用 yb_no。
      * 存量实现使用 ybMappingCode。当前保留该列以兼容存量调用方，但回写方法优先按 SDD 字段全集落地。</p>
      */
     @Column(name = "yb_mapping_code")
@@ -321,7 +333,7 @@ public class DeviceDefinition extends BaseAuditedEntity {
      * @throws BusinessException 参数非法
      */
     public void assertYbMappingPayloadValid() {
-        // SDD 字段表允许为空的字段不强制必填；但若携带 ybNo/ybOrgNo 则需去空格归一化由调用方完成。
+        // SDD 字段表允许为空的字段不强制必填；但若携带 ybNo 则需去空格归一化由调用方完成。
         if (this.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DEFINITION_INVALID_ARGUMENT, "器材定义标识不能为空");
         }

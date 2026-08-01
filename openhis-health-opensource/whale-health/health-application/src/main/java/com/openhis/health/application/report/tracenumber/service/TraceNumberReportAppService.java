@@ -155,9 +155,14 @@ public class TraceNumberReportAppService {
             }
             Page<TraceNumberReportRowQueryModel> page = traceNumberQueryService.pageTraceNumberReport(query);
             List<TraceNumberReportRowDto> rows = traceNumberReportMapper.toRowDtoList(page.getContent());
-            // Pre：药品 enrich
+            // Pre：药品 + 当前所在库房 enrich
             Map<Long, MedicationDefinition> medicationById = this.loadMedicationByIdForRows(rows);
-            traceNumberReportEnrichmentEnricher.enrichListRows(rows, medicationById, request.getQueryScope());
+            Map<Long, String> locationNameById = this.loadLocationNameByIdForReportRows(rows);
+            // Pre：指定库房时把所选库房名并入映射，保证「当前所在库房」必有值
+            this.putSelectedLocationName(locationNameById, request.getQueryScope(), request.getLocationId());
+            traceNumberReportEnrichmentEnricher.enrichListRows(
+                rows, medicationById, locationNameById, request.getQueryScope());
+            this.fillSelectedLocationNameWhenMissing(rows, request.getQueryScope(), request.getLocationId(), locationNameById);
             // Asm：分页壳 + deep link 回显
             PageTraceNumberReportResponse response = traceNumberReportMapper.toPageResponse(page, rows);
             this.applyDeepLinkFields(response, request);
@@ -315,7 +320,12 @@ public class TraceNumberReportAppService {
             Page<TraceNumberReportRowQueryModel> page = traceNumberQueryService.pageTraceNumberReport(pageQuery);
             List<TraceNumberReportRowDto> rows = traceNumberReportMapper.toRowDtoList(page.getContent());
             Map<Long, MedicationDefinition> medicationById = this.loadMedicationByIdForRows(rows);
-            traceNumberReportEnrichmentEnricher.enrichListRows(rows, medicationById, request.getQueryScope());
+            Map<Long, String> locationNameById = this.loadLocationNameByIdForReportRows(rows);
+            this.putSelectedLocationName(locationNameById, request.getQueryScope(), request.getLocationId());
+            traceNumberReportEnrichmentEnricher.enrichListRows(
+                rows, medicationById, locationNameById, request.getQueryScope());
+            this.fillSelectedLocationNameWhenMissing(
+                rows, request.getQueryScope(), request.getLocationId(), locationNameById);
             for (TraceNumberReportRowDto row : rows) {
                 if (allRows.size() >= TraceNumberReportExportConstants.EXPORT_MAX_ROWS) {
                     truncated = true;
@@ -355,6 +365,92 @@ public class TraceNumberReportAppService {
         }
         List<MedicationDefinition> definitions = medicationDefinitionQueryService.findAllByIds(medicationIds);
         return traceNumberReportEnrichmentEnricher.indexMedicationsById(definitions);
+    }
+
+    /**
+     * 指定库房查询时，把所选库房名写入映射，供列表「当前所在库房」展示。
+     *
+     * @param locationNameById 库位 id → 名称
+     * @param queryScope       查询范围
+     * @param locationId       所选库房
+     */
+    private void putSelectedLocationName(
+        Map<Long, String> locationNameById,
+        String queryScope,
+        Long locationId) {
+        if (!TraceNumberConstants.REPORT_QUERY_SCOPE_LOCATION.equals(trimToNull(queryScope))) {
+            return;
+        }
+        if (locationId == null || locationNameById == null) {
+            return;
+        }
+        if (locationNameById.containsKey(locationId)) {
+            return;
+        }
+        String name = locationQueryService.findNameById(locationId);
+        if (trimToNull(name) != null) {
+            locationNameById.put(locationId, name);
+        }
+    }
+
+    /**
+     * 指定库房命中行若未解析出当前所在库房名，回填为所选库房名（能查出即在本库）。
+     *
+     * @param rows             列表行
+     * @param queryScope       查询范围
+     * @param locationId       所选库房
+     * @param locationNameById 库位名映射
+     */
+    private void fillSelectedLocationNameWhenMissing(
+        List<TraceNumberReportRowDto> rows,
+        String queryScope,
+        Long locationId,
+        Map<Long, String> locationNameById) {
+        if (!TraceNumberConstants.REPORT_QUERY_SCOPE_LOCATION.equals(trimToNull(queryScope))) {
+            return;
+        }
+        if (rows == null || locationId == null || locationNameById == null) {
+            return;
+        }
+        String selectedName = locationNameById.get(locationId);
+        if (trimToNull(selectedName) == null) {
+            return;
+        }
+        for (TraceNumberReportRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (trimToNull(row.getCurrentLocationNames()) != null) {
+                continue;
+            }
+            row.setCurrentLocationNames(selectedName);
+        }
+    }
+
+    /**
+     * 批量加载列表行「当前所在库房」名称。
+     *
+     * @param rows 列表 DTO
+     * @return 库位 id → 名称
+     */
+    private Map<Long, String> loadLocationNameByIdForReportRows(List<TraceNumberReportRowDto> rows) {
+        Set<Long> locationIds = new HashSet<>();
+        if (rows != null) {
+            for (TraceNumberReportRowDto row : rows) {
+                if (row == null || row.getCurrentLocationIds() == null) {
+                    continue;
+                }
+                for (Long locationId : row.getCurrentLocationIds()) {
+                    if (locationId != null) {
+                        locationIds.add(locationId);
+                    }
+                }
+            }
+        }
+        if (locationIds.isEmpty()) {
+            return new LinkedHashMap<>();
+        }
+        return new LinkedHashMap<>(locationQueryService.mapNamesByIds(locationIds));
     }
 
     /**

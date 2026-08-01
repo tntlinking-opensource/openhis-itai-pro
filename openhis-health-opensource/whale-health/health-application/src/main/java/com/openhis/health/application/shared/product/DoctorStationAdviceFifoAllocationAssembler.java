@@ -10,6 +10,7 @@ import com.openhis.health.domain.medication.medicationdispense.command.ReplaceFi
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseOrderCatalogOccupancyModel;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.constants.DoctorStationAdviceConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.MedicationCommonConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
@@ -105,7 +106,12 @@ public class DoctorStationAdviceFifoAllocationAssembler {
         DoctorStationAdviceFifoAllocationResult fifoResult = DoctorStationAdviceInventoryUnitQuantityHelper.allocateFifoSegmentsInDoctorBusinessUnit(
                 physical, occ, TableNameConstants.MED_MEDICATION_DEFINITION, productRow, businessUnitCode, totalQuantity);
         if (fifoResult.getRemainingSplitQuantity().compareTo(BigDecimal.ZERO) > 0) {
-            throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_RULE_CONFLICT, "候选库位可用库存不足以覆盖医嘱数量，拒绝签发");
+            // 拒绝签发时点名药品，便于医生直接改量或换药
+            throw new BusinessException(
+                    ErrorCodeConstants.MEDICATION_DISPENSE_RULE_CONFLICT,
+                    String.format(
+                            DoctorStationAdviceConstants.MSG_SIGN_FIFO_INSUFFICIENT_STOCK_FOR_ADVICE,
+                            resolveFifoProductDisplayName(productRow, "药品")));
         }
         return toMedicationDispenseSegments(fifoResult.getSegments());
     }
@@ -227,7 +233,12 @@ public class DoctorStationAdviceFifoAllocationAssembler {
         DoctorStationAdviceFifoAllocationResult fifoResult = DoctorStationAdviceInventoryUnitQuantityHelper.allocateFifoSegmentsInDoctorBusinessUnit(
                 physical, occ, TableNameConstants.ADM_DEVICE_DEFINITION, productRow, businessUnitCode, totalQuantity);
         if (fifoResult.getRemainingSplitQuantity().compareTo(BigDecimal.ZERO) > 0) {
-            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_RULE_CONFLICT, "候选库位可用库存不足以覆盖耗材医嘱数量，拒绝签发");
+            // 拒绝签发时点名耗材，便于护士/医生直接改量或换品
+            throw new BusinessException(
+                    ErrorCodeConstants.DEVICE_DISPENSE_RULE_CONFLICT,
+                    String.format(
+                            DoctorStationAdviceConstants.MSG_SIGN_FIFO_INSUFFICIENT_STOCK_FOR_DEVICE,
+                            resolveFifoProductDisplayName(productRow, "耗材")));
         }
         return toDeviceDispenseSegments(fifoResult.getSegments());
     }
@@ -274,7 +285,9 @@ public class DoctorStationAdviceFifoAllocationAssembler {
         DoctorStationAdviceFifoAllocationResult fifoResult = DoctorStationAdviceInventoryUnitQuantityHelper.allocateFifoSegmentsInDoctorBusinessUnit(
             physical, occ, TableNameConstants.ADM_DEVICE_DEFINITION, productRow, unitCode, totalQuantity);
         if (fifoResult.getRemainingSplitQuantity().compareTo(BigDecimal.ZERO) > 0) {
-            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_RULE_CONFLICT, "指定库房可用库存不足以覆盖耗材数量");
+            throw new BusinessException(
+                ErrorCodeConstants.DEVICE_DISPENSE_RULE_CONFLICT,
+                "【" + resolveFifoProductDisplayName(productRow, "耗材") + "】指定库房可用库存不足以覆盖耗材数量");
         }
         return toDeviceDispenseSegments(fifoResult.getSegments());
     }
@@ -382,6 +395,24 @@ public class DoctorStationAdviceFifoAllocationAssembler {
             }
             return compareLong(left.getId(), right.getId());
         });
+    }
+
+    /**
+     * 解析 FIFO 库存不足提示中的产品展示名（通用名优先，其次商品名）。
+     *
+     * @param productRow 产品读模型
+     * @param fallback   名称均空时的兜底文案（如「药品」「耗材」）
+     * @return 非空展示名
+     */
+    private static String resolveFifoProductDisplayName(ProductDefinitionDisplayDto productRow, String fallback) {
+        if (productRow == null) {
+            return fallback;
+        }
+        String name = StringUtils.firstNonBlank(productRow.getProductName(), productRow.getMerchandiseName());
+        if (StringUtils.isEmpty(name)) {
+            return fallback;
+        }
+        return name;
     }
 
     /**

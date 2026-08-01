@@ -15,8 +15,8 @@ import lombok.Setter;
 public class TcmEncounterDiagnosisAssociationQueryModel {
     /** 就诊诊断关联主键 {@code adm_encounter_diagnosis.id}。 */
     private Long encounterDiagnosisId;
-    /** 病情事实主键 {@code cln_condition.id}。 */
-    private Long conditionId;
+    /** 诊断目录主键 {@code cln_condition_definition.id}。 */
+    private Long conditionDefinitionId;
     /** 中医证候组号（同组病名与证候共享）。 */
     private String tcmSyndromeGroup;
     /** 是否主诊病证组。 */

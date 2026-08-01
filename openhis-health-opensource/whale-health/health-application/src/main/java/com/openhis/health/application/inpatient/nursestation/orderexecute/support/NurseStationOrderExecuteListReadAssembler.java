@@ -7,27 +7,39 @@ package com.openhis.health.application.inpatient.nursestation.orderexecute.suppo
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
 
 import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler;
-import com.openhis.health.application.outpatient.nursestation.skintest.support.NurseStationSkinTestExecuteExcludeHelper;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.support.NurseStationOrderViewListAssembler;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderViewDisplayContext;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderViewDisplayCore;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderViewListDetailIndex;
+import com.openhis.health.application.outpatient.doctorstation.advice.dto.ServiceRequestDetailSummaryDto;
+import com.openhis.health.application.shared.advice.AdviceExtensionJsonParser;
+import com.openhis.health.application.shared.advice.AdviceExtensionJsonParser.AdvicePackageChildItemDto;
 import com.openhis.health.application.shared.advice.AdviceOrderBindQueryLoader;
 import com.openhis.health.application.shared.advice.AdviceOrderBindRowDto;
+import com.openhis.health.application.shared.advice.ServiceRequestDetailListAssembler;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteBindItemDto;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecutePatientGroupDto;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteRowDto;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteSlotDto;
+import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
+import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
+import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
+import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.clinical.procedure.entity.Procedure;
 import com.openhis.health.domain.clinical.procedure.queries.model.ProcedureRecordQueryModel;
 import com.openhis.health.domain.clinical.procedure.service.ProcedureQueryService;
+import com.openhis.health.application.shared.advice.InpatientMedicationRequestExecutionMeasureHelper;
+import com.openhis.health.application.shared.advice.InpatientStandingOrderSplittableSettingResolver;
+import com.openhis.health.application.shared.advice.LongTermFirstExecutionSlotSupport;
+import com.openhis.health.application.shared.advice.StandingOrderPackageBatchExpandSupport;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
 import com.openhis.health.domain.custom.frequency.queries.model.FrequencyExecutionTimePointQueryModel;
 import com.openhis.health.domain.custom.frequency.service.FrequencyQueryService;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.application.shared.advice.InpatientOrderListSkeleton;
 import com.openhis.health.domain.share.constants.DoctorStationAdviceConstants;
-import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
@@ -35,16 +47,29 @@ import com.openhis.health.domain.share.enums.EventStatus;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.TherapyType;
+import com.openhis.health.domain.share.product.MedicationProductUnitConversionSource;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.EnumUtil;
+import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
+import com.openhis.health.domain.workflow.activitydefinition.queries.model.ActivityDefinitionChildQueryModel;
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
+import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestListModel;
+import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestQueryService;
+import com.openhis.health.domain.workflow.inventoryitem.support.MedicationProductQuantityToSplitUnitConverter;
+import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest;
+import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestDetailListModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
+import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -64,11 +89,16 @@ import java.util.Set;
  *   <li>长期：{@code FrequencyQueryService#computeExecutionTimePoints} 展开计划点（BR-IP-EXE-005）；临时：整单按净 COMPLETED 归并（BR-IP-EXE-006）</li>
  *   <li>长期 Procedure 按 occurrence 归并；临时不按 occurrence 与开立时刻并列 pending → pending/executed/skipped/cancelled 四类槽位（BR-IP-EXE-007～009）</li>
  *   <li>净态判定：occurrence 组内 id 最大 + {@code CANCEL.refund_id}；执行-取消对冲净值为 hedged pending，同时展示于待执行/取消 Tab（BR-IP-EXE-008/014）</li>
- *   <li>批量挂载 bindItems：药嘱按用法→耗材，诊嘱按 activity→子项（BR-IP-EXE-013）</li>
- *   <li>executeTab 收窄当前 Tab 槽位（医嘱行不变，BR-IP-EXE-010/012）</li>
+ *   <li>批量挂载 bindItems：药嘱按用法→耗材，诊嘱按 activity→绑定模板（BR-IP-EXE-013）</li>
+ *   <li>诊嘱批量挂载 packageChildren / serviceRequestDetails：供检查/检验申请单打印（列表页不展示）</li>
+ *   <li>长期医嘱 bindItems 数量：批量回显上次 ORDER_EXECUTE 派生量（含取消软删，便于下次执行沿用护士手改）</li>
+ *   <li>终态槽位批量回填操作人姓名（BR-IP-EXE-031；主执行人优先，否则 recorder）</li>
+ *   <li>executeTab 收窄当前 Tab 槽位（医嘱行不变，BR-IP-EXE-010/012）；长嘱不可拆展满盒时不再按 deadline 砍盒尾（BR-IP-EXE-035）</li>
  * </ol>
  *
- * <p>医嘱行展示字段委托 {@link NurseStationOrderViewListAssembler}。</p>
+ * <p>医嘱行展示字段委托 {@link NurseStationOrderViewListAssembler}。
+ * 全局开关 {@code inpatientStandingOrderSplittable=0} 时，仅本列表读路径对长期药品按包装拆零量切盒展槽（BR-IP-EXE-035）；
+ * 出院门禁等同调用保持可拆口径，写执行/取消不受影响。</p>
  *
  */
 @Component
@@ -81,17 +111,27 @@ public class NurseStationOrderExecuteListReadAssembler {
     private final FrequencyQueryService frequencyQueryService;
     /** Procedure 批量加载。 */
     private final ProcedureQueryService procedureQueryService;
+    /** 医务人员姓名解析（终态槽位操作人展示）。 */
+    private final PractitionerQueryService practitionerQueryService;
     /** 绑定项模板查询。 */
     private final AdviceOrderBindQueryLoader orderBindQueryLoader;
+    /** 派生服务申请查询（长期绑定诊疗上次执行数量回显）。 */
+    private final ServiceRequestQueryService serviceRequestQueryService;
+    /** 派生耗材请求查询（长期绑定耗材上次执行数量回显）。 */
+    private final DeviceRequestQueryService deviceRequestQueryService;
+    /** 收费明细查询（长期带出量优先取上次 ORDER_EXECUTE 账单数量）。 */
+    private final ChargeItemQueryService chargeItemQueryService;
 
     /** 中药 Tab 方级折叠。 */
     private final InpatientNurseStationTcmOrchestrator inpatientNurseStationTcmOrchestrator;
-
-    /** 皮试检查活动定义解析：执行 Tab 与皮试 Tab 互斥过滤。 */
+    /** 住院长嘱是否可拆全局开关。 */
+    private final InpatientStandingOrderSplittableSettingResolver standingOrderSplittableSettingResolver;
+    /** 药品目录批量加载（不可拆切盒取包装拆零比）。 */
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
+    /** 活动定义子项只读（套餐子项，检查/检验申请单打印用）。 */
     private final ActivityDefinitionQueryService activityDefinitionQueryService;
-
-    /** 皮试检查活动 id 进程内缓存（主数据固定名，启动后不变）。 */
-    private volatile Long cachedSkinTestActivityId;
+    /** 服务申请明细只读装配（部位/标本展示名，申请单打印用）。 */
+    private final ServiceRequestDetailListAssembler serviceRequestDetailListAssembler;
 
     /**
      * OrderInfo 骨架 + 域明细 → 按就诊分组且组内已排序的列表（含槽位与 bindItems）。
@@ -120,35 +160,56 @@ public class NurseStationOrderExecuteListReadAssembler {
             orderViewListAssembler.indexEncounterDetails(skeleton, medByEncounter, svcByEncounter);
         NurseStationOrderViewDisplayContext displayContext =
             orderViewListAssembler.prepareDisplayContext(index);
-        Long skinTestActivityId = this.resolveSkinTestActivityId();
+        // Pre：长嘱不可拆时批量预热药品目录，供包装拆零比与槽量换算（可拆开关下跳过）
+        boolean standingOrderSplittable = standingOrderSplittableSettingResolver.isSplittable();
+        Map<String, ProductDefinitionDisplayDto> medicationProductByKey = Collections.emptyMap();
+        if (!standingOrderSplittable) {
+            medicationProductByKey = this.loadMedicationProductsForPackageBatch(index.getMedDetailById());
+        }
+        // Pre：诊嘱套餐子项 + 申请明细（部位/标本），供检查/检验申请单打印；列表页不展示
+        Map<Long, List<AdvicePackageChildItemDto>> packageChildrenByActivityId =
+            this.loadPackageChildrenByActivityId(index.getSvcDetailById().values());
+        Map<Long, List<ServiceRequestDetailSummaryDto>> detailsByServiceRequestId =
+            this.loadServiceRequestDetailSummaries(index.getSvcDetailById().values());
         Map<Long, List<NurseStationOrderExecuteRowDto>> rowsByEncounter = new LinkedHashMap<>();
         // 逐 OrderInfo 骨架行装配：展示字段 + 四类槽位 + bindItems + Tab 过滤
         for (InpatientOrderListSkeleton order : skeleton) {
             if (order == null || order.getEncounterId() == null) {
                 continue;
             }
-            // 剔除长期无频次、转科/出院/护理等特殊诊疗等不可执行行
+            // 剔除长期无频次、转科/出院/护理等特殊诊疗等不可执行行（皮试检查与其它诊疗同轨，不互斥）
             if (this.shouldExcludeExecuteRow(
-                order, index.getMedDetailById(), index.getSvcDetailById(), skinTestActivityId)) {
+                order, index.getMedDetailById(), index.getSvcDetailById())) {
                 continue;
             }
             Long requestId = orderViewListAssembler.resolveRequestId(order);
             String requestTable = orderViewListAssembler.resolveRequestTable(order);
             // 按 request 锚点加载全部 Procedure，供槽位终态归并
             List<ProcedureRecordQueryModel> procedures = procedureQueryService.getProcedureRecords(requestId, requestTable);
-            NurseStationOrderExecuteRowDto line = this.mapOrderRow(
+            ServiceRequestListModel svcDetail = index.getSvcDetailById().get(requestId);
+            PackageBatchExpandOutcome expandOutcome = this.mapOrderRow(
                 order,
                 index.getMedDetailById().get(requestId),
-                index.getSvcDetailById().get(requestId),
+                svcDetail,
                 displayContext,
                 procedures,
                 executionDeadline,
-                encounterOrgIds);
-            if (line == null) {
+                encounterOrgIds,
+                !standingOrderSplittable,
+                medicationProductByKey);
+            if (expandOutcome == null || expandOutcome.row == null) {
                 continue;
             }
-            // Tab 过滤：医嘱行始终保留，仅回传当前 Tab 且 planTime ≤ deadline 的计划点（BR-IP-EXE-010）
-            this.applyExecuteTabSlotFilter(line, executeTab, executionDeadline);
+            NurseStationOrderExecuteRowDto line = expandOutcome.row;
+            // Asm：诊嘱挂载套餐子项/部位标本（打印用）
+            this.attachServiceRequestPrintDetails(
+                line, svcDetail, packageChildrenByActivityId, detailsByServiceRequestId);
+            // Tab 过滤：默认可拆按 deadline 收窄；不可拆已展满盒时禁止再砍盒尾时点（BR-IP-EXE-035）
+            LocalDateTime slotFilterDeadline = executionDeadline;
+            if (expandOutcome.packageBatchApplied) {
+                slotFilterDeadline = LocalDateTime.MAX;
+            }
+            this.applyExecuteTabSlotFilter(line, executeTab, slotFilterDeadline);
             List<NurseStationOrderExecuteRowDto> bucket = rowsByEncounter.get(order.getEncounterId());
             if (bucket == null) {
                 bucket = new ArrayList<>();
@@ -156,7 +217,11 @@ public class NurseStationOrderExecuteListReadAssembler {
             }
             bucket.add(line);
         }
-        // 按就诊分组，组内长临+开立时间排序
+        // Asm：长期医嘱 bindItems 数量回显上次 ORDER_EXECUTE 派生量（护士手改后下次执行沿用）
+        this.overlayLongTermBindQuantitiesFromLastExecution(rowsByEncounter);
+        // Asm：终态槽位批量回填操作人姓名（已执行优先主执行人，不执行/取消回落 recorder）
+        this.enrichTerminalSlotOperatorNames(rowsByEncounter.values());
+        // 按就诊分组，组内按开立时间倒序
         // 输出：每个 encounterId 一组，组内 orders 已排序
         List<NurseStationOrderExecutePatientGroupDto> groups = new ArrayList<>();
         Map<Long, MedicationRequestListQueryModel> medDetailById =
@@ -263,7 +328,8 @@ public class NurseStationOrderExecuteListReadAssembler {
         if (procedureRows == null) {
             procedureRows = Collections.emptyList();
         }
-        SlotBuckets buckets = this.buildSlotBuckets(order, medDetail, svcDetail, procedureRows, executionDeadline);
+        SlotBuckets buckets = this.buildSlotBuckets(
+            order, medDetail, svcDetail, procedureRows, executionDeadline, false, Collections.emptyMap());
         if (buckets.pendingSlots == null || buckets.pendingSlots.isEmpty()) {
             return false;
         }
@@ -499,22 +565,31 @@ public class NurseStationOrderExecuteListReadAssembler {
             LocalDateTime stopTime = null;
             if (medDetail != null
                 && RequestStatus.STOPPED.getCode().equals(medDetail.getStatusEnum())
-                && medDetail.getEffectiveDoseEnd() != null) {
-                stopTime = medDetail.getEffectiveDoseEnd();
+                && medDetail.getStopTime() != null) {
+                stopTime = medDetail.getStopTime();
             }
             if (RequestStatus.STOPPED.getCode().equals(order.getStatusEnum())
-                && order.getEffectiveDoseEnd() != null) {
-                if (stopTime == null || order.getEffectiveDoseEnd().isBefore(stopTime)) {
-                    stopTime = order.getEffectiveDoseEnd();
+                && order.getStopTime() != null) {
+                if (stopTime == null || order.getStopTime().isBefore(stopTime)) {
+                    stopTime = order.getStopTime();
                 }
             }
             return stopTime;
         }
-        if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(order.getOrderType())
-            && svcDetail != null
-            && RequestStatus.STOPPED.getCode().equals(svcDetail.getStatusEnum())
-            && svcDetail.getOccurrenceEndTime() != null) {
-            return svcDetail.getOccurrenceEndTime();
+        if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(order.getOrderType())) {
+            LocalDateTime stopTime = null;
+            if (svcDetail != null
+                && RequestStatus.STOPPED.getCode().equals(svcDetail.getStatusEnum())
+                && svcDetail.getStopTime() != null) {
+                stopTime = svcDetail.getStopTime();
+            }
+            if (RequestStatus.STOPPED.getCode().equals(order.getStatusEnum())
+                && order.getStopTime() != null) {
+                if (stopTime == null || order.getStopTime().isBefore(stopTime)) {
+                    stopTime = order.getStopTime();
+                }
+            }
+            return stopTime;
         }
         return null;
     }
@@ -526,9 +601,6 @@ public class NurseStationOrderExecuteListReadAssembler {
         InpatientOrderListSkeleton order,
         MedicationRequestListQueryModel medDetail,
         ServiceRequestListModel svcDetail) {
-        if (this.shouldExcludeSkinTestExecuteRow(order, medDetail, svcDetail, this.resolveSkinTestActivityId())) {
-            return true;
-        }
         if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(order.getOrderType())) {
             String serviceCategory = orderViewListAssembler.resolveServiceCategoryEnum(order, svcDetail);
             if (orderViewListAssembler.isExcludedFromNurseStationExecuteList(serviceCategory)) {
@@ -603,8 +675,7 @@ public class NurseStationOrderExecuteListReadAssembler {
     private boolean shouldExcludeExecuteRow(
         InpatientOrderListSkeleton order,
         Map<Long, MedicationRequestListQueryModel> medDetailById,
-        Map<Long, ServiceRequestListModel> svcDetailById,
-        Long skinTestActivityId) {
+        Map<Long, ServiceRequestListModel> svcDetailById) {
         MedicationRequestListQueryModel med = null;
         ServiceRequestListModel svc = null;
         if (ReadModelOrderTypeConstants.MED_REQUEST.equals(order.getOrderType())) {
@@ -612,9 +683,6 @@ public class NurseStationOrderExecuteListReadAssembler {
         }
         if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(order.getOrderType())) {
             svc = svcDetailById.get(order.getOrderId());
-        }
-        if (this.shouldExcludeSkinTestExecuteRow(order, med, svc, skinTestActivityId)) {
-            return true;
         }
         if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(order.getOrderType())) {
             String serviceCategory = orderViewListAssembler.resolveServiceCategoryEnum(order, svc);
@@ -661,51 +729,23 @@ public class NurseStationOrderExecuteListReadAssembler {
     }
 
     /**
-     * 皮试检查 SR 与皮试药不进执行 Tab（AS-IP-NUR-011 与执行 Tab 互斥）。
-     */
-    private boolean shouldExcludeSkinTestExecuteRow(
-        InpatientOrderListSkeleton order,
-        MedicationRequestListQueryModel medDetail,
-        ServiceRequestListModel svcDetail,
-        Long skinTestActivityId) {
-        if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(order.getOrderType())) {
-            if (NurseStationSkinTestExecuteExcludeHelper.shouldExcludeServiceFromNurseStationExecuteList(
-                skinTestActivityId, svcDetail)) {
-                return true;
-            }
-        }
-        if (ReadModelOrderTypeConstants.MED_REQUEST.equals(order.getOrderType())) {
-            if (NurseStationSkinTestExecuteExcludeHelper.shouldExcludeMedicationFromNurseStationExecuteList(medDetail)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * 解析皮试检查活动定义主键（进程内缓存）。
-     */
-    private Long resolveSkinTestActivityId() {
-        if (this.cachedSkinTestActivityId == null) {
-            this.cachedSkinTestActivityId = this.activityDefinitionQueryService.requireIdByExactName(
-                GeneralSharedConstants.SKIN_TEST_INSPECTION_ACTIVITY_NAME);
-        }
-        return this.cachedSkinTestActivityId;
-    }
-
-    /**
      * 单条 OrderInfo → 执行列表行（含四类槽位 + bindItems）。
      *
-     * @param encounterOrgIds 就诊→机构，供 bindItems 模板 org 收窄
+     * @param encounterOrgIds              就诊→机构，供 bindItems 模板 org 收窄
+     * @param applyStandingOrderPackageBatch 是否启用长嘱不可拆切盒（仅 IF-IP-EXE-01 列表）
+     * @param medicationProductByKey       药品复合键 → 目录；不可拆时非空
+     * @return 行与是否已按包装展满盒；不可映射时 null
      */
-    private NurseStationOrderExecuteRowDto mapOrderRow(
+    private PackageBatchExpandOutcome mapOrderRow(
         InpatientOrderListSkeleton order,
         MedicationRequestListQueryModel medDetail,
         ServiceRequestListModel svcDetail,
         NurseStationOrderViewDisplayContext displayContext,
         List<ProcedureRecordQueryModel> procedures,
         LocalDateTime executionDeadline,
-        Map<Long, Long> encounterOrgIds) {
+        Map<Long, Long> encounterOrgIds,
+        boolean applyStandingOrderPackageBatch,
+        Map<String, ProductDefinitionDisplayDto> medicationProductByKey) {
         NurseStationOrderViewDisplayCore core;
         if (ReadModelOrderTypeConstants.MED_REQUEST.equals(order.getOrderType())) {
             core = orderViewListAssembler.buildMedicationDisplayCore(order, medDetail, displayContext);
@@ -720,8 +760,20 @@ public class NurseStationOrderExecuteListReadAssembler {
         }
         NurseStationOrderExecuteRowDto line = new NurseStationOrderExecuteRowDto();
         this.applyViewCoreToExecuteRow(core, line);
-        // 频次计划点 + Procedure 归并 → 四类槽位
-        SlotBuckets buckets = this.buildSlotBuckets(order, medDetail, svcDetail, procedures, executionDeadline);
+        // 药嘱途径 code / 输液标志：供打印中心等按 code 筛选，禁止前端用 usageDisplay 文案分支
+        if (medDetail != null) {
+            line.setMethodCode(medDetail.getMethodCode());
+            line.setInfusionFlag(medDetail.getInfusionFlag());
+        }
+        // 频次计划点 + Procedure 归并 → 四类槽位（可选包装切盒）
+        SlotBuckets buckets = this.buildSlotBuckets(
+            order,
+            medDetail,
+            svcDetail,
+            procedures,
+            executionDeadline,
+            applyStandingOrderPackageBatch,
+            medicationProductByKey);
         line.setPendingSlots(buckets.pendingSlots);
         line.setExecutedSlots(buckets.executedSlots);
         line.setSkippedSlots(buckets.skippedSlots);
@@ -732,7 +784,137 @@ public class NurseStationOrderExecuteListReadAssembler {
         }
         // bindItems 供前端勾选；写路径按勾选项派生
         line.setBindItems(this.loadBindItems(order, medDetail, svcDetail, orgId, displayContext.getUnitLabelByCode()));
-        return line;
+        PackageBatchExpandOutcome outcome = new PackageBatchExpandOutcome();
+        outcome.row = line;
+        outcome.packageBatchApplied = buckets.packageBatchApplied;
+        return outcome;
+    }
+
+    /**
+     * Pre：按活动定义主键批量加载套餐子项（检查/检验申请单打印「明细」列）。
+     *
+     * @param svcDetails 本批诊嘱明细
+     * @return activityId → 套餐子项；无子项时对应键可缺省
+     */
+    private Map<Long, List<AdvicePackageChildItemDto>> loadPackageChildrenByActivityId(
+        Collection<ServiceRequestListModel> svcDetails) {
+        if (svcDetails == null || svcDetails.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        LinkedHashSet<Long> activityIds = new LinkedHashSet<>();
+        for (ServiceRequestListModel svc : svcDetails) {
+            if (svc != null && svc.getActivityId() != null) {
+                activityIds.add(svc.getActivityId());
+            }
+        }
+        if (activityIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, List<ActivityDefinitionChildQueryModel>> modelsByActivityId =
+            activityDefinitionQueryService.listChildrenByActivityIds(activityIds);
+        Map<Long, List<AdvicePackageChildItemDto>> result = new HashMap<>();
+        for (Map.Entry<Long, List<ActivityDefinitionChildQueryModel>> entry : modelsByActivityId.entrySet()) {
+            if (entry.getKey() == null) {
+                continue;
+            }
+            result.put(entry.getKey(), AdviceExtensionJsonParser.toPackageChildItems(entry.getValue()));
+        }
+        return result;
+    }
+
+    /**
+     * Pre：按服务申请主键批量加载部位/标本明细摘要（申请单打印用）。
+     *
+     * @param svcDetails 本批诊嘱明细
+     * @return serviceRequestId → 明细摘要；无明细时对应键可缺省
+     */
+    private Map<Long, List<ServiceRequestDetailSummaryDto>> loadServiceRequestDetailSummaries(
+        Collection<ServiceRequestListModel> svcDetails) {
+        if (svcDetails == null || svcDetails.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Long> serviceRequestIds = new ArrayList<>();
+        for (ServiceRequestListModel svc : svcDetails) {
+            if (svc != null && svc.getId() != null) {
+                serviceRequestIds.add(svc.getId());
+            }
+        }
+        if (serviceRequestIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, List<ServiceRequestDetailListModel>> modelsByRequestId =
+            serviceRequestDetailListAssembler.mapDetailListModelsByServiceRequestIds(serviceRequestIds);
+        Map<Long, List<ServiceRequestDetailSummaryDto>> result = new HashMap<>();
+        for (Map.Entry<Long, List<ServiceRequestDetailListModel>> entry : modelsByRequestId.entrySet()) {
+            if (entry.getKey() == null) {
+                continue;
+            }
+            result.put(entry.getKey(), this.toServiceRequestDetailSummaries(entry.getValue()));
+        }
+        return result;
+    }
+
+    /**
+     * Asm：领域明细模型 → 打印用明细摘要 DTO（不经门诊申请单 Orchestrator，避免跨 Feature support 依赖）。
+     *
+     * @param models 已 enrich 展示名的明细行
+     * @return 摘要列表；无数据时空列表
+     */
+    private List<ServiceRequestDetailSummaryDto> toServiceRequestDetailSummaries(
+        List<ServiceRequestDetailListModel> models) {
+        if (models == null || models.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<ServiceRequestDetailSummaryDto> result = new ArrayList<>();
+        for (ServiceRequestDetailListModel model : models) {
+            if (model == null) {
+                continue;
+            }
+            ServiceRequestDetailSummaryDto dto = new ServiceRequestDetailSummaryDto();
+            dto.setTargetTable(model.getTargetTable());
+            dto.setTargetId(model.getTargetId());
+            dto.setTargetDisplayName(model.getTargetDisplayName());
+            dto.setRemark(model.getRemark());
+            result.add(dto);
+        }
+        return result;
+    }
+
+    /**
+     * Asm：诊嘱行挂载套餐子项与申请明细（仅 SERVICE_REQUEST；列表页不展示，供打印映射）。
+     *
+     * @param line                         执行列表行
+     * @param svcDetail                    诊疗明细；非诊嘱为 null
+     * @param packageChildrenByActivityId  activityId → 套餐子项
+     * @param detailsByServiceRequestId    serviceRequestId → 部位/标本摘要
+     */
+    private void attachServiceRequestPrintDetails(
+        NurseStationOrderExecuteRowDto line,
+        ServiceRequestListModel svcDetail,
+        Map<Long, List<AdvicePackageChildItemDto>> packageChildrenByActivityId,
+        Map<Long, List<ServiceRequestDetailSummaryDto>> detailsByServiceRequestId) {
+        if (line == null || svcDetail == null) {
+            return;
+        }
+        if (!ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(line.getOrderType())) {
+            return;
+        }
+        List<AdvicePackageChildItemDto> children = Collections.emptyList();
+        if (svcDetail.getActivityId() != null && packageChildrenByActivityId != null) {
+            List<AdvicePackageChildItemDto> found = packageChildrenByActivityId.get(svcDetail.getActivityId());
+            if (found != null) {
+                children = found;
+            }
+        }
+        line.setPackageChildren(children);
+        List<ServiceRequestDetailSummaryDto> details = Collections.emptyList();
+        if (svcDetail.getId() != null && detailsByServiceRequestId != null) {
+            List<ServiceRequestDetailSummaryDto> found = detailsByServiceRequestId.get(svcDetail.getId());
+            if (found != null) {
+                details = found;
+            }
+        }
+        line.setServiceRequestDetails(details);
     }
 
     /**
@@ -749,42 +931,78 @@ public class NurseStationOrderExecuteListReadAssembler {
         line.setTherapyEnum(core.getTherapyEnum());
         line.setTherapyEnumText(core.getTherapyDisplay());
         line.setCategoryEnum(core.getCategoryEnum());
+        // 类型列与校对同源（含嘱托「嘱托」，禁止前端仅按 orderType 回落「诊疗」）
+        line.setOrderKindDisplay(core.getOrderKindDisplay());
         line.setAdviceDisplayName(core.getAdviceDisplayName());
+        line.setRemark(core.getRemark());
         line.setSpecificationText(core.getSpecificationText());
         line.setDosageDisplay(core.getDosageDisplay());
         line.setUsageDisplay(core.getUsageDisplay());
         line.setFrequencyDisplay(core.getFrequencyDisplay());
-        line.setAuthoredTime(core.getAuthoredTime());
+        line.setReqOpenedTime(core.getReqOpenedTime());
+        line.setReqAuthoredTime(core.getReqAuthoredTime());
         line.setStopTime(core.getStopTime());
         line.setRequesterName(core.getRequesterName());
+        line.setStopperId(core.getStopperId());
+        line.setStopperName(core.getStopperName());
+        line.setPerformerCheckOrgDisplay(core.getPerformerCheckOrgDisplay());
         line.setGroupId(core.getGroupId());
+        line.setBasedOnMedicationRequestId(core.getBasedOnMedicationRequestId());
     }
 
     /**
      * 槽位四类分桶（BR-IP-EXE-007～009）。
      *
      * <p>计划点集合 = 频次展开 ∪ Procedure 已有 occurrence；无 Procedure 覆盖的计划点 → pending；
-     * 有 Procedure 时取组内最后一条为终态；执行-取消对冲净值 hedged pending，同时归入 pending 与 cancelled 桶。</p>
+     * 有 Procedure 时取组内最后一条为终态；执行-取消对冲净值 hedged pending，同时归入 pending 与 cancelled 桶。
+     * <strong>不执行（STOPPED）只占用对应 occurrence</strong>，同医嘱其它 planTime 仍可 pending；
+     * 禁止按「整条 Request 已有 STOPPED」清空其余计划点。</p>
+     *
+     * @param applyStandingOrderPackageBatch 列表读路径且全局不可拆时为 true；出院门禁等须传 false
+     * @param medicationProductByKey         药品目录 Map；不可拆切盒用
      */
     private SlotBuckets buildSlotBuckets(
         InpatientOrderListSkeleton order,
         MedicationRequestListQueryModel medDetail,
         ServiceRequestListModel svcDetail,
         List<ProcedureRecordQueryModel> procedures,
-        LocalDateTime executionDeadline) {
+        LocalDateTime executionDeadline,
+        boolean applyStandingOrderPackageBatch,
+        Map<String, ProductDefinitionDisplayDto> medicationProductByKey) {
         String therapy = this.resolveTherapyEnum(order, medDetail, svcDetail);
-        LocalDateTime authoredTime = this.resolveAuthoredTime(order, medDetail, svcDetail);
+        LocalDateTime openedTime = this.resolveOpenedTime(order, medDetail, svcDetail);
         if (TherapyType.TEMPORARY.getCode().equals(therapy)) {
             // 临时嘱整单归并：有净执行记录即已执行，不再按 occurrence 与开立时刻并列 pending（BR-IP-EXE-006）
-            return this.buildTemporarySlotBuckets(procedures, authoredTime);
+            return this.buildTemporarySlotBuckets(procedures, openedTime);
         }
         SlotBuckets buckets = new SlotBuckets();
         buckets.pendingSlots = new ArrayList<>();
         buckets.executedSlots = new ArrayList<>();
         buckets.skippedSlots = new ArrayList<>();
         buckets.cancelledSlots = new ArrayList<>();
-        // 长期频次展开
-        Set<LocalDateTime> plannedTimes = this.resolvePlannedOccurrenceTimes(order, medDetail, svcDetail, executionDeadline);
+        // 长期频次展开（含开立日首次槽裁剪；可选包装切盒 BR-IP-EXE-035）
+        PlannedOccurrenceExpandResult expandResult = this.resolvePlannedOccurrenceTimes(
+            order,
+            medDetail,
+            svcDetail,
+            executionDeadline,
+            applyStandingOrderPackageBatch,
+            medicationProductByKey);
+        Set<LocalDateTime> plannedTimes = expandResult.planTimes;
+        buckets.packageBatchApplied = expandResult.packageBatchApplied;
+        // 秒级归一，与 Procedure occurrence 分组合并键一致
+        Set<LocalDateTime> normalizedPlanned = new LinkedHashSet<>();
+        for (LocalDateTime planned : plannedTimes) {
+            if (planned != null) {
+                normalizedPlanned.add(planned.withNano(0));
+            }
+        }
+        plannedTimes = normalizedPlanned;
+        LocalDateTime firstPlanTime = LongTermFirstExecutionSlotSupport.resolveFirstPlanTimeOnOpenedDay(
+            new ArrayList<>(plannedTimes), openedTime);
+        LocalDateTime stopTime = this.resolveOrderStopTime(order, medDetail, svcDetail);
+        LocalDateTime lastPlanTimeOnStopDay = LongTermFirstExecutionSlotSupport.resolveLastPlanTimeOnStopDay(
+            new ArrayList<>(plannedTimes), stopTime);
         Map<LocalDateTime, List<ProcedureRecordQueryModel>> byOccurrence = this.groupProceduresByOccurrence(procedures);
         Set<LocalDateTime> allOccurrences = new LinkedHashSet<>(plannedTimes);
         allOccurrences.addAll(byOccurrence.keySet());
@@ -792,37 +1010,43 @@ public class NurseStationOrderExecuteListReadAssembler {
             if (occurrence == null) {
                 continue;
             }
-            List<ProcedureRecordQueryModel> group = byOccurrence.get(occurrence);
+            LocalDateTime occurrenceKey = occurrence.withNano(0);
+            List<ProcedureRecordQueryModel> group = byOccurrence.get(occurrenceKey);
             if (group == null || group.isEmpty()) {
                 // 频次计划点尚无 Procedure 记录 → 待执行
-                if (plannedTimes.contains(occurrence)) {
-                    NurseStationOrderExecuteSlotDto pending = this.buildPendingSlot(occurrence);
-                    buckets.pendingSlots.add(pending);
+                if (plannedTimes.contains(occurrenceKey)) {
+                    buckets.pendingSlots.add(
+                        this.buildPendingSlotWithBoundaryDefaults(
+                            occurrenceKey, firstPlanTime, openedTime, lastPlanTimeOnStopDay, stopTime));
                 }
                 continue;
             }
             // 同一 occurrence 可能有多条 Procedure（执行/取消往返），按净态分桶
             OccurrenceNetSlotState netState = this.resolveOccurrenceNetSlotState(group, procedures);
             if (OccurrenceNetSlotState.PENDING.equals(netState)) {
-                if (plannedTimes.contains(occurrence)) {
-                    buckets.pendingSlots.add(this.buildPendingSlot(occurrence));
+                if (plannedTimes.contains(occurrenceKey)) {
+                    buckets.pendingSlots.add(
+                        this.buildPendingSlotWithBoundaryDefaults(
+                            occurrenceKey, firstPlanTime, openedTime, lastPlanTimeOnStopDay, stopTime));
                 }
                 continue;
             }
             if (OccurrenceNetSlotState.HEDGED_PENDING.equals(netState)) {
                 // 执行-取消对冲：净值待执行，待执行/取消 Tab 双展示
-                if (plannedTimes.contains(occurrence)) {
-                    buckets.pendingSlots.add(this.buildPendingSlot(occurrence));
+                if (plannedTimes.contains(occurrenceKey)) {
+                    buckets.pendingSlots.add(
+                        this.buildPendingSlotWithBoundaryDefaults(
+                            occurrenceKey, firstPlanTime, openedTime, lastPlanTimeOnStopDay, stopTime));
                 }
                 ProcedureRecordQueryModel hedgeFinalRecord = this.pickFinalProcedureRecord(group);
-                NurseStationOrderExecuteSlotDto cancelledSlot = this.toSlotDto(hedgeFinalRecord, occurrence);
+                NurseStationOrderExecuteSlotDto cancelledSlot = this.toSlotDto(hedgeFinalRecord, occurrenceKey);
                 if (cancelledSlot != null) {
                     buckets.cancelledSlots.add(cancelledSlot);
                 }
                 continue;
             }
             ProcedureRecordQueryModel finalRecord = this.pickFinalProcedureRecord(group);
-            NurseStationOrderExecuteSlotDto slot = this.toSlotDto(finalRecord, occurrence);
+            NurseStationOrderExecuteSlotDto slot = this.toSlotDto(finalRecord, occurrenceKey);
             if (slot == null) {
                 continue;
             }
@@ -845,16 +1069,17 @@ public class NurseStationOrderExecuteListReadAssembler {
     /**
      * 临时嘱槽位分桶（BR-IP-EXE-006～008）。
      *
-     * <p>整单仅一个逻辑槽位：存在净 COMPLETED → executed（展示最后一次净执行的 {@code recorded_time}）；
-     * 否则末态 STOPPED/CANCEL 归入对应桶；无终态 Procedure 时 pending 仍为开立时刻。</p>
+     * <p>临时<strong>不展开频次</strong>，整单仅一个逻辑槽（开立时刻）。不执行/执行仍按该 occurrence
+     * 单点占用（STOPPED/COMPLETED），<strong>不是</strong>把长期多计划点整单作废。临嘱写路径强制
+     * occurrence=recorded；已执行槽读侧对齐该同值时刻并回传 procedureId/operatorName（BR-IP-EXE-006/030）。</p>
      *
      * @param procedures   该 request 下全部 Procedure
-     * @param authoredTime 开立时刻，待执行 planTime
+     * @param openedTime 开立时刻，待执行 planTime
      * @return 四类槽位分桶
      */
     private SlotBuckets buildTemporarySlotBuckets(
         List<ProcedureRecordQueryModel> procedures,
-        LocalDateTime authoredTime) {
+        LocalDateTime openedTime) {
         SlotBuckets buckets = new SlotBuckets();
         buckets.pendingSlots = new ArrayList<>();
         buckets.executedSlots = new ArrayList<>();
@@ -864,133 +1089,250 @@ public class NurseStationOrderExecuteListReadAssembler {
         if (OccurrenceNetSlotState.EXECUTED.equals(netState)) {
             ProcedureRecordQueryModel lastNetCompleted = this.pickLastNetCompletedProcedure(procedures);
             if (lastNetCompleted != null) {
-                buckets.executedSlots.add(this.toTemporaryExecutedSlotDto(lastNetCompleted));
+                // 临时已执行：写路径 occurrence=recorded 同值；读侧回传 procedureId 供取消
+                buckets.executedSlots.add(this.toTemporaryTerminalSlotDto(lastNetCompleted));
             }
             return buckets;
         }
         if (OccurrenceNetSlotState.PENDING.equals(netState)) {
-            if (authoredTime != null) {
-                buckets.pendingSlots.add(this.buildPendingSlot(authoredTime));
+            if (openedTime != null) {
+                buckets.pendingSlots.add(this.buildPendingSlot(openedTime));
             }
             return buckets;
         }
         if (OccurrenceNetSlotState.HEDGED_PENDING.equals(netState)) {
             // 临时嘱执行-取消对冲：待执行/取消 Tab 双展示
-            if (authoredTime != null) {
-                buckets.pendingSlots.add(this.buildPendingSlot(authoredTime));
+            if (openedTime != null) {
+                buckets.pendingSlots.add(this.buildPendingSlot(openedTime));
             }
             ProcedureRecordQueryModel hedgeFinalRecord = this.pickNetFinalProcedureRecord(procedures);
             if (hedgeFinalRecord != null) {
-                buckets.cancelledSlots.add(this.toTemporaryExecutedSlotDto(hedgeFinalRecord));
+                buckets.cancelledSlots.add(this.toTemporaryTerminalSlotDto(hedgeFinalRecord));
             }
             return buckets;
         }
         ProcedureRecordQueryModel netFinal = this.pickNetFinalProcedureRecord(procedures);
         if (netFinal == null) {
-            if (authoredTime != null) {
-                buckets.pendingSlots.add(this.buildPendingSlot(authoredTime));
+            if (openedTime != null) {
+                buckets.pendingSlots.add(this.buildPendingSlot(openedTime));
             }
             return buckets;
         }
         if (OccurrenceNetSlotState.SKIPPED.equals(netState)) {
-            buckets.skippedSlots.add(this.toTemporaryExecutedSlotDto(netFinal));
+            // 不执行仅占用本 occurrence 单槽；planTime 仍为计划锚点，禁止用登记时刻冒充
+            buckets.skippedSlots.add(this.toTemporaryTerminalSlotDto(netFinal));
             return buckets;
         }
         if (OccurrenceNetSlotState.CANCELLED.equals(netState)) {
-            buckets.cancelledSlots.add(this.toTemporaryExecutedSlotDto(netFinal));
+            buckets.cancelledSlots.add(this.toTemporaryTerminalSlotDto(netFinal));
         }
         return buckets;
     }
 
     /**
-     * 长期频次展开 / 临时单槽（BR-IP-EXE-004/005/006）。
+     * 长期频次展开 / 临时单槽（BR-IP-EXE-004/005/006；开立日首次槽见 BR-IP-ORD-030⑥；
+     * 长嘱不可拆包装切盒见 BR-IP-EXE-035）。
      *
-     * <p>列表窗口：左边界 = 开立时间 {@code authored_time} 所在自然日 00:00:00（不按开立时分裁剪当日计划点）；
-     * 右边界 = {@code min(停嘱时刻, executionDeadline)}；长期计划点仅委托
-     * {@link FrequencyQueryService#computeExecutionTimePoints}。</p>
+     * <p>可拆口径：左边界仍取开立自然日 00:00；右边界 = {@code min(停嘱时刻, executionDeadline)}；
+     * 再按开立时刻裁首次槽。不可拆且长期药品：在首日逻辑之后按包装拆零量切盒，筛选截止落在第 N 盒时
+     * 展满第 1～N 盒（可晚于 deadline）；凑不出刚好一盒或触及停嘱无法凑满则降级可拆。</p>
+     *
+     * @param applyStandingOrderPackageBatch 是否尝试不可拆切盒
+     * @param medicationProductByKey         药品目录
+     * @return 计划点与是否已按包装展满盒
      */
-    private Set<LocalDateTime> resolvePlannedOccurrenceTimes(
+    private PlannedOccurrenceExpandResult resolvePlannedOccurrenceTimes(
         InpatientOrderListSkeleton order,
         MedicationRequestListQueryModel medDetail,
         ServiceRequestListModel svcDetail,
-        LocalDateTime executionDeadline) {
-        Set<LocalDateTime> planned = new LinkedHashSet<>();
+        LocalDateTime executionDeadline,
+        boolean applyStandingOrderPackageBatch,
+        Map<String, ProductDefinitionDisplayDto> medicationProductByKey) {
+        PlannedOccurrenceExpandResult result = new PlannedOccurrenceExpandResult();
+        result.planTimes = new LinkedHashSet<>();
+        result.packageBatchApplied = false;
         if (executionDeadline == null) {
-            return planned;
+            return result;
         }
-        LocalDateTime authoredTime = this.resolveAuthoredTime(order, medDetail, svcDetail);
-        // 默认取自 OrderInfo 骨架，域明细非空时覆盖长临/停嘱/频次
+        LocalDateTime openedTime = this.resolveOpenedTime(order, medDetail, svcDetail);
         String therapy = this.resolveTherapyEnum(order, medDetail, svcDetail);
         String statusEnum = order.getStatusEnum();
-        LocalDateTime end = executionDeadline;
+        LocalDateTime stopHardCap = null;
         String rateCode = null;
         if (ReadModelOrderTypeConstants.MED_REQUEST.equals(order.getOrderType())) {
             if (medDetail != null) {
                 if (StringUtils.isNotEmpty(medDetail.getStatusEnum())) {
                     statusEnum = medDetail.getStatusEnum();
                 }
-                // 右边界：仅停嘱（STOPPED）时取 effective_dose_end，禁止与 check_time 混用
+                // 右边界：仅停嘱（STOPPED）时取 stop_time，禁止与 check_time / 计划结束混用
                 if (RequestStatus.STOPPED.getCode().equals(medDetail.getStatusEnum())
-                    && medDetail.getEffectiveDoseEnd() != null) {
-                    end = medDetail.getEffectiveDoseEnd();
+                    && medDetail.getStopTime() != null) {
+                    stopHardCap = medDetail.getStopTime();
                 }
                 if (StringUtils.isNotEmpty(medDetail.getRateCode())) {
                     rateCode = medDetail.getRateCode();
                 }
             }
             if (RequestStatus.STOPPED.getCode().equals(statusEnum)
-                && order.getEffectiveDoseEnd() != null
-                && order.getEffectiveDoseEnd().isBefore(end)) {
-                // 读模型骨架上的停嘱时间进一步收窄展开上界
-                end = order.getEffectiveDoseEnd();
+                && order.getStopTime() != null) {
+                if (stopHardCap == null || order.getStopTime().isBefore(stopHardCap)) {
+                    // 读模型骨架上的停嘱时间进一步收窄硬上界
+                    stopHardCap = order.getStopTime();
+                }
             }
         } else if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(order.getOrderType())) {
             if (svcDetail != null) {
                 if (StringUtils.isNotEmpty(svcDetail.getStatusEnum())) {
                     statusEnum = svcDetail.getStatusEnum();
                 }
-                // 诊嘱右边界：仅 STOPPED 时取 occurrence_end_time
                 if (RequestStatus.STOPPED.getCode().equals(svcDetail.getStatusEnum())
-                    && svcDetail.getOccurrenceEndTime() != null) {
-                    end = svcDetail.getOccurrenceEndTime();
+                    && svcDetail.getStopTime() != null) {
+                    stopHardCap = svcDetail.getStopTime();
                 }
                 if (StringUtils.isNotEmpty(svcDetail.getRateCode())) {
                     rateCode = svcDetail.getRateCode();
                 }
             }
+            if (RequestStatus.STOPPED.getCode().equals(statusEnum)
+                && order.getStopTime() != null) {
+                if (stopHardCap == null || order.getStopTime().isBefore(stopHardCap)) {
+                    stopHardCap = order.getStopTime();
+                }
+            }
         }
-        if (end.isAfter(executionDeadline)) {
-            // 列表窗口上界不超过用户选择的 executionDeadline
-            end = executionDeadline;
+        // 可拆默认展开上界：不超过用户 deadline，且不超过停嘱
+        LocalDateTime splittableEnd = executionDeadline;
+        if (stopHardCap != null && stopHardCap.isBefore(splittableEnd)) {
+            splittableEnd = stopHardCap;
         }
         if (TherapyType.TEMPORARY.getCode().equals(therapy)) {
             // 临时医嘱：仅一个计划点 = 开立时刻（完整时分秒）
-            if (authoredTime != null) {
-                planned.add(authoredTime);
+            if (openedTime != null) {
+                result.planTimes.add(openedTime);
             }
-            return planned;
+            return result;
         }
-        if (authoredTime == null) {
-            return planned;
+        if (openedTime == null) {
+            return result;
         }
-        // 长期：左边界取开立自然日 00:00:00，使开立当日频次时点（如 08:00）不因开立时分晚于该点而被裁掉
-        LocalDateTime expandStart = authoredTime.toLocalDate().atStartOfDay();
+        LocalDateTime expandStart = openedTime.toLocalDate().atStartOfDay();
         if (StringUtils.isEmpty(rateCode)) {
+            return result;
+        }
+        if (!splittableEnd.isAfter(expandStart)) {
+            // 无效时间窗：截止不晚于开立日零点
+            return result;
+        }
+        // 可拆基线：先展开到 min(停嘱, deadline)
+        Set<LocalDateTime> splittablePlanned =
+            this.expandLongTermPlanTimes(rateCode, expandStart, splittableEnd, openedTime);
+        boolean tryPackageBatch = applyStandingOrderPackageBatch
+            && ReadModelOrderTypeConstants.MED_REQUEST.equals(order.getOrderType())
+            && TherapyType.LONG_TERM.getCode().equals(therapy)
+            && medDetail != null;
+        if (!tryPackageBatch) {
+            result.planTimes = splittablePlanned;
+            return result;
+        }
+        ProductDefinitionDisplayDto product = this.resolveMedicationProduct(medDetail, medicationProductByKey);
+        if (product == null
+            || product.getPackageUnitRatio() == null
+            || product.getPackageUnitRatio().compareTo(BigDecimal.ZERO) <= 0) {
+            // 无包装拆零比：无法切盒，降级可拆
+            result.planTimes = splittablePlanned;
+            return result;
+        }
+        BigDecimal packageSplitQuantity = product.getPackageUnitRatio();
+        LocalDateTime maxProbeEnd = openedTime.toLocalDate()
+            .plusDays(InpatientNurseStationConstants.STANDING_ORDER_PACKAGE_BATCH_MAX_LOOKAHEAD_DAYS)
+            .atTime(23, 59, 59);
+        if (stopHardCap != null && stopHardCap.isBefore(maxProbeEnd)) {
+            // 停嘱硬顶：不可拆也不得越过停嘱凑盒
+            maxProbeEnd = stopHardCap;
+        }
+        LocalDateTime probeEnd = splittableEnd;
+        int guard = 0;
+        while (guard < 64) {
+            guard++;
+            Set<LocalDateTime> probed =
+                this.expandLongTermPlanTimes(rateCode, expandStart, probeEnd, openedTime);
+            List<LocalDateTime> ordered = new ArrayList<>(probed);
+            Collections.sort(ordered);
+            List<BigDecimal> splitQuantities = this.resolveSlotSplitQuantities(
+                ordered, openedTime, medDetail, product);
+            if (splitQuantities == null) {
+                // 换算失败：降级可拆
+                result.planTimes = splittablePlanned;
+                return result;
+            }
+            boolean canExtendFurther = probeEnd.isBefore(maxProbeEnd);
+            StandingOrderPackageBatchExpandSupport.CutResult cut =
+                StandingOrderPackageBatchExpandSupport.cutThroughBatchContainingDeadline(
+                    ordered,
+                    splitQuantities,
+                    packageSplitQuantity,
+                    executionDeadline,
+                    canExtendFurther);
+            if (StandingOrderPackageBatchExpandSupport.CutKind.SUCCESS.equals(cut.getKind())) {
+                result.planTimes =
+                    StandingOrderPackageBatchExpandSupport.toLinkedPlanTimeSet(cut.getPlanTimes());
+                result.packageBatchApplied = !cut.getPlanTimes().isEmpty();
+                return result;
+            }
+            if (StandingOrderPackageBatchExpandSupport.CutKind.FALLBACK.equals(cut.getKind())) {
+                // 凑不出刚好一盒或已触硬顶：与可拆现逻辑一致，线下自行处理
+                result.planTimes = splittablePlanned;
+                return result;
+            }
+            // NEED_MORE：把探测窗再往后推一步，但不超过硬顶
+            LocalDateTime nextProbe = probeEnd.plusDays(
+                InpatientNurseStationConstants.STANDING_ORDER_PACKAGE_BATCH_EXPAND_STEP_DAYS);
+            if (!nextProbe.isBefore(maxProbeEnd)) {
+                probeEnd = maxProbeEnd;
+            } else {
+                probeEnd = nextProbe;
+            }
+            if (!canExtendFurther) {
+                result.planTimes = splittablePlanned;
+                return result;
+            }
+        }
+        // 探测次数耗尽：降级可拆
+        result.planTimes = splittablePlanned;
+        return result;
+    }
+
+    /**
+     * 长期频次展开 + 开立日首次槽裁剪（唯一委托 FrequencyQueryService）。
+     *
+     * @param rateCode     频次编码
+     * @param expandStart  展开左界（开立日零点）
+     * @param expandEnd    展开右界
+     * @param openedTime   开立时刻
+     * @return 裁剪后计划点
+     */
+    private Set<LocalDateTime> expandLongTermPlanTimes(
+        String rateCode,
+        LocalDateTime expandStart,
+        LocalDateTime expandEnd,
+        LocalDateTime openedTime) {
+        Set<LocalDateTime> planned = new LinkedHashSet<>();
+        if (StringUtils.isEmpty(rateCode) || expandStart == null || expandEnd == null || openedTime == null) {
             return planned;
         }
-        if (!end.isAfter(expandStart)) {
-            // 无效时间窗：截止不晚于开立日零点
+        if (!expandEnd.isAfter(expandStart)) {
             return planned;
         }
         try {
-            // 长期：唯一入口 FrequencyQueryService#computeExecutionTimePoints（字段驱动）
             List<FrequencyExecutionTimePointQueryModel> points =
-                frequencyQueryService.computeExecutionTimePoints(rateCode, expandStart, end);
+                frequencyQueryService.computeExecutionTimePoints(rateCode, expandStart, expandEnd);
+            List<LocalDateTime> rawTimes = new ArrayList<>();
             for (FrequencyExecutionTimePointQueryModel point : points) {
                 if (point != null && point.getExecutionAt() != null) {
-                    planned.add(point.getExecutionAt());
+                    rawTimes.add(point.getExecutionAt().withNano(0));
                 }
             }
+            planned.addAll(LongTermFirstExecutionSlotSupport.applyOpenedDayFirstSlotRule(rawTimes, openedTime));
         } catch (BusinessException ex) {
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_EXE_201,
@@ -1000,40 +1342,157 @@ public class NurseStationOrderExecuteListReadAssembler {
     }
 
     /**
+     * 按槽解析拆零用量（首次槽可换 firstDose，其余用 quantity；单位一并解析后换算）。
+     *
+     * @param orderedPlanTimes 有序计划点
+     * @param openedTime       开立时刻
+     * @param medDetail        药品申请
+     * @param product          目录
+     * @return 与计划点等长的拆零量；任一槽换算失败返回 null（触发降级）
+     */
+    private List<BigDecimal> resolveSlotSplitQuantities(
+        List<LocalDateTime> orderedPlanTimes,
+        LocalDateTime openedTime,
+        MedicationRequestListQueryModel medDetail,
+        ProductDefinitionDisplayDto product) {
+        if (orderedPlanTimes == null || medDetail == null || product == null) {
+            return null;
+        }
+        LocalDateTime firstPlanTime = LongTermFirstExecutionSlotSupport.resolveFirstPlanTimeOnOpenedDay(
+            orderedPlanTimes, openedTime);
+        MedicationProductUnitConversionSource conversionSource =
+            ProductDefinitionDisplaySupport.toUnitConversionSource(product);
+        if (conversionSource == null) {
+            return null;
+        }
+        List<BigDecimal> splitQuantities = new ArrayList<>(orderedPlanTimes.size());
+        for (LocalDateTime planTime : orderedPlanTimes) {
+            BigDecimal qty = InpatientMedicationRequestExecutionMeasureHelper.resolveDispenseQuantityForExecutionSlot(
+                medDetail.getTherapyEnum(),
+                medDetail.getQuantity(),
+                medDetail.getFirstDose(),
+                planTime,
+                firstPlanTime);
+            String unitCode = InpatientMedicationRequestExecutionMeasureHelper.resolveDispenseUnitCodeForExecutionSlot(
+                medDetail.getTherapyEnum(),
+                medDetail.getUnitCode(),
+                medDetail.getFirstDoseUnitCode(),
+                planTime,
+                firstPlanTime);
+            try {
+                BigDecimal split = MedicationProductQuantityToSplitUnitConverter.medicationQuantityToSplitUnit(
+                    conversionSource, unitCode, qty);
+                splitQuantities.add(split);
+            } catch (BusinessException conversionFailure) {
+                // 单位无法换算为拆零：整单降级可拆
+                return null;
+            }
+        }
+        return splitQuantities;
+    }
+
+    /**
+     * 批量加载长期药品目录，供不可拆切盒取 {@code packageUnitRatio}。
+     *
+     * @param medDetailById 药品申请明细
+     * @return 复合键 → 目录；无药时返回空 Map
+     */
+    private Map<String, ProductDefinitionDisplayDto> loadMedicationProductsForPackageBatch(
+        Map<Long, MedicationRequestListQueryModel> medDetailById) {
+        if (medDetailById == null || medDetailById.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
+        Set<String> seenKeys = new LinkedHashSet<>();
+        for (MedicationRequestListQueryModel med : medDetailById.values()) {
+            if (med == null || med.getMedicationId() == null) {
+                continue;
+            }
+            if (!TherapyType.LONG_TERM.getCode().equals(med.getTherapyEnum())) {
+                continue;
+            }
+            String key = ProductDefinitionKeyUtil.buildCompositeKey(
+                TableNameConstants.MED_MEDICATION_DEFINITION, med.getMedicationId());
+            if (key == null || seenKeys.contains(key)) {
+                continue;
+            }
+            seenKeys.add(key);
+            ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+            lookup.setProductTableName(TableNameConstants.MED_MEDICATION_DEFINITION);
+            lookup.setProductDefinitionId(med.getMedicationId());
+            lookups.add(lookup);
+        }
+        if (lookups.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
+    }
+
+    /**
+     * 解析本行药品目录展示 DTO。
+     *
+     * @param medDetail              药品申请
+     * @param medicationProductByKey 预热 Map
+     * @return 目录；缺失时 null
+     */
+    private ProductDefinitionDisplayDto resolveMedicationProduct(
+        MedicationRequestListQueryModel medDetail,
+        Map<String, ProductDefinitionDisplayDto> medicationProductByKey) {
+        if (medDetail == null || medDetail.getMedicationId() == null) {
+            return null;
+        }
+        if (medicationProductByKey == null || medicationProductByKey.isEmpty()) {
+            return null;
+        }
+        String key = ProductDefinitionKeyUtil.buildCompositeKey(
+            TableNameConstants.MED_MEDICATION_DEFINITION, medDetail.getMedicationId());
+        if (key == null) {
+            return null;
+        }
+        return medicationProductByKey.get(key);
+    }
+
+    /**
      * 解析医嘱开立时刻，供列表频次展开窗口左边界使用。
      *
-     * <p>药嘱优先 {@code req_authored_time}（域明细 / OrderInfo {@code med_authored_time}）；
-     * 诊嘱优先 {@code authored_time}（域明细 / OrderInfo 骨架）。</p>
+     * <p>优先 {@code req_opened_time}（开立）；空则回落 {@code req_authored_time}（签发，兼容存量）。</p>
      *
      * @param order     OrderInfo 骨架行
      * @param medDetail 药品明细，可空
      * @param svcDetail 诊疗明细，可空
      * @return 开立时刻；无法解析时返回 null
      */
-    private LocalDateTime resolveAuthoredTime(
+    private LocalDateTime resolveOpenedTime(
         InpatientOrderListSkeleton order,
         MedicationRequestListQueryModel medDetail,
         ServiceRequestListModel svcDetail) {
-        LocalDateTime authoredTime = null;
+        // 频次展开左界：明细 req_opened_time 优先，空回落 req_authored_time / 骨架。
+        LocalDateTime openedTime = null;
         if (ReadModelOrderTypeConstants.MED_REQUEST.equals(order.getOrderType())) {
-            if (medDetail != null && medDetail.getReqAuthoredTime() != null) {
-                authoredTime = medDetail.getReqAuthoredTime();
+            if (medDetail != null && medDetail.getReqOpenedTime() != null) {
+                openedTime = medDetail.getReqOpenedTime();
             }
-            if (authoredTime == null && order.getMedAuthoredTime() != null) {
-                authoredTime = order.getMedAuthoredTime();
+            if (openedTime == null && medDetail != null && medDetail.getReqAuthoredTime() != null) {
+                openedTime = medDetail.getReqAuthoredTime();
             }
-            return authoredTime;
+            if (openedTime == null) {
+                openedTime = order.resolveOrderOpenedTime();
+            }
+            return openedTime;
         }
         if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(order.getOrderType())) {
-            if (svcDetail != null && svcDetail.getReqAuthoredTime() != null) {
-                authoredTime = svcDetail.getReqAuthoredTime();
+            if (svcDetail != null && svcDetail.getReqOpenedTime() != null) {
+                openedTime = svcDetail.getReqOpenedTime();
             }
-            if (authoredTime == null && order.getAuthoredTime() != null) {
-                authoredTime = order.getAuthoredTime();
+            if (openedTime == null && svcDetail != null && svcDetail.getReqAuthoredTime() != null) {
+                openedTime = svcDetail.getReqAuthoredTime();
             }
-            return authoredTime;
+            if (openedTime == null) {
+                openedTime = order.resolveOrderOpenedTime();
+            }
+            return openedTime;
         }
-        return order.getAuthoredTime();
+        return order.resolveOrderOpenedTime();
     }
 
     /**
@@ -1130,21 +1589,44 @@ public class NurseStationOrderExecuteListReadAssembler {
     }
 
     /**
-     * 临时嘱已执行/不执行/取消槽位：planTime 取净执行 {@code recorded_time}（回落 occurrence）。
+     * 临时嘱终态槽位装配（已执行 / 不执行 / 取消）。
+     *
+     * <p>临时嘱读侧仍为<strong>整单单逻辑槽</strong>。不执行/取消：{@code planTime} 取
+     * {@code occurrence_time}。已执行：临嘱写路径强制 occurrence=recorded 同值；读侧
+     * {@code planTime} 仍锚 occurrence（截止过滤），{@code recordedTime} 供已执行 Tab 展示；
+     * 历史脏数据缺 recorded 时回落 planTime，保证时间列与 procedureId 可勾选取消
+     * （BR-IP-EXE-006/030）。</p>
      *
      * @param record 净末态 Procedure
-     * @return 槽位 DTO
+     * @return 槽位 DTO；无可用时刻时 null
      */
-    private NurseStationOrderExecuteSlotDto toTemporaryExecutedSlotDto(ProcedureRecordQueryModel record) {
-        LocalDateTime displayTime = record.getRecordedTime();
-        if (displayTime == null) {
-            displayTime = record.getOccurrenceTime();
+    private NurseStationOrderExecuteSlotDto toTemporaryTerminalSlotDto(ProcedureRecordQueryModel record) {
+        if (record == null) {
+            return null;
         }
-        return this.toSlotDto(record, displayTime);
+        LocalDateTime planTime = record.getOccurrenceTime();
+        if (planTime == null) {
+            // 历史脏数据无 occurrence：回落 recorded，避免槽位键为空
+            planTime = record.getRecordedTime();
+        }
+        if (planTime == null) {
+            return null;
+        }
+        NurseStationOrderExecuteSlotDto slot = this.toSlotDto(record, planTime);
+        if (slot == null) {
+            return null;
+        }
+        // 已执行：缺 recorded 时回落 planTime，前端时间列与操作人拼接有据
+        if (EventStatus.COMPLETED.getCode().equals(record.getStatusEnum()) && slot.getRecordedTime() == null) {
+            slot.setRecordedTime(planTime);
+        }
+        return slot;
     }
 
     /**
      * Procedure 按 occurrence_time 分组（BR-IP-EXE-007，仅长期）。
+     *
+     * <p>occurrence 秒级归一，与 {@link #planTimesEqual} / 写 Gate 同口径，避免纳秒差拆成多个槽。</p>
      */
     private Map<LocalDateTime, List<ProcedureRecordQueryModel>> groupProceduresByOccurrence(
         List<ProcedureRecordQueryModel> procedures) {
@@ -1157,14 +1639,47 @@ public class NurseStationOrderExecuteListReadAssembler {
                 // 无 occurrence 的 Procedure 不参与槽位归并
                 continue;
             }
-            List<ProcedureRecordQueryModel> bucket = grouped.get(row.getOccurrenceTime());
+            LocalDateTime occurrenceKey = row.getOccurrenceTime().withNano(0);
+            List<ProcedureRecordQueryModel> bucket = grouped.get(occurrenceKey);
             if (bucket == null) {
                 bucket = new ArrayList<>();
-                grouped.put(row.getOccurrenceTime(), bucket);
+                grouped.put(occurrenceKey, bucket);
             }
             bucket.add(row);
         }
         return grouped;
+    }
+
+    /**
+     * 组装待执行槽：开立日首次点 {@code defaultActualTime}=开立（BR-IP-EXE-032）；
+     * 停嘱日末点=停嘱（对称易用，同槽开嘱优先）。
+     *
+     * @param occurrence            频次计划点（逻辑锚）
+     * @param firstPlanTime         开立日首次 planTime
+     * @param openedTime            开立时刻
+     * @param lastPlanTimeOnStopDay 停嘱日末槽 planTime
+     * @param stopTime              停嘱时刻（仅已停嘱非空）
+     * @return pending 槽位 DTO
+     */
+    private NurseStationOrderExecuteSlotDto buildPendingSlotWithBoundaryDefaults(
+        LocalDateTime occurrence,
+        LocalDateTime firstPlanTime,
+        LocalDateTime openedTime,
+        LocalDateTime lastPlanTimeOnStopDay,
+        LocalDateTime stopTime) {
+        NurseStationOrderExecuteSlotDto pending = this.buildPendingSlot(occurrence);
+        // 开嘱优先：同槽既是首次又是停嘱末槽时只盖开立时刻
+        if (LongTermFirstExecutionSlotSupport.isFirstExecutionSlot(occurrence, firstPlanTime)
+            && openedTime != null) {
+            pending.setDefaultActualTime(openedTime);
+            return pending;
+        }
+        // 停嘱日末槽：建议 actualTime=停嘱时刻（逻辑仍锚 planTime）
+        if (LongTermFirstExecutionSlotSupport.isLastExecutionSlotOnStopDay(occurrence, lastPlanTimeOnStopDay)
+            && stopTime != null) {
+            pending.setDefaultActualTime(stopTime);
+        }
+        return pending;
     }
 
     /**
@@ -1325,6 +1840,239 @@ public class NurseStationOrderExecuteListReadAssembler {
     }
 
     /**
+     * 终态槽位批量回填操作人展示名（BR-IP-EXE-031）。
+     *
+     * <p>已执行优先 {@code cln_procedure_performer} 主执行人；不执行/取消等无执行人行时回落
+     * Procedure {@code recorder_id}（经 {@code mapDisplayNameByEntererIds} 兼容医务人员主键与用户主键）。</p>
+     *
+     * @param rowLists 按就诊分组的医嘱行集合
+     */
+    private void enrichTerminalSlotOperatorNames(Collection<List<NurseStationOrderExecuteRowDto>> rowLists) {
+        if (rowLists == null || rowLists.isEmpty()) {
+            return;
+        }
+        // 收集已执行/不执行/取消槽位上的 procedureId（待执行无操作人）
+        Set<Long> procedureIds = new LinkedHashSet<>();
+        for (List<NurseStationOrderExecuteRowDto> rows : rowLists) {
+            if (rows == null) {
+                continue;
+            }
+            for (NurseStationOrderExecuteRowDto row : rows) {
+                this.collectTerminalSlotProcedureIds(row, procedureIds);
+            }
+        }
+        if (procedureIds.isEmpty()) {
+            return;
+        }
+        // Pre：主执行人 practitionerId；无则用 recorderId（不执行/取消）
+        Map<Long, Long> performerByProcedureId =
+            procedureQueryService.mapPrimaryPractitionerIdByProcedureIds(procedureIds);
+        Map<Long, Long> recorderByProcedureId = new HashMap<>();
+        // CANCEL 无 recorder 时回落被对冲 COMPLETED（refund_id）
+        Map<Long, Long> refundIdByProcedureId = new HashMap<>();
+        List<Procedure> procedures = procedureQueryService.listByIds(procedureIds);
+        for (Procedure procedure : procedures) {
+            if (procedure == null || procedure.getId() == null) {
+                continue;
+            }
+            if (procedure.getRecorderId() != null) {
+                recorderByProcedureId.put(procedure.getId(), procedure.getRecorderId());
+            }
+            if (procedure.getRefundId() != null) {
+                refundIdByProcedureId.put(procedure.getId(), procedure.getRefundId());
+            }
+        }
+        // 存量 CANCEL 可能未写 recorder：补查 refund 指向的 COMPLETED 执行人/记录人
+        Set<Long> refundLookupIds = new LinkedHashSet<>();
+        for (Long refundId : refundIdByProcedureId.values()) {
+            if (refundId != null && !procedureIds.contains(refundId)) {
+                refundLookupIds.add(refundId);
+            }
+        }
+        if (!refundLookupIds.isEmpty()) {
+            Map<Long, Long> refundPerformers =
+                procedureQueryService.mapPrimaryPractitionerIdByProcedureIds(refundLookupIds);
+            performerByProcedureId.putAll(refundPerformers);
+            List<Procedure> refundedProcedures = procedureQueryService.listByIds(refundLookupIds);
+            for (Procedure refunded : refundedProcedures) {
+                if (refunded == null || refunded.getId() == null || refunded.getRecorderId() == null) {
+                    continue;
+                }
+                recorderByProcedureId.put(refunded.getId(), refunded.getRecorderId());
+            }
+        }
+        Set<Long> nameLookupIds = new LinkedHashSet<>();
+        for (Long performerId : performerByProcedureId.values()) {
+            if (performerId != null) {
+                nameLookupIds.add(performerId);
+            }
+        }
+        for (Long recorderId : recorderByProcedureId.values()) {
+            if (recorderId != null) {
+                nameLookupIds.add(recorderId);
+            }
+        }
+        Map<Long, String> nameById = practitionerQueryService.mapDisplayNameByEntererIds(nameLookupIds);
+        // Asm：按槽位 procedureId 写回 operatorName
+        for (List<NurseStationOrderExecuteRowDto> rows : rowLists) {
+            if (rows == null) {
+                continue;
+            }
+            for (NurseStationOrderExecuteRowDto row : rows) {
+                this.applyOperatorNameToTerminalSlots(
+                    row,
+                    performerByProcedureId,
+                    recorderByProcedureId,
+                    refundIdByProcedureId,
+                    nameById);
+            }
+        }
+    }
+
+    /**
+     * 从医嘱行终态槽位收集 procedureId。
+     *
+     * @param row          医嘱行
+     * @param procedureIds 去重收集目标
+     */
+    private void collectTerminalSlotProcedureIds(
+        NurseStationOrderExecuteRowDto row, Set<Long> procedureIds) {
+        if (row == null || procedureIds == null) {
+            return;
+        }
+        this.collectSlotProcedureIds(row.getExecutedSlots(), procedureIds);
+        this.collectSlotProcedureIds(row.getSkippedSlots(), procedureIds);
+        this.collectSlotProcedureIds(row.getCancelledSlots(), procedureIds);
+    }
+
+    /**
+     * 槽位列表中非空 procedureId 写入集合。
+     *
+     * @param slots        槽位列表
+     * @param procedureIds 去重收集目标
+     */
+    private void collectSlotProcedureIds(
+        List<NurseStationOrderExecuteSlotDto> slots, Set<Long> procedureIds) {
+        if (slots == null || slots.isEmpty()) {
+            return;
+        }
+        for (NurseStationOrderExecuteSlotDto slot : slots) {
+            if (slot == null || slot.getProcedureId() == null) {
+                continue;
+            }
+            procedureIds.add(slot.getProcedureId());
+        }
+    }
+
+    /**
+     * 终态槽位写入操作人姓名。
+     *
+     * @param row                     医嘱行
+     * @param performerByProcedureId  procedureId → 主执行人
+     * @param recorderByProcedureId   procedureId → 记录人
+     * @param refundIdByProcedureId   CANCEL procedureId → 被对冲 COMPLETED id
+     * @param nameById                医务人员/用户主键 → 姓名
+     */
+    private void applyOperatorNameToTerminalSlots(
+        NurseStationOrderExecuteRowDto row,
+        Map<Long, Long> performerByProcedureId,
+        Map<Long, Long> recorderByProcedureId,
+        Map<Long, Long> refundIdByProcedureId,
+        Map<Long, String> nameById) {
+        if (row == null) {
+            return;
+        }
+        this.applyOperatorNameToSlots(
+            row.getExecutedSlots(),
+            performerByProcedureId,
+            recorderByProcedureId,
+            refundIdByProcedureId,
+            nameById);
+        this.applyOperatorNameToSlots(
+            row.getSkippedSlots(),
+            performerByProcedureId,
+            recorderByProcedureId,
+            refundIdByProcedureId,
+            nameById);
+        this.applyOperatorNameToSlots(
+            row.getCancelledSlots(),
+            performerByProcedureId,
+            recorderByProcedureId,
+            refundIdByProcedureId,
+            nameById);
+    }
+
+    /**
+     * 单类槽位写回 operatorName（主执行人优先，否则记录人；CANCEL 无记录人再回落 refund 行）。
+     *
+     * @param slots                   槽位列表
+     * @param performerByProcedureId  procedureId → 主执行人
+     * @param recorderByProcedureId   procedureId → 记录人
+     * @param refundIdByProcedureId   CANCEL → 被对冲 COMPLETED
+     * @param nameById                主键 → 姓名
+     */
+    private void applyOperatorNameToSlots(
+        List<NurseStationOrderExecuteSlotDto> slots,
+        Map<Long, Long> performerByProcedureId,
+        Map<Long, Long> recorderByProcedureId,
+        Map<Long, Long> refundIdByProcedureId,
+        Map<Long, String> nameById) {
+        if (slots == null || slots.isEmpty()) {
+            return;
+        }
+        for (NurseStationOrderExecuteSlotDto slot : slots) {
+            if (slot == null || slot.getProcedureId() == null) {
+                continue;
+            }
+            Long procedureId = slot.getProcedureId();
+            // 已执行：优先主执行人；不执行/取消通常无 performer，回落 recorder
+            Long nameKey = this.resolveOperatorNameKey(
+                procedureId, performerByProcedureId, recorderByProcedureId);
+            // 存量 CANCEL 未写 recorder：回落被对冲 COMPLETED 的执行人/记录人
+            if (nameKey == null && refundIdByProcedureId != null) {
+                Long refundId = refundIdByProcedureId.get(procedureId);
+                if (refundId != null) {
+                    nameKey = this.resolveOperatorNameKey(
+                        refundId, performerByProcedureId, recorderByProcedureId);
+                }
+            }
+            if (nameKey == null || nameById == null) {
+                continue;
+            }
+            String operatorName = nameById.get(nameKey);
+            if (StringUtils.isEmpty(operatorName)) {
+                continue;
+            }
+            slot.setOperatorName(operatorName.trim());
+        }
+    }
+
+    /**
+     * 解析操作人姓名查找键：主执行人优先，否则记录人。
+     *
+     * @param procedureId             执行记录主键
+     * @param performerByProcedureId  procedureId → 主执行人
+     * @param recorderByProcedureId   procedureId → 记录人
+     * @return 姓名查找键；均无则 null
+     */
+    private Long resolveOperatorNameKey(
+        Long procedureId,
+        Map<Long, Long> performerByProcedureId,
+        Map<Long, Long> recorderByProcedureId) {
+        if (procedureId == null) {
+            return null;
+        }
+        Long nameKey = null;
+        if (performerByProcedureId != null) {
+            nameKey = performerByProcedureId.get(procedureId);
+        }
+        if (nameKey == null && recorderByProcedureId != null) {
+            nameKey = recorderByProcedureId.get(procedureId);
+        }
+        return nameKey;
+    }
+
+    /**
      * Procedure 记录 → 槽位 DTO（含 procedureId、status、recordedTime）。
      */
     private NurseStationOrderExecuteSlotDto toSlotDto(ProcedureRecordQueryModel record, LocalDateTime planTime) {
@@ -1399,6 +2147,297 @@ public class NurseStationOrderExecuteListReadAssembler {
     }
 
     /**
+     * 长期医嘱：用上次 ORDER_EXECUTE 派生单数量覆盖 bindItems 模板量。
+     *
+     * <p>批量按 based_on 反查绑定诊疗 SR / 绑定耗材 DR（含取消软删记录），按主键取最新一条，
+     * 写回 {@code quantityNumerator}（分母置 1）。临时医嘱不覆盖。无历史时保持模板量。</p>
+     *
+     * @param rowsByEncounter 就诊 → 已装配执行行（含 bindItems）
+     */
+    private void overlayLongTermBindQuantitiesFromLastExecution(
+        Map<Long, List<NurseStationOrderExecuteRowDto>> rowsByEncounter) {
+        if (rowsByEncounter == null || rowsByEncounter.isEmpty()) {
+            return;
+        }
+        // Pre：收集长期医嘱主键，分药嘱/诊嘱两表批量反查派生单
+        LinkedHashSet<Long> medBasedOnIds = new LinkedHashSet<>();
+        LinkedHashSet<Long> svcBasedOnIds = new LinkedHashSet<>();
+        for (List<NurseStationOrderExecuteRowDto> rows : rowsByEncounter.values()) {
+            if (rows == null) {
+                continue;
+            }
+            for (NurseStationOrderExecuteRowDto row : rows) {
+                if (row == null || row.getOrderId() == null) {
+                    continue;
+                }
+                // 仅长期：临时通常一次性执行，无需记住
+                if (!TherapyType.LONG_TERM.getCode().equals(trimToEmpty(row.getTherapyEnum()))) {
+                    continue;
+                }
+                if (row.getBindItems() == null || row.getBindItems().isEmpty()) {
+                    continue;
+                }
+                if (ReadModelOrderTypeConstants.MED_REQUEST.equals(row.getOrderType())) {
+                    medBasedOnIds.add(row.getOrderId());
+                } else if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(row.getOrderType())) {
+                    svcBasedOnIds.add(row.getOrderId());
+                }
+            }
+        }
+        if (medBasedOnIds.isEmpty() && svcBasedOnIds.isEmpty()) {
+            return;
+        }
+        // activity 键：basedOnTable|basedOnId|activityId → 最新数量
+        Map<String, BigDecimal> latestActivityQtyByKey = new HashMap<>();
+        // device 键：basedOnTable|basedOnId|deviceId → 最新数量
+        Map<String, BigDecimal> latestDeviceQtyByKey = new HashMap<>();
+        Map<String, Long> latestActivityIdByKey = new HashMap<>();
+        Map<String, Long> latestDeviceIdByKey = new HashMap<>();
+        this.collectLatestBindActivityQuantities(
+            TableNameConstants.MED_MEDICATION_REQUEST, medBasedOnIds, latestActivityQtyByKey, latestActivityIdByKey);
+        this.collectLatestBindDeviceQuantities(
+            TableNameConstants.MED_MEDICATION_REQUEST, medBasedOnIds, latestDeviceQtyByKey, latestDeviceIdByKey);
+        this.collectLatestBindActivityQuantities(
+            TableNameConstants.WKF_SERVICE_REQUEST, svcBasedOnIds, latestActivityQtyByKey, latestActivityIdByKey);
+        this.collectLatestBindDeviceQuantities(
+            TableNameConstants.WKF_SERVICE_REQUEST, svcBasedOnIds, latestDeviceQtyByKey, latestDeviceIdByKey);
+        if (latestActivityQtyByKey.isEmpty() && latestDeviceQtyByKey.isEmpty()) {
+            return;
+        }
+        // Asm：写回长期行 bindItems 数量
+        for (List<NurseStationOrderExecuteRowDto> rows : rowsByEncounter.values()) {
+            if (rows == null) {
+                continue;
+            }
+            for (NurseStationOrderExecuteRowDto row : rows) {
+                if (row == null || row.getOrderId() == null) {
+                    continue;
+                }
+                if (!TherapyType.LONG_TERM.getCode().equals(trimToEmpty(row.getTherapyEnum()))) {
+                    continue;
+                }
+                List<NurseStationOrderExecuteBindItemDto> bindItems = row.getBindItems();
+                if (bindItems == null || bindItems.isEmpty()) {
+                    continue;
+                }
+                String basedOnTable;
+                if (ReadModelOrderTypeConstants.MED_REQUEST.equals(row.getOrderType())) {
+                    basedOnTable = TableNameConstants.MED_MEDICATION_REQUEST;
+                } else if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(row.getOrderType())) {
+                    basedOnTable = TableNameConstants.WKF_SERVICE_REQUEST;
+                } else {
+                    continue;
+                }
+                for (NurseStationOrderExecuteBindItemDto bindItem : bindItems) {
+                    if (bindItem == null) {
+                        continue;
+                    }
+                    if (bindItem.getActivityId() != null) {
+                        String key = this.buildBindTargetQtyKey(
+                            basedOnTable, row.getOrderId(), "A", bindItem.getActivityId());
+                        BigDecimal qty = latestActivityQtyByKey.get(key);
+                        if (qty != null) {
+                            bindItem.setQuantityNumerator(qty);
+                            bindItem.setQuantityDenominator(BigDecimal.ONE);
+                        }
+                        continue;
+                    }
+                    if (bindItem.getDeviceId() != null) {
+                        String key = this.buildBindTargetQtyKey(
+                            basedOnTable, row.getOrderId(), "D", bindItem.getDeviceId());
+                        BigDecimal qty = latestDeviceQtyByKey.get(key);
+                        if (qty != null) {
+                            bindItem.setQuantityNumerator(qty);
+                            bindItem.setQuantityDenominator(BigDecimal.ONE);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 批量装载绑定诊疗上次执行数量索引。
+     *
+     * <p>优先取 ORDER_EXECUTE 收费明细 {@code quantityValue}（历史派生 SR 曾写死 1，账单量才是护士手改真值）；
+     * 无账单时回落派生 SR.quantity。允许 0（本趟不带出的记忆）。</p>
+     */
+    private void collectLatestBindActivityQuantities(
+        String basedOnTable,
+        Collection<Long> basedOnIds,
+        Map<String, BigDecimal> latestQtyByKey,
+        Map<String, Long> latestRecordIdByKey) {
+        if (basedOnIds == null || basedOnIds.isEmpty()) {
+            return;
+        }
+        List<ServiceRequest> derivedList =
+            serviceRequestQueryService.listServiceRequestsByBasedOnAnchors(basedOnTable, basedOnIds);
+        if (derivedList == null || derivedList.isEmpty()) {
+            return;
+        }
+        String orderExecute = GenerateSource.ORDER_EXECUTE.getCode();
+        Map<Long, ServiceRequest> derivedById = new HashMap<>();
+        List<Long> serviceIds = new ArrayList<>();
+        for (ServiceRequest derived : derivedList) {
+            if (derived == null || derived.getId() == null || derived.getBasedOnId() == null) {
+                continue;
+            }
+            // 仅医嘱执行派生；跳过划价/其它来源
+            if (!orderExecute.equals(trimToEmpty(derived.getGenerateSourceEnum()))) {
+                continue;
+            }
+            if (derived.getActivityId() == null) {
+                continue;
+            }
+            derivedById.put(derived.getId(), derived);
+            serviceIds.add(derived.getId());
+            BigDecimal qty = derived.getQuantity();
+            // 先用派生 SR 数量占位；后续有账单则覆盖
+            if (qty == null || qty.compareTo(BigDecimal.ZERO) < 0) {
+                continue;
+            }
+            String key = this.buildBindTargetQtyKey(
+                basedOnTable, derived.getBasedOnId(), "A", derived.getActivityId());
+            Long previousId = latestRecordIdByKey.get(key);
+            if (previousId != null && previousId >= derived.getId()) {
+                continue;
+            }
+            latestRecordIdByKey.put(key, derived.getId());
+            latestQtyByKey.put(key, qty);
+        }
+        if (serviceIds.isEmpty()) {
+            return;
+        }
+        // Pre：按派生 SR 批量拉 ORDER_EXECUTE 账单，用账单数量覆盖（纠正历史 SR=1）
+        ChargeItemQueryCommand chargeCmd = new ChargeItemQueryCommand();
+        chargeCmd.setServiceIds(serviceIds);
+        List<ChargeItem> charges = chargeItemQueryService.listChargeItemsByServiceIds(chargeCmd);
+        if (charges == null || charges.isEmpty()) {
+            return;
+        }
+        for (ChargeItem charge : charges) {
+            if (charge == null || charge.getId() == null || charge.getServiceId() == null) {
+                continue;
+            }
+            if (!orderExecute.equals(trimToEmpty(charge.getGenerateSourceEnum()))) {
+                continue;
+            }
+            ServiceRequest derived = derivedById.get(charge.getServiceId());
+            if (derived == null || derived.getActivityId() == null || derived.getBasedOnId() == null) {
+                continue;
+            }
+            BigDecimal qty = charge.getQuantityValue();
+            if (qty == null || qty.compareTo(BigDecimal.ZERO) < 0) {
+                continue;
+            }
+            String key = this.buildBindTargetQtyKey(
+                basedOnTable, derived.getBasedOnId(), "A", derived.getActivityId());
+            Long previousId = latestRecordIdByKey.get(key);
+            long chargeRank = charge.getId();
+            // 账单主键更大则覆盖（纠正历史派生 SR 写死 1）
+            if (previousId != null && previousId >= chargeRank) {
+                continue;
+            }
+            latestRecordIdByKey.put(key, chargeRank);
+            latestQtyByKey.put(key, qty);
+        }
+    }
+
+    /**
+     * 批量装载绑定耗材上次执行数量索引。
+     *
+     * <p>优先 ORDER_EXECUTE 账单数量；无则回落派生 DR.quantity；跳过退单负向行；允许 0。</p>
+     */
+    private void collectLatestBindDeviceQuantities(
+        String basedOnTable,
+        Collection<Long> basedOnIds,
+        Map<String, BigDecimal> latestQtyByKey,
+        Map<String, Long> latestRecordIdByKey) {
+        if (basedOnIds == null || basedOnIds.isEmpty()) {
+            return;
+        }
+        List<DeviceRequestListModel> derivedList =
+            deviceRequestQueryService.listDeviceRequestsByBasedOnAnchors(basedOnTable, basedOnIds);
+        if (derivedList == null || derivedList.isEmpty()) {
+            return;
+        }
+        String orderExecute = GenerateSource.ORDER_EXECUTE.getCode();
+        Map<Long, DeviceRequestListModel> derivedById = new HashMap<>();
+        List<Long> serviceIds = new ArrayList<>();
+        for (DeviceRequestListModel derived : derivedList) {
+            if (derived == null || derived.getId() == null || derived.getBasedOnId() == null) {
+                continue;
+            }
+            if (!orderExecute.equals(trimToEmpty(derived.getGenerateSourceEnum()))) {
+                continue;
+            }
+            // 退单负向行不参与回显
+            if (derived.getRefundDeviceId() != null) {
+                continue;
+            }
+            if (derived.getDeviceDefId() == null) {
+                continue;
+            }
+            derivedById.put(derived.getId(), derived);
+            serviceIds.add(derived.getId());
+            BigDecimal qty = derived.getQuantity();
+            if (qty == null || qty.compareTo(BigDecimal.ZERO) < 0) {
+                continue;
+            }
+            String key = this.buildBindTargetQtyKey(
+                basedOnTable, derived.getBasedOnId(), "D", derived.getDeviceDefId());
+            Long previousId = latestRecordIdByKey.get(key);
+            if (previousId != null && previousId >= derived.getId()) {
+                continue;
+            }
+            latestRecordIdByKey.put(key, derived.getId());
+            latestQtyByKey.put(key, qty);
+        }
+        if (serviceIds.isEmpty()) {
+            return;
+        }
+        ChargeItemQueryCommand chargeCmd = new ChargeItemQueryCommand();
+        chargeCmd.setServiceIds(serviceIds);
+        List<ChargeItem> charges = chargeItemQueryService.listChargeItemsByServiceIds(chargeCmd);
+        if (charges == null || charges.isEmpty()) {
+            return;
+        }
+        for (ChargeItem charge : charges) {
+            if (charge == null || charge.getId() == null || charge.getServiceId() == null) {
+                continue;
+            }
+            if (!orderExecute.equals(trimToEmpty(charge.getGenerateSourceEnum()))) {
+                continue;
+            }
+            DeviceRequestListModel derived = derivedById.get(charge.getServiceId());
+            if (derived == null || derived.getDeviceDefId() == null || derived.getBasedOnId() == null) {
+                continue;
+            }
+            BigDecimal qty = charge.getQuantityValue();
+            if (qty == null || qty.compareTo(BigDecimal.ZERO) < 0) {
+                continue;
+            }
+            String key = this.buildBindTargetQtyKey(
+                basedOnTable, derived.getBasedOnId(), "D", derived.getDeviceDefId());
+            Long previousId = latestRecordIdByKey.get(key);
+            long chargeRank = charge.getId();
+            if (previousId != null && previousId >= chargeRank) {
+                continue;
+            }
+            latestRecordIdByKey.put(key, chargeRank);
+            latestQtyByKey.put(key, qty);
+        }
+    }
+
+    /**
+     * 绑定目标数量索引键：来源表|来源主键|A/D|目标主键。
+     */
+    private String buildBindTargetQtyKey(
+        String basedOnTable, Long basedOnId, String targetKind, Long targetId) {
+        return basedOnTable + "|" + basedOnId + "|" + targetKind + "|" + targetId;
+    }
+
+    /**
      * 绑定模板行 → 执行 bindItem DTO；按 bindType/targetItemTable 回填 activityId 或 deviceId。
      */
     private List<NurseStationOrderExecuteBindItemDto> mapBindRows(
@@ -1464,7 +2503,7 @@ public class NurseStationOrderExecuteListReadAssembler {
     }
 
     /**
-     * 组内医嘱行排序：长临 code 升序，同长临下开立时间降序（BR-IP-EXE-012）。
+     * 组内医嘱行排序：开立时间（{@code reqOpenedTime}，空回落签发）倒序；成组药按组内最晚开立时刻聚邻。
      *
      * @param rows 待排序医嘱行
      * @return 排序后的新列表
@@ -1474,10 +2513,117 @@ public class NurseStationOrderExecuteListReadAssembler {
             return new ArrayList<>();
         }
         List<NurseStationOrderExecuteRowDto> copy = new ArrayList<>(rows);
+        Map<Long, LocalDateTime> groupMaxOpenedTime = new HashMap<>();
+        Map<Long, LocalDateTime> medicationOpenedTimeByOrderId = new HashMap<>();
+        for (NurseStationOrderExecuteRowDto row : copy) {
+            LocalDateTime sortTime = this.resolveRowOpenedTimeForSort(row);
+            Long groupId = row.getGroupId();
+            if (groupId != null && sortTime != null) {
+                LocalDateTime existing = groupMaxOpenedTime.get(groupId);
+                // 组内取最晚开立时刻，保证同组执行行连续展示。
+                if (existing == null || sortTime.isAfter(existing)) {
+                    groupMaxOpenedTime.put(groupId, sortTime);
+                }
+            }
+            if (ReadModelOrderTypeConstants.MED_REQUEST.equals(row.getOrderType())
+                && row.getOrderId() != null
+                && sortTime != null) {
+                medicationOpenedTimeByOrderId.put(row.getOrderId(), sortTime);
+            }
+        }
         copy.sort(Comparator
-            .comparing(NurseStationOrderExecuteRowDto::getTherapyEnum, Comparator.nullsLast(Comparator.naturalOrder()))
-            .thenComparing(NurseStationOrderExecuteRowDto::getAuthoredTime, Comparator.nullsLast(Comparator.reverseOrder())));
+            .comparing((NurseStationOrderExecuteRowDto row) ->
+                    this.resolveExecuteClusterOpenedTime(row, groupMaxOpenedTime, medicationOpenedTimeByOrderId),
+                Comparator.nullsLast(Comparator.reverseOrder()))
+            .thenComparing(NurseStationOrderExecuteRowDto::getGroupId, Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(this::resolveExecuteSkinTestClusterKey, Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(this::resolveExecuteSkinTestCompanionRank)
+            .thenComparing(NurseStationOrderExecuteRowDto::getOrderId, Comparator.nullsLast(Comparator.naturalOrder())));
         return copy;
+    }
+
+    /**
+     * 执行列表簇排序键：成组药用组内最晚开立时刻；皮试 companion 用锚定皮试药开立时刻。
+     *
+     * @param row                           执行行
+     * @param groupMaxOpenedTime            成组 groupId → 最晚开立时刻
+     * @param medicationOpenedTimeByOrderId 药品 orderId → 开立时刻
+     * @return 簇排序时刻；无时刻时为 null
+     */
+    private LocalDateTime resolveExecuteClusterOpenedTime(
+        NurseStationOrderExecuteRowDto row,
+        Map<Long, LocalDateTime> groupMaxOpenedTime,
+        Map<Long, LocalDateTime> medicationOpenedTimeByOrderId) {
+        // companion：跟锚皮试药同簇
+        if (row != null && row.getBasedOnMedicationRequestId() != null
+            && medicationOpenedTimeByOrderId != null) {
+            LocalDateTime linked = medicationOpenedTimeByOrderId.get(row.getBasedOnMedicationRequestId());
+            if (linked != null) {
+                return linked;
+            }
+        }
+        if (row != null && row.getGroupId() != null) {
+            LocalDateTime groupOpened = groupMaxOpenedTime.get(row.getGroupId());
+            if (groupOpened != null) {
+                return groupOpened;
+            }
+        }
+        return this.resolveRowOpenedTimeForSort(row);
+    }
+
+    /**
+     * 皮试聚邻键：皮试药=自身 orderId；companion=basedOn；其它 null。
+     *
+     * @param row 执行行
+     * @return 聚邻键
+     */
+    private Long resolveExecuteSkinTestClusterKey(NurseStationOrderExecuteRowDto row) {
+        if (row == null) {
+            return null;
+        }
+        if (row.getBasedOnMedicationRequestId() != null) {
+            return row.getBasedOnMedicationRequestId();
+        }
+        // 药品行：与 companion 同键时聚邻（非皮试药独自一簇无副作用）
+        if (ReadModelOrderTypeConstants.MED_REQUEST.equals(row.getOrderType())) {
+            return row.getOrderId();
+        }
+        return null;
+    }
+
+    /**
+     * 同皮试簇内次序：药品 0，companion 1，其它 2。
+     *
+     * @param row 执行行
+     * @return 次序
+     */
+    private int resolveExecuteSkinTestCompanionRank(NurseStationOrderExecuteRowDto row) {
+        if (row == null) {
+            return 2;
+        }
+        if (row.getBasedOnMedicationRequestId() != null) {
+            return 1;
+        }
+        if (ReadModelOrderTypeConstants.MED_REQUEST.equals(row.getOrderType())) {
+            return 0;
+        }
+        return 2;
+    }
+
+    /**
+     * 行排序时刻：优先 {@code reqOpenedTime}，空回落 {@code reqAuthoredTime}。
+     *
+     * @param row 执行行
+     * @return 排序时刻；均空时 null
+     */
+    private LocalDateTime resolveRowOpenedTimeForSort(NurseStationOrderExecuteRowDto row) {
+        if (row == null) {
+            return null;
+        }
+        if (row.getReqOpenedTime() != null) {
+            return row.getReqOpenedTime();
+        }
+        return row.getReqAuthoredTime();
     }
 
     /**
@@ -1508,6 +2654,28 @@ public class NurseStationOrderExecuteListReadAssembler {
         private List<NurseStationOrderExecuteSlotDto> skippedSlots;
         /** 已取消执行槽位。 */
         private List<NurseStationOrderExecuteSlotDto> cancelledSlots;
+        /** 本行计划点是否已按包装批次展满盒（影响 Tab 的 deadline 过滤）。 */
+        private boolean packageBatchApplied;
+    }
+
+    /**
+     * 列表行装配结果：行 DTO + 是否已按不可拆包装展满盒。
+     */
+    private static class PackageBatchExpandOutcome {
+        /** 执行列表行。 */
+        private NurseStationOrderExecuteRowDto row;
+        /** true 表示计划点已按第 1～N 盒裁切，Tab 过滤不得再按 deadline 砍尾。 */
+        private boolean packageBatchApplied;
+    }
+
+    /**
+     * 长期计划点展开结果。
+     */
+    private static class PlannedOccurrenceExpandResult {
+        /** 计划点集合。 */
+        private Set<LocalDateTime> planTimes;
+        /** 是否已成功按包装批次展满盒。 */
+        private boolean packageBatchApplied;
     }
 
     /**

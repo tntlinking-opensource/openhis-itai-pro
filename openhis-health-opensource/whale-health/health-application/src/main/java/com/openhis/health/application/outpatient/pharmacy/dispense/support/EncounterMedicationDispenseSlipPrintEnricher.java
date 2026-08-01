@@ -9,8 +9,11 @@ import com.alibaba.fastjson2.JSONObject;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
+import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.domain.share.constants.OutpatientPharmacyPrescriptionQueryConstants;
+import com.openhis.health.domain.share.constants.PrescriptionSplitConstants;
 import com.openhis.health.domain.share.enums.AdministrativeGender;
 import com.openhis.health.domain.share.enums.OrganizationType;
 import com.openhis.health.domain.share.enums.PublicationStatus;
@@ -18,6 +21,7 @@ import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.application.outpatient.pharmacy.dispense.dto.EncounterMedicationDispenseSlipRowDto;
 import com.openhis.health.application.shared.diagnosis.EncounterDiagnosisSnapshotAssembler;
+import com.openhis.health.application.shared.financial.ContractExpenseNatureAssembler;
 import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -26,10 +30,12 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 import static com.openhis.whale.core.application.util.StringUtils.firstNonBlank;
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
@@ -43,6 +49,11 @@ public class EncounterMedicationDispenseSlipPrintEnricher {
 
     private final OrganizationQueryService organizationQueryService;
     private final EncounterDiagnosisSnapshotAssembler encounterDiagnosisSnapshotAssembler;
+    /** 费用性质：药嘱 contract_id → ContractCategory 分类文案。 */
+    private final ContractExpenseNatureAssembler contractExpenseNatureAssembler;
+
+    /** 医院名称短窗缓存（避免每次 enrich 全量拉机构树）。 */
+    private volatile CachedHospitalName cachedHospitalName;
 
     /**
      * 为门诊发药 slip 行填充处方打印字段。
@@ -50,11 +61,15 @@ public class EncounterMedicationDispenseSlipPrintEnricher {
      * @param rows 已装配 slip 行
      * @param outpatientSnapshot 就诊上下文（非历史医嘱 scope）
      * @param preparerPractitionerNameByDispenseId 调配药师姓名（按发放单）
+     * @param pricingPractitionerNameByDispenseId 划价人=收费人姓名（按发放单；来自结算收费明细 performer_id）
+     * @param medicationRequestByMedReqId 药嘱索引（费用性质 contract_id）
      */
     public void enrichOutpatientPrintFields(
         List<EncounterMedicationDispenseSlipRowDto> rows,
         OutpatientEncounterContextQueryModel outpatientSnapshot,
-        Map<Long, String> preparerPractitionerNameByDispenseId) {
+        Map<Long, String> preparerPractitionerNameByDispenseId,
+        Map<Long, String> pricingPractitionerNameByDispenseId,
+        Map<Long, MedicationRequestListQueryModel> medicationRequestByMedReqId) {
         if (rows == null || rows.isEmpty()) {
             return;
         }
@@ -63,23 +78,36 @@ public class EncounterMedicationDispenseSlipPrintEnricher {
         String ageText = null;
         String genderEnumText = null;
         String patientPhone = null;
-        String conditionSummaryText = null;
         if (outpatientSnapshot != null) {
             patientName = trimToNull(outpatientSnapshot.getPatientName());
             ageText = trimToNull(outpatientSnapshot.getAgeText());
             genderEnumText = resolveGenderText(outpatientSnapshot.getGenderEnum());
             patientPhone = trimToNull(outpatientSnapshot.getPhone());
-            if (outpatientSnapshot.getEncounterId() != null) {
-                conditionSummaryText = resolveDiagnosisSummary(outpatientSnapshot.getEncounterId());
-            }
         }
+        // Pre：按处方号聚合各药行绑定诊断并集，作西药方头诊断（不再用整次就诊诊断摘要）
+        Map<String, String> conditionSummaryByPrescriptionKey =
+            buildPrescriptionDiagnosisUnionByKey(rows, medicationRequestByMedReqId);
         Map<String, BigDecimal> totalPriceByPrescriptionKey = sumTotalPriceByPrescription(rows);
         Map<String, String> prescriptionDateByKey = resolvePrescriptionDateByKey(rows);
+        Map<Long, String> feeNatureTextByContractId =
+            this.buildFeeNatureTextByContractId(medicationRequestByMedReqId);
         Map<Long, String> preparerNames;
         if (preparerPractitionerNameByDispenseId == null) {
             preparerNames = Map.of();
         } else {
             preparerNames = preparerPractitionerNameByDispenseId;
+        }
+        Map<Long, String> pricingNames;
+        if (pricingPractitionerNameByDispenseId == null) {
+            pricingNames = Map.of();
+        } else {
+            pricingNames = pricingPractitionerNameByDispenseId;
+        }
+        Map<Long, MedicationRequestListQueryModel> requestById;
+        if (medicationRequestByMedReqId == null) {
+            requestById = Map.of();
+        } else {
+            requestById = medicationRequestByMedReqId;
         }
         for (EncounterMedicationDispenseSlipRowDto row : rows) {
             if (row == null) {
@@ -90,54 +118,162 @@ public class EncounterMedicationDispenseSlipPrintEnricher {
             row.setGenderEnumText(genderEnumText);
             row.setPatientPhone(patientPhone);
             row.setHospitalName(hospitalName);
+            // 费用性质：药嘱 contract_id → 分类文案；无合同/未识别时回落自费（与发药笺面一致）
+            String feeNatureText = resolveFeeNatureText(row, requestById, feeNatureTextByContractId);
+            if (StringUtils.isEmpty(feeNatureText)) {
+                feeNatureText = OutpatientPharmacyPrescriptionQueryConstants.CONTRACT_CATEGORY_SELF_CHARGE_LABEL;
+            }
+            row.setFeeNatureText(feeNatureText);
             if (Boolean.TRUE.equals(row.getTcmFlag())) {
                 row.setPrescriptionDocumentTitle("中药处方笺");
             } else {
                 row.setPrescriptionDocumentTitle("处方笺");
             }
-            if (!Boolean.TRUE.equals(row.getTcmFlag()) && StringUtils.isEmpty(row.getConditionSummaryText())) {
-                row.setConditionSummaryText(conditionSummaryText);
+            String prescriptionKey = prescriptionGroupKey(row);
+            // 西药方头：同处方号绑定诊断并集（强制覆盖行级单诊摘要，保证查询/打印全集一致）
+            if (!Boolean.TRUE.equals(row.getTcmFlag())) {
+                String unionSummary = conditionSummaryByPrescriptionKey.get(prescriptionKey);
+                if (StringUtils.isNotEmpty(unionSummary)) {
+                    row.setConditionSummaryText(unionSummary);
+                }
             }
             applyPrescriptionTypeLines(row);
-            String prescriptionKey = prescriptionGroupKey(row);
             BigDecimal prescriptionTotal = totalPriceByPrescriptionKey.get(prescriptionKey);
             row.setPrescriptionTotalPrice(prescriptionTotal);
             row.setPrescriptionTotalPriceText(formatPrescriptionTotalPriceText(prescriptionTotal));
             row.setPrescriptionDateText(prescriptionDateByKey.get(prescriptionKey));
             if (row.getDispenseId() != null) {
                 row.setPreparerPractitionerName(preparerNames.get(row.getDispenseId()));
-            }
-            if (StringUtils.isEmpty(row.getPricingPractitionerName())) {
-                row.setPricingPractitionerName(row.getOrderingPractitionerName());
+                // 划价取收费人（结算 performer），禁止回落开单医生
+                String pricingName = pricingNames.get(row.getDispenseId());
+                if (StringUtils.isNotEmpty(pricingName)) {
+                    row.setPricingPractitionerName(pricingName);
+                }
             }
             applyMedicationDisplayFields(row);
         }
     }
 
     /**
-     * 处方类型文案拆成两行（≤4 字首行，余量/中药标记落第二行）。
+     * 按处方分组键汇总各药嘱 {@code encounter_diagnosis_ids} 并集，再解析为顿号拼接展示名。
+     *
+     * @param rows                        slip 行
+     * @param medicationRequestByMedReqId 药嘱索引
+     * @return 处方分组键 → 方头诊断文案
+     */
+    private Map<String, String> buildPrescriptionDiagnosisUnionByKey(
+        List<EncounterMedicationDispenseSlipRowDto> rows,
+        Map<Long, MedicationRequestListQueryModel> medicationRequestByMedReqId) {
+        Map<String, String> result = new HashMap<>();
+        // Gate：无 slip / 无药嘱索引则无法回填方头诊断
+        if (rows == null || rows.isEmpty() || medicationRequestByMedReqId == null || medicationRequestByMedReqId.isEmpty()) {
+            return result;
+        }
+        Map<String, List<String>> idsTextsByKey = new LinkedHashMap<>();
+        // Loop：按处方键收集各药行绑定 ids 串
+        for (EncounterMedicationDispenseSlipRowDto row : rows) {
+            if (row == null || Boolean.TRUE.equals(row.getTcmFlag())) {
+                continue;
+            }
+            String key = prescriptionGroupKey(row);
+            Long medReqId = row.getMedReqId();
+            if (medReqId == null) {
+                continue;
+            }
+            MedicationRequestListQueryModel requestRow = medicationRequestByMedReqId.get(medReqId);
+            if (requestRow == null) {
+                continue;
+            }
+            List<String> bucket = idsTextsByKey.get(key);
+            if (bucket == null) {
+                bucket = new ArrayList<>();
+                idsTextsByKey.put(key, bucket);
+            }
+            bucket.add(requestRow.getEncounterDiagnosisIds());
+        }
+        // Asm：分组 ids 并集 → 顿号展示名
+        return encounterDiagnosisSnapshotAssembler.mapUnionDisplayNameByGroupKey(idsTextsByKey);
+    }
+
+    /**
+     * 从药嘱索引收集 contract_id，批量解析费用性质分类文案。
+     *
+     * @param medicationRequestByMedReqId 药嘱索引
+     * @return 合同主键 → 分类文案
+     */
+    private Map<Long, String> buildFeeNatureTextByContractId(
+        Map<Long, MedicationRequestListQueryModel> medicationRequestByMedReqId) {
+        if (medicationRequestByMedReqId == null || medicationRequestByMedReqId.isEmpty()) {
+            return Map.of();
+        }
+        Set<Long> contractIds = new HashSet<>();
+        // Loop：收集本页/本就诊药嘱上的费用性质主键
+        for (MedicationRequestListQueryModel requestRow : medicationRequestByMedReqId.values()) {
+            if (requestRow != null && requestRow.getContractId() != null) {
+                contractIds.add(requestRow.getContractId());
+            }
+        }
+        return this.contractExpenseNatureAssembler.mapCategoryTextByContractIdIn(contractIds);
+    }
+
+    /**
+     * 单行费用性质文案：slip.medReqId → 药嘱 contract_id → 分类文案。
+     *
+     * @param row                         slip 行
+     * @param requestById                 药嘱索引
+     * @param feeNatureTextByContractId   合同 → 文案
+     * @return 分类文案；无则 null
+     */
+    private static String resolveFeeNatureText(
+        EncounterMedicationDispenseSlipRowDto row,
+        Map<Long, MedicationRequestListQueryModel> requestById,
+        Map<Long, String> feeNatureTextByContractId) {
+        if (row.getMedReqId() == null) {
+            return null;
+        }
+        MedicationRequestListQueryModel requestRow = requestById.get(row.getMedReqId());
+        if (requestRow == null || requestRow.getContractId() == null) {
+            return null;
+        }
+        return feeNatureTextByContractId.get(requestRow.getContractId());
+    }
+
+    /**
+     * 方头右上角两行：纸质处方分类文案 + 有效期（与样张「普通处方 / 当日有效」对齐）。
+     * <p>勿回落 {@code tcmFlagText}/{@code skinTestFlagText} 等布尔展示「是/否」，亦勿直接印术语「门诊西药」。</p>
      *
      * @param row slip 行（就地写入 typeLine1/2）
      */
     private static void applyPrescriptionTypeLines(EncounterMedicationDispenseSlipRowDto row) {
-        String typeText = trimToNull(row.getEncounterMedicationTypeText());
-        if (typeText == null) {
-            row.setPrescriptionTypeLine1(trimToNull(row.getTcmFlagText()));
-            row.setPrescriptionTypeLine2(null);
-            return;
+        row.setPrescriptionTypeLine1(resolvePrescriptionPaperTypeLine1(row.getEncounterMedicationTypeCode()));
+        row.setPrescriptionTypeLine2("当日有效");
+    }
+
+    /**
+     * 按处方类别码（355）映射方头第一行纸质分类文案。
+     *
+     * @param rxTypeCode {@code rx_type_code}
+     * @return 普通/急诊/儿科/麻精一文案
+     */
+    private static String resolvePrescriptionPaperTypeLine1(String rxTypeCode) {
+        String code = trimToNull(rxTypeCode);
+        if (code == null) {
+            return "普通处方";
         }
-        if (typeText.length() <= 4) {
-            row.setPrescriptionTypeLine1(typeText);
-            row.setPrescriptionTypeLine2(trimToNull(row.getTcmFlagText()));
-            return;
+        if (PrescriptionSplitConstants.RX_TYPE_EMERGENCY_WESTERN.equals(code)
+            || PrescriptionSplitConstants.RX_TYPE_EMERGENCY_HERBAL.equals(code)
+            || PrescriptionSplitConstants.RX_TYPE_EMERGENCY_PATENT.equals(code)) {
+            return "急诊处方";
         }
-        int split = Math.min(4, typeText.length());
-        row.setPrescriptionTypeLine1(typeText.substring(0, split));
-        String line2 = typeText.substring(split).trim();
-        if (StringUtils.isEmpty(line2)) {
-            line2 = trimToNull(row.getTcmFlagText());
+        if (PrescriptionSplitConstants.RX_TYPE_PEDIATRIC_WESTERN.equals(code)
+            || PrescriptionSplitConstants.RX_TYPE_PEDIATRIC_HERBAL.equals(code)
+            || PrescriptionSplitConstants.RX_TYPE_PEDIATRIC_PATENT.equals(code)) {
+            return "儿科处方";
         }
-        row.setPrescriptionTypeLine2(line2);
+        if (PrescriptionSplitConstants.RX_TYPE_NARCOTIC_PSYCH_ONE.equals(code)) {
+            return "麻精一";
+        }
+        return "普通处方";
     }
 
     /**
@@ -272,7 +408,7 @@ public class EncounterMedicationDispenseSlipPrintEnricher {
     }
 
     /**
-     * 每组处方取最早 requestAuthoredTime 格式化为日期展示。
+     * 每组处方取最早 requestOpenedTime 格式化为日期展示。
      *
      * @param rows slip 行
      * @return 分组键 → 日期文案
@@ -280,13 +416,13 @@ public class EncounterMedicationDispenseSlipPrintEnricher {
     private static Map<String, String> resolvePrescriptionDateByKey(List<EncounterMedicationDispenseSlipRowDto> rows) {
         Map<String, LocalDateTime> earliest = new LinkedHashMap<>();
         for (EncounterMedicationDispenseSlipRowDto row : rows) {
-            if (row == null || row.getRequestAuthoredTime() == null) {
+            if (row == null || row.getRequestOpenedTime() == null) {
                 continue;
             }
             String key = prescriptionGroupKey(row);
             LocalDateTime current = earliest.get(key);
-            if (current == null || row.getRequestAuthoredTime().isBefore(current)) {
-                earliest.put(key, row.getRequestAuthoredTime());
+            if (current == null || row.getRequestOpenedTime().isBefore(current)) {
+                earliest.put(key, row.getRequestOpenedTime());
             }
         }
         Map<String, String> result = new HashMap<>();
@@ -370,11 +506,19 @@ public class EncounterMedicationDispenseSlipPrintEnricher {
     }
 
     /**
-     * 机构树中首个启用态 HOSPITAL 类型组织名称。
+     * 机构树中首个启用态 HOSPITAL 类型组织名称（进程内短窗缓存，降低点患者反复拉树成本）。
      *
      * @return 医院名；无则 null
      */
     private String resolveHospitalName() {
+        long nowMs = System.currentTimeMillis();
+        CachedHospitalName cached = this.cachedHospitalName;
+        // 短窗命中则直接复用，避免每次 IF-OPP-03 全量 getOrganizationTree
+        if (cached != null
+            && nowMs - cached.loadedAtMs() < GeneralSharedConstants.SERVICE_LOCATION_TEMPLATE_ORG_CACHE_TTL_MS) {
+            return cached.name();
+        }
+        String hospitalName = null;
         for (Organization organization : organizationQueryService.getOrganizationTree()) {
             if (organization == null || organization.getId() == null) {
                 continue;
@@ -383,10 +527,21 @@ public class EncounterMedicationDispenseSlipPrintEnricher {
                 continue;
             }
             if (OrganizationType.HOSPITAL.getCode().equals(organization.getTypeEnum())) {
-                return trimToNull(organization.getName());
+                hospitalName = trimToNull(organization.getName());
+                break;
             }
         }
-        return null;
+        this.cachedHospitalName = new CachedHospitalName(hospitalName, nowMs);
+        return hospitalName;
+    }
+
+    /**
+     * 医院名称缓存条目。
+     *
+     * @param name       医院展示名；可空
+     * @param loadedAtMs 加载时刻（epoch ms）
+     */
+    private record CachedHospitalName(String name, long loadedAtMs) {
     }
 
     /**

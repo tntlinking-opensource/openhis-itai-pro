@@ -47,6 +47,9 @@ public class TraceNumberRecordQueryModel {
     /** 业务单号。 */
     private String busNo;
 
+    /** 批号。 */
+    private String lotNumber;
+
     /** 创建时间。 */
     private LocalDateTime createdAt;
 }

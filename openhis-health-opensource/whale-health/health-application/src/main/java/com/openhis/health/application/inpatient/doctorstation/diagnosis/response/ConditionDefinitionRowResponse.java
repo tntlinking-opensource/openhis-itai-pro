@@ -88,6 +88,12 @@ public class ConditionDefinitionRowResponse {
     private String ybFlagText;
 
     /**
+     * 医保诊断编码（目录对码 {@code yb_no}）；未对码时为空，前端展示为「-」。
+     */
+    @Schema(description = "医保诊断编码；未对码为空")
+    private String ybNo;
+
+    /**
      * 发布状态整型展示：分页接口仅返回已启用（ACTIVE）行。
      */
     @Schema(description = "发布状态整数码")

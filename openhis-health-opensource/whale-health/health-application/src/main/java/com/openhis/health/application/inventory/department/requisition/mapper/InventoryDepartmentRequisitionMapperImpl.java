@@ -29,12 +29,15 @@ import com.openhis.health.application.inventory.department.requisition.response.
 import com.openhis.health.application.inventory.department.requisition.response.WithdrawDepartmentRequisitionApprovalResponse;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.SupplyCategory;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.share.utils.EnumUtil;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryItemModel;
 import com.openhis.health.domain.workflow.supplyrequest.command.AgreeRequestCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreateRequisitionCommand;
@@ -49,6 +52,7 @@ import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -98,6 +102,45 @@ public class InventoryDepartmentRequisitionMapperImpl implements InventoryDepart
     }
 
     /**
+     * 将医务人员实体列表装配为下拉（药师/库管）。
+     *
+     * @param practitioners 医务人员列表，可为 null
+     * @return 下拉项列表，永不为 null
+     */
+    @Override
+    public List<OptionDto> toOptionDtoListFromPractitioners(List<Practitioner> practitioners) {
+        List<OptionDto> list = new ArrayList<>();
+        if (practitioners == null) {
+            return list;
+        }
+        for (Practitioner p : practitioners) {
+            if (p == null || p.getId() == null) {
+                continue;
+            }
+            Long id = p.getId();
+            String label = p.getName();
+            if (StringUtils.isEmpty(label)) {
+                label = String.valueOf(id);
+            }
+            list.add(new OptionDto(id, String.valueOf(id), label));
+        }
+        return list;
+    }
+
+    /**
+     * 装配物品来源表（药品/耗材）固定两档选项。
+     *
+     * @return 物品表下拉选项
+     */
+    @Override
+    public List<OptionDto> toOptionDtoListInboundItemTableTypes() {
+        List<OptionDto> list = new ArrayList<>();
+        list.add(new OptionDto(1L, TableNameConstants.MED_MEDICATION_DEFINITION, "药品"));
+        list.add(new OptionDto(2L, TableNameConstants.ADM_DEVICE_DEFINITION, "耗材"));
+        return list;
+    }
+
+    /**
      * 装配供应状态筛选项（IF-DEP-QL-01）。
      *
      * @return 按 {@link SupplyStatus#getSortOrder()} 升序的选项列表
@@ -120,20 +163,29 @@ public class InventoryDepartmentRequisitionMapperImpl implements InventoryDepart
     /**
      * 组装科室药房请领页初始化响应（IF-DEP-QL-01）。
      *
-     * @param pharmacyOpts  目的科室药房
-     * @param warehouseOpts 来源药库
-     * @param statusOpts    单据状态筛选项
+     * @param pharmacyOpts   目的科室药房
+     * @param warehouseOpts  来源药库
+     * @param inboundTypes   入库项目类型
+     * @param statusOpts     单据状态筛选项
+     * @param pharmacistOpts 药师下拉
+     * @param keeperOpts     库管下拉
      * @return 初始化响应体
      */
     @Override
     public LoadDepartmentRequisitionFormInitResponse toLoadDepartmentRequisitionFormInitResponse(
         List<OptionDto> pharmacyOpts,
         List<OptionDto> warehouseOpts,
-        List<OptionDto> statusOpts) {
+        List<OptionDto> inboundTypes,
+        List<OptionDto> statusOpts,
+        List<OptionDto> pharmacistOpts,
+        List<OptionDto> keeperOpts) {
         LoadDepartmentRequisitionFormInitResponse res = new LoadDepartmentRequisitionFormInitResponse();
         res.setPharmacyLocationOptions(pharmacyOpts);
         res.setWarehouseLocationOptions(warehouseOpts);
+        res.setInboundItemTableTypeOptions(inboundTypes);
         res.setStatusOptions(statusOpts);
+        res.setPharmacistOptions(pharmacistOpts);
+        res.setWarehouseKeeperOptions(keeperOpts);
         return res;
     }
 
@@ -200,9 +252,13 @@ public class InventoryDepartmentRequisitionMapperImpl implements InventoryDepart
                 }
             }
             LocalDateTime maxApply = null;
+            List<BigDecimal> lineTotals = new ArrayList<>();
             for (SupplyRequestModel line : lines) {
                 if (line == null) {
                     continue;
+                }
+                if (line.getTotalPrice() != null) {
+                    lineTotals.add(line.getTotalPrice());
                 }
                 if (line.getApplyTime() != null) {
                     // 列表申请时间取同号下最晚申请时刻，表示「单据活跃时间」上界。
@@ -211,6 +267,7 @@ public class InventoryDepartmentRequisitionMapperImpl implements InventoryDepart
                     }
                 }
             }
+            BigDecimal totalAmount = MonetaryAmountSupport.sumThenSettle(lineTotals);
             LocalDateTime approvalTime = null;
             List<SupplyRequestModel> sortedById = new ArrayList<>(lines);
             sortedById.sort(this::compareSupplyModelIdAscNullsLast);
@@ -236,6 +293,7 @@ public class InventoryDepartmentRequisitionMapperImpl implements InventoryDepart
             dto.setOriginalBusNo(head.getOriginalBusNo());
             dto.setApprovalTime(approvalTime);
             dto.setApplyTime(maxApply);
+            dto.setTotalAmount(totalAmount);
             out.add(dto);
         }
         return out;
@@ -489,6 +547,8 @@ public class InventoryDepartmentRequisitionMapperImpl implements InventoryDepart
             item.setOccurrenceTime(occ);
             item.setReason(line.getRemake());
             item.setLotNumber(line.getLotNumber());
+            item.setStartTime(line.getStartTime());
+            item.setEndTime(line.getEndTime());
             item.setTraceNo(line.getTraceNo());
             item.setPrice(line.getPrice());
             item.setTotalPrice(line.getTotalPrice());

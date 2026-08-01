@@ -37,8 +37,8 @@ public class LoadInpatientDailySettlementPageInitResponse {
     @Schema(description = "是否允许财务代交账")
     private Boolean financialDelegateEnabled;
 
-    /** 经办人下拉。 */
-    @Schema(description = "经办人下拉")
+    /** 收款人下拉岗池：仅 ROLE_ACCOUNTANT；查询后再合并窗内收费人。 */
+    @Schema(description = "收款人下拉")
     private List<OptionDto> cashierOptions;
 
     /** 当前经办人 Practitioner 主键。 */

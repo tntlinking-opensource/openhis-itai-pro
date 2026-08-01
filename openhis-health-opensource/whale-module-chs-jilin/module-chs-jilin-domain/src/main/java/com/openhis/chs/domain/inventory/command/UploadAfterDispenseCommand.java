@@ -10,7 +10,7 @@ import lombok.experimental.Accessors;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 发药完成后触发 3505 商品销售上报 */
+/** 发药完成后触发 3502(107)→3505 销售上报 */
 @Data
 @Accessors(chain = true)
 public class UploadAfterDispenseCommand {

@@ -1,0 +1,11 @@
+{
+  "moduleId": "campus",
+  "displayName": "校区组织（Campus）",
+  "enabledProperty": "openhis.modules.campus.enabled",
+  "autoConfigurationClass": "com.openhis.campus.application.config.CampusAutoConfiguration",
+  "appServiceNames": [
+    "campusSite",
+    "campusCollege",
+    "campusDepartment"
+  ]
+}

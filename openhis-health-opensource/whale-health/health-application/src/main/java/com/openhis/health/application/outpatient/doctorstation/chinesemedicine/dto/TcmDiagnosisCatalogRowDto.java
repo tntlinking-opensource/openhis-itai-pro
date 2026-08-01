@@ -38,4 +38,10 @@ public class TcmDiagnosisCatalogRowDto {
     /** 目录来源展示文案。 */
     @Schema(description = "目录来源展示文案")
     private String sourceText;
+
+    /**
+     * 医保诊断编码（目录对码 {@code yb_no}）；未对码时为空，前端展示为「-」。
+     */
+    @Schema(description = "医保诊断编码；未对码为空")
+    private String ybNo;
 }

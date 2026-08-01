@@ -112,17 +112,42 @@ public enum InvChgType implements ChsCodeEnum {
     /**
      * 校验 inv_chg_type 与盈亏数量符号是否一致（入库为正、出库为负）。
      *
-     * @param qty 3502 盈亏数量
+     * @param qty 3502 盈亏数量（有符号变化量）
      */
     public void validateQtyDirection(BigDecimal qty) {
         if (qty == null) {
             return;
         }
+        // 入库类：cnt 须为正
         if (stockIncrease && qty.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalStateException("inv_chg_type=" + code + " 要求盈亏数量为正");
         }
+        // 出库类：cnt 须为负
         if (!stockIncrease && qty.compareTo(BigDecimal.ZERO) >= 0) {
             throw new IllegalStateException("inv_chg_type=" + code + " 要求盈亏数量为负");
         }
+    }
+
+    /**
+     * 将操作单位数量转为 3502 {@code cnt}：入库类为正、出库类为负。
+     *
+     * <p>内部<strong>先 abs 再按类型赋符号</strong>，不是对 HIS 原值再 {@code negate}。
+     * 故页面报损/盘亏已填负数（如 -5）时：abs→5 → 出库类再赋负 → 仍为 -5，不会负负得正。</p>
+     *
+     * @param absoluteOperationQty 操作单位变化量（绝对值或带符号均可，内部统一 abs）
+     * @return 有符号 cnt；入参 null 时 null
+     */
+    public BigDecimal toSignedCnt(BigDecimal absoluteOperationQty) {
+        if (absoluteOperationQty == null) {
+            return null;
+        }
+        // 先去掉 HIS/页面符号，再只按 inv_chg_type 方向赋正负（防负负得正）
+        BigDecimal abs = absoluteOperationQty.abs();
+        // 入库/盘盈等：正数
+        if (stockIncrease) {
+            return abs;
+        }
+        // 出库/盘损/销毁等：负数
+        return abs.negate();
     }
 }

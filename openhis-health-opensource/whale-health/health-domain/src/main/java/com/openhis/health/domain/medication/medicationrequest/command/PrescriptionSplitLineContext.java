@@ -42,8 +42,30 @@ public class PrescriptionSplitLineContext {
      */
     private String medType;
 
-    /** 药品目录特殊管理分类（{@code part_attribute_enum}）。 */
-    private String partAttributeEnum;
+    /**
+     * 诊断集规范化键（{@code sorted(unique(parse(encounter_diagnosis_ids))).join(",")}）；
+     * 同方判定用「有交集即可」（见 {@code EncounterDiagnosisIdsSupport#compatibleForSamePrescription}），
+     * 不再作为硬分区 equals；空绑定时为空串。
+     */
+    private String diagnosisSetKey;
+
+    /**
+     * 药品性质码（目录 {@code pharmacology_category_code}，术语 {@code medicine_properties}：
+     * 普通 / 麻醉 / 毒性 / 精一 / 精二等）。
+     *
+     * <p><b>禁止</b>写入门诊拆分属性 {@code part_attribute_enum}（{@code OrderCalcRuleEnum} 拆零规则），
+     * 二者码值均含数字串 {@code 2}/{@code 4}，串用会把「整包不拆」误判为麻/精一。</p>
+     */
+    private String pharmacologyCategoryCode;
+
+    /**
+     * 药品目录分类码（{@code medication_category_code}）：
+     * {@link com.openhis.health.domain.share.constants.DailySettlementSharedConstants#MEDICATION_CATEGORY_PATENT_CHINESE_CODE}
+     * 中成药、
+     * {@link com.openhis.health.domain.share.constants.DailySettlementSharedConstants#MEDICATION_CATEGORY_WESTERN_CODE}
+     * 西药等；普通药分方时按此走西药/中成药轨道。
+     */
+    private String medicationCategoryCode;
 
     /** 是否中药饮片方。 */
     private Boolean tcmFlag;

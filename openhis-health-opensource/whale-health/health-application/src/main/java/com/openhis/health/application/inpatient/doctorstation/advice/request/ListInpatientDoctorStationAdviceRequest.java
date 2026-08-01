@@ -15,7 +15,8 @@ import lombok.experimental.Accessors;
 /**
  * IF-IP-DOR-10：加载当前就诊医嘱统一列表请求。
  *
- * <p>列表主数据来自 OrderInfo 读模型；{@link #therapyTypeCode} 可选过滤长临（LONG_TERM / TEMPORARY）。</p>
+ * <p>列表主数据来自 OrderInfo 读模型；{@link #therapyTypeCode} 可选过滤长/临/出院带药
+ * （LONG_TERM / TEMPORARY / DISCHARGE_MEDICATION）。</p>
  */
 @Data
 @Accessors(chain = true)
@@ -35,7 +36,7 @@ public class ListInpatientDoctorStationAdviceRequest {
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
 
-    /** 长临医嘱筛选：LONG_TERM / TEMPORARY；空表示全部。 */
-    @Schema(description = "长临医嘱筛选：LONG_TERM / TEMPORARY；空表示全部")
+    /** 治疗类型筛选：LONG_TERM / TEMPORARY / DISCHARGE_MEDICATION；空表示全部。 */
+    @Schema(description = "治疗类型筛选：LONG_TERM / TEMPORARY / DISCHARGE_MEDICATION；空表示全部")
     private String therapyTypeCode;
 }

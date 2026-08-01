@@ -17,11 +17,8 @@ import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.Disc
 import com.openhis.health.application.inpatient.nursestation.ATDManager.request.ClearDischargedBedRequest;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.request.ExecuteBedOperationRequest;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.request.ExecuteInpatientDischargeRequest;
-import com.openhis.health.application.inpatient.nursestation.ATDManager.request.RecallInpatientDischargeRequest;
 import com.openhis.health.domain.administration.encounter.command.ClearDischargedBedCommand;
 import com.openhis.health.domain.administration.encounter.command.ExecuteInpatientNurseDischargeCommand;
-import com.openhis.health.domain.administration.encounter.command.RecallInpatientDischargeCommand;
-import com.openhis.health.domain.workflow.servicerequest.command.RejectServiceRequestToDraftCommand;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseListQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.share.constants.TableNameConstants;
@@ -408,7 +405,12 @@ public class NurseStationATDManagerMapperImpl implements NurseStationATDManagerM
         dto.setTherapyEnum(row.getTherapyEnum());
         dto.setStatusEnum(row.getStatusEnum());
         dto.setDisplayName(medicationName);
-        dto.setReqAuthoredTime(row.getReqAuthoredTime());
+        LocalDateTime openedTime = row.getReqOpenedTime();
+        // 出院待执行展示主轴：开立时刻优先，空回落签发追溯列。
+        if (openedTime == null) {
+            openedTime = row.getReqAuthoredTime();
+        }
+        dto.setReqOpenedTime(openedTime);
         dto.setRateCode(row.getRateCode());
         dto.setDoseText(doseText);
         dto.setBlockingReason(blockingReason);
@@ -439,7 +441,12 @@ public class NurseStationATDManagerMapperImpl implements NurseStationATDManagerM
         dto.setTherapyEnum(row.getTherapyEnum());
         dto.setStatusEnum(row.getStatusEnum());
         dto.setDisplayName(activityName);
-        dto.setReqAuthoredTime(row.getReqAuthoredTime());
+        LocalDateTime openedTime = row.getReqOpenedTime();
+        // 出院待执行展示主轴：开立时刻优先，空回落签发追溯列。
+        if (openedTime == null) {
+            openedTime = row.getReqAuthoredTime();
+        }
+        dto.setReqOpenedTime(openedTime);
         dto.setRateCode(row.getRateCode());
         dto.setDoseText(doseText);
         dto.setBlockingReason(blockingReason);
@@ -573,83 +580,6 @@ public class NurseStationATDManagerMapperImpl implements NurseStationATDManagerM
         ClearDischargedBedResponse response = new ClearDischargedBedResponse();
         response.setEncounterId(encounterId);
         response.setSucceeded(Boolean.TRUE);
-        return response;
-    }
-
-    /**
-     * 出院嘱退回草稿命令（召回前置）。
-     *
-     * @param serviceRequestId 出院类诊疗请求主键
-     * @param operatorId       操作人主键
-     * @param performerCheckId 校对人 practitioner 主键
-     * @param checkTime        退回时间
-     * @return 退回命令
-     */
-    @Override
-    public RejectServiceRequestToDraftCommand toRejectDischargeServiceRequestToDraftCommand(
-        Long serviceRequestId,
-        Long operatorId,
-        Long performerCheckId,
-        LocalDateTime checkTime) {
-        RejectServiceRequestToDraftCommand command = new RejectServiceRequestToDraftCommand();
-        command.setOperatorId(operatorId);
-        command.setPerformerCheckId(performerCheckId);
-        command.setCheckTime(checkTime);
-        if (serviceRequestId == null) {
-            return command;
-        }
-        RejectServiceRequestToDraftCommand.RejectServiceRequestToDraftItemCommand line =
-            new RejectServiceRequestToDraftCommand.RejectServiceRequestToDraftItemCommand();
-        line.setId(serviceRequestId);
-        line.setReason("出院召回");
-        command.setItems(List.of(line));
-        return command;
-    }
-
-    /**
-     * 出院召回请求 → 领域命令。
-     *
-     * @param request        写请求
-     * @param operatorId     操作人主键
-     * @param wardLocationId 末次已完成病区；已清床轨非空
-     * @return 出院召回命令
-     */
-    @Override
-    public RecallInpatientDischargeCommand toRecallInpatientDischargeCommand(
-        RecallInpatientDischargeRequest request,
-        Long operatorId,
-        Long wardLocationId) {
-        RecallInpatientDischargeCommand command = new RecallInpatientDischargeCommand();
-        command.setOperatorId(operatorId);
-        RecallInpatientDischargeCommand.RecallInpatientDischargeItemCommand item =
-            new RecallInpatientDischargeCommand.RecallInpatientDischargeItemCommand();
-        if (request != null) {
-            item.setEncounterId(request.getEncounterId());
-        }
-        item.setWardLocationId(wardLocationId);
-        item.setRecalledAt(LocalDateTime.now());
-        command.setItem(item);
-        return command;
-    }
-
-    /**
-     * 出院召回成功响应。
-     *
-     * @param encounterId           就诊主键
-     * @param targetStatusEnum      召回后状态
-     * @param requiresBedAssignment 是否须二次分床
-     * @return 成功响应
-     */
-    @Override
-    public RecallInpatientDischargeResponse toRecallInpatientDischargeResponse(
-        Long encounterId,
-        String targetStatusEnum,
-        boolean requiresBedAssignment) {
-        RecallInpatientDischargeResponse response = new RecallInpatientDischargeResponse();
-        response.setEncounterId(encounterId);
-        response.setSucceeded(Boolean.TRUE);
-        response.setTargetStatusEnum(targetStatusEnum);
-        response.setRequiresBedAssignment(requiresBedAssignment);
         return response;
     }
 }

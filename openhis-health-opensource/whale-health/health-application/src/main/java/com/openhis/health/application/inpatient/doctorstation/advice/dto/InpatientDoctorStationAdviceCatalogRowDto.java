@@ -40,9 +40,16 @@ public class InpatientDoctorStationAdviceCatalogRowDto {
     @Schema(description = "业务编码")
     private String busNo;
 
-    /** 展示名称。 */
-    @Schema(description = "展示名称")
+    /** 展示名称（通用名/项目名称）。 */
+    @Schema(description = "展示名称（通用名/项目名称）")
     private String name;
+
+    /**
+     * 商品名称（药品定义 {@code merchandise_name}；诊疗/耗材通常为空）。
+     * <p>开立选品关键字已可按商品名模糊检索；本字段供列表列展示。</p>
+     */
+    @Schema(description = "商品名称")
+    private String merchandiseName;
 
     /** 拼音检索码。 */
     @Schema(description = "拼音检索码")
@@ -92,6 +99,14 @@ public class InpatientDoctorStationAdviceCatalogRowDto {
     @Schema(description = "默认用法展示名")
     private String methodCodeDictText;
 
+    /** 中药特殊煎法术语码（药品目录 dosage_instruction）。 */
+    @Schema(description = "中药特殊煎法术语码")
+    private String dosageInstruction;
+
+    /** 中药特殊煎法展示名。 */
+    @Schema(description = "中药特殊煎法展示名")
+    private String dosageInstructionDictText;
+
     /** 剂型编码。 */
     @Schema(description = "剂型编码")
     private String doseFormCode;
@@ -99,6 +114,18 @@ public class InpatientDoctorStationAdviceCatalogRowDto {
     /** 剂型展示名。 */
     @Schema(description = "剂型展示名")
     private String doseFormCodeDictText;
+
+    /** 默认单次剂量（剂量单位）。 */
+    @Schema(description = "默认单次剂量（剂量单位）")
+    private BigDecimal dose;
+
+    /** 单次最小剂量（剂量单位）。 */
+    @Schema(description = "单次最小剂量（剂量单位）")
+    private BigDecimal minUnit;
+
+    /** 单次最大剂量（剂量单位）。 */
+    @Schema(description = "单次最大剂量（剂量单位）")
+    private BigDecimal maxUnit;
 
     /** 是否限制使用。 */
     @Schema(description = "是否限制使用")
@@ -136,6 +163,10 @@ public class InpatientDoctorStationAdviceCatalogRowDto {
     @Schema(description = "包装规格")
     private String totalVolume;
 
+    /** 生产厂家/产地展示名（读模型 {@code manufacturer}）。 */
+    @Schema(description = "生产厂家/产地")
+    private String manufacturer;
+
     /** 诊疗活动类型 code。 */
     @Schema(description = "诊疗活动类型 code")
     private String activityTypeCode;
@@ -168,9 +199,19 @@ public class InpatientDoctorStationAdviceCatalogRowDto {
     @Schema(description = "默认库房名称")
     private String defaultDispenseLocationName;
 
-    /** 默认发点下可开总量展示列（展示单位，非拆零小单位）。 */
-    @Schema(description = "默认发点下可开总量展示列（展示单位，非拆零小单位）")
+    /**
+     * 默认发点下可开量（包装单位换算值，供库存对比；可含小数，界面勿直接展示）。
+     * <p>该目录各批净可用合计；界面库存列优先用 {@link #availableQuantityText}。</p>
+     */
+    @Schema(description = "可开量（包装单位；该目录各批合计）")
     private BigDecimal availableQuantity;
+
+    /**
+     * 可开量展示文案：拆零净量 → 满包整数 + 不足一包拆零余量（如 {@code 4盒6片}），与库存明细
+     * {@code packageStockText} / {@link com.openhis.health.application.shared.product.MedicationPackageSplitQuantityDisplayAssembler} 同族。
+     */
+    @Schema(description = "可开量展示文案（满包+拆零，无小数盒）")
+    private String availableQuantityText;
 
     /** 预减后的库存行列表（仅药/材）。 */
     @Schema(description = "预减后的库存行列表（仅药/材）")
@@ -187,4 +228,12 @@ public class InpatientDoctorStationAdviceCatalogRowDto {
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "收费项定义主键")
     private Long chargeItemDefinitionId;
+
+    /** 医保收费项目等级码（术语 {@code CHRGITM_LV}，如 1/2/3）。 */
+    @Schema(description = "医保收费项目等级码（CHRGITM_LV）")
+    private Integer chrgitmLv;
+
+    /** 医保等级展示名（甲类/乙类/丙类等）。 */
+    @Schema(description = "医保等级展示名（甲类/乙类/丙类等）")
+    private String chrgitmLvText;
 }

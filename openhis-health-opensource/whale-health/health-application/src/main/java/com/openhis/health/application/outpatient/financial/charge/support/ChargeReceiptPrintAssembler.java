@@ -6,6 +6,9 @@ package com.openhis.health.application.outpatient.financial.charge.support;
 
 import com.openhis.health.application.outpatient.financial.charge.dto.ChargeReceiptChargeLineDto;
 import com.openhis.health.application.outpatient.financial.charge.dto.ChargeReceiptSlipDto;
+import com.openhis.health.application.outpatient.financial.charge.dto.ChargeSettlementInsuranceSummaryDto;
+import com.openhis.health.application.outpatient.financial.charge.dto.ChargeSettlementPaymentLineDto;
+import com.openhis.health.application.outpatient.financial.charge.dto.ChargeSettlementSetlinfoDto;
 import com.openhis.health.domain.administration.account.entity.Account;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
@@ -26,7 +29,7 @@ import com.openhis.health.domain.financial.paymentreconciliation.service.Payment
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientChargeConstants;
 import com.openhis.health.domain.share.enums.AdministrativeGender;
-import com.openhis.health.domain.share.enums.ChargeTypeCategory;
+import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.OrganizationType;
 import com.openhis.health.domain.share.enums.PaymentChannel;
 import com.openhis.health.domain.share.enums.PublicationStatus;
@@ -34,8 +37,10 @@ import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.OutpatientChargeInsuranceExtension;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.OutpatientRegistrationInsuranceExtension;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientRegistrationPlatformQueryExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientChargeSettlementRecordExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientRegistrationPlatformQueryExtensionOut;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.application.shared.encounter.EncounterContextReader;
@@ -70,7 +75,288 @@ public class ChargeReceiptPrintAssembler {
     private final ContractQueryService contractQueryService;
     private final PractitionerQueryService practitionerQueryService;
     private final OutpatientRegistrationInsuranceExtension outpatientRegistrationInsuranceExtension;
+    private final OutpatientChargeInsuranceExtension outpatientChargeInsuranceExtension;
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
+
+    /**
+     * 按结算单（成功支付明细）解析医保分摊摘要，供收费页患者信息栏展示。
+     *
+     * <p>口径与小票 {@link #applyPaymentBreakdown} 一致：统筹/个账取自 {@code INSURANCE_*}，
+     * 个人自付为现金/微信/支付宝/银行卡合计；无成功支付时返回 {@code null}。</p>
+     *
+     * @param encounterId 就诊主键
+     * @param paymentId   支付流水；空则取就诊最近成功支付
+     * @return 摘要；无支付明细时 null
+     */
+    public ChargeSettlementInsuranceSummaryDto resolveSettlementInsuranceSummary(
+        Long encounterId,
+        Long paymentId) {
+        if (encounterId == null) {
+            return null;
+        }
+        Long resolvedPaymentId = paymentId;
+        if (resolvedPaymentId == null) {
+            Map<Long, Long> paymentByEncounter =
+                paymentReconciliationQueryService.findLatestSuccessPaymentIdsByEncounterIds(List.of(encounterId));
+            resolvedPaymentId = paymentByEncounter.get(encounterId);
+        }
+        if (resolvedPaymentId == null) {
+            return null;
+        }
+        List<PaymentRecDetailQueryModel> details =
+            paymentReconciliationQueryService.listPaymentRecDetailsByPaymentId(resolvedPaymentId);
+        if (details == null || details.isEmpty()) {
+            return null;
+        }
+        BigDecimal fundPay = BigDecimal.ZERO;
+        BigDecimal acctPay = BigDecimal.ZERO;
+        BigDecimal selfPay = BigDecimal.ZERO;
+        BigDecimal medfee = BigDecimal.ZERO;
+        boolean hasInsurance = false;
+        for (PaymentRecDetailQueryModel detail : details) {
+            if (detail == null || detail.getAmount() == null) {
+                continue;
+            }
+            BigDecimal amount = detail.getAmount();
+            medfee = medfee.add(amount);
+            String payEnum = StringUtils.trimToEmpty(detail.getPayEnum());
+            if (PaymentChannel.INSURANCE_FUND.getCode().equals(payEnum)) {
+                fundPay = fundPay.add(amount);
+                hasInsurance = true;
+            } else if (PaymentChannel.INSURANCE_ACCT.getCode().equals(payEnum)) {
+                acctPay = acctPay.add(amount);
+                hasInsurance = true;
+            } else {
+                PaymentChannel channel = PaymentChannel.fromCode(payEnum);
+                if (channel != null && channel.isUserSelectable() && !channel.isUiOnly()) {
+                    selfPay = selfPay.add(amount);
+                }
+            }
+        }
+        ChargeSettlementInsuranceSummaryDto summary = new ChargeSettlementInsuranceSummaryDto();
+        summary.setPaymentId(resolvedPaymentId);
+        summary.setInsuranceSettled(hasInsurance);
+        summary.setMedfeeSumamt(MonetaryAmountSupport.scaleSettle(medfee));
+        summary.setFundPaySumamt(MonetaryAmountSupport.scaleSettle(fundPay));
+        summary.setAcctPay(MonetaryAmountSupport.scaleSettle(acctPay));
+        summary.setPsnCashPay(MonetaryAmountSupport.scaleSettle(selfPay));
+        this.fillSettlementSummaryPaymentHeader(summary, resolvedPaymentId);
+        this.fillSettlementSetlinfo(summary, resolvedPaymentId);
+        return summary;
+    }
+
+    /**
+     * 列出就诊下全部成功支付的结算分摊摘要（账单时间倒序）。
+     *
+     * @param encounterId 就诊主键
+     * @return 摘要列表；无成功支付时为空列表
+     */
+    public List<ChargeSettlementInsuranceSummaryDto> listSettlementInsuranceSummaries(Long encounterId) {
+        if (encounterId == null) {
+            return List.of();
+        }
+        List<PaymentReconciliationQueryModel> payments =
+            paymentReconciliationQueryService.listSuccessPaymentsByEncounterId(encounterId);
+        if (payments == null || payments.isEmpty()) {
+            return List.of();
+        }
+        List<ChargeSettlementInsuranceSummaryDto> options = new ArrayList<>();
+        for (PaymentReconciliationQueryModel payment : payments) {
+            if (payment == null || payment.getId() == null) {
+                continue;
+            }
+            ChargeSettlementInsuranceSummaryDto summary =
+                this.resolveSettlementInsuranceSummary(encounterId, payment.getId());
+            if (summary != null) {
+                options.add(summary);
+            }
+        }
+        return options;
+    }
+
+    /**
+     * 从支付主单回填业务号、账单时间与展示金额。
+     *
+     * @param summary   摘要 DTO
+     * @param paymentId 支付主键
+     */
+    private void fillSettlementSummaryPaymentHeader(
+        ChargeSettlementInsuranceSummaryDto summary,
+        Long paymentId) {
+        if (summary == null || paymentId == null) {
+            return;
+        }
+        PaymentReconciliationQueryModel payment =
+            paymentReconciliationQueryService.mustGetPayment(paymentId);
+        if (payment == null) {
+            return;
+        }
+        summary.setPaymentNo(payment.getPaymentNo());
+        summary.setBillDate(payment.getBillDate());
+        BigDecimal displayAmount = payment.getDisplayAmount();
+        if (displayAmount == null) {
+            displayAmount = payment.getTenderedAmount();
+        }
+        summary.setDisplayAmount(displayAmount);
+        List<Long> chargeItemIds = parseChargeItemIds(payment.getChargeItemIds());
+        summary.setChargeItemIds(chargeItemIds);
+        summary.setChargeLines(this.buildSettlementPaymentLines(chargeItemIds));
+    }
+
+    /**
+     * 从第三方正式结算回执回填 2206/2207 setlinfo；混合结算多笔时金额汇总。
+     *
+     * <p>有有效回执时同步覆盖摘要区医疗费/统筹/个账/自付为平台口径。</p>
+     *
+     * @param summary   支付结算摘要
+     * @param paymentId 支付主键
+     */
+    private void fillSettlementSetlinfo(ChargeSettlementInsuranceSummaryDto summary, Long paymentId) {
+        if (summary == null || paymentId == null || !outpatientChargeInsuranceExtension.isEnabled()) {
+            return;
+        }
+        List<OutpatientChargeSettlementRecordExtensionOut> records =
+            outpatientChargeInsuranceExtension.listSettlementsByPayment(paymentId);
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        ChargeSettlementSetlinfoDto setlinfo = null;
+        for (OutpatientChargeSettlementRecordExtensionOut record : records) {
+            if (record == null || "REVOKED".equals(StringUtils.trimToEmpty(record.getStatus()))) {
+                continue;
+            }
+            if (setlinfo == null) {
+                setlinfo = new ChargeSettlementSetlinfoDto()
+                    .setSetlId(StringUtils.trimToNull(record.getSettlementId()))
+                    .setMdtrtId(StringUtils.trimToNull(record.getEncounterPlatformId()))
+                    .setChrgBchno(StringUtils.trimToNull(record.getChargeBatchNo()))
+                    .setClrOptins(StringUtils.trimToNull(record.getClrOptins()))
+                    .setClrWay(StringUtils.trimToNull(record.getClrWay()))
+                    .setClrType(StringUtils.trimToNull(record.getClrType()))
+                    .setPoolPropSelfpay(record.getPoolPropSelfpay())
+                    .setBalc(record.getBalc());
+            } else if (record.getBalc() != null) {
+                // 多笔时余额取最后一笔非空值
+                setlinfo.setBalc(record.getBalc());
+            }
+            setlinfo.setMedfeeSumamt(sumNullable(setlinfo.getMedfeeSumamt(), record.getMedfeeSumamt()));
+            setlinfo.setFulamtOwnpayAmt(sumNullable(setlinfo.getFulamtOwnpayAmt(), record.getFulamtOwnpayAmt()));
+            setlinfo.setOverlmtSelfpay(sumNullable(setlinfo.getOverlmtSelfpay(), record.getOverlmtSelfpay()));
+            setlinfo.setPreselfpayAmt(sumNullable(setlinfo.getPreselfpayAmt(), record.getPreselfpayAmt()));
+            setlinfo.setInscpScpAmt(sumNullable(setlinfo.getInscpScpAmt(), record.getInscpScpAmt()));
+            setlinfo.setActPayDedc(sumNullable(setlinfo.getActPayDedc(), record.getActPayDedc()));
+            setlinfo.setHifpPay(sumNullable(setlinfo.getHifpPay(), record.getHifpPay()));
+            setlinfo.setCvlservPay(sumNullable(setlinfo.getCvlservPay(), record.getCvlservPay()));
+            setlinfo.setHifesPay(sumNullable(setlinfo.getHifesPay(), record.getHifesPay()));
+            setlinfo.setHifmiPay(sumNullable(setlinfo.getHifmiPay(), record.getHifmiPay()));
+            setlinfo.setHifobPay(sumNullable(setlinfo.getHifobPay(), record.getHifobPay()));
+            setlinfo.setMafPay(sumNullable(setlinfo.getMafPay(), record.getMafPay()));
+            setlinfo.setHifdmPay(sumNullable(setlinfo.getHifdmPay(), record.getHifdmPay()));
+            setlinfo.setOthPay(sumNullable(setlinfo.getOthPay(), record.getOthPay()));
+            setlinfo.setFundPaySumamt(sumNullable(setlinfo.getFundPaySumamt(), record.getFundPaySumamt()));
+            setlinfo.setPsnPartAmt(sumNullable(setlinfo.getPsnPartAmt(), record.getPsnPartAmt()));
+            setlinfo.setAcctPay(sumNullable(setlinfo.getAcctPay(), record.getAcctPay()));
+            setlinfo.setPsnCashPay(sumNullable(setlinfo.getPsnCashPay(), record.getPsnCashPay()));
+            setlinfo.setHospPartAmt(sumNullable(setlinfo.getHospPartAmt(), record.getHospPartAmt()));
+            setlinfo.setAcctMulaidPay(sumNullable(setlinfo.getAcctMulaidPay(), record.getAcctMulaidPay()));
+        }
+        if (setlinfo == null) {
+            return;
+        }
+        summary.setSetlinfo(setlinfo);
+        summary.setInsuranceSettled(true);
+        if (setlinfo.getMedfeeSumamt() != null) {
+            summary.setMedfeeSumamt(MonetaryAmountSupport.scaleSettle(setlinfo.getMedfeeSumamt()));
+        }
+        if (setlinfo.getFundPaySumamt() != null) {
+            summary.setFundPaySumamt(MonetaryAmountSupport.scaleSettle(setlinfo.getFundPaySumamt()));
+        }
+        if (setlinfo.getAcctPay() != null) {
+            summary.setAcctPay(MonetaryAmountSupport.scaleSettle(setlinfo.getAcctPay()));
+        }
+        if (setlinfo.getPsnCashPay() != null) {
+            summary.setPsnCashPay(MonetaryAmountSupport.scaleSettle(setlinfo.getPsnCashPay()));
+        }
+    }
+
+    private static BigDecimal sumNullable(BigDecimal left, BigDecimal right) {
+        if (left == null) {
+            return right;
+        }
+        if (right == null) {
+            return left;
+        }
+        return left.add(right);
+    }
+
+    /**
+     * 按支付关联收费项 id 组装只读明细（不按收银台状态过滤，含已退费/挂号锚点等）。
+     *
+     * <p>项目名/数量单位口径与 {@link #buildChargeItemLines}、待收费列表一致：优先目录
+     * {@code product_name} 与单位 band 展示名；禁止用单据号回落项目名。</p>
+     *
+     * @param chargeItemIds 收费项主键
+     * @return 明细行；无 id 时为空列表
+     */
+    private List<ChargeSettlementPaymentLineDto> buildSettlementPaymentLines(List<Long> chargeItemIds) {
+        if (chargeItemIds == null || chargeItemIds.isEmpty()) {
+            return List.of();
+        }
+        ChargeItemQueryCommand command = new ChargeItemQueryCommand();
+        command.setIds(chargeItemIds);
+        List<ChargeItem> loaded = chargeItemQueryService.loadChargeItemsByIds(command);
+        if (loaded == null || loaded.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<Long> definitionIds = new LinkedHashSet<>();
+        for (ChargeItem item : loaded) {
+            if (item != null && item.getDefinitionId() != null) {
+                definitionIds.add(item.getDefinitionId());
+            }
+        }
+        Map<Long, ChargeItemDefinition> definitionMap =
+            chargeItemDefinitionQueryService.findAllDefinitionsByIdIn(definitionIds);
+        // 批量加载目录，供项目名与数量单位展示解析（与小票明细同口径）
+        Map<String, ProductDefinitionDisplayDto> productMap = this.loadProductMapForChargeItems(loaded);
+        List<ChargeSettlementPaymentLineDto> lines = new ArrayList<>();
+        for (ChargeItem item : loaded) {
+            if (item == null || item.getId() == null) {
+                continue;
+            }
+            ChargeSettlementPaymentLineDto line = new ChargeSettlementPaymentLineDto();
+            line.setChargeItemId(item.getId());
+            line.setBusNo(StringUtils.trimToNull(item.getBusNo()));
+            ChargeItemDefinition definition = null;
+            if (item.getDefinitionId() != null) {
+                definition = definitionMap.get(item.getDefinitionId());
+            }
+            ProductDefinitionDisplayDto product = this.resolveProductForChargeItem(item, productMap);
+            line.setItemName(firstNonBlank(
+                this.resolveChargeLineDisplayName(item, definition, product),
+                OutpatientChargeConstants.PENDING_CHARGE_ITEM_DISPLAY_FALLBACK));
+            if (item.getQuantityValue() != null) {
+                line.setQuantityDisplay(item.getQuantityValue().stripTrailingZeros().toPlainString());
+            }
+            // 单位 code → 目录 band 展示名（如「盒」）；未命中时回落持久化 code
+            String unitDisplay = this.resolveQuantityUnitDisplay(item.getQuantityUnit(), product);
+            if (StringUtils.isNotEmpty(unitDisplay)) {
+                line.setQuantityUnit(unitDisplay);
+            } else {
+                line.setQuantityUnit(StringUtils.trimToNull(item.getQuantityUnit()));
+            }
+            line.setStatusCode(StringUtils.trimToNull(item.getStatusEnum()));
+            ChargeItemStatus status =
+                EnumUtil.fromCode(ChargeItemStatus.class, StringUtils.trimToEmpty(item.getStatusEnum()));
+            if (status != null) {
+                line.setStatusText(status.getDisplay());
+            } else {
+                line.setStatusText(StringUtils.trimToNull(item.getStatusEnum()));
+            }
+            line.setTotalPrice(item.getTotalPrice());
+            lines.add(line);
+        }
+        return lines;
+    }
 
     /**
      * 组装门诊收费小票打印字段。
@@ -200,7 +486,8 @@ public class ChargeReceiptPrintAssembler {
                 OutpatientChargeConstants.PENDING_CHARGE_ITEM_DISPLAY_FALLBACK));
             row.setQuantityText(formatQuantityText(line, product));
             row.setAmountText(formatAmountText(line.getTotalPrice()));
-            row.setChargeCategoryText(firstNonBlank(resolveChargeCategoryText(definition), "收费"));
+            // 类别列：医保收费项目等级（甲类/乙类/自费），非价目 fin_type
+            row.setChargeCategoryText(resolveChrgitmLvCategoryText(product));
             result.add(row);
         }
         return result;
@@ -330,20 +617,25 @@ public class ChargeReceiptPrintAssembler {
     }
 
     /**
-     * 价目 typeCode 转收费类别展示（ChargeTypeCategory）。
+     * 小票「类别」列：取产品医保收费项目等级展示（术语 CHRGITM_LV → 甲类/乙类/自费等）。
      *
-     * @param definition 价目定义
-     * @return 类别展示；无定义时 null
+     * <p>勿用价目 {@code type_code}（财务 fin_type，如 1003），否则会把财务码原样打到小票上。</p>
+     *
+     * @param product 产品目录展示（含已回填的 chrgitmLvText）
+     * @return 等级展示；无等级时返回空串
      */
-    private String resolveChargeCategoryText(ChargeItemDefinition definition) {
-        if (definition == null || StringUtils.isEmpty(definition.getTypeCode())) {
-            return null;
+    private String resolveChrgitmLvCategoryText(ProductDefinitionDisplayDto product) {
+        if (product == null) {
+            return "";
         }
-        ChargeTypeCategory category = EnumUtil.fromCode(ChargeTypeCategory.class, definition.getTypeCode().trim());
-        if (category != null) {
-            return category.getDisplay();
+        if (StringUtils.isNotEmpty(product.getChrgitmLvText())) {
+            return product.getChrgitmLvText().trim();
         }
-        return definition.getTypeCode().trim();
+        // 仅有码无文案时仍不回落财务 type_code，避免再出现 1003 类误显
+        if (product.getChrgitmLv() != null) {
+            return String.valueOf(product.getChrgitmLv());
+        }
+        return "";
     }
 
     /**
@@ -372,6 +664,9 @@ public class ChargeReceiptPrintAssembler {
     /**
      * 按支付子明细与医保快照回填小票各渠道金额（含 totalAmount 现金回落）。
      *
+     * <p>起付线取 2207 回执 {@code act_pay_dedc}；个账余额优先取回执 {@code balc}，
+     * 再回落支付明细 {@code afterBalance}（门诊收费通常不写 afterBalance）。</p>
+     *
      * @param slip               收费小票 DTO
      * @param payment            支付读模型
      * @param insuranceSnapshot  医保平台快照
@@ -383,7 +678,7 @@ public class ChargeReceiptPrintAssembler {
         OutpatientRegistrationPlatformQueryExtensionOut insuranceSnapshot,
         BigDecimal totalAmount) {
         Map<String, BigDecimal> channelAmounts = new HashMap<>();
-        BigDecimal accountBalance = null;
+        BigDecimal accountBalanceFromDetail = null;
         if (payment != null && payment.getId() != null) {
             List<PaymentRecDetailQueryModel> details =
                 paymentReconciliationQueryService.listPaymentRecDetailsByPaymentId(payment.getId());
@@ -398,10 +693,19 @@ public class ChargeReceiptPrintAssembler {
                 channelAmounts.merge(payEnum, detail.getAmount(), BigDecimal::add);
                 if (detail.getAfterBalance() != null
                     && PaymentChannel.INSURANCE_ACCT.getCode().equals(payEnum)) {
-                    accountBalance = detail.getAfterBalance();
+                    accountBalanceFromDetail = detail.getAfterBalance();
                 }
             }
         }
+
+        BigDecimal settlementActPayDedc = null;
+        BigDecimal settlementBalc = null;
+        if (payment != null && payment.getId() != null) {
+            SettlementPrintAmounts settlementAmounts = resolveSettlementPrintAmounts(payment.getId());
+            settlementActPayDedc = settlementAmounts.actPayDedc;
+            settlementBalc = settlementAmounts.balc;
+        }
+        BigDecimal accountBalance = firstNonNull(settlementBalc, accountBalanceFromDetail);
 
         BigDecimal pooling = channelAmounts.get(PaymentChannel.INSURANCE_FUND.getCode());
         BigDecimal snapshotFund = null;
@@ -442,11 +746,48 @@ public class ChargeReceiptPrintAssembler {
         slip.setPoolingPayText(formatAmountText(pooling));
         slip.setFundPayText(formatAmountText(fund));
         slip.setAccountPayText(formatAmountText(acct));
-        slip.setDeductibleLineText("");
+        slip.setDeductibleLineText(formatAmountText(settlementActPayDedc));
         slip.setCashPayText(formatAmountText(cash));
         slip.setWechatPayText(formatAmountText(wechat));
         slip.setAlipayPayText(formatAmountText(alipay));
         slip.setAccountBalanceText(formatAmountText(accountBalance));
+    }
+
+    /**
+     * 从支付单下未撤销的 2207 正式结算回执汇总小票起付线与个账余额。
+     *
+     * <p>多笔时 {@code act_pay_dedc} 求和；{@code balc} 取最后一笔非空值（与
+     * {@link #fillSettlementSetlinfo} 口径一致）。</p>
+     *
+     * @param paymentId 支付主键
+     * @return 起付线/余额；扩展未启用或无回执时字段为 null
+     */
+    private SettlementPrintAmounts resolveSettlementPrintAmounts(Long paymentId) {
+        SettlementPrintAmounts amounts = new SettlementPrintAmounts();
+        if (paymentId == null || !outpatientChargeInsuranceExtension.isEnabled()) {
+            return amounts;
+        }
+        List<OutpatientChargeSettlementRecordExtensionOut> records =
+            outpatientChargeInsuranceExtension.listSettlementsByPayment(paymentId);
+        if (records == null || records.isEmpty()) {
+            return amounts;
+        }
+        for (OutpatientChargeSettlementRecordExtensionOut record : records) {
+            if (record == null || "REVOKED".equals(StringUtils.trimToEmpty(record.getStatus()))) {
+                continue;
+            }
+            amounts.actPayDedc = sumNullable(amounts.actPayDedc, record.getActPayDedc());
+            if (record.getBalc() != null) {
+                amounts.balc = record.getBalc();
+            }
+        }
+        return amounts;
+    }
+
+    /** 小票用结算回执金额（起付线 + 个账余额）。 */
+    private static final class SettlementPrintAmounts {
+        private BigDecimal actPayDedc;
+        private BigDecimal balc;
     }
 
     /**

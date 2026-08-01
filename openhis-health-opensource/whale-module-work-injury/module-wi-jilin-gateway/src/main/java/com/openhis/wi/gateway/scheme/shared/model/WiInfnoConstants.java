@@ -17,7 +17,7 @@ public final class WiInfnoConstants {
     public static final String SIGN_IN = "9001";
     /** DLL 签退。 */
     public static final String SIGN_OUT = "9002";
-    /** 人员信息查询（HIS 1101，非 invoke 链）。 */
+    /** 人员信息查询（REG_QUERY 首步；写 anchor.psn_no）。 */
     public static final String PERSON_INFO = "1101";
     /** 工伤资格/审批信息查询。 */
     public static final String QUALIFICATION_QUERY = "9102";

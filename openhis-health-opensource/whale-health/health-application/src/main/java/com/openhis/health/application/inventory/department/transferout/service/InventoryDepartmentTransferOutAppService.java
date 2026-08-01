@@ -142,9 +142,9 @@ public class InventoryDepartmentTransferOutAppService {
             // —— 平级调拨：源/目的下拉均为管辖范围内启用中科室药房。——
             List<Location> departmentPharmacies = locationQueryService.listAllActiveDepartmentPharmacies();
             List<Location> gatedDepartmentPharmacies = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(departmentPharmacies);
-            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
                 WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
-            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
                 WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE, resolvedOrg);
             return transferOutMapper.toLoadTransferOutFormInitResponse(
                 transferOutMapper.toOptionDtoListFromLocations(gatedDepartmentPharmacies),
@@ -291,6 +291,8 @@ public class InventoryDepartmentTransferOutAppService {
         GetTransferOutDetailResponse res = transferOutMapper.toGetTransferOutDetailResponse(lines, hints);
         this.enrichTransferOutDetailProductDisplay(res.getLines(), products, terminologyMaps);
         this.enrichTransferOutDetailLines(res.getLines());
+        this.enrichTransferOutDetailAvailableQuantity(res.getLines(), res.getSourceLocationId());
+        this.enrichTransferOutDetailPractitionerName(res);
         return res;
     }
 
@@ -777,6 +779,8 @@ public class InventoryDepartmentTransferOutAppService {
         InventoryItemPageQuery invQuery = new InventoryItemPageQuery();
         invQuery.setLocationId(request.getSourceLocationId());
         invQuery.setItemTable(request.getProductTableName().trim());
+        // —— 前台可选：true 仅返回选品库位账面量>0 的批号行；false/未传不过滤数量。——
+        invQuery.setPositiveQuantityOnly(request.getPositiveQuantityOnly());
         PageQueryBinder.bind(request, invQuery);
         Pageable pageable = PageRequest.of(
             request.springPageIndex(), request.getBoundedPageSize(), Sort.by(Sort.Direction.ASC, FieldNameConstants.ID));
@@ -1058,6 +1062,92 @@ public class InventoryDepartmentTransferOutAppService {
             // —— 历史单据：槽价仅锚 SupplyRequest 持久化行价（BR-PRICE-SRC-001）。——
             ProductDefinitionCatalogUnitBandsAssembler.enrichWarehouseDetailCatalogFromPersistedSupplyLinePrice(
                 cat, dto.getPrice(), dto.getUnitCode(), null);
+        }
+    }
+
+    /**
+     * 详情回填源库可用量（拆零），与选品 {@code availableQuantity} 同口径。
+     *
+     * @param lines            详情明细行
+     * @param sourceLocationId 调出源科室药房
+     */
+    private void enrichTransferOutDetailAvailableQuantity(
+        List<TransferOutDetailLineDto> lines, Long sourceLocationId) {
+        if (lines == null || lines.isEmpty() || sourceLocationId == null) {
+            return;
+        }
+        // —— 按物品表分组批量取可用行，避免按明细行 N 次查库。——
+        Map<String, List<Long>> itemIdsByTable = new HashMap<>();
+        for (TransferOutDetailLineDto line : lines) {
+            if (line == null || line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
+                continue;
+            }
+            String table = line.getItemTable().trim();
+            itemIdsByTable.computeIfAbsent(table, k -> new ArrayList<>()).add(line.getItemId());
+        }
+        Map<String, Map<Long, Map<String, BigDecimal>>> availableByTableItemLot = new HashMap<>();
+        for (Map.Entry<String, List<Long>> entry : itemIdsByTable.entrySet()) {
+            String table = entry.getKey();
+            List<Long> itemIds = entry.getValue();
+            if (itemIds.isEmpty()) {
+                continue;
+            }
+            List<InventoryCatalogAvailabilityRowModel> availRows =
+                this.inventoryItemQueryService.findAvailableCatalogRowsForOrder(
+                    table, itemIds, List.of(sourceLocationId));
+            Map<Long, Map<String, BigDecimal>> byItem =
+                availableByTableItemLot.computeIfAbsent(table, k -> new HashMap<>());
+            for (InventoryCatalogAvailabilityRowModel ar : availRows) {
+                if (ar == null || ar.getItemId() == null || ar.getQuantity() == null) {
+                    continue;
+                }
+                if (!Objects.equals(ar.getLocationId(), sourceLocationId)) {
+                    continue;
+                }
+                String normLot =
+                    InventoryItemQueryService.normalizeLotNumberForAvailabilityMatch(ar.getLotNumber());
+                byItem.computeIfAbsent(ar.getItemId(), k -> new HashMap<>())
+                    .merge(normLot, ar.getQuantity(), BigDecimal::add);
+            }
+        }
+        for (TransferOutDetailLineDto line : lines) {
+            if (line == null) {
+                continue;
+            }
+            if (line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
+                line.setAvailableQuantity(BigDecimal.ZERO);
+                continue;
+            }
+            String table = line.getItemTable().trim();
+            Map<Long, Map<String, BigDecimal>> byItem = availableByTableItemLot.get(table);
+            BigDecimal avail = BigDecimal.ZERO;
+            if (byItem != null) {
+                Map<String, BigDecimal> byLot = byItem.get(line.getItemId());
+                if (byLot != null) {
+                    String normLot =
+                        InventoryItemQueryService.normalizeLotNumberForAvailabilityMatch(line.getLotNumber());
+                    BigDecimal v = byLot.get(normLot);
+                    if (v != null) {
+                        avail = v;
+                    }
+                }
+            }
+            line.setAvailableQuantity(avail);
+        }
+    }
+
+    /**
+     * 详情头回填经手人姓名，供前端下拉 pin 展示（避免仅有 id）。
+     *
+     * @param res 详情响应
+     */
+    private void enrichTransferOutDetailPractitionerName(GetTransferOutDetailResponse res) {
+        if (res == null || res.getPractitionerId() == null) {
+            return;
+        }
+        Practitioner pr = this.practitionerQueryService.findById(res.getPractitionerId());
+        if (pr != null && StringUtils.isNotEmpty(pr.getName())) {
+            res.setPractitionerName(pr.getName().trim());
         }
     }
 

@@ -32,10 +32,6 @@ public class DiagnosisCatalogDto {
     @Schema(description = "疾病编码")
     private String conditionCode;
 
-    /** 特慢病编码。 */
-    @Schema(description = "特慢病编码")
-    private String diseaseCode;
-
     /** 疾病名称。 */
     @Schema(description = "疾病名称")
     private String name;
@@ -67,6 +63,10 @@ public class DiagnosisCatalogDto {
     /** 医保编码。 */
     @Schema(description = "医保编码")
     private String ybNo;
+
+    /** 国家临床版诊断编码（国临码）。 */
+    @Schema(description = "国家临床版诊断编码（国临码）")
+    private String clinicCode;
 
     /** 医保对码标记（0/1）。 */
     @Schema(description = "医保对码标记（0/1）")

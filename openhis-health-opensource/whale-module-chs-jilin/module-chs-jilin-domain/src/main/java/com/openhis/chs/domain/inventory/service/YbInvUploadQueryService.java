@@ -11,6 +11,9 @@ import com.openhis.chs.domain.inventory.repository.YbInvUploadRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -67,5 +70,133 @@ public class YbInvUploadQueryService {
             ChsInventoryConstants.UPLOAD_STATUS_SUCCESS);
         return row3502.isPresent()
             && ChsInventoryConstants.SOURCE_TYPE_INIT.equals(row3502.get().getSourceType());
+    }
+
+    /**
+     * 列出就诊下已成功的清床汇总径销售 3505（{@code source_type=CLEAR_BED_SUMMARY}）。
+     *
+     * <p>反结/召回冲销时只冲本批次，不含发药当时 {@code DISPENSE} 的按患者 3505。</p>
+     *
+     * @param tenantId    租户主键
+     * @param encounterId 就诊主键（写入 {@code source_id}）
+     * @return 成功 3505 流水；无匹配时空列表
+     */
+    public List<YbInvUpload> listSuccessfulClearBedSummarySales(Long tenantId, Long encounterId) {
+        List<YbInvUpload> result = new ArrayList<>();
+        if (tenantId == null || encounterId == null) {
+            return result;
+        }
+        List<YbInvUpload> rows = uploadRepository.findAllByTenantIdAndSourceTypeAndSourceIdOrderByIdAsc(
+            tenantId,
+            ChsInventoryConstants.SOURCE_TYPE_CLEAR_BED_SUMMARY,
+            encounterId);
+        for (YbInvUpload row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (!ChsInfNo.INVENTORY_SALE.equals(row.getInfno())) {
+                continue;
+            }
+            if (!ChsInventoryConstants.UPLOAD_STATUS_SUCCESS.equals(row.getUploadStatus())) {
+                continue;
+            }
+            result.add(row);
+        }
+        return result;
+    }
+
+    /**
+     * 本就诊是否已有成功的清床汇总径 3505（用于反结是否触发 3506 的前置判断）。
+     *
+     * @param tenantId    租户主键
+     * @param encounterId 就诊主键
+     * @return 存在成功清床汇总销售时 true
+     */
+    public boolean hasSuccessfulClearBedSummarySales(Long tenantId, Long encounterId) {
+        return !this.listSuccessfulClearBedSummarySales(tenantId, encounterId).isEmpty();
+    }
+
+    /**
+     * 是否存在「已成功清床汇总 3505、尚未被成功 3506 冲销」的批次。
+     *
+     * <p>召回后再清床前用于轻门禁：有未冲销销售则禁止再次清床，避免平台双报。</p>
+     *
+     * @param tenantId    租户主键
+     * @param encounterId 就诊主键
+     * @return 存在未冲销成功销售时 true
+     */
+    public boolean hasUnreversedClearBedSummarySales(Long tenantId, Long encounterId) {
+        List<YbInvUpload> sales = this.listSuccessfulClearBedSummarySales(tenantId, encounterId);
+        if (sales.isEmpty()) {
+            return false;
+        }
+        List<YbInvUpload> returns = this.listSuccessfulClearBedSummaryReturns(tenantId, encounterId);
+        HashSet<String> reversedKeys = new HashSet<>();
+        for (YbInvUpload ret : returns) {
+            if (ret == null) {
+                continue;
+            }
+            reversedKeys.add(this.buildClearBedSaleLineKey(ret.getSourceLineId(), ret.getFixmedinsBchno()));
+        }
+        for (YbInvUpload sale : sales) {
+            if (sale == null) {
+                continue;
+            }
+            String key = this.buildClearBedSaleLineKey(sale.getSourceLineId(), sale.getFixmedinsBchno());
+            if (!reversedKeys.contains(key)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 列出就诊下已成功的清床汇总径销售退货 3506。
+     *
+     * @param tenantId    租户主键
+     * @param encounterId 就诊主键
+     * @return 成功 3506 流水
+     */
+    public List<YbInvUpload> listSuccessfulClearBedSummaryReturns(Long tenantId, Long encounterId) {
+        List<YbInvUpload> result = new ArrayList<>();
+        if (tenantId == null || encounterId == null) {
+            return result;
+        }
+        List<YbInvUpload> rows = uploadRepository.findAllByTenantIdAndSourceTypeAndSourceIdOrderByIdAsc(
+            tenantId,
+            ChsInventoryConstants.SOURCE_TYPE_CLEAR_BED_SUMMARY,
+            encounterId);
+        for (YbInvUpload row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (!ChsInfNo.INVENTORY_SALE_RETURN.equals(row.getInfno())) {
+                continue;
+            }
+            if (!ChsInventoryConstants.UPLOAD_STATUS_SUCCESS.equals(row.getUploadStatus())) {
+                continue;
+            }
+            result.add(row);
+        }
+        return result;
+    }
+
+    /**
+     * 清床汇总销售/冲销配对键：来源行 + 定点批次号。
+     *
+     * @param sourceLineId   来源行主键
+     * @param fixmedinsBchno 定点批次号
+     * @return 配对键
+     */
+    private String buildClearBedSaleLineKey(Long sourceLineId, String fixmedinsBchno) {
+        String linePart = "null";
+        if (sourceLineId != null) {
+            linePart = String.valueOf(sourceLineId);
+        }
+        String batchPart = "";
+        if (fixmedinsBchno != null) {
+            batchPart = fixmedinsBchno.trim();
+        }
+        return linePart + "|" + batchPart;
     }
 }

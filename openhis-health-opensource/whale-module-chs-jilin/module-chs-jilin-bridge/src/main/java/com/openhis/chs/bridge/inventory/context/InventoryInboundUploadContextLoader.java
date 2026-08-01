@@ -18,6 +18,7 @@ import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
 import com.openhis.health.domain.financial.contract.entity.Contract;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.workflow.inventoryitem.entity.InventoryItem;
@@ -28,13 +29,14 @@ import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQue
 import com.openhis.chs.bridge.catalog.ChsInsuranceContractReaderImpl;
 import com.openhis.chs.bridge.inventory.assembler.InventoryPlatformFieldAssembler;
 import com.openhis.chs.bridge.inventory.assembler.InventoryUploadBatchNoAssembler;
+import com.openhis.chs.bridge.inventory.assembler.InventoryUploadQtyPriceResult;
+import com.openhis.chs.bridge.inventory.assembler.InventoryUploadQuantityAssembler;
 import com.openhis.chs.bridge.inventory.support.InventoryUploadTraceLineSupport;
 import com.openhis.chs.domain.inventory.command.UploadAfterInboundCommand;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -47,15 +49,12 @@ import java.util.Set;
  * 进货入库行（{@code CABINET_INBOUND_RECEIPT}）、
  * {@link com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition}、
  * 供应商（{@code supplier}）、{@link com.openhis.health.domain.workflow.inventoryitem.entity.InventoryItem}
- * 批号效期及入库操作员信息。</p>
+ * 批号效期及入库操作员信息；{@code purc_invo_no} 取自 {@code invoiceNo}，空则默认 {@code 0}。</p>
  */
 @Component
 @RequiredArgsConstructor
 @ConditionalOnProperty(name = "openhis.modules.chs.enabled", havingValue = "true")
 public class InventoryInboundUploadContextLoader {
-
-    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    private static final DateTimeFormatter DATE_TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final SupplyRequestQueryService supplyRequestQueryService;
     private final MedicationDefinitionQueryService medicationDefinitionQueryService;
@@ -132,22 +131,44 @@ public class InventoryInboundUploadContextLoader {
         cmd.setMedListCodg(trimToNull(medication.getYbNo()));
         cmd.setFixmedinsHilistId(medication.getBusNo());
         cmd.setFixmedinsHilistName(medication.getName());
-        cmd.setFixmedinsBchno(InventoryUploadBatchNoAssembler.buildFixmedinsBchno(medication.getBusNo(), line.getLotNumber()));
+        // fixmedins_bchno：进货单据头 busNo（supply_request 行上的单据号）
+        cmd.setFixmedinsBchno(InventoryUploadBatchNoAssembler.buildFixmedinsBchno(line.getBusNo()));
         cmd.setManuLotnum(line.getLotNumber());
         cmd.setAprvno(medication.getApprovalNumber());
         cmd.setProdentpName(medication.getManufacturerText());
-        cmd.setPurcRetnCnt(line.getItemQuantity());
-        cmd.setFinlTrnsPric(line.getPrice());
+        // 库房：拆零数量 → 操作单位数量；单价与 unitCode 同单位
+        InventoryUploadQtyPriceResult qtyPrice = InventoryUploadQuantityAssembler.resolveWarehouseQtyAndPrice(
+            medication, line.getUnitCode(), line.getItemQuantity(), line.getPrice(), line.getUnitCode());
+        cmd.setPurcRetnCnt(qtyPrice.getOperationQuantity());
+        cmd.setFinlTrnsPric(qtyPrice.getOperationUnitPrice());
         cmd.setRxFlag(InventoryPlatformFieldAssembler.toRxFlagCode(medication.getRxFlag()));
         cmd.setProdGeayFlag(ProdGeayFlag.NO.getCode());
         cmd.setDyntNo(line.getOriginalBusNo());
         cmd.setMemo(line.getRemake());
+        // purc_invo_no ← invoice_no；未填则传默认占位，不拦进货业务
+        cmd.setPurcInvoNo(resolvePurcInvoNoOrDefault(line.getInvoiceNo()));
         uploadTraceLineSupport.applyMedicationSupplyLineTrace(
-            medication, line.getUnitCode(), line.getTraceNo(), cmd);
+            medication, line.getUnitCode(), line.getTraceNo(), line.getItemQuantity(), cmd);
         fillSupplierFields(cmd, line.getSupplierId());
         fillInventoryDates(cmd, line);
         fillOperatorFields(cmd, line);
         return cmd;
+    }
+
+    /**
+     * 解析采购发票号：有值用业务值，空则平台占位 {@link ChsInventoryConstants#DEFAULT_PURC_INVO_NO}。
+     *
+     * @param invoiceNo 供应请求发票号
+     * @return 非空发票号或默认占位
+     */
+    private String resolvePurcInvoNoOrDefault(String invoiceNo) {
+        String trimmed = trimToNull(invoiceNo);
+        // 业务已填真实发票号
+        if (trimmed != null) {
+            return trimmed;
+        }
+        // 未填：平台占位，保证 3503/3504 报文非空且不拦进货
+        return ChsInventoryConstants.DEFAULT_PURC_INVO_NO;
     }
 
     /**
@@ -190,10 +211,10 @@ public class InventoryInboundUploadContextLoader {
         }
         InventoryItem item = items.get(0);
         if (item.getProductionDate() != null) {
-            cmd.setManuDate(item.getProductionDate().toLocalDate().format(DATE_FMT));
+            cmd.setManuDate(item.getProductionDate().toLocalDate().format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
         }
         if (item.getExpirationDate() != null) {
-            cmd.setExpyEnd(item.getExpirationDate().toLocalDate().format(DATE_FMT));
+            cmd.setExpyEnd(item.getExpirationDate().toLocalDate().format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
         }
     }
 
@@ -204,16 +225,11 @@ public class InventoryInboundUploadContextLoader {
      * @param line 进货入库行
      */
     private void fillOperatorFields(InvUploadLineCommand cmd, SupplyRequestModel line) {
+        // 3503：入库时间/经办人 = 审批时间/审批人（理论上必填齐全）
         if (line.getApprovalTime() != null) {
-            cmd.setPurcRetnStoinTime(line.getApprovalTime().format(DATE_TIME_FMT));
-        } else if (line.getOccurrenceTime() != null) {
-            cmd.setPurcRetnStoinTime(line.getOccurrenceTime().format(DATE_TIME_FMT));
+            cmd.setPurcRetnStoinTime(line.getApprovalTime().format(GeneralSharedConstants.DATE_TIME_FORMATTER));
         }
-        Long practitionerId = line.getApproverId();
-        if (practitionerId == null) {
-            practitionerId = line.getPractitionerId();
-        }
-        cmd.setPurcRetnOpterName(resolvePractitionerName(practitionerId));
+        cmd.setPurcRetnOpterName(resolvePractitionerName(line.getApproverId()));
     }
 
     /**

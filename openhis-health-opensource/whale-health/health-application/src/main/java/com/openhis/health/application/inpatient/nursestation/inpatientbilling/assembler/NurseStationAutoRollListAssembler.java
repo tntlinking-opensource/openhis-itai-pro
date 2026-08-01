@@ -7,10 +7,14 @@ package com.openhis.health.application.inpatient.nursestation.inpatientbilling.a
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.AutoRollChargeLineResolved;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationAutoRollConfigRowDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationAutoRollNursingReadonlyDto;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationAutoRollPostedChargeRowDto;
+import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.custom.chargeitemautogen.queries.model.ChargeItemAutoGenRuleQueryModel;
+import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.enums.RequestStatus;
+import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefinition;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.InpatientAutoRollNursingLevelQueryModel;
 import com.openhis.whale.core.application.util.StringUtils;
@@ -25,7 +29,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * IF-IP-ARG-02：自动计费配置列表与护理只读区装配（AS-IP-NUR-013 §3.3）。
+ * IF-IP-ARG-02/09：自动计费配置列表、护理只读区与已滚费用行装配（AS-IP-NUR-013）。
  */
 @Component
 @RequiredArgsConstructor
@@ -164,6 +168,55 @@ public class NurseStationAutoRollListAssembler {
             }
         }
         return dto;
+    }
+
+    /**
+     * 装配床位配置已滚费用行（IF-IP-ARG-09；取消执行锚点取 procedureId）。
+     *
+     * @param charges     order-execute 收费行（已按 occurrence 倒序）
+     * @param encounterId 就诊主键；非空时过滤跨就诊脏数据
+     * @return 展开列表 DTO
+     */
+    public List<NurseStationAutoRollPostedChargeRowDto> assemblePostedChargeRows(
+        List<ChargeItem> charges,
+        Long encounterId) {
+        List<NurseStationAutoRollPostedChargeRowDto> rows = new ArrayList<>();
+        if (charges == null || charges.isEmpty()) {
+            return rows;
+        }
+        String pendingCode = ChargeItemStatus.PENDING_SETTLEMENT.getCode();
+        for (ChargeItem charge : charges) {
+            if (charge == null || charge.getId() == null) {
+                continue;
+            }
+            // 仅本就诊费用；防止 SR 复用误挂其它就诊
+            if (encounterId != null
+                && charge.getEncounterId() != null
+                && !encounterId.equals(charge.getEncounterId())) {
+                continue;
+            }
+            NurseStationAutoRollPostedChargeRowDto dto = new NurseStationAutoRollPostedChargeRowDto();
+            dto.setChargeItemId(charge.getId());
+            dto.setProcedureId(charge.getProcedureId());
+            dto.setOccurrenceTime(charge.getOccurrenceTime());
+            dto.setQuantityValue(charge.getQuantityValue());
+            dto.setQuantityUnit(charge.getQuantityUnit());
+            dto.setUnitPrice(charge.getUnitPrice());
+            dto.setTotalPrice(charge.getTotalPrice());
+            dto.setStatusEnum(charge.getStatusEnum());
+            ChargeItemStatus status = EnumUtil.fromCode(ChargeItemStatus.class, charge.getStatusEnum());
+            if (status != null) {
+                dto.setStatusDisplay(status.getDisplay());
+            } else {
+                dto.setStatusDisplay(charge.getStatusEnum());
+            }
+            // 取消执行写路径仅回退待结算 order-execute；无 procedure 不可发起
+            boolean cancelable = charge.getProcedureId() != null
+                && pendingCode.equals(charge.getStatusEnum());
+            dto.setCancelable(Boolean.valueOf(cancelable));
+            rows.add(dto);
+        }
+        return rows;
     }
 
     /**

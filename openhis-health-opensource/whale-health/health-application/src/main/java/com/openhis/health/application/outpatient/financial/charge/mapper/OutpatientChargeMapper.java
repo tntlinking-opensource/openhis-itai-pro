@@ -60,7 +60,20 @@ public interface OutpatientChargeMapper {
 
     SettleOutpatientPaymentCommand toSettleOutpatientPaymentCommand(ConfirmOutpatientChargeSettlementRequest request);
 
-    CreateDraftInvoiceCommand toCreateDraftInvoiceCommand(PaymentReconciliationQueryModel payment, Long paymentId, Long operatorId);
+    /**
+     * 装配创建票据草稿命令。
+     *
+     * @param payment           支付流水
+     * @param paymentId         支付主键
+     * @param operatorId        操作人
+     * @param invoiceFaceAmount 票面金额（收费项合计结算刻度；含医保已付）
+     * @return 票据草稿命令
+     */
+    CreateDraftInvoiceCommand toCreateDraftInvoiceCommand(
+        PaymentReconciliationQueryModel payment,
+        Long paymentId,
+        Long operatorId,
+        BigDecimal invoiceFaceAmount);
 
     SwitchEncounterChargeItemsAccountResponse toSwitchAccountResponse(boolean success, String messageCode);
 

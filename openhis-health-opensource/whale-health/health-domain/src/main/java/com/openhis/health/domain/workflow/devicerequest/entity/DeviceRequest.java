@@ -119,8 +119,29 @@ public class DeviceRequest extends BaseAuditedEntity {
     @Column(name = "use_timing")
     private String useTiming;
 
+    /**
+     * 开立时间：首次建草稿/直建落库写一次；签发、改草稿、签退不覆盖。
+     */
+    @Column(name = "req_opened_time")
+    private LocalDateTime reqOpenedTime;
+
+    /**
+     * 签发时间：仅签发（及无草稿直建完成态）写入；草稿暂存不写本列。
+     */
     @Column(name = "req_authored_time")
     private LocalDateTime reqAuthoredTime;
+
+    /**
+     * 停嘱时间：长期停嘱写入；取消停嘱清空（与药/诊同构）。
+     */
+    @Column(name = "stop_time")
+    private LocalDateTime stopTime;
+
+    /**
+     * 停嘱人：停嘱操作写入；取消停嘱清空；与药/诊同构。
+     */
+    @Column(name = "stopper_id")
+    private Long stopperId;
 
     @Column(name = "performer_enum")
     private String performerEnum;
@@ -149,12 +170,11 @@ public class DeviceRequest extends BaseAuditedEntity {
     @Column(name = "trace_no", length = 50000)
     private String traceNo;
 
-    /** 诊断定义主键（列 {@code condition_definition_id}，即 {@code cln_condition_definition.id}）。 */
-    @Column(name = "condition_definition_id")
-    private Long conditionDefinitionId;
-
-    @Column(name = "encounter_diagnosis_id")
-    private Long encounterDiagnosisId;
+    /**
+     * 绑定就诊诊断主键有序串（有序；首位为主诊断 {@code adm_encounter_diagnosis.id}）。
+     */
+    @Column(name = "encounter_diagnosis_ids", length = 2000)
+    private String encounterDiagnosisIds;
 
     @Column(name = "observation_id_json")
     private String observationIdJson;
@@ -287,6 +307,8 @@ public class DeviceRequest extends BaseAuditedEntity {
      */
     public void activeToDraft() {
         this.statusEnum = RequestStatus.DRAFT.getCode();
+        // 签退回草稿：草稿态不得保留签发列。
+        this.reqAuthoredTime = null;
     }
 
     /**

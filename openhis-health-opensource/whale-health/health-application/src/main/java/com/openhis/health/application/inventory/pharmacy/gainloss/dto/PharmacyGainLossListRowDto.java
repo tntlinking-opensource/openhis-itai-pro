@@ -56,6 +56,10 @@ public class PharmacyGainLossListRowDto {
     @Schema(description = "盈亏数量合计")
     private BigDecimal gainLossQuantitySum;
 
+    /** 盈亏金额合计（行 profitLossPrice 代数加总，可负）。 */
+    @Schema(description = "盈亏金额合计（可负）")
+    private BigDecimal gainLossAmountSum;
+
     /** 实盘金额合计。 */
     @Schema(description = "实盘金额合计")
     private BigDecimal actualAmountSum;

@@ -112,7 +112,6 @@ public class InpatientAutoRollOrderExecutionOrchestrator {
             operatorId = performerId;
         }
         LocalDateTime planTime = billDate.atStartOfDay();
-        LocalDateTime actualTime = LocalDateTime.now();
         BigDecimal quantity = command.getQuantity();
         if (quantity == null || quantity.compareTo(BigDecimal.ZERO) <= 0) {
             quantity = serviceOrder.getQuantity();
@@ -173,6 +172,8 @@ public class InpatientAutoRollOrderExecutionOrchestrator {
             completeCmd.setProcedureId(procedureId);
             completeCmd.setOperatorId(operatorId);
             completeCmd.setResultText(InpatientNurseStationConstants.INPATIENT_NURSE_EXECUTE_PROCEDURE_RESULT_TEXT);
+            // 滚费自动执行：展示时间与计划日对齐（recorded=planTime），逻辑锚点仍为 occurrence=planTime
+            completeCmd.setRecordedTime(planTime);
             procedureDomainService.completeProcedureRecord(completeCmd);
         } catch (BusinessException ex) {
             // 槽位已被占用视为幂等跳过（EX-IP-EXE-301）
@@ -186,9 +187,9 @@ public class InpatientAutoRollOrderExecutionOrchestrator {
                 ex);
             return Outcome.FAILED;
         }
-        // Cmd：登记主执行人（责任护士）
+        // Cmd：登记主执行人（责任护士）；startTime 与 planTime 对齐，避免展示成任务触发瞬间
         procedureExecutionPerformerOrchestrator.registerPrimaryPerformer(
-            procedureId, performerId, operatorId, actualTime);
+            procedureId, performerId, operatorId, planTime);
         // Cmd：新建 order-execute 待结算 Charge（IF-IP-EXE-018）
         try {
             CreateChargeItemCommand chargeCmd = new CreateChargeItemCommand();

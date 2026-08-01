@@ -30,4 +30,32 @@ public interface YbInvUploadLookup {
         LocalDateTime now,
         Pageable pageable
     );
+
+    /**
+     * 运维本地流水多条件 AND 筛选（契约/交易号/来源/状态/批次号/创建时间均可空）。
+     *
+     * @param tenantId       租户主键
+     * @param contractBusNo  契约业务编号；空则不限
+     * @param infno          交易号；空则不限
+     * @param sourceType     来源类型；空则不限
+     * @param sourceId       来源主键；空则不限
+     * @param uploadStatus   上报状态；空则不限；SKIPPED 前缀匹配
+     * @param fixmedinsBchno 批次流水号；空则不限；模糊 LIKE
+     * @param createdFrom    创建时间起（含）；空则不限
+     * @param createdTo      创建时间止（含）；空则不限
+     * @param pageable       分页（limit/offset）
+     * @return 按 id 降序的流水列表
+     */
+    List<YbInvUpload> findLocalRecords(
+        Long tenantId,
+        String contractBusNo,
+        String infno,
+        String sourceType,
+        Long sourceId,
+        String uploadStatus,
+        String fixmedinsBchno,
+        LocalDateTime createdFrom,
+        LocalDateTime createdTo,
+        Pageable pageable
+    );
 }

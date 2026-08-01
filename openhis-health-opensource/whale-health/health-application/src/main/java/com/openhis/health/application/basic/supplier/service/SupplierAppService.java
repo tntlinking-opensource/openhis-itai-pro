@@ -11,6 +11,7 @@ import com.openhis.health.application.basic.supplier.mapper.SupplierMapper;
 import com.openhis.health.application.basic.supplier.request.CreateSupplierRequest;
 import com.openhis.health.application.basic.supplier.request.QuerySupplierRequest;
 import com.openhis.health.application.basic.supplier.request.UpdateSupplierRequest;
+import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
 import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.custom.supplier.command.ActivateSupplierCommand;
@@ -23,6 +24,7 @@ import com.openhis.health.domain.custom.supplier.service.SupplierDomainService;
 import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
 import com.openhis.health.domain.share.enums.SupplierType;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
+import com.openhis.whale.core.application.ILoginOrganizationScopeQuery;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.EntityNotFoundException;
@@ -65,6 +67,19 @@ public class SupplierAppService {
     private SupplierMapper supplierMapper;
 
     /**
+     * 当前登录会话机构解析（B.6.5）：禁止 AppService 直注 ICurrentUser；
+     * 创建供应商缺省部门时取会话医院（非科室）。
+     */
+    @Autowired
+    private CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
+
+    /**
+     * 登录组织树范围：自科室向上解析所属医院，保证供应商 orgId 落医院级。
+     */
+    @Autowired(required = false)
+    private ILoginOrganizationScopeQuery loginOrganizationScopeQuery;
+
+    /**
      * 维护页初始化：供应商类型术语选项、所属机构下拉（由组织树映射）。
      *
      * @return 初始化 DTO
@@ -86,15 +101,20 @@ public class SupplierAppService {
     /**
      * 注册新供应商并回读实体映射为 DTO。
      *
+     * <p>领域层注册完成后即为启用态（ACTIVE），前端无需再调批量启用。</p>
+     * <p>部门固定落医院级：缺省取会话医院；若传入科室则沿组织树上溯至 HOSPITAL，禁止落科室。</p>
+     *
      * @param request 创建请求
      * @return 新建供应商展示数据
-     * @throws ValidationException 请求体为空或领域校验失败时
+     * @throws ValidationException 请求体为空、无法解析会话医院或领域校验失败时
      */
     public SupplierDto createSupplier(CreateSupplierRequest request) {
         // Gate：请求体非空
         if (request == null) {
             throw new ValidationException("创建供应商失败：请求体不能为空");
         }
+        // Pre：部门归一为医院（会话医院或缺省上溯），禁止落库科室 / orgId=0
+        this.resolveHospitalOrgIdForCreate(request);
         // Pre：请求映射为领域注册命令
         RegisterSupplierCommand command = supplierMapper.ConverterRegisterSupplierCommand(request);
         // Cmd：领域注册供应商
@@ -103,6 +123,36 @@ public class SupplierAppService {
         var supplier = supplierQueryService.findSupplierById(id);
         // Asm：映射展示 DTO
         return supplierMapper.ConverterSupplierDto(supplier);
+    }
+
+    /**
+     * 将创建请求的 orgId 归一为医院：优先会话医院缺省；已传值则上溯到 HOSPITAL。
+     *
+     * @param request 创建请求（就地回填医院 orgId）
+     * @throws ValidationException 无法解析医院时
+     */
+    private void resolveHospitalOrgIdForCreate(CreateSupplierRequest request) {
+        Long candidate = request.getOrgId();
+        // 缺省或占位 0：取登录选院，绝不回落会话科室
+        if (candidate == null || candidate == 0L) {
+            candidate = managedOrganizationIdsResolver.resolveSessionHospitalIdOrNull();
+        }
+        if (candidate == null || candidate == 0L) {
+            throw new ValidationException("创建供应商失败：无法解析当前登录医院，请先选择医院");
+        }
+        Long hospitalId = candidate;
+        // 已传科室时沿组织树上溯到医院根，避免供应商挂在科室节点
+        if (loginOrganizationScopeQuery != null) {
+            hospitalId = loginOrganizationScopeQuery.resolveHospitalOrganizationId(candidate)
+                .orElse(null);
+            if (hospitalId == null) {
+                hospitalId = managedOrganizationIdsResolver.resolveSessionHospitalIdOrNull();
+            }
+        }
+        if (hospitalId == null || hospitalId == 0L) {
+            throw new ValidationException("创建供应商失败：无法解析医院级机构，请选择医院");
+        }
+        request.setOrgId(hospitalId);
     }
 
     /**

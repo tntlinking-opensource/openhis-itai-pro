@@ -25,7 +25,8 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 住院护士站中药 Tab：中西药筛选、按 {@code prescription_no} 整方扩行与列表折叠（AS-IP-DOR-006 · BR-IP-TCM 下游）。
+ * 住院护士站药嘱写扩行与中药方折叠：中西药 Tab 筛选、中药按 {@code prescription_no} 整方扩行/折叠、
+ * 西药成组按 {@code group_id} 写扩行（与门诊护士站成组展示 + 住院校对/执行一起操作对齐；AS-IP-DOR-006 / AS-IP-NUR-003/004）。
  */
 @Component
 public class InpatientNurseStationTcmOrchestrator {
@@ -207,6 +208,77 @@ public class InpatientNurseStationTcmOrchestrator {
             }
         }
         return new ArrayList<>(expanded);
+    }
+
+    /**
+     * 按同就诊同 {@code group_id} 扩全组成组药嘱 id（西药成组一起校对/执行/退回/不执行）。
+     * <p>中药行不走本组扩行（仍按 {@link #expandMedRequestIdsByPrescriptionNo}）；未成组仅回种子行。</p>
+     *
+     * @param encounterId   就诊主键
+     * @param seedRequestId 种子行 id（组内任一行）
+     * @param encounterMeds 本就诊药品明细全集
+     * @return 扩行后的 id 列表（含种子；同组一致）
+     */
+    public List<Long> expandMedRequestIdsByGroupId(
+        Long encounterId,
+        Long seedRequestId,
+        List<MedicationRequestListQueryModel> encounterMeds) {
+        Set<Long> expanded = new LinkedHashSet<>();
+        if (seedRequestId != null) {
+            expanded.add(seedRequestId);
+        }
+        if (encounterId == null || seedRequestId == null || encounterMeds == null) {
+            return new ArrayList<>(expanded);
+        }
+        MedicationRequestListQueryModel seed = null;
+        for (MedicationRequestListQueryModel row : encounterMeds) {
+            if (row != null && seedRequestId.equals(row.getId())) {
+                seed = row;
+                break;
+            }
+        }
+        // 中药成组扩行走处方号，不在此按 group_id 扩
+        if (seed == null || Boolean.TRUE.equals(seed.getTcmFlag())) {
+            return new ArrayList<>(expanded);
+        }
+        Long targetGroupId = seed.getGroupId();
+        if (targetGroupId == null) {
+            return new ArrayList<>(expanded);
+        }
+        // 同组：非中药且 group_id 一致的全部药嘱行（与医生站输液成组同源）
+        for (MedicationRequestListQueryModel row : encounterMeds) {
+            if (row == null || row.getId() == null) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(row.getTcmFlag())) {
+                continue;
+            }
+            if (targetGroupId.equals(row.getGroupId())) {
+                expanded.add(row.getId());
+            }
+        }
+        return new ArrayList<>(expanded);
+    }
+
+    /**
+     * 护士站药嘱写路径统一扩行：优先中药整方（prescription_no），否则西药成组（group_id），否则仅种子行。
+     *
+     * @param encounterId   就诊主键
+     * @param seedRequestId 种子行 id
+     * @param encounterMeds 本就诊药品明细全集
+     * @return 扩行后的 id 列表（含种子）
+     */
+    public List<Long> expandMedRequestIdsForNurseWrite(
+        Long encounterId,
+        Long seedRequestId,
+        List<MedicationRequestListQueryModel> encounterMeds) {
+        List<Long> byPrescription =
+            this.expandMedRequestIdsByPrescriptionNo(encounterId, seedRequestId, encounterMeds);
+        // 中药整方已扩出多方味药时，不再叠加 group_id 扩行
+        if (byPrescription.size() > 1) {
+            return byPrescription;
+        }
+        return this.expandMedRequestIdsByGroupId(encounterId, seedRequestId, encounterMeds);
     }
 
     /**

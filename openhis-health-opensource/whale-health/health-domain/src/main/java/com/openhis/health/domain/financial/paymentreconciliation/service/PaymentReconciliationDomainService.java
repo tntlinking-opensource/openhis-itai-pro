@@ -6,10 +6,12 @@ package com.openhis.health.domain.financial.paymentreconciliation.service;
 
 import com.openhis.health.domain.financial.paymentreconciliation.command.*;
 import com.openhis.health.domain.financial.paymentreconciliation.entity.PaymentRecDetail;
+import com.openhis.health.domain.financial.paymentreconciliation.entity.PaymentRecStatic;
 import com.openhis.health.domain.financial.paymentreconciliation.entity.PaymentReconciliation;
 import com.openhis.health.domain.financial.paymentreconciliation.entity.PaymentYbSettlement;
 import com.openhis.health.domain.financial.paymentreconciliation.PaymentYbSettlementStatus;
 import com.openhis.health.domain.financial.paymentreconciliation.repository.PaymentRecDetailRepository;
+import com.openhis.health.domain.financial.paymentreconciliation.repository.PaymentRecStaticRepository;
 import com.openhis.health.domain.financial.paymentreconciliation.repository.PaymentReconciliationRepository;
 import com.openhis.health.domain.financial.paymentreconciliation.repository.PaymentYbSettlementRepository;
 import com.openhis.health.domain.financial.paymentreconciliation.support.PaymentYbSettlementSupport;
@@ -18,6 +20,7 @@ import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.enums.PaymentStatus;
+import com.openhis.health.domain.share.enums.PaymentType;
 import com.openhis.health.domain.share.events.financial.paymentreconciliation.*;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
@@ -48,6 +51,7 @@ import java.util.List;
 public class PaymentReconciliationDomainService {
     private final PaymentReconciliationRepository paymentRepository;
     private final PaymentRecDetailRepository detailRepository;
+    private final PaymentRecStaticRepository recStaticRepository;
     private final PaymentYbSettlementRepository ybSettlementRepository;
     private final IDomainEventPublisher domainEventPublisher;
     /** 支付流水号：沿用展示前缀 PMR-，末段为 {@link AggregateTypeConstants#PAYMENT_RECONCILIATION} 序号去前缀后的 16 位数字。 */
@@ -141,6 +145,8 @@ public class PaymentReconciliationDomainService {
         // Pre：按主键加载支付主记录，不存在则抛出业务异常
         PaymentReconciliation payment = this.mustGetPayment(cmd.getPaymentId());
         payment.assertStatusTransitionAllowed(PaymentStatus.DRAFT);
+        // Gate：头字段 payment_enum 须为 PaymentType；历史误写渠道码时收口为 PAY
+        this.normalizeForwardPaymentEnum(payment);
         payment.setStatusEnum(PaymentStatus.SUCCESS);
         payment.setOutcomeEnum(cmd.getOutcomeEnum());
         payment.setBillDate(cmd.getBillDate());
@@ -167,6 +173,8 @@ public class PaymentReconciliationDomainService {
     public Long settleInpatientPayment(SettleInpatientPaymentCommand cmd) {
         PaymentReconciliation payment = this.mustGetPayment(cmd.getPaymentId());
         payment.assertStatusTransitionAllowed(PaymentStatus.DRAFT);
+        // Gate：头字段 payment_enum 须为 PaymentType；历史误写渠道码时收口为 PAY
+        this.normalizeForwardPaymentEnum(payment);
         payment.setStatusEnum(PaymentStatus.SUCCESS);
         payment.setOutcomeEnum(cmd.getOutcomeEnum());
         payment.setBillDate(cmd.getBillDate());
@@ -202,6 +210,7 @@ public class PaymentReconciliationDomainService {
         payment.setChargeItemIds(PaymentReconciliation.coerceChargeItemIds(cmd.getChargeItemIds()));
         payment.setKindEnum(cmd.getKindEnum());
         payment.setPaymentEnum(cmd.getPaymentEnum());
+        payment.setContractNo(cmd.getContractNo());
         payment.setPaymentNo(this.nextPaymentNo());
         payment.initDraft();
         // 逆向单进入退款受理中；收费原单保持 SUCCESS 不变
@@ -321,6 +330,7 @@ public class PaymentReconciliationDomainService {
         payment.setChargeItemIds(PaymentReconciliation.coerceChargeItemIds(cmd.getChargeItemIds()));
         payment.setKindEnum(cmd.getKindEnum());
         payment.setPaymentEnum(cmd.getPaymentEnum());
+        payment.setContractNo(cmd.getContractNo());
         payment.setPaymentNo(this.nextPaymentNo());
         payment.initDraft();
         payment.setStatusEnum(PaymentStatus.REFUND_PROCESSING);
@@ -545,6 +555,45 @@ public class PaymentReconciliationDomainService {
     }
 
     /**
+     * 以先删后插方式替换支付费用分类统计快照（结算/退费成功后由应用层写入）。
+     *
+     * @param paymentId 支付主键
+     * @param staticItems 分类快照行；空则仅清空
+     */
+    public void replacePaymentRecStatics(Long paymentId, List<PaymentRecStaticItemCommand> staticItems) {
+        if (paymentId == null) {
+            throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT, "支付主键不能为空");
+        }
+        this.mustGetPayment(paymentId);
+        this.recStaticRepository.deleteByReconciliationId(paymentId);
+        if (staticItems == null || staticItems.isEmpty()) {
+            return;
+        }
+        List<PaymentRecStatic> toSave = new ArrayList<>();
+        for (PaymentRecStaticItemCommand item : staticItems) {
+            if (item == null || StringUtils.isEmpty(item.getTypeCode()) || item.getAmount() == null) {
+                continue;
+            }
+            if (StringUtils.isEmpty(item.getMethodCode())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                    "支付分类快照 method_code 不能为空");
+            }
+            PaymentRecStatic row = new PaymentRecStatic();
+            row.setReconciliationId(paymentId);
+            row.setMethodCode(item.getMethodCode().trim());
+            row.setTypeCode(item.getTypeCode().trim());
+            row.setTypeName(item.getTypeName());
+            row.setAmount(item.getAmount());
+            row.setChargeItemIds(item.getChargeItemIds());
+            toSave.add(row);
+        }
+        if (!toSave.isEmpty()) {
+            this.recStaticRepository.saveAll(toSave);
+        }
+    }
+
+    /**
      * 按主键强制加载支付主记录，不存在则抛出业务异常。
      *
      * @param paymentId 支付主键
@@ -607,6 +656,25 @@ public class PaymentReconciliationDomainService {
     }
 
     /**
+     * 正向结算：头字段 {@code payment_enum} 须为 {@link PaymentType#PAY}。
+     *
+     * <p>历史草稿可能误写入渠道码（如 {@code CASHIER}）；正式结算时防御收口，避免按 PAY 过滤的读路径漏单。</p>
+     *
+     * @param payment 待结算支付主单
+     */
+    private void normalizeForwardPaymentEnum(PaymentReconciliation payment) {
+        if (payment == null) {
+            return;
+        }
+        String paymentEnum = payment.getPaymentEnum();
+        if (PaymentType.PAY.getCode().equals(paymentEnum)
+            || PaymentType.UN_PAY.getCode().equals(paymentEnum)) {
+            return;
+        }
+        payment.setPaymentEnum(PaymentType.PAY.getCode());
+    }
+
+    /**
      * 医保结算子表写路径：空输入跳过，否则全量替换并返回原命令列表。
      *
      * @param paymentId 对账主键
@@ -659,6 +727,57 @@ public class PaymentReconciliationDomainService {
             toSave.add(row);
         }
         ybSettlementRepository.saveAll(toSave);
+    }
+
+    /**
+     * 2208/2305/2601 撤销成功后：将关联 {@code fin_payment_yb_settlement} 标为 {@code REVOKED}（幂等）。
+     *
+     * <p>优先按 {@code settlementRecordId} 定位；未命中时回落 {@code setlId}。
+     * 日结汇总依赖 CONFIRMED 桥表行计入个账/统筹，须与 {@code yb_settlement_record} 同态。</p>
+     *
+     * @param settlementRecordId CHS {@code yb_settlement_record.id}；可空
+     * @param setlId             平台结算号；可空（与 settlementRecordId 至少一个有效）
+     * @return 实际改为 REVOKED 的行数（已是 REVOKED 的不计入）
+     */
+    public int markYbSettlementsRevoked(Long settlementRecordId, String setlId) {
+        List<PaymentYbSettlement> rows = new ArrayList<>();
+        // Pre：优先按结算回执主键定位桥表
+        if (settlementRecordId != null) {
+            List<PaymentYbSettlement> byRecord =
+                this.ybSettlementRepository.findAllBySettlementRecordIdAndIsDeletedFalse(settlementRecordId);
+            if (byRecord != null && !byRecord.isEmpty()) {
+                rows.addAll(byRecord);
+            }
+        }
+        // Pre：无 settlement_record_id 挂载时回落 setl_id
+        if (rows.isEmpty() && StringUtils.isNotEmpty(setlId)) {
+            List<PaymentYbSettlement> bySetl =
+                this.ybSettlementRepository.findAllBySetlIdAndIsDeletedFalse(setlId.trim());
+            if (bySetl != null && !bySetl.isEmpty()) {
+                rows.addAll(bySetl);
+            }
+        }
+        if (rows.isEmpty()) {
+            return 0;
+        }
+        int changed = 0;
+        LocalDateTime now = LocalDateTime.now();
+        // Loop：仅将非 REVOKED 行改为 REVOKED，已撤销幂等跳过
+        for (PaymentYbSettlement row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (PaymentYbSettlementStatus.REVOKED.equals(row.getStatus())) {
+                continue;
+            }
+            row.setStatus(PaymentYbSettlementStatus.REVOKED);
+            row.setUpdatedAt(now);
+            changed++;
+        }
+        if (changed > 0) {
+            this.ybSettlementRepository.saveAll(rows);
+        }
+        return changed;
     }
 
     /**

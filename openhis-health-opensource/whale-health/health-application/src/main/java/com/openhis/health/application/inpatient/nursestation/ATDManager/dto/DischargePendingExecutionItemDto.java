@@ -46,7 +46,7 @@ public class DischargePendingExecutionItemDto {
     /** 开立时间。 */
     @Schema(description = "开立时间")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
-    private LocalDateTime reqAuthoredTime;
+    private LocalDateTime reqOpenedTime;
 
     /** 频次 code。 */
     @Schema(description = "频次 code")

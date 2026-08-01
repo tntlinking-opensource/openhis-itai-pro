@@ -420,6 +420,7 @@ public class InpatientSettleReadAssembler {
                 dto.setSignedAmount(displayAmount);
             }
             boolean reverseEnabled = false;
+            boolean recallEnabled = false;
             String reverseDisabledReason = null;
             if (reverseRecord) {
                 reverseDisabledReason = InpatientSettleConstants.REVERSE_DISABLED_REASON_REVERSE_RECORD;
@@ -427,20 +428,22 @@ public class InpatientSettleReadAssembler {
                 reverseDisabledReason = InpatientSettleConstants.REVERSE_DISABLED_REASON_NOT_SUCCESS;
             } else if (!PaymentKind.INPATIENT_CLINIC.equals(payment.getKindEnum())) {
                 reverseDisabledReason = InpatientSettleConstants.REVERSE_DISABLED_REASON_NOT_SUCCESS;
-            } else if (EncounterStatus.DISCHARGED.getCode().equals(encounterStatusCode)) {
-                // 已清床离院：收银台禁止再发起反结（BR-IP-RVS-008）
-                reverseDisabledReason = InpatientSettleConstants.REVERSE_DISABLED_REASON_DISCHARGED;
             } else if (payment.getId() != null
                 && paymentReconciliationQueryService != null
                 && Boolean.TRUE.equals(
                     paymentReconciliationQueryService.hasRefundByRelationId(payment.getId()).getExists())) {
-                // 已有 relation 逆向单：禁止重复反结
+                // 已有 relation 逆向单：禁止重复反结/召回
                 reverseDisabledReason = InpatientSettleConstants.REVERSE_DISABLED_REASON_ALREADY_REVERSED;
+            } else if (EncounterStatus.DISCHARGED.getCode().equals(encounterStatusCode)) {
+                // 已离院：禁止反结，展示召回（BR-IP-RVS-008 / 召回入口）
+                reverseDisabledReason = InpatientSettleConstants.REVERSE_DISABLED_REASON_DISCHARGED;
+                recallEnabled = true;
             } else {
                 reverseEnabled = true;
             }
             dto.setReverseEnabled(reverseEnabled);
             dto.setReverseDisabledReason(reverseDisabledReason);
+            dto.setRecallEnabled(recallEnabled);
             rows.add(dto);
         }
         return rows;

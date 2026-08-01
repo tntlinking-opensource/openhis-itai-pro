@@ -45,15 +45,11 @@ public class TraceNumberReportExportRowDto {
     @Excel(name = "追溯码单位", sort = 7)
     private String traceUnitCodeLabel;
 
-    /** 本库状态。 */
-    @Excel(name = "本库状态", sort = 8)
-    private String locationStockStatusLabel;
-
-    /** 本库净拆零量。 */
-    @Excel(name = "本库净拆零量", sort = 9, scale = 0)
-    private BigDecimal locationNetSplitQuantity;
+    /** 当前所在库房（仅指定库房范围有值）。 */
+    @Excel(name = "当前所在库房", sort = 8)
+    private String currentLocationNames;
 
     /** 最近流水时间（格式化展示）。 */
-    @Excel(name = "最近流水时间", sort = 10)
+    @Excel(name = "最近流水时间", sort = 9)
     private String lastFlowAtLabel;
 }

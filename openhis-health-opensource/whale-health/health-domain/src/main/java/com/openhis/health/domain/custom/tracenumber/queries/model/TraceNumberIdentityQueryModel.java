@@ -34,6 +34,11 @@ public class TraceNumberIdentityQueryModel {
     /** 追溯码单位。 */
     private String traceUnitCode;
 
+    /**
+     * 建码时 1 个追溯单位对应的拆零数量快照（主档 {@code trace_unit_ratio}）。
+     */
+    private BigDecimal traceUnitRatio;
+
     /** 拆零剩余量。 */
     private BigDecimal remainingSplitQuantity;
 

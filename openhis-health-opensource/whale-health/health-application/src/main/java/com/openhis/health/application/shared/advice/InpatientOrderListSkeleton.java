@@ -21,6 +21,7 @@ import java.time.LocalDateTime;
  * 住院医嘱统一列表骨架（替代 {@code OrderInfoReadModel} 读侧投影行）。
  *
  * <p>{@code orderId} 恒为域 Request 主键（药/诊/材）；{@code orderType} 标识来源表语义。</p>
+ * <p>时间字段与三 Request 落库列同名：{@code reqOpenedTime}/{@code reqAuthoredTime}/{@code stopTime}。</p>
  */
 @Getter
 @Setter
@@ -65,20 +66,23 @@ public class InpatientOrderListSkeleton {
     /** 计量单位 code。 */
     private String unitCode;
 
-    /** 诊疗/耗材开立人主键。 */
+    /** 开立人主键（药/诊/材统一 {@code requester_id}）。 */
     private Long requesterId;
 
-    /** 药品开立人主键（与 medAuthoredTime 同源）。 */
+    /** 药品开立人主键别名（历史兼容；与 {@link #requesterId} 同源）。 */
     private Long medRequesterId;
 
-    /** 诊疗/耗材开立时间。 */
-    private LocalDateTime authoredTime;
+    /** 开立时间（{@code req_opened_time}）。 */
+    private LocalDateTime reqOpenedTime;
 
-    /** 药品开立时间。 */
-    private LocalDateTime medAuthoredTime;
+    /** 签发时间（{@code req_authored_time}）。 */
+    private LocalDateTime reqAuthoredTime;
 
-    /** 有效剂量结束时刻（药嘱停嘱边界）。 */
-    private LocalDateTime effectiveDoseEnd;
+    /** 停嘱时间（{@code stop_time}）。 */
+    private LocalDateTime stopTime;
+
+    /** 停嘱人主键（{@code stopper_id}；未停嘱为 null）。 */
+    private Long stopperId;
 
     /** 执行/发药库位主键（诊嘱）。 */
     private Long locationId;
@@ -88,6 +92,18 @@ public class InpatientOrderListSkeleton {
 
     /** 药嘱 based_on 主键。 */
     private Long basedOnId;
+
+    /**
+     * 负向药嘱锚原药嘱主键（{@code refund_medicine_id}）；正向为 null。
+     * <p>门诊退费路径才落此字段；住院退药不造负向 Request。禁止用 {@link #basedOnId} 顶替退单语义。</p>
+     */
+    private Long refundMedicineId;
+
+    /**
+     * 负向诊嘱锚原诊嘱主键（{@code refund_service_id}）；正向为 null。
+     * <p>门诊退费路径才落此字段；住院取消执行回退账单，不造负向诊嘱。禁止用 {@link #basedOnId} 顶替。</p>
+     */
+    private Long refundServiceId;
 
     /** 材嘱 based_on 表名。 */
     private String devBasedOnTable;
@@ -111,6 +127,33 @@ public class InpatientOrderListSkeleton {
     }
 
     /**
+     * 解析开立时刻（业务排序/频次主轴）：优先 {@code reqOpenedTime}，回落 {@code reqAuthoredTime}，再回落 createdAt。
+     *
+     * @return 开立锚点时刻；均空时 null
+     */
+    public LocalDateTime resolveOrderOpenedTime() {
+        if (this.reqOpenedTime != null) {
+            return this.reqOpenedTime;
+        }
+        if (this.reqAuthoredTime != null) {
+            return this.reqAuthoredTime;
+        }
+        return this.createdAt;
+    }
+
+    /**
+     * 解析签发时刻（仅追溯/签发锚点，禁止作业务列表排序主轴）：优先 {@code reqAuthoredTime}，回落 {@code reqOpenedTime}。
+     *
+     * @return 签发锚点时刻；均空时 null
+     */
+    public LocalDateTime resolveOrderAuthoredTime() {
+        if (this.reqAuthoredTime != null) {
+            return this.reqAuthoredTime;
+        }
+        return this.reqOpenedTime;
+    }
+
+    /**
      * 药嘱实体 → 列表骨架。
      *
      * @param request 药品申请实体
@@ -131,11 +174,15 @@ public class InpatientOrderListSkeleton {
         skeleton.setMedicationId(request.getMedicationId());
         skeleton.setQuantity(request.getQuantity());
         skeleton.setUnitCode(request.getUnitCode());
+        skeleton.setRequesterId(request.getRequesterId());
         skeleton.setMedRequesterId(request.getRequesterId());
-        skeleton.setMedAuthoredTime(request.getReqAuthoredTime());
-        skeleton.setEffectiveDoseEnd(request.getEffectiveDoseEnd());
+        skeleton.setReqOpenedTime(request.getReqOpenedTime());
+        skeleton.setReqAuthoredTime(request.getReqAuthoredTime());
+        skeleton.setStopTime(request.getStopTime());
+        skeleton.setStopperId(request.getStopperId());
         skeleton.setBasedOnTable(request.getBasedOnTable());
         skeleton.setBasedOnId(request.getBasedOnId());
+        skeleton.setRefundMedicineId(request.getRefundMedicineId());
         skeleton.setCreatedAt(request.getCreatedAt());
         return skeleton;
     }
@@ -165,11 +212,15 @@ public class InpatientOrderListSkeleton {
         if (authorId == null) {
             authorId = model.getRecorderId();
         }
+        skeleton.setRequesterId(authorId);
         skeleton.setMedRequesterId(authorId);
-        skeleton.setMedAuthoredTime(model.getReqAuthoredTime());
-        skeleton.setEffectiveDoseEnd(model.getEffectiveDoseEnd());
+        skeleton.setReqOpenedTime(model.getReqOpenedTime());
+        skeleton.setReqAuthoredTime(model.getReqAuthoredTime());
+        skeleton.setStopTime(model.getStopTime());
+        skeleton.setStopperId(model.getStopperId());
         skeleton.setBasedOnTable(model.getBasedOnTable());
         skeleton.setBasedOnId(model.getBasedOnId());
+        skeleton.setRefundMedicineId(model.getRefundMedicineId());
         return skeleton;
     }
 
@@ -196,10 +247,14 @@ public class InpatientOrderListSkeleton {
         skeleton.setQuantity(request.getQuantity());
         skeleton.setUnitCode(request.getUnitCode());
         skeleton.setRequesterId(request.getRequesterId());
-        skeleton.setAuthoredTime(request.getAuthoredTime());
+        skeleton.setReqOpenedTime(request.getReqOpenedTime());
+        skeleton.setReqAuthoredTime(request.getReqAuthoredTime());
+        skeleton.setStopTime(request.getStopTime());
+        skeleton.setStopperId(request.getStopperId());
         skeleton.setLocationId(request.getLocationId());
         skeleton.setBasedOnTable(request.getBasedOnTable());
         skeleton.setBasedOnId(request.getBasedOnId());
+        skeleton.setRefundServiceId(request.getRefundServiceId());
         skeleton.setCreatedAt(request.getCreatedAt());
         return skeleton;
     }
@@ -227,10 +282,14 @@ public class InpatientOrderListSkeleton {
         skeleton.setQuantity(model.getQuantity());
         skeleton.setUnitCode(model.getUnitCode());
         skeleton.setRequesterId(model.getRequesterId());
-        skeleton.setAuthoredTime(model.getReqAuthoredTime());
+        skeleton.setReqOpenedTime(model.getReqOpenedTime());
+        skeleton.setReqAuthoredTime(model.getReqAuthoredTime());
+        skeleton.setStopTime(model.getStopTime());
+        skeleton.setStopperId(model.getStopperId());
         skeleton.setLocationId(model.getLocationId());
         skeleton.setBasedOnTable(model.getBasedOnTable());
         skeleton.setBasedOnId(model.getBasedOnId());
+        skeleton.setRefundServiceId(model.getRefundServiceId());
         return skeleton;
     }
 
@@ -255,7 +314,10 @@ public class InpatientOrderListSkeleton {
         skeleton.setQuantity(request.getQuantity());
         skeleton.setUnitCode(request.getUnitCode());
         skeleton.setRequesterId(request.getRequesterId());
-        skeleton.setAuthoredTime(request.getReqAuthoredTime());
+        skeleton.setReqOpenedTime(request.getReqOpenedTime());
+        skeleton.setReqAuthoredTime(request.getReqAuthoredTime());
+        skeleton.setStopTime(request.getStopTime());
+        skeleton.setStopperId(request.getStopperId());
         skeleton.setDevBasedOnTable(request.getBasedOnTable());
         skeleton.setDevBasedOnId(request.getBasedOnId());
         skeleton.setCreatedAt(request.getCreatedAt());
@@ -283,7 +345,10 @@ public class InpatientOrderListSkeleton {
         skeleton.setQuantity(model.getQuantity());
         skeleton.setUnitCode(model.getUnitCode());
         skeleton.setRequesterId(model.getRequesterId());
-        skeleton.setAuthoredTime(model.getReqAuthoredTime());
+        skeleton.setReqOpenedTime(model.getReqOpenedTime());
+        skeleton.setReqAuthoredTime(model.getReqAuthoredTime());
+        skeleton.setStopTime(model.getStopTime());
+        skeleton.setStopperId(model.getStopperId());
         skeleton.setDevBasedOnTable(model.getBasedOnTable());
         skeleton.setDevBasedOnId(model.getBasedOnId());
         return skeleton;

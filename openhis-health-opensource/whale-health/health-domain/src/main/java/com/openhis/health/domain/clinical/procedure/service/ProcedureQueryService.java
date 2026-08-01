@@ -143,6 +143,30 @@ public class ProcedureQueryService {
     }
 
     /**
+     * 构建就诊维度「净剩 COMPLETED」执行记录的展示时间索引（AS-IP-NUR-006 双轨展示轴）。
+     *
+     * <p>口径与 {@link #mapNetCompletedOccurrenceTimeByEncounterId} 同净剩集合；值为
+     * {@code recorded_time}（护士认定实际执行时刻）。过滤/排序仍用 occurrence，本索引仅供页面展示。</p>
+     *
+     * @param encounterId 就诊主键
+     * @return 净剩执行记录主键 → {@code recorded_time}；无 recorded 的行不入 Map
+     */
+    public Map<Long, LocalDateTime> mapNetCompletedRecordedTimeByEncounterId(Long encounterId) {
+        if (encounterId == null) {
+            return Collections.emptyMap();
+        }
+        List<ProcedureRecordQueryModel> netRows = this.listNetRemainingCompletedProcedureRecords(encounterId, null, null);
+        Map<Long, LocalDateTime> recordedById = new HashMap<>();
+        for (ProcedureRecordQueryModel row : netRows) {
+            if (row == null || row.getId() == null || row.getRecordedTime() == null) {
+                continue;
+            }
+            recordedById.put(row.getId(), row.getRecordedTime());
+        }
+        return recordedById;
+    }
+
+    /**
      * 就诊主键去重（批量查询入参归一化）。
      *
      * @param encounterIds 原始就诊主键集合

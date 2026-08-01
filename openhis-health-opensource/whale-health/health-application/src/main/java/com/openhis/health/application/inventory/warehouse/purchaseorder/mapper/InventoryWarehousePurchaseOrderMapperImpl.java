@@ -5,10 +5,12 @@
 package com.openhis.health.application.inventory.warehouse.purchaseorder.mapper;
 
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.LinkableDeptPurchaseRequestListRowDto;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.PurchaseOrderDetailLineDto;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.PurchaseOrderLineDto;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.PurchaseOrderListRowDto;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.PurchaseWarningProductRowDto;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.AgreePurchaseOrderRequest;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.CreatePurchaseOrderRequest;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.RejectPurchaseOrderRequest;
@@ -18,10 +20,13 @@ import com.openhis.health.application.inventory.warehouse.purchaseorder.request.
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.WithdrawPurchaseOrderApprovalRequest;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.AgreePurchaseOrderResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.CreatePurchaseOrderResponse;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.response.GetLinkableDeptPurchaseRequestDetailResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.GetPurchaseOrderDetailResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.LoadPurchaseOrderFormInitResponse;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.response.PageLinkableDeptPurchaseRequestsResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.PageProductsForPurchaseResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.PagePurchaseOrdersResponse;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.response.PagePurchaseWarningProductsResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.RejectPurchaseOrderResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.RemovePurchaseOrderResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.SubmitPurchaseOrderApprovalResponse;
@@ -149,22 +154,25 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
     /**
      * 装配订货页初始化响应。
      *
-     * @param warehouseLocationOptions     药库选项（含「全部」由 AppService 前置）
-     * @param supplierOptions              供应商选项
-     * @param warehouseKeeperOptions       库管员选项
-     * @param statusOptions                单据状态选项
-     * @param purchaseItemTableTypeOptions 物品来源表选项
+     * @param warehouseLocationOptions          药库选项（含「全部」由 AppService 前置）
+     * @param departmentPharmacyLocationOptions 科室药房选项（关联申请弹窗，含「全部」）
+     * @param supplierOptions                   供应商选项
+     * @param warehouseKeeperOptions            库管员选项
+     * @param statusOptions                     单据状态选项
+     * @param purchaseItemTableTypeOptions      物品来源表选项
      * @return 页初始化响应
      */
     @Override
     public LoadPurchaseOrderFormInitResponse toLoadPurchaseOrderFormInitResponse(
         List<OptionDto> warehouseLocationOptions,
+        List<OptionDto> departmentPharmacyLocationOptions,
         List<OptionDto> supplierOptions,
         List<OptionDto> warehouseKeeperOptions,
         List<OptionDto> statusOptions,
         List<OptionDto> purchaseItemTableTypeOptions) {
         LoadPurchaseOrderFormInitResponse res = new LoadPurchaseOrderFormInitResponse();
         res.setWarehouseLocationOptions(warehouseLocationOptions);
+        res.setDepartmentPharmacyLocationOptions(departmentPharmacyLocationOptions);
         res.setSupplierOptions(supplierOptions);
         res.setWarehouseKeeperOptions(warehouseKeeperOptions);
         res.setStatusOptions(statusOptions);
@@ -409,6 +417,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         res.setPurposeTypeEnum(head.getPurposeTypeEnum());
         res.setCategoryEnum(head.getCategoryEnum());
         res.setPractitionerId(head.getPractitionerId());
+        res.setOriginalBusNo(head.getOriginalBusNo());
         // —— rowVersion 供修订乐观锁带回；优先首行 version，与进货详情同口径
         res.setRowVersion(this.resolvePurchaseOrderDocumentRowVersion(lines, head));
         List<PurchaseOrderDetailLineDto> detailLines = new ArrayList<>();
@@ -477,6 +486,10 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         String purposeTypeCode = this.requirePurposeSupplyRequestTypeCodeFromLocation(request.getPurposeLocationId());
         String categoryCode = this.resolveSupplyCategoryCode(request.getCategoryEnum());
         String typeCode = SupplyType.CABINET_PURCHASE_ORDER.getCode();
+        String originalBusNo = null;
+        if (StringUtils.isNotEmpty(request.getOriginalBusNo())) {
+            originalBusNo = request.getOriginalBusNo().trim();
+        }
         for (PurchaseOrderLineDto line : request.getLines()) {
             if (line == null) {
                 continue;
@@ -494,6 +507,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
             item.setSourceLocationId(null);
             item.setPurposeTypeEnum(purposeTypeCode);
             item.setPurposeLocationId(request.getPurposeLocationId());
+            item.setOriginalBusNo(originalBusNo);
             item.setSupplierId(request.getSupplierId());
             item.setOccurrenceTime(line.getOccurrenceTime());
             item.setPractitionerId(request.getPractitionerId());
@@ -782,6 +796,53 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
     }
 
     /**
+     * 将产品定义列表装配为订货选品分页响应（预警 ids 快捷路径；B.10.11）。
+     *
+     * @param products 已过滤的产品定义列表（当前页切片）
+     * @param total    总条数
+     * @param pageNo   1-based 页码
+     * @param pageSize 每页条数
+     * @return 选品分页响应
+     */
+    @Override
+    public PageProductsForPurchaseResponse toPageProductsForPurchaseResponse(
+        List<ProductDefinitionDisplayDto> products,
+        long total,
+        int pageNo,
+        int pageSize) {
+        List<ProductDefinitionItemDto> content = new ArrayList<>();
+        // —— ids 快捷路径：仅映射当前页切片；空列表允许（无命中）
+        if (products != null) {
+            for (ProductDefinitionDisplayDto pr : products) {
+                // 跳过空行，避免 NPE
+                if (pr == null) {
+                    continue;
+                }
+                content.add(this.toProductDefinitionItemDto(pr));
+            }
+        }
+        return PagedResultBuilder.build(new PageProductsForPurchaseResponse(), content, total, pageNo, pageSize);
+    }
+
+    /**
+     * 装配订货预警快捷选品分页响应（IF-WHS-PO-14）。
+     *
+     * @param rows     当前页行
+     * @param total    总条数
+     * @param pageNo   1-based 页码
+     * @param pageSize 每页条数
+     * @return 预警分页响应
+     */
+    @Override
+    public PagePurchaseWarningProductsResponse toPagePurchaseWarningProductsResponse(
+        List<PurchaseWarningProductRowDto> rows,
+        long total,
+        int pageNo,
+        int pageSize) {
+        return PagedResultBuilder.build(new PagePurchaseWarningProductsResponse(), rows, total, pageNo, pageSize);
+    }
+
+    /**
      * 将产品定义读模型装配为订货选品行 DTO（含 PURCHASE 进价解析）。
      *
      * @param pr 产品定义读模型
@@ -907,5 +968,163 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
             }
         }
         return Integer.valueOf(0);
+    }
+
+    /**
+     * 按 busNo 顺序聚合科室采购申请明细为可关联列表行（IF-WHS-PO-12）。
+     *
+     * @param busNoPageOrder 分页单号顺序
+     * @param detailRows     同页明细行
+     * @return 聚合列表行
+     * @throws BusinessException {@link ErrorCodeConstants#WHS_PO_102} 同号头字段不一致
+     */
+    @Override
+    public List<LinkableDeptPurchaseRequestListRowDto> toLinkableDeptPurchaseRequestListAggregated(
+        List<String> busNoPageOrder,
+        List<SupplyRequestModel> detailRows) {
+        List<LinkableDeptPurchaseRequestListRowDto> out = new ArrayList<>();
+        if (busNoPageOrder == null || busNoPageOrder.isEmpty()) {
+            return out;
+        }
+        if (detailRows == null || detailRows.isEmpty()) {
+            return out;
+        }
+        LinkedHashMap<String, List<SupplyRequestModel>> byBusNo = new LinkedHashMap<>();
+        for (SupplyRequestModel row : detailRows) {
+            if (row == null || StringUtils.isEmpty(row.getBusNo())) {
+                continue;
+            }
+            String bn = row.getBusNo().trim();
+            byBusNo.computeIfAbsent(bn, k -> new ArrayList<>()).add(row);
+        }
+        for (String busNoRaw : busNoPageOrder) {
+            if (StringUtils.isEmpty(busNoRaw)) {
+                continue;
+            }
+            String busNo = busNoRaw.trim();
+            List<SupplyRequestModel> lines = byBusNo.get(busNo);
+            if (lines == null || lines.isEmpty()) {
+                continue;
+            }
+            List<SupplyRequestModel> sortedByApply = new ArrayList<>(lines);
+            sortedByApply.sort(this::compareSupplyModelApplyTimeDescNullsLast);
+            SupplyRequestModel head = sortedByApply.get(0);
+            for (SupplyRequestModel line : lines) {
+                if (line == null) {
+                    continue;
+                }
+                if (!Objects.equals(head.getStatusEnum(), line.getStatusEnum())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.WHS_PO_102, "同号科室采购申请状态头字段不一致: " + busNo);
+                }
+                if (!Objects.equals(head.getPurposeLocationId(), line.getPurposeLocationId())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.WHS_PO_102, "同号科室采购申请目的科室药房头字段不一致: " + busNo);
+                }
+            }
+            BigDecimal totalAmount = BigDecimal.ZERO;
+            LocalDateTime maxApply = null;
+            LocalDateTime maxOccurrence = null;
+            for (SupplyRequestModel line : lines) {
+                if (line == null) {
+                    continue;
+                }
+                if (line.getTotalPrice() != null) {
+                    totalAmount = totalAmount.add(line.getTotalPrice());
+                }
+                if (line.getApplyTime() != null) {
+                    if (maxApply == null || line.getApplyTime().isAfter(maxApply)) {
+                        maxApply = line.getApplyTime();
+                    }
+                }
+                if (line.getOccurrenceTime() != null) {
+                    if (maxOccurrence == null || line.getOccurrenceTime().isAfter(maxOccurrence)) {
+                        maxOccurrence = line.getOccurrenceTime();
+                    }
+                }
+            }
+            LocalDateTime approvalTime = null;
+            List<SupplyRequestModel> sortedById = new ArrayList<>(lines);
+            sortedById.sort(this::compareSupplyModelIdAscNullsLast);
+            for (SupplyRequestModel line : sortedById) {
+                if (line != null && line.getApprovalTime() != null) {
+                    approvalTime = line.getApprovalTime();
+                    break;
+                }
+            }
+            LinkableDeptPurchaseRequestListRowDto dto = new LinkableDeptPurchaseRequestListRowDto();
+            dto.setBusNo(busNo);
+            dto.setPurposeLocationId(head.getPurposeLocationId());
+            dto.setStatusEnum(head.getStatusEnum());
+            dto.setApproverId(head.getApproverId());
+            dto.setTotalAmount(totalAmount);
+            dto.setApprovalTime(approvalTime);
+            dto.setApplyTime(maxApply);
+            dto.setOccurrenceTime(maxOccurrence);
+            out.add(dto);
+        }
+        return out;
+    }
+
+    /**
+     * 用可关联申请聚合行构建分页响应（B.10.11）。
+     *
+     * @param mergedTotal 不重复 busNo 总数
+     * @param pageNo      1-based 页码
+     * @param pageSize    页大小
+     * @param records     当前页聚合行
+     * @return 分页响应
+     */
+    @Override
+    public PageLinkableDeptPurchaseRequestsResponse toPageLinkableDeptPurchaseRequestsAggregatedResponse(
+        long mergedTotal,
+        int pageNo,
+        int pageSize,
+        List<LinkableDeptPurchaseRequestListRowDto> records) {
+        List<LinkableDeptPurchaseRequestListRowDto> content;
+        if (records == null) {
+            content = new ArrayList<>();
+        } else {
+            content = records;
+        }
+        return PagedResultBuilder.build(
+            new PageLinkableDeptPurchaseRequestsResponse(),
+            content,
+            mergedTotal,
+            pageNo,
+            pageSize);
+    }
+
+    /**
+     * 将已同意科室采购申请写模型行映射为订货新建预填响应（IF-WHS-PO-13；只读）。
+     *
+     * @param deptRequestLines 科室采购申请供应请求行，非空
+     * @param productByKey     产品读模型 compositeKey 映射，可空
+     * @return 订货表单预填 DTO
+     */
+    @Override
+    public GetLinkableDeptPurchaseRequestDetailResponse toGetLinkableDeptPurchaseRequestDetailResponse(
+        List<SupplyRequestModel> deptRequestLines,
+        Map<String, ProductDefinitionDisplayDto> productByKey) {
+        GetLinkableDeptPurchaseRequestDetailResponse res = new GetLinkableDeptPurchaseRequestDetailResponse();
+        if (deptRequestLines == null || deptRequestLines.isEmpty()) {
+            return res;
+        }
+        SupplyRequestModel head = deptRequestLines.get(0);
+        String busNo = head.getBusNo();
+        res.setOriginalBusNo(busNo);
+        res.setDeptPurchaseRequestBusNo(busNo);
+        res.setPurposeLocationId(head.getPurposeLocationId());
+        res.setCategoryEnum(head.getCategoryEnum());
+        res.setPractitionerId(head.getPractitionerId());
+        List<PurchaseOrderDetailLineDto> lines = new ArrayList<>();
+        for (SupplyRequestModel line : deptRequestLines) {
+            if (line == null) {
+                continue;
+            }
+            lines.add(this.toDetailLine(line, productByKey));
+        }
+        res.setLines(lines);
+        return res;
     }
 }

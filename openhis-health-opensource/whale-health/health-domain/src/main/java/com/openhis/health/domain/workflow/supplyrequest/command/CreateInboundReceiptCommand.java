@@ -89,5 +89,9 @@ public class CreateInboundReceiptCommand extends BatchCommand<CreateInboundRecei
         private String reason;
         /** 行备注（库列 remake）。 */
         private String remake;
+        /**
+         * 采购发票号（库列 {@code invoice_no}；同号多行写入相同值）。
+         */
+        private String invoiceNo;
     }
 }

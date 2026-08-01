@@ -21,6 +21,7 @@ public class InvUploadLineCommand {
     private String medListCodg;
     private String fixmedinsHilistId;
     private String fixmedinsHilistName;
+    /** 机构批次流水号：对应业务单据 busNo（发药取发放行；库房类取单据头；非生产批号） */
     private String fixmedinsBchno;
     private String manuLotnum;
     private String manuDate;
@@ -38,11 +39,21 @@ public class InvUploadLineCommand {
     private String setlId;
     private String mdtrtSn;
     private String mdtrtSetlType;
+    /**
+     * 3505 零售单据号：= 省平台 {@code feedetl_sn}（收费项 busNo，否则收费项 id）；非发放单 busNo。
+     * <p>3506 报文无此字段，勿写入平台。</p>
+     */
     private String rtalDocno;
+    /** 外购处方标志：院内发药固定非外购 */
+    private String rxCircFlag;
     private BigDecimal finlTrnsPric;
-    /** 3506：原销售上报 fixmedins_bchno（可空） */
+    /**
+     * 3506：退药单 busNo 暂存（伴生 3502 批次用此字段；平台 3506 定位仍用 {@link #fixmedinsBchno}=原销售批次）。
+     */
     private String originalFixmedinsBchno;
-    /** 3506：原商品销售流水号（关联 3505） */
+    /**
+     * 3506 对单：商品销售流水号 {@code medins_prod_sel_no}（吉林=3511 平台 {@code medinsProdSelNo}）。
+     */
     private String medinsProdSelNo;
     /** 3505/3506：人员编号 */
     private String psnNo;
@@ -52,6 +63,11 @@ public class InvUploadLineCommand {
     private String certno;
     /** 3505/3506：人员姓名 */
     private String psnName;
+    /**
+     * 上报前业务校验失败原因（非平台字段；如配药人与发药人同一人）。
+     * <p>有值时编排层记 FAILED，不调用平台。</p>
+     */
+    private String preUploadFailureMessage;
     /** 3503/3504：随货单号 */
     private String dyntNo;
     /** 3503/3504：供应商名称 */
@@ -64,9 +80,12 @@ public class InvUploadLineCommand {
     private String aprvno;
     /** 3503/3504：采购/退货数量 */
     private BigDecimal purcRetnCnt;
-    /** 3503/3504：采购发票编码 */
+    /** 3503/3504：采购发票编码（可选） */
     private String purcInvoCodg;
-    /** 3503/3504：采购发票号 */
+    /**
+     * 3503/3504：采购发票号（真源 {@code wkf_supply_request.invoice_no}）。
+     * <p>业务未填时 Loader 回落 {@link com.openhis.chs.domain.share.constants.ChsInventoryConstants#DEFAULT_PURC_INVO_NO}。</p>
+     */
     private String purcInvoNo;
     /** 3503/3504：采购/退货入库时间 */
     private String purcRetnStoinTime;
@@ -86,7 +105,7 @@ public class InvUploadLineCommand {
 
     /** 3502：库存变更类型（103 盘盈 / 104 盘损等） */
     private String invChgType;
-    /** 3502：变更数量（最小包装单位，正数） */
+    /** 3502：变更数量（操作单位；入库类正、出库类负，见 {@code InvChgType#toSignedCnt}） */
     private BigDecimal cnt;
     /** 3502：单价 */
     private BigDecimal pric;

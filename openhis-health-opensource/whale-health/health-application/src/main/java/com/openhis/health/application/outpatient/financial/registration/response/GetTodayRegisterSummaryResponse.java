@@ -11,7 +11,10 @@ import lombok.experimental.Accessors;
 import java.time.LocalDate;
 
 /**
- * 当日挂号统计响应（不含待收费 PLANNED）。
+ * 当日挂号统计响应。
+ *
+ * <p>不含待收费 {@code PLANNED}、不含未收费取消 {@code ENTERED_IN_ERROR}；
+ * {@code cancelledCount} 仅计退号 {@code CANCELLED}。</p>
  */
 @Data
 @Accessors(chain = true)
@@ -22,11 +25,11 @@ public class GetTodayRegisterSummaryResponse {
     @Schema(description = "统计日期")
     private LocalDate date;
 
-    /** 当日挂号总数（不含待收费）。 */
-    @Schema(description = "当日挂号总数（不含待收费）")
+    /** 当日挂号总数（不含待收费、不含未收费取消）。 */
+    @Schema(description = "当日挂号总数（不含待收费、不含未收费取消）")
     private Long totalCount;
 
-    /** 当日已退号数。 */
+    /** 当日已退号数（仅 CANCELLED，不含 ENTERED_IN_ERROR）。 */
     @Schema(description = "当日已退号数")
     private Long cancelledCount;
 

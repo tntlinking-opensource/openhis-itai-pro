@@ -6,6 +6,7 @@ package com.openhis.health.application.inventory.pharmacy.returntowarehouse.serv
 
 import com.openhis.health.application.inventory.pharmacy.returntowarehouse.dto.LinkablePharmacyStockInListRowDto;
 import com.openhis.health.application.inventory.pharmacy.returntowarehouse.dto.ReturnToWarehouseLineDto;
+import com.openhis.health.application.inventory.pharmacy.returntowarehouse.dto.ReturnToWarehouseListRowDto;
 import com.openhis.health.application.inventory.pharmacy.returntowarehouse.mapper.InventoryPharmacyReturnToWarehouseMapper;
 import com.openhis.health.application.inventory.pharmacy.returntowarehouse.request.*;
 import com.openhis.health.application.inventory.pharmacy.returntowarehouse.response.*;
@@ -43,13 +44,14 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyByBusNoQue
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyByOriginalBusNoQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyRequestDocumentListQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.VerifyAbleEditQuery;
-import com.openhis.health.domain.workflow.supplyrequest.queries.WarehouseDocumentDetailPageQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestValidationModel;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService;
 import com.openhis.health.application.inventory.support.SupplyRequestPricedWriteOrchestrator;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
 import com.openhis.health.domain.workflow.supplyrequest.support.SupplyPersistedSplitQuantity;
+import com.openhis.health.application.shared.inventory.InventoryListLocationNameResolver;
+import com.openhis.health.application.shared.inventory.InventoryListPractitionerNameResolver;
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.application.shared.validator.CurrentManagedLocationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
@@ -62,13 +64,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.dao.OptimisticLockingFailureException;
-import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -104,6 +107,8 @@ public class InventoryPharmacyReturnToWarehouseAppService {
     private final InventoryPharmacyReturnToWarehouseMapper returnToWarehouseMapper;
     private final InventoryWarehouseInboundReceiptMapper inboundReceiptMapper;
     private final TraceNumberSupplyAgreeTraceOrchestrator traceNumberSupplyAgreeTraceOrchestrator;
+    private final InventoryListPractitionerNameResolver listPractitionerNameResolver;
+    private final InventoryListLocationNameResolver listLocationNameResolver;
 
     /**
      * 加载页主数据（库位、人员、状态等下拉）。
@@ -153,37 +158,46 @@ public class InventoryPharmacyReturnToWarehouseAppService {
         this.validateOptionalReturnTypeEnum(request.getTypeEnum());
         this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.PHA_RTW_101, "机构上下文缺失");
         Set<Long> allowedPharmacies = this.resolveGatedPharmacyLocationIds();
-        WarehouseDocumentDetailPageQuery query = new WarehouseDocumentDetailPageQuery();
-        query.setTypeEnum(SupplyType.PHARMACY_RETURN_TO_WAREHOUSE.getCode());
+        SupplyRequestDocumentListQuery listQuery = new SupplyRequestDocumentListQuery();
+        listQuery.setTypeEnum(SupplyType.PHARMACY_RETURN_TO_WAREHOUSE.getCode());
         // Pre：sourceLocationId=0 表示当前用户可见的全部药房；否则单库且须在管辖门控内
         if (Long.valueOf(InventoryPharmacyConstants.ALL_PHARMACIES_LIST_FILTER_LOCATION_ID)
             .equals(request.getSourceLocationId())) {
             if (allowedPharmacies.isEmpty()) {
                 // 无可见药房：占位 id 收窄为空页，避免无约束全表扫描
-                query.setSourceLocationIds(
+                listQuery.setSourceLocationIds(
                     List.of(InventoryPharmacyConstants.LIST_FILTER_NO_VISIBLE_PHARMACY_PLACEHOLDER_ID));
             } else {
                 // 多药房 IN 查询：下推当前用户可见 id 集合
-                query.setSourceLocationIds(new ArrayList<>(allowedPharmacies));
+                listQuery.setSourceLocationIds(new ArrayList<>(allowedPharmacies));
             }
         } else {
             // 单药房筛选（防横向越权）
             this.assertPharmacyLocationAllowed(request.getSourceLocationId(), allowedPharmacies);
-            query.setSourceLocationId(request.getSourceLocationId());
+            listQuery.setSourceLocationId(request.getSourceLocationId());
         }
         if (request.getStatusEnum() != null) {
             // 列表筛选：前端传 sortOrder，下推持久化 status code
             SupplyStatus st = EnumUtil.requireFromSortOrder(SupplyStatus.class, request.getStatusEnum().longValue());
-            query.setStatusEnum(st.getCode());
+            listQuery.setStatusEnum(st.getCode());
         }
-        PageQueryBinder.bind(request, query);
-        query.setApplyTimeStart(request.getApplyTimeFrom());
-        query.setApplyTimeEnd(request.getApplyTimeTo());
+        PageQueryBinder.bind(request, listQuery);
+        listQuery.setStartDate(request.getApplyTimeFrom());
+        listQuery.setEndDate(request.getApplyTimeTo());
         try {
-            Page<com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel> page =
-                this.supplyRequestQueryService.pageWarehouseDocumentDetail(query);
-            // Asm：映射分页列表响应
-            return this.returnToWarehouseMapper.toPageReturnToWarehousesResponse(page);
+            // Cmd：按 bus_no 聚合分页查询药房退库单
+            long mergedTotal = this.supplyRequestQueryService.countDistinctBusNo(listQuery);
+            List<String> busNos = this.supplyRequestQueryService.listDistinctBusNoPage(listQuery);
+            List<SupplyRequestModel> lines = this.supplyRequestQueryService.listByBusNosWithFilter(listQuery, busNos);
+            List<ReturnToWarehouseListRowDto> records =
+                this.returnToWarehouseMapper.toReturnToWarehouseListAggregated(busNos, lines);
+            // Pre：侧栏卡片制单人/审核人/供应商展示名批量富化
+            this.enrichReturnToWarehouseListDisplayNames(records);
+            int pageNo = request.getPageNo().intValue();
+            int pageSize = listQuery.getBoundedPageSize();
+            // Asm：映射聚合分页列表响应
+            return this.returnToWarehouseMapper.toPageReturnToWarehousesAggregatedResponse(
+                mergedTotal, pageNo, pageSize, records);
         } catch (RuntimeException ex) {
             log.warn("pageReturnToWarehouses failed", ex);
             throw new BusinessException(ErrorCodeConstants.PHA_RTW_102, "退库单列表查询失败");
@@ -546,9 +560,11 @@ public class InventoryPharmacyReturnToWarehouseAppService {
             }
             String splitUnitCode = product.getSplitUnitCode().trim();
             String productName = this.resolveProductName(line, productByKey);
-            String resolvedLot = StringUtils.isEmpty(line.getLotNumber())
-                ? GeneralSharedConstants.EMPTY_STRING
-                : line.getLotNumber().trim();
+            // 批号空串与库存可用量匹配口径一致（空白归一为空串）
+            String resolvedLot = GeneralSharedConstants.EMPTY_STRING;
+            if (!StringUtils.isEmpty(line.getLotNumber())) {
+                resolvedLot = line.getLotNumber().trim();
+            }
 
             InventoryMatchKey srcKey = new InventoryMatchKey();
             srcKey.setLotNumber(resolvedLot);
@@ -762,13 +778,24 @@ public class InventoryPharmacyReturnToWarehouseAppService {
         this.pageWindowGate.requireNonNullPageWindow(request, ErrorCodeConstants.PHA_RTW_001, "分页参数不能为空");
         this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.PHA_RTW_101, "机构上下文缺失");
         Set<Long> allowedPharmacies = this.resolveGatedPharmacyLocationIds();
-        this.assertPharmacyLocationAllowed(request.getSourceLocationId(), allowedPharmacies);
 
         // Pre：组装已同意入库单聚合列表查询
         SupplyRequestDocumentListQuery listQuery = new SupplyRequestDocumentListQuery();
         listQuery.setTypeEnum(SupplyType.PHARMACY_STOCK_IN.getCode());
         listQuery.setStatusEnum(SupplyStatus.AGREE.getCode());
-        listQuery.setPurposeLocationId(request.getSourceLocationId());
+        // Pre：sourceLocationId=0 表示当前用户可见的全部药房（与 pageReturnToWarehouses / 退货关联进货单同构）
+        if (Long.valueOf(InventoryPharmacyConstants.ALL_PHARMACIES_LIST_FILTER_LOCATION_ID)
+            .equals(request.getSourceLocationId())) {
+            if (allowedPharmacies.isEmpty()) {
+                listQuery.setPurposeLocationIds(
+                    List.of(InventoryPharmacyConstants.LIST_FILTER_NO_VISIBLE_PHARMACY_PLACEHOLDER_ID));
+            } else {
+                listQuery.setPurposeLocationIds(new ArrayList<>(allowedPharmacies));
+            }
+        } else {
+            this.assertPharmacyLocationAllowed(request.getSourceLocationId(), allowedPharmacies);
+            listQuery.setPurposeLocationId(request.getSourceLocationId());
+        }
         PageQueryBinder.bind(request, listQuery);
         try {
             long mergedTotal = this.supplyRequestQueryService.countDistinctBusNo(listQuery);
@@ -793,6 +820,8 @@ public class InventoryPharmacyReturnToWarehouseAppService {
             }
             int pageNo = request.getPageNo().intValue();
             int pageSize = listQuery.getBoundedPageSize();
+            // Pre：批量解析制单人/药房/供应商展示名（对偶 IF-WHS-RT-12）
+            this.enrichLinkablePharmacyStockInDisplayNames(filtered);
             // Asm：映射分页响应
             return this.returnToWarehouseMapper.toPageLinkablePharmacyStockInsAggregatedResponse(
                 mergedTotal, pageNo, pageSize, filtered);
@@ -1145,7 +1174,18 @@ public class InventoryPharmacyReturnToWarehouseAppService {
         row.setBusNo(stockInBusNo);
         row.setPurposeLocationId(head.getPurposeLocationId());
         row.setSupplierId(head.getSupplierId());
+        // —— 制单人取入库头行申请人，展示名由 enrichLinkablePharmacyStockInDisplayNames 回填。——
+        row.setApplicantId(head.getApplicantId());
         row.setApprovalTime(head.getApprovalTime());
+        // —— 选单「制单时间」优先业务发生时刻，其次申请时刻，最后回落审批时刻。——
+        LocalDateTime applyTime = head.getOccurrenceTime();
+        if (applyTime == null) {
+            applyTime = head.getApplyTime();
+        }
+        if (applyTime == null) {
+            applyTime = head.getApprovalTime();
+        }
+        row.setApplyTime(applyTime);
         row.setReturnable(Boolean.valueOf(returnable));
         BigDecimal totalAmount = BigDecimal.ZERO;
         for (SupplyRequestModel line : stockInLines) {
@@ -1155,6 +1195,66 @@ public class InventoryPharmacyReturnToWarehouseAppService {
         }
         row.setTotalAmount(totalAmount);
         return row;
+    }
+
+    /**
+     * 为可关联药房入库单列表行批量填充制单人名、药房名、供应商名（IF-PHA-RTW-12）。
+     *
+     * @param rows 列表行
+     */
+    private void enrichLinkablePharmacyStockInDisplayNames(List<LinkablePharmacyStockInListRowDto> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        Set<Long> applicantIds = new HashSet<>();
+        Set<Long> purposeLocationIds = new HashSet<>();
+        Set<Long> supplierIds = new HashSet<>();
+        for (LinkablePharmacyStockInListRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            // 收集本页需解析的主键，避免逐行查主数据
+            if (row.getApplicantId() != null) {
+                applicantIds.add(row.getApplicantId());
+            }
+            if (row.getPurposeLocationId() != null) {
+                purposeLocationIds.add(row.getPurposeLocationId());
+            }
+            if (row.getSupplierId() != null) {
+                supplierIds.add(row.getSupplierId());
+            }
+        }
+        Map<Long, String> practitionerNameById = this.listPractitionerNameResolver.resolveNamesByIds(applicantIds);
+        Map<Long, String> purposeLocationNameById = this.listLocationNameResolver.resolveNamesByIds(purposeLocationIds);
+        Map<Long, String> supplierNameById = new HashMap<>();
+        for (Long supplierId : supplierIds) {
+            // B.6.4：跨聚合读 SupplierQueryService，仅取展示名
+            this.supplierQueryService.findSupplierNameIfPresent(supplierId)
+                .ifPresent(name -> supplierNameById.put(supplierId, name));
+        }
+        for (LinkablePharmacyStockInListRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getApplicantId() != null) {
+                String creatorName = practitionerNameById.get(row.getApplicantId());
+                if (creatorName != null) {
+                    row.setCreatorName(creatorName);
+                }
+            }
+            if (row.getPurposeLocationId() != null) {
+                String purposeLocationName = purposeLocationNameById.get(row.getPurposeLocationId());
+                if (purposeLocationName != null) {
+                    row.setPurposeLocationName(purposeLocationName);
+                }
+            }
+            if (row.getSupplierId() != null) {
+                String supplierName = supplierNameById.get(row.getSupplierId());
+                if (supplierName != null) {
+                    row.setSupplierName(supplierName);
+                }
+            }
+        }
     }
 
     /**
@@ -1571,6 +1671,64 @@ public class InventoryPharmacyReturnToWarehouseAppService {
             return new BusinessException(ErrorCodeConstants.PHA_RTW_003, msg);
         }
         return ex;
+    }
+
+    /**
+     * 为药房退库单列表行批量填充供应商名、制单人名、审批人名（IF-PHA-RTW-02 侧栏卡片展示）。
+     *
+     * @param rows 当前页聚合列表行
+     */
+    private void enrichReturnToWarehouseListDisplayNames(List<ReturnToWarehouseListRowDto> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        Set<Long> supplierIds = new HashSet<>();
+        Set<Long> practitionerIds = new HashSet<>();
+        for (ReturnToWarehouseListRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getSupplierId() != null) {
+                supplierIds.add(row.getSupplierId());
+            }
+            if (row.getApplicantId() != null) {
+                practitionerIds.add(row.getApplicantId());
+            }
+            if (row.getApproverId() != null) {
+                practitionerIds.add(row.getApproverId());
+            }
+        }
+        Map<Long, String> supplierNameById = new HashMap<>();
+        for (Long supplierId : supplierIds) {
+            // B.6.4：跨聚合读 SupplierQueryService，仅取展示名
+            this.supplierQueryService.findSupplierNameIfPresent(supplierId)
+                .ifPresent(name -> supplierNameById.put(supplierId, name));
+        }
+        Map<Long, String> practitionerNameById =
+            this.listPractitionerNameResolver.resolveNamesByIds(practitionerIds);
+        for (ReturnToWarehouseListRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getSupplierId() != null) {
+                String supplierName = supplierNameById.get(row.getSupplierId());
+                if (supplierName != null) {
+                    row.setSupplierName(supplierName);
+                }
+            }
+            if (row.getApplicantId() != null) {
+                String creatorName = practitionerNameById.get(row.getApplicantId());
+                if (creatorName != null) {
+                    row.setCreatorName(creatorName);
+                }
+            }
+            if (row.getApproverId() != null) {
+                String approverName = practitionerNameById.get(row.getApproverId());
+                if (approverName != null) {
+                    row.setApproverName(approverName);
+                }
+            }
+        }
     }
 
     /** 同意编排中目的药库入账计划的行内上下文（非对外 DTO）。 */

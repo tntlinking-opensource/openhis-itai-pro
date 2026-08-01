@@ -10,7 +10,7 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 /**
- * 备份批次下拉读模型：单号 + 抓拍时刻（DM-DOC-001 · IF-11 / 库房日结 IF-01）。
+ * 备份批次下拉读模型：单号 + 抓拍时刻（DM-DOC-001 · IF-11 / 库房期初期末明细 IF-01）。
  */
 @Getter
 @Setter

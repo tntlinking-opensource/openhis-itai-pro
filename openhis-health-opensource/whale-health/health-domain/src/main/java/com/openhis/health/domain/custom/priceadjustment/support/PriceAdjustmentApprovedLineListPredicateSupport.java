@@ -8,8 +8,11 @@ import com.openhis.health.domain.custom.priceadjustment.entity.PriceAdjustment;
 import com.openhis.health.domain.custom.priceadjustment.queries.PriceAdjustmentApprovedLineListQuery;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.enums.PriceAdjustmentStatus;
+import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Order;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import com.openhis.whale.core.application.util.StringUtils;
@@ -68,6 +71,33 @@ public final class PriceAdjustmentApprovedLineListPredicateSupport {
             predicates.add(cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), likeIc));
         }
         return predicates;
+    }
+
+    /**
+     * 已生效调价行：单号模糊时 SQL 层「精确全等在前」（与 LIKE 列 busNo 同集合）。
+     *
+     * @param cq              CriteriaQuery；null 或 count 时工具内部跳过
+     * @param root            调价主行根
+     * @param cb              CriteriaBuilder
+     * @param query           列表查询；无 busNo 时不写排序
+     * @param secondaryOrders 次级排序（如生效时间/主键倒序）；不可为 null
+     */
+    public static void applyBusNoExactFirstOrder(
+        CriteriaQuery<?> cq,
+        Root<PriceAdjustment> root,
+        CriteriaBuilder cb,
+        PriceAdjustmentApprovedLineListQuery query,
+        List<Order> secondaryOrders) {
+        if (query == null || StringUtils.isEmpty(query.getBusNo())) {
+            return;
+        }
+        String trimmed = query.getBusNo().trim();
+        KeywordExactFirstOrderSupport.applyExactFirstOrder(
+            cq,
+            cb,
+            trimmed,
+            secondaryOrders,
+            root.get(FieldNameConstants.BUS_NO));
     }
 
     /**

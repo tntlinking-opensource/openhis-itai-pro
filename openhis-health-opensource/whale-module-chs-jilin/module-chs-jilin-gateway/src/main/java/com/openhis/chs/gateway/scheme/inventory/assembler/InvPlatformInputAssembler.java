@@ -85,7 +85,7 @@ public final class InvPlatformInputAssembler {
         return new Inv3501Input().setInvinfo(invinfo);
     }
 
-    /** 502】库存变更上input.invinfo（含 inv_chg_type、drugtracinfo） */
+    /** 【3502】库存变更 input.invinfo（含 inv_chg_type、有符号 cnt、drugtracinfo）。 */
     public static Inv3502Input assemble3502(InvUploadLineCommand line) {
         if (line == null) {
             throw new IllegalArgumentException("3502 上报行不能为空");
@@ -94,6 +94,8 @@ public final class InvPlatformInputAssembler {
             throw new IllegalArgumentException("3502 inv_chg_type 不能为空");
         }
         InvChgType invChgType = InvChgType.requireCode(line.getInvChgType());
+        // Gate：cnt 符号须与 inv_chg_type 方向一致（入库正、出库负）
+        invChgType.validateQtyDirection(line.getCnt());
         InvInvinfo invinfo = new InvInvinfo();
         setIfNotBlank(invinfo::setMedListCodg, line.getMedListCodg());
         invinfo.setInvChgType(invChgType.getCode());
@@ -109,6 +111,10 @@ public final class InvPlatformInputAssembler {
             invinfo.setCnt(line.getCnt());
         }
         setIfNotBlank(invinfo::setRxFlag, line.getRxFlag());
+        // 批号/效期：与初始化、库房 3502 Loader 写入的行字段对齐出站
+        setIfNotBlank(invinfo::setManuLotnum, line.getManuLotnum());
+        setIfNotBlank(invinfo::setManuDate, line.getManuDate());
+        setIfNotBlank(invinfo::setExpyEnd, line.getExpyEnd());
         setIfNotBlank(invinfo::setInvChgTime, line.getInvChgTime());
         setIfNotBlank(invinfo::setInvChgOpterName, line.getInvChgOpterName());
         setIfNotBlank(invinfo::setMemo, line.getMemo());
@@ -173,6 +179,7 @@ public final class InvPlatformInputAssembler {
             selinfo.setFinlTrnsPric(line.getFinlTrnsPric());
         }
         setIfNotBlank(selinfo::setRtalDocno, line.getRtalDocno());
+        setIfNotBlank(selinfo::setRxCircFlag, line.getRxCircFlag());
         if (line.getSelRetnCnt() != null) {
             selinfo.setSelRetnCnt(line.getSelRetnCnt());
         }
@@ -207,6 +214,7 @@ public final class InvPlatformInputAssembler {
         }
         setIfNotBlank(selinfo::setSelRetnTime, line.getSelRetnTime());
         setIfNotBlank(selinfo::setSelRetnOpterName, line.getSelRetnOpterName());
+        // 3506 无 rtal_docno；对单字段为 medins_prod_sel_no（吉林=3511 平台销售流水）
         setIfNotBlank(selinfo::setPsnNo, line.getPsnNo());
         setIfNotBlank(selinfo::setPsnCertType, line.getPsnCertType());
         setIfNotBlank(selinfo::setCertno, line.getCertno());

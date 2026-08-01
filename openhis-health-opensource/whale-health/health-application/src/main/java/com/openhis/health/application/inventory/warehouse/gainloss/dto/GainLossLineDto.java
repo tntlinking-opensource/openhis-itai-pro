@@ -19,7 +19,8 @@ import java.time.LocalDateTime;
 /**
  * 药库损益单写模型明细行（IF-WHS-GL-04/05）。
  *
- * <p>{@code gainLossQuantity} 映射持久化 {@code item_quantity}；{@code actualQuantity} 映射 {@code total_quantity}。</p>
+ * <p>{@code gainLossQuantity} 映射持久化 {@code item_quantity}（盈亏：正报溢、负报损，禁止 0）；
+ * {@code actualQuantity} 映射 {@code total_quantity}。</p>
  */
 @Getter
 @Setter
@@ -36,8 +37,8 @@ public class GainLossLineDto {
     @Schema(description = "物品定义主键", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long itemId;
 
-    /** 盈亏数量 gainLossQuantity。 */
-    @Schema(description = "盈亏数量 gainLossQuantity", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 盈亏数量（正数报溢、负数报损，禁止 0）；映射 {@code item_quantity}。 */
+    @Schema(description = "盈亏数量（正报溢/负报损，禁止0）", requiredMode = Schema.RequiredMode.REQUIRED)
     private BigDecimal gainLossQuantity;
 
     /** 实盘数量 actualQuantity。 */
@@ -60,8 +61,8 @@ public class GainLossLineDto {
     @Schema(description = "批号")
     private String lotNumber;
 
-    /** 剩余追溯码 traceNo。 */
-    @Schema(description = "剩余追溯码 traceNo")
+    /** 损益扫码 traceNo（报溢 IN / 报损 OUT，与盈亏正负同向）。 */
+    @Schema(description = "损益扫码 traceNo（与盈亏正负同向直接加减）")
     private String traceNo;
 
     /**

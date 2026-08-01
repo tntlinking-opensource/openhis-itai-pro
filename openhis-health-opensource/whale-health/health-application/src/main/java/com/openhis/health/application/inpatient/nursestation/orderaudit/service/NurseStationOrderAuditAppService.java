@@ -38,7 +38,6 @@ import com.openhis.health.domain.administration.encounter.queries.model.Inpatien
 import com.openhis.health.application.shared.advice.InpatientOrderListSkeleton;
 import com.openhis.health.application.shared.advice.InpatientOrderListMergeAssembler;
 import com.openhis.health.application.shared.advice.InpatientOrderLookupLoader;
-import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.CustomConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
@@ -194,7 +193,7 @@ public class NurseStationOrderAuditAppService {
         List<NurseStationOrderAuditWriteItemDto> items = request.getItems();
         Set<Long> visibleEncounterIds = this.resolveVisibleEncounterIdsForWrite(items, true);
         Map<Long, List<MedicationRequestListQueryModel>> medByEncounter = this.loadMedByEncounterForWrite(visibleEncounterIds);
-        // Pre·中药整方扩行：代表行按 prescription_no 扩成全方逐条校对
+        // Pre·药嘱写扩行：中药整方 / 西药成组一并扩成逐条校对（Gate 条数按扩行前勾选计）
         List<NurseStationOrderAuditWriteItemDto> expandedItems =
             this.expandAuditWriteItemsByTcmPrescription(items, medByEncounter);
         Map<Long, ServiceRequestListModel> serviceDetailById =
@@ -269,7 +268,7 @@ public class NurseStationOrderAuditAppService {
         // Pre：写项所属就诊须在护士站可见范围
         Set<Long> visibleEncounterIds = this.resolveVisibleEncounterIdsForWrite(items, false);
         Map<Long, List<MedicationRequestListQueryModel>> medByEncounter = this.loadMedByEncounterForWrite(visibleEncounterIds);
-        // Pre·中药整方扩行：退回须覆盖方内全部味药行
+        // Pre·药嘱写扩行：退回须覆盖中药整方 / 西药成组全部成员行
         List<NurseStationOrderAuditWriteItemDto> expandedItems =
             this.expandAuditWriteItemsByTcmPrescription(items, medByEncounter);
         // Pre：状态/来源/下游事实门禁（ACTIVE/VERIFIED 均须过签退门控，防直调 API 恶意退回）
@@ -336,7 +335,7 @@ public class NurseStationOrderAuditAppService {
     }
 
     /**
-     * 中药方勾选时按 prescription_no 扩成全方逐条写项。
+     * 药嘱勾选写项扩行：中药按 prescription_no 整方；西药按 group_id 成组；诊疗原样。
      *
      * @param items          原始写项
      * @param medByEncounter 就诊药品明细
@@ -355,7 +354,7 @@ public class NurseStationOrderAuditAppService {
                 continue;
             }
             if (!ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())) {
-                // 诊疗行不参与方级扩行
+                // 诊疗行不参与药嘱方级/成组扩行
                 expanded.add(item);
                 continue;
             }
@@ -364,7 +363,8 @@ public class NurseStationOrderAuditAppService {
             if (encounterId != null) {
                 encounterMeds = medByEncounter.get(encounterId);
             }
-            List<Long> requestIds = inpatientNurseStationTcmOrchestrator.expandMedRequestIdsByPrescriptionNo(
+            // 统一扩行：中药整方优先，否则西药同 group_id
+            List<Long> requestIds = inpatientNurseStationTcmOrchestrator.expandMedRequestIdsForNurseWrite(
                 encounterId, item.getRequestId(), encounterMeds);
             for (Long requestId : requestIds) {
                 String dedupeKey = item.getOrderType() + ":" + requestId;
@@ -596,7 +596,7 @@ public class NurseStationOrderAuditAppService {
     }
 
     /**
-     * 药品须为医生开立且非退药/派生行（对齐 BR-IP-AUD-002，防伪造锚点退回）。
+     * 药品须为医生开立且非退药负向行（对齐 BR-IP-AUD-002，防伪造锚点退回；认 refund_medicine_id，不认 based_on）。
      *
      * @param request   药品申请
      * @param errorCode 业务语义码
@@ -607,14 +607,6 @@ public class NurseStationOrderAuditAppService {
         }
         if (request.getRefundMedicineId() != null) {
             throw new BusinessException(errorCode, "退药关联行不允许校对退回");
-        }
-        if (request.getBasedOnId() != null && StringUtils.isNotEmpty(request.getBasedOnTable())) {
-            String table = request.getBasedOnTable().trim();
-            // 退药/退诊疗派生行须从列表排除，写路径再次拦截（BR-IP-AUD-002）
-            if (TableNameConstants.MED_MEDICATION_REQUEST.equalsIgnoreCase(table)
-                || TableNameConstants.WKF_SERVICE_REQUEST.equalsIgnoreCase(table)) {
-                throw new BusinessException(errorCode, "退药/派生关联行不允许校对退回");
-            }
         }
     }
 
@@ -747,8 +739,10 @@ public class NurseStationOrderAuditAppService {
         String summary = null;
         ServiceRequestListModel detail = serviceDetailById.get(serviceRequestId);
         if (detail != null) {
-            // AS-SDD：dischargedAt=occurrenceStartTime（空则 now）；列表行用 reqAuthoredTime 对齐开立时刻。
-            if (detail.getReqAuthoredTime() != null) {
+            // AS-SDD：dischargedAt 优先诊嘱开立时刻 reqOpenedTime（空回落 reqAuthoredTime，再回落 checkTime/now）。
+            if (detail.getReqOpenedTime() != null) {
+                dischargedAt = detail.getReqOpenedTime();
+            } else if (detail.getReqAuthoredTime() != null) {
                 dischargedAt = detail.getReqAuthoredTime();
             }
             summary = detail.getRemark();

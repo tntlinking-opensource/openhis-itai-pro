@@ -92,4 +92,17 @@ public interface EncounterRepository extends JpaRepository<Encounter, Long>, Jpa
         Long ambEncounterId,
         String classEnum,
         Collection<String> excludedStatusEnums);
+
+    /**
+     * 是否存在指定类别、状态不在排除集合中的未软删就诊（体检防重复在检）。
+     *
+     * @param patientId 患者主键
+     * @param classEnum 就诊类别（体检为 {@code PE}）
+     * @param excludedStatusEnums 排除的终态集合
+     * @return 存在返回 true
+     */
+    boolean existsByPatientIdAndClassEnumAndStatusEnumNotInAndIsDeletedFalse(
+        Long patientId,
+        String classEnum,
+        Collection<String> excludedStatusEnums);
 }

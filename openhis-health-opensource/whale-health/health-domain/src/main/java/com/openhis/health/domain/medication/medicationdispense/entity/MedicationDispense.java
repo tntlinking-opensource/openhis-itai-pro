@@ -170,6 +170,14 @@ public class MedicationDispense extends BaseAuditedEntity {
     @Column(name = "dispense_frequency_code")
     private String dispenseFrequencyCode;
 
+    /**
+     * 交账批次标识；非空=已纳入某药房交账（含待审）。
+     *
+     * <p>见 DM-FIN-003 / DM-MED-002 v1.3.12。</p>
+     */
+    @Column(name = "cashier_settlement_id")
+    private Long cashierSettlementId;
+
     /** 乐观锁版本号。 */
     @jakarta.persistence.Version
     @Column(name = "version")
@@ -508,5 +516,42 @@ public class MedicationDispense extends BaseAuditedEntity {
         if (Boolean.TRUE.equals(this.getIsDeleted())) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_NOT_FOUND, "药品发放记录不存在");
         }
+    }
+
+    /**
+     * 挂载到指定交账头；已挂载则拒绝（药房日结并发防护）。
+     *
+     * @param settlementId 交账头主键
+     * @throws BusinessException 参数空或已挂载
+     */
+    public void attachCashierSettlement(Long settlementId) {
+        if (settlementId == null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "交账头标识不能为空");
+        }
+        // 已挂载表示另一交账批次已纳入，禁止重复挂载
+        if (this.cashierSettlementId != null) {
+            throw new BusinessException(ErrorCodeConstants.CASHIER_SETTLEMENT_CONCURRENT_CONFLICT, "发药记录已被交账，请刷新后重试");
+        }
+        this.cashierSettlementId = settlementId;
+    }
+
+    /**
+     * 清空交账挂载（撤回/驳回）。
+     *
+     * @param expectedSettlementId 期望的交账头
+     * @throws BusinessException 期望 id 空或不匹配
+     */
+    public void clearCashierSettlement(Long expectedSettlementId) {
+        // 期望批次为空无法安全清挂载
+        if (expectedSettlementId == null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "交账头标识不能为空");
+        }
+        // 未挂载或已挂其它批次，拒绝静默清空
+        if (this.cashierSettlementId == null || !this.cashierSettlementId.equals(expectedSettlementId)) {
+            throw new BusinessException(
+                ErrorCodeConstants.CASHIER_SETTLEMENT_CONCURRENT_CONFLICT,
+                "发药记录交账挂载已变更，请刷新后重试");
+        }
+        this.cashierSettlementId = null;
     }
 }

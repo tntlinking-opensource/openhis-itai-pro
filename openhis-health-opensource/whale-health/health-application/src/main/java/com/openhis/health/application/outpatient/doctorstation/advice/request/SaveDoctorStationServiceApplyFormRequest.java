@@ -47,15 +47,15 @@ public class SaveDoctorStationServiceApplyFormRequest {
     @Schema(description = "整单执行科室", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long orgId;
 
-    /** 整单绑定诊断定义主键。 */
-    @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "整单绑定诊断定义主键")
-    private Long conditionDefinitionId;
+    /**
+     * 整单执行次数（写入该单全部 {@code ServiceRequest.execution_count}）；空或非法时编排层回落为 1。
+     */
+    @Schema(description = "整单执行次数（各明细行共用）")
+    private Integer executionCount;
 
-    /** 整单绑定就诊诊断主键。 */
-    @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "整单绑定就诊诊断主键")
-    private Long encounterDiagnosisId;
+    /** 整单绑定就诊诊断主键有序串（写入该单全部 {@code ServiceRequest.encounter_diagnosis_ids}）。 */
+    @Schema(description = "整单绑定就诊诊断主键有序串")
+    private String encounterDiagnosisIds;
 
     /** 编辑时待替换的旧 AR 申请单号。 */
     @Schema(description = "编辑时待替换的旧 AR 申请单号")

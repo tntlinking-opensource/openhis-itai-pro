@@ -5,6 +5,7 @@
 package com.openhis.health.domain.medication.medicationrequest.prescriptionsplit;
 
 import com.openhis.health.domain.medication.medicationrequest.command.PrescriptionSplitLineContext;
+import com.openhis.health.domain.share.constants.DailySettlementSharedConstants;
 import com.openhis.health.domain.share.constants.PrescriptionSplitConstants;
 import com.openhis.whale.core.application.exception.BusinessException;
 import org.junit.jupiter.api.Test;
@@ -110,6 +111,98 @@ class OutpatientPrescriptionSplitPlannerTest {
         assertEquals(List.of(4L, 7L), plans.get(1).getRequestIds());
     }
 
+    @Test
+    void westernAndChinesePatentMustSplitIntoDifferentPrescriptionUnits() {
+        List<PrescriptionSplitLineContext> lines = List.of(
+            lineWithCategory(1L, 9001L, null, "PO", "BID", null, null,
+                DailySettlementSharedConstants.MEDICATION_CATEGORY_WESTERN_CODE),
+            lineWithCategory(2L, 9002L, null, "PO", "BID", null, null,
+                DailySettlementSharedConstants.MEDICATION_CATEGORY_PATENT_CHINESE_CODE)
+        );
+        List<OutpatientPrescriptionSplitPlanner.PrescriptionUnitPlan> plans =
+            OutpatientPrescriptionSplitPlanner.plan(lines, disabledAmountLimit());
+        assertEquals(2, plans.size());
+        assertEquals(PrescriptionSplitConstants.RX_TYPE_OUTPATIENT_WESTERN, plans.get(0).getRxTypeCode());
+        assertEquals(PrescriptionSplitConstants.RX_TYPE_OUTPATIENT_PATENT, plans.get(1).getRxTypeCode());
+    }
+
+    @Test
+    void chinesePatentOnlyGetsPatentRxType() {
+        List<PrescriptionSplitLineContext> lines = List.of(
+            lineWithCategory(1L, 9101L, null, "PO", "BID", null, null,
+                DailySettlementSharedConstants.MEDICATION_CATEGORY_PATENT_CHINESE_CODE)
+        );
+        List<OutpatientPrescriptionSplitPlanner.PrescriptionUnitPlan> plans =
+            OutpatientPrescriptionSplitPlanner.plan(lines, disabledAmountLimit());
+        assertEquals(1, plans.size());
+        assertEquals(PrescriptionSplitConstants.RX_TYPE_OUTPATIENT_PATENT, plans.get(0).getRxTypeCode());
+    }
+
+    @Test
+    void ordinaryWesternDrugGetsOutpatientWesternRxType() {
+        // 药品性质=普通 + 目录西药 → 门诊西药；即使历史上拆零码「2」也曾误当性质码
+        List<PrescriptionSplitLineContext> lines = List.of(
+            lineWithMedicineProperty(
+                1L,
+                9201L,
+                PrescriptionSplitConstants.MEDICINE_PROPERTY_NORMAL,
+                DailySettlementSharedConstants.MEDICATION_CATEGORY_WESTERN_CODE)
+        );
+        List<OutpatientPrescriptionSplitPlanner.PrescriptionUnitPlan> plans =
+            OutpatientPrescriptionSplitPlanner.plan(lines, disabledAmountLimit());
+        assertEquals(1, plans.size());
+        assertEquals(PrescriptionSplitConstants.RX_TYPE_OUTPATIENT_WESTERN, plans.get(0).getRxTypeCode());
+    }
+
+    @Test
+    void narcoticMedicinePropertyGetsNarcoticPsychOneRxType() {
+        List<PrescriptionSplitLineContext> lines = List.of(
+            lineWithMedicineProperty(
+                1L,
+                9301L,
+                PrescriptionSplitConstants.MEDICINE_PROPERTY_NARCOTIC,
+                DailySettlementSharedConstants.MEDICATION_CATEGORY_WESTERN_CODE)
+        );
+        List<OutpatientPrescriptionSplitPlanner.PrescriptionUnitPlan> plans =
+            OutpatientPrescriptionSplitPlanner.plan(lines, disabledAmountLimit());
+        assertEquals(1, plans.size());
+        assertEquals(PrescriptionSplitConstants.RX_TYPE_NARCOTIC_PSYCH_ONE, plans.get(0).getRxTypeCode());
+    }
+
+    @Test
+    void overlappingDiagnosisSetsMayStayOnSamePrescription() {
+        // A 绑 B+C，D 仅绑 B：有交集 → 同方
+        PrescriptionSplitLineContext drugA = line(1L, 9001L, null, "PO", "BID", null, null);
+        drugA.setDiagnosisSetKey("10,20");
+        PrescriptionSplitLineContext drugD = line(2L, 9002L, null, "PO", "QD", null, null);
+        drugD.setDiagnosisSetKey("10");
+        List<OutpatientPrescriptionSplitPlanner.PrescriptionUnitPlan> plans =
+            OutpatientPrescriptionSplitPlanner.plan(List.of(drugA, drugD), disabledAmountLimit());
+        assertEquals(1, plans.size());
+        assertEquals(2, plans.get(0).getRequestIds().size());
+    }
+
+    @Test
+    void disjointDiagnosisSetsMustSplitIntoDifferentPrescriptionUnits() {
+        PrescriptionSplitLineContext drugA = line(1L, 9001L, null, "PO", "BID", null, null);
+        drugA.setDiagnosisSetKey("10,20");
+        PrescriptionSplitLineContext drugD = line(2L, 9002L, null, "PO", "QD", null, null);
+        drugD.setDiagnosisSetKey("30");
+        List<OutpatientPrescriptionSplitPlanner.PrescriptionUnitPlan> plans =
+            OutpatientPrescriptionSplitPlanner.plan(List.of(drugA, drugD), disabledAmountLimit());
+        assertEquals(2, plans.size());
+    }
+
+    @Test
+    void emptyDiagnosisCannotMergeWithBoundDiagnosis() {
+        PrescriptionSplitLineContext unbound = line(1L, 9001L, null, "PO", "BID", null, null);
+        PrescriptionSplitLineContext bound = line(2L, 9002L, null, "PO", "QD", null, null);
+        bound.setDiagnosisSetKey("10");
+        List<OutpatientPrescriptionSplitPlanner.PrescriptionUnitPlan> plans =
+            OutpatientPrescriptionSplitPlanner.plan(List.of(unbound, bound), disabledAmountLimit());
+        assertEquals(2, plans.size());
+    }
+
     private static BigDecimal disabledAmountLimit() {
         return PrescriptionSplitConstants.OUTPATIENT_AMOUNT_LIMIT_DISABLED_SENTINEL_YUAN;
     }
@@ -123,6 +216,27 @@ class OutpatientPrescriptionSplitPlannerTest {
         BigDecimal dose,
         String doseUnitCode
     ) {
+        return lineWithCategory(
+            requestId,
+            medicationId,
+            groupId,
+            methodCode,
+            rateCode,
+            dose,
+            doseUnitCode,
+            DailySettlementSharedConstants.MEDICATION_CATEGORY_WESTERN_CODE);
+    }
+
+    private static PrescriptionSplitLineContext lineWithCategory(
+        Long requestId,
+        Long medicationId,
+        Long groupId,
+        String methodCode,
+        String rateCode,
+        BigDecimal dose,
+        String doseUnitCode,
+        String medicationCategoryCode
+    ) {
         PrescriptionSplitLineContext ctx = new PrescriptionSplitLineContext();
         ctx.setRequestId(requestId);
         ctx.setMedicationId(medicationId);
@@ -132,10 +246,30 @@ class OutpatientPrescriptionSplitPlannerTest {
         ctx.setDose(dose);
         ctx.setDoseUnitCode(doseUnitCode);
         ctx.setMedType("11");
-        ctx.setPartAttributeEnum(PrescriptionSplitConstants.PART_ATTRIBUTE_NORMAL);
+        ctx.setPharmacologyCategoryCode(PrescriptionSplitConstants.MEDICINE_PROPERTY_NORMAL);
+        ctx.setMedicationCategoryCode(medicationCategoryCode);
         ctx.setTcmFlag(false);
         ctx.setChargeTotalPrice(BigDecimal.ONE);
         ctx.setPharmacyLocationId(1L);
+        return ctx;
+    }
+
+    private static PrescriptionSplitLineContext lineWithMedicineProperty(
+        Long requestId,
+        Long medicationId,
+        String pharmacologyCategoryCode,
+        String medicationCategoryCode
+    ) {
+        PrescriptionSplitLineContext ctx = lineWithCategory(
+            requestId,
+            medicationId,
+            null,
+            "PO",
+            "BID",
+            null,
+            null,
+            medicationCategoryCode);
+        ctx.setPharmacologyCategoryCode(pharmacologyCategoryCode);
         return ctx;
     }
 }

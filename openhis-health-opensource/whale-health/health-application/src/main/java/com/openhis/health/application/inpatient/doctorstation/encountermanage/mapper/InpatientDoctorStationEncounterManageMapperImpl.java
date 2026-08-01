@@ -35,7 +35,7 @@ import java.util.List;
  * <ul>
  *   <li>医生站队列读侧内置 IMP + IN_PROGRESS/ON_HOLD + 当前科室收窄（{@code doctorStationQueue=true}）。</li>
  *   <li>展示字段优先读模型列，缺失时回落 {@link InpatientInfoQueueDisplayAssembler} 覆盖层（BR-IP-DOR-008 状态文案）。</li>
- *   <li>入科时间读模型未投影，与护士站列表口径一致返回 null。</li>
+ *   <li>入科时间读模型未投影，与护士站列表口径一致返回 null；出院时间透传读模型 {@code endTime}。</li>
  * </ul></p>
  */
 @Component
@@ -145,6 +145,8 @@ public class InpatientDoctorStationEncounterManageMapperImpl implements Inpatien
         dto.setOrganizationName(firstNonBlank(row.getOrganizationName(), overlayOrgName));
         dto.setPriorityEnum(priorityEnum);
         dto.setStartTime(row.getStartTime());
+        // 出院时间：读模型已投影 Encounter.endTime；在院未出院为 null。
+        dto.setEndTime(row.getEndTime());
         // 入科时间：读模型当前未投影独立列，与护士站列表口径一致返回 null。
         dto.setAdmissionTime(null);
         dto.setTotalAmount(row.getTotalAmount());

@@ -4,8 +4,8 @@
  */
 package com.openhis.chs.bridge.inpatient.invoker;
 
-
 import com.openhis.chs.domain.inpatient.command.IpSettleContext;
+import com.openhis.chs.domain.outpatient.entity.YbEncounterPlatformMap;
 import com.openhis.chs.domain.outpatient.service.YbEncounterPlatformMapDomainService;
 import com.openhis.chs.domain.outpatient.service.YbEncounterPlatformMapQueryService;
 import com.openhis.chs.gateway.client.InsuranceGatewayClient;
@@ -16,6 +16,7 @@ import com.openhis.chs.gateway.scheme.inpatient.model.Ip2401Input;
 import com.openhis.chs.gateway.scheme.inpatient.model.Ip2401Output;
 import com.openhis.chs.gateway.scheme.inpatient.parser.Ip2401OutputParser;
 import com.openhis.chs.gateway.scheme.inpatient.assembler.IpInpatientSettleInputAssembler;
+import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -37,6 +38,8 @@ public class Ip2401Invoker {
     /**
      * 查询本地就诊平台映射，不存在时调用 2401 入院登记并落库。
      *
+     * <p>map 命中时：若上下文缺少 {@code psnNo}，用 map 行回填，供后续 3101 {@code patn_id}。</p>
+     *
      * @param contractBusNo 医保契约 bus_no
      * @param context       住院结算上下文（就诊、费用性质、人员编号等）
      * @param invokeContext 操作员与签到上下文
@@ -49,12 +52,16 @@ public class Ip2401Invoker {
             InvokeContext invokeContext,
             Long tenantId) {
         String medType = IpInpatientSettleInputAssembler.resolveMedTypeForContext(context);
-        Optional<String> existingMdtrtId = encounterPlatformMapQueryService
+        Optional<YbEncounterPlatformMap> mappedOpt = encounterPlatformMapQueryService
             .findOptionalByEncounterContractMedType(
-                context.getEncounterId(), context.getContractId(), medType, tenantId)
-            .map(row -> row.getMdtrtId());
-        if (existingMdtrtId.isPresent()) {
-            return existingMdtrtId.get().trim();
+                context.getEncounterId(), context.getContractId(), medType, tenantId);
+        if (mappedOpt.isPresent()) {
+            YbEncounterPlatformMap mapped = mappedOpt.get();
+            // Pre：门禁常不传 psnNo，map 命中须回填，否则 3101 patn_id 为空
+            if (StringUtils.isEmpty(context.getPsnNo()) && StringUtils.isNotEmpty(mapped.getPsnNo())) {
+                context.setPsnNo(mapped.getPsnNo().trim());
+            }
+            return mapped.getMdtrtId().trim();
         }
         Ip2401Input input2401 = IpInpatientSettleInputAssembler.assemble2401(context);
         ResultBody body2401 = gatewayClient.invoke(

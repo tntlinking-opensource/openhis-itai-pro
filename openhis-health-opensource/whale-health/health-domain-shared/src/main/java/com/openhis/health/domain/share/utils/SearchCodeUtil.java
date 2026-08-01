@@ -65,6 +65,9 @@ public final class SearchCodeUtil {
      * <p>凡「姓名、编码、业务号、拼音、五笔」等由用户键盘输入驱动的 {@code LIKE}，列侧统一 {@code cb.lower(root.get(...))}，
      * 模式侧统一使用本方法返回值；调用方须先对原始关键字做 {@code trim}。两侧通配符使用 {@link GeneralSharedConstants#LIKE_PERCENT}。</p>
      *
+     * <p>排序口径（硬门槛）：关键字非空时须「先精确后模糊」——见 {@link KeywordExactFirstOrderSupport}
+     * 与通用规范 B.2.1；禁止仅 LIKE 而无精确优先 ORDER BY（分页场景尤甚）。</p>
+     *
      * @param trimmedKeyword 已去除首尾空白的关键字（允许为空串，得到 {@code %%}）
      * @return 形如 {@code %关键字小写%} 的匹配串
      */
@@ -73,5 +76,44 @@ public final class SearchCodeUtil {
         return GeneralSharedConstants.LIKE_PERCENT
             + trimmedKeyword.toLowerCase(Locale.ROOT)
             + GeneralSharedConstants.LIKE_PERCENT;
+    }
+
+    /**
+     * 关键字忽略大小写「全文精确」比较值：与 JPA {@code cb.lower(列)} / {@code EQUAL} 配对。
+     *
+     * <p>用于 {@link KeywordExactFirstOrderSupport} 判定精确命中；调用方须先 {@code trim}。
+     * <strong>禁止</strong>再手写 {@code toLowerCase} 散落业务路径。</p>
+     *
+     * @param trimmedKeyword 已去除首尾空白的关键字
+     * @return {@code Locale.ROOT} 小写全文（无通配符）
+     */
+    public static String toCaseInsensitiveExactValue(String trimmedKeyword) {
+        Objects.requireNonNull(trimmedKeyword, "trimmedKeyword");
+        return trimmedKeyword.toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * 是否为纯拉丁字母关键字（典型拼音/五笔首码输入）。
+     *
+     * <p>目录选品可据此只扫 {@code py_str}/{@code wb_str} 等检索码列，避免对中文名称列做宽 OR LIKE。</p>
+     *
+     * @param trimmedKeyword 已 trim 的关键字
+     * @return 非空且每一位均为 a-z/A-Z 时为 true
+     */
+    public static boolean isAsciiLetterKeyword(String trimmedKeyword) {
+        if (trimmedKeyword == null || trimmedKeyword.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < trimmedKeyword.length(); i++) {
+            char ch = trimmedKeyword.charAt(i);
+            if (ch >= 'a' && ch <= 'z') {
+                continue;
+            }
+            if (ch >= 'A' && ch <= 'Z') {
+                continue;
+            }
+            return false;
+        }
+        return true;
     }
 }

@@ -19,6 +19,7 @@ import com.openhis.health.domain.administration.chargeitemdefinition.service.Cha
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel;
+import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.SupplierType;
 import com.openhis.health.domain.share.enums.SupplyCategory;
 import com.openhis.health.domain.share.enums.SupplyRequestType;
@@ -36,8 +37,11 @@ import com.openhis.health.domain.workflow.supplyrequest.command.WithdrawApproval
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogEditorHintsAssembler;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.whale.core.application.util.StringUtils;
+import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
@@ -48,6 +52,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 药房退药库装配实现：{@link InventoryPharmacyReturnToWarehouseMapper}。仅做字段搬运与枚举 code 归一；业务流程判断在应用编排层。
@@ -153,6 +158,139 @@ public class InventoryPharmacyReturnToWarehouseMapperImpl implements InventoryPh
     }
 
     /**
+     * 按 busNo 顺序聚合药房退库供应请求明细为列表行 DTO。
+     *
+     * @param busNoPageOrder 分页单号顺序
+     * @param detailRows     同页全部明细
+     * @return 聚合列表行
+     */
+    @Override
+    public List<ReturnToWarehouseListRowDto> toReturnToWarehouseListAggregated(
+        List<String> busNoPageOrder,
+        List<SupplyRequestModel> detailRows) {
+        List<ReturnToWarehouseListRowDto> out = new ArrayList<>();
+        if (busNoPageOrder == null || busNoPageOrder.isEmpty()) {
+            return out;
+        }
+        if (detailRows == null || detailRows.isEmpty()) {
+            return out;
+        }
+        LinkedHashMap<String, List<SupplyRequestModel>> byBusNo = new LinkedHashMap<>();
+        for (SupplyRequestModel row : detailRows) {
+            if (row == null || StringUtils.isEmpty(row.getBusNo())) {
+                continue;
+            }
+            String bn = row.getBusNo().trim();
+            byBusNo.computeIfAbsent(bn, k -> new ArrayList<>()).add(row);
+        }
+        for (String busNoRaw : busNoPageOrder) {
+            if (StringUtils.isEmpty(busNoRaw)) {
+                continue;
+            }
+            String busNo = busNoRaw.trim();
+            List<SupplyRequestModel> lines = byBusNo.get(busNo);
+            if (lines == null || lines.isEmpty()) {
+                continue;
+            }
+            SupplyRequestModel head = lines.get(0);
+            for (SupplyRequestModel line : lines) {
+                if (line == null) {
+                    continue;
+                }
+                if (!Objects.equals(head.getStatusEnum(), line.getStatusEnum())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.PHA_RTW_102, "同号药房退库单状态头字段不一致: " + busNo);
+                }
+                if (!Objects.equals(head.getOriginalBusNo(), line.getOriginalBusNo())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.PHA_RTW_102, "同号药房退库单来源入库单不一致: " + busNo);
+                }
+                if (!Objects.equals(head.getSourceLocationId(), line.getSourceLocationId())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.PHA_RTW_102, "同号药房退库单源药房头字段不一致: " + busNo);
+                }
+                if (!Objects.equals(head.getPurposeLocationId(), line.getPurposeLocationId())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.PHA_RTW_102, "同号药房退库单目的药库头字段不一致: " + busNo);
+                }
+            }
+            BigDecimal totalAmount = BigDecimal.ZERO;
+            LocalDateTime maxApply = null;
+            LocalDateTime maxOccurrence = null;
+            for (SupplyRequestModel line : lines) {
+                if (line == null) {
+                    continue;
+                }
+                if (line.getTotalPrice() != null) {
+                    totalAmount = totalAmount.add(line.getTotalPrice());
+                }
+                if (line.getApplyTime() != null) {
+                    if (maxApply == null || line.getApplyTime().isAfter(maxApply)) {
+                        maxApply = line.getApplyTime();
+                    }
+                }
+                if (line.getOccurrenceTime() != null) {
+                    if (maxOccurrence == null || line.getOccurrenceTime().isAfter(maxOccurrence)) {
+                        maxOccurrence = line.getOccurrenceTime();
+                    }
+                }
+            }
+            LocalDateTime approvalTime = null;
+            for (SupplyRequestModel line : lines) {
+                if (line != null && line.getApprovalTime() != null) {
+                    approvalTime = line.getApprovalTime();
+                    break;
+                }
+            }
+            ReturnToWarehouseListRowDto dto = new ReturnToWarehouseListRowDto();
+            dto.setBusNo(busNo);
+            dto.setOriginalBusNo(head.getOriginalBusNo());
+            dto.setTypeEnum(this.toApiSortSupplyType(head.getTypeEnum()));
+            dto.setStatusEnum(this.toApiSortSupplyStatus(head.getStatusEnum()));
+            dto.setCategoryEnum(this.toApiSortSupplyCategory(head.getCategoryEnum()));
+            dto.setSourceLocationId(head.getSourceLocationId());
+            dto.setPurposeLocationId(head.getPurposeLocationId());
+            dto.setSupplierId(head.getSupplierId());
+            dto.setApplicantId(head.getApplicantId());
+            dto.setApproverId(head.getApproverId());
+            dto.setTotalPrice(totalAmount);
+            dto.setTotalAmount(totalAmount);
+            if (maxApply != null) {
+                dto.setApplyTime(maxApply);
+            } else {
+                dto.setApplyTime(maxOccurrence);
+            }
+            dto.setApprovalTime(approvalTime);
+            out.add(dto);
+        }
+        return out;
+    }
+
+    /**
+     * 用聚合列表行构建药房退库单分页响应。
+     *
+     * @param mergedTotal 去重后总单数
+     * @param pageNo      页码
+     * @param pageSize    页大小
+     * @param records     列表行
+     * @return 分页响应
+     */
+    @Override
+    public PageReturnToWarehousesResponse toPageReturnToWarehousesAggregatedResponse(
+        long mergedTotal,
+        int pageNo,
+        int pageSize,
+        List<ReturnToWarehouseListRowDto> records) {
+        List<ReturnToWarehouseListRowDto> content;
+        if (records == null) {
+            content = new ArrayList<>();
+        } else {
+            content = records;
+        }
+        return PagedResultBuilder.build(new PageReturnToWarehousesResponse(), content, mergedTotal, pageNo, pageSize);
+    }
+
+    /**
      * 库房单据读模型 → 药房退药库列表行 DTO（枚举转 API sortOrder）。
      *
      * @param row 库房单据读模型
@@ -218,7 +356,9 @@ public class InventoryPharmacyReturnToWarehouseMapperImpl implements InventoryPh
     }
 
     /**
-     * 供应请求明细 → 退药库详情行 DTO（按产品键回填品名）。
+     * 供应请求明细 → 退药库详情行 DTO（品名 + 单位展示名 + 计量带目录）。
+     *
+     * <p>对齐药库退供应商详情富化口径：前端数量列须展示字典文案（如「支」），禁止裸 unitCode（如「9」）。</p>
      *
      * @param line         供应请求明细
      * @param productByKey 产品复合键 → 展示 DTO
@@ -234,15 +374,22 @@ public class InventoryPharmacyReturnToWarehouseMapperImpl implements InventoryPh
         dto.setItemQuantity(line.getItemQuantity());
         dto.setUnitCode(line.getUnitCode());
         dto.setLotNumber(line.getLotNumber());
+        dto.setStartTime(line.getStartTime());
+        dto.setEndTime(line.getEndTime());
         dto.setTraceNo(line.getTraceNo());
         dto.setOccurrenceTime(line.getOccurrenceTime());
         dto.setReason(line.getReason());
         dto.setRemake(line.getRemake());
+        // 按产品复合键回填品名、单位展示名与计量带，供详情数量列回显
         if (productByKey != null && line.getItemTable() != null && line.getItemId() != null) {
             String key = ProductDefinitionKeyUtil.buildCompositeKey(line.getItemTable(), line.getItemId());
             ProductDefinitionDisplayDto pr = productByKey.get(key);
             if (pr != null) {
                 dto.setProductName(pr.getProductName());
+                dto.setUnitCodeDictText(
+                    ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(
+                        null, line.getUnitCode(), pr));
+                dto.setProductCatalog(ProductDefinitionCatalogEditorHintsAssembler.fromDisplayDto(pr));
             }
         }
         return dto;
@@ -605,7 +752,15 @@ public class InventoryPharmacyReturnToWarehouseMapperImpl implements InventoryPh
                 item.setOccurrenceTime(line.getOccurrenceTime());
                 item.setApplicantId(applicantId);
                 item.setApplyTime(shellApplyTime);
-                item.setReason(null);
+                // 壳单回显：退货原因/审批人与下游退库同意人对齐（禁止再置空 reason）
+                item.setReason(line.getReason());
+                item.setApproverId(operatorId);
+                LocalDateTime shellApprovalTime = line.getApprovalTime();
+                if (shellApprovalTime == null) {
+                    // 退库行尚未落审批时刻时，回落壳单制单时刻，避免 AGREE 行审批时间为空
+                    shellApprovalTime = shellApplyTime;
+                }
+                item.setApprovalTime(shellApprovalTime);
                 items.add(item);
             }
         }
@@ -663,9 +818,9 @@ public class InventoryPharmacyReturnToWarehouseMapperImpl implements InventoryPh
         String busNo = head.getBusNo();
         res.setOriginalBusNo(busNo);
         res.setStockInBusNo(busNo);
-        Long purposeLocationId = head.getPurposeLocationId();
-        res.setPurposeLocationId(purposeLocationId);
-        res.setSourceLocationId(purposeLocationId);
+        // —— 退库预填库位：源=入库目的药房；目的=入库来源药库（禁止把药房 id 写入「退入药库」）。——
+        res.setSourceLocationId(head.getPurposeLocationId());
+        res.setPurposeLocationId(head.getSourceLocationId());
         res.setSupplierId(head.getSupplierId());
         res.setCategoryEnum(head.getCategoryEnum());
         res.setPractitionerId(head.getPractitionerId());
@@ -713,13 +868,14 @@ public class InventoryPharmacyReturnToWarehouseMapperImpl implements InventoryPh
             String productKey = ProductDefinitionKeyUtil.buildCompositeKey(line.getItemTable(), line.getItemId());
             ProductDefinitionDisplayDto product = safeProducts.get(productKey);
             if (product != null) {
-                // —— 产品展示富化：行价仍取源入库落库价。——
+                // —— 产品展示富化：行价仍取源入库落库价；单位展示名 + 计量带供前端数量列回显。——
                 dto.setProductName(product.getProductName());
                 dto.setSpecification(product.getTotalVolume());
                 dto.setManufacturer(product.getManufacturer());
                 dto.setUnitCodeDictText(
-                    com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler
-                        .resolveUnitDisplayName(null, line.getUnitCode(), product));
+                    ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(
+                        null, line.getUnitCode(), product));
+                dto.setProductCatalog(ProductDefinitionCatalogEditorHintsAssembler.fromDisplayDto(product));
             }
             lines.add(dto);
         }

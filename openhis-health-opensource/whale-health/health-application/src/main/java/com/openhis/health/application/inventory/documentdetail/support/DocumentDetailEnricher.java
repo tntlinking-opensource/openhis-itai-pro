@@ -6,6 +6,7 @@ package com.openhis.health.application.inventory.documentdetail.support;
 
 import com.openhis.health.application.inventory.documentdetail.dto.DocumentDetailRowDto;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
+import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
@@ -40,6 +41,8 @@ public class DocumentDetailEnricher {
 
     /** 库位 init 下拉与行 enrich。 */
     private final LocationQueryService locationQueryService;
+    /** 领用科室 Organization 展示名 enrich。 */
+    private final OrganizationQueryService organizationQueryService;
     /** 供应商展示名 enrich。 */
     private final SupplierQueryService supplierQueryService;
     /** 制单/审批/经手人展示名 enrich。 */
@@ -62,6 +65,7 @@ public class DocumentDetailEnricher {
         Set<Long> locationIds = new HashSet<>();
         Set<Long> supplierIds = new HashSet<>();
         Set<Long> practitionerIds = new HashSet<>();
+        Set<Long> consumingOrganizationIds = new HashSet<>();
         List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
         for (WarehouseDocumentDetailQueryModel model : models) {
             if (model == null) {
@@ -72,6 +76,10 @@ public class DocumentDetailEnricher {
             }
             if (model.getPurposeLocationId() != null) {
                 locationIds.add(model.getPurposeLocationId());
+            }
+            // 落库领用科室优先收集；历史空列后续用药房上级科室回落
+            if (model.getConsumingOrganizationId() != null) {
+                consumingOrganizationIds.add(model.getConsumingOrganizationId());
             }
             if (model.getSupplierId() != null) {
                 supplierIds.add(model.getSupplierId());
@@ -93,10 +101,16 @@ public class DocumentDetailEnricher {
             }
         }
         Map<Long, String> locationNameById = new HashMap<>();
+        Map<Long, Long> organizationIdByLocationId = new HashMap<>();
         for (Long locationId : locationIds) {
             this.locationQueryService.findOptionalById(locationId).ifPresent(loc -> {
                 if (loc.getName() != null) {
                     locationNameById.put(locationId, loc.getName().trim());
+                }
+                // 历史领用单列空时，用科室药房上级科室回落领用科室
+                if (loc.getOrganizationId() != null) {
+                    organizationIdByLocationId.put(locationId, loc.getOrganizationId());
+                    consumingOrganizationIds.add(loc.getOrganizationId());
                 }
             });
         }
@@ -115,11 +129,14 @@ public class DocumentDetailEnricher {
                 practitionerNameById.put(practitioner.getId(), practitioner.getName().trim());
             }
         }
+        Map<Long, String> organizationNameById = this.organizationQueryService.mapNamesByIds(consumingOrganizationIds);
         Map<String, ProductDefinitionDisplayDto> productByKey = new HashMap<>();
         if (!lookups.isEmpty()) {
             productByKey = this.productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
         }
         context.setLocationNameById(locationNameById);
+        context.setOrganizationIdByLocationId(organizationIdByLocationId);
+        context.setOrganizationNameById(organizationNameById);
         context.setSupplierNameById(supplierNameById);
         context.setPractitionerNameById(practitionerNameById);
         context.setProductByKey(productByKey);
@@ -142,6 +159,8 @@ public class DocumentDetailEnricher {
             return rows;
         }
         Map<Long, String> locationNameById = context.getLocationNameById();
+        Map<Long, Long> organizationIdByLocationId = context.getOrganizationIdByLocationId();
+        Map<Long, String> organizationNameById = context.getOrganizationNameById();
         Map<Long, String> supplierNameById = context.getSupplierNameById();
         Map<Long, String> practitionerNameById = context.getPractitionerNameById();
         Map<String, ProductDefinitionDisplayDto> productByKey = context.getProductByKey();
@@ -154,8 +173,9 @@ public class DocumentDetailEnricher {
             row.setOriginalBusNo(model.getOriginalBusNo());
             row.setTypeEnum(model.getTypeEnum());
             row.setTypeEnumText(this.resolveTypeEnumText(model.getTypeEnum()));
-            row.setStatusEnum(SupplyStatus.AGREE.getCode());
-            row.setStatusEnumText(SupplyStatus.AGREE.getDisplay());
+            // 回填真实状态（期初可含审核中，禁止写死 AGREE）
+            row.setStatusEnum(model.getStatusEnum());
+            row.setStatusEnumText(this.resolveStatusEnumText(model.getStatusEnum()));
             row.setSourceLocationId(model.getSourceLocationId());
             if (model.getSourceLocationId() != null && locationNameById != null) {
                 row.setSourceLocationName(locationNameById.get(model.getSourceLocationId()));
@@ -163,6 +183,18 @@ public class DocumentDetailEnricher {
             row.setPurposeLocationId(model.getPurposeLocationId());
             if (model.getPurposeLocationId() != null && locationNameById != null) {
                 row.setPurposeLocationName(locationNameById.get(model.getPurposeLocationId()));
+            }
+            // 领用/退领：优先落库 consumingOrganizationId；历史空列回落药房上级科室
+            Long consumingOrganizationId = model.getConsumingOrganizationId();
+            if (consumingOrganizationId == null
+                && model.getPurposeLocationId() != null
+                && organizationIdByLocationId != null
+                && this.isDeptIssueFamily(model.getTypeEnum())) {
+                consumingOrganizationId = organizationIdByLocationId.get(model.getPurposeLocationId());
+            }
+            row.setConsumingOrganizationId(consumingOrganizationId);
+            if (consumingOrganizationId != null && organizationNameById != null) {
+                row.setConsumingOrganizationName(organizationNameById.get(consumingOrganizationId));
             }
             row.setSupplierId(model.getSupplierId());
             if (model.getSupplierId() != null && supplierNameById != null) {
@@ -260,6 +292,42 @@ public class DocumentDetailEnricher {
     }
 
     /**
+     * 解析状态展示名（期初可含审核中，须按落库码回显）。
+     *
+     * @param statusEnum 持久化码
+     * @return 展示名或原码
+     */
+    private String resolveStatusEnumText(String statusEnum) {
+        if (StringUtils.isEmpty(statusEnum)) {
+            return null;
+        }
+        String trimmed = statusEnum.trim();
+        for (SupplyStatus supplyStatus : SupplyStatus.values()) {
+            if (supplyStatus.getCode().equals(trimmed)) {
+                return supplyStatus.getDisplay();
+            }
+        }
+        return trimmed;
+    }
+
+    /**
+     * 是否科室领用族（领用/退领）——仅此类才回落药房上级科室为领用科室。
+     *
+     * @param typeEnum 供应类型码
+     * @return true=领用或退领
+     */
+    private boolean isDeptIssueFamily(String typeEnum) {
+        if (StringUtils.isEmpty(typeEnum)) {
+            return false;
+        }
+        String trimmed = typeEnum.trim();
+        if (SupplyType.DEPT_ISSUE.getCode().equals(trimmed)) {
+            return true;
+        }
+        return SupplyType.DEPT_ISSUE_RETURN.getCode().equals(trimmed);
+    }
+
+    /**
      * 从单位槽解析计量单位展示名。
      *
      * @param bands    单位槽
@@ -289,6 +357,8 @@ public class DocumentDetailEnricher {
     public static class DocumentDetailEnrichmentContext {
 
         private Map<Long, String> locationNameById = new HashMap<>();
+        private Map<Long, Long> organizationIdByLocationId = new HashMap<>();
+        private Map<Long, String> organizationNameById = new HashMap<>();
         private Map<Long, String> supplierNameById = new HashMap<>();
         private Map<Long, String> practitionerNameById = new HashMap<>();
         private Map<String, ProductDefinitionDisplayDto> productByKey = new HashMap<>();
@@ -298,6 +368,20 @@ public class DocumentDetailEnricher {
          */
         public void setLocationNameById(Map<Long, String> locationNameById) {
             this.locationNameById = locationNameById;
+        }
+
+        /**
+         * @param organizationIdByLocationId 库位 id → 上级 Organization id（历史领用科室回落）
+         */
+        public void setOrganizationIdByLocationId(Map<Long, Long> organizationIdByLocationId) {
+            this.organizationIdByLocationId = organizationIdByLocationId;
+        }
+
+        /**
+         * @param organizationNameById Organization id → 名称
+         */
+        public void setOrganizationNameById(Map<Long, String> organizationNameById) {
+            this.organizationNameById = organizationNameById;
         }
 
         /**

@@ -10,6 +10,10 @@ import lombok.experimental.Accessors;
 
 /**
  * 打印版式配置（与《打印预览设计》§4.1 对齐）。
+ * <p>
+ * 默认值落实《病历书写基本规范》第三十二条「统一纸张、字体、字号及排版格式」：
+ * A4；页边距上/下 25.4mm、左/右 31.8mm；宋体；正文 12pt（小四）；标题 16pt；行距 1.5。
+ * </p>
  */
 @Getter
 @Setter
@@ -133,7 +137,7 @@ public class PrintConfig {
     public static class FooterConfig {
         private boolean enabled = true;
         private float heightMm = 12f;
-        private String template = "第 {page} 页";
+        private String template = "第 {page} 页 (共 {total} 页)";
         private boolean showPageNumber = true;
 
         public static FooterConfig standard() {

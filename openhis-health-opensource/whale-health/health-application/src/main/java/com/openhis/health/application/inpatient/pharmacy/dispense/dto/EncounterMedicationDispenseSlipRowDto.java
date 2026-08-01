@@ -173,6 +173,49 @@ public class EncounterMedicationDispenseSlipRowDto {
     @Schema(description = "发放/计价单位展示")
     private String unitText;
 
+    /**
+     * 包装单位码（产品定义 {@code package_unit_code}）。
+     * <p>住院发药待扫换算：操作量换拆零时用。</p>
+     */
+    @Schema(description = "包装单位码")
+    private String packageUnitCode;
+
+    /**
+     * 包装相对拆零倍数（1 包装 = N 拆零）。
+     */
+    @Schema(description = "包装相对拆零倍数")
+    private BigDecimal packageUnitRatio;
+
+    /**
+     * 拆零单位码（产品定义 {@code split_unit_code}）。
+     */
+    @Schema(description = "拆零单位码")
+    private String splitUnitCode;
+
+    /**
+     * 追溯码主档贴码单位（{@code cus_trace_number.trace_unit_code}；本库优先否则全院同批）。
+     *
+     * <p>发药应扫个数换算用；非药典目录值。</p>
+     */
+    @Schema(description = "追溯码主档贴码单位")
+    private String traceUnitCode;
+
+    /**
+     * 追溯码主档贴码比例快照（{@code cus_trace_number.trace_unit_ratio}；1 码对应拆零量）。
+     *
+     * <p>发药应扫个数 = ceil(行拆零 / 本值)；非药典目录比。</p>
+     */
+    @Schema(description = "追溯码主档贴码比例快照")
+    private BigDecimal traceUnitRatio;
+
+    /**
+     * 主表该品批是否已有追溯码（有码批=true）。
+     *
+     * <p>false=无码批：扫码仅软提示，发药只写业务行不写主表流水；true=有码批：本库优先否则全院校验并写流水。</p>
+     */
+    @Schema(description = "主表该品批是否已有追溯码")
+    private Boolean lotHasTraceMaster;
+
     /** 单次发药数量。 */
     @Schema(description = "单次发药数")
     private Integer dispensePerQuantity;
@@ -202,10 +245,10 @@ public class EncounterMedicationDispenseSlipRowDto {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long prescriptionGroupId;
 
-    /** 医嘱开具时间。 */
-    @Schema(description = "医嘱开具时间")
+    /** 医嘱开立时间（{@code req_opened_time}，空回落 {@code req_authored_time}）。 */
+    @Schema(description = "医嘱开立时间")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
-    private LocalDateTime requestAuthoredTime;
+    private LocalDateTime requestOpenedTime;
 
     /** 是否皮试医嘱。 */
     @Schema(description = "是否皮试医嘱")

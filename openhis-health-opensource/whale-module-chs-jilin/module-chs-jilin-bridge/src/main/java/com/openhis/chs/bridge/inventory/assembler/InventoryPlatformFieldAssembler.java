@@ -17,10 +17,10 @@ public final class InventoryPlatformFieldAssembler {
     }
 
     /**
-     * 品种「是否处方药」→ 平台 {@code rx_flag}。
+     * 药典「是否处方药」→ 平台 {@code rx_flag}。
      *
-     * @param rxFlag HIS 品种维护中的处方药标志；{@code null} 视为非处方
-     * @return {@link RxFlag} 对应 code
+     * @param rxFlag 药典维护的处方药标志；未维护（{@code null}）视为非处方药
+     * @return {@link RxFlag} 对应 code（0/1）
      */
     public static String toRxFlagCode(Boolean rxFlag) {
         return RxFlag.toCode(rxFlag);

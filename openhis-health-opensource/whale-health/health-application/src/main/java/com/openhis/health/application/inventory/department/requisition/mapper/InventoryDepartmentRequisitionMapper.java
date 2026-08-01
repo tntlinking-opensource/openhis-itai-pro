@@ -11,6 +11,7 @@ import com.openhis.health.application.inventory.department.requisition.dto.Produ
 import com.openhis.health.application.inventory.department.requisition.request.*;
 import com.openhis.health.application.inventory.department.requisition.response.*;
 import com.openhis.health.domain.administration.location.entity.Location;
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryItemModel;
 import com.openhis.health.domain.workflow.supplyrequest.command.AgreeRequestCommand;
@@ -42,6 +43,21 @@ public interface InventoryDepartmentRequisitionMapper {
     List<OptionDto> toOptionDtoListFromLocations(List<Location> locations);
 
     /**
+     * 医务人员列表转 OptionDto。
+     *
+     * @param practitioners 医务人员列表，可为 null
+     * @return 下拉项，永不为 null
+     */
+    List<OptionDto> toOptionDtoListFromPractitioners(List<Practitioner> practitioners);
+
+    /**
+     * 装配入库项目类型两档固定下拉选项（药品/耗材）。
+     *
+     * @return 物品表类型选项
+     */
+    List<OptionDto> toOptionDtoListInboundItemTableTypes();
+
+    /**
      * 单据状态下拉（IF-DEP-QL-01）。
      *
      * @return SupplyStatus 选项
@@ -53,13 +69,19 @@ public interface InventoryDepartmentRequisitionMapper {
      *
      * @param pharmacyOpts   目的科室药房
      * @param warehouseOpts  来源药库
+     * @param inboundTypes   入库项目类型
      * @param statusOpts     状态
+     * @param pharmacistOpts 药师
+     * @param keeperOpts     库管
      * @return 响应
      */
     LoadDepartmentRequisitionFormInitResponse toLoadDepartmentRequisitionFormInitResponse(
         List<OptionDto> pharmacyOpts,
         List<OptionDto> warehouseOpts,
-        List<OptionDto> statusOpts);
+        List<OptionDto> inboundTypes,
+        List<OptionDto> statusOpts,
+        List<OptionDto> pharmacistOpts,
+        List<OptionDto> keeperOpts);
 
     /**
      * 科室药房请领列表聚合（IF-DEP-QL-02）。

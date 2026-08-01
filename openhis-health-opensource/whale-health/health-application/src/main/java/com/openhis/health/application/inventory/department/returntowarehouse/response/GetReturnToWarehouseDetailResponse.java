@@ -37,6 +37,10 @@ public class GetReturnToWarehouseDetailResponse {
     private Integer purposeTypeEnum;
     /** 供应类别持久化码。 */
     private Integer categoryEnum;
+    /** 经手人主键。 */
+    private Long practitionerId;
+    /** 申请人（制单人）主键。 */
+    private Long applicantId;
     /** 明细行列表。 */
     private List<ReturnToWarehouseDetailLineDto> lines;
 }

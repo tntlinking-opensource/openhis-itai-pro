@@ -22,6 +22,14 @@ public class QueryServiceCatalogRequest extends AbstractHealthPageRequest {
     /** 诊疗大类/分类编码过滤；空表示不按分类过滤。 */
     private String categoryCode;
 
+    /**
+     * 是否包含已被套餐引用的子诊疗行。
+     *
+     * <p>{@code null}：本 IF（诊疗目录）按维护语义默认含明细；
+     * {@code false}：医嘱组套等临床选品隐藏明细；{@code true}：显式含明细。</p>
+     */
+    private Boolean includeReferencedPackageChildren;
+
     {
         // 声明允许参与 where 的读模型/投影字段名，与产品定义分页查询契约对齐
         List<String> where = new ArrayList<>();

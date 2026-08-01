@@ -60,6 +60,9 @@ public class ActivityDefinitionDomainService {
     /** 诊疗项目定义 busNo：主数据全局递增，前缀 {@link AggregateTypeConstants#ACTIVITY_DEFINITION}，共 10 位。 */
     private final BusinessSequenceService businessSequenceService;
 
+    /** 采番撞号时单条最大重试次数（序号落后或并发占用）。 */
+    private static final int BUS_NO_ALLOCATE_MAX_ATTEMPTS = 32;
+
     /**
      * 新建诊疗项目。
      *
@@ -75,8 +78,8 @@ public class ActivityDefinitionDomainService {
         for (CreateActivityDefinitionCommand.CreateActivityDefinitionItemCommand item : items) {
             ActivityDefinition definition = new ActivityDefinition();
 
-            // 业务编码由领域层按日序列生成，禁止外部注入（B.10.9）。
-            definition.setBusNo(this.generateBusNo());
+            // 业务编码由领域层采番，禁止外部注入（B.10.9）；冲突时自动跳号。
+            definition.setBusNo(this.allocateUniqueBusNo());
 
             definition.setCategoryCode(item.getCategoryCode());
             definition.setName(item.getName());
@@ -106,9 +109,6 @@ public class ActivityDefinitionDomainService {
             definition.assertRequiredFieldsProvided();
             definition.assertBusNoGenerated();
             definition.rebuildSearchCodes();
-
-            // 唯一性校验：先内存去重，再下推数据库校验。
-            this.assertBusNoUnique(definition.getBusNo());
 
             toSave.add(definition);
 
@@ -557,7 +557,7 @@ public class ActivityDefinitionDomainService {
                 // busNo 未命中存量记录时走新建路径，由领域层生成业务编码。
                 if (target == null) {
                     ActivityDefinition created = new ActivityDefinition();
-                    created.setBusNo(this.generateBusNo());
+                    created.setBusNo(this.allocateUniqueBusNo());
                     created.setCategoryCode(row.getCategoryCode());
                     created.setName(row.getName());
                     created.setPackageUnitCode(row.getPackageUnitCode());
@@ -737,17 +737,19 @@ public class ActivityDefinitionDomainService {
     }
 
     /**
-     * 私有方法：assertBusNoUnique。
+     * 采番一条未被占用的诊疗业务编码；冲突则继续取下一号。
+     *
+     * @return 未占用的业务编码
      */
-    private void assertBusNoUnique(String busNo) {
-        // 业务编码为空无法保证目录唯一性，拒绝保存。
-        if (StringUtils.isEmpty(busNo)) {
-            throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "诊疗项目业务编码不能为空");
+    private String allocateUniqueBusNo() {
+        for (int attempt = 0; attempt < BUS_NO_ALLOCATE_MAX_ATTEMPTS; attempt++) {
+            String busNo = this.generateBusNo();
+            if (!activityDefinitionRepository.existsByBusNo(busNo)) {
+                return busNo;
+            }
         }
-        // busNo 已存在则违反目录唯一约束，拒绝重复建档。
-        if (activityDefinitionRepository.existsByBusNo(busNo)) {
-            throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "诊疗项目业务编码已存在，busNo=" + busNo);
-        }
+        throw new BusinessException(
+            ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "诊疗项目业务编码采番冲突，请稍后重试");
     }
 
     /**
@@ -775,6 +777,104 @@ public class ActivityDefinitionDomainService {
             return PublicationStatus.DRAFT.getCode();
         }
         return statusEnum;
+    }
+
+    /**
+     * 套餐层级门禁（只允许一层父→子）。
+     *
+     * <ul>
+     *   <li><strong>允许</strong>：同一明细子项被多个父套餐引用（子项可有多个父亲）</li>
+     *   <li><strong>禁止</strong>：父套餐再被其它套餐引用为子项（父项不能再有父亲）—
+     *       即「已是别人子项」的诊疗禁止再挂子项；「已是套餐」的诊疗禁止再被挂为子项</li>
+     *   <li>子项不得引用自身</li>
+     * </ul>
+     *
+     * @param parentActivityId 父诊疗主键；新建落库前可为空（跳过「父已是子项」校验）
+     * @param childrenIds      拟挂载的子项主键集合
+     */
+    private void assertNoPackageNesting(Long parentActivityId, Set<Long> childrenIds) {
+        if (childrenIds == null || childrenIds.isEmpty()) {
+            return;
+        }
+        List<Long> childIdList = new ArrayList<>();
+        for (Long childId : childrenIds) {
+            if (childId == null) {
+                continue;
+            }
+            // 自引用会造成环，一律拒绝
+            if (parentActivityId != null && parentActivityId.equals(childId)) {
+                throw new BusinessException(
+                    ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT,
+                    "子项不能引用自身");
+            }
+            childIdList.add(childId);
+        }
+        if (childIdList.isEmpty()) {
+            return;
+        }
+
+        // 父项已是其它套餐的子项 → 禁止再挂子项（父项不能再有父亲）
+        if (parentActivityId != null) {
+            List<ActivityDefinitionChild> parentAsChildRows =
+                activityDefinitionChildRepository.findByChildrenIdIn(List.of(parentActivityId));
+            if (parentAsChildRows != null && !parentAsChildRows.isEmpty()) {
+                throw new BusinessException(
+                    ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT,
+                    "该诊疗已是其它套餐的子项，禁止再维护子项（父项不能再有父亲）");
+            }
+        }
+
+        // 拟挂子项自身仍有子表行 → 它已是套餐，不能再当别人的子项（父项不能再有父亲）
+        // 注意：不校验「子项是否已被其它父套餐引用」——同一明细可挂多个父亲
+        List<ActivityDefinitionChild> nestedChildRows =
+            activityDefinitionChildRepository.findByActivityIdIn(childIdList);
+        if (nestedChildRows != null && !nestedChildRows.isEmpty()) {
+            Set<Long> nestedPackageIds = new HashSet<>();
+            for (ActivityDefinitionChild row : nestedChildRows) {
+                if (row.getActivityId() != null) {
+                    nestedPackageIds.add(row.getActivityId());
+                }
+            }
+            String nestedName = this.resolveFirstActivityName(nestedPackageIds);
+            throw new BusinessException(
+                ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT,
+                "子项「" + nestedName + "」已是套餐，不能再被其它套餐引用（父项不能再有父亲）");
+        }
+
+        // 双保险：childrenFlag=true 但子表暂空的脏数据也拦
+        List<ActivityDefinition> childDefs = activityDefinitionRepository.findByIdIn(childIdList);
+        for (ActivityDefinition childDef : childDefs) {
+            if (Boolean.TRUE.equals(childDef.getChildrenFlag())) {
+                String name = childDef.getName();
+                if (StringUtils.isEmpty(name)) {
+                    name = String.valueOf(childDef.getId());
+                }
+                throw new BusinessException(
+                    ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT,
+                    "子项「" + name + "」已是套餐，不能再被其它套餐引用（父项不能再有父亲）");
+            }
+        }
+    }
+
+    /**
+     * 取集合中首个诊疗名称，便于嵌套校验报错文案；找不到时回落主键。
+     *
+     * @param activityIds 诊疗主键集合
+     * @return 展示名
+     */
+    private String resolveFirstActivityName(Set<Long> activityIds) {
+        if (activityIds == null || activityIds.isEmpty()) {
+            return "";
+        }
+        List<ActivityDefinition> defs = activityDefinitionRepository.findByIdIn(new ArrayList<>(activityIds));
+        if (defs != null) {
+            for (ActivityDefinition def : defs) {
+                if (def != null && StringUtils.isNotEmpty(def.getName())) {
+                    return def.getName();
+                }
+            }
+        }
+        return String.valueOf(activityIds.iterator().next());
     }
 
     /**
@@ -814,7 +914,11 @@ public class ActivityDefinitionDomainService {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "同一父项下子项 childrenId 不允许重复");
             }
             seenChildrenId.add(item.getChildrenId());
+        }
+        // 禁止套餐嵌套：只允许一层父→子
+        this.assertNoPackageNesting(definition.getId(), seenChildrenId);
 
+        for (CreateActivityDefinitionCommand.ActivityDefinitionChildItemCommand item : children) {
             ActivityDefinitionChild child = new ActivityDefinitionChild();
             child.setActivityId(definition.getId());
             child.setChildrenId(item.getChildrenId());
@@ -860,7 +964,11 @@ public class ActivityDefinitionDomainService {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "导入子项 childrenId 重复");
             }
             seenChildrenId.add(item.getChildrenId());
+        }
+        // 禁止套餐嵌套：只允许一层父→子
+        this.assertNoPackageNesting(definition.getId(), seenChildrenId);
 
+        for (ImportActivityCatalogCommand.ActivityDefinitionChildItemCommand item : children) {
             ActivityDefinitionChild child = new ActivityDefinitionChild();
             child.setActivityId(definition.getId());
             child.setChildrenId(item.getChildrenId());
@@ -916,7 +1024,13 @@ public class ActivityDefinitionDomainService {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "同一父项下子项 childrenId 不允许重复");
             }
             seenChildrenId.add(item.getChildrenId());
+        }
+        // 禁止套餐嵌套：只允许一层父→子（清空子项时不做嵌套校验）
+        if (!seenChildrenId.isEmpty()) {
+            this.assertNoPackageNesting(definition.getId(), seenChildrenId);
+        }
 
+        for (UpdateActivityDefinitionCommand.ActivityDefinitionChildItemCommand item : inputChildren) {
             ActivityDefinitionChild target = existedByChildrenId.get(item.getChildrenId());
             // 子项 childrenId 未命中存量行则新建关联行。
             if (target == null) {
@@ -1020,7 +1134,13 @@ public class ActivityDefinitionDomainService {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "导入子项 childrenId 重复");
             }
             seenChildrenId.add(item.getChildrenId());
+        }
+        // 禁止套餐嵌套：只允许一层父→子（清空子项时不做嵌套校验）
+        if (!seenChildrenId.isEmpty()) {
+            this.assertNoPackageNesting(definition.getId(), seenChildrenId);
+        }
 
+        for (ImportActivityCatalogCommand.ActivityDefinitionChildItemCommand item : inputChildren) {
             ActivityDefinitionChild target = existedByChildrenId.get(item.getChildrenId());
             // 子项 childrenId 未命中存量行则新建关联行。
             if (target == null) {
@@ -1088,7 +1208,7 @@ public class ActivityDefinitionDomainService {
     /**
      * 私有方法：collectIdList。
      *
-     * <p>从批量命令项中提取并去重 ID 列表。支持停用/启用命令的类型。</p>
+     * <p>从批量命令项中提取并去重 ID 列表。支持停用/启用/删除命令的类型。</p>
      * <ul>
      *   <li>Loop：遍历命令项列表</li>
      *   <li>Cmd：提取每项的 idList 并去重合并</li>
@@ -1107,11 +1227,13 @@ public class ActivityDefinitionDomainService {
         // Loop：遍历命令项，提取所有 ID。
         for (T item : items) {
             List<Long> idList;
-            // 按命令类型提取批量 idList（停用/启用路径结构不同）。
+            // 按命令类型提取批量 idList（停用/启用/删除路径结构不同）。
             if (item instanceof RetireActivityDefinitionsCommand.RetireActivityDefinitionsItemCommand) {
                 idList = ((RetireActivityDefinitionsCommand.RetireActivityDefinitionsItemCommand) item).getIdList();
             } else if (item instanceof ActivateActivityDefinitionsCommand.ActivateActivityDefinitionsItemCommand) {
                 idList = ((ActivateActivityDefinitionsCommand.ActivateActivityDefinitionsItemCommand) item).getIdList();
+            } else if (item instanceof DeleteActivityDefinitionsCommand.DeleteActivityDefinitionsItemCommand) {
+                idList = ((DeleteActivityDefinitionsCommand.DeleteActivityDefinitionsItemCommand) item).getIdList();
             } else {
                 idList = null;
             }

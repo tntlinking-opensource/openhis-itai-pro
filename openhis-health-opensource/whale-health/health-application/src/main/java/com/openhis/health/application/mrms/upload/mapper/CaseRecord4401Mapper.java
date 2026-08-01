@@ -8,17 +8,21 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.openhis.health.application.mrms.upload.support.Mrms4401DiagTypeMapping;
 import com.openhis.health.application.mrms.upload.support.MrmsInsuranceEncounterContext;
+import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
+import com.openhis.health.domain.clinical.proceduredefinition.service.ProcedureDefinitionQueryService;
 import com.openhis.health.domain.mrms.caserecord.entity.CaseRecord;
 import com.openhis.health.domain.mrms.caserecord.entity.CaseRecordHomepage;
 import com.openhis.health.domain.mrms.caserecord.entity.HomepageDiagnosis;
 import com.openhis.health.domain.mrms.caserecord.entity.HomepageProcedure;
 import com.openhis.health.domain.mrms.caserecord.service.CaseRecordHomepageDomainService;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.domain.share.constants.MrmsErrorCodes;
 import com.openhis.health.infrastructure.integration.insurance.medcas.dto.MedcasHomepageBaseInfo;
 import com.openhis.health.infrastructure.integration.insurance.medcas.dto.MedcasHomepageDiseInfo;
 import com.openhis.health.infrastructure.integration.insurance.medcas.dto.MedcasHomepageIcuInfo;
 import com.openhis.health.infrastructure.integration.insurance.medcas.dto.MedcasHomepageOprnInfo;
 import com.openhis.health.infrastructure.integration.insurance.medcas.dto.MedcasHomepagePayload;
+import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -27,7 +31,10 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
@@ -42,6 +49,10 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 public class CaseRecord4401Mapper {
 
     private final CaseRecordHomepageDomainService homepageDomainService;
+    /** 国临码 → 医保 yb_no 解析（诊断）。 */
+    private final ConditionDefinitionQueryService conditionDefinitionQueryService;
+    /** 国临码 → 医保 yb_no 解析（手术）。 */
+    private final ProcedureDefinitionQueryService procedureDefinitionQueryService;
 
     /**
      * 组装 4401 上传载荷。
@@ -139,11 +150,31 @@ public class CaseRecord4401Mapper {
         List<HomepageDiagnosis> sorted = new ArrayList<>(rows);
         sorted.sort(Comparator.comparing(HomepageDiagnosis::getDiagTypeCode)
                 .thenComparing(HomepageDiagnosis::getSortNo));
+        // Pre：首页 diag_code 存国临码，4401 须输出医保 yb_no
+        Set<String> clinicCodes = new LinkedHashSet<>();
+        for (HomepageDiagnosis row : sorted) {
+            String clinic = trimToNull(row.getDiagCode());
+            if (clinic != null) {
+                clinicCodes.add(clinic);
+            }
+        }
+        Map<String, String> ybByClinic = conditionDefinitionQueryService.mapYbNoByClinicCodes(clinicCodes);
         List<MedcasHomepageDiseInfo> result = new ArrayList<>();
         for (HomepageDiagnosis row : sorted) {
             // 无 ICD 编码行跳过，避免 4401 校验失败
-            if (trimToNull(row.getDiagCode()) == null) {
+            String clinicCode = trimToNull(row.getDiagCode());
+            if (clinicCode == null) {
                 continue;
+            }
+            String ybNo = trimToNull(ybByClinic.get(clinicCode));
+            if (ybNo == null) {
+                String hint = clinicCode;
+                if (trimToNull(row.getDiagName()) != null) {
+                    hint = clinicCode + " " + row.getDiagName().trim();
+                }
+                throw new BusinessException(
+                    MrmsErrorCodes.UPLOAD_ASSEMBLE_VALIDATION,
+                    "病案诊断未对医保码，请在诊断目录维护国临码(clinic_code)与医保编码(yb_no)对照：" + hint);
             }
             MedcasHomepageDiseInfo item = new MedcasHomepageDiseInfo();
             item.setIptMedcasHmpgSn(hmpgSn);
@@ -151,7 +182,7 @@ public class CaseRecord4401Mapper {
             item.setFixmedinsCode(fixmedinsCode);
             item.setIptPatnDisediagTypeCode(Mrms4401DiagTypeMapping.mapTypeCode(row.getDiagTypeCode()));
             item.setMaindiagFlag(Mrms4401DiagTypeMapping.mapMainFlag(row.getDiagTypeCode(), row.getMaindiagFlag()));
-            item.setDiagCode(trimToNull(row.getDiagCode()));
+            item.setDiagCode(ybNo);
             item.setDiagName(trimToNull(row.getDiagName()));
             item.setAdmCondCode(trimToNull(row.getAdmCondCode()));
             item.setValiFlag("1");
@@ -179,18 +210,38 @@ public class CaseRecord4401Mapper {
         }
         List<HomepageProcedure> sorted = new ArrayList<>(rows);
         sorted.sort(Comparator.comparing(HomepageProcedure::getSortNo));
+        // Pre：首页 oprn_oprt_code 存国临码，4401 须输出医保 yb_no
+        Set<String> clinicCodes = new LinkedHashSet<>();
+        for (HomepageProcedure row : sorted) {
+            String clinic = trimToNull(row.getOprnOprtCode());
+            if (clinic != null) {
+                clinicCodes.add(clinic);
+            }
+        }
+        Map<String, String> ybByClinic = procedureDefinitionQueryService.mapYbNoByClinicCodes(clinicCodes);
         List<MedcasHomepageOprnInfo> result = new ArrayList<>();
         for (HomepageProcedure row : sorted) {
             // 无手术编码行跳过
-            if (trimToNull(row.getOprnOprtCode()) == null) {
+            String clinicCode = trimToNull(row.getOprnOprtCode());
+            if (clinicCode == null) {
                 continue;
+            }
+            String ybNo = trimToNull(ybByClinic.get(clinicCode));
+            if (ybNo == null) {
+                String hint = clinicCode;
+                if (trimToNull(row.getOprnOprtName()) != null) {
+                    hint = clinicCode + " " + row.getOprnOprtName().trim();
+                }
+                throw new BusinessException(
+                    MrmsErrorCodes.UPLOAD_ASSEMBLE_VALIDATION,
+                    "病案手术未对医保码，请在手术目录维护国临码(clinic_code)与医保编码(yb_no)对照：" + hint);
             }
             MedcasHomepageOprnInfo item = new MedcasHomepageOprnInfo();
             item.setIptMedcasHmpgSn(hmpgSn);
             item.setMdtrtSn(mdtrtSn);
             item.setFixmedinsCode(fixmedinsCode);
             item.setOprnOprtDate(formatDate(row.getOprnDate()));
-            item.setOprnOprtCode(trimToNull(row.getOprnOprtCode()));
+            item.setOprnOprtCode(ybNo);
             item.setOprnOprtName(trimToNull(row.getOprnOprtName()));
             item.setMainOprnFlag(trimToNull(row.getMainOprnFlag()));
             item.setValiFlag("1");

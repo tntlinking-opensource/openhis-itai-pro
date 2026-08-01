@@ -54,8 +54,11 @@ public class ReturnableInboundLineDto {
     @Schema(description = "批号 lotNumber")
     private String lotNumber;
 
-    /** 追溯码 traceNo。 */
-    @Schema(description = "追溯码 traceNo")
+    /**
+     * 追溯码：IF-WHS-RT-13 由应用层按当前院内剩余码预填（本库优先 / 全院回落）；
+     * 非进货当时扫码快照。无码批可为空。
+     */
+    @Schema(description = "当前剩余追溯码（逗号串；非进货历史快照）")
     private String traceNo;
 
     /** 单价 price。 */

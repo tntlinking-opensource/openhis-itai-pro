@@ -5,6 +5,7 @@
 package com.openhis.whale.identity.infrastructure.repository;
 
 import com.openhis.whale.identity.domain.UserOrganizationUnit;
+import com.openhis.whale.core.infrastructure.transaction.SkipSoftDeleteFilter;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
@@ -52,6 +53,16 @@ public interface UserOrganizationUnitRepository extends JpaRepository<UserOrgani
      * 根据用户ID和组织单元ID查找
      */
     Optional<UserOrganizationUnit> findByUserIdAndOrganizationUnitId(Long userId, Long organizationUnitId);
+
+    /**
+     * 按用户+OU 查绑定（含已软删），供同步恢复，避免 uk_whale_uou_user_ou 重复插入。
+     *
+     * @param userId             用户主键
+     * @param organizationUnitId Whale OU 主键
+     * @return 命中行（含 is_deleted=true）
+     */
+    @SkipSoftDeleteFilter
+    Optional<UserOrganizationUnit> findFirstByUserIdAndOrganizationUnitId(Long userId, Long organizationUnitId);
 
     /**
      * 根据用户ID和租户ID查找用户关联的组织单元

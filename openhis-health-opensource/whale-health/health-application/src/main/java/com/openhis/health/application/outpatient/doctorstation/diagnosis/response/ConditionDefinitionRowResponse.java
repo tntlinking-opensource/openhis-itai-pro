@@ -63,6 +63,12 @@ public class ConditionDefinitionRowResponse {
     @Schema(description = "医保标记展示文本")
     private String ybFlagText;
 
+    /**
+     * 医保诊断编码（目录对码 {@code yb_no}）；未对码时为空，前端展示为「-」。
+     */
+    @Schema(description = "医保诊断编码；未对码为空")
+    private String ybNo;
+
     /** 发布状态整数码。 */
     @Schema(description = "发布状态整数码")
     private Integer statusEnum;

@@ -20,6 +20,8 @@ import com.openhis.whale.identity.infrastructure.repository.UserOrganizationUnit
 import com.openhis.whale.identity.infrastructure.repository.UserRepository;
 import com.openhis.whale.identity.domain.User;
 import com.openhis.whale.core.application.util.SpecificationUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -28,8 +30,11 @@ import org.springframework.stereotype.Service;
 
 import jakarta.persistence.criteria.Predicate;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -39,6 +44,8 @@ import java.util.stream.Collectors;
  */
 @Service
 public class OrganizationUnitAppService {
+
+    private static final Logger log = LoggerFactory.getLogger(OrganizationUnitAppService.class);
 
     @Autowired
     private OrganizationUnitRepository organizationUnitRepository;
@@ -294,17 +301,26 @@ public class OrganizationUnitAppService {
     /**
      * 将用户的可登录科室与给定 Whale OU 主键列表对齐（全量替换，供人员岗位维护派生）。
      *
+     * <p>集合已对齐时短路不写库；增删均走批量 I/O，避免登录选科室时逐条 delete/save。</p>
+     *
      * @param userId 系统用户主键（{@code whale_users.id}）
      * @param organizationUnitIds Whale {@code OrganizationUnit.id} 列表（可为空表示清空）；非 HIS 组织 id
      */
     public void syncOrganizationUnitsForUser(Long userId, List<Long> organizationUnitIds) {
+        // Gate：用户主键必填且须存在，否则无法写入 whale_user_organization_units
         if (userId == null) {
             throw new ValidationException("用户ID不能为空");
         }
         userRepository.findById(userId)
             .orElseThrow(() -> new EntityNotFoundException("用户", userId));
 
-        List<Long> desiredIds = organizationUnitIds != null ? organizationUnitIds : List.of();
+        // Pre：目标 OU 去重；与现网绑定对比后决定是否写库
+        List<Long> desiredIds;
+        if (organizationUnitIds != null) {
+            desiredIds = organizationUnitIds;
+        } else {
+            desiredIds = List.of();
+        }
         Set<Long> desiredSet = new HashSet<>();
         for (Long orgUnitId : desiredIds) {
             if (orgUnitId != null) {
@@ -314,29 +330,80 @@ public class OrganizationUnitAppService {
 
         Long tenantId = TenantUtils.getCurrentTenantId();
         List<UserOrganizationUnit> existing = userOrganizationUnitRepository.findByUserIdAndTenantId(userId, tenantId);
-        Set<Long> processed = new HashSet<>();
-
+        Set<Long> existingIds = new HashSet<>();
         for (UserOrganizationUnit row : existing) {
-            Long orgUnitId = row.getOrganizationUnitId();
-            if (desiredSet.contains(orgUnitId)) {
-                processed.add(orgUnitId);
-            } else {
-                userOrganizationUnitRepository.deleteByUserIdAndOrganizationUnitId(userId, orgUnitId);
+            if (row != null && row.getOrganizationUnitId() != null) {
+                existingIds.add(row.getOrganizationUnitId());
             }
         }
+        // 已与岗位/全院科室对齐：跳过写库，登录二次拉列表不再刷表
+        if (existingIds.equals(desiredSet)) {
+            return;
+        }
 
-        for (Long orgUnitId : desiredSet) {
-            if (processed.contains(orgUnitId)) {
+        // Cmd：批量删除多余绑定
+        List<UserOrganizationUnit> toDelete = new ArrayList<>();
+        for (UserOrganizationUnit row : existing) {
+            if (row == null || row.getOrganizationUnitId() == null) {
                 continue;
             }
-            organizationUnitRepository.findById(orgUnitId)
-                .orElseThrow(() -> new EntityNotFoundException("组织单元", orgUnitId));
+            if (!desiredSet.contains(row.getOrganizationUnitId())) {
+                toDelete.add(row);
+            }
+        }
+        if (!toDelete.isEmpty()) {
+            userOrganizationUnitRepository.deleteAll(toDelete);
+        }
+
+        // Cmd：批量校验并插入缺失绑定；库中无对应 OU 时跳过（避免登录选科整页失败）
+        Set<Long> toAdd = new HashSet<>(desiredSet);
+        toAdd.removeAll(existingIds);
+        if (toAdd.isEmpty()) {
+            return;
+        }
+        List<OrganizationUnit> foundUnits = organizationUnitRepository.findAllById(toAdd);
+        Set<Long> foundIds = new HashSet<>();
+        for (OrganizationUnit unit : foundUnits) {
+            if (unit != null && unit.getId() != null) {
+                foundIds.add(unit.getId());
+            }
+        }
+        Set<Long> missingIds = new HashSet<>();
+        for (Long orgUnitId : toAdd) {
+            if (!foundIds.contains(orgUnitId)) {
+                missingIds.add(orgUnitId);
+            }
+        }
+        // 岗位派生出的 Whale OU 可能尚未建链或已软删：跳过缺失项，其余科室仍可登录
+        if (!missingIds.isEmpty()) {
+            log.warn("同步用户可登录科室时跳过不存在的组织单元: userId={}, missingOuIds={}", userId, missingIds);
+            toAdd.removeAll(missingIds);
+        }
+        if (toAdd.isEmpty()) {
+            return;
+        }
+        // 软删行仍占 uk_whale_uou_user_ou：优先恢复，禁止盲目 insert
+        List<UserOrganizationUnit> toSave = new ArrayList<>(toAdd.size());
+        for (Long orgUnitId : toAdd) {
+            Optional<UserOrganizationUnit> includingDeleted =
+                userOrganizationUnitRepository.findFirstByUserIdAndOrganizationUnitId(userId, orgUnitId);
+            if (includingDeleted.isPresent()) {
+                UserOrganizationUnit existingRow = includingDeleted.get();
+                // 恢复软删绑定并回写租户
+                existingRow.setIsDeleted(false);
+                existingRow.setDeletedAt(null);
+                existingRow.setDeletedBy(null);
+                existingRow.setTenantId(tenantId);
+                toSave.add(existingRow);
+                continue;
+            }
             UserOrganizationUnit uou = new UserOrganizationUnit();
             uou.setUserId(userId);
             uou.setOrganizationUnitId(orgUnitId);
             uou.setTenantId(tenantId);
-            userOrganizationUnitRepository.save(uou);
+            toSave.add(uou);
         }
+        userOrganizationUnitRepository.saveAll(toSave);
     }
 
     /**
@@ -363,6 +430,49 @@ public class OrganizationUnitAppService {
             return Optional.empty();
         }
         return organizationUnitRepository.findByCode(code.trim());
+    }
+
+    /**
+     * 按编码加载组织单元（含已软删行），供导入/登录补链时恢复同 code OU。
+     *
+     * @param code 组织单元编码
+     * @return 组织单元或空
+     */
+    public Optional<OrganizationUnit> findOptionalByCodeIncludingDeleted(String code) {
+        if (code == null || code.isBlank()) {
+            return Optional.empty();
+        }
+        return organizationUnitRepository.findFirstByCode(code.trim());
+    }
+
+    /**
+     * 按编码批量加载组织单元（登录科室 HIS→Whale 桥接避免 N+1 findByCode）。
+     *
+     * @param codes OU code 集合；{@code null} 或空时返回空映射
+     * @return code → 组织单元；空白 code 与未命中不写入
+     */
+    public Map<String, OrganizationUnit> mapByCodes(Collection<String> codes) {
+        Map<String, OrganizationUnit> unitByCode = new HashMap<>();
+        if (codes == null || codes.isEmpty()) {
+            return unitByCode;
+        }
+        Set<String> distinctCodes = new HashSet<>();
+        for (String code : codes) {
+            if (code == null || code.isBlank()) {
+                continue;
+            }
+            distinctCodes.add(code.trim());
+        }
+        if (distinctCodes.isEmpty()) {
+            return unitByCode;
+        }
+        for (OrganizationUnit unit : organizationUnitRepository.findByCodeIn(distinctCodes)) {
+            if (unit == null || unit.getCode() == null || unit.getCode().isBlank()) {
+                continue;
+            }
+            unitByCode.put(unit.getCode().trim(), unit);
+        }
+        return unitByCode;
     }
 
     /**

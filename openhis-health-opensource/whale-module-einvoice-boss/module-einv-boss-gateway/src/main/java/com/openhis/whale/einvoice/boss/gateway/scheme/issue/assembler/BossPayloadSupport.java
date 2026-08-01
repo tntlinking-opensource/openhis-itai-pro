@@ -43,6 +43,9 @@ public final class BossPayloadSupport {
         body.put("medicalCareType", defaultIfBlank(snapshot.getMedicalCareType(), "全自费"));
         body.put("medicalInstitution", defaultIfBlank(properties.getPlatform().getMedicalInstitution(), "二级甲等"));
         body.put("medCareInstitution", defaultIfBlank(properties.getPlatform().getMedCareInstitution(), ""));
+        // 博思 v4 / 院点校验：caseNumber(病历号) 必填，取 encounter.bus_no
+        body.put("caseNumber", defaultIfBlank(snapshot.getCaseNumber(),
+                defaultIfBlank(snapshot.getEncounterBusNo(), String.valueOf(snapshot.getPatientId()))));
         if (snapshot.getPatientCategory() != null && !snapshot.getPatientCategory().isBlank()) {
             body.put("patientCategory", snapshot.getPatientCategory());
         }
@@ -142,7 +145,8 @@ public final class BossPayloadSupport {
             item.put("chargeCode", line.getChargeCode());
             item.put("chargeName", line.getChargeName());
             item.put("code", line.getChargeCode());
-            item.put("name", line.getChargeName());
+            // 对齐 areahis：chargeName=统计大类；name=具体项目/药品名
+            item.put("name", defaultIfBlank(line.getItemName(), line.getChargeName()));
             item.put("unit", defaultIfBlank(line.getUnit(), "次"));
             item.put("std", scale2(line.getStdAmount()));
             item.put("number", line.getQuantity() != null ? line.getQuantity() : BigDecimal.ONE);
@@ -151,6 +155,22 @@ public final class BossPayloadSupport {
             array.add(item);
         }
         return array;
+    }
+
+    /**
+     * 解析收费员/编制人/复核人展示名。
+     *
+     * @param snapshot 开票快照
+     * @return 优先姓名，其次操作人 ID，再兜底 system
+     */
+    public static String resolveOperatorDisplay(BossIssueSnapshot snapshot) {
+        if (snapshot.getOperatorName() != null && !snapshot.getOperatorName().isBlank()) {
+            return snapshot.getOperatorName().trim();
+        }
+        if (snapshot.getOperatorId() != null) {
+            return String.valueOf(snapshot.getOperatorId());
+        }
+        return "system";
     }
 
     /**

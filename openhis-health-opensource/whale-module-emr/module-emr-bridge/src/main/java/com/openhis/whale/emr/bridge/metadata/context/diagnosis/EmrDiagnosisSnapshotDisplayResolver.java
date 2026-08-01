@@ -15,6 +15,7 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
@@ -189,6 +190,140 @@ public class EmrDiagnosisSnapshotDisplayResolver {
             }
         }
         return lines;
+    }
+
+    /**
+     * 西医诊断展示（仅 WESTERN 行，分号拼接；无「[主]」前缀）。
+     *
+     * @param diagnosisJson 就诊诊断快照 JSON
+     * @return 展示文案；无西医行时返回 {@code null}
+     */
+    public String resolveWesternDiagnosisDisplay(String diagnosisJson) {
+        return joinDiagnosisDisplayLines(resolveWesternDiagnosisDisplayLines(diagnosisJson));
+    }
+
+    /**
+     * 中医诊断展示（病证组合并为「病名（证候）」，分号拼接；无「[主]」前缀）。
+     *
+     * @param diagnosisJson 就诊诊断快照 JSON
+     * @return 展示文案；无中医行时返回 {@code null}
+     */
+    public String resolveTcmDiagnosisDisplay(String diagnosisJson) {
+        return joinDiagnosisDisplayLines(resolveTcmDiagnosisDisplayLines(diagnosisJson));
+    }
+
+    /**
+     * 西医诊断有序展示行（不含中医；名称侧无「[主]」前缀）。
+     */
+    public List<String> resolveWesternDiagnosisDisplayLines(String diagnosisJson) {
+        List<EmrDiagnosisJsonSnapshotParser.ParsedDiagnosisRow> rows =
+                EmrDiagnosisJsonSnapshotParser.parse(diagnosisJson);
+        if (rows.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<EmrDiagnosisJsonSnapshotParser.ParsedDiagnosisRow> western = new ArrayList<>();
+        for (EmrDiagnosisJsonSnapshotParser.ParsedDiagnosisRow row : rows) {
+            if (!this.isTcmDiagnosisRow(row)) {
+                western.add(row);
+            }
+        }
+        if (western.isEmpty()) {
+            return Collections.emptyList();
+        }
+        western.sort(buildDiagnosisRowDisplayComparator());
+        List<String> lines = new ArrayList<>(western.size());
+        for (EmrDiagnosisJsonSnapshotParser.ParsedDiagnosisRow row : western) {
+            String name = plainDiagnosisName(row);
+            if (StringUtils.isNotEmpty(name)) {
+                lines.add(name);
+            }
+        }
+        return lines;
+    }
+
+    /**
+     * 中医诊断有序展示行（同组病证合并；名称侧无「[主]」前缀）。
+     */
+    public List<String> resolveTcmDiagnosisDisplayLines(String diagnosisJson) {
+        List<EmrDiagnosisJsonSnapshotParser.ParsedDiagnosisRow> rows =
+                EmrDiagnosisJsonSnapshotParser.parse(diagnosisJson);
+        if (rows.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<EmrDiagnosisJsonSnapshotParser.ParsedDiagnosisRow> tcmRows = new ArrayList<>();
+        for (EmrDiagnosisJsonSnapshotParser.ParsedDiagnosisRow row : rows) {
+            if (this.isTcmDiagnosisRow(row)) {
+                tcmRows.add(row);
+            }
+        }
+        if (tcmRows.isEmpty()) {
+            return Collections.emptyList();
+        }
+        tcmRows.sort(buildDiagnosisRowDisplayComparator());
+
+        List<String> lines = new ArrayList<>();
+        LinkedHashSet<String> emittedGroups = new LinkedHashSet<>();
+        for (EmrDiagnosisJsonSnapshotParser.ParsedDiagnosisRow row : tcmRows) {
+            String groupKey = trimToNull(row.getTcmSyndromeGroup());
+            if (groupKey != null) {
+                if (!emittedGroups.add(groupKey)) {
+                    continue;
+                }
+                String merged = formatTcmGroupDisplayName(tcmRows, groupKey, row);
+                if (StringUtils.isNotEmpty(merged)) {
+                    lines.add(merged);
+                }
+                continue;
+            }
+            String name = plainDiagnosisName(row);
+            if (StringUtils.isNotEmpty(name)) {
+                lines.add(name);
+            }
+        }
+        return lines;
+    }
+
+    private String formatTcmGroupDisplayName(
+            List<EmrDiagnosisJsonSnapshotParser.ParsedDiagnosisRow> tcmRows,
+            String groupKey,
+            EmrDiagnosisJsonSnapshotParser.ParsedDiagnosisRow fallbackRow) {
+        EmrDiagnosisJsonSnapshotParser.ParsedDiagnosisRow diseaseRow = null;
+        EmrDiagnosisJsonSnapshotParser.ParsedDiagnosisRow syndromeRow = null;
+        for (EmrDiagnosisJsonSnapshotParser.ParsedDiagnosisRow row : tcmRows) {
+            if (!groupKey.equals(trimToNull(row.getTcmSyndromeGroup()))) {
+                continue;
+            }
+            if (this.isTcmDiseaseSource(row)) {
+                diseaseRow = row;
+            } else if (this.isTcmSyndromeSource(row)) {
+                syndromeRow = row;
+            }
+        }
+        if (diseaseRow == null && this.isTcmDiseaseSource(fallbackRow)) {
+            diseaseRow = fallbackRow;
+        }
+        if (syndromeRow == null && this.isTcmSyndromeSource(fallbackRow)) {
+            syndromeRow = fallbackRow;
+        }
+        if (diseaseRow == null) {
+            diseaseRow = fallbackRow;
+        }
+        String diseaseName = diseaseRow != null ? diseaseRow.getConditionDefinitionName() : null;
+        String syndromeName = syndromeRow != null ? syndromeRow.getConditionDefinitionName() : null;
+        return TcmDiagnosisPresentationUtil.formatGroupDisplayName(diseaseName, syndromeName);
+    }
+
+    private static String plainDiagnosisName(EmrDiagnosisJsonSnapshotParser.ParsedDiagnosisRow row) {
+        if (row == null) {
+            return null;
+        }
+        if (StringUtils.isNotEmpty(row.getConditionDefinitionName())) {
+            return row.getConditionDefinitionName().trim();
+        }
+        if (StringUtils.isNotEmpty(row.getDiagnosisDesc())) {
+            return row.getDiagnosisDesc().trim();
+        }
+        return null;
     }
 
     /**

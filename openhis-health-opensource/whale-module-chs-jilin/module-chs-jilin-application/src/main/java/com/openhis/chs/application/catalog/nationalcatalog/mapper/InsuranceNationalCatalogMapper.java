@@ -45,6 +45,19 @@ public final class InsuranceNationalCatalogMapper {
         if (Boolean.TRUE.equals(request.getDedupeByHilistCode())) {
             query.setDedupeByHilistCode(true);
         }
+        query.setValiFlag(request.getValiFlag());
+        query.setAprvno(request.getAprvno());
+        query.setSpec(request.getSpec());
+        if (Boolean.TRUE.equals(request.getExcludePlatformExpired())) {
+            query.setExcludePlatformExpired(true);
+        }
+        String source = request.getSourceInfno() == null ? null : request.getSourceInfno().trim();
+        if ("1301".equals(source) && !Boolean.TRUE.equals(request.getDedupeByHilistCode())) {
+            query.setPickerMode1301Detail(true);
+        }
+        if ("1312".equals(source)) {
+            query.setPickerMode1312Only(true);
+        }
         return query;
     }
 

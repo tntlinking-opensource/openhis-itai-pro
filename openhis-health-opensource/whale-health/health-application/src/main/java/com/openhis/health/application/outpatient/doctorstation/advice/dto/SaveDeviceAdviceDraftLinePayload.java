@@ -51,16 +51,8 @@ public class SaveDeviceAdviceDraftLinePayload {
     private Long dispenseLocationId;
 
     /**
-     * 诊断定义主键（落库 {@code wkf_device_request.condition_definition_id}，与药品医嘱语义一致）。
+     * 绑定就诊诊断主键有序串（落库 {@code wkf_device_request.encounter_diagnosis_ids}；有序，首位为主诊断）。
      */
-    @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "诊断定义主键")
-    private Long conditionDefinitionId;
-
-    /**
-     * 就诊诊断主键（落库 {@code wkf_device_request.encounter_diagnosis_id}，与药品医嘱语义一致）。
-     */
-    @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "就诊诊断主键")
-    private Long encounterDiagnosisId;
+    @Schema(description = "绑定就诊诊断主键有序串")
+    private String encounterDiagnosisIds;
 }

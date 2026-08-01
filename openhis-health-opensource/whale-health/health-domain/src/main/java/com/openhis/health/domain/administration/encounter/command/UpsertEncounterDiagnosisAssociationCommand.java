@@ -10,6 +10,8 @@ import lombok.Setter;
 
 /**
  * 维护单条就诊诊断关联命令：新增或更新一条诊断与就诊的关联及扩展属性。
+ *
+ * <p>更新时带 {@code encounterDiagnosisId}；新建时带 {@code conditionDefinitionId}，直挂诊断目录。</p>
  */
 @Getter
 @Setter
@@ -22,10 +24,12 @@ public class UpsertEncounterDiagnosisAssociationCommand extends BatchCommand<Ups
     @Getter
     @Setter
     public static class UpsertEncounterDiagnosisAssociationItemCommand {
-        /** 就诊主键。 */
+        /** 就诊主键 {@code adm_encounter.id}。 */
         private Long encounterId;
-        /** 病情/诊断条件主键。 */
-        private Long conditionId;
+        /** 就诊诊断关联行主键 {@code adm_encounter_diagnosis.id}；更新时必填。 */
+        private Long encounterDiagnosisId;
+        /** 诊断目录主键 {@code cln_condition_definition.id}；新建时必填。 */
+        private Long conditionDefinitionId;
         /** 是否主诊断。 */
         private Boolean primaryFlag;
         /** 排序序号。 */
@@ -34,9 +38,9 @@ public class UpsertEncounterDiagnosisAssociationCommand extends BatchCommand<Ups
         private String description;
         /** 诊断类型码（术语 code 字符串）。 */
         private String diagTypeCode;
-        /** 诊断编码。 */
+        /** 诊断编码（历史列，可空）。 */
         private Integer diagCode;
-        /** 病情编码。 */
+        /** 病情编码（历史列，可空）。 */
         private Integer conditionCode;
         /** 医保或诊疗类别。 */
         private String medType;

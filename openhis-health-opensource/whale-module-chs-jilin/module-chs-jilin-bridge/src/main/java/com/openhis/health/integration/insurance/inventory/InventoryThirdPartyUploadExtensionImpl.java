@@ -4,9 +4,11 @@
  */
 package com.openhis.health.integration.insurance.inventory;
 
-import com.openhis.chs.bridge.inventory.workflow.InventoryThirdPartyUploadOrchestrator;
+import com.openhis.chs.bridge.inventory.workflow.InventoryThirdPartyUploadAsyncRunner;
+import com.openhis.chs.domain.inventory.command.UploadAfterClearBedSummarySalesReverseCommand;
 import com.openhis.chs.domain.inventory.command.UploadAfterDeptIssueCommand;
 import com.openhis.chs.domain.inventory.command.UploadAfterDeptIssueReturnCommand;
+import com.openhis.chs.domain.inventory.command.UploadAfterDischargeSummarySalesCommand;
 import com.openhis.chs.domain.inventory.command.UploadAfterDispenseCommand;
 import com.openhis.chs.domain.inventory.command.UploadAfterGainLossCommand;
 import com.openhis.chs.domain.inventory.command.UploadAfterInboundCommand;
@@ -14,10 +16,15 @@ import com.openhis.chs.domain.inventory.command.UploadAfterPurchaseReturnCommand
 import com.openhis.chs.domain.inventory.command.UploadAfterReturnCommand;
 import com.openhis.chs.domain.inventory.command.UploadAfterStocktakeCommand;
 import com.openhis.chs.domain.inventory.command.UploadAfterTransferCommand;
-import com.openhis.chs.domain.inventory.command.InvUpload3502Command;
+import com.openhis.chs.domain.inventory.service.YbInvUploadQueryService;
+import com.openhis.chs.gateway.client.InvokeContext;
+import com.openhis.chs.gateway.session.ChsSignCredentialResolver;
+import com.openhis.chs.gateway.support.ChsCurrentOperatorResolver;
 import com.openhis.health.infrastructure.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
+import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterClearBedSummarySalesReverseExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterDeptIssueExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterDeptIssueReturnExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterDischargeSummarySalesExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterDispenseExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterGainLossExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterInboundExtensionIn;
@@ -25,13 +32,7 @@ import com.openhis.health.infrastructure.integration.insurance.inventory.Extensi
 import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterReturnExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterStocktakeExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterTransferExtensionIn;
-import com.openhis.chs.bridge.inventory.context.InventoryDeptIssueUploadContextLoader;
-import com.openhis.chs.bridge.inventory.context.InventoryGainLossUploadContextLoader;
-import com.openhis.chs.bridge.inventory.context.InventoryInboundUploadContextLoader;
-import com.openhis.chs.bridge.inventory.context.InventoryPurchaseReturnUploadContextLoader;
-import com.openhis.chs.bridge.inventory.context.InventoryStocktakeUploadContextLoader;
-import com.openhis.chs.bridge.inventory.context.InventoryTransferUploadContextLoader;
-import com.openhis.chs.bridge.inventory.context.InventoryUploadContextLoader;
+import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -42,84 +43,146 @@ import org.springframework.stereotype.Component;
 /**
  * 吉林医保进销存第三方上报 SPI 实现。
  *
- * <p><b>3502 搭配（吉林省）</b>：仅 3501 首次初始化成对调 3502；3503/3504/3505/3506 调完<strong>不再</strong>调 3502。
+ * <p><b>3502 搭配（吉林省）</b>：3501 初始化成对 3502；3503/3504 成功后跟 3502（108/109）；
+ * <strong>3505 前先试 3502(107) 再调 3505（3502 失败仍继续），3506 成功后再 3502(106，批次=退药单号)</strong>。
  * 详见 whale-doc {@code 09-医保进销存-详细设计.md} §2.6。</p>
  *
- * <p><b>追溯码</b>：策略与上报前校验内聚于 {@code *UploadContextLoader} 与
- * {@link com.openhis.chs.bridge.inventory.workflow.InventoryThirdPartyUploadOrchestrator}（
- * {@link com.openhis.chs.bridge.inventory.support.InventoryUploadTraceLineSupport}），Health 仅调用本 SPI。</p>
+ * <p><b>异步</b>：除 {@link #hasUnreversedClearBedSummarySales} 同步查询外，全部 {@code uploadAfter*} 委托
+ * {@link InventoryThirdPartyUploadAsyncRunner} 在事务提交后 {@code @Async} 出站；失败不回滚 HIS 主流程。
+ * 操作人对齐发票：在<strong>调用线程</strong>（afterCommit 时仍有登录态）解析 {@code operatorId}/{@code operatorName}
+ * 传入异步，异步侧写入 {@code InvUpload*} 命令——同 {@code BossIssueSnapshot.operatorId}，不依赖异步 SecurityContext。</p>
+ *
+ * <p><b>追溯码</b>：策略与上报前校验内聚于 {@code *UploadContextLoader} 与 Orchestrator，Health 仅调用本 SPI。</p>
  *
  * <p><b>SPI 接口</b>：{@link InventoryThirdPartyUploadExtension}</p>
- * <p><b>Health 调用方</b>：门诊/住院发退药 AppService（{@code OutpatientPharmacyDispenseAppService}、
- * {@code InpatientPharmacyDispenseAppService} 等）及库房/药房/科室进销存 AppService</p>
- * <p><b>Bridge 委托</b>：各 {@code *UploadContextLoader} 组装请求 →
- * {@link InventoryThirdPartyUploadOrchestrator} 出站上报</p>
+ * <p><b>Health 调用方</b>：门诊/住院发退药、库房进销存、清床汇总径净销售、反结/召回冲销</p>
  */
 @Component
 @Primary
 @RequiredArgsConstructor
-@ConditionalOnBean(InventoryThirdPartyUploadOrchestrator.class)
+@ConditionalOnBean(InventoryThirdPartyUploadAsyncRunner.class)
 @ConditionalOnProperty(name = "openhis.modules.chs.enabled", havingValue = "true")
 public class InventoryThirdPartyUploadExtensionImpl implements InventoryThirdPartyUploadExtension {
 
-    private final InventoryThirdPartyUploadOrchestrator uploadOrchestrator;
-    private final InventoryUploadContextLoader dispenseUploadContextLoader;
-    private final InventoryInboundUploadContextLoader inboundUploadContextLoader;
-    private final InventoryPurchaseReturnUploadContextLoader purchaseReturnUploadContextLoader;
-    private final InventoryStocktakeUploadContextLoader stocktakeUploadContextLoader;
-    private final InventoryTransferUploadContextLoader transferUploadContextLoader;
-    private final InventoryGainLossUploadContextLoader gainLossUploadContextLoader;
-    private final InventoryDeptIssueUploadContextLoader deptIssueUploadContextLoader;
+    private final InventoryThirdPartyUploadAsyncRunner uploadAsyncRunner;
+    /** 清床轻门禁：未冲销汇总销售查询。 */
+    private final YbInvUploadQueryService invUploadQueryService;
+    /** 调用线程解析操作人主键。 */
+    private final ChsCurrentOperatorResolver currentOperatorResolver;
+    /** 调用线程解析操作人姓名（供平台 InvokeContext）。 */
+    private final ChsSignCredentialResolver signCredentialResolver;
 
     @Value("${openhis.chs.inventory.upload-enabled:true}")
     private boolean uploadEnabled;
 
-    /** 本地：返回 Extension 已启用。 */
+    /**
+     * 是否启用进销存上报：与 {@code openhis.chs.inventory.upload-enabled} 对齐，
+     * 供 {@code runUploadIfEnabled} / 清床门禁短路，避免开关关闭后仍注册 afterCommit。
+     *
+     * @return 配置开启时 true
+     */
     @Override
     public boolean isEnabled() {
-        return true;
+        return uploadEnabled;
     }
 
-    /** 【3505】发药后上报商品销售（库存变动由 3505 覆盖，不再伴生 3502）。 */
+    /** 【3505】发药后上报：先试 3502(107) 再 3505（异步；3502 失败仍继续 3505）。 */
     @Override
     public void uploadAfterDispense(InventoryUploadAfterDispenseExtensionIn command) {
         if (!uploadEnabled || command == null || command.getDispenseIds() == null || command.getDispenseIds().isEmpty()) {
             return;
         }
-        UploadAfterDispenseCommand domain = toDispenseCommand(command);
-        uploadOrchestrator.uploadSale3505(dispenseUploadContextLoader.build3505Request(domain));
+        // Pre：调用线程捕获操作人（afterCommit 时登录态仍在）
+        CapturedOperator operator = captureOperator();
+        // Cmd：委托异步 Runner，立即返回
+        uploadAsyncRunner.uploadAfterDispense(
+            currentTenantId(), operator.operatorId(), operator.operatorName(), toDispenseCommand(command));
     }
 
-    /** 【3506】退药后上报商品销售退货（不调 3502）。 */
+    /**
+     * 【3505】清床后汇总径净销售上报（异步）。
+     *
+     * @param command 就诊与可选契约
+     */
+    @Override
+    public void uploadAfterDischargeSummarySales(InventoryUploadAfterDischargeSummarySalesExtensionIn command) {
+        if (!uploadEnabled || command == null || command.getEncounterId() == null) {
+            return;
+        }
+        CapturedOperator operator = captureOperator();
+        // Cmd：委托异步 Runner，立即返回，不阻塞清床 HTTP
+        uploadAsyncRunner.uploadAfterDischargeSummarySales(
+            currentTenantId(), operator.operatorId(), operator.operatorName(), toDischargeSummaryCommand(command));
+    }
+
+    /**
+     * 【3506】反结/召回冲销清床汇总径净销售（异步；无成功清床 3505 时 no-op）。
+     *
+     * @param command 就诊与可选契约
+     */
+    @Override
+    public void uploadAfterClearBedSummarySalesReverse(
+        InventoryUploadAfterClearBedSummarySalesReverseExtensionIn command) {
+        if (!uploadEnabled || command == null || command.getEncounterId() == null) {
+            return;
+        }
+        CapturedOperator operator = captureOperator();
+        // Cmd：委托异步 Runner；未清床反结因无 SUCCESS 审计而空跑
+        uploadAsyncRunner.uploadAfterClearBedSummarySalesReverse(
+            currentTenantId(),
+            operator.operatorId(),
+            operator.operatorName(),
+            toClearBedSummaryReverseCommand(command));
+    }
+
+    /**
+     * 清床轻门禁：存在未冲销的成功清床汇总 3505 时 true。
+     *
+     * @param encounterId 就诊主键
+     * @return 存在未冲销销售时 true
+     */
+    @Override
+    public boolean hasUnreversedClearBedSummarySales(Long encounterId) {
+        if (!uploadEnabled || encounterId == null) {
+            return false;
+        }
+        return invUploadQueryService.hasUnreversedClearBedSummarySales(
+            TenantUtils.getCurrentTenantId(), encounterId);
+    }
+
+    /** 【3506】退药后上报：3506 成功后再 3502(106，批次=退药单号)（异步；伴生失败不回写 3506）。 */
     @Override
     public void uploadAfterReturn(InventoryUploadAfterReturnExtensionIn command) {
         if (!uploadEnabled || command == null || command.getDispenseIds() == null || command.getDispenseIds().isEmpty()) {
             return;
         }
-        uploadOrchestrator.uploadSaleReturn3506(
-            dispenseUploadContextLoader.build3506Request(toReturnCommand(command)));
+        CapturedOperator operator = captureOperator();
+        uploadAsyncRunner.uploadAfterReturn(
+            currentTenantId(), operator.operatorId(), operator.operatorName(), toReturnCommand(command));
     }
 
-    /** 【3503】入库审核通过后上报商品采购（不调 3502）。 */
+    /** 【3503】入库审核通过后上报商品采购（异步；成功后伴生 3502/108）。 */
     @Override
     public void uploadAfterInboundAgree(InventoryUploadAfterInboundExtensionIn command) {
         if (!uploadEnabled || command == null || command.getSupplyRequestLineIds() == null
             || command.getSupplyRequestLineIds().isEmpty()) {
             return;
         }
-        uploadOrchestrator.uploadPurchase3503(
-            inboundUploadContextLoader.build3503Request(toInboundCommand(command)));
+        CapturedOperator operator = captureOperator();
+        uploadAsyncRunner.uploadAfterInboundAgree(
+            currentTenantId(), operator.operatorId(), operator.operatorName(), toInboundCommand(command));
     }
 
-    /** 【3504】采购退货审核通过后上报商品采购退货（不调 3502）。 */
+    /** 【3504】采购退货审核通过后上报商品采购退货（异步；成功后伴生 3502/109，批次=退供单号）。 */
     @Override
     public void uploadAfterPurchaseReturn(InventoryUploadAfterPurchaseReturnExtensionIn command) {
         if (!uploadEnabled || command == null || command.getSupplyRequestLineIds() == null
             || command.getSupplyRequestLineIds().isEmpty()) {
             return;
         }
-        uploadOrchestrator.uploadPurchaseReturn3504(
-            purchaseReturnUploadContextLoader.build3504Request(toPurchaseReturnCommand(command)));
+        CapturedOperator operator = captureOperator();
+        uploadAsyncRunner.uploadAfterPurchaseReturn(
+            currentTenantId(), operator.operatorId(), operator.operatorName(), toPurchaseReturnCommand(command));
     }
 
     /** 【3502】盘点审核通过后上报盘盈盘亏（3501 仅首次初始化，日常盘点不报 3501）。 */
@@ -129,65 +192,93 @@ public class InventoryThirdPartyUploadExtensionImpl implements InventoryThirdPar
             || command.getSupplyRequestLineIds().isEmpty()) {
             return;
         }
-        UploadAfterStocktakeCommand domain = toStocktakeCommand(command);
-        InvUpload3502Command request3502 = stocktakeUploadContextLoader.build3502Request(domain);
-        if (request3502.getLines() != null && !request3502.getLines().isEmpty()) {
-            uploadOrchestrator.uploadInvChange3502(request3502);
-        }
+        CapturedOperator operator = captureOperator();
+        uploadAsyncRunner.uploadAfterStocktakeAgree(
+            currentTenantId(), operator.operatorId(), operator.operatorName(), toStocktakeCommand(command));
     }
 
-    /** 【3502】调拨审核通过后上报商品库存变更。 */
+    /** 【3502】调拨审核通过后上报商品库存变更（异步）。 */
     @Override
     public void uploadAfterTransferAgree(InventoryUploadAfterTransferExtensionIn command) {
         if (!uploadEnabled || command == null || command.getSupplyRequestLineIds() == null
             || command.getSupplyRequestLineIds().isEmpty()) {
             return;
         }
-        InvUpload3502Command request = transferUploadContextLoader.build3502Request(toTransferCommand(command));
-        if (request.getLines() != null && !request.getLines().isEmpty()) {
-            uploadOrchestrator.uploadInvChange3502(request);
-        }
+        CapturedOperator operator = captureOperator();
+        uploadAsyncRunner.uploadAfterTransferAgree(
+            currentTenantId(), operator.operatorId(), operator.operatorName(), toTransferCommand(command));
     }
 
-    /** 【3502】损益审核通过后上报商品库存变更。 */
+    /** 【3502】损益审核通过后上报商品库存变更（异步）。 */
     @Override
     public void uploadAfterGainLossAgree(InventoryUploadAfterGainLossExtensionIn command) {
         if (!uploadEnabled || command == null || command.getSupplyRequestLineIds() == null
             || command.getSupplyRequestLineIds().isEmpty()) {
             return;
         }
-        InvUpload3502Command request = gainLossUploadContextLoader.build3502Request(toGainLossCommand(command));
-        if (request.getLines() != null && !request.getLines().isEmpty()) {
-            uploadOrchestrator.uploadInvChange3502(request);
-        }
+        CapturedOperator operator = captureOperator();
+        uploadAsyncRunner.uploadAfterGainLossAgree(
+            currentTenantId(), operator.operatorId(), operator.operatorName(), toGainLossCommand(command));
     }
 
-    /** 【3502】科室领用审核通过后上报其他出库。 */
+    /** 【3502】科室领用审核通过后上报其他出库（异步）。 */
     @Override
     public void uploadAfterDeptIssueAgree(InventoryUploadAfterDeptIssueExtensionIn command) {
         if (!uploadEnabled || command == null || command.getSupplyRequestLineIds() == null
             || command.getSupplyRequestLineIds().isEmpty()) {
             return;
         }
-        InvUpload3502Command request = deptIssueUploadContextLoader.build3502DeptIssueRequest(
-            toDeptIssueCommand(command));
-        if (request.getLines() != null && !request.getLines().isEmpty()) {
-            uploadOrchestrator.uploadInvChange3502(request);
-        }
+        CapturedOperator operator = captureOperator();
+        uploadAsyncRunner.uploadAfterDeptIssueAgree(
+            currentTenantId(), operator.operatorId(), operator.operatorName(), toDeptIssueCommand(command));
     }
 
-    /** 【3502】科室退领审核通过后上报其他入库。 */
+    /** 【3502】科室退领审核通过后上报其他入库（异步）。 */
     @Override
     public void uploadAfterDeptIssueReturnAgree(InventoryUploadAfterDeptIssueReturnExtensionIn command) {
         if (!uploadEnabled || command == null || command.getSupplyRequestLineIds() == null
             || command.getSupplyRequestLineIds().isEmpty()) {
             return;
         }
-        InvUpload3502Command request = deptIssueUploadContextLoader.build3502DeptIssueReturnRequest(
-            toDeptIssueReturnCommand(command));
-        if (request.getLines() != null && !request.getLines().isEmpty()) {
-            uploadOrchestrator.uploadInvChange3502(request);
-        }
+        CapturedOperator operator = captureOperator();
+        uploadAsyncRunner.uploadAfterDeptIssueReturnAgree(
+            currentTenantId(), operator.operatorId(), operator.operatorName(), toDeptIssueReturnCommand(command));
+    }
+
+    /**
+     * 捕获当前租户主键，供异步线程还原。
+     *
+     * @return 当前租户主键
+     */
+    private static Long currentTenantId() {
+        return TenantUtils.getCurrentTenantId();
+    }
+
+    /**
+     * 在调用线程（仍有登录态）解析操作人，供异步写入 {@code InvUpload*} 命令。
+     *
+     * <p>对齐发票：Worker 用快照 {@code operatorId}，不在异步线程 {@code requireOperatorId}。</p>
+     *
+     * @return 操作人主键与姓名
+     */
+    private CapturedOperator captureOperator() {
+        // Pre：主键必须能解析，否则异步必失败且无流水
+        Long operatorId = currentOperatorResolver.requireOperatorId("请先登录");
+        InvokeContext partial = InvokeContext.builder()
+            .operatorId(String.valueOf(operatorId))
+            .build();
+        // Pre：姓名可回落 admin；仍在调用线程解析，避免异步无登录名
+        String operatorName = signCredentialResolver.resolveOperatorName(partial);
+        return new CapturedOperator(operatorId, operatorName);
+    }
+
+    /**
+     * 调用线程捕获的操作人（异步出站载荷）。
+     *
+     * @param operatorId   操作人主键
+     * @param operatorName 操作人姓名
+     */
+    private record CapturedOperator(Long operatorId, String operatorName) {
     }
 
     /**
@@ -202,6 +293,35 @@ public class InventoryThirdPartyUploadExtensionImpl implements InventoryThirdPar
             .setDispenseIds(command.getDispenseIds())
             .setContractBusNo(command.getContractBusNo())
             .setContractId(command.getContractId());
+    }
+
+    /**
+     * 将清床汇总径上报 ExtensionIn 映射为 CHS 命令。
+     *
+     * @param command 清床汇总径扩展入参
+     * @return CHS 清床汇总径上报命令
+     */
+    private static UploadAfterDischargeSummarySalesCommand toDischargeSummaryCommand(
+        InventoryUploadAfterDischargeSummarySalesExtensionIn command) {
+        return new UploadAfterDischargeSummarySalesCommand()
+            .setEncounterId(command.getEncounterId())
+            .setContractBusNo(command.getContractBusNo())
+            .setContractId(command.getContractId());
+    }
+
+    /**
+     * 将清床汇总径冲销 ExtensionIn 映射为 CHS 命令。
+     *
+     * @param command 冲销扩展入参
+     * @return CHS 冲销命令
+     */
+    private static UploadAfterClearBedSummarySalesReverseCommand toClearBedSummaryReverseCommand(
+        InventoryUploadAfterClearBedSummarySalesReverseExtensionIn command) {
+        return new UploadAfterClearBedSummarySalesReverseCommand()
+            .setEncounterId(command.getEncounterId())
+            .setContractBusNo(command.getContractBusNo())
+            .setContractId(command.getContractId())
+            .setDispenseIds(command.getDispenseIds());
     }
 
     /**

@@ -37,13 +37,13 @@ public class CreateDiagnosisCatalogRequest {
     @Schema(description = "医保标记（0/1）")
     private Integer ybFlag;
 
-    /** 特慢病编码。 */
-    @Schema(description = "特慢病编码")
-    private String diseaseCode;
-
     /** 医保编码。 */
     @Schema(description = "医保编码")
     private String ybNo;
+
+    /** 国家临床版诊断编码（国临码）。 */
+    @Schema(description = "国家临床版诊断编码（国临码）")
+    private String clinicCode;
 
     /** 拼音助记码。 */
     @Schema(description = "拼音助记码")

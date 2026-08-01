@@ -19,6 +19,7 @@ import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.query.ProductDefinitionPurchasePageQuery;
 import lombok.RequiredArgsConstructor;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -149,6 +150,10 @@ public class ProductDefinitionPurchasePageLoader {
         int pageSize = effective.getBoundedPageSize();
         if (pageSize > GeneralSharedConstants.PRODUCT_DEFINITION_RM_PAGE_SIZE_MAX) {
             pageSize = GeneralSharedConstants.PRODUCT_DEFINITION_RM_PAGE_SIZE_MAX;
+        }
+        // B.2.1：关键字非空时勿带 Sort，避免覆盖 Spec 内「精确优先」ORDER BY
+        if (StringUtils.isNotEmpty(effective.getKeyword())) {
+            return PageRequest.of(effective.springPageIndex(), pageSize);
         }
         return PageRequest.of(
             effective.springPageIndex(),

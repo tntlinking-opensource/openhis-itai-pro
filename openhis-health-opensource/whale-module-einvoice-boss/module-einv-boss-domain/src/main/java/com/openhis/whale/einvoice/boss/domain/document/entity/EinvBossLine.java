@@ -44,9 +44,16 @@ public class EinvBossLine extends BaseAuditedEntity {
     @Column(name = "charge_code", nullable = false, length = 50)
     private String chargeCode;
 
-    /** 博思收费项目名称。 */
+    /** 博思收费项目名称（统计大类，如治疗费/西药费）。 */
     @Column(name = "charge_name", nullable = false, length = 200)
     private String chargeName;
+
+    /**
+     * 清单具体项目名称（对齐 areahis {@code listDetail.name}，如药品/诊疗项目名）。
+     * <p>可空；出站时回落 {@link #chargeName}。</p>
+     */
+    @Column(name = "item_name", length = 200)
+    private String itemName;
 
     /** 标准金额。 */
     @Column(name = "std_amount", nullable = false, precision = 14, scale = 2)

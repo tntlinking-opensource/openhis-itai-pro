@@ -74,9 +74,10 @@ public interface NurseStationOrderExecuteMapper {
      * 批量执行成功响应。
      *
      * @param processedCount 成功槽位数
+     * @param warnings       软提示文案（BR-IP-EXE-034）；可空，映射为空列表
      * @return 响应 DTO
      */
-    ExecuteNurseStationOrdersResponse toExecuteResponse(int processedCount);
+    ExecuteNurseStationOrdersResponse toExecuteResponse(int processedCount, List<String> warnings);
 
     /**
      * 批量不执行成功响应。
@@ -119,11 +120,13 @@ public interface NurseStationOrderExecuteMapper {
     /**
      * 完成 Procedure 执行。
      *
-     * @param procedureId 执行记录主键
-     * @param operatorId  操作人
+     * @param procedureId  执行记录主键
+     * @param operatorId   操作人
+     * @param recordedTime 实际执行时刻（{@code actualTime} → {@code recorded_time}）；可空由领域回落
      * @return 完成命令
      */
-    CompleteProcedureRecordCommand toCompleteProcedureRecordCommand(Long procedureId, Long operatorId);
+    CompleteProcedureRecordCommand toCompleteProcedureRecordCommand(
+        Long procedureId, Long operatorId, LocalDateTime recordedTime);
 
     /**
      * 登记计划点不执行（BR-IP-EXE-021）。
@@ -153,7 +156,7 @@ public interface NurseStationOrderExecuteMapper {
      *
      * @param medReqId           药品申请主键
      * @param procedureId        执行记录主键
-     * @param planTime           计划发药时刻
+     * @param planTime           计划发药时刻（=频次 planTime；汇总领药时间点逻辑字段）
      * @param locationId         FIFO 库位
      * @param lotNumber          FIFO 批号
      * @param quantity           应发数量（单次量）
@@ -183,7 +186,7 @@ public interface NurseStationOrderExecuteMapper {
      * @param priceLine     销售定价行；模板缺 {@code definitionId} 时必填
      * @param accountId     就诊账户（IF-IP-EXE-02 由前端从患者列表回传）
      * @param procedureId   执行记录主键
-     * @param planTime      计划执行时刻
+     * @param planTime      账单 occurrence 时刻（=频次 planTime；逻辑归并，非展示用实际时分）
      * @param quantity           计价数量
      * @param quantityUnitCode   计价单位 code（药嘱须与 {@code med_medication_request.unit_code} 一致）
      * @param medicationProduct  产品定义读模型（药/诊路径用于比例换算单价）
@@ -259,6 +262,7 @@ public interface NurseStationOrderExecuteMapper {
      * @param patientId       患者主键
      * @param basedOnTable    主医嘱来源表
      * @param basedOnId       主医嘱来源主键
+     * @param packageId       组套标识（可与主药嘱 package_id 对齐；可空）
      * @param operatorId      操作人
      * @return 创建命令
      */
@@ -271,6 +275,7 @@ public interface NurseStationOrderExecuteMapper {
         Long patientId,
         String basedOnTable,
         Long basedOnId,
+        Long packageId,
         Long operatorId);
 
     /**

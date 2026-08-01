@@ -19,13 +19,11 @@ import lombok.RequiredArgsConstructor;
 /**
  * 诊断（Condition）事实读侧查询服务。
  *
- * <p>职责：批量/按就诊加载诊断事实，以及从诊断定义目录检索候选条目（与病情事实表分离，见 BR-CND-004）。</p>
+ * <p><b>DD 退役</b>：禁止业务调用；读路径改经 {@code adm_encounter_diagnosis} + {@code ConditionDefinitionQueryService}。</p>
  *
- * <p>边界：只读；空入参返回空集合；不修改实体。诊断候选检索见
- * {@link com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService}。</p>
- *
- * <p>聚合边界：仅本聚合 {@link ConditionRepository}。</p>
+ * @deprecated DD 退役，禁止业务调用
  */
+@Deprecated
 @Service
 @RequiredArgsConstructor
 public class ConditionQueryService {

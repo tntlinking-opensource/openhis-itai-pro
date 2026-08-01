@@ -9,7 +9,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 移除就诊诊断关联命令：按就诊与病情主键解除关联并记录原因。
+ * 移除就诊诊断关联命令：按就诊诊断行主键软删关联并记录原因。
  */
 @Getter
 @Setter
@@ -22,10 +22,10 @@ public class RemoveEncounterDiagnosisAssociationCommand extends BatchCommand<Rem
     @Getter
     @Setter
     public static class RemoveEncounterDiagnosisAssociationItemCommand {
-        /** 就诊主键。 */
+        /** 就诊主键 {@code adm_encounter.id}，与行主键一并校验归属。 */
         private Long encounterId;
-        /** 病情/诊断条件主键。 */
-        private Long conditionId;
+        /** 就诊诊断关联行主键 {@code adm_encounter_diagnosis.id}。 */
+        private Long encounterDiagnosisId;
         /** 移除原因。 */
         private String removeReason;
     }

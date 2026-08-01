@@ -60,6 +60,7 @@ import com.openhis.health.domain.financial.paymentreconciliation.queries.model.P
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationDomainService;
 import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationQueryService;
+import com.openhis.health.domain.financial.paymentreconciliation.support.PaymentYbSettlementSupport;
 import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
@@ -72,7 +73,15 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientChargeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.administration.invoice.command.CancelInvoiceCommand;
+import com.openhis.health.domain.administration.invoice.entity.Invoice;
+import com.openhis.health.domain.administration.invoice.query.InvoiceQueryCommand;
+import com.openhis.health.domain.administration.invoice.service.InvoiceDomainService;
+import com.openhis.health.domain.administration.invoice.service.InvoiceQueryService;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
+import com.openhis.health.domain.share.enums.InvoiceStatus;
+import com.openhis.health.infrastructure.integration.einvoice.orchestration.BossElectronicInvoiceAfterCommitOrchestration;
+import com.openhis.health.domain.share.enums.PaymentChannel;
 import com.openhis.health.domain.share.enums.PaymentStatus;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.utils.GatewayIdParseUtil;
@@ -176,6 +185,15 @@ public class OutpatientRefundAppService {
     /** 半退保留行预结算与正式结算。 */
     private final OutpatientChargeAppService outpatientChargeAppService;
 
+    /** 票据写侧（退费后 DRAFT 作废 / ISSUED 冲红）。 */
+    private final InvoiceDomainService invoiceDomainService;
+
+    /** 票据读侧。 */
+    private final InvoiceQueryService invoiceQueryService;
+
+    /** 博思冲红 afterCommit 编排。 */
+    private final BossElectronicInvoiceAfterCommitOrchestration bossElectronicInvoiceAfterCommitOrchestration;
+
     /** 门诊第三方结算扩展（未装 Module 时为 NoOp）。 */
     private final OutpatientChargeInsuranceExtension chargeInsuranceExtension;
 
@@ -241,7 +259,13 @@ public class OutpatientRefundAppService {
                     filtered.add(record);
                     continue;
                 }
-                // 待退/已退页签：仅保留与请求页签标签匹配的行。
+                // 已退页签：DB 已按存在 REFUNDED 收敛；半退后仍有拟退时也保留，不再按标签二次剔除。
+                if (OutpatientRefundQueueTab.SETTLED.equals(request.getQueueTabCode())) {
+                    record.setQueueLabelCode(OutpatientRefundQueueTab.SETTLED);
+                    filtered.add(record);
+                    continue;
+                }
+                // 待退页签：仅保留仍有拟退（标签为 PENDING）的行。
                 if (request.getQueueTabCode().equals(record.getQueueLabelCode())) {
                     filtered.add(record);
                 }
@@ -374,19 +398,14 @@ public class OutpatientRefundAppService {
         }
         List<PaymentRecDetailQueryModel> originalPaymentDetails =
             paymentReconciliationQueryService.listPaymentRecDetailsByPaymentId(request.getOriginalPaymentId());
-        boolean halfRefundOnPayment = request.getPreservedNewChargeItemIds() != null
-            && !request.getPreservedNewChargeItemIds().isEmpty();
-        BigDecimal expectedRefund;
-        List<RefundPaymentDetailSubmitDto> effectiveRefundPaymentDetails;
-        if (halfRefundOnPayment) {
-            // 产品半退：资金侧对该 paymentId 整单冲退（AS-OP-FIN-003 §1.3），UN_PAY 须为原支付全额而非拟退行合计。
-            expectedRefund = this.resolveOriginalPaymentTenderedAmount(originalPayment);
-            effectiveRefundPaymentDetails = this.buildFullOriginalRefundPaymentDetails(originalPaymentDetails);
-        } else {
-            expectedRefund = this.sumChargeItemAmount(refundingRows);
-            effectiveRefundPaymentDetails = request.getRefundPaymentDetails();
-        }
-        BigDecimal actualRefund = this.sumRefundPaymentDetails(effectiveRefundPaymentDetails);
+        // 原路返回：实退分桶一律取自原支付明细（含医保统筹/个账）；忽略前端自选支付方式。
+        // 产品半退时资金侧仍对该 paymentId 整单冲退（AS-OP-FIN-003 §1.3），渠道合计取原支付全额。
+        List<RefundPaymentDetailSubmitDto> effectiveRefundPaymentDetails =
+            this.buildFullOriginalRefundPaymentDetails(originalPaymentDetails);
+        // 渠道实退合计（含医保统筹/个账）；与主单患者应付可能不一致（医保全报 display=0）
+        BigDecimal channelRefundTotal = this.sumRefundPaymentDetails(effectiveRefundPaymentDetails);
+        BigDecimal expectedRefund = channelRefundTotal;
+        BigDecimal actualRefund = channelRefundTotal;
         // Gate：应退与渠道实退须在结算刻度一致（BR-MON-001）
         if (!MonetaryAmountSupport.equalsAtSettleScale(expectedRefund, actualRefund)) {
             throw new BusinessException(
@@ -394,6 +413,9 @@ public class OutpatientRefundAppService {
                 this.buildMessage(OutpatientRefundConstants.MESSAGE_CODE_REFUND_AMOUNT_MISMATCH, "实退合计与应退不符"));
         }
         // Pre：工伤/医保撤销须在本地逆向落账之前完成。
+        boolean hadInsuranceSettlement =
+            chargeInsuranceExtension.isEnabled()
+                && !chargeInsuranceExtension.listSettlementsByPayment(request.getOriginalPaymentId()).isEmpty();
         this.runWorkInjuryRevokeBeforeRefund(request.getOriginalPaymentId());
         this.runInsuranceRevokeBeforeRefund(
             request.getOriginalPaymentId(),
@@ -404,12 +426,21 @@ public class OutpatientRefundAppService {
         String outcomeEnum = this.resolvePaymentOutcomeEnum(originalPayment);
         List<Long> paymentIdList = new ArrayList<>();
         paymentIdList.add(request.getOriginalPaymentId());
-        thirdPartyPaymentRefundOrchestrator.applyRefundBeforeLocalRefund(
-            request.getOriginalPaymentId(),
-            request.getClientRefundResult(),
-            operatorId);
+        try {
+            thirdPartyPaymentRefundOrchestrator.applyRefundBeforeLocalRefund(
+                request.getOriginalPaymentId(),
+                request.getClientRefundResult(),
+                operatorId);
+        } catch (RuntimeException refundEx) {
+            throw this.wrapLocalRefundFailureAfterExternalReverse(refundEx, hadInsuranceSettlement);
+        }
+        // 医保已撤或银联已退货：后续本地失败须提示强制重试，禁止当「未退费」再收一次。
+        boolean externalReverseCompleted =
+            hadInsuranceSettlement || request.getClientRefundResult() != null;
         List<PaymentDetailItemCommand> refundPaymentDetailCommands =
             outpatientRefundMapper.toPaymentDetailItemCommands(effectiveRefundPaymentDetails);
+        // 明细终态：禁止落 DRAFT；原明细缺失时回落本笔 outcome
+        this.fillRefundDetailResultEnum(refundPaymentDetailCommands, outcomeEnum);
         // Gate：退费渠道拆分须与原支付明细一致（原路返回，BR-REF-011）。
         this.assertRefundPaymentDetailsMatchOriginalPayment(effectiveRefundPaymentDetails, originalPaymentDetails);
         // Pre：前端仅提交渠道与实退额；落库前须写回 accountId，避免领域明细自检「支付明细账户标识不能为空」。
@@ -428,6 +459,11 @@ public class OutpatientRefundAppService {
             reversePaymentId = paymentReconciliationDomainService.requestOutpatientRefund(refundCommand);
             CompleteOutpatientRefundCommand completeCommand =
                 outpatientRefundMapper.toCompleteOutpatientRefundCommand(reversePaymentId, outcomeEnum, billDate);
+            // 逆向桥表：拷贝原单 setl 为 REVOKED，与 2208 后原单同态，供日结行级过滤
+            PaymentReconciliationQueryModel originalForYb =
+                paymentReconciliationQueryService.mustGetPayment(request.getOriginalPaymentId());
+            completeCommand.setYbSettlements(
+                PaymentYbSettlementSupport.copyAsRevoked(originalForYb.getYbSettlements()));
             // Cmd：逆向单收口 REFUNDED 并发布唯一退费完成事件
             paymentReconciliationDomainService.completeOutpatientRefund(completeCommand);
             List<Long> snapshotIds = this.resolvePaymentSnapshotChargeItemIds(request.getOriginalPaymentId());
@@ -436,6 +472,11 @@ public class OutpatientRefundAppService {
             BatchChargeItemIdsCommand billRefundCommand =
                 outpatientRefundMapper.toBatchChargeItemIdsCommand(completionIds, operatorId);
             chargeItemDomainService.completeOutpatientBillRefund(billRefundCommand);
+            // 资金退费成功后收口原支付关联票据：DRAFT 本地作废；ISSUED 冲红（半退再结算会另开新票）。
+            this.voidOrWriteOffInvoiceLinkedToPayment(
+                request.getOriginalPaymentId(),
+                operatorId,
+                "门诊退费");
             boolean halfRefundExecuted = false;
             if (request.getPreservedNewChargeItemIds() != null && !request.getPreservedNewChargeItemIds().isEmpty()) {
                 halfRefundExecuted = true;
@@ -460,11 +501,42 @@ public class OutpatientRefundAppService {
                 reversePaymentId, request.getOriginalPaymentId(), halfRefundExecuted);
         } catch (BusinessException businessException) {
             this.rollbackOutpatientRefundAttempt(reversePaymentId);
-            throw businessException;
+            throw this.wrapLocalRefundFailureAfterExternalReverse(businessException, externalReverseCompleted);
         } catch (RuntimeException runtimeException) {
             this.rollbackOutpatientRefundAttempt(reversePaymentId);
-            throw runtimeException;
+            throw this.wrapLocalRefundFailureAfterExternalReverse(runtimeException, externalReverseCompleted);
         }
+    }
+
+    /**
+     * 第三方已撤销后本地落账失败：改写提示，要求立即重试退费、禁止再收一次。
+     *
+     * @param cause                    原异常
+     * @param externalReverseCompleted 医保/银联撤销是否已完成
+     * @return 包装后的业务异常，或原异常（未完成外部撤销时）
+     */
+    private RuntimeException wrapLocalRefundFailureAfterExternalReverse(
+            RuntimeException cause, boolean externalReverseCompleted) {
+        if (!externalReverseCompleted || cause == null) {
+            return cause;
+        }
+        String detail = cause.getMessage();
+        if (detail == null || detail.isBlank()) {
+            detail = "院内落账失败";
+        }
+        String message = "第三方（医保/银联）已撤销成功，但院内退费未完成，请立即重试退费，切勿再次收费。原因：" + detail;
+        if (cause instanceof BusinessException businessException) {
+            String code = businessException.getErrorCode();
+            if (code == null || code.isBlank()) {
+                code = "REF-013";
+            }
+            BusinessException wrapped = new BusinessException(code, message);
+            wrapped.addSuppressed(cause);
+            return wrapped;
+        }
+        BusinessException wrapped = new BusinessException("REF-013", message);
+        wrapped.addSuppressed(cause);
+        return wrapped;
     }
 
     /**
@@ -477,6 +549,38 @@ public class OutpatientRefundAppService {
             return;
         }
         paymentReconciliationDomainService.abortOutpatientRefundAttempt(reversePaymentId);
+    }
+
+    /**
+     * 门诊退费后作废/冲红原支付关联票据：DRAFT → voidDraftInvoice；ISSUED → writeoff。
+     *
+     * @param paymentId  被退费的原正向支付单 ID
+     * @param operatorId 操作员 ID
+     * @param reason     作废/冲红原因
+     */
+    private void voidOrWriteOffInvoiceLinkedToPayment(Long paymentId, Long operatorId, String reason) {
+        InvoiceQueryCommand query = new InvoiceQueryCommand();
+        query.setPaymentId(paymentId);
+        Invoice invoice = invoiceQueryService.getInvoiceByPaymentId(query);
+        if (invoice == null || invoice.getId() == null) {
+            return;
+        }
+        if (InvoiceStatus.CANCELLED.sameAs(invoice.getStatusEnum())) {
+            return;
+        }
+        CancelInvoiceCommand cancelCommand = new CancelInvoiceCommand();
+        cancelCommand.setInvoiceId(invoice.getId());
+        cancelCommand.setReason(reason);
+        cancelCommand.setOperatorId(operatorId);
+        if (InvoiceStatus.DRAFT.sameAs(invoice.getStatusEnum())) {
+            invoiceDomainService.voidDraftInvoice(cancelCommand);
+            bossElectronicInvoiceAfterCommitOrchestration.afterInvoiceCancelled(invoice.getId(), reason);
+            return;
+        }
+        if (InvoiceStatus.ISSUED.sameAs(invoice.getStatusEnum())) {
+            invoiceDomainService.writeoffInvoiceAndCreateRedRecord(cancelCommand);
+            bossElectronicInvoiceAfterCommitOrchestration.afterInvoiceCancelled(invoice.getId(), reason);
+        }
     }
 
     /**
@@ -520,6 +624,13 @@ public class OutpatientRefundAppService {
             return;
         }
         for (OutpatientChargeSettlementRecordExtensionOut record : records) {
+            if (record == null) {
+                continue;
+            }
+            // Skip：本地已 REVOKED 不再打 2208（半退/重试退费时 list 仍含已撤行）
+            if ("REVOKED".equals(record.getStatus())) {
+                continue;
+            }
             OutpatientChargeRevokeSettleExtensionIn command = new OutpatientChargeRevokeSettleExtensionIn();
             command.setSettlementRecordId(record.getSettlementRecordId());
             command.setPaymentId(originalPaymentId);
@@ -529,9 +640,13 @@ public class OutpatientRefundAppService {
                 // Cmd：退费前 Extension 2208 撤销原正式结算
                 chargeInsuranceExtension.revokeSettle(command);
             } catch (RuntimeException ex) {
+                String detail = ex.getMessage();
+                if (detail == null || detail.isBlank()) {
+                    detail = "平台返回失败";
+                }
                 throw new BusinessException(
                     "INS-013",
-                    "医保结算撤销失败，请勿重复退费，联系医保办处理");
+                    "医保结算撤销失败（2208）：" + detail + "；请勿重复退费，联系医保办处理");
             }
         }
     }
@@ -930,7 +1045,7 @@ public class OutpatientRefundAppService {
     }
 
     /**
-     * 为支付分组补充原支付落库渠道码（供前端退费前银联路径判定）。
+     * 为支付分组补充原支付落库渠道码与分桶金额（供前端原路退判定与费用明细展示）。
      *
      * @param groups 按原支付分组列表
      */
@@ -955,6 +1070,32 @@ public class OutpatientRefundAppService {
             }
             group.setOriginalPayChannelCodes(
                 codesByPaymentId.getOrDefault(group.getPaymentId(), Collections.emptyList()));
+            List<PaymentRecDetailQueryModel> details =
+                paymentReconciliationQueryService.listPaymentRecDetailsByPaymentId(group.getPaymentId());
+            BigDecimal fundPay = BigDecimal.ZERO;
+            BigDecimal acctPay = BigDecimal.ZERO;
+            BigDecimal selfPay = BigDecimal.ZERO;
+            if (details != null) {
+                for (PaymentRecDetailQueryModel row : details) {
+                    if (row == null || StringUtils.isEmpty(row.getPayEnum()) || row.getAmount() == null) {
+                        continue;
+                    }
+                    String channelCode = row.getPayEnum().trim();
+                    if (PaymentChannel.INSURANCE_FUND.getCode().equals(channelCode)) {
+                        fundPay = MonetaryAmountSupport.sumThenSettle(List.of(fundPay, row.getAmount()));
+                    } else if (PaymentChannel.INSURANCE_ACCT.getCode().equals(channelCode)) {
+                        acctPay = MonetaryAmountSupport.sumThenSettle(List.of(acctPay, row.getAmount()));
+                    } else {
+                        PaymentChannel channel = PaymentChannel.fromCode(channelCode);
+                        if (channel != null && channel.isUserSelectable() && !channel.isUiOnly()) {
+                            selfPay = MonetaryAmountSupport.sumThenSettle(List.of(selfPay, row.getAmount()));
+                        }
+                    }
+                }
+            }
+            group.setYbFundPaySumamt(fundPay);
+            group.setYbAcctPay(acctPay);
+            group.setSelfPayAmount(selfPay);
         }
     }
 
@@ -1027,28 +1168,6 @@ public class OutpatientRefundAppService {
     }
 
     /**
-     * 解析原支付主单冲退金额（整单冲退口径）。
-     *
-     * @param originalPayment 原支付读模型
-     * @return 原支付 tendered_amount；缺失时回落 display_amount
-     */
-    private BigDecimal resolveOriginalPaymentTenderedAmount(PaymentReconciliationQueryModel originalPayment) {
-        BigDecimal amount = null;
-        if (originalPayment != null) {
-            amount = originalPayment.getTenderedAmount();
-            if (amount == null) {
-                amount = originalPayment.getDisplayAmount();
-            }
-        }
-        if (amount == null) {
-            throw new BusinessException(
-                ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
-                this.buildMessage(OutpatientRefundConstants.MESSAGE_CODE_PAYMENT_NOT_REFUNDABLE, "原支付金额缺失，无法整单冲退"));
-        }
-        return amount;
-    }
-
-    /**
      * 按原支付明细装配整单冲退渠道实退（产品半退 UN_PAY 须全额原路返回）。
      *
      * @param originalPaymentDetails 原支付自付明细
@@ -1056,8 +1175,7 @@ public class OutpatientRefundAppService {
      */
     private List<RefundPaymentDetailSubmitDto> buildFullOriginalRefundPaymentDetails(
         List<PaymentRecDetailQueryModel> originalPaymentDetails) {
-        Map<String, BigDecimal> originalByChannel = this.aggregatePaymentAmountByChannel(originalPaymentDetails);
-        if (originalByChannel.isEmpty()) {
+        if (originalPaymentDetails == null || originalPaymentDetails.isEmpty()) {
             throw new BusinessException(
                 ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
                 this.buildMessage(
@@ -1065,13 +1183,60 @@ public class OutpatientRefundAppService {
                     "原支付无渠道明细，无法整单冲退"));
         }
         List<RefundPaymentDetailSubmitDto> refundDetails = new ArrayList<>();
-        for (Map.Entry<String, BigDecimal> entry : originalByChannel.entrySet()) {
+        // 逐行拷贝（含 pay_trans_no），禁止按渠道聚合丢 setl_id
+        for (PaymentRecDetailQueryModel row : originalPaymentDetails) {
+            if (row == null || StringUtils.isEmpty(row.getPayEnum()) || row.getAmount() == null) {
+                continue;
+            }
+            String channelCode = paymentChannelGate.requireKnownPersistedPayChannelCode(
+                row.getPayEnum(),
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                "原支付渠道不合法");
             RefundPaymentDetailSubmitDto detail = new RefundPaymentDetailSubmitDto();
-            detail.setPayChannelCode(entry.getKey());
-            detail.setAmount(entry.getValue());
+            detail.setPayChannelCode(channelCode);
+            detail.setAmount(row.getAmount());
+            if (StringUtils.isNotEmpty(row.getPayTransNo())) {
+                detail.setPayTransNo(row.getPayTransNo().trim());
+            }
+            detail.setPayTransText(row.getPayTransText());
+            detail.setPayTransDate(row.getPayTransDate());
+            if (StringUtils.isNotEmpty(row.getResultEnum())) {
+                detail.setResultEnum(row.getResultEnum().trim());
+            }
+            detail.setAccountId(row.getAccountId());
+            detail.setAccountCode(row.getAccountCode());
             refundDetails.add(detail);
         }
+        if (refundDetails.isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                this.buildMessage(
+                    OutpatientRefundConstants.MESSAGE_CODE_REFUND_CHANNEL_MUST_ORIGINAL,
+                    "原支付无渠道明细，无法整单冲退"));
+        }
         return refundDetails;
+    }
+
+    /**
+     * 逆向明细 result_enum 收口为成功/已退语义；空或 DRAFT 时回落本笔 outcome。
+     *
+     * @param details     待落库逆向明细命令
+     * @param outcomeEnum 本笔退费结果码
+     */
+    private void fillRefundDetailResultEnum(List<PaymentDetailItemCommand> details, String outcomeEnum) {
+        if (details == null || details.isEmpty()) {
+            return;
+        }
+        for (PaymentDetailItemCommand detail : details) {
+            if (detail == null) {
+                continue;
+            }
+            String resultEnum = detail.getResultEnum();
+            if (StringUtils.isEmpty(resultEnum)
+                || "DRAFT".equalsIgnoreCase(resultEnum.trim())) {
+                detail.setResultEnum(outcomeEnum);
+            }
+        }
     }
 
     /**
@@ -1098,7 +1263,7 @@ public class OutpatientRefundAppService {
                 if (row == null || StringUtils.isEmpty(row.getPayEnum()) || row.getAmount() == null) {
                     continue;
                 }
-                String channelCode = paymentChannelGate.requirePersistablePayChannelCode(
+                String channelCode = paymentChannelGate.requireKnownPersistedPayChannelCode(
                     row.getPayEnum(),
                     ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
                     "原支付渠道不合法");
@@ -1328,7 +1493,7 @@ public class OutpatientRefundAppService {
             if (row == null || StringUtils.isEmpty(row.getPayEnum()) || row.getAmount() == null) {
                 continue;
             }
-            String channelCode = paymentChannelGate.requirePersistablePayChannelCode(
+            String channelCode = paymentChannelGate.requireKnownPersistedPayChannelCode(
                 row.getPayEnum(),
                 ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
                 "原支付渠道不合法");
@@ -1360,7 +1525,7 @@ public class OutpatientRefundAppService {
             if (row == null || StringUtils.isEmpty(row.getPayChannelCode()) || row.getAmount() == null) {
                 continue;
             }
-            String channelCode = paymentChannelGate.requirePersistablePayChannelCode(
+            String channelCode = paymentChannelGate.requireKnownPersistedPayChannelCode(
                 row.getPayChannelCode(),
                 ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
                 "退款支付渠道不合法");
@@ -1488,7 +1653,8 @@ public class OutpatientRefundAppService {
                 continue;
             }
             Long encounterId = record.getEncounterId();
-            // 仍存在拟退明细 → 待退费；否则存在已退明细 → 已退费（SETTLED 码，UI 展示已退费）。
+            // 仍存在拟退明细 → 待退费（可与已退并存，已退页签另按 REFUNDED 事实展示）。
+            // 无拟退且存在已退明细 → 已退费。
             if (Boolean.TRUE.equals(hasRefundingByEncounterId.get(encounterId))) {
                 flags.put(encounterId, OutpatientRefundQueueTab.PENDING);
                 continue;
@@ -1892,18 +2058,7 @@ public class OutpatientRefundAppService {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "退费参数不完整");
         }
         GatewayIdParseUtil.requireNonEmptyLongIds(request.getRefundingChargeItemIds(), "拟退收费明细不能为空");
-        if (request.getRefundPaymentDetails() == null || request.getRefundPaymentDetails().isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT, "退款渠道明细不能为空");
-        }
-        for (RefundPaymentDetailSubmitDto detail : request.getRefundPaymentDetails()) {
-            if (detail == null) {
-                throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT, "退款渠道明细不能为空");
-            }
-            detail.setPayChannelCode(paymentChannelGate.requirePersistablePayChannelCode(
-                detail.getPayChannelCode(),
-                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
-                "退款支付渠道不合法"));
-        }
+        // 渠道实退由服务端按原支付明细原路返回装配；前端可不传 refundPaymentDetails。
     }
 
     /**

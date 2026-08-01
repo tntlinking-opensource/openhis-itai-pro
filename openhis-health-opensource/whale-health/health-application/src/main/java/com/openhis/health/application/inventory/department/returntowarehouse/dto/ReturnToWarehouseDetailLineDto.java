@@ -4,6 +4,7 @@
  */
 package com.openhis.health.application.inventory.department.returntowarehouse.dto;
 
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -27,8 +28,14 @@ public class ReturnToWarehouseDetailLineDto {
     private BigDecimal itemQuantity;
     /** 计量单位编码。 */
     private String unitCode;
+    /** 计量单位展示名（术语/产品槽字典文案；禁止回落裸 unitCode）。 */
+    private String unitCodeDictText;
     /** 批号。 */
     private String lotNumber;
+    /** 效期起。 */
+    private LocalDateTime startTime;
+    /** 效期止。 */
+    private LocalDateTime endTime;
     /** 追溯码（逗号分隔多码）。 */
     private String traceNo;
     /** 业务发生/制单时间。 */
@@ -39,4 +46,10 @@ public class ReturnToWarehouseDetailLineDto {
     private String remake;
     /** 产品展示名称（读模型富化）。 */
     private String productName;
+    /** 规格展示文本（来自产品定义 {@code totalVolume}）。 */
+    private String specification;
+    /** 生产厂家名称（读模型富化）。 */
+    private String manufacturer;
+    /** 产品目录编辑提示（单位档/换算等，供前端回显编辑器）。 */
+    private ProductDefinitionCatalogEditorHintsDto productCatalog;
 }

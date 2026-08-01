@@ -42,13 +42,9 @@ public class CreateMedicationOrderDraftCommand {
     /** 是否皮试。 */
     private Boolean skinTestFlag;
     /**
-     * 绑定诊断定义主键（医生站 {@code medicationPayload.conditionDefinitionId}，列 {@code condition_definition_id}）。
+     * 绑定就诊诊断主键有序串（医生站 {@code medicationPayload.encounterDiagnosisIds}，列 {@code encounter_diagnosis_ids}；有序，首位为主诊断）。
      */
-    private Long conditionDefinitionId;
-    /**
-     * 就诊诊断主键（医生站 {@code medicationPayload.encounterDiagnosisId}，列 {@code encounter_diagnosis_id}）。
-     */
-    private Long encounterDiagnosisId;
+    private String encounterDiagnosisIds;
     /** 费用性质/合同覆盖（列 {@code contract_id}；可空表示走患者默认）。 */
     private Long contractId;
     /** 药品成组号。 */
@@ -71,4 +67,9 @@ public class CreateMedicationOrderDraftCommand {
 
     /** 医生站列表展示排序号（可选）。 */
     private Integer sortNumber;
+
+    /**
+     * 医嘱备注（落库 {@code med_medication_request.remark}；护士站随医嘱展示）。
+     */
+    private String remark;
 }

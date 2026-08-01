@@ -184,8 +184,17 @@ public class OutpatientRefundMapperImpl implements OutpatientRefundMapper {
         command.setEntererId(originalPayment.getEntererId());
         command.setKindEnum(originalPayment.getKindEnum());
         command.setPaymentEnum(PaymentType.UN_PAY.getCode());
-        command.setDisplayAmount(refundAmount);
-        command.setTenderedAmount(refundAmount);
+        command.setContractNo(originalPayment.getContractNo());
+        // 主单金额与原单患者应付同口径（医保全报可为 0）；渠道统筹/个账等落在 paymentDetails，供日结成对抵净
+        BigDecimal headerAmount = originalPayment.getDisplayAmount();
+        if (headerAmount == null) {
+            headerAmount = originalPayment.getTenderedAmount();
+        }
+        if (headerAmount == null) {
+            headerAmount = refundAmount;
+        }
+        command.setDisplayAmount(headerAmount);
+        command.setTenderedAmount(headerAmount);
         command.setChargeItemIds(chargeItemIdsJoined);
         command.setPaymentDetails(paymentDetails);
         return command;
@@ -284,6 +293,13 @@ public class OutpatientRefundMapperImpl implements OutpatientRefundMapper {
             detail.setPayEnum(submit.getPayChannelCode());
             detail.setAmount(submit.getAmount());
             detail.setChargeAmount(submit.getAmount());
+            // 医保行须带原 setl_id，供日结行级对齐；自付渠道可空
+            detail.setPayTransNo(submit.getPayTransNo());
+            detail.setPayTransText(submit.getPayTransText());
+            detail.setPayTransDate(submit.getPayTransDate());
+            detail.setResultEnum(submit.getResultEnum());
+            detail.setAccountId(submit.getAccountId());
+            detail.setAccountCode(submit.getAccountCode());
             details.add(detail);
         }
         return details;

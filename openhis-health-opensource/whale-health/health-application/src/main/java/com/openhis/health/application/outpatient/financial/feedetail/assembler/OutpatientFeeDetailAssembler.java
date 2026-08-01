@@ -19,6 +19,7 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 门诊费用明细金额列与合计装配（AS-OP-FIN-005 §1.3.1；**BR-OP-FDT-010～012**；金额刻度 **BR-MON-001**）。
@@ -76,12 +77,8 @@ public class OutpatientFeeDetailAssembler {
             line.setProductName(product.getProductName());
             line.setProductCode(product.getProductBusNo());
             line.setSpecification(this.resolveSpecification(product));
+            // 医保等级取目录甲乙类文案；医保类型列已废弃（曾误绑频次 rateCode）
             line.setInsuranceLevelDisplay(product.getChrgitmLvText());
-            if (StringUtils.isNotEmpty(product.getRateCodeDictText())) {
-                line.setInsuranceTypeDisplay(product.getRateCodeDictText());
-            } else {
-                line.setInsuranceTypeDisplay(product.getRateCode());
-            }
         }
         if (StringUtils.isNotEmpty(finTypeCode)) {
             line.setSubCategoryCode(finTypeCode.trim());
@@ -128,7 +125,15 @@ public class OutpatientFeeDetailAssembler {
         line.setDiscountAmount(MonetaryAmountSupport.applySignAtCalcScale(discountAmount, signMultiplier));
         line.setReceivableAmount(MonetaryAmountSupport.applySignAtCalcScale(receivableAmount, signMultiplier));
         line.setDiscountedAmount(MonetaryAmountSupport.applySignAtCalcScale(discountedAmount, signMultiplier));
-        line.setLineAmount(MonetaryAmountSupport.applySignAtCalcScale(lineAmountRaw.abs(), signMultiplier));
+        BigDecimal signedSaleAmount =
+            MonetaryAmountSupport.applySignAtCalcScale(lineAmountRaw.abs(), signMultiplier);
+        BigDecimal signedSaleUnit =
+            MonetaryAmountSupport.applySignAtCalcScale(
+                MonetaryAmountSupport.nullToZero(chargeItem.getUnitPrice()), signMultiplier);
+        line.setLineAmount(signedSaleAmount);
+        // 售价：历史落库 ChargeItem 单价/行额（BR-PRICE-SRC-001）
+        line.setSaleUnitPrice(signedSaleUnit);
+        line.setSaleAmount(signedSaleAmount);
         line.setActualReceivedAmount(MonetaryAmountSupport.applySignAtCalcScale(actualReceivedRaw.abs(), signMultiplier));
         line.setInsuranceAmount(MonetaryAmountSupport.applySignAtCalcScale(insuranceRaw, signMultiplier));
         line.setSelfPayAmount(MonetaryAmountSupport.applySignAtCalcScale(selfPayRaw.abs(), signMultiplier));
@@ -149,6 +154,8 @@ public class OutpatientFeeDetailAssembler {
         summary.setReceivableAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
         summary.setDiscountedAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
         summary.setLineAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setPurchaseAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setSaleAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
         summary.setActualReceivedAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
         summary.setInsuranceAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
         summary.setSelfPayAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
@@ -160,6 +167,8 @@ public class OutpatientFeeDetailAssembler {
         BigDecimal receivableSum = BigDecimal.ZERO;
         BigDecimal discountedSum = BigDecimal.ZERO;
         BigDecimal lineSum = BigDecimal.ZERO;
+        BigDecimal purchaseSum = BigDecimal.ZERO;
+        BigDecimal saleSum = BigDecimal.ZERO;
         BigDecimal actualReceivedSum = BigDecimal.ZERO;
         BigDecimal insuranceSum = BigDecimal.ZERO;
         BigDecimal selfPaySum = BigDecimal.ZERO;
@@ -173,6 +182,8 @@ public class OutpatientFeeDetailAssembler {
             receivableSum = receivableSum.add(MonetaryAmountSupport.nullToZero(line.getReceivableAmount()));
             discountedSum = discountedSum.add(MonetaryAmountSupport.nullToZero(line.getDiscountedAmount()));
             lineSum = lineSum.add(MonetaryAmountSupport.nullToZero(line.getLineAmount()));
+            purchaseSum = purchaseSum.add(MonetaryAmountSupport.nullToZero(line.getPurchaseAmount()));
+            saleSum = saleSum.add(MonetaryAmountSupport.nullToZero(line.getSaleAmount()));
             actualReceivedSum = actualReceivedSum.add(MonetaryAmountSupport.nullToZero(line.getActualReceivedAmount()));
             insuranceSum = insuranceSum.add(MonetaryAmountSupport.nullToZero(line.getInsuranceAmount()));
             selfPaySum = selfPaySum.add(MonetaryAmountSupport.nullToZero(line.getSelfPayAmount()));
@@ -183,6 +194,119 @@ public class OutpatientFeeDetailAssembler {
         summary.setReceivableAmountTotal(MonetaryAmountSupport.scaleSettle(receivableSum));
         summary.setDiscountedAmountTotal(MonetaryAmountSupport.scaleSettle(discountedSum));
         summary.setLineAmountTotal(MonetaryAmountSupport.scaleSettle(lineSum));
+        summary.setPurchaseAmountTotal(MonetaryAmountSupport.scaleSettle(purchaseSum));
+        summary.setSaleAmountTotal(MonetaryAmountSupport.scaleSettle(saleSum));
+        summary.setActualReceivedAmountTotal(MonetaryAmountSupport.scaleSettle(actualReceivedSum));
+        summary.setInsuranceAmountTotal(MonetaryAmountSupport.scaleSettle(insuranceSum));
+        summary.setSelfPayAmountTotal(MonetaryAmountSupport.scaleSettle(selfPaySum));
+        return summary;
+    }
+
+    /**
+     * 由域层候选行直接装配全量金额 summary（**BR-OP-FDT-010～013**），不装配产品/就诊/人员展示字段。
+     *
+     * <p>供明细分页页脚使用：避免为算合计而全量 enrichment 就诊块。金额口径与
+     * {@link #assembleLineAmounts} + 进价回填一致；进价由调用方批量解析后传入。</p>
+     *
+     * @param rows                         全量命中候选行（含 payment 上下文与快照分母）
+     * @param purchaseAmountByChargeItemId chargeItemId → 历史进价行额（缺键按 0）
+     * @return 合计 DTO（结算刻度 2 位）
+     */
+    public OutpatientFeeDetailAmountSummaryDto assembleGlobalSummaryFromChargeRows(
+        List<OutpatientFeeDetailChargeRowQueryModel> rows,
+        Map<Long, BigDecimal> purchaseAmountByChargeItemId) {
+        OutpatientFeeDetailAmountSummaryDto summary = new OutpatientFeeDetailAmountSummaryDto();
+        summary.setBaseAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setDiscountAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setReceivableAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setDiscountedAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setLineAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setPurchaseAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setSaleAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setActualReceivedAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setInsuranceAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setSelfPayAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        if (rows == null || rows.isEmpty()) {
+            return summary;
+        }
+        BigDecimal baseSum = BigDecimal.ZERO;
+        BigDecimal discountSum = BigDecimal.ZERO;
+        BigDecimal receivableSum = BigDecimal.ZERO;
+        BigDecimal discountedSum = BigDecimal.ZERO;
+        BigDecimal lineSum = BigDecimal.ZERO;
+        BigDecimal purchaseSum = BigDecimal.ZERO;
+        BigDecimal saleSum = BigDecimal.ZERO;
+        BigDecimal actualReceivedSum = BigDecimal.ZERO;
+        BigDecimal insuranceSum = BigDecimal.ZERO;
+        BigDecimal selfPaySum = BigDecimal.ZERO;
+        // Pre：按候选行 6 位原值累加（与 assembleLineAmounts 同口径，BR-MON-001）
+        for (OutpatientFeeDetailChargeRowQueryModel row : rows) {
+            if (row == null || row.getChargeItem() == null) {
+                continue;
+            }
+            ChargeItem chargeItem = row.getChargeItem();
+            OutpatientFeeDetailPaymentContextQueryModel context = row.getPaymentContext();
+            boolean refundLine = this.isRefundLine(context);
+            BigDecimal signMultiplier = BigDecimal.ONE;
+            if (refundLine) {
+                // 退费 payment 链路金额列统一取负展示（BR-OP-FDT-012）
+                signMultiplier = new BigDecimal("-1");
+            }
+            BigDecimal baseAmount = MonetaryAmountSupport.nullToZero(chargeItem.getBaseAmount());
+            BigDecimal receivableAmount = this.resolveReceivableAmount(chargeItem);
+            BigDecimal discountedAmount = this.resolveDiscountedAmount(chargeItem);
+            BigDecimal lineAmountRaw = MonetaryAmountSupport.nullToZero(chargeItem.getTotalPrice());
+            BigDecimal discountGap = baseAmount.subtract(receivableAmount);
+            BigDecimal discountAmount = BigDecimal.ZERO;
+            if (discountGap.compareTo(BigDecimal.ZERO) > 0) {
+                discountAmount = discountGap;
+            }
+            BigDecimal lineAbsAmount = lineAmountRaw.abs();
+            BigDecimal insuranceRaw = BigDecimal.ZERO;
+            if (context != null) {
+                // Gate：ybFundAndAcctTotal 仅含已确认医保凭证（同 PaymentYbSettlementSupport#hasConfirmed）
+                insuranceRaw = this.allocateInsuranceAmount(
+                    lineAbsAmount,
+                    MonetaryAmountSupport.nullToZero(context.getYbFundAndAcctTotal()),
+                    MonetaryAmountSupport.nullToZero(context.getPaymentSnapshotAbsAmountTotal()));
+            }
+            BigDecimal actualReceivedRaw = lineAmountRaw;
+            BigDecimal selfPayRaw = actualReceivedRaw.subtract(insuranceRaw);
+            BigDecimal purchaseAmount = BigDecimal.ZERO;
+            if (chargeItem.getId() != null && purchaseAmountByChargeItemId != null) {
+                BigDecimal resolvedPurchase = purchaseAmountByChargeItemId.get(chargeItem.getId());
+                if (resolvedPurchase != null) {
+                    purchaseAmount = resolvedPurchase;
+                }
+            }
+            // Asm：带符号累加，禁止对先行 settle 的金额再相加
+            baseSum = baseSum.add(MonetaryAmountSupport.applySignAtCalcScale(baseAmount, signMultiplier));
+            discountSum = discountSum.add(MonetaryAmountSupport.applySignAtCalcScale(discountAmount, signMultiplier));
+            receivableSum = receivableSum.add(
+                MonetaryAmountSupport.applySignAtCalcScale(receivableAmount, signMultiplier));
+            discountedSum = discountedSum.add(
+                MonetaryAmountSupport.applySignAtCalcScale(discountedAmount, signMultiplier));
+            BigDecimal signedSaleAmount =
+                MonetaryAmountSupport.applySignAtCalcScale(lineAbsAmount, signMultiplier);
+            lineSum = lineSum.add(signedSaleAmount);
+            saleSum = saleSum.add(signedSaleAmount);
+            purchaseSum = purchaseSum.add(
+                MonetaryAmountSupport.applySignAtCalcScale(purchaseAmount, signMultiplier));
+            actualReceivedSum = actualReceivedSum.add(
+                MonetaryAmountSupport.applySignAtCalcScale(actualReceivedRaw.abs(), signMultiplier));
+            insuranceSum = insuranceSum.add(
+                MonetaryAmountSupport.applySignAtCalcScale(insuranceRaw, signMultiplier));
+            selfPaySum = selfPaySum.add(
+                MonetaryAmountSupport.applySignAtCalcScale(selfPayRaw.abs(), signMultiplier));
+        }
+        // Asm：页脚合计 settle 到 2 位
+        summary.setBaseAmountTotal(MonetaryAmountSupport.scaleSettle(baseSum));
+        summary.setDiscountAmountTotal(MonetaryAmountSupport.scaleSettle(discountSum));
+        summary.setReceivableAmountTotal(MonetaryAmountSupport.scaleSettle(receivableSum));
+        summary.setDiscountedAmountTotal(MonetaryAmountSupport.scaleSettle(discountedSum));
+        summary.setLineAmountTotal(MonetaryAmountSupport.scaleSettle(lineSum));
+        summary.setPurchaseAmountTotal(MonetaryAmountSupport.scaleSettle(purchaseSum));
+        summary.setSaleAmountTotal(MonetaryAmountSupport.scaleSettle(saleSum));
         summary.setActualReceivedAmountTotal(MonetaryAmountSupport.scaleSettle(actualReceivedSum));
         summary.setInsuranceAmountTotal(MonetaryAmountSupport.scaleSettle(insuranceSum));
         summary.setSelfPayAmountTotal(MonetaryAmountSupport.scaleSettle(selfPaySum));

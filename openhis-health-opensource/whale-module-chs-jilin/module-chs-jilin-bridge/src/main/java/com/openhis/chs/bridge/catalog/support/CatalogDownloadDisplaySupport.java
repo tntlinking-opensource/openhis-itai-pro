@@ -42,6 +42,9 @@ public final class CatalogDownloadDisplaySupport {
             case ChsInfNo.DISEASE_CATALOG_DOWNLOAD -> "1307 疾病与诊断";
             case ChsInfNo.SURGERY_CATALOG_DOWNLOAD -> "1308 手术操作";
             case ChsInfNo.SPECIAL_DISEASE_CATALOG_DOWNLOAD -> "1309 门诊慢特病";
+            case ChsInfNo.BY_DISEASE_PAYMENT_CATALOG_DOWNLOAD -> "1310 按病种付费";
+            case ChsInfNo.DAY_SURGERY_DISEASE_CATALOG_DOWNLOAD -> "1311 日间手术病种";
+            case ChsInfNo.TUMOR_MORPHOLOGY_CATALOG_DOWNLOAD -> "1313 肿瘤形态学";
             case ChsInfNo.TCM_DISEASE_CATALOG_DOWNLOAD -> "1314 中医疾病";
             case ChsInfNo.TCM_SYNDROME_CATALOG_DOWNLOAD -> "1315 中医证候";
             default -> infno.trim();
@@ -66,6 +69,9 @@ public final class CatalogDownloadDisplaySupport {
             case ChsInfNo.DISEASE_CATALOG_DOWNLOAD -> ChsInfNo.DISEASE_CATALOG_DOWNLOAD;
             case ChsInfNo.SURGERY_CATALOG_DOWNLOAD -> ChsInfNo.SURGERY_CATALOG_DOWNLOAD;
             case ChsInfNo.SPECIAL_DISEASE_CATALOG_DOWNLOAD -> ChsInfNo.SPECIAL_DISEASE_CATALOG_DOWNLOAD;
+            case ChsInfNo.BY_DISEASE_PAYMENT_CATALOG_DOWNLOAD -> ChsInfNo.BY_DISEASE_PAYMENT_CATALOG_DOWNLOAD;
+            case ChsInfNo.DAY_SURGERY_DISEASE_CATALOG_DOWNLOAD -> ChsInfNo.DAY_SURGERY_DISEASE_CATALOG_DOWNLOAD;
+            case ChsInfNo.TUMOR_MORPHOLOGY_CATALOG_DOWNLOAD -> ChsInfNo.TUMOR_MORPHOLOGY_CATALOG_DOWNLOAD;
             case ChsInfNo.TCM_DISEASE_CATALOG_DOWNLOAD -> ChsInfNo.TCM_DISEASE_CATALOG_DOWNLOAD;
             case ChsInfNo.TCM_SYNDROME_CATALOG_DOWNLOAD -> ChsInfNo.TCM_SYNDROME_CATALOG_DOWNLOAD;
             default -> ListType.WESTERN_DRUG.getCode();

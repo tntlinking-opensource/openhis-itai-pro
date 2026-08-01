@@ -1,4 +1,6 @@
--- Squashed emr DDL (V1–V6)
+-- EMR DDL（清库压扁）
+-- 表：document / data_item_index / document_type / document_version / metadata_field_def / template
+-- category_code 五类：OUTPATIENT / INPATIENT / NOTICE / SURGERY / OTHER
 
 -- from V1__emr_document.sql
 -- emr_document（建表）
@@ -112,6 +114,7 @@ CREATE TABLE IF NOT EXISTS emr_document_type (
     default_template_id BIGINT,
     is_enabled          BOOLEAN      NOT NULL DEFAULT TRUE,
     sort_order          INT,
+    category_code       VARCHAR(32),
 
     created_at          TIMESTAMP    NOT NULL,
     updated_at          TIMESTAMP,
@@ -131,6 +134,9 @@ CREATE INDEX IF NOT EXISTS idx_emr_document_type_enabled
 
 CREATE INDEX IF NOT EXISTS idx_emr_document_type_tenant
     ON emr_document_type (tenant_id);
+
+CREATE INDEX IF NOT EXISTS idx_emr_document_type_category
+    ON emr_document_type (category_code);
 COMMENT ON TABLE emr_document_type IS '电子病历 document type';
 COMMENT ON COLUMN emr_document_type.id IS '主键';
 COMMENT ON COLUMN emr_document_type.code IS '文书类型配置';
@@ -138,6 +144,7 @@ COMMENT ON COLUMN emr_document_type.name IS '文书类型名称';
 COMMENT ON COLUMN emr_document_type.default_template_id IS '默认模板 ID';
 COMMENT ON COLUMN emr_document_type.is_enabled IS '是否启用';
 COMMENT ON COLUMN emr_document_type.sort_order IS '排序';
+COMMENT ON COLUMN emr_document_type.category_code IS '文书分类：OUTPATIENT=门诊病历 / INPATIENT=住院病历 / NOTICE=告知书 / SURGERY=手术病历 / OTHER=其他';
 COMMENT ON COLUMN emr_document_type.created_at IS '创建时间';
 COMMENT ON COLUMN emr_document_type.updated_at IS '最后更新时间';
 COMMENT ON COLUMN emr_document_type.created_by IS '创建人';
@@ -146,8 +153,6 @@ COMMENT ON COLUMN emr_document_type.is_deleted IS '软删标记';
 COMMENT ON COLUMN emr_document_type.deleted_at IS '删除时间';
 COMMENT ON COLUMN emr_document_type.deleted_by IS '删除人';
 COMMENT ON COLUMN emr_document_type.tenant_id IS '租户标识';
-
--- seed: emr_document_type（default_template_id 与 V6 模板种子 id 对齐）
 
 -- from V4__emr_document_version.sql
 -- emr_document_version（建表）

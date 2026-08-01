@@ -1,41 +1,6 @@
--- Dev seed part 7
-
-INSERT INTO "public"."prt_print_binding" (
-    "id", "tenant_id", "organization_id", "binding_code", "bus_no", "name", "enabled",
-    "created_at", "updated_at", "created_by", "updated_by", "is_deleted"
-) VALUES
-(
-    910600000000000011, 0, NULL, 'charge.cashier.receipt', 'charge_receipt', '收费小票', true,
-    '2026-06-22 00:00:00.000+00', '2026-06-22 00:00:00.000+00', 1, 1, false
-),
-(
-    910600000000000012, 0, NULL, 'outpatient.rx.print', 'outpatient_prescription', '门诊处方', true,
-    '2026-06-22 00:00:00.000+00', '2026-06-22 00:00:00.000+00', 1, 1, false
-)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "public"."prt_template" (
-    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
-    "print_json", "schema_version", "sample_print_data",
-    "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "scenario_code"
-) VALUES (
-    330512847710097408,
-    1,
-    NULL,
-    'PT202607090001',
-    '护理记录单',
-    'published',
-    1,
-    '{"schemaVersion":1,"engine":"Print","panels":[{"name":"1","index":0,"width":297,"height":210,"paperType":"A4","rotate":true,"paperHeader":0,"paperFooter":575.4,"paperNumberContinue":true,"paperNumberDisabled":true,"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"printElements":[{"printElementType":{"type":"text","title":"文本"},"options":{"top":24,"left":28.3,"field":"weekRangeLabel","width":170,"height":14,"fontSize":9,"hideTitle":true,"textAlign":"left","fontWeight":"normal","testData":"本周 07-06 ~ 07-12"}},{"printElementType":{"type":"text","title":"文本"},"options":{"top":24,"left":28.3,"field":"documentTitle","width":785.2,"height":24,"fontSize":18,"hideTitle":true,"textAlign":"center","fontWeight":"bold","testData":"某某医院 护理记录单"}},{"printElementType":{"type":"text","title":"姓名"},"options":{"top":52,"left":28.3,"title":"姓名","field":"patientName","width":72,"height":14,"fontSize":9,"testData":"小王"}},{"printElementType":{"type":"text","title":"性别"},"options":{"top":52,"left":104,"title":"性别","field":"genderEnumText","width":56,"height":14,"fontSize":9,"testData":"男"}},{"printElementType":{"type":"text","title":"年龄"},"options":{"top":52,"left":164,"title":"年龄","field":"ageText","width":56,"height":14,"fontSize":9,"testData":"25岁"}},{"printElementType":{"type":"text","title":"病室"},"options":{"top":52,"left":224,"title":"病室","field":"wardName","width":96,"height":14,"fontSize":9,"testData":"内科疗区"}},{"printElementType":{"type":"text","title":"床号"},"options":{"top":52,"left":324,"title":"床号","field":"bedNo","width":56,"height":14,"fontSize":9,"testData":""}},{"printElementType":{"type":"text","title":"病历号"},"options":{"top":52,"left":384,"title":"病历号","field":"inpatientNo","width":120,"height":14,"fontSize":9,"testData":"ZY2026-07-080002"}},{"printElementType":{"type":"text","title":"入院日期"},"options":{"top":52,"left":508,"title":"入院日期","field":"admitAtText","width":150,"height":14,"fontSize":9,"testData":"2026-07-08 15:23:14"}},{"printElementType":{"type":"text","title":"出院日期"},"options":{"top":52,"left":662,"title":"出院日期","field":"dischargeAtText","width":150,"height":14,"fontSize":9,"testData":""}},{"printElementType":{"type":"table","title":"表格","editable":true,"columnResizable":true,"isEnableDeleteRow":true,"isEnableEditField":true,"isEnableInsertRow":true,"isEnableMergeCell":true,"columnAlignEditable":true,"columnTitleEditable":true,"isEnableContextMenu":true,"isEnableDeleteColumn":true,"isEnableInsertColumn":true,"columnDisplayEditable":true,"columnDisplayIndexEditable":true},"options":{"top":72,"left":28.3,"field":"recordRows","width":785.2,"height":486,"fontSize":9,"textAlign":"center","lineHeight":12,"tableBorder":"border","tableHeaderBorder":"border","tableHeaderRepeat":"first","tableBodyRowBorder":"border","tableBodyRowHeight":22,"tableBodyCellBorder":"border","tableHeaderRowHeight":26,"tableHeaderCellBorder":"border","columns":[[{"title":"日期\n时间","field":"recordDatetime","width":68,"colspan":1,"rowspan":2,"align":"center","checked":true,"columnId":"recordDatetime"},{"title":"体温","width":43.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"temperatureGroup"},{"title":"脉搏","width":43.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"pulseGroup"},{"title":"心率","width":43.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"heartRateGroup"},{"title":"呼吸","width":43.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"respiratoryGroup"},{"title":"血压","width":43.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"bloodPressureGroup"},{"title":"意识","field":"consciousness","width":37.6,"colspan":1,"rowspan":2,"align":"center","checked":true,"columnId":"consciousness"},{"title":"瞳孔","width":67.2,"colspan":2,"rowspan":1,"align":"center","checked":true,"columnId":"pupilGroup"},{"title":"入量","width":63.2,"colspan":2,"rowspan":1,"align":"center","checked":true,"columnId":"intakeGroup"},{"title":"出量","width":98.7,"colspan":3,"rowspan":1,"align":"center","checked":true,"columnId":"outputGroup"},{"title":"病情观察及护理","field":"conditionMeasure","width":169.2,"colspan":1,"rowspan":2,"align":"center","checked":true,"columnId":"conditionMeasure"},{"title":"护士签名","field":"nurseSignature","width":63.2,"colspan":1,"rowspan":2,"align":"center","checked":true,"columnId":"nurseSignature"}],[{"title":"℃","field":"temperature","width":43.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"temperature"},{"title":"次/分","field":"pulse","width":43.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"pulse"},{"title":"次/分","field":"heartRate","width":43.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"heartRate"},{"title":"次/分","field":"respiratory","width":43.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"respiratory"},{"title":"mmHg","field":"bloodPressure","width":43.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"bloodPressure"},{"title":"左","field":"pupilLeft","width":33.6,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"pupilLeft"},{"title":"右","field":"pupilRight","width":33.6,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"pupilRight"},{"title":"名称","field":"intakeName","width":39.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"intakeName"},{"title":"ml","field":"intakeAmount","width":23.7,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"intakeAmount"},{"title":"名称","field":"outputName","width":39.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"outputName"},{"title":"ml","field":"outputAmount","width":23.7,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"outputAmount"},{"title":"颜色","field":"outputColorCharacter","width":35.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"outputColorCharacter"}]],"testData":"[{\"recordDatetime\":\"07-08\\n15:23\",\"temperature\":\"36.5\",\"pulse\":\"78\",\"heartRate\":\"78\",\"respiratory\":\"18\",\"bloodPressure\":\"120/80\",\"consciousness\":\"清醒\",\"pupilLeft\":\"3\",\"pupilRight\":\"3\",\"intakeName\":\"\",\"intakeAmount\":\"\",\"outputName\":\"\",\"outputAmount\":\"\",\"outputColorCharacter\":\"\",\"conditionMeasure\":\"\",\"nurseSignature\":\"\"},{\"recordDatetime\":\"07-09\\n08:00\",\"temperature\":\"36.8\",\"pulse\":\"80\",\"heartRate\":\"80\",\"respiratory\":\"19\",\"bloodPressure\":\"118/76\",\"consciousness\":\"清醒\",\"pupilLeft\":\"\",\"pupilRight\":\"\",\"intakeName\":\"口服\",\"intakeAmount\":\"200\",\"outputName\":\"尿\",\"outputAmount\":\"150\",\"outputColorCharacter\":\"淡黄\",\"conditionMeasure\":\"患者精神可，无特殊不适。\",\"nurseSignature\":\"张护士\"}]"}}]}]}'::jsonb,
-    1,
-    '{"weekRangeLabel":"本周 07-06 ~ 07-12","documentTitle":"某某医院 护理记录单","patientName":"小王","genderEnumText":"男","ageText":"25岁","wardName":"内科疗区","bedNo":"","inpatientNo":"ZY2026-07-080002","admitAtText":"2026-07-08 15:23:14","dischargeAtText":"","recordRows":[{"recordDatetime":"07-08\n15:23","temperature":"36.5","pulse":"78","heartRate":"78","respiratory":"18","bloodPressure":"120/80","consciousness":"清醒","pupilLeft":"3","pupilRight":"3","intakeName":"","intakeAmount":"","outputName":"","outputAmount":"","outputColorCharacter":"","conditionMeasure":"","nurseSignature":""},{"recordDatetime":"07-09\n08:00","temperature":"36.8","pulse":"80","heartRate":"80","respiratory":"19","bloodPressure":"118/76","consciousness":"清醒","pupilLeft":"","pupilRight":"","intakeName":"口服","intakeAmount":"200","outputName":"尿","outputAmount":"150","outputColorCharacter":"淡黄","conditionMeasure":"患者精神可，无特殊不适。","nurseSignature":"张护士"}]}'::jsonb,
-    TIMESTAMP '2026-07-09 17:00:00+08',
-    TIMESTAMP '2026-07-09 17:00:00+08',
-    1,
-    1,
-    FALSE,
-    NULL,
-    NULL,
-    'ip-nursingRecord-print'
-)
-ON CONFLICT ("id") DO NOTHING;
+-- =============================================================================
+-- 已迁至 platform：health-infrastructure/.../V10__seed_platform.sql
+--   - prt_print_binding（收费小票 / 门诊处方绑定）
+--   - prt_template 护理记录单（与 V24 一并并入 V10 PRT 段）
+-- 本文件保留为空壳，避免已执行过 V17 的库 Flyway 版本空洞。
+-- =============================================================================

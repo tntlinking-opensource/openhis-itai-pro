@@ -5,10 +5,12 @@
 package com.openhis.wi.bridge.invoke.workflow;
 
 import com.alibaba.fastjson2.JSON;
+import com.openhis.wi.gateway.scheme.register.model.Wi1101Output;
 import com.openhis.wi.gateway.scheme.settle.model.Wi2206Output;
 import com.openhis.wi.gateway.scheme.settle.model.Wi2207Output;
 import com.openhis.wi.gateway.scheme.register.model.Wi2301Output;
 import com.openhis.wi.gateway.scheme.register.model.Wi9102Output;
+import com.openhis.wi.gateway.scheme.register.parser.Wi1101OutputParser;
 import com.openhis.wi.gateway.scheme.register.parser.Wi2301OutputParser;
 import com.openhis.wi.gateway.scheme.register.parser.Wi9102OutputParser;
 import com.openhis.wi.gateway.scheme.settle.parser.Wi2206OutputParser;
@@ -386,6 +388,11 @@ public class WorkInjuryInvokeOrchestrator {
             Long invokeLogId) {
         Map<String, Object> output = request.getOutput();
         if (infno == null) {
+            return null;
+        }
+        if (WiInfnoConstants.PERSON_INFO.equals(infno)) {
+            Wi1101Output parsed = Wi1101OutputParser.parse(output);
+            anchorDomainService.apply1101Submit(anchor, parsed.getPsnNo(), parsed.getInjureAffirmId());
             return null;
         }
         if (WiInfnoConstants.APPROVAL_UPLOAD.equals(infno)) {

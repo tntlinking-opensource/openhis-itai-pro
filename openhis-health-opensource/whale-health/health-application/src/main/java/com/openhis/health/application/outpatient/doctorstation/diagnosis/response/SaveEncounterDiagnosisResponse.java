@@ -19,9 +19,8 @@ import java.util.List;
 public class SaveEncounterDiagnosisResponse {
 
     @Schema(description = "保存成功条数")
-    /** 保存后的诊断事实标识列表。 */
     private Integer savedCount;
 
-    @Schema(description = "保存后的诊断事实标识列表")
-    private List<Long> savedConditionIds;
+    @Schema(description = "保存后的就诊诊断行主键列表")
+    private List<Long> savedEncounterDiagnosisIds;
 }

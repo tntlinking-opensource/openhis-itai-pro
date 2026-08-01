@@ -416,37 +416,79 @@ public class NurseWorkloadReportAppService {
     }
 
     /**
-     * 汇总诊疗执行明细金额（复用导出循环，避免重复 enrich 规则）。
+     * 汇总诊疗执行明细金额：仅分页拉事实行 + 金额 enrich，禁止走导出级展示 enrichment。
      *
      * @param query 已预解析读查询
-     * @return 金额合计
+     * @return 金额合计（结算 2 位）
      */
     private BigDecimal sumExecutionAmountForQuery(NurseWorkloadPageQuery query) {
-        NurseWorkloadExportLoopResult<NurseExecutionDetailRowDto> loopResult =
-            this.exportExecutionDetailsLoop(query);
         List<BigDecimal> amounts = new ArrayList<>();
-        for (NurseExecutionDetailRowDto row : loopResult.getRows()) {
-            if (row != null && row.getAmount() != null) {
-                amounts.add(row.getAmount());
+        int pageNo = 1;
+        // Pre：按导出页大小翻页，仅金额 enrich（BR-RPT-NWL-022）
+        while (amounts.size() < NurseWorkloadExportConstants.EXPORT_MAX_ROWS) {
+            NurseWorkloadPageQuery pageQuery = this.copyQueryWithPaging(
+                query, pageNo, NurseWorkloadExportConstants.EXPORT_PAGE_SIZE);
+            Page<NurseExecutionWorkloadDetailQueryModel> page =
+                this.procedureQueryService.pageNurseExecutionWorkloadDetail(pageQuery);
+            // 空页表示已扫完
+            if (page.getContent().isEmpty()) {
+                break;
             }
+            List<NurseExecutionDetailRowDto> rows = this.mapExecutionDetailRows(page.getContent());
+            // Pre：跳过 GenerateSource/项目名等展示 enrichment，只算 ChargeItem 金额
+            this.nurseWorkloadAmountEnricher.enrichExecutionDetailAmounts(rows);
+            for (NurseExecutionDetailRowDto row : rows) {
+                if (amounts.size() >= NurseWorkloadExportConstants.EXPORT_MAX_ROWS) {
+                    break;
+                }
+                if (row != null && row.getAmount() != null) {
+                    amounts.add(row.getAmount());
+                }
+            }
+            if (page.getContent().size() < NurseWorkloadExportConstants.EXPORT_PAGE_SIZE) {
+                break;
+            }
+            pageNo = pageNo + 1;
         }
         return this.nurseWorkloadAmountEnricher.sumDetailAmounts(amounts);
     }
 
     /**
-     * 汇总耗材使用明细金额（复用导出循环，避免重复 enrich 规则）。
+     * 汇总耗材使用明细金额：仅分页拉事实行 + 金额 enrich，禁止走导出级展示 enrichment。
      *
      * @param query 已预解析读查询
-     * @return 金额合计
+     * @return 金额合计（结算 2 位）
      */
     private BigDecimal sumConsumableAmountForQuery(NurseWorkloadPageQuery query) {
-        NurseWorkloadExportLoopResult<NurseConsumableDetailRowDto> loopResult =
-            this.exportConsumableDetailsLoop(query);
         List<BigDecimal> amounts = new ArrayList<>();
-        for (NurseConsumableDetailRowDto row : loopResult.getRows()) {
-            if (row != null && row.getAmount() != null) {
-                amounts.add(row.getAmount());
+        int pageNo = 1;
+        // Pre：按导出页大小翻页，仅金额 enrich（BR-RPT-NWL-022）
+        while (amounts.size() < NurseWorkloadExportConstants.EXPORT_MAX_ROWS) {
+            NurseWorkloadPageQuery pageQuery = this.copyQueryWithPaging(
+                query, pageNo, NurseWorkloadExportConstants.EXPORT_PAGE_SIZE);
+            Page<NurseConsumableWorkloadDetailQueryModel> page =
+                this.deviceDispenseQueryService.pageNurseConsumableWorkloadDetail(pageQuery);
+            // 空页表示已扫完
+            if (page.getContent().isEmpty()) {
+                break;
             }
+            List<NurseConsumableDetailRowDto> rows = this.mapConsumableDetailRows(page.getContent());
+            // Pre：仅解析发放→请求映射供金额匹配，跳过姓名/品名等展示 enrichment
+            Map<Long, Long> deviceReqIdByDispenseId =
+                this.buildDeviceReqIdByDispenseIdForAmountSum(page.getContent());
+            this.nurseWorkloadAmountEnricher.enrichConsumableDetailAmounts(rows, deviceReqIdByDispenseId);
+            for (NurseConsumableDetailRowDto row : rows) {
+                if (amounts.size() >= NurseWorkloadExportConstants.EXPORT_MAX_ROWS) {
+                    break;
+                }
+                if (row != null && row.getAmount() != null) {
+                    amounts.add(row.getAmount());
+                }
+            }
+            if (page.getContent().size() < NurseWorkloadExportConstants.EXPORT_PAGE_SIZE) {
+                break;
+            }
+            pageNo = pageNo + 1;
         }
         return this.nurseWorkloadAmountEnricher.sumDetailAmounts(amounts);
     }
@@ -566,6 +608,27 @@ public class NurseWorkloadReportAppService {
                 ErrorCodeConstants.RPT_NWL_201,
                 "当前条件下无明细可导出");
         }
+    }
+
+    /**
+     * 从耗材明细领域行提取发放→请求映射（汇总金额用；不装载展示上下文）。
+     *
+     * @param models 当前页领域明细
+     * @return dispenseId → deviceReqId
+     */
+    private Map<Long, Long> buildDeviceReqIdByDispenseIdForAmountSum(
+        List<NurseConsumableWorkloadDetailQueryModel> models) {
+        Map<Long, Long> deviceReqIdByDispenseId = new HashMap<>();
+        if (models == null) {
+            return deviceReqIdByDispenseId;
+        }
+        for (NurseConsumableWorkloadDetailQueryModel model : models) {
+            if (model == null || model.getDispenseId() == null || model.getDeviceReqId() == null) {
+                continue;
+            }
+            deviceReqIdByDispenseId.put(model.getDispenseId(), model.getDeviceReqId());
+        }
+        return deviceReqIdByDispenseId;
     }
 
     /**

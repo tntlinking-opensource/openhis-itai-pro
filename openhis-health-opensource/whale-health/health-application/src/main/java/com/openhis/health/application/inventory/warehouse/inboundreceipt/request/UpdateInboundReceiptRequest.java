@@ -67,6 +67,12 @@ public class UpdateInboundReceiptRequest {
     @Schema(description = "经手人 practitionerId")
     private Long practitionerId;
 
+    /**
+     * 采购发票号（同单共享，落库 {@code invoice_no}）。
+     */
+    @Schema(description = "采购发票号 invoiceNo")
+    private String invoiceNo;
+
     /** 明细行 lines。 */
     @Schema(description = "明细行 lines")
     private List<InboundReceiptLineDto> lines;

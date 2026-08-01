@@ -4,18 +4,23 @@
  */
 package com.openhis.health.application.basic.activitydefinition.support;
 
+import com.openhis.health.application.basic.activitydefinition.support.dto.ActivityDefinitionPackageChargeSliceDto;
+import com.openhis.health.application.basic.activitydefinition.support.dto.ActivityDefinitionPackageChildResolvedDto;
+import com.openhis.health.application.shared.product.ClinicalCatalogPriceResolver;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
-import com.openhis.health.domain.share.constants.ChargeItemAmountScaleConstants;
+import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
+import com.openhis.health.domain.administration.chargeitemdefinition.query.ChargeItemDefinitionQueryCommand;
+import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
+import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.workflow.activitydefinition.queries.model.ActivityDefinitionChildQueryModel;
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
-import com.openhis.health.application.basic.activitydefinition.support.dto.ActivityDefinitionPackageChargeSliceDto;
-import com.openhis.health.application.basic.activitydefinition.support.dto.ActivityDefinitionPackageChildResolvedDto;
-import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
-import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -23,17 +28,21 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 诊疗套餐子项解析与父 charge 分摊（BR-ACTDEF-005 / BR-IP-PRC-011；全局「落一条、用时解析」）。
+ * 诊疗套餐子项解析与父 charge 展开（BR-ACTDEF-005 / BR-IP-PRC-011；全局「落一条、用时解析」）。
  *
- * <p>子表 {@code wkf_activity_definition_children} 为事实源；本 Support **不落库**、**不校验医保编码**，
- * 供 LIS 外发、报表、医保 adapter 等消费方按需调用 {@link #allocateChargeSlices}。</p>
+ * <p>子表 {@code wkf_activity_definition_children} 为事实源；本 Support **不落库**。
+ * 有子项时 {@link #allocateChargeSlices} <strong>只返回子项行</strong>（父项通常无 {@code yb_no}，
+ * 医保/LIS 等消费方只传子项），金额取各子项目录 {@code SALE} 价，
+ * <strong>禁止</strong>按权重分摊父项金额；各子项金额之和须等于父 charge {@code totalPrice}。</p>
  *
  * <p>B.6.4 只读编排：经 {@link ActivityDefinitionQueryService} 读子表、
- * {@link ProductDefinitionDisplayTerminologyAssembler} 批量预热子目录，内存合并后返回 DTO。</p>
+ * {@link ProductDefinitionDisplayTerminologyAssembler} 批量预热子目录，
+ * {@link ChargeItemDefinitionQueryService} 批量取子项 SALE 价。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -41,6 +50,8 @@ public class ActivityDefinitionPackageChildResolver {
 
     private final ActivityDefinitionQueryService activityDefinitionQueryService;
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
+    private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
+    private final ClinicalCatalogPriceResolver clinicalCatalogPriceResolver;
 
     /**
      * 按父诊疗定义 id 解析套餐子项（含子目录读模型批量预热）。
@@ -98,11 +109,15 @@ public class ActivityDefinitionPackageChildResolver {
     }
 
     /**
-     * 将单条父 charge 按套餐子项拆为逻辑行（无子项时返回 1 行父项）。
+     * 将单条父 charge 展开为对外逻辑行。
      *
-     * @param chargeItem     院内收费明细（父项）
-     * @param parentProduct  与 charge 锚定一致的父目录读模型
-     * @return 至少一行；各行 {@code lineAmount} 之和等于父 {@code totalPrice}（6 位计算刻度）
+     * <p>无子项：返回 1 行父项。有子项：<strong>仅</strong>返回子项行（父项通常无医保编码，不对外上传）；
+     * 数量 = 父数量 × {@code children_num}；单价/金额取子项目录 {@code SALE} 价，
+     * <strong>不分摊</strong>父项金额；各行之和必须等于父 {@code totalPrice}。</p>
+     *
+     * @param chargeItem    院内收费明细（父项）
+     * @param parentProduct 与 charge 锚定一致的父目录读模型
+     * @return 至少一行；有子项时不含父项行
      */
     public List<ActivityDefinitionPackageChargeSliceDto> allocateChargeSlices(
         ChargeItem chargeItem,
@@ -117,77 +132,59 @@ public class ActivityDefinitionPackageChildResolver {
             return List.of(this.buildParentOnlySlice(chargeItem, parentProduct, 0));
         }
         BigDecimal parentQty = MonetaryAmountSupport.nullToZero(chargeItem.getQuantityValue());
-        // 父数量为 0 时按 1 计，避免权重全零无法分摊
-        if (parentQty.compareTo(BigDecimal.ZERO) <= 0) {
-            parentQty = BigDecimal.ONE;
-        }
-        BigDecimal parentTotal = MonetaryAmountSupport.scaleCalc(chargeItem.getTotalPrice());
-        List<WeightedChildRow> weightedRows = new ArrayList<>();
-        BigDecimal totalWeight = BigDecimal.ZERO;
-        // Pre：权重 = 父数量 × children_num（空倍率按 1）
-        for (ActivityDefinitionPackageChildResolvedDto child : children) {
+        Map<Long, ChargeItemDefinition> saleByChildId = this.loadChildSalePriceLines(children);
+        List<ActivityDefinitionPackageChargeSliceDto> slices = new ArrayList<>();
+        BigDecimal childSum = BigDecimal.ZERO;
+        // Cmd：逐子项按目录 SALE 计价；禁止按权重拆父 totalPrice
+        for (int index = 0; index < children.size(); index++) {
+            ActivityDefinitionPackageChildResolvedDto child = children.get(index);
             if (child == null || child.getChildrenId() == null) {
                 continue;
+            }
+            ChargeItemDefinition saleLine = saleByChildId.get(child.getChildrenId());
+            if (saleLine == null || saleLine.getPriceValue() == null) {
+                String childName = resolveChildDisplayName(child);
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
+                    "套餐子项缺少有效售价，无法展开费用：" + childName);
             }
             BigDecimal childNum = BigDecimal.ONE;
             if (child.getChildrenNum() != null && child.getChildrenNum() > 0) {
                 childNum = BigDecimal.valueOf(child.getChildrenNum());
             }
-            BigDecimal weight = parentQty.multiply(childNum);
-            weightedRows.add(new WeightedChildRow(child, weight));
-            totalWeight = totalWeight.add(weight);
-        }
-        // 子表有行但均无效时，回落父项单行
-        if (weightedRows.isEmpty()) {
-            return List.of(this.buildParentOnlySlice(chargeItem, parentProduct, 0));
-        }
-        // 权重和为 0 时均分，防止除零
-        if (totalWeight.compareTo(BigDecimal.ZERO) <= 0) {
-            totalWeight = BigDecimal.valueOf(weightedRows.size());
-            for (WeightedChildRow row : weightedRows) {
-                row.weight = BigDecimal.ONE;
-            }
-        }
-        List<ActivityDefinitionPackageChargeSliceDto> slices = new ArrayList<>();
-        BigDecimal allocated = BigDecimal.ZERO;
-        // Cmd：按权重分摊父 totalPrice；最后一行吃尾差，保证各行之和等于父金额（6 位刻度）
-        for (int index = 0; index < weightedRows.size(); index++) {
-            WeightedChildRow row = weightedRows.get(index);
-            BigDecimal sliceAmount;
-            if (index == weightedRows.size() - 1) {
-                sliceAmount = parentTotal.subtract(allocated);
-            } else {
-                sliceAmount = parentTotal.multiply(row.weight).divide(
-                    totalWeight,
-                    ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE,
-                    MonetaryAmountSupport.MONETARY_ROUNDING);
-                sliceAmount = MonetaryAmountSupport.scaleCalc(sliceAmount);
-                allocated = allocated.add(sliceAmount);
-            }
-            BigDecimal quantity = row.weight;
-            BigDecimal unitPrice = sliceAmount;
-            if (quantity.compareTo(BigDecimal.ZERO) > 0) {
-                unitPrice = sliceAmount.divide(
-                    quantity,
-                    ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE,
-                    MonetaryAmountSupport.MONETARY_ROUNDING);
-                unitPrice = MonetaryAmountSupport.scaleCalc(unitPrice);
-            }
+            BigDecimal quantity = parentQty.multiply(childNum);
+            BigDecimal unitPrice = MonetaryAmountSupport.scaleCalc(saleLine.getPriceValue());
+            BigDecimal lineAmount = MonetaryAmountSupport.lineTotal(unitPrice, quantity);
             ActivityDefinitionPackageChargeSliceDto slice = new ActivityDefinitionPackageChargeSliceDto();
             slice.setChargeItemId(chargeItem.getId());
             slice.setSliceIndex(index);
             slice.setPackageChildLine(Boolean.TRUE);
-            slice.setChildrenId(row.child.getChildrenId());
-            ProductDefinitionDisplayDto catalog = row.child.getChildProduct();
+            slice.setChildrenId(child.getChildrenId());
+            ProductDefinitionDisplayDto catalog = child.getChildProduct();
             // 子目录未预热时占位，供消费方展示名称或自行 Gate yb_no
             if (catalog == null) {
-                catalog = this.buildPlaceholderChildProduct(row.child);
+                catalog = this.buildPlaceholderChildProduct(child);
             }
             slice.setCatalogProduct(catalog);
             slice.setQuantity(quantity);
             slice.setUnitPrice(unitPrice);
-            slice.setLineAmount(sliceAmount);
+            slice.setLineAmount(lineAmount);
             slices.add(slice);
+            childSum = childSum.add(lineAmount);
+        }
+        // 子表有行但均无效时，回落父项单行
+        if (slices.isEmpty()) {
+            return List.of(this.buildParentOnlySlice(chargeItem, parentProduct, 0));
+        }
+        // Gate：父项金额必须等于子项金额之和（目录维护口径；禁止分摊抹平）
+        BigDecimal parentTotal = MonetaryAmountSupport.scaleCalc(chargeItem.getTotalPrice());
+        if (MonetaryAmountSupport.scaleCalc(childSum).compareTo(parentTotal) != 0) {
+            throw new BusinessException(
+                ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
+                "套餐父项金额与子项金额合计不一致：父项="
+                    + parentTotal
+                    + "，子项合计="
+                    + MonetaryAmountSupport.scaleCalc(childSum));
         }
         return slices;
     }
@@ -217,6 +214,50 @@ public class ActivityDefinitionPackageChildResolver {
     }
 
     /**
+     * 批量加载子项诊疗 SALE 定价行（按 instanceId 择优）。
+     *
+     * @param children 已解析子项
+     * @return childrenId → SALE 定价行
+     */
+    private Map<Long, ChargeItemDefinition> loadChildSalePriceLines(
+        List<ActivityDefinitionPackageChildResolvedDto> children) {
+        List<Long> childIds = new ArrayList<>();
+        for (ActivityDefinitionPackageChildResolvedDto child : children) {
+            if (child != null && child.getChildrenId() != null) {
+                childIds.add(child.getChildrenId());
+            }
+        }
+        if (childIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        ChargeItemDefinitionQueryCommand priceQuery = new ChargeItemDefinitionQueryCommand();
+        priceQuery.setInstanceTable(TableNameConstants.WKF_ACTIVITY_DEFINITION);
+        priceQuery.setInstanceIds(childIds);
+        List<ChargeItemDefinition> priceLines =
+            chargeItemDefinitionQueryService.findPriceLinesByProjects(priceQuery);
+        if (priceLines == null || priceLines.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, List<ChargeItemDefinition>> linesByInstanceId = new HashMap<>();
+        for (ChargeItemDefinition line : priceLines) {
+            if (line == null || line.getInstanceId() == null) {
+                continue;
+            }
+            linesByInstanceId.computeIfAbsent(line.getInstanceId(), key -> new ArrayList<>()).add(line);
+        }
+        Map<Long, ChargeItemDefinition> saleByChildId = new HashMap<>();
+        for (Long childId : childIds) {
+            List<ChargeItemDefinition> lines = linesByInstanceId.get(childId);
+            ChargeItemDefinition sale = clinicalCatalogPriceResolver.selectFirstPriceLineForChargeDraft(
+                TableNameConstants.WKF_ACTIVITY_DEFINITION, lines);
+            if (sale != null) {
+                saleByChildId.put(childId, sale);
+            }
+        }
+        return saleByChildId;
+    }
+
+    /**
      * 子目录未命中批量加载时，用子表快照构造最小读模型占位（供消费方展示/报错）。
      *
      * @param child 已解析子项
@@ -231,6 +272,23 @@ public class ActivityDefinitionPackageChildResolver {
             dto.setProductName(child.getChildrenName());
         }
         return dto;
+    }
+
+    /**
+     * 子项展示名（缺价报错用）。
+     *
+     * @param child 已解析子项
+     * @return 非空展示串
+     */
+    private String resolveChildDisplayName(ActivityDefinitionPackageChildResolvedDto child) {
+        if (child.getChildProduct() != null
+            && StringUtils.isNotEmpty(child.getChildProduct().getProductName())) {
+            return child.getChildProduct().getProductName().trim();
+        }
+        if (StringUtils.isNotEmpty(child.getChildrenName())) {
+            return child.getChildrenName().trim();
+        }
+        return String.valueOf(child.getChildrenId());
     }
 
     /**
@@ -255,18 +313,5 @@ public class ActivityDefinitionPackageChildResolver {
             return Collections.emptyMap();
         }
         return productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
-    }
-
-    /** 分摊中间态：子项解析结果 + 按 children_num 折算后的权重。 */
-    private static final class WeightedChildRow {
-        /** 已解析子项（含 children_id / 子目录读模型）。 */
-        private final ActivityDefinitionPackageChildResolvedDto child;
-        /** 分摊权重（父数量 × children_num；均分回落时为 1）。 */
-        private BigDecimal weight;
-
-        private WeightedChildRow(ActivityDefinitionPackageChildResolvedDto child, BigDecimal weight) {
-            this.child = child;
-            this.weight = weight;
-        }
     }
 }

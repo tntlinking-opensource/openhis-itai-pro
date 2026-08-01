@@ -18,7 +18,8 @@ import lombok.RequiredArgsConstructor;
 /**
  * 诊疗项目与耗材/设备活动绑定写侧领域服务。
  *
- * <p>维护用法、诊疗来源项与耗材主数据、设备活动之间的数量与单位绑定；新建默认全院范围，变更后走聚合不变式校验。</p>
+ * <p>维护用法、诊疗来源项与耗材主数据、设备活动之间的数量与单位绑定；
+ * 新建时范围码应由调用方显式传入（门诊/住院），缺省时仍兜底历史全院码以兼容旧调用。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -29,7 +30,7 @@ public class ServiceDeviceTemplateDomainService {
 
 
     /**
-     * 新建绑定：装配范围/类型/物品与设备活动引用，缺省范围全院、状态启用；校验必填与目标类型允许后落库并发布创建事件。
+     * 新建绑定：装配范围/类型/物品与设备活动引用；范围未传时兜底历史全院码、状态默认启用；校验后落库并发布创建事件。
      *
      * @param command 绑定字段与操作人
      * @return 新记录主键
@@ -37,7 +38,7 @@ public class ServiceDeviceTemplateDomainService {
      */
     public Long createBinding(CreateBindingCommand command) {
         ServiceDeviceTemplate binding = new ServiceDeviceTemplate();
-        // 适用范围未传时默认全院级绑定。
+        // 适用范围未传时兜底历史全院码（应用层保存须显式传门诊/住院）。
         if (command.getRangeCode() == null) {
             binding.setRangeCode(ServiceDeviceTemplateRangeCode.HOSPITAL.getCode());
         } else {

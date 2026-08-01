@@ -167,6 +167,14 @@ public interface ServiceRequestRepository extends JpaRepository<ServiceRequest, 
         Long encounterId, String prescriptionNo, String generateSourceEnum);
 
     /**
+     * 按申请单号（prescription_no）查未删服务申请（CRB Path B / MedSync APPLYNO 反查）。
+     *
+     * @param prescriptionNo 申请单号完整匹配
+     * @return 命中列表（可能多条，调用方取最新）
+     */
+    List<ServiceRequest> findByPrescriptionNoAndIsDeletedFalse(String prescriptionNo);
+
+    /**
      * 按主键加悲观写锁（门诊执行次数门控 GAP-EXE-006）。
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)

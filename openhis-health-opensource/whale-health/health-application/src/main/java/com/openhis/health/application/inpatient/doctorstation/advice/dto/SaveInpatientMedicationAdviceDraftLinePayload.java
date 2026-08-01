@@ -58,6 +58,19 @@ public class SaveInpatientMedicationAdviceDraftLinePayload {
     @Schema(description = "剂量单位编码")
     private String doseUnitCode;
 
+    /**
+     * 首日/首次用量（仅长期药品；可空；BR-IP-ORD-030）。
+     *
+     * <p>空 = 首次执行槽仍用 {@link #quantity}；有值须 &gt;0，与 {@link #firstDoseUnitCode} 成对。
+     * 临时/出院带药不得传值（域 BR-MRQ-010）。</p>
+     */
+    @Schema(description = "首日/首次用量（仅长期）")
+    private BigDecimal firstDose;
+
+    /** 首日/首次用量单位术语编码（与 {@link #firstDose} 成对）。 */
+    @Schema(description = "首日用量单位编码")
+    private String firstDoseUnitCode;
+
     /** 用药天数（与统一列表 dispensePerDuration 列回显一致）。 */
     @Schema(description = "用药天数")
     private Integer dispensePerDuration;
@@ -67,21 +80,20 @@ public class SaveInpatientMedicationAdviceDraftLinePayload {
     private Boolean skinTestFlag;
 
     /**
-     * 诊断定义主键（落库 {@code med_medication_request.condition_definition_id}）。
+     * 绑定就诊诊断主键有序串（落库 {@code med_medication_request.encounter_diagnosis_ids}；有序，首位为主诊断）。
      */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "诊断定义主键")
-    private Long conditionDefinitionId;
-
-    /**
-     * 就诊诊断主键（落库 {@code med_medication_request.encounter_diagnosis_id}）。
-     */
-    @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "就诊诊断主键")
-    private Long encounterDiagnosisId;
+    @Schema(description = "绑定就诊诊断主键有序串")
+    private String encounterDiagnosisIds;
 
     /** 费用性质/合同覆盖，可空表示走患者默认。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "费用性质覆盖")
     private Long contractId;
+
+    /**
+     * 医嘱备注（落库 {@code med_medication_request.remark}；护士站随医嘱展示）。
+     */
+    @Schema(description = "医嘱备注")
+    private String remark;
 }

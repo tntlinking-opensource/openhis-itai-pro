@@ -34,6 +34,14 @@ public interface TraceNumberRecordRepository extends JpaRepository<TraceNumberRe
     List<TraceNumberRecord> findAllByLocationIdAndIsDeletedFalse(Long locationId);
 
     /**
+     * 按业务单号加载有效流水（期初作废 T1 冲销按 bus_no 找当初 IN）。
+     *
+     * @param busNo 业务单号
+     * @return 流水列表
+     */
+    List<TraceNumberRecord> findAllByBusNoAndIsDeletedFalse(String busNo);
+
+    /**
      * 按主档标识批量加载有效记录。
      *
      * @param traceNumberIds 主档标识集合

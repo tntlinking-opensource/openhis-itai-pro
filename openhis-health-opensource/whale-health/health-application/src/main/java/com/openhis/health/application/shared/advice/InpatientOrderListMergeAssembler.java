@@ -185,7 +185,7 @@ public class InpatientOrderListMergeAssembler {
     }
 
     /**
-     * 列表排序键：createdAt → medAuthoredTime → authoredTime。
+     * 列表排序键：createdAt → resolveOrderOpenedTime（reqOpenedTime，空回落 reqAuthoredTime）。
      *
      * @param row 列表骨架
      * @return 排序时刻；row 为 null 时 null
@@ -197,9 +197,7 @@ public class InpatientOrderListMergeAssembler {
         if (row.getCreatedAt() != null) {
             return row.getCreatedAt();
         }
-        if (row.getMedAuthoredTime() != null) {
-            return row.getMedAuthoredTime();
-        }
-        return row.getAuthoredTime();
+        // 业务列表排序主轴：开立时刻，空回落签发（兼容存量）。
+        return row.resolveOrderOpenedTime();
     }
 }

@@ -64,7 +64,17 @@ public class WebConfig implements WebMvcConfigurer {
         if (rateLimitInterceptor != null) {
             registry.addInterceptor(rateLimitInterceptor)
                     .addPathPatterns("/api/**")
-                    .excludePathPatterns("/api/auth/**", "/api/app/auth/**") // 登录接口不限流
+                    .excludePathPatterns(
+                        "/api/auth/**",
+                        "/api/app/auth/**",
+                        // 长任务进度轮询：避免 500ms/2s 轮询打满每分钟配额返回 429
+                        "/**/getApplyNoticeDocProgress",
+                        "/**/getScanNoticeCanonicalDirProgress",
+                        "/**/getConfirmNoticeScanImportProgress",
+                        "/**/getCatalogDownloadProgress",
+                        "/**/getCatalogImportProgress",
+                        "/**/getImportMedicationCatalogProgress"
+                    )
                     .order(2);
         }
 
@@ -72,6 +82,7 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addInterceptor(tenantInterceptor)
                 .addPathPatterns("/api/**")
                 .excludePathPatterns(
+                    "/api/health",
                     "/api/auth/login",
                     "/api/auth/refresh",
                     "/api/auth/logout",
@@ -89,6 +100,7 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addInterceptor(organizationUnitContextInterceptor)
                 .addPathPatterns("/api/**")
                 .excludePathPatterns(
+                    "/api/health",
                     "/api/auth/login",
                     "/api/auth/refresh",
                     "/api/auth/logout",
@@ -106,6 +118,7 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addInterceptor(requireTenantContextInterceptor)
                 .addPathPatterns("/api/**")
                 .excludePathPatterns(
+                    "/api/health",
                     "/api/auth/login",
                     "/api/auth/refresh",
                     "/api/auth/logout",

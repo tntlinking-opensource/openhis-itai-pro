@@ -47,6 +47,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -134,12 +135,7 @@ public class AuthAppService {
      * 登录
      */
     public LoginResponse login(LoginRequest request) {
-        // 检查是否被锁定
         String lockoutKey = request.getUserName();
-        LocalDateTime lockoutEnd = lockoutEndTime.get(lockoutKey);
-        if (lockoutEnd != null && lockoutEnd.isAfter(LocalDateTime.now())) {
-            throw new BusinessException("账户已被锁定，请稍后再试");
-        }
 
         // 查找用户
         User user = userRepository.findByUserName(request.getUserName())
@@ -164,9 +160,20 @@ public class AuthAppService {
             throw new BusinessException("用户已被禁用");
         }
 
-        // 检查用户是否被锁定
-        if (user.getIsLockedOut() && user.getLockoutEnd() != null
-                && user.getLockoutEnd().isAfter(LocalDateTime.now())) {
+        // 库中未锁定（或锁定已过期）时，同步清除进程内锁定，便于运维 UPDATE whale_users 立即解禁
+        boolean dbLocked = Boolean.TRUE.equals(user.getIsLockedOut())
+                && user.getLockoutEnd() != null
+                && user.getLockoutEnd().isAfter(LocalDateTime.now());
+        if (!dbLocked) {
+            lockoutEndTime.remove(lockoutKey);
+            loginFailureCount.remove(lockoutKey);
+        }
+
+        LocalDateTime memLockoutEnd = lockoutEndTime.get(lockoutKey);
+        if (memLockoutEnd != null && memLockoutEnd.isAfter(LocalDateTime.now())) {
+            throw new BusinessException("账户已被锁定，请稍后再试");
+        }
+        if (dbLocked) {
             logger.warn("❌ 登录失败: 账户已被锁定 - userName: {}", request.getUserName());
             throw new BusinessException("账户已被锁定，请稍后再试");
         }
@@ -686,13 +693,8 @@ public class AuthAppService {
             throw new BusinessException("租户不可用");
         }
 
-        boolean platformAdmin = platformTenantAccessPolicy != null
-            && platformTenantAccessPolicy.isPlatformAdmin(userId);
-        if (!platformAdmin) {
-            UserTenant membership = userTenantRepository.findByUserIdAndTenantId(userId, tenantId);
-            if (membership == null || Boolean.TRUE.equals(membership.getIsDeleted())) {
-                throw new BusinessException("您不属于该租户");
-            }
+        if (!canSelectTenant(userId, tenantId)) {
+            throw new BusinessException("您不属于该租户");
         }
 
         Long previousTenantId = loginSession.getSessionTenantId();
@@ -736,6 +738,13 @@ public class AuthAppService {
             return loginOrganizationScopeQuery.listActiveHospitalOrganizations();
         }
 
+        List<UserOrganizationUnit> userOus =
+            userOrganizationUnitRepository.findByUserIdAndTenantId(userId, tenantId);
+        // 无登录科室绑定：直接回落医院列表，跳过 OU 同步（药房/护士等医院级登录热路径）
+        if (userOus.isEmpty()) {
+            return this.listFallbackHospitalOptions(userId);
+        }
+
         refreshLoginOrganizationUnitsIfSupported();
 
         Set<Long> hospitalIds = new LinkedHashSet<>();
@@ -750,18 +759,16 @@ public class AuthAppService {
                 }
             });
         }
-        if (options.isEmpty() && loginDefaultOrganizationResolver != null) {
-            for (Long hospitalId : loginDefaultOrganizationResolver.resolveFallbackHospitalOrganizationIds(userId)) {
-                if (hospitalId != null && hospitalIds.add(hospitalId)) {
-                    loginOrganizationScopeQuery.loadOrganizationOption(hospitalId).ifPresent(options::add);
-                }
-            }
+        if (options.isEmpty()) {
+            return this.listFallbackHospitalOptions(userId);
         }
         return options;
     }
 
     /**
      * 选择医院并写入服务端会话；须先 {@link #selectTenant(SelectTenantRequest)}。
+     *
+     * <p>权限校验走轻量判定，禁止再调 {@link #getAvailableHospitals()}（会重复刷 OU 同步，拖慢登录）。</p>
      */
     public LoginOrganizationOption selectHospital(SelectHospitalRequest request) {
         requireAuthenticatedUser();
@@ -775,9 +782,8 @@ public class AuthAppService {
         }
 
         Long hospitalId = request.getHospitalId();
-        boolean allowed = getAvailableHospitals().stream()
-            .anyMatch(option -> hospitalId.equals(option.getId()));
-        if (!allowed) {
+        // Gate：须为医院节点且当前用户可登录该院（轻量，不二次 getAvailableHospitals）
+        if (!this.canSelectHospital(userId, tenantId, hospitalId)) {
             throw new BusinessException("您没有权限登录该医院");
         }
 
@@ -795,15 +801,61 @@ public class AuthAppService {
     }
 
     /**
-     * 根据租户和token获取当前用户可以登录的科室
-     * 须先 {@link #selectTenant(SelectTenantRequest)}；多医院时须再 {@link #selectHospital(SelectHospitalRequest)}。
+     * 获取当前用户可登录的科室（不含医院节点）。
+     *
+     * <p>须先 {@link #selectTenant(SelectTenantRequest)}；多医院时须再 {@link #selectHospital(SelectHospitalRequest)}。
+     * 医院与科室不同级：医院由 {@link #getAvailableHospitals()} 单独列出，本科室接口只返回所选医院下的科室。</p>
      */
     public List<OrganizationUnitDto> getAvailableOrganizationUnits() {
         requireAuthenticatedUser();
         Long tenantId = requireSessionTenantId();
         Long hospitalId = ensureSessionHospitalIfNeeded();
+        // 拉科室前刷一次 OU（医生出诊绑定落库）；医院列表路径已避免重复刷
         refreshLoginOrganizationUnitsIfSupported();
         return listLoginDepartmentsInternal(loginSession.getCurrentUserId(), tenantId, hospitalId);
+    }
+
+    /**
+     * 选租户后一次拉齐登录范围：医院列表；仅一家时写入会话并返回可登录科室。
+     *
+     * <p>替代前端串行 {@code getAvailableHospitals → selectHospital → getAvailableOrganizationUnits}，
+     * 同一请求内至多刷一次 OU 同步。</p>
+     *
+     * @return 医院 + 科室 + 已选医院 id
+     */
+    public LoginScopeBootstrapDto bootstrapLoginScope() {
+        requireAuthenticatedUser();
+        Long tenantId = requireSessionTenantId();
+        Long userId = loginSession.getCurrentUserId();
+
+        LoginScopeBootstrapDto dto = new LoginScopeBootstrapDto();
+        List<LoginOrganizationOption> hospitals = this.getAvailableHospitals();
+        dto.setHospitals(hospitals);
+
+        // 多医院：只回医院列表，等用户选院后再拉科室
+        if (hospitals.size() != 1) {
+            Long existingHospitalId = loginSession.getSessionHospitalId();
+            dto.setSelectedHospitalId(existingHospitalId);
+            if (existingHospitalId != null) {
+                refreshLoginOrganizationUnitsIfSupported();
+                dto.setDepartments(listLoginDepartmentsInternal(userId, tenantId, existingHospitalId));
+            }
+            return dto;
+        }
+
+        // 单医院：写入会话后刷 OU 并返回科室（空列表=医院级）
+        LoginOrganizationOption onlyHospital = hospitals.get(0);
+        Long hospitalId = onlyHospital.getId();
+        Long previousHospitalId = loginSession.getSessionHospitalId();
+        if (previousHospitalId == null || !previousHospitalId.equals(hospitalId)) {
+            loginSession.clearOrganizationUnit();
+        }
+        loginSession.setSessionHospitalId(hospitalId);
+        dto.setSelectedHospitalId(hospitalId);
+
+        refreshLoginOrganizationUnitsIfSupported();
+        dto.setDepartments(listLoginDepartmentsInternal(userId, tenantId, hospitalId));
+        return dto;
     }
 
     /**
@@ -833,10 +885,7 @@ public class AuthAppService {
             .orElse(null);
 
         Long sessionBusinessOrganizationId = organizationUnitId;
-        List<Long> managedOrganizationUnitIds = loginSession.getManagedOrganizationUnitIds();
-        boolean inManagedScope = managedOrganizationUnitIds != null
-            && managedOrganizationUnitIds.contains(sessionBusinessOrganizationId);
-        boolean defaultLoginOrganization = isDefaultLoginOrganization(userId, sessionBusinessOrganizationId);
+        boolean defaultLoginOrganization = isDefaultLoginOrganization(userId, organizationUnitId);
 
         if (whaleOrganizationUnitId != null) {
             OrganizationUnit orgUnit = organizationUnitRepository.findById(whaleOrganizationUnitId)
@@ -853,20 +902,33 @@ public class AuthAppService {
             boolean exists = userOrganizationUnitRepository
                 .existsByUserIdAndOrganizationUnitId(userId, whaleOrganizationUnitId);
             if (!exists) {
-                // 岗位管辖内但尚未写入 whale_user_organization_units 时，按需补链。
-                if (!inManagedScope && !defaultLoginOrganization) {
+                // 绑定表未命中：仅在默认登录科室或岗位管辖内才允许按需补链（避免点选时先算全院 managed）
+                if (!defaultLoginOrganization && !isBusinessOrganizationInManagedScope(organizationUnitId)) {
                     throw new BusinessException("您没有权限访问该组织单元");
                 }
-                UserOrganizationUnit uou = new UserOrganizationUnit();
-                uou.setUserId(userId);
-                uou.setOrganizationUnitId(whaleOrganizationUnitId);
-                uou.setTenantId(tenantId);
-                userOrganizationUnitRepository.save(uou);
+                // 软删行仍占唯一约束：恢复而非 insert，避免 uk_whale_uou_user_ou
+                Optional<UserOrganizationUnit> includingDeleted =
+                    userOrganizationUnitRepository.findFirstByUserIdAndOrganizationUnitId(
+                        userId, whaleOrganizationUnitId);
+                if (includingDeleted.isPresent()) {
+                    UserOrganizationUnit existingRow = includingDeleted.get();
+                    existingRow.setIsDeleted(false);
+                    existingRow.setDeletedAt(null);
+                    existingRow.setDeletedBy(null);
+                    existingRow.setTenantId(tenantId);
+                    userOrganizationUnitRepository.save(existingRow);
+                } else {
+                    UserOrganizationUnit uou = new UserOrganizationUnit();
+                    uou.setUserId(userId);
+                    uou.setOrganizationUnitId(whaleOrganizationUnitId);
+                    uou.setTenantId(tenantId);
+                    userOrganizationUnitRepository.save(uou);
+                }
             }
 
             sessionBusinessOrganizationId = resolveBusinessOrganizationId(orgUnit)
                 .orElse(organizationUnitId);
-        } else if (!inManagedScope && !defaultLoginOrganization) {
+        } else if (!defaultLoginOrganization && !isBusinessOrganizationInManagedScope(organizationUnitId)) {
             throw new BusinessException("您没有权限访问该组织单元");
         }
 
@@ -874,21 +936,6 @@ public class AuthAppService {
         if (sessionHospitalId != null && loginOrganizationScopeQuery != null
             && !loginOrganizationScopeQuery.belongsToHospital(sessionBusinessOrganizationId, sessionHospitalId)) {
             throw new BusinessException("该科室不属于当前所选医院");
-        }
-
-        if (managedOrganizationUnitIds != null && !managedOrganizationUnitIds.isEmpty()) {
-            boolean inManagedScopeAfterResolve = defaultLoginOrganization;
-            if (!inManagedScopeAfterResolve) {
-                for (Long managedOrgId : managedOrganizationUnitIds) {
-                    if (sessionBusinessOrganizationId.equals(managedOrgId)) {
-                        inManagedScopeAfterResolve = true;
-                        break;
-                    }
-                }
-            }
-            if (!inManagedScopeAfterResolve) {
-                throw new BusinessException("该组织单元不在您的岗位管辖范围内");
-            }
         }
 
         assertOrganizationAllowedForLogin(userId, tenantId, sessionBusinessOrganizationId);
@@ -912,29 +959,26 @@ public class AuthAppService {
     }
 
     /**
-     * 平台管理员在租户内尚无可登录科室时，跳过科室选择以初始化组织（医院/科室等）。
-     * <p>存在可登录科室时须走 {@link #selectOrganizationUnit(SelectOrganizationUnitRequest)}。</p>
+     * 无可登录科室时跳过选科：会话停留在已选医院（医院级），科室非必选。
+     *
+     * <p>有可登录科室时仍须走 {@link #selectOrganizationUnit(SelectOrganizationUnitRequest)}。
+     * 本方法不再二次刷 OU 同步：调用方通常刚拉过科室列表，此处只清会话科室。</p>
      */
     public void skipOrganizationUnitSelection() {
         requireAuthenticatedUser();
         Long userId = loginSession.getCurrentUserId();
         Long tenantId = requireSessionTenantId();
 
-        if (!isPlatformAdmin(userId)) {
-            throw new BusinessException("仅平台管理员可在无科室时跳过选科");
-        }
-
-        refreshLoginOrganizationUnitsIfSupported();
-        Long hospitalId = loginOrganizationScopeQuery != null
-            ? ensureSessionHospitalIfNeeded()
-            : loginSession.getSessionHospitalId();
+        Long hospitalId = loginSession.getSessionHospitalId();
+        // 只读绑定表判定，避免再 refresh + 全量装配
         List<OrganizationUnitDto> allowed = listLoginDepartmentsInternal(userId, tenantId, hospitalId);
         if (!allowed.isEmpty()) {
             throw new BusinessException("存在可登录科室，请先选择科室");
         }
 
         loginSession.clearOrganizationUnit();
-        logger.info("✅ 平台管理员跳过科室选择: userId={}, tenantId={}", userId, tenantId);
+        logger.info("✅ 跳过科室选择（医院级登录）: userId={}, tenantId={}, hospitalId={}",
+            userId, tenantId, hospitalId);
     }
 
     /**
@@ -1010,6 +1054,75 @@ public class AuthAppService {
         }
     }
 
+    /**
+     * 无登录科室绑定时的医院回落列表（不触发 OU 同步）。
+     *
+     * @param userId 平台用户主键
+     * @return 医院选项；无解析器时为空列表
+     */
+    private List<LoginOrganizationOption> listFallbackHospitalOptions(Long userId) {
+        if (loginDefaultOrganizationResolver == null || loginOrganizationScopeQuery == null) {
+            return List.of();
+        }
+        Set<Long> hospitalIds = new LinkedHashSet<>();
+        List<LoginOrganizationOption> options = new ArrayList<>();
+        for (Long hospitalId : loginDefaultOrganizationResolver.resolveFallbackHospitalOrganizationIds(userId)) {
+            if (hospitalId == null || !hospitalIds.add(hospitalId)) {
+                continue;
+            }
+            loginOrganizationScopeQuery.loadOrganizationOption(hospitalId).ifPresent(options::add);
+        }
+        return options;
+    }
+
+    /**
+     * 轻量判定用户是否可选该医院（供 {@link #selectHospital}，避免二次 getAvailableHospitals）。
+     *
+     * @param userId     用户主键
+     * @param tenantId   租户主键
+     * @param hospitalId 医院业务组织主键
+     * @return 可选为 true
+     */
+    private boolean canSelectHospital(Long userId, Long tenantId, Long hospitalId) {
+        if (hospitalId == null || loginOrganizationScopeQuery == null) {
+            return false;
+        }
+        // 须确认为医院节点
+        if (!loginOrganizationScopeQuery.belongsToHospital(hospitalId, hospitalId)) {
+            return false;
+        }
+        if (isPlatformAdmin(userId)) {
+            return true;
+        }
+        // 回落医院（无出诊绑定的医院级用户）
+        if (loginDefaultOrganizationResolver != null) {
+            for (Long allowedId : loginDefaultOrganizationResolver.resolveFallbackHospitalOrganizationIds(userId)) {
+                if (hospitalId.equals(allowedId)) {
+                    return true;
+                }
+            }
+        }
+        // 已有登录科室绑定：看绑定科室是否归属该院（不刷 sync，读现网绑定）
+        List<UserOrganizationUnit> userOus =
+            userOrganizationUnitRepository.findByUserIdAndTenantId(userId, tenantId);
+        if (userOus.isEmpty()) {
+            return false;
+        }
+        for (OrganizationUnitDto department : buildLoginDepartmentsFromUserBindings(userOus, hospitalId)) {
+            if (department != null && department.getId() != null) {
+                return true;
+            }
+        }
+        Optional<Long> defaultOrgId = Optional.empty();
+        if (loginDefaultOrganizationResolver != null) {
+            defaultOrgId = loginDefaultOrganizationResolver.resolveDefaultLoginOrganizationId(userId, hospitalId);
+        }
+        if (defaultOrgId.isPresent()) {
+            return loginOrganizationScopeQuery.belongsToHospital(defaultOrgId.get(), hospitalId);
+        }
+        return false;
+    }
+
     private void requireAuthenticatedUser() {
         if (!loginSession.isAuthenticated()) {
             throw new BusinessException("未登录");
@@ -1032,7 +1145,40 @@ public class AuthAppService {
     }
 
     /**
-     * 所选科室须在 {@link #getAvailableOrganizationUnits()} 返回的可登录列表内，防止绕过前端直接调 selectOrganizationUnit。
+     * 是否允许将指定租户写入当前会话。
+     * <p>普通登录：平台 admin 或用户租户成员。</p>
+     * <p>代理态：与 {@link #validateImpersonationTenantScope} 对齐——代理者为平台 admin，
+     * 或被代理用户属于该租户，或被代理用户无任何租户关联（全局用户）；
+     * 若代理已写入会话租户，则仅允许该租户，防止代理后切换到未校验租户。</p>
+     */
+    private boolean canSelectTenant(Long userId, Long tenantId) {
+        if (isPlatformAdmin(userId)) {
+            return true;
+        }
+        UserTenant membership = userTenantRepository.findByUserIdAndTenantId(userId, tenantId);
+        if (membership != null && !Boolean.TRUE.equals(membership.getIsDeleted())) {
+            return true;
+        }
+        if (!loginSession.isImpersonating()) {
+            return false;
+        }
+        Long sessionTenantId = loginSession.getSessionTenantId();
+        if (sessionTenantId != null && !sessionTenantId.equals(tenantId)) {
+            return false;
+        }
+        Long impersonatorId = loginSession.getImpersonatorUserId();
+        if (isPlatformAdmin(impersonatorId)) {
+            return true;
+        }
+        List<UserTenant> targetTenants = userTenantRepository.findByUserId(userId);
+        boolean hasAnyMembership = targetTenants.stream()
+                .anyMatch(ut -> !Boolean.TRUE.equals(ut.getIsDeleted()));
+        return !hasAnyMembership;
+    }
+
+    /**
+     * 所选科室须在可登录范围内：优先命中已同步的 {@code whale_user_organization_units}，
+     * 避免为校验单个科室而重建全院科室 DTO 列表（admin 场景原为数百次查库）。
      *
      * @param userId                 当前用户主键
      * @param tenantId               当前租户主键
@@ -1043,56 +1189,168 @@ public class AuthAppService {
         if (loginOrganizationScopeQuery != null) {
             hospitalOrganizationId = ensureSessionHospitalIfNeeded();
         }
-        List<OrganizationUnitDto> allowed = listLoginDepartmentsInternal(userId, tenantId, hospitalOrganizationId);
-        if (allowed.isEmpty()) {
-            throw new BusinessException("未获取到可登录科室，请联系管理员配置岗位管辖或科室权限");
+        // Gate：须为科室候选且归属当前医院
+        if (!isLoginDepartmentCandidate(businessOrganizationId, hospitalOrganizationId)) {
+            throw new BusinessException("您没有权限访问该组织单元");
         }
-        for (OrganizationUnitDto dto : allowed) {
-            if (businessOrganizationId.equals(dto.getId())) {
-                return;
-            }
+        // 已写入可登录绑定：选科前 refresh 后的稳态路径
+        Optional<Long> whaleId = resolveWhaleOrganizationUnitIdOptional(businessOrganizationId);
+        if (whaleId.isPresent()
+            && userOrganizationUnitRepository.existsByUserIdAndOrganizationUnitId(userId, whaleId.get())) {
+            return;
+        }
+        // 人员默认登录科室
+        if (isDefaultLoginOrganization(userId, businessOrganizationId)) {
+            return;
+        }
+        // 冷路径：绑定缺失时才解析岗位管辖
+        if (isBusinessOrganizationInManagedScope(businessOrganizationId)) {
+            return;
         }
         throw new BusinessException("您没有权限访问该组织单元");
     }
 
     /**
-     * 组装当前用户可登录科室列表：岗位管辖非空时以 {@code adm_pr_assign} 为准，否则读 {@code whale_user_organization_units}；
-     * 并并入 {@code adm_practitioner.org_id}（未填时回落会话医院）。
+     * 组装当前用户可登录科室列表。
+     *
+     * <p>来源仅 {@code whale_user_organization_units}（出诊科室 + 默认登录科室同步结果）及
+     * {@link #mergeDefaultLoginDepartment}。管辖范围（ManagedScope）只做出诊/库房权限，
+     * 不得回落进登录选科列表，否则无出诊岗位会被灌满科室并被迫进入选科页。</p>
      *
      * @param userId                 用户主键
      * @param tenantId               租户主键
      * @param hospitalOrganizationId 已选医院；{@code null} 表示不按医院过滤
-     * @return 可登录科室 DTO 列表
+     * @return 可登录科室 DTO 列表（不含医院节点）；空列表表示医院级登录
      */
     private List<OrganizationUnitDto> listLoginDepartmentsInternal(
             Long userId, Long tenantId, Long hospitalOrganizationId) {
+        List<UserOrganizationUnit> userOus =
+            userOrganizationUnitRepository.findByUserIdAndTenantId(userId, tenantId);
         List<OrganizationUnitDto> departments;
-        List<Long> managedOrganizationUnitIds = loginSession.getManagedOrganizationUnitIds();
-        if (managedOrganizationUnitIds != null && !managedOrganizationUnitIds.isEmpty()) {
-            departments = buildLoginDepartmentsFromBusinessOrgIds(managedOrganizationUnitIds, hospitalOrganizationId);
+        // 有绑定按 OU 装配；无绑定保持空列表（医院级），禁止回落 ManagedScope
+        if (!userOus.isEmpty()) {
+            departments = buildLoginDepartmentsFromUserBindings(userOus, hospitalOrganizationId);
         } else {
-            List<UserOrganizationUnit> userOus =
-                userOrganizationUnitRepository.findByUserIdAndTenantId(userId, tenantId);
-            List<Long> orgUnitIds = userOus.stream()
-                .map(UserOrganizationUnit::getOrganizationUnitId)
-                .collect(Collectors.toList());
-            if (orgUnitIds.isEmpty()) {
-                departments = new ArrayList<>();
-            } else {
-                List<OrganizationUnit> orgUnits = organizationUnitRepository.findAllById(orgUnitIds);
-                departments = orgUnits.stream()
-                    .filter(ou -> Boolean.TRUE.equals(ou.getIsEnabled()) && !Boolean.TRUE.equals(ou.getIsDeleted()))
-                    .map(ou -> {
-                        OrganizationUnitDto dto = new OrganizationUnitDto();
-                        BeanUtils.copyProperties(ou, dto);
-                        resolveBusinessOrganizationId(ou).ifPresentOrElse(dto::setId, () -> dto.setId(ou.getId()));
-                        return dto;
-                    })
-                    .filter(dto -> matchesHospitalScope(dto.getId(), hospitalOrganizationId))
-                    .collect(Collectors.toList());
-            }
+            departments = new ArrayList<>();
         }
         return mergeDefaultLoginDepartment(userId, hospitalOrganizationId, departments);
+    }
+
+    /**
+     * 由用户-OU 绑定批量装配登录科室列表（一次 findAllById + 批量 code 反查 + 内存医院过滤）。
+     *
+     * @param userOus                当前租户下用户 OU 绑定
+     * @param hospitalOrganizationId 已选医院；{@code null} 不过滤
+     * @return 可登录科室 DTO
+     */
+    private List<OrganizationUnitDto> buildLoginDepartmentsFromUserBindings(
+            List<UserOrganizationUnit> userOus,
+            Long hospitalOrganizationId) {
+        List<Long> orgUnitIds = new ArrayList<>();
+        for (UserOrganizationUnit row : userOus) {
+            if (row != null && row.getOrganizationUnitId() != null) {
+                orgUnitIds.add(row.getOrganizationUnitId());
+            }
+        }
+        if (orgUnitIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<OrganizationUnit> orgUnits = organizationUnitRepository.findAllById(orgUnitIds);
+        List<String> codes = new ArrayList<>(orgUnits.size());
+        for (OrganizationUnit ou : orgUnits) {
+            if (ou != null && ou.getCode() != null && !ou.getCode().isBlank()) {
+                codes.add(ou.getCode().trim());
+            }
+        }
+        Map<String, Long> businessIdByCode = Map.of();
+        if (organizationUnitScopeBridge != null && !codes.isEmpty()) {
+            businessIdByCode = organizationUnitScopeBridge
+                .mapBusinessOrganizationIdsByOrganizationUnitCodes(codes);
+        }
+        List<OrganizationUnitDto> departments = new ArrayList<>(orgUnits.size());
+        LinkedHashSet<Long> processedBusinessIds = new LinkedHashSet<>();
+        for (OrganizationUnit ou : orgUnits) {
+            if (ou == null || !Boolean.TRUE.equals(ou.getIsEnabled()) || Boolean.TRUE.equals(ou.getIsDeleted())) {
+                continue;
+            }
+            Long businessId = resolveBusinessIdForLoadedOu(ou, businessIdByCode);
+            if (businessId == null || !processedBusinessIds.add(businessId)) {
+                continue;
+            }
+            if (!isLoginDepartmentCandidate(businessId, hospitalOrganizationId)) {
+                continue;
+            }
+            OrganizationUnitDto dto = new OrganizationUnitDto();
+            BeanUtils.copyProperties(ou, dto);
+            dto.setId(businessId);
+            departments.add(dto);
+        }
+        return departments;
+    }
+
+    /**
+     * 已加载 OU → HIS 组织 id：优先批量映射，否则单条桥接，最后回落 OU 主键。
+     *
+     * @param organizationUnit 已加载 OU
+     * @param businessIdByCode 本批 code→业务 id
+     * @return 业务组织 id
+     */
+    private Long resolveBusinessIdForLoadedOu(
+            OrganizationUnit organizationUnit,
+            Map<String, Long> businessIdByCode) {
+        if (organizationUnit == null) {
+            return null;
+        }
+        if (organizationUnit.getCode() != null && !organizationUnit.getCode().isBlank()
+            && businessIdByCode != null) {
+            Long mapped = businessIdByCode.get(organizationUnit.getCode().trim());
+            if (mapped != null) {
+                return mapped;
+            }
+        }
+        return resolveBusinessOrganizationIdFromLoadedOu(organizationUnit).orElse(organizationUnit.getId());
+    }
+
+    /**
+     * 业务组织是否落在岗位派生管辖科室集合内（可能触发全院管辖解析，仅冷路径调用）。
+     *
+     * @param businessOrganizationId HIS 组织主键
+     * @return 在管辖内为 true
+     */
+    private boolean isBusinessOrganizationInManagedScope(Long businessOrganizationId) {
+        if (businessOrganizationId == null) {
+            return false;
+        }
+        List<Long> managedOrganizationUnitIds = loginSession.getManagedOrganizationUnitIds();
+        if (managedOrganizationUnitIds == null || managedOrganizationUnitIds.isEmpty()) {
+            return false;
+        }
+        for (Long managedOrgId : managedOrganizationUnitIds) {
+            if (businessOrganizationId.equals(managedOrgId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 已加载的 Whale OU → HIS 组织 id（优先按 code 解析，避免再按 OU id 查库）。
+     *
+     * @param organizationUnit 已加载 OU
+     * @return 业务组织 id
+     */
+    private Optional<Long> resolveBusinessOrganizationIdFromLoadedOu(OrganizationUnit organizationUnit) {
+        if (organizationUnit == null) {
+            return Optional.empty();
+        }
+        if (organizationUnitScopeBridge != null) {
+            Optional<Long> fromCode = organizationUnitScopeBridge
+                .findBusinessOrganizationIdByOrganizationUnitCode(organizationUnit.getCode());
+            if (fromCode.isPresent()) {
+                return fromCode;
+            }
+        }
+        return Optional.ofNullable(organizationUnit.getId());
     }
 
     private List<OrganizationUnitDto> mergeDefaultLoginDepartment(
@@ -1108,7 +1366,8 @@ public class AuthAppService {
             return departments;
         }
         Long orgId = defaultOrgId.get();
-        if (!matchesHospitalScope(orgId, hospitalOrganizationId)) {
+        // 默认项也须是科室候选，禁止把医院并进科室列表
+        if (!isLoginDepartmentCandidate(orgId, hospitalOrganizationId)) {
             return departments;
         }
         for (OrganizationUnitDto existing : departments) {
@@ -1137,10 +1396,10 @@ public class AuthAppService {
     }
 
     /**
-     * 将岗位派生的 HIS 组织 id 转为登录科室 DTO，并按医院范围过滤。
+     * 将岗位派生的 HIS 组织 id 转为登录科室 DTO，并按医院范围过滤（排除医院节点本身）。
      *
      * @param businessOrganizationIds 岗位管辖科室（{@code adm_organization.id}）
-     * @param hospitalOrganizationId  已选医院；{@code null} 表示不过滤
+     * @param hospitalOrganizationId  已选医院；{@code null} 表示不过滤医院归属
      * @return 去重后的可登录科室列表
      */
     private List<OrganizationUnitDto> buildLoginDepartmentsFromBusinessOrgIds(
@@ -1152,7 +1411,7 @@ public class AuthAppService {
             if (businessOrganizationId == null || !processed.add(businessOrganizationId)) {
                 continue;
             }
-            if (!matchesHospitalScope(businessOrganizationId, hospitalOrganizationId)) {
+            if (!isLoginDepartmentCandidate(businessOrganizationId, hospitalOrganizationId)) {
                 continue;
             }
             toLoginDepartmentDto(businessOrganizationId).ifPresent(result::add);
@@ -1163,10 +1422,15 @@ public class AuthAppService {
     /**
      * 将单个 HIS 组织 id 装配为登录科室 DTO；优先 Whale OU，缺失时回落读模型选项。
      *
+     * <p>医院节点返回 empty：医院只出现在选院步骤，不进入科室列表。</p>
+     *
      * @param businessOrganizationId HIS 组织主键
-     * @return 可展示科室；无权限或不存在时为空
+     * @return 可展示科室；无权限、不存在或为医院时为空
      */
     private Optional<OrganizationUnitDto> toLoginDepartmentDto(Long businessOrganizationId) {
+        if (isHospitalOrganizationNode(businessOrganizationId)) {
+            return Optional.empty();
+        }
         OrganizationUnit orgUnit = loadOrganizationUnitForSessionOrganizationId(businessOrganizationId);
         if (orgUnit != null && Boolean.TRUE.equals(orgUnit.getIsEnabled())
             && !Boolean.TRUE.equals(orgUnit.getIsDeleted())) {
@@ -1187,6 +1451,36 @@ public class AuthAppService {
                 dto.setIsEnabled(Boolean.TRUE);
                 return dto;
             });
+    }
+
+    /**
+     * 可登录科室候选：须非医院节点，且（若已选院）归属当前医院。
+     *
+     * @param businessOrganizationId 业务组织主键
+     * @param hospitalOrganizationId 已选医院；{@code null} 表示不按医院归属收窄
+     * @return 可作为登录科室时为 true
+     */
+    private boolean isLoginDepartmentCandidate(Long businessOrganizationId, Long hospitalOrganizationId) {
+        if (businessOrganizationId == null) {
+            return false;
+        }
+        if (isHospitalOrganizationNode(businessOrganizationId)) {
+            return false;
+        }
+        return matchesHospitalScope(businessOrganizationId, hospitalOrganizationId);
+    }
+
+    /**
+     * 判定业务组织是否为医院节点（与自身做归属校验：仅医院满足 {@code belongsToHospital(id, id)}）。
+     *
+     * @param businessOrganizationId 业务组织主键
+     * @return 医院节点为 true
+     */
+    private boolean isHospitalOrganizationNode(Long businessOrganizationId) {
+        if (businessOrganizationId == null || loginOrganizationScopeQuery == null) {
+            return false;
+        }
+        return loginOrganizationScopeQuery.belongsToHospital(businessOrganizationId, businessOrganizationId);
     }
 
     /**

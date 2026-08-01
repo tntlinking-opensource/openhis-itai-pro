@@ -25,6 +25,7 @@ public interface YbNationalCatalogItemLookup {
         String hilistCodePrefix,
         String aprvno,
         String spec,
+        boolean excludePlatformExpired,
         Pageable pageable);
 
     List<YbNationalCatalogItem> listDistinctForMedicationMatch(
@@ -48,6 +49,21 @@ public interface YbNationalCatalogItemLookup {
         String valiFlag,
         int limit);
 
+    /**
+     * 按 source_infno 查明细候选（1301 西药 / 1305 诊疗 / 1306 耗材）。
+     */
+    List<YbNationalCatalogItem> listDetailForMedicationMatch(
+        Long contractId,
+        Long tenantId,
+        String listType,
+        String sourceInfno,
+        String keyword,
+        String aprvno,
+        String spec,
+        String hilistCodeExact,
+        String valiFlag,
+        int limit);
+
     Page<YbNationalCatalogItem> page1301Detail(
         Long contractId,
         Long tenantId,
@@ -57,5 +73,7 @@ public interface YbNationalCatalogItemLookup {
         String hilistCodePrefix,
         String aprvno,
         String spec,
+        boolean excludePlatformExpired,
         Pageable pageable);
 }
+

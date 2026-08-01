@@ -133,6 +133,9 @@ public class NurseStationExecutionInventoryAssembler {
     /**
      * 对批量药嘱执行需求做 FIFO 分段 dry-run；按需求行顺序扣减 working 库存，任一不足整批失败。
      *
+     * <p>不足时扫完整批需求行，汇总全部缺货药品展示名后再抛 {@code EX-IP-EXE-302}，
+     * 便于护士一次确认本批全部缺货项（多药缺货不截断为首条）。</p>
+     *
      * @param demandLines 库存 Gate 需求行（与待执行药嘱槽位顺序一致）
      * @return 分段计划
      * @throws BusinessException EX-IP-EXE-302 库存不足或未配置药房
@@ -167,24 +170,60 @@ public class NurseStationExecutionInventoryAssembler {
             this.buildGlobalOccupancyByItemLocationKey(candidateLocationIds, medicationIds);
         Map<Long, ProductDefinitionDisplayDto> productByMedicationId = this.batchLoadMedicationProducts(demandLines);
         List<List<MedicationFifoSegment>> plan = new ArrayList<>();
+        // 按出现顺序去重收集缺货药名，整批扫完后一次性提示
+        LinkedHashSet<String> insufficientMedicationNames = new LinkedHashSet<>();
         // Cmd：逐需求行 FIFO 分段并在 working 库存上扣减，供同批后续槽位继续分配
         for (InventoryGateDemandLine line : demandLines) {
             if (line == null || line.getMedicationId() == null) {
                 plan.add(Collections.emptyList());
                 continue;
             }
+            // 无有效业务数量时不占库存，也不记为缺货
+            if (line.getBusinessQuantity() == null || line.getBusinessQuantity().compareTo(BigDecimal.ZERO) <= 0) {
+                plan.add(Collections.emptyList());
+                continue;
+            }
             ProductDefinitionDisplayDto product = productByMedicationId.get(line.getMedicationId());
             List<MedicationFifoSegment> segments = this.allocateSegmentsForDemandLine(
                 line, workingPhysical, occupancyByItemLocationKey, product);
+            // 本行无法覆盖：记入缺货清单，不扣减 working，继续扫后续行以汇总全部缺货药
             if (segments.isEmpty()) {
-                throw new BusinessException(
-                    InpatientNurseStationConstants.EX_IP_EXE_302,
-                    "药品库存不足，无法执行所选计划点");
+                insufficientMedicationNames.add(
+                    this.resolveMedicationDisplayName(line.getMedicationId(), product));
+                plan.add(Collections.emptyList());
+                continue;
             }
             this.applySegmentDepletion(workingPhysical, product, line.getUnitCode(), segments);
             plan.add(segments);
         }
+        // Gate：任一行缺货则整批拒绝，文案列出全部缺货药品名
+        if (!insufficientMedicationNames.isEmpty()) {
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_EXE_302,
+                InpatientNurseStationConstants.MSG_EXE_STOCK_INSUFFICIENT_PREFIX
+                    + String.join("、", insufficientMedicationNames));
+        }
         return new MedicationFifoBatchPlan(plan);
+    }
+
+    /**
+     * 解析缺货提示用的药品展示名（通用名优先，其次商品名；均无则回退定义主键）。
+     *
+     * @param medicationId 药品定义主键
+     * @param product      产品读模型；可为 null
+     * @return 非空展示文案
+     */
+    private String resolveMedicationDisplayName(Long medicationId, ProductDefinitionDisplayDto product) {
+        if (product != null) {
+            String displayName = StringUtils.firstNonBlank(product.getProductName(), product.getMerchandiseName());
+            if (StringUtils.isNotEmpty(displayName)) {
+                return displayName.trim();
+            }
+        }
+        if (medicationId == null) {
+            return "未知药品";
+        }
+        return "药品#" + medicationId;
     }
 
     /**

@@ -6,13 +6,28 @@ package com.openhis.health.application.basic.diagnosiscatalog.service;
 
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
+import com.openhis.health.application.basic.diagnosiscatalog.dto.ClinicalV2ImportProgressResponse;
 import com.openhis.health.application.basic.diagnosiscatalog.dto.DiagnosisCatalogDetailDto;
 import com.openhis.health.application.basic.diagnosiscatalog.dto.DiagnosisCatalogDto;
 import com.openhis.health.application.basic.diagnosiscatalog.dto.DiagnosisCatalogInitDto;
+import com.openhis.health.application.basic.diagnosiscatalog.dto.ImportClinicalV2CatalogResponse;
+import com.openhis.health.application.basic.diagnosiscatalog.dto.StartClinicalV2ImportResponse;
+import com.openhis.health.application.basic.diagnosiscatalog.dto.StartYbConditionImportResponse;
+import com.openhis.health.application.basic.diagnosiscatalog.dto.YbConditionImportProgressResponse;
 import com.openhis.health.application.basic.diagnosiscatalog.mapper.DiagnosisCatalogMapper;
 import com.openhis.health.application.basic.diagnosiscatalog.request.CreateDiagnosisCatalogRequest;
+import com.openhis.health.application.basic.diagnosiscatalog.request.GetClinicalV2ImportProgressRequest;
+import com.openhis.health.application.basic.diagnosiscatalog.request.GetYbConditionImportProgressRequest;
+import com.openhis.health.application.basic.diagnosiscatalog.request.ImportClinicalV2CatalogRequest;
 import com.openhis.health.application.basic.diagnosiscatalog.request.QueryDiagnosisCatalogRequest;
+import com.openhis.health.application.basic.diagnosiscatalog.request.StartYbConditionImportRequest;
 import com.openhis.health.application.basic.diagnosiscatalog.request.UpdateDiagnosisCatalogRequest;
+import com.openhis.health.application.basic.diagnosiscatalog.support.ClinicalV2CatalogImportAsyncWorkflow;
+import com.openhis.health.application.basic.diagnosiscatalog.support.ClinicalV2CatalogImportJob;
+import com.openhis.health.application.basic.diagnosiscatalog.support.ClinicalV2CatalogWorkbookParser;
+import com.openhis.health.application.basic.diagnosiscatalog.support.YbConditionCatalogImportAsyncWorkflow;
+import com.openhis.health.application.basic.diagnosiscatalog.support.YbConditionCatalogImportJob;
+import com.openhis.health.domain.clinical.conditiondefinition.command.ClinicalV2ImportRowCommand;
 import com.openhis.health.domain.clinical.conditiondefinition.command.EditDiseaseStartCommand;
 import com.openhis.health.domain.clinical.conditiondefinition.command.EditDiseaseStopCommand;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.DiseasePageQuery;
@@ -55,6 +70,12 @@ public class DiagnosisCatalogAppService {
     private final DiagnosisCatalogMapper diagnosisMapper;
     /** 术语下拉：分类、医保诊断类型等初始化选项。 */
     private final CodeSystemQueryService codeSystemQueryService;
+    /** 国家临床版 2.0 Excel 解析。 */
+    private final ClinicalV2CatalogWorkbookParser clinicalV2CatalogWorkbookParser;
+    /** 国家临床版 2.0 异步导入。 */
+    private final ClinicalV2CatalogImportAsyncWorkflow clinicalV2CatalogImportAsyncWorkflow;
+    /** 医保诊断目录异步导入。 */
+    private final YbConditionCatalogImportAsyncWorkflow ybConditionCatalogImportAsyncWorkflow;
 
     /**
      * 返回疾病目录维护页所需的下拉：分类、发布状态、医保诊断类型。
@@ -161,7 +182,7 @@ public class DiagnosisCatalogAppService {
     }
 
     /**
-     * 单条停用/下线疾病目录（领域批量停用语义，此处单元素列表）。
+     * 单条删除疾病目录（软删，列表不再展示）。
      *
      * @param id 主键
      * @throws ValidationException id 为空时
@@ -171,10 +192,8 @@ public class DiagnosisCatalogAppService {
         if (id == null) {
             throw new ValidationException("删除疾病目录失败：id 不能为空");
         }
-        // Cmd：领域单条停用（批量停用语义）
-        EditDiseaseStopCommand command = new EditDiseaseStopCommand();
-        command.setIds(List.of(id));
-        conditionDefinitionDomainService.editDiseaseStop(command);
+        // Cmd：领域软删
+        conditionDefinitionDomainService.delete(id);
     }
 
     /**
@@ -205,6 +224,110 @@ public class DiagnosisCatalogAppService {
         EditDiseaseStopCommand command = new EditDiseaseStopCommand();
         command.setIds(ids);
         conditionDefinitionDomainService.editDiseaseStop(command);
+    }
+
+    /**
+     * 启动国家临床版 2.0 异步导入（推荐；避免全量 3 万+ 行 HTTP 超时）。
+     *
+     * @param request 含 fileBytes 的导入请求
+     * @return jobId，供进度轮询
+     */
+    public StartClinicalV2ImportResponse startImportClinicalV2Catalog(ImportClinicalV2CatalogRequest request) {
+        if (request == null || request.getFileBytes() == null || request.getFileBytes().length == 0) {
+            throw new ValidationException("导入国家临床版2.0失败：文件不能为空");
+        }
+        String jobId = clinicalV2CatalogImportAsyncWorkflow.startImport(
+            request.getFileBytes(), request.getFileName());
+        StartClinicalV2ImportResponse response = new StartClinicalV2ImportResponse();
+        response.setJobId(jobId);
+        return response;
+    }
+
+    /**
+     * 查询国家临床版 2.0 异步导入进度。
+     *
+     * @param request 含 jobId
+     * @return 进度快照
+     */
+    public ClinicalV2ImportProgressResponse getImportClinicalV2CatalogProgress(
+            GetClinicalV2ImportProgressRequest request) {
+        if (request == null || request.getJobId() == null || request.getJobId().isBlank()) {
+            throw new ValidationException("查询导入进度失败：jobId 不能为空");
+        }
+        ClinicalV2CatalogImportJob job = clinicalV2CatalogImportAsyncWorkflow.getJob(request.getJobId());
+        ClinicalV2ImportProgressResponse response = new ClinicalV2ImportProgressResponse();
+        response.setJobId(job.getJobId());
+        response.setStatus(job.getStatus());
+        response.setStage(job.getStage());
+        response.setPercent(job.getPercent());
+        response.setTotal(job.getTotal());
+        response.setProcessed(job.getProcessed());
+        response.setSuccessCount(job.getSuccessCount());
+        response.setMessage(job.getMessage());
+        return response;
+    }
+
+    /**
+     * 启动医保诊断目录异步导入（从 yb_national_catalog_item 按 list_type 灌入）。
+     *
+     * @param request 含 sourceEnum
+     * @return jobId，供进度轮询
+     */
+    public StartYbConditionImportResponse startImportYbConditionCatalog(StartYbConditionImportRequest request) {
+        if (request == null || request.getSourceEnum() == null || request.getSourceEnum().isBlank()) {
+            throw new ValidationException("从医保导入失败：sourceEnum 不能为空");
+        }
+        String jobId = ybConditionCatalogImportAsyncWorkflow.startImport(request.getSourceEnum());
+        StartYbConditionImportResponse response = new StartYbConditionImportResponse();
+        response.setJobId(jobId);
+        return response;
+    }
+
+    /**
+     * 查询医保诊断目录异步导入进度。
+     *
+     * @param request 含 jobId
+     * @return 进度快照
+     */
+    public YbConditionImportProgressResponse getImportYbConditionCatalogProgress(
+            GetYbConditionImportProgressRequest request) {
+        if (request == null || request.getJobId() == null || request.getJobId().isBlank()) {
+            throw new ValidationException("查询导入进度失败：jobId 不能为空");
+        }
+        YbConditionCatalogImportJob job = ybConditionCatalogImportAsyncWorkflow.getJob(request.getJobId());
+        YbConditionImportProgressResponse response = new YbConditionImportProgressResponse();
+        response.setJobId(job.getJobId());
+        response.setStatus(job.getStatus());
+        response.setStage(job.getStage());
+        response.setPercent(job.getPercent());
+        response.setTotal(job.getTotal());
+        response.setProcessed(job.getProcessed());
+        response.setSuccessCount(job.getSuccessCount());
+        response.setMessage(job.getMessage());
+        return response;
+    }
+
+    /**
+     * 同步导入国家临床版 2.0（兼容旧调用；全量文件易超时，页面请用异步接口）。
+     *
+     * @param request 含 fileBytes 的导入请求
+     * @return 解析行数与写入条数
+     * @throws ValidationException 文件为空或无法解析时
+     */
+    public ImportClinicalV2CatalogResponse importClinicalV2Catalog(ImportClinicalV2CatalogRequest request) {
+        // Gate：上传字节非空
+        if (request == null || request.getFileBytes() == null || request.getFileBytes().length == 0) {
+            throw new ValidationException("导入国家临床版2.0失败：文件不能为空");
+        }
+        // Pre：解析 Excel
+        List<ClinicalV2ImportRowCommand> rows = clinicalV2CatalogWorkbookParser.parse(request.getFileBytes());
+        // Cmd：领域批量 upsert
+        int success = conditionDefinitionDomainService.importClinicalV2Catalog(rows);
+        // Asm：导入结果
+        ImportClinicalV2CatalogResponse response = new ImportClinicalV2CatalogResponse();
+        response.setTotalCount(rows.size());
+        response.setSuccessCount(success);
+        return response;
     }
 
     /**

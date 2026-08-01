@@ -37,10 +37,10 @@ public class ChangeMedicationOrderDraftCommand {
     private Integer dispensePerDuration;
     /** 是否皮试；非空时更新。 */
     private Boolean skinTestFlag;
-    /** 绑定诊断定义主键；非空时更新。 */
-    private Long conditionDefinitionId;
-    /** 就诊诊断主键；非空时更新。 */
-    private Long encounterDiagnosisId;
+    /**
+     * 绑定就诊诊断主键有序串（列 {@code encounter_diagnosis_ids}）；非空时更新。
+     */
+    private String encounterDiagnosisIds;
     /** 费用性质/合同覆盖；非空时更新。 */
     private Long contractId;
     /** 药品成组号；非空时更新。 */
@@ -52,4 +52,9 @@ public class ChangeMedicationOrderDraftCommand {
 
     /** 医生站列表展示排序号；非空时更新。 */
     private Integer sortNumber;
+
+    /**
+     * 医嘱备注；非空时更新（含空串清空；与中药草稿 remark 口径一致）。
+     */
+    private String remark;
 }

@@ -46,6 +46,33 @@ public class EmrDiagnosisMetadataContributor {
                     String.valueOf(primary.getPrimaryConditionDefinitionId()));
         }
         put(target, "diagnosis.summary", diagnosisSnapshotDisplayResolver.resolveDiagnosisSummary(diagnosisJson));
+        put(target, "diagnosis.dischargeDisplay", resolveDischargeDisplay(diagnosisJson));
+        // 门诊病历「西医诊断 / 中医诊断」数据元：分侧展示；某侧无行时不写入（字段保持空可编辑槽）
+        put(target, "diagnosis.westernDisplay",
+                diagnosisSnapshotDisplayResolver.resolveWesternDiagnosisDisplay(diagnosisJson));
+        put(target, "diagnosis.tcmDisplay",
+                diagnosisSnapshotDisplayResolver.resolveTcmDiagnosisDisplay(diagnosisJson));
+    }
+
+    /**
+     * 出院诊断书用：全量诊断展示名，去掉「[主]」标签，以中文分号拼接。
+     */
+    private String resolveDischargeDisplay(String diagnosisJson) {
+        List<String> lines = diagnosisSnapshotDisplayResolver.resolveDiagnosisDisplayLines(diagnosisJson);
+        if (lines == null || lines.isEmpty()) {
+            return null;
+        }
+        List<String> cleaned = new java.util.ArrayList<>(lines.size());
+        for (String line : lines) {
+            String name = stripPrimaryDisplayTag(line);
+            if (StringUtils.isNotBlank(name)) {
+                cleaned.add(name);
+            }
+        }
+        if (cleaned.isEmpty()) {
+            return null;
+        }
+        return String.join("；", cleaned);
     }
 
     private String resolvePrimaryDisplay(String diagnosisJson) {

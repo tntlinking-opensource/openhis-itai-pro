@@ -62,11 +62,19 @@ public class SettledPaymentBriefDto {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long relationId;
 
-    /** 是否可在结算页点击反结。 */
+    /** 是否可在结算页点击反结（未离院且正向 SUCCESS 未反结）。 */
     @Schema(description = "是否可反结")
     private Boolean reverseEnabled;
 
     /** reverseEnabled=false 时的前端 Tooltip 文案。 */
     @Schema(description = "不可反结原因")
     private String reverseDisabledReason;
+
+    /**
+     * 是否可在结算页点击召回。
+     *
+     * <p>仅就诊 {@code DISCHARGED} 且本行满足反结资格（正向 SUCCESS 未反结）时为 true。</p>
+     */
+    @Schema(description = "是否可召回")
+    private Boolean recallEnabled;
 }

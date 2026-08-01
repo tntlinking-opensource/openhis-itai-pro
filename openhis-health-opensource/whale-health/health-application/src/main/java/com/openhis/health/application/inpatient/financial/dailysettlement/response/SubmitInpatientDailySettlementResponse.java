@@ -30,4 +30,12 @@ public class SubmitInpatientDailySettlementResponse {
     /** 挂载条数。 */
     @Schema(description = "挂载条数")
     private Integer paymentCount;
+
+    /** 交账头状态 code（提交后一般为 SUBMITTED）。 */
+    @Schema(description = "交账头状态枚举 code")
+    private String statusEnum;
+
+    /** 截止后未交账条数（仅提醒，不拦提交）。 */
+    @Schema(description = "截止后未交账条数（仅提醒）")
+    private Long gapSoftWarnCount;
 }

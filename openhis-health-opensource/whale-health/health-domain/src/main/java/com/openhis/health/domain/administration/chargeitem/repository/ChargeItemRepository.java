@@ -200,4 +200,15 @@ public interface ChargeItemRepository extends JpaRepository<ChargeItem, Long>, J
      * @return 仍处源态的明细列表
      */
     List<ChargeItem> findAllByIdInAndStatusEnum(Collection<Long> ids, String statusEnum);
+
+    /**
+     * 按就诊与产品锚点加载收费明细（代煎费等同 activity 产品回显，避免拉全就诊费用）。
+     *
+     * @param encounterId  就诊标识
+     * @param productTable 产品物理表名（如 {@code wkf_activity_definition}）
+     * @param productId    产品主键
+     * @return 匹配明细；无命中时为空列表
+     */
+    List<ChargeItem> findAllByEncounterIdAndProductTableAndProductId(
+        Long encounterId, String productTable, Long productId);
 }

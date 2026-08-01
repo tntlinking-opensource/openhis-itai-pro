@@ -11,6 +11,7 @@ import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.assembler.NurseStationDispenseSummaryListAssembler;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.assembler.NurseStationDispenseSummaryWriteAssembler.SummaryMergeGroup;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.dto.NurseStationDispenseSummaryPatientGroupDto;
+import com.openhis.health.application.inpatient.nursestation.dispensesummary.dto.NurseStationDispenseSummaryPatientPickupGroupDto;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.dto.NurseStationDispenseSummarySlipHeaderDto;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.dto.NurseStationDispenseSummarySlipLineDto;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.request.PageMedicationSummarySlipHeadersRequest;
@@ -18,6 +19,7 @@ import com.openhis.health.application.inpatient.nursestation.dispensesummary.req
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.CancelMedicationSummaryResponse;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.CreateMedicationSummaryResponse;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.GetMedicationSummarySlipDetailResponse;
+import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.GetMedicationSummarySlipPatientDetailResponse;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.PageMedicationSummarySlipHeadersResponse;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.PagePendingDispenseSummaryLinesResponse;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.SubmitMedicationSummaryResponse;
@@ -258,6 +260,30 @@ public class NurseStationDispenseSummaryMapperImpl implements NurseStationDispen
             response.setLines(new ArrayList<>());
         } else {
             response.setLines(lines);
+        }
+        return response;
+    }
+
+    /**
+     * 装配 IF-IP-SUM-09 摆药单查询响应（单头 + 按患者分组明细）。
+     *
+     * @param summaryNo     汇总单号
+     * @param header        单头展示
+     * @param patientGroups 患者分组摆药行
+     * @return 摆药明细响应
+     */
+    @Override
+    public GetMedicationSummarySlipPatientDetailResponse toGetMedicationSummarySlipPatientDetailResponse(
+        String summaryNo,
+        NurseStationDispenseSummarySlipHeaderDto header,
+        List<NurseStationDispenseSummaryPatientPickupGroupDto> patientGroups) {
+        GetMedicationSummarySlipPatientDetailResponse response = new GetMedicationSummarySlipPatientDetailResponse();
+        response.setSummaryNo(summaryNo);
+        response.setHeader(header);
+        if (patientGroups == null) {
+            response.setPatientGroups(new ArrayList<>());
+        } else {
+            response.setPatientGroups(patientGroups);
         }
         return response;
     }

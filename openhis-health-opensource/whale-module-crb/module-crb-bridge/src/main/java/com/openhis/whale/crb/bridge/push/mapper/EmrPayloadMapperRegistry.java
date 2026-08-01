@@ -44,7 +44,7 @@ public class EmrPayloadMapperRegistry {
             if (!task.getResource().equals(mapper.resource())) {
                 continue;
             }
-            CrbMappingContext ctx = mappingContextFactory.create(task.getOperatorId());
+            CrbMappingContext ctx = mappingContextFactory.create(task.getOperatorId(), task.getTenantId());
             var payload = mapper.toPayload(task.getSourceId(), ctx);
             if (payload == null) {
                 log.warn("Mapper returned null payload, resource={}, sourceId={}",

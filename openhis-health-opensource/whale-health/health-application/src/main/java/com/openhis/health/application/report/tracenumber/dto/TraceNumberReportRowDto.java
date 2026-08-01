@@ -9,6 +9,7 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * IF-TRC-RPT-02 列表行 DTO。
@@ -29,6 +30,9 @@ public class TraceNumberReportRowDto {
     /** 药品名称（enrich）。 */
     private String medicationName;
 
+    /** 规格文本（enrich，药品 totalVolume）。 */
+    private String specificationText;
+
     /** 批号。 */
     private String lotNumber;
 
@@ -44,14 +48,20 @@ public class TraceNumberReportRowDto {
     /** 追溯码单位 code。 */
     private String traceUnitCode;
 
-    /** 本库状态 code（LOCATION 范围；否则 null）。 */
+    /** 本库状态 code（兼容字段；指定库房仅返回在库码，对客列表不再展示）。 */
     private String locationStockStatusEnum;
 
-    /** 本库状态展示名。 */
+    /** 本库状态展示名（兼容字段；对客列表不再展示）。 */
     private String locationStockStatusLabel;
 
     /** 本库净拆零量（LOCATION 范围）。 */
     private BigDecimal locationNetSplitQuantity;
+
+    /** 当前所在库房 id（领域回填，应用层转名称）。 */
+    private List<Long> currentLocationIds;
+
+    /** 当前所在库房名称（多个以顿号拼接）。 */
+    private String currentLocationNames;
 
     /** 最近流水时间。 */
     private LocalDateTime lastFlowAt;

@@ -18,8 +18,10 @@ import java.time.LocalDateTime;
  * LongTermMedicationOrderStoppedEvent：health-domain-shared 跨领域共享模型。
  */
 public class LongTermMedicationOrderStoppedEvent extends DomainEvent {
-    /** effectiveDoseEnd（LongTermMedicationOrderStopped 业务上下文）。 */
-    private LocalDateTime effectiveDoseEnd;
+    /**
+     * 停嘱时间（落库 {@code stop_time}）。
+     */
+    private LocalDateTime stopTime;
 
     /** 操作人主键（LongTermMedicationOrderStoppedEvent）。 */
     private Long operatorId;
@@ -28,21 +30,24 @@ public class LongTermMedicationOrderStoppedEvent extends DomainEvent {
     private String statusEnum;
 
     /**
-     * 处理逻辑。
-     * @return 返回结果
+     * 无参构造（反序列化/框架用）。
      */
     public LongTermMedicationOrderStoppedEvent() {
         super();
     }
 
     /**
-     * 处理Long id, LocalDateTime effectiveDoseEnd逻辑。
-     * @return 返回结果
+     * 构造长期药品医嘱已停嘱事件。
+     *
+     * @param id         药品申请主键
+     * @param stopTime   停嘱时间
+     * @param operatorId 操作人主键
+     * @param statusEnum 停嘱后状态码
      */
     public LongTermMedicationOrderStoppedEvent(
-        Long id, LocalDateTime effectiveDoseEnd, Long operatorId, String statusEnum) {
+        Long id, LocalDateTime stopTime, Long operatorId, String statusEnum) {
         super(id, AggregateTypeConstants.MEDICATION_REQUEST);
-        this.effectiveDoseEnd = effectiveDoseEnd;
+        this.stopTime = stopTime;
         this.operatorId = operatorId;
         this.statusEnum = statusEnum;
     }

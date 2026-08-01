@@ -233,6 +233,9 @@ public final class VitalSignConstants {
         /** 脉搏短绌。 */
         public static final String PULSE_DEFICIT = "PULSE_DEFICIT";
 
+        /** 临时加测。 */
+        public static final String TEMP_EXTRA_MEASURE = "TEMP_EXTRA_MEASURE";
+
         /** 特殊事件占位值（无附加数值时）。 */
         public static final String FLAG_VALUE = "1";
 

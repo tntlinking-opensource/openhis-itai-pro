@@ -12,12 +12,13 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
-     * 创建或修订退库单命令（药房/科室退库主动单、退库入库壳单等，见 {@link com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService#createReturn}）。
+ * 创建或修订退库单命令（药房/科室退库主动单、退库入库壳单等，见 {@link com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService#createReturn}）。
  *
  * <p>凡 {@code typeEnum}/{@code categoryEnum}/{@code sourceTypeEnum}/{@code purposeTypeEnum} 等与库 {@code *_enum} 列对应字段，均为各枚举
  * {@link com.openhis.health.domain.share.enums.EnumInterface#getCode()} 持久化字符串（B.10.8.1）。</p>
  *
- * <p>可选 {@link #bootstrapFinalStatusCode} 用于药房/科室退库 agree 后生成退库入库壳单（DM §6.1.5，对偶 §6.1.8 调入壳单）。</p>
+ * <p>可选 {@link #bootstrapFinalStatusCode} 用于药房/科室退库 agree 后生成退库入库壳单（DM §6.1.5，对偶 §6.1.8 调入壳单）。
+ * 壳单行须拷贝下游退库 {@code reason}，并写入 {@code approverId}/{@code approvalTime}（bootstrap AGREE 不走 {@code approvalToAgree}）。</p>
  */
 @Getter
 @Setter
@@ -65,6 +66,8 @@ public class CreateReturnCommand extends BatchCommand<CreateReturnCommand.Create
         private LocalDateTime occurrenceTime;
         /** 申请人主键。 */
         private Long applicantId;
+        /** 经手人主键。 */
+        private Long practitionerId;
         /** 申请时间。 */
         private LocalDateTime applyTime;
         /** 原因说明。 */
@@ -79,5 +82,13 @@ public class CreateReturnCommand extends BatchCommand<CreateReturnCommand.Create
         private BigDecimal price;
         /** 行总价。 */
         private BigDecimal totalPrice;
+        /**
+         * 审批人主键（退库入库壳单 bootstrap AGREE 时写入，与下游退库同意人对齐）。
+         */
+        private Long approverId;
+        /**
+         * 审批时刻（壳单 bootstrap AGREE 时写入）。
+         */
+        private LocalDateTime approvalTime;
     }
 }

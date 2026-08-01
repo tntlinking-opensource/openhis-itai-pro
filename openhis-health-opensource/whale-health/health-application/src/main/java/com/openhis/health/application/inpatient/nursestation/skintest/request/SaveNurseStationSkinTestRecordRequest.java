@@ -28,13 +28,18 @@ public class SaveNurseStationSkinTestRecordRequest {
     /** 皮试药医嘱主键。 */
     private Long medicationRequestId;
 
+    /**
+     * 目标 companion 皮试检查 SR 主键；同一皮试药多条 companion 时必填，单条时可空由服务端解析。
+     */
+    private Long skinTestServiceRequestId;
+
     /** 药品定义主键。 */
     private Long medicationId;
 
     /** 已有过敏记录主键（更新时必填）。 */
     private Long allergyRecordId;
 
-    /** 批号。 */
+    /** 批号（必填，且须 ∈ 该皮试药 MedicationDispense 发放批号候选，BR-IP-STK-013）。 */
     private String lotNumber;
 
     /** 记录时间；空则服务端取当前时刻。 */

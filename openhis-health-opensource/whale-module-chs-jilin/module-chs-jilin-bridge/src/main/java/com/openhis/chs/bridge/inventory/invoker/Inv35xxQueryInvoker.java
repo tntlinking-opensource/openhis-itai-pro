@@ -37,7 +37,12 @@ public class Inv35xxQueryInvoker implements com.openhis.chs.domain.inventory.acc
             throw new BusinessException(ChsErrorCodes.CONTRACT_INVALID, "契约未配置 fixmedins_code");
         }
         InvPlatformQueryInput input = InvPlatformInputAssembler.assemblePlatformQuery(query, ctx.fixmedinsCode());
-        ResultBody body = gatewayClient.invoke(ctx.busNo(), infno, input, invPlatformSupport.buildInvokeContext());
+        // 异步 3511（退药组装）带 query.operatorId；运维台同步查询走登录态
+        ResultBody body = gatewayClient.invoke(
+            ctx.busNo(),
+            infno,
+            input,
+            invPlatformSupport.buildInvokeContext(query.getOperatorId(), query.getOperatorName()));
         ChsPlatformResponseSupport.requireSuccess(body, infno);
         return new PlatformInvQueryResult()
             .setInfno(infno)

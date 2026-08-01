@@ -7,8 +7,10 @@ package com.openhis.health.domain.share.enums;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.whale.core.application.exception.BusinessException;
 
+import java.util.List;
+
 /**
- * 供应请求单据类型：写表 {@code wkf_supply_request.type_enum} 的<strong>持久化身份白名单</strong>（当前 30 项）。
+ * 供应请求单据类型：写表 {@code wkf_supply_request.type_enum} 的<strong>持久化身份白名单</strong>（当前 34 项）。
  *
  * <p><strong>B.10.8.1</strong>：对外与落库身份一律为 {@link #getCode()} 字符串；{@link #getSortOrder()} 仅用于列表/下拉排序，
  * 禁止当作 type 身份或数字串与 code 互转。{@link #getBusNoSeqKey()} 供按日流水单号分桶（B.10.9），与 {@code code} 不同维。</p>
@@ -73,7 +75,31 @@ public enum SupplyType implements EnumInterface {
     /** 科室药房领用（上级科室消耗；单库房扣减，与临床 DeviceDispense 无关）。 */
     DEPT_ISSUE(0L, "DEPT_ISSUE", "科室领用单", "", 29L, "DEI"),
     /** 科室药房退领（自 {@link #DEPT_ISSUE} 未用完退回；单库房加回）。 */
-    DEPT_ISSUE_RETURN(0L, "DEPT_ISSUE_RETURN", "科室退领单", "", 30L, "DTL");
+    DEPT_ISSUE_RETURN(0L, "DEPT_ISSUE_RETURN", "科室退领单", "", 30L, "DTL"),
+    /**
+     * 科室采购申请单（科室药房提出采购需求；申请单，同意仅终态；药库订货可选手动拉取）。
+     *
+     * <p>序号键 {@code DPR}；单端点仅 {@code purpose_*}（科室药房）；不写供应商。</p>
+     */
+    DEPT_PURCHASE_REQUEST(0L, "DEPT_PURCHASE_REQUEST", "科室采购申请单", "", 31L, "DPR"),
+    /**
+     * 药库库存期初（AS-BAS-INV-001 · GAP-OPN-001）。
+     *
+     * <p>序号键 {@code COP}；单端点仅 {@code purpose_*}；同意后整库期初真源；不走财务审批。</p>
+     */
+    CABINET_OPENING(0L, "CABINET_OPENING", "药库期初单", "", 32L, "COP"),
+    /**
+     * 药房库存期初（AS-BAS-INV-001 · GAP-OPN-001）。
+     *
+     * <p>序号键 {@code POP}；单端点仅 {@code purpose_*}；不走财务审批。</p>
+     */
+    PHARMACY_OPENING(0L, "PHARMACY_OPENING", "药房期初单", "", 33L, "POP"),
+    /**
+     * 耗材房/科室药房库存期初（AS-BAS-INV-001 · GAP-OPN-001）。
+     *
+     * <p>序号键 {@code DOP}；单端点仅 {@code purpose_*}；不走财务审批。</p>
+     */
+    DEPT_OPENING(0L, "DEPT_OPENING", "科室药房期初单", "", 34L, "DOP");
 
     /** 编码体系占位；当前各常量恒为 {@code 0L}，与术语扩展预留一致。 */
     private final Long codeSystemId;
@@ -261,6 +287,37 @@ public enum SupplyType implements EnumInterface {
         if (DEPT_ISSUE_RETURN.code.equals(trimmed)) {
             return true;
         }
+        if (DEPT_PURCHASE_REQUEST.code.equals(trimmed)) {
+            return true;
+        }
+        if (isOpeningTypeCode(trimmed)) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 是否为库存期初类供应单据（药库/药房/科室药房 OPENING）。
+     *
+     * <p>对应 AS-BAS-INV-001：执行单据；同意后写库存与条件追溯；不进 {@link #requiresFinanceApproval(String)}。</p>
+     *
+     * @param typeEnumCode 持久化 {@link #getCode()}；空白视为非期初
+     * @return 命中三类 OPENING 时为 {@code true}
+     */
+    public static boolean isOpeningTypeCode(String typeEnumCode) {
+        if (typeEnumCode == null || typeEnumCode.isBlank()) {
+            return false;
+        }
+        String trimmed = typeEnumCode.trim();
+        if (CABINET_OPENING.code.equals(trimmed)) {
+            return true;
+        }
+        if (PHARMACY_OPENING.code.equals(trimmed)) {
+            return true;
+        }
+        if (DEPT_OPENING.code.equals(trimmed)) {
+            return true;
+        }
         return false;
     }
 
@@ -295,28 +352,39 @@ public enum SupplyType implements EnumInterface {
     }
 
     /**
-     * 是否属于须「财务审批」岗位才能 agree/reject 的动账类供应单（B.10.8.1 持久化 {@code type_enum} 白名单）。
+     * 是否为科室采购申请类供应单据（{@link #DEPT_PURCHASE_REQUEST}）。
      *
-     * <p>纯物流调拨、出入库、盘点、药房/科室退库等不在此列；调价单走独立域审批 gate。</p>
+     * <p>申请单：同意仅终态；产品定义级选品；单端点仅 {@code purpose_location_id}；不写供应商。</p>
+     *
+     * @param typeEnumCode 持久化 {@link #getCode()}；空白视为非本类
+     * @return 命中科室采购申请白名单时为 {@code true}
+     */
+    public static boolean isDeptPurchaseRequestTypeCode(String typeEnumCode) {
+        if (typeEnumCode == null || typeEnumCode.isBlank()) {
+            return false;
+        }
+        return DEPT_PURCHASE_REQUEST.code.equals(typeEnumCode.trim());
+    }
+
+    /**
+     * 是否属于须「财务审批」岗位才能 agree/reject 的供应单（B.10.8.1 持久化 {@code type_enum} 白名单）。
+     *
+     * <p>财务审批族（对齐 <strong>AS-FIN-APR-001</strong>）：药库进货、退供应商、药库/药房/科室损益、
+     * 药库/药房/科室盘点。<strong>不含</strong>已废止的科室耗材盘点。订货、退库入库、请领、出库、调拨等<strong>不在</strong>本列（原业务页审批、不校财务角色）。
+     * 调价单不经本方法，走独立域 {@code FinanceApprovalAuthorizer#assertFinanceApprovalRole}。</p>
      *
      * @param typeEnumCode 持久化 {@link #getCode()}；空白视为否
-     * @return 命中动账白名单时为 {@code true}
+     * @return 命中财务审批族白名单时为 {@code true}
      */
     public static boolean requiresFinanceApproval(String typeEnumCode) {
         if (typeEnumCode == null || typeEnumCode.isBlank()) {
             return false;
         }
         String trimmed = typeEnumCode.trim();
-        if (CABINET_PURCHASE_ORDER.code.equals(trimmed)) {
-            return true;
-        }
         if (CABINET_INBOUND_RECEIPT.code.equals(trimmed)) {
             return true;
         }
         if (CABINET_RETURN_TO_SUPPLIER.code.equals(trimmed)) {
-            return true;
-        }
-        if (CABINET_RETURN_STOCK_IN.code.equals(trimmed)) {
             return true;
         }
         if (CABINET_GAIN_LOSS.code.equals(trimmed)) {
@@ -328,6 +396,34 @@ public enum SupplyType implements EnumInterface {
         if (DEPT_GAIN_LOSS.code.equals(trimmed)) {
             return true;
         }
+        if (CABINET_STOCKTAKE.code.equals(trimmed)) {
+            return true;
+        }
+        if (PHARMACY_STOCKTAKE.code.equals(trimmed)) {
+            return true;
+        }
+        if (DEPT_STOCKTAKE.code.equals(trimmed)) {
+            return true;
+        }
         return false;
+    }
+
+    /**
+     * 财务审批族供应类型持久化码列表（只读副本），供财务审批列表 {@code typeEnums} 默认收窄。
+     *
+     * <p>与 {@link #requiresFinanceApproval(String)} 白名单一致；不含调价（调价非 {@code SupplyType}）；不含已废止的科室耗材盘点。</p>
+     *
+     * @return 不可变码列表
+     */
+    public static List<String> listFinanceApprovalTypeCodes() {
+        return List.of(
+            CABINET_INBOUND_RECEIPT.code,
+            CABINET_RETURN_TO_SUPPLIER.code,
+            CABINET_GAIN_LOSS.code,
+            PHARMACY_GAIN_LOSS.code,
+            DEPT_GAIN_LOSS.code,
+            CABINET_STOCKTAKE.code,
+            PHARMACY_STOCKTAKE.code,
+            DEPT_STOCKTAKE.code);
     }
 }

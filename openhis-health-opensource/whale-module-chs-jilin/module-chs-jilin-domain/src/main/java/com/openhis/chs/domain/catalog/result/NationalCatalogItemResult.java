@@ -74,4 +74,19 @@ public class NationalCatalogItemResult {
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
     @Schema(description = "平台 updt_time")
     private LocalDateTime updtTime;
+
+    @Schema(description = "选码是否可选（镜像 ⋈ overlay 合成）")
+    private Boolean isSelectable;
+
+    @Schema(description = "不可选原因（平台停用 / 局文停用等）")
+    private String unselectableReason;
+
+    @Schema(description = "局文可用标志 notice_avali_flag")
+    private String noticeAvaliFlag;
+
+    @Schema(description = "局文终止日 notice_end_date")
+    private LocalDate noticeEndDate;
+
+    @Schema(description = "合成限价上限 hilist_pric_uplmt_amt（来自 overlay patch）")
+    private String priceUplmtAmt;
 }

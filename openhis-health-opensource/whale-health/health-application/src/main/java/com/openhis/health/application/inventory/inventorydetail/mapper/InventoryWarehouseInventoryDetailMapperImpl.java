@@ -537,8 +537,13 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
             }
             InventoryItemTraceNumberRowDto dto = new InventoryItemTraceNumberRowDto();
             dto.setTraceNo(model.getTraceNo());
+            dto.setLotNumber(model.getLotNumber());
             dto.setLocationNetSplitQuantity(model.getLocationNetSplitQuantity());
+            // 主档拆零剩余（全院浏览 / 与本库净量并存）
+            dto.setRemainingSplitQuantity(model.getRemainingSplitQuantity());
             dto.setTraceUnitCode(model.getTraceUnitCode());
+            // 主档贴码比：发药待扫换算
+            dto.setTraceUnitRatio(model.getTraceUnitRatio());
             dto.setInHospitalStatusEnum(model.getInHospitalStatusEnum());
             result.add(dto);
         }

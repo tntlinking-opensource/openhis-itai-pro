@@ -9,6 +9,11 @@ package com.openhis.health.domain.share.constants;
  */
 public interface DailySettlementSharedConstants {
 
+    /**
+     * {@code fin_payment_rec_static.method_code}：按字典 {@code fin_type_code} 统计（DM-FIN-002 §4.10 编码值 1）。
+     */
+    String PAYMENT_REC_STATIC_METHOD_FIN_TYPE_CODE = "1";
+
     /** 诊察费财务类别码（号源定价 type_code 与日结归并目标，对齐 ter_concept 236/1012）。 */
     String CONSULTATION_FEE_FIN_TYPE_CODE = "1012";
 

@@ -40,12 +40,13 @@ public class ConditionDefinition extends BaseAuditedEntity {
     private String description;
     @Column(name = "yb_flag")
     private Boolean ybFlag;
-    @Column(name = "disease_code")
-    private String diseaseCode;
     @Column(name = "yb_no")
     private String ybNo;
     @Column(name = "yb_match_flag")
     private Boolean ybMatchFlag;
+    /** 国家临床版诊断编码（国临码）；病案首页用，医保上传仍走 {@link #ybNo}。 */
+    @Column(name = "clinic_code")
+    private String clinicCode;
     @Column(name = "status_enum", nullable = false)
     private String statusEnum;
 

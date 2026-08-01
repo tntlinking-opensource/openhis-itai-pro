@@ -5,9 +5,13 @@
 package com.openhis.health.integration.emr.mrms;
 
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
+import com.openhis.health.domain.share.constants.EmrDocumentTypeCodes;
 import com.openhis.health.infrastructure.integration.emr.EmrDocumentExtension;
 import com.openhis.health.infrastructure.integration.emr.ExtensionIn.EmrDocumentListExtensionIn;
+import com.openhis.health.infrastructure.integration.emr.ExtensionIn.EmrOutpatientDocumentPageExtensionIn;
 import com.openhis.health.infrastructure.integration.emr.ExtensionOut.EmrDocumentQueryExtensionOut;
+import com.openhis.health.infrastructure.integration.emr.ExtensionOut.EmrOutpatientDocumentItemExtensionOut;
+import com.openhis.health.infrastructure.integration.emr.ExtensionOut.EmrOutpatientDocumentPageExtensionOut;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.exception.EntityNotFoundException;
 import com.openhis.whale.emr.domain.document.access.EmrPdfRenderCommand;
@@ -24,6 +28,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -225,6 +232,70 @@ public class EmrDocumentExtensionImpl implements EmrDocumentExtension {
     }
 
     /**
+     * 门诊文书跨患者分页（按类型 + 可选患者/就诊/状态）。
+     *
+     * @param query 过滤与分页；{@code null} 时返回空页
+     * @return 分页摘要（不含正文）
+     */
+    @Override
+    public EmrOutpatientDocumentPageExtensionOut queryOutpatientDocumentPage(
+            EmrOutpatientDocumentPageExtensionIn query) {
+        EmrOutpatientDocumentPageExtensionOut out = new EmrOutpatientDocumentPageExtensionOut();
+        // Gate：入参为空时不查库
+        if (query == null) {
+            out.setContent(List.of());
+            out.setTotalCount(0L);
+            return out;
+        }
+        int pageNo = query.getPageNo() == null || query.getPageNo() < 1 ? 1 : query.getPageNo();
+        int pageSize = query.getPageSize() == null || query.getPageSize() < 1 ? 20 : query.getPageSize();
+        if (pageSize > 200) {
+            pageSize = 200;
+        }
+        out.setPageNo(pageNo);
+        out.setPageSize(pageSize);
+        String typeCode = trimToNull(query.getDocumentTypeCode());
+        if (typeCode == null) {
+            typeCode = EmrDocumentTypeCodes.OUTPATIENT_RECORD;
+        }
+        String status = trimToNull(query.getStatus());
+        List<String> patientKeys = toStringIdList(query.getPatientIds());
+        List<String> encounterKeys = toStringIdList(query.getEncounterIds());
+        // Cmd：Specification 分页（患者/就诊同时有值时 OR）
+        String finalTypeCode = typeCode;
+        Specification<Document> spec = (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("isDeleted"), false));
+            predicates.add(cb.equal(root.get("documentTypeCode"), finalTypeCode));
+            if (status != null) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+            if (!patientKeys.isEmpty() && !encounterKeys.isEmpty()) {
+                predicates.add(cb.or(
+                        root.get("patientId").in(patientKeys),
+                        root.get("encounterId").in(encounterKeys)));
+            } else if (!patientKeys.isEmpty()) {
+                predicates.add(root.get("patientId").in(patientKeys));
+            } else if (!encounterKeys.isEmpty()) {
+                predicates.add(root.get("encounterId").in(encounterKeys));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        PageRequest pageable = PageRequest.of(
+                pageNo - 1, pageSize, Sort.by(Sort.Direction.DESC, "updatedAt", "id"));
+        Page<Document> page = documentRepository.findAll(spec, pageable);
+        Map<String, String> typeNames = loadDocumentTypeNames(page.getContent());
+        List<EmrOutpatientDocumentItemExtensionOut> items = new ArrayList<>();
+        for (Document document : page.getContent()) {
+            items.add(toOutpatientItem(document, typeNames));
+        }
+        // Asm：分页壳
+        out.setContent(items);
+        out.setTotalCount(page.getTotalElements());
+        return out;
+    }
+
+    /**
      * 按 patientId+encounterId 加载文书；patientId 维度无结果时降级仅按 encounterId 查。
      *
      * @param patientId 患者主键
@@ -286,6 +357,50 @@ public class EmrDocumentExtensionImpl implements EmrDocumentExtension {
         item.setCreatedAt(document.getCreatedAt());
         item.setPrintable(isSubmittedOrBeyond(document.getStatus()));
         return item;
+    }
+
+    /**
+     * 文书实体转门诊检索行。
+     *
+     * @param document 文书实体
+     * @param typeNames 类型 code → 展示名
+     * @return 门诊检索行
+     */
+    private EmrOutpatientDocumentItemExtensionOut toOutpatientItem(
+            Document document, Map<String, String> typeNames) {
+        EmrOutpatientDocumentItemExtensionOut item = new EmrOutpatientDocumentItemExtensionOut();
+        item.setDocumentId(document.getId());
+        item.setPatientId(document.getPatientId());
+        item.setEncounterId(document.getEncounterId());
+        item.setTitle(document.getTitle());
+        item.setDocumentTypeCode(document.getDocumentTypeCode());
+        item.setDocumentTypeName(typeNames.get(document.getDocumentTypeCode()));
+        item.setStatusCode(document.getStatus());
+        item.setCreatedAt(document.getCreatedAt());
+        item.setUpdatedAt(document.getUpdatedAt());
+        item.setCreatedBy(document.getCreatedBy());
+        item.setUpdatedBy(document.getUpdatedBy());
+        item.setPrintable(isSubmittedOrBeyond(document.getStatus()));
+        return item;
+    }
+
+    /**
+     * Long 主键集合转 emr_document 存库用的字符串 ID 列表。
+     *
+     * @param ids 主键集合
+     * @return 非空字符串 ID；空入参返回空列表
+     */
+    private static List<String> toStringIdList(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        List<String> keys = new ArrayList<>();
+        for (Long id : ids) {
+            if (id != null) {
+                keys.add(String.valueOf(id));
+            }
+        }
+        return keys;
     }
 
     /**

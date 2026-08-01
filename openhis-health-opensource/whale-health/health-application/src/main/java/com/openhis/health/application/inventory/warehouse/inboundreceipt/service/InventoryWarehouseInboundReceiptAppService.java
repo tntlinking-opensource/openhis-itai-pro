@@ -41,6 +41,7 @@ import com.openhis.health.domain.custom.tracenumber.service.TraceNumberQueryServ
 import com.openhis.health.application.shared.tracenumber.TraceNumberBatchIdentityResolver;
 import com.openhis.health.application.shared.tracenumber.TraceNumberSupplyAgreeTraceOrchestrator;
 import com.openhis.health.application.shared.tracenumber.RecordTraceFromSupplyLineSpec;
+import com.openhis.health.application.shared.tracenumber.TraceScanCountSupport;
 import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
 import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
@@ -158,9 +159,9 @@ public class InventoryWarehouseInboundReceiptAppService {
             List<SupplierListItemQueryModel> suppliers =
                 supplierQueryService.listSuppliersByTypeAndActive(
                     com.openhis.health.domain.share.enums.SupplierType.SUPPLIER.getCode());
-            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
                 WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
-            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
                 WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE, resolvedOrg);
             return inboundReceiptMapper.toLoadInboundReceiptFormInitResponse(
                 inboundReceiptMapper.toOptionDtoListFromLocations(gatedPharmacies),
@@ -417,9 +418,10 @@ public class InventoryWarehouseInboundReceiptAppService {
         this.assertLocationAllowed(request.getSourceLocationId(), allowed);
         this.assertLocationAllowed(request.getPurposeLocationId(), allowed);
 
-        // —— 业务门禁：供应商启用态；追溯码片段长度上限（新建场景错误码 WHS_IN_001）。——
+        // —— 业务门禁：供应商启用态；追溯码片段长度上限 + 个数/跨行重复（新建场景错误码 WHS_IN_001）。——
         this.validateSupplierOptional(request.getSupplierId());
         this.assertInboundReceiptTraceNosWithinWideLimit(request.getLines(), ErrorCodeConstants.WHS_IN_001);
+        this.assertInboundReceiptDraftTraceGates(request.getLines(), ErrorCodeConstants.WHS_IN_001);
 
         // —— 订货引用必填：进货单须从已同意订货单拉取，禁止无源直建。——
         String originalBusNo = this.requireOriginalPurchaseOrderBusNo(request.getOriginalBusNo());
@@ -502,6 +504,7 @@ public class InventoryWarehouseInboundReceiptAppService {
 
         this.validateSupplierOptional(request.getSupplierId());
         this.assertInboundReceiptTraceNosWithinWideLimit(request.getLines(), ErrorCodeConstants.WHS_IN_004);
+        this.assertInboundReceiptDraftTraceGates(request.getLines(), ErrorCodeConstants.WHS_IN_004);
 
         if (request.getPractitionerId() == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_IN_001, "经手人不能为空");
@@ -828,14 +831,22 @@ public class InventoryWarehouseInboundReceiptAppService {
 
             if (StringUtils.isNotEmpty(line.getTraceNo())) {
                 String lt = this.resolvePurposeLocationTypeCode(line, head);
-                String traceUnitCode = this.resolveInboundTraceUnitCode(line, product);
+                String traceUnitCode = this.resolveInboundTraceUnitCode(product);
+                // 有码必须能解析贴码单位，禁止静默跳过个数 Gate
+                if (StringUtils.isEmpty(traceUnitCode)) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.WHS_IN_104,
+                        "有追溯码的明细须在药品/耗材目录维护追溯码单位"
+                    );
+                }
                 MedicationProductUnitConversionSource conversionSource =
                     ProductDefinitionDisplaySupport.toUnitConversionSource(product);
                 this.assertInboundTraceCodeCountMatchesSplitQuantity(
                     line.getTraceNo(),
                     splitQty,
                     traceUnitCode,
-                    conversionSource
+                    conversionSource,
+                    ErrorCodeConstants.WHS_IN_104
                 );
                 RecordTraceFromSupplyLineSpec traceCmd = new RecordTraceFromSupplyLineSpec();
                 traceCmd.setOperatorId(operatorId);
@@ -1895,19 +1906,109 @@ public class InventoryWarehouseInboundReceiptAppService {
     }
 
     /**
-     * 追溯码总长与逗号分隔片段均受宽限约束。
+     * 解析进货追溯码贴码单位：仅取药典 {@code traceUnitCode}（供应行无此列）。
      *
-     * @param lines     明细行
-     * @param errorCode 业务错误码
+     * @param product 产品定义展示（须含目录追溯单位）
+     * @return 追溯码单位 code；药典未维护时 null
      */
-    private String resolveInboundTraceUnitCode(SupplyRequestModel line, ProductDefinitionDisplayDto product) {
-        if (product != null && StringUtils.isNotEmpty(product.getPackageUnitCode())) {
-            return product.getPackageUnitCode().trim();
-        }
-        if (line != null && StringUtils.isNotEmpty(line.getUnitCode())) {
-            return line.getUnitCode().trim();
+    private String resolveInboundTraceUnitCode(ProductDefinitionDisplayDto product) {
+        if (product != null && StringUtils.isNotEmpty(product.getTraceUnitCode())) {
+            return product.getTraceUnitCode().trim();
         }
         return null;
+    }
+
+    /**
+     * 新建/修订草稿：有码行须通过跨行去重与个数 Gate（与同意编排同口径，保存即拒，不必等到审批）。
+     *
+     * @param lines     写模型明细
+     * @param errorCode 失败业务码（新建 {@code WHS_IN_001} / 修订 {@code WHS_IN_004}）
+     */
+    private void assertInboundReceiptDraftTraceGates(List<InboundReceiptLineDto> lines, String errorCode) {
+        if (lines == null || lines.isEmpty()) {
+            return;
+        }
+        // Gate：本单多行追溯码不得重复
+        this.assertInboundReceiptDraftTraceCodesNotDuplicatedAcrossLines(lines, errorCode);
+
+        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
+        Set<String> lookupKeys = new HashSet<>();
+        for (InboundReceiptLineDto line : lines) {
+            if (line == null || StringUtils.isEmpty(line.getTraceNo())) {
+                continue;
+            }
+            if (line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
+                continue;
+            }
+            String key = ProductDefinitionKeyUtil.buildCompositeKey(line.getItemTable().trim(), line.getItemId());
+            if (!lookupKeys.add(key)) {
+                continue;
+            }
+            ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+            lookup.setProductDefinitionId(line.getItemId());
+            lookup.setProductTableName(line.getItemTable().trim());
+            lookups.add(lookup);
+        }
+        if (lookups.isEmpty()) {
+            return;
+        }
+        Map<String, ProductDefinitionDisplayDto> productByKey =
+            productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
+        for (InboundReceiptLineDto line : lines) {
+            if (line == null || StringUtils.isEmpty(line.getTraceNo())) {
+                continue;
+            }
+            BigDecimal splitQty = SupplyPersistedSplitQuantity.requireMedicationOrDeviceTableAndPositiveSplitQuantity(
+                line.getItemTable(),
+                line.getItemQuantity(),
+                errorCode,
+                "进货明细数量须为拆零正数量"
+            );
+            ProductDefinitionDisplayDto product = productByKey.get(
+                ProductDefinitionKeyUtil.buildCompositeKey(line.getItemTable().trim(), line.getItemId()));
+            String traceUnitCode = this.resolveInboundTraceUnitCode(product);
+            if (StringUtils.isEmpty(traceUnitCode)) {
+                throw new BusinessException(errorCode, "有追溯码的明细须在药品/耗材目录维护追溯码单位");
+            }
+            MedicationProductUnitConversionSource conversionSource =
+                ProductDefinitionDisplaySupport.toUnitConversionSource(product);
+            this.assertInboundTraceCodeCountMatchesSplitQuantity(
+                line.getTraceNo(),
+                splitQty,
+                traceUnitCode,
+                conversionSource,
+                errorCode
+            );
+        }
+    }
+
+    /**
+     * 草稿明细：本单多行追溯码不得重复（同一码不可出现在多行 comma 串中）。
+     *
+     * @param lines     写模型明细
+     * @param errorCode 失败业务码
+     */
+    private void assertInboundReceiptDraftTraceCodesNotDuplicatedAcrossLines(
+        List<InboundReceiptLineDto> lines,
+        String errorCode
+    ) {
+        if (lines == null || lines.isEmpty()) {
+            return;
+        }
+        Set<String> seen = new HashSet<>();
+        for (InboundReceiptLineDto line : lines) {
+            if (line == null || StringUtils.isEmpty(line.getTraceNo())) {
+                continue;
+            }
+            for (String code : this.splitInboundTraceCodes(line.getTraceNo())) {
+                if (!seen.add(code)) {
+                    throw new BusinessException(
+                        errorCode,
+                        "追溯码" + code + "在本进货单多行重复，请合并到一行或删除重复码"
+                    );
+                }
+            }
+        }
     }
 
     /**
@@ -1936,39 +2037,41 @@ public class InventoryWarehouseInboundReceiptAppService {
     }
 
     /**
-     * 入库追溯：码个数 × 每码 1 盒拆零量须等于本行入库拆零总量（1 码 = 1 盒）。
+     * 入库追溯：码个数须等于 ceil(本行入库拆零 / 每码拆零)（半盒允许，与出库同口径）。
      *
-     * @param traceNosRaw        逗号追溯码
-     * @param lineSplitQty       本行入库拆零总量
-     * @param traceUnitCode      销售包装追溯单位
-     * @param conversionSource   单位换算源
+     * @param traceNosRaw      逗号追溯码
+     * @param lineSplitQty     本行入库拆零总量
+     * @param traceUnitCode    追溯码贴码单位（非固定包装单位）
+     * @param conversionSource 单位换算源
+     * @param errorCode        失败业务码
      */
     private void assertInboundTraceCodeCountMatchesSplitQuantity(
         String traceNosRaw,
         BigDecimal lineSplitQty,
         String traceUnitCode,
-        MedicationProductUnitConversionSource conversionSource
+        MedicationProductUnitConversionSource conversionSource,
+        String errorCode
     ) {
         List<String> codes = this.splitInboundTraceCodes(traceNosRaw);
         if (codes.isEmpty() || StringUtils.isEmpty(traceUnitCode) || lineSplitQty == null) {
             return;
         }
-        BigDecimal perPackageSplit = MedicationProductQuantityToSplitUnitConverter.medicationQuantityToSplitUnit(
+        // Gate：应扫数 = ceil(入库拆零 / 每码拆零)，与实扫个数须一致（半盒允许）
+        int expected = TraceScanCountSupport.requireExactInboundCodeCount(
             conversionSource,
             traceUnitCode.trim(),
-            BigDecimal.ONE
+            lineSplitQty
         );
-        BigDecimal expectedTotalSplit = perPackageSplit.multiply(BigDecimal.valueOf(codes.size()));
-        if (expectedTotalSplit.compareTo(lineSplitQty) != 0) {
+        if (codes.size() != expected) {
             throw new BusinessException(
-                ErrorCodeConstants.WHS_IN_104,
-                "追溯码个数与入库数量不一致："
+                errorCode,
+                "追溯码个数与入库数量不一致：应扫"
+                    + expected
+                    + "个码（每码="
+                    + traceUnitCode.trim()
+                    + "），本行实扫"
                     + codes.size()
-                    + "个码应对应"
-                    + expectedTotalSplit.stripTrailingZeros().toPlainString()
-                    + "拆零量，本行入库"
-                    + lineSplitQty.stripTrailingZeros().toPlainString()
-                    + "拆零量（1码=1盒）"
+                    + "个"
             );
         }
     }

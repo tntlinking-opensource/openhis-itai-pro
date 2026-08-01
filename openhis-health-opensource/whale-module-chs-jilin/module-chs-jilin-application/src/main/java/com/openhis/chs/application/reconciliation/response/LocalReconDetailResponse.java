@@ -12,16 +12,26 @@ import lombok.experimental.Accessors;
 @Accessors(chain = true)
 public class LocalReconDetailResponse {
 
+    /** 本地记录 ID */
+    private Long id;
     /** 契约业务编号 */
     private String contractBusNo;
+    /** 结算经办机构 */
+    private String setlOptins;
+    /** 清算类别 */
+    private String clrType;
     /** 对账开始日期 */
     private String stmtBegndate;
     /** 对账结束日期 */
     private String stmtEnddate;
-    /** 9101 上传文件名 */
-    private String uploadFilename;
     /** 明细行数 */
     private Integer rowCount;
     /** 不平行数 */
     private Integer mismatchCount;
+    /** 9101 上传文件查询号 */
+    private String uploadFileQuryNo;
+    /** 9102 结果文件查询号 */
+    private String resultFileQuryNo;
+    /** 创建时间 */
+    private String createdAt;
 }

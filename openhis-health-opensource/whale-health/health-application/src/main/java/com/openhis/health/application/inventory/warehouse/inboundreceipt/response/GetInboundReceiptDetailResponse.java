@@ -71,6 +71,12 @@ public class GetInboundReceiptDetailResponse {
     @Schema(description = "供应类别 categoryEnum")
     private String categoryEnum;
 
+    /**
+     * 采购发票号（同单共享；进销存 {@code purc_invo_no}）。
+     */
+    @Schema(description = "采购发票号 invoiceNo")
+    private String invoiceNo;
+
     /** 乐观锁 rowVersion。 */
     @JsonInclude(JsonInclude.Include.ALWAYS)
     @Schema(description = "乐观锁 rowVersion")

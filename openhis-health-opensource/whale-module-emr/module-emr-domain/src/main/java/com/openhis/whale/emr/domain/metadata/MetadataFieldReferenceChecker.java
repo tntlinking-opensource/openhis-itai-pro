@@ -90,9 +90,8 @@ public class MetadataFieldReferenceChecker {
                     return true;
                 }
             }
-            var fields = node.fields();
-            while (fields.hasNext()) {
-                if (walk(fields.next().getValue(), fieldKey)) {
+            for (var entry : node.properties()) {
+                if (walk(entry.getValue(), fieldKey)) {
                     return true;
                 }
             }

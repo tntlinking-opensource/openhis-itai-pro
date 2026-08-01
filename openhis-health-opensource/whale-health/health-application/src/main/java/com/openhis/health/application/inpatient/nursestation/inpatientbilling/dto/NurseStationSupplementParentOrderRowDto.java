@@ -83,19 +83,33 @@ public class NurseStationSupplementParentOrderRowDto {
     @Schema(description = "频次展示")
     private String frequencyDisplay;
 
-    /** 开立时间。 */
-    @Schema(description = "开立时间")
+    /** 开立时间（{@code req_opened_time}）。 */
+    @Schema(description = "开立时间（req_opened_time）")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
-    private LocalDateTime authoredTime;
+    private LocalDateTime reqOpenedTime;
 
-    /** 停嘱时间。 */
-    @Schema(description = "停嘱时间")
+    /** 签发时间（{@code req_authored_time}；仅追溯，组内按开立倒序）。 */
+    @Schema(description = "签发时间（req_authored_time）")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    private LocalDateTime reqAuthoredTime;
+
+    /** 停嘱时间（{@code stop_time}）。 */
+    @Schema(description = "停嘱时间（stop_time）")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime stopTime;
 
     /** 开立医生。 */
     @Schema(description = "开立医生")
     private String requesterName;
+
+    /** 停嘱人主键（{@code stopper_id}）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "停嘱人主键")
+    private Long stopperId;
+
+    /** 停嘱人姓名。 */
+    @Schema(description = "停嘱人姓名")
+    private String stopperName;
 
     /** 执行/发药位置。 */
     @Schema(description = "执行/发药位置")

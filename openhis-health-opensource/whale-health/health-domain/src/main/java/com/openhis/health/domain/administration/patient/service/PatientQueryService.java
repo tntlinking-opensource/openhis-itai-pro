@@ -8,15 +8,14 @@ import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.administration.patient.entity.Patient;
 import com.openhis.health.domain.administration.patient.entity.PatientIdentifier;
-import com.openhis.health.domain.administration.patient.entity.PatientStudent;
 import com.openhis.health.domain.administration.patient.queries.DuplicatePatientCheckQuery;
 import com.openhis.health.domain.administration.patient.queries.PatientPagedQuery;
 import com.openhis.health.domain.administration.patient.queries.model.*;
 import com.openhis.health.domain.administration.patient.repository.PatientIdentifierRepository;
 import com.openhis.health.domain.administration.patient.repository.PatientRepository;
-import com.openhis.health.domain.administration.patient.repository.PatientStudentRepository;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.utils.AgeCalculatorUtil;
+import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.health.domain.share.enums.PatientStatus;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -27,18 +26,17 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
 
 /**
  * 患者读侧查询服务。
  *
- * <p>职责：患者主档与标识/学籍子资源的只读加载、分页检索、公费资格与建档同人校验等。</p>
+ * <p>职责：患者主档与标识子资源的只读加载、分页检索与建档同人校验等。</p>
  *
  * <p>边界：只读；强依赖场景通过 {@link #requirePatient(Long)} 抛 {@link BusinessException}；
  * 同人校验优先身份证精确路径以控制候选集规模（通用规范 B.2）。</p>
- * <p>聚合边界：仅本聚合 {@link PatientRepository}、{@link PatientIdentifierRepository}、{@link PatientStudentRepository}。</p>
+ * <p>聚合边界：仅本聚合 {@link PatientRepository}、{@link PatientIdentifierRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -46,8 +44,6 @@ public class PatientQueryService {
     private final PatientRepository patientRepository;
 
     private final PatientIdentifierRepository patientIdentifierRepository;
-
-    private final PatientStudentRepository patientStudentRepository;
 
     /**
      * 就诊列表关键字：解析匹配患者主键（姓名/院内编码/身份证/拼音/五笔），供应用层收窄 {@code adm_encounter.patient_id}。
@@ -59,16 +55,31 @@ public class PatientQueryService {
         if (StringUtils.isEmpty(keyword)) {
             return Collections.emptyList();
         }
-        String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(keyword.trim());
-        Specification<Patient> specification = (root, criteriaQuery, criteriaBuilder) -> criteriaBuilder.and(
-            criteriaBuilder.isFalse(root.get(FieldNameConstants.IS_DELETED)),
-            criteriaBuilder.or(
-                criteriaBuilder.like(criteriaBuilder.lower(root.get(FieldNameConstants.NAME)), likeIc),
-                criteriaBuilder.like(criteriaBuilder.lower(root.get(FieldNameConstants.BUS_NO)), likeIc),
-                criteriaBuilder.like(criteriaBuilder.lower(root.get(FieldNameConstants.ID_CARD)), likeIc),
-                criteriaBuilder.like(criteriaBuilder.lower(root.get(FieldNameConstants.PY_STR)), likeIc),
-                criteriaBuilder.like(criteriaBuilder.lower(root.get(FieldNameConstants.WB_STR)), likeIc)
-            ));
+        String trimmed = keyword.trim();
+        String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
+        Specification<Patient> specification = (root, criteriaQuery, criteriaBuilder) -> {
+            jakarta.persistence.criteria.Predicate predicate = criteriaBuilder.and(
+                criteriaBuilder.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+                criteriaBuilder.or(
+                    criteriaBuilder.like(criteriaBuilder.lower(root.get(FieldNameConstants.NAME)), likeIc),
+                    criteriaBuilder.like(criteriaBuilder.lower(root.get(FieldNameConstants.BUS_NO)), likeIc),
+                    criteriaBuilder.like(criteriaBuilder.lower(root.get(FieldNameConstants.ID_CARD)), likeIc),
+                    criteriaBuilder.like(criteriaBuilder.lower(root.get(FieldNameConstants.PY_STR)), likeIc),
+                    criteriaBuilder.like(criteriaBuilder.lower(root.get(FieldNameConstants.WB_STR)), likeIc)
+                ));
+            // B.2.1：就诊列表患者关键字精确全等置顶
+            KeywordExactFirstOrderSupport.applyExactFirstOrder(
+                criteriaQuery,
+                criteriaBuilder,
+                trimmed,
+                List.of(criteriaBuilder.desc(root.get(FieldNameConstants.ID))),
+                root.get(FieldNameConstants.NAME),
+                root.get(FieldNameConstants.BUS_NO),
+                root.get(FieldNameConstants.ID_CARD),
+                root.get(FieldNameConstants.PY_STR),
+                root.get(FieldNameConstants.WB_STR));
+            return predicate;
+        };
         List<Patient> rows = this.patientRepository.findAll(specification);
         List<Long> ids = new ArrayList<>();
         for (Patient row : rows) {
@@ -81,6 +92,13 @@ public class PatientQueryService {
 
     /**
      * 按姓名关键字模糊匹配患者主键（adapter 票据检索读路径）。
+     *
+     * <p>B.2.1：{@code lower(name)} + {@link SearchCodeUtil#toCaseInsensitiveLikePattern}；
+     * 精确全等姓名置顶后再截取 limit。</p>
+     *
+     * @param keyword 姓名关键字；空白返回空列表
+     * @param limit   最大返回条数；≤0 时按 50
+     * @return 患者主键列表（精确命中优先）
      */
     public List<Long> listPatientIdsByNameKeyword(String keyword, int limit) {
         if (StringUtils.isEmpty(keyword)) {
@@ -92,9 +110,24 @@ public class PatientQueryService {
         } else {
             pageSize = limit;
         }
-        Specification<Patient> specification = (root, query, cb) -> cb.and(
-            cb.like(root.get(FieldNameConstants.NAME), "%" + keyword.trim() + "%"),
-            cb.or(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)), cb.isNull(root.get(FieldNameConstants.IS_DELETED))));
+        String trimmed = keyword.trim();
+        String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
+        // 无 Sort 的 Pageable，保留 Spec 内精确优先 ORDER BY（B.2.1）
+        Specification<Patient> specification = (root, query, cb) -> {
+            jakarta.persistence.criteria.Predicate predicate = cb.and(
+                cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc),
+                cb.or(
+                    cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+                    cb.isNull(root.get(FieldNameConstants.IS_DELETED))));
+            // 精确全等姓名置顶，避免仅子串命中挤占 limit 窗口
+            KeywordExactFirstOrderSupport.applyExactFirstOrder(
+                query,
+                cb,
+                trimmed,
+                List.of(cb.desc(root.get(FieldNameConstants.ID))),
+                root.get(FieldNameConstants.NAME));
+            return predicate;
+        };
         Page<Patient> page = patientRepository.findAll(specification, PageRequest.of(0, pageSize));
         List<Long> ids = new ArrayList<>();
         for (Patient row : page.getContent()) {
@@ -121,7 +154,14 @@ public class PatientQueryService {
             pageSize = query.getPageSize();
         }
         Sort sort = Sort.by(Sort.Order.desc(FieldNameConstants.CREATED_AT));
-        Pageable pageable = PageRequest.of(pageNo, pageSize, sort);
+        // 关键字非空时勿带 Sort，保留 Spec 内精确优先 ORDER BY（B.2.1）
+        boolean hasKeyword = StringUtils.isNotEmpty(query.getKeyword()) || StringUtils.isNotEmpty(query.getName());
+        Pageable pageable;
+        if (hasKeyword) {
+            pageable = PageRequest.of(pageNo, pageSize);
+        } else {
+            pageable = PageRequest.of(pageNo, pageSize, sort);
+        }
         Specification<Patient> specification = (root, criteriaQuery, criteriaBuilder) -> {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
             predicates.add(criteriaBuilder.isFalse(root.get(FieldNameConstants.IS_DELETED)));
@@ -141,6 +181,17 @@ public class PatientQueryService {
                     criteriaBuilder.like(criteriaBuilder.lower(root.get(FieldNameConstants.PY_STR)), likeIc),
                     criteriaBuilder.like(criteriaBuilder.lower(root.get(FieldNameConstants.WB_STR)), likeIc)
                 ));
+                // B.2.1：选患者精确全等置顶，次级创建时间倒序
+                KeywordExactFirstOrderSupport.applyExactFirstOrder(
+                    criteriaQuery,
+                    criteriaBuilder,
+                    searchKey,
+                    List.of(criteriaBuilder.desc(root.get(FieldNameConstants.CREATED_AT))),
+                    root.get(FieldNameConstants.NAME),
+                    root.get(FieldNameConstants.BUS_NO),
+                    root.get(FieldNameConstants.ID_CARD),
+                    root.get(FieldNameConstants.PY_STR),
+                    root.get(FieldNameConstants.WB_STR));
             }
             if (StringUtils.isNotEmpty(query.getIdCard())) {
                 String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getIdCard().trim());
@@ -187,75 +238,6 @@ public class PatientQueryService {
         PatientDetailQueryModel model = new PatientDetailQueryModel();
         model.setPatient(this.toCoreModel(patient));
         model.setIdentifiers(this.toIdentifierModels(patientIdentifierRepository.findAllByPatientId(patientId)));
-        model.setStudents(this.toStudentModels(patientStudentRepository.findAllByPatientId(patientId)));
-        return model;
-    }
-
-    /**
-     * 加载学籍合并视图。
-     *
-     * @param patientId 患者标识
-     * @return 视图模型
-     */
-    public PatientStudentProfileQueryModel loadPatientStudentProfile(Long patientId) {
-        Patient patient = this.requirePatient(patientId);
-        PatientStudentProfileQueryModel model = new PatientStudentProfileQueryModel();
-        model.setPatientId(patient.getId());
-        model.setName(patient.getName());
-        model.setIdCard(patient.getIdCard());
-        model.setPhone(patient.getPhone());
-        model.setStudentRecords(this.toStudentModels(patientStudentRepository.findAllByPatientId(patientId)));
-        return model;
-    }
-
-    /**
-     * 公费学生资格校验。
-     *
-     * @param patientId 患者标识
-     * @param studentId 学生记录标识
-     * @return 校验结果
-     */
-    /**
-     * 公费学生资格校验。
-     *
-     * @param patientId 患者标识
-     * @param studentId 学生记录标识
-     * @return 校验结果
-     */
-    public StudentPublicExpenseEligibilityQueryModel checkStudentPublicExpenseEligibility(Long patientId, Long studentId) {
-        Patient patient = this.requirePatient(patientId);
-        PatientStudent student = patientStudentRepository.findByIdAndPatientId(studentId, patientId)
-            .orElseThrow(() -> new BusinessException(ErrorCodeConstants.PATIENT_NOT_FOUND, "学籍记录不存在"));
-        StudentPublicExpenseEligibilityQueryModel model = new StudentPublicExpenseEligibilityQueryModel();
-        model.setPatientId(patientId);
-        model.setStudentId(studentId);
-        if (StringUtils.isEmpty(patient.getIdCard()) || StringUtils.isEmpty(student.getIdCard())) {
-            model.setEligible(Boolean.FALSE);
-            model.setReasonCode("PATIENT_STUDENT_NO_ID_CARD");
-            model.setReasonMessage("缺少身份证信息");
-            return model;
-        }
-        if (!patient.getIdCard().equals(student.getIdCard())) {
-            model.setEligible(Boolean.FALSE);
-            model.setReasonCode("PATIENT_STUDENT_ID_CARD_MISMATCH");
-            model.setReasonMessage("学籍证件号与主档不一致");
-            return model;
-        }
-        if (student.getLeaveTime() != null && student.getLeaveTime().isBefore(LocalDateTime.now())) {
-            model.setEligible(Boolean.FALSE);
-            model.setReasonCode("PATIENT_STUDENT_LEFT_SCHOOL");
-            model.setReasonMessage("学生已离校");
-            return model;
-        }
-        if (!GeneralSharedConstants.STUDENT_PHYSICAL_EXAM_PASS.equals(student.getPhysicalExamResult())) {
-            model.setEligible(Boolean.FALSE);
-            model.setReasonCode("PATIENT_STUDENT_PHYSICAL_EXAM_FAILED");
-            model.setReasonMessage("体检结果不合格");
-            return model;
-        }
-        model.setEligible(Boolean.TRUE);
-        model.setReasonCode("OK");
-        model.setReasonMessage("通过");
         return model;
     }
 
@@ -363,16 +345,10 @@ public class PatientQueryService {
         }
         List<Patient> patients = patientRepository.findAllByIdIn(patientIds);
         List<PatientIdentifier> identifiers = patientIdentifierRepository.findAllByPatientIdIn(patientIds);
-        List<PatientStudent> students = patientStudentRepository.findAllByPatientIdIn(patientIds);
         Map<Long, List<PatientIdentifier>> identifierMap = new HashMap<>();
         for (PatientIdentifier identifier : identifiers) {
             List<PatientIdentifier> list = identifierMap.computeIfAbsent(identifier.getPatientId(), key -> new ArrayList<>());
             list.add(identifier);
-        }
-        Map<Long, List<PatientStudent>> studentMap = new HashMap<>();
-        for (PatientStudent student : students) {
-            List<PatientStudent> list = studentMap.computeIfAbsent(student.getPatientId(), key -> new ArrayList<>());
-            list.add(student);
         }
         // Loop：遍历患者列表，组装批量详情模型
         Map<Long, BatchPatientDetailQueryModel> result = new HashMap<>();
@@ -380,7 +356,6 @@ public class PatientQueryService {
             PatientDetailQueryModel detail = new PatientDetailQueryModel();
             detail.setPatient(this.toCoreModel(patient));
             detail.setIdentifiers(this.toIdentifierModels(identifierMap.get(patient.getId())));
-            detail.setStudents(this.toStudentModels(studentMap.get(patient.getId())));
             BatchPatientDetailQueryModel item = new BatchPatientDetailQueryModel();
             item.setPatientId(patient.getId());
             item.setPatientDetail(detail);
@@ -659,40 +634,6 @@ public class PatientQueryService {
             model.setStateEnum(identifier.getStateEnum());
             model.setStartTime(identifier.getStartTime());
             model.setEndTime(identifier.getEndTime());
-            models.add(model);
-        }
-        return models;
-    }
-
-    /**
-     * 批量转换学生模型。
-     *
-     * @param students 学生实体集合
-     * @return 学生模型集合
-     */
-    private List<PatientStudentQueryModel> toStudentModels(List<PatientStudent> students) {
-        List<PatientStudentQueryModel> models = new ArrayList<>();
-        if (students == null) {
-            return models;
-        }
-        for (PatientStudent student : students) {
-            PatientStudentQueryModel model = new PatientStudentQueryModel();
-            model.setId(student.getId());
-            model.setName(student.getName());
-            model.setStudentNo(student.getStudentNo());
-            model.setIdCard(student.getIdCard());
-            model.setPhone(student.getPhone());
-            model.setCollege(student.getCollege());
-            model.setMajor(student.getMajor());
-            model.setEduLevel(student.getEduLevel());
-            model.setEnrollTime(student.getEnrollTime());
-            model.setLeaveTime(student.getLeaveTime());
-            model.setGrade(student.getGrade());
-            model.setStudyType(student.getStudyType());
-            model.setSchoolStatus(student.getSchoolStatus());
-            model.setPhysicalExamResult(student.getPhysicalExamResult());
-            model.setCounselor(student.getCounselor());
-            model.setCounselorPhone(student.getCounselorPhone());
             models.add(model);
         }
         return models;

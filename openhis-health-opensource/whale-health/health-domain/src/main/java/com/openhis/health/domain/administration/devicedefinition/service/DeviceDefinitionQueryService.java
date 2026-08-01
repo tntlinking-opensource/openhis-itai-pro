@@ -12,10 +12,12 @@ import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.query.ProductDefinitionCatalogPageQuery;
 import com.openhis.health.domain.share.query.ProductDefinitionPurchasePageQuery;
+import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.health.domain.administration.devicedefinition.entity.DeviceDefinition;
 import com.openhis.health.domain.administration.devicedefinition.repository.DeviceDefinitionRepository;
 import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.Order;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import com.openhis.whale.core.application.util.StringUtils;
@@ -29,7 +31,9 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -77,7 +81,7 @@ public class DeviceDefinitionQueryService {
      * 分页查询器材定义（可选关键字、分类与耗材种类；未删除记录，含启用/停用全状态）。
      *
      * <p>基础数据维护页需展示停用项以便启停操作，口径对齐诊疗/药品目录分页（不按 status 收窄）。</p>
-     * <p>关键字同时匹配名称、拼音码、五笔码、业务编码、医保编码、医药机构目录编码（OR）。</p>
+     * <p>关键字同时匹配名称、拼音码、五笔码、业务编码、医保编码（OR）。</p>
      *
      * @param pageNum      页码（0-based）
      * @param pageSize     每页大小
@@ -91,8 +95,13 @@ public class DeviceDefinitionQueryService {
         String sk = trimToEmpty(searchKey);
         String cc = trimToEmpty(categoryCode);
         String tc = trimToEmpty(typeCode);
-        // 目录列表固定按 busNo 倒序，与药品/诊疗目录维护页一致
-        Pageable pageable = PageRequest.of(pageNum, pageSize, Sort.by(Sort.Direction.DESC, FieldNameConstants.BUS_NO));
+        // 目录列表固定按 busNo 倒序，与药品/诊疗目录维护页一致；有关键字时改由 Spec 写「精确优先 + busNo」
+        Pageable pageable;
+        if (sk.isEmpty()) {
+            pageable = PageRequest.of(pageNum, pageSize, Sort.by(Sort.Direction.DESC, FieldNameConstants.BUS_NO));
+        } else {
+            pageable = PageRequest.of(pageNum, pageSize);
+        }
         if (sk.isEmpty() && cc.isEmpty() && tc.isEmpty()) {
             Specification<DeviceDefinition> catalogPage = (root, query, cb) ->
                 DeviceDefinitionQueryService.notDeletedPredicate(root, cb);
@@ -115,8 +124,19 @@ public class DeviceDefinitionQueryService {
                 ors.add(cb.like(cb.lower(root.get(FieldNameConstants.WB_STR)), likeIc));
                 ors.add(cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), likeIc));
                 ors.add(cb.like(cb.lower(root.get(FieldNameConstants.YB_NO)), likeIc));
-                ors.add(cb.like(cb.lower(root.get(FieldNameConstants.YB_ORG_NO)), likeIc));
                 ands.add(cb.or(ors.toArray(Predicate[]::new)));
+                // B.2.1：精确全等置顶，次级仍按 busNo 倒序
+                List<Order> secondary = List.of(cb.desc(root.get(FieldNameConstants.BUS_NO)));
+                KeywordExactFirstOrderSupport.applyExactFirstOrder(
+                    query,
+                    cb,
+                    sk,
+                    secondary,
+                    root.get(FieldNameConstants.NAME),
+                    root.get(FieldNameConstants.PY_STR),
+                    root.get(FieldNameConstants.WB_STR),
+                    root.get(FieldNameConstants.BUS_NO),
+                    root.get(FieldNameConstants.YB_NO));
             }
             return cb.and(ands.toArray(Predicate[]::new));
         };
@@ -173,6 +193,15 @@ public class DeviceDefinitionQueryService {
                     cb.like(cb.lower(root.get(FieldNameConstants.PY_STR)), likeIc),
                     cb.like(cb.lower(root.get(FieldNameConstants.WB_STR)), likeIc)
                 ));
+                // B.2.1：下拉选品精确全等置顶
+                KeywordExactFirstOrderSupport.applyExactFirstOrder(
+                    query,
+                    cb,
+                    sk,
+                    List.of(cb.desc(root.get(FieldNameConstants.ID))),
+                    root.get(FieldNameConstants.NAME),
+                    root.get(FieldNameConstants.PY_STR),
+                    root.get(FieldNameConstants.WB_STR));
             }
             return cb.and(ands.toArray(Predicate[]::new));
         };
@@ -207,7 +236,13 @@ public class DeviceDefinitionQueryService {
      * 采购/进货选品分页（读 {@code adm_device_definition}，谓词对齐原产品读模型采购分支）。
      */
     public Page<DeviceDefinition> pageForPurchase(ProductDefinitionPurchasePageQuery query, Pageable pageable) {
-        return repository.findAll(this.buildPurchasePageSpecification(query), pageable);
+        // 关键字非空时剥掉 Pageable Sort，保留 Spec 内「精确优先」ORDER BY（B.2.1）
+        Pageable effective = pageable;
+        if (query != null && StringUtils.isNotEmpty(query.getKeyword())
+            && pageable != null && pageable.getSort().isSorted()) {
+            effective = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
+        }
+        return repository.findAll(this.buildPurchasePageSpecification(query), effective);
     }
 
     /** 医嘱开立目录分页（读耗材主表）。 */
@@ -299,6 +334,8 @@ public class DeviceDefinitionQueryService {
                 Predicate keywordPred = this.buildPurchaseKeywordPredicate(root, cb, query.getKeyword());
                 Predicate prepPred = this.buildDevicePrepickedPredicate(root, cb, query.getPrepickedProductKeys());
                 this.appendKeywordOrPrepicked(ands, cb, keywordPred, prepPred);
+                // B.2.1：有关键字时精确命中置顶（与 LIKE 列同集合）
+                this.applyPurchaseKeywordExactFirstOrder(root, cq, cb, query.getKeyword());
             }
             return cb.and(ands.toArray(Predicate[]::new));
         };
@@ -316,7 +353,17 @@ public class DeviceDefinitionQueryService {
         if (StringUtils.isEmpty(keyword)) {
             return null;
         }
-        String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(keyword.trim());
+        String trimmed = keyword.trim();
+        String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
+        // 纯拼音/五笔字母输入：只扫检索码列
+        if (SearchCodeUtil.isAsciiLetterKeyword(trimmed)) {
+            return cb.or(
+                cb.like(cb.lower(root.get(FieldNameConstants.PY_STR)), likeIc),
+                cb.like(cb.lower(root.get(FieldNameConstants.WB_STR)), likeIc),
+                cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_PY_STR)), likeIc),
+                cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_WB_STR)), likeIc)
+            );
+        }
         return cb.or(
             cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc),
             cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_NAME)), likeIc),
@@ -326,6 +373,50 @@ public class DeviceDefinitionQueryService {
             cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_WB_STR)), likeIc),
             cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), likeIc)
         );
+    }
+
+    /**
+     * 采购/开立选品关键字：SQL 层「精确全等在前、模糊在后」（B.2.1）。
+     *
+     * @param root    器材定义根
+     * @param cq      CriteriaQuery（count 由工具跳过 orderBy）
+     * @param cb      CriteriaBuilder
+     * @param keyword 用户关键字；空则不写排序
+     */
+    private void applyPurchaseKeywordExactFirstOrder(
+        Root<DeviceDefinition> root,
+        jakarta.persistence.criteria.CriteriaQuery<?> cq,
+        CriteriaBuilder cb,
+        String keyword) {
+        if (StringUtils.isEmpty(keyword)) {
+            return;
+        }
+        String trimmed = keyword.trim();
+        List<Order> secondary = List.of(cb.desc(root.get(FieldNameConstants.CREATED_AT)));
+        if (SearchCodeUtil.isAsciiLetterKeyword(trimmed)) {
+            KeywordExactFirstOrderSupport.applyExactFirstOrder(
+                cq,
+                cb,
+                trimmed,
+                secondary,
+                root.get(FieldNameConstants.PY_STR),
+                root.get(FieldNameConstants.WB_STR),
+                root.get(FieldNameConstants.MERCHANDISE_PY_STR),
+                root.get(FieldNameConstants.MERCHANDISE_WB_STR));
+            return;
+        }
+        KeywordExactFirstOrderSupport.applyExactFirstOrder(
+            cq,
+            cb,
+            trimmed,
+            secondary,
+            root.get(FieldNameConstants.NAME),
+            root.get(FieldNameConstants.MERCHANDISE_NAME),
+            root.get(FieldNameConstants.PY_STR),
+            root.get(FieldNameConstants.WB_STR),
+            root.get(FieldNameConstants.MERCHANDISE_PY_STR),
+            root.get(FieldNameConstants.MERCHANDISE_WB_STR),
+            root.get(FieldNameConstants.BUS_NO));
     }
 
     /**
@@ -452,6 +543,83 @@ public class DeviceDefinitionQueryService {
             }
         }
         return ids;
+    }
+
+    /**
+     * 批量查询库内已存在的耗材唯一键 token（同机构、未删除、未废弃）。
+     *
+     * <p>token 格式：{@code trim(name) + '\\u0001' + trim(totalVolume) + '\\u0001' + trim(manufacturerText)}。</p>
+     *
+     * @param orgId  机构主键
+     * @param tokens 待比对 token 集合
+     * @return 库内已存在的 token 子集；入参无效时返回空集
+     */
+    public Set<String> findExistingDuplicateKeyTokens(Long orgId, Collection<String> tokens) {
+        if (orgId == null || tokens == null || tokens.isEmpty()) {
+            return Collections.emptySet();
+        }
+        Set<String> tokenSet = new HashSet<>();
+        Set<String> names = new HashSet<>();
+        for (String token : tokens) {
+            if (StringUtils.isEmpty(token)) {
+                continue;
+            }
+            tokenSet.add(token.trim());
+            String[] parts = token.split("\u0001", -1);
+            if (parts.length > 0 && StringUtils.isNotEmpty(parts[0])) {
+                names.add(parts[0].trim());
+            }
+        }
+        if (tokenSet.isEmpty() || names.isEmpty()) {
+            return Collections.emptySet();
+        }
+        Specification<DeviceDefinition> specification = (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(DeviceDefinitionQueryService.notDeletedPredicate(root, cb));
+            predicates.add(cb.equal(root.get(FieldNameConstants.ORG_ID), orgId));
+            predicates.add(cb.notEqual(
+                root.get(FieldNameConstants.STATUS_ENUM),
+                PublicationStatus.DISCARDED.getCode()));
+            predicates.add(root.get(FieldNameConstants.NAME).in(names));
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
+        List<DeviceDefinition> candidates = repository.findAll(specification);
+        Set<String> existing = new HashSet<>();
+        for (DeviceDefinition row : candidates) {
+            if (row == null) {
+                continue;
+            }
+            String candidateToken = this.buildDuplicateKeyToken(
+                row.getName(), row.getTotalVolume(), row.getManufacturerText());
+            if (tokenSet.contains(candidateToken)) {
+                existing.add(candidateToken);
+            }
+        }
+        return existing;
+    }
+
+    /**
+     * 构造与导入校验一致的唯一键 token。
+     *
+     * @param name             耗材名称
+     * @param totalVolume      包装规格
+     * @param manufacturerText 生产厂家
+     * @return token 字符串
+     */
+    private String buildDuplicateKeyToken(String name, String totalVolume, String manufacturerText) {
+        String n = "";
+        if (name != null) {
+            n = name.trim();
+        }
+        String v = "";
+        if (totalVolume != null) {
+            v = totalVolume.trim();
+        }
+        String m = "";
+        if (manufacturerText != null) {
+            m = manufacturerText.trim();
+        }
+        return n + '\u0001' + v + '\u0001' + m;
     }
 
     /**

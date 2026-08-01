@@ -32,10 +32,12 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -292,9 +294,21 @@ public class RoleAppService {
         roleRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("角色", id));
 
-        if (roleClaimRepository.findByRoleIdAndClaimTypeAndClaimValue(
-                id, request.getClaimType(), request.getClaimValue()).isPresent()) {
-            throw new BusinessException("角色声明已存在");
+        Optional<RoleClaim> existingOpt = roleClaimRepository.findFirstByRoleIdAndClaimTypeAndClaimValue(
+                id, request.getClaimType(), request.getClaimValue());
+        if (existingOpt.isPresent()) {
+            RoleClaim existing = existingOpt.get();
+            // 有效声明已存在则拒绝；软删行则恢复，避免唯一约束冲突后再插
+            if (!Boolean.TRUE.equals(existing.getIsDeleted())) {
+                throw new BusinessException("角色声明已存在");
+            }
+            existing.setIsDeleted(false);
+            existing.setDeletedAt(null);
+            existing.setDeletedBy(null);
+            existing = roleClaimRepository.save(existing);
+            RoleClaimDto restored = new RoleClaimDto();
+            BeanUtils.copyProperties(existing, restored);
+            return restored;
         }
 
         RoleClaim claim = new RoleClaim();
@@ -459,27 +473,57 @@ public class RoleAppService {
         return values;
     }
 
+    /**
+     * 全量对齐某类型声明：恢复软删、软删多余、仅插入全新值。
+     * <p>不可先 delete 再 insert：{@code uk_whale_rc_role_type_value} 含软删行，会触发重复键。</p>
+     */
     private void replaceClaimValues(Long roleId, String claimType, List<String> scopeCodes, Set<String> allowed) {
-        roleClaimRepository.deleteByRoleIdAndClaimType(roleId, claimType);
-        if (scopeCodes == null || scopeCodes.isEmpty()) {
-            return;
+        Set<String> desired = new HashSet<>();
+        if (scopeCodes != null) {
+            for (String scope : scopeCodes) {
+                if (scope == null || scope.isBlank()) {
+                    continue;
+                }
+                String trimmed = scope.trim();
+                if (!allowed.contains(trimmed)) {
+                    throw new ValidationException("不支持的声明值：" + trimmed);
+                }
+                desired.add(trimmed);
+            }
         }
-        Set<String> unique = new HashSet<>();
-        for (String scope : scopeCodes) {
-            if (scope == null || scope.isBlank()) {
+
+        List<RoleClaim> existingRows = roleClaimRepository.findAllByRoleIdAndClaimType(roleId, claimType);
+        Set<String> satisfied = new HashSet<>();
+        LocalDateTime deletedAt = LocalDateTime.now();
+
+        for (RoleClaim existing : existingRows) {
+            if (existing == null || existing.getClaimValue() == null || existing.getClaimValue().isBlank()) {
                 continue;
             }
-            String trimmed = scope.trim();
-            if (!allowed.contains(trimmed)) {
-                throw new ValidationException("不支持的声明值：" + trimmed);
+            String value = existing.getClaimValue().trim();
+            if (desired.contains(value)) {
+                if (Boolean.TRUE.equals(existing.getIsDeleted())) {
+                    existing.setIsDeleted(false);
+                    existing.setDeletedAt(null);
+                    existing.setDeletedBy(null);
+                    roleClaimRepository.save(existing);
+                }
+                satisfied.add(value);
+            } else if (!Boolean.TRUE.equals(existing.getIsDeleted())) {
+                existing.setIsDeleted(true);
+                existing.setDeletedAt(deletedAt);
+                roleClaimRepository.save(existing);
             }
-            if (!unique.add(trimmed)) {
+        }
+
+        for (String value : desired) {
+            if (satisfied.contains(value)) {
                 continue;
             }
             RoleClaim claim = new RoleClaim();
             claim.setRoleId(roleId);
             claim.setClaimType(claimType);
-            claim.setClaimValue(trimmed);
+            claim.setClaimValue(value);
             claim.setTenantId(TenantUtils.getCurrentTenantId());
             roleClaimRepository.save(claim);
         }

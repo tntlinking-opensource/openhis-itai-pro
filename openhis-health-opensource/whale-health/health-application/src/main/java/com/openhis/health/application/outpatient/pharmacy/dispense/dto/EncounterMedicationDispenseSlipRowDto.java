@@ -173,6 +173,50 @@ public class EncounterMedicationDispenseSlipRowDto {
     @Schema(description = "发放/计价单位展示")
     private String unitText;
 
+    /**
+     * 包装单位码（产品定义 {@code package_unit_code}）。
+     * <p>门诊发药追溯扫码默认按包装单位计码（发 N 拆零 → ceil(N / packageUnitRatio) 个码）。</p>
+     */
+    @Schema(description = "包装单位码")
+    private String packageUnitCode;
+
+    /**
+     * 包装相对拆零倍数（1 包装 = N 拆零；产品定义 {@code package_unit_ratio}）。
+     */
+    @Schema(description = "包装相对拆零倍数")
+    private BigDecimal packageUnitRatio;
+
+    /**
+     * 拆零单位码（产品定义 {@code split_unit_code}）。
+     */
+    @Schema(description = "拆零单位码")
+    private String splitUnitCode;
+
+    /**
+     * 追溯码主档贴码单位（{@code cus_trace_number.trace_unit_code}；本库优先否则全院同批）。
+     *
+     * <p>发药应扫个数换算用；非药典目录值。</p>
+     */
+    @Schema(description = "追溯码主档贴码单位")
+    private String traceUnitCode;
+
+    /**
+     * 追溯码主档贴码比例快照（{@code cus_trace_number.trace_unit_ratio}；1 码对应拆零量）。
+     *
+     * <p>发药应扫个数 = ceil(行拆零 / 本值)；非药典目录比。</p>
+     */
+    @Schema(description = "追溯码主档贴码比例快照")
+    private BigDecimal traceUnitRatio;
+
+    /**
+     * 主表该品批是否已有追溯码（有码批=true）。
+     *
+     * <p>false=无码批（期初/进货未扫）：扫码仅软提示数量，发药只写业务行 {@code trace_no}，不写主表流水。
+     * true=有码批：须校验本库优先、否则全院在院码，并写主表流水。</p>
+     */
+    @Schema(description = "主表该品批是否已有追溯码")
+    private Boolean lotHasTraceMaster;
+
     /** 单次发药数量。 */
     @Schema(description = "单次发药数")
     private Integer dispensePerQuantity;
@@ -202,10 +246,10 @@ public class EncounterMedicationDispenseSlipRowDto {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long prescriptionGroupId;
 
-    /** 医嘱开具时间。 */
-    @Schema(description = "医嘱开具时间")
+    /** 医嘱开立时间（{@code req_opened_time}，空回落 {@code req_authored_time}）。 */
+    @Schema(description = "医嘱开立时间")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
-    private LocalDateTime requestAuthoredTime;
+    private LocalDateTime requestOpenedTime;
 
     /** 是否皮试医嘱。 */
     @Schema(description = "是否皮试医嘱")
@@ -323,8 +367,8 @@ public class EncounterMedicationDispenseSlipRowDto {
     @Schema(description = "调配药师姓名（处方打印）")
     private String preparerPractitionerName;
 
-    /** 划价员姓名（处方打印）。 */
-    @Schema(description = "划价员姓名（处方打印）")
+    /** 划价员姓名（处方打印；取收费人/结算 performer，禁止回落开单医生）。 */
+    @Schema(description = "划价员姓名（处方打印；收费人）")
     private String pricingPractitionerName;
 
     /** 药品主行左列展示（处方打印）。 */
@@ -346,4 +390,24 @@ public class EncounterMedicationDispenseSlipRowDto {
     /** 单味特殊煎法展示名。 */
     @Schema(description = "特殊煎法展示名")
     private String dosageInstructionText;
+
+    /** 方头是否代煎（同源药嘱 {@code suffering_flag}；同处方号各行一致）。 */
+    @Schema(description = "是否代煎")
+    private Boolean sufferingFlag;
+
+    /** 同处方号代煎费金额（锚定代煎 companion ServiceRequest 的 ChargeItem 合计）。 */
+    @Schema(description = "代煎费金额")
+    private BigDecimal decoctionChargeAmount;
+
+    /** 代煎费数量（付数等，取自代煎 ChargeItem.quantity_value）。 */
+    @Schema(description = "代煎费数量")
+    private BigDecimal decoctionChargeQuantity;
+
+    /** 代煎费数量单位展示（取自代煎 ChargeItem.quantity_unit 术语回填前的单位码，前端可直接展示）。 */
+    @Schema(description = "代煎费数量单位")
+    private String decoctionChargeUnitCode;
+
+    /** 代煎诊疗项目名称（默认「代煎中药」）。 */
+    @Schema(description = "代煎项目名称")
+    private String decoctionActivityName;
 }

@@ -32,6 +32,31 @@ public interface OrganizationRepository extends JpaRepository<Organization, Long
     Optional<Organization> findFirstByBusNo(String busNo);
 
     /**
+     * 按业务号批量查询（登录 OU code=busNo 反查 HIS 组织，避免 N+1）。
+     *
+     * @param busNos 业务号集合；调用方保证非空
+     * @return 命中的组织列表（同一 busNo 多条时由上层择一）
+     */
+    List<Organization> findByBusNoIn(Collection<String> busNos);
+
+    /**
+     * 判断层级编码是否已被占用（BR-ORG-001）。
+     *
+     * @param busNo 层级编码
+     * @return 已存在为 true
+     */
+    boolean existsByBusNo(String busNo);
+
+    /**
+     * 判断层级编码是否被其他机构占用（修改/迁移场景排除自身）。
+     *
+     * @param busNo 层级编码
+     * @param id    排除的机构主键
+     * @return 其他机构已占用为 true
+     */
+    boolean existsByBusNoAndIdNot(String busNo, Long id);
+
+    /**
      * 判断是否存在满足条件的记录。
      * @param parentId 条件
      * @param name 条件

@@ -10,9 +10,13 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 import com.openhis.health.application.shared.validator.CurrentManagedWardLocationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.advice.InpatientMedicationRequestExecutionMeasureHelper;
 import com.openhis.health.application.shared.advice.InpatientNursingOrderGate;
+import com.openhis.health.application.shared.advice.InpatientEntrustOrderGateSupport;
+import com.openhis.health.application.shared.advice.LongTermFirstExecutionSlotSupport;
+import com.openhis.health.domain.custom.frequency.queries.model.FrequencyExecutionTimePointQueryModel;
+import com.openhis.health.domain.custom.frequency.service.FrequencyQueryService;
 import com.openhis.health.application.shared.validator.InpatientPendingSettlementClinicalGate;
-import com.openhis.health.application.shared.product.ClinicalCatalogPriceResolver;
 import com.openhis.health.application.shared.product.ClinicalCatalogPriceResolver;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.assembler.NurseStationExecutionInventoryAssembler;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.assembler.NurseStationOrderExecuteListAssembler;
@@ -36,6 +40,8 @@ import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQue
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.administration.chargeitemdefinition.query.ChargeItemDefinitionQueryCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
+import com.openhis.health.domain.clinical.allergyintolerance.queries.model.AllergyIntoleranceRecordQueryModel;
+import com.openhis.health.domain.clinical.allergyintolerance.service.AllergyIntoleranceQueryService;
 import com.openhis.health.domain.clinical.procedure.command.CreateProcedureRecordCommand;
 import com.openhis.health.domain.clinical.procedure.queries.model.ProcedureRecordQueryModel;
 import com.openhis.health.domain.clinical.procedure.service.ProcedureDomainService;
@@ -49,7 +55,6 @@ import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.application.shared.advice.InpatientOrderListSkeleton;
-import com.openhis.health.application.shared.advice.InpatientMedicationRequestExecutionMeasureHelper;
 import com.openhis.health.application.shared.advice.InpatientOrderListMergeAssembler;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
@@ -59,22 +64,25 @@ import com.openhis.health.application.shared.product.ClinicalCatalogDispenseLoca
 import com.openhis.health.domain.share.constants.MedicationCommonConstants;
 import com.openhis.health.domain.share.constants.DoctorStationAdviceConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
+import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.TherapyType;
 import com.openhis.health.application.shared.product.DoctorStationAdviceFifoAllocationAssembler;
 import com.openhis.health.application.shared.nursestation.DeviceAutoInventoryDeductSettingResolver;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.support.NurseStationProcedureOccurrenceConcurrencyGate;
-import com.openhis.health.application.inpatient.nursestation.orderexecute.support.LongTermMedicationMonthlyDispenseCapGate;
 import com.openhis.health.application.shared.nursestation.DeviceDispenseNurseWorkflowOrchestrator;
 import com.openhis.health.application.shared.nursestation.ProcedureExecutionPerformerOrchestrator;
+import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
 import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestDomainService;
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseDomainService;
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQueryService;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDomainService;
 import com.openhis.health.domain.workflow.servicerequest.command.CreateExecutedServiceRequestCommand;
+import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestDomainService;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
@@ -134,6 +142,10 @@ public class NurseStationOrderExecuteAppService {
     private final MedicationRequestQueryService medicationRequestQueryService;
     /** 诊疗申请读侧。 */
     private final ServiceRequestQueryService serviceRequestQueryService;
+    /** 皮试检查活动定义读侧（BR-IP-EXE-034 companion SR 过滤）。 */
+    private final ActivityDefinitionQueryService activityDefinitionQueryService;
+    /** 皮试登记读侧（BR-IP-EXE-034 上次批号）。 */
+    private final AllergyIntoleranceQueryService allergyIntoleranceQueryService;
     /** Procedure 读侧。 */
     private final ProcedureQueryService procedureQueryService;
     /** 发药读侧。 */
@@ -160,8 +172,8 @@ public class NurseStationOrderExecuteAppService {
     private final DeviceDispenseNurseWorkflowOrchestrator deviceDispenseNurseWorkflowOrchestrator;
     /** Procedure 完成后登记主执行人（cln_procedure_performer，1:1）。 */
     private final ProcedureExecutionPerformerOrchestrator procedureExecutionPerformerOrchestrator;
-    /** 长期嘱自然月累计发放上限（GAP-EXE-010）。 */
-    private final LongTermMedicationMonthlyDispenseCapGate longTermMedicationMonthlyDispenseCapGate;
+    /** 频次展开（开嘱日首次槽判定）。 */
+    private final FrequencyQueryService frequencyQueryService;
     private final InventoryItemDomainService inventoryItemDomainService;
     /** 映射器。 */
     private final NurseStationOrderExecuteMapper nurseStationOrderExecuteMapper;
@@ -175,10 +187,12 @@ public class NurseStationOrderExecuteAppService {
     private final DeviceAutoInventoryDeductSettingResolver deviceAutoInventoryDeductSettingResolver;
     /** BR-IP-EXE-027：护理级别禁止护士站执行/不执行。 */
     private final InpatientNursingOrderGate inpatientNursingOrderGate;
+    /** BR-IP-ORD-028：嘱托识别（执行写路径禁止建账单）。 */
+    private final InpatientEntrustOrderGateSupport inpatientEntrustOrderGateSupport;
     /** 就诊待结算禁止执行/不执行写路径。 */
     private final InpatientPendingSettlementClinicalGate inpatientPendingSettlementClinicalGate;
 
-    /** 中药整方扩行。 */
+    /** 中药整方 / 西药成组写扩行。 */
     private final InpatientNurseStationTcmOrchestrator inpatientNurseStationTcmOrchestrator;
 
     /** 住院执行代煎费（BR-IP-TCM-008）。 */
@@ -203,14 +217,16 @@ public class NurseStationOrderExecuteAppService {
     /**
      * IF-IP-EXE-02：批量执行医嘱计划点。
      *
+     * <p>成功响应可附带 {@code warnings} 软提示（BR-IP-EXE-034 长嘱皮试药跨批）；不拒绝执行。</p>
+     *
      * @param request 待执行槽位列表
-     * @return 处理结果
+     * @return 处理结果（含可选软提示）
      */
     public ExecuteNurseStationOrdersResponse executeNurseStationOrders(ExecuteNurseStationOrdersRequest request) {
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "请求不能为空");
         }
-        // 写槽位入参 Gate：批量上限 50、锚点完整、执行路径要求 actualTime（BR-IP-EXE-014 前置）
+        // Gate：写槽位入参——批量上限 50、锚点完整、执行路径要求 actualTime（BR-IP-EXE-014 前置）
         this.assertWriteSlotsGate(request.getItems(), true);
         // operatorId = 登录账号；performerId = 当前医务人员（可能不同，如代执行场景）
         Long operatorId = currentPractitionerResolver.requireOperatorId(
@@ -220,14 +236,18 @@ public class NurseStationOrderExecuteAppService {
         Long performerId = currentPractitionerResolver.requirePractitionerId(
             InpatientNurseStationConstants.EX_IP_EXE_303,
             "未解析到当前医务人员，无法执行医嘱");
-        // Pre·中药整方扩行：同 planTime 扩全方各味药槽位（Gate 已按扩行前计）
+        // Pre·药嘱写扩行：同 planTime 扩中药整方 / 西药成组成员（Gate 已按扩行前计）
         List<NurseStationOrderExecuteWriteSlotDto> items =
             this.expandExecuteWriteSlotsByTcmPrescription(request.getItems());
-        // 预加载：OrderInfo、可见性、药诊明细、Procedure 历史——避免写循环内单条查库
+        // Pre：OrderInfo、可见性、药诊明细、Procedure 历史——避免写循环内单条查库
         WriteContextBundle context = this.prepareWriteContext(items);
+        // Pre：首次槽 actualTime 默认开嘱时刻；其余回落 planTime（BR-IP-ORD-030⑥ / BR-IP-EXE-030）
+        this.applyExecutionActualTimeDefaults(items, context);
+        // Pre：临嘱双轨收敛——planTime 与 actualTime 强制同值（改不改时分都一样）
+        this.alignTemporaryExecutePlanAndActualTimes(items, context);
         // Pre：批量预热产品定义/定价行/临时发药单，避免写循环内按槽位重复查库
         this.warmWritePathCatalogCaches(items, context);
-        // 逐槽位业务 Gate：可见性 + VERIFIED + 该 planTime 未被 Procedure 终态占用（EX-IP-EXE-301）
+        // Gate：逐槽位——可见性 + VERIFIED + 停嘱/开立时间边界 + occurrence 净态（EX-IP-EXE-301/303）
         for (NurseStationOrderExecuteWriteSlotDto item : items) {
             this.assertWriteSlotExecutable(item, context, performerId);
         }
@@ -238,15 +258,15 @@ public class NurseStationOrderExecuteAppService {
         NurseStationExecutionInventoryAssembler.MedicationFifoBatchPlan fifoBatchPlan =
             nurseStationExecutionInventoryAssembler.prepareMedicationFifoBatchPlan(gateLines);
         Map<String, List<NurseStationExecutionInventoryAssembler.MedicationFifoSegment>> fifoSegmentsBySlotKey =
-            this.indexFifoSegmentsByMedicationSlot(gateLines, items, fifoBatchPlan);
+            this.indexFifoSegmentsByMedicationSlot(gateLines, items, context, fifoBatchPlan);
         int processed = 0;
         Set<String> decoctionKeys = new LinkedHashSet<>();
-        // 逐槽位写 Procedure + Dispense/Charge + bindItems；同事务，失败即回滚整批
+        // Cmd：逐槽位写 Procedure + Dispense/Charge + bindItems；同事务，失败即回滚整批
         for (NurseStationOrderExecuteWriteSlotDto item : items) {
             try {
                 List<NurseStationExecutionInventoryAssembler.MedicationFifoSegment> fifoSegments =
                     fifoSegmentsBySlotKey.get(this.buildMedicationGateSlotKey(item));
-                this.assertLongTermMonthlyDispenseCapBeforeWrite(item, context, fifoSegments);
+                // 防超发仅靠同一 planTime 净态（执行/取消一对一，EX-IP-EXE-301）；不做自然月用量推算
                 this.executeSingleSlot(item, context, operatorId, performerId, fifoSegments, decoctionKeys);
                 processed = processed + 1;
             } catch (BusinessException ex) {
@@ -265,7 +285,10 @@ public class NurseStationOrderExecuteAppService {
             inventoryItemDomainService.decreaseQuantitiesMerged(
                 operatorId, context.getDeviceInventoryDecreaseAccumulator());
         }
-        return nurseStationOrderExecuteMapper.toExecuteResponse(processed);
+        // Asm：整批成功后附带软提示（BR-IP-EXE-034）；软提示永不抛错
+        List<String> warnings =
+            this.collectLongTermSkinTestCrossLotWarnings(items, context, fifoSegmentsBySlotKey);
+        return nurseStationOrderExecuteMapper.toExecuteResponse(processed, warnings);
     }
 
     /**
@@ -283,7 +306,7 @@ public class NurseStationOrderExecuteAppService {
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             InpatientNurseStationConstants.EX_IP_EXE_403,
             "未登录或登录已失效，无法登记不执行");
-        // Pre·中药整方扩行：不执行亦须覆盖方内全部味药行
+        // Pre·药嘱写扩行：不执行亦须覆盖中药整方 / 西药成组全部成员行
         List<NurseStationOrderExecuteWriteSlotDto> items =
             this.expandExecuteWriteSlotsByTcmPrescription(request.getItems());
         WriteContextBundle context = this.prepareWriteContext(items);
@@ -359,8 +382,8 @@ public class NurseStationOrderExecuteAppService {
         String categoryEnum = this.resolveProcedureCategory(order, orderCtx);
         LocalDateTime actualTime = item.getActualTime();
         if (actualTime == null) {
-            // 防御：Gate 已校验 actualTime，此处仅兜底
-            actualTime = LocalDateTime.now();
+            // 护士未改时分：默认按计划时点登记（BR-IP-EXE-030）；禁止回落点击瞬间 now 干扰展示
+            actualTime = item.getPlanTime();
         }
         // ① 创建 Procedure 锚点（skipDuplicate=true，防并发重复创建）
         CreateProcedureRecordCommand createCmd = nurseStationOrderExecuteMapper.toCreateProcedureRecordCommand(
@@ -369,9 +392,9 @@ public class NurseStationOrderExecuteAppService {
         // ② 启动执行
         procedureDomainService.startProcedureExecution(
             nurseStationOrderExecuteMapper.toStartProcedureExecutionCommand(procedureId, operatorId));
-        // ③ 完成执行（recordedTime 由领域层取当前时刻）
+        // ③ 完成执行：recorded_time=actualTime（展示）；occurrence 已在 create 写入 planTime（逻辑）
         procedureDomainService.completeProcedureRecord(
-            nurseStationOrderExecuteMapper.toCompleteProcedureRecordCommand(procedureId, operatorId));
+            nurseStationOrderExecuteMapper.toCompleteProcedureRecordCommand(procedureId, operatorId, actualTime));
         // Cmd：登记主执行人（与 Procedure 1:1 写入 cln_procedure_performer）。
         procedureExecutionPerformerOrchestrator.registerPrimaryPerformer(
             procedureId, performerId, operatorId, actualTime);
@@ -418,8 +441,12 @@ public class NurseStationOrderExecuteAppService {
         if (fifoSegments == null || fifoSegments.isEmpty()) {
             throw new BusinessException(InpatientNurseStationConstants.EX_IP_EXE_302, "库存 Gate 未通过");
         }
-        String unitCode = InpatientMedicationRequestExecutionMeasureHelper.resolveDispenseUnitCodeFromRequest(
-            med.getUnitCode());
+        String unitCode = InpatientMedicationRequestExecutionMeasureHelper.resolveDispenseUnitCodeForExecutionSlot(
+            med.getTherapyEnum(),
+            med.getUnitCode(),
+            med.getFirstDoseUnitCode(),
+            item.getPlanTime(),
+            this.resolveFirstPlanTimeOnOpenedDay(med));
         ChargeItem template = this.findChargeTemplate(context, order.getEncounterId(),
             TableNameConstants.MED_MEDICATION_REQUEST, med.getId());
         ProductDefinitionDisplayDto medicationProduct =
@@ -434,6 +461,7 @@ public class NurseStationOrderExecuteAppService {
                 nurseStationOrderExecuteMapper.toGenerateDispenseFromExecutionCommand(
                     med.getId(),
                     procedureId,
+                    // 发药 plannedDispenseTime = 频次计划槽位（汇总领药勾选/截止/归组逻辑用）；展示实际时间读 Procedure.recorded
                     item.getPlanTime(),
                     segment.getLocationId(),
                     segment.getLotNumber(),
@@ -455,6 +483,7 @@ public class NurseStationOrderExecuteAppService {
                     priceLine,
                     item.getAccountId(),
                     procedureId,
+                    // 账单 occurrence = 计划槽位（费用归并/汇总逻辑）；展示执行时刻读 Procedure.recorded_time
                     item.getPlanTime(),
                     segmentQuantity,
                     unitCode,
@@ -467,51 +496,9 @@ public class NurseStationOrderExecuteAppService {
     }
 
     /**
-     * FIFO 分段数量求和；null 段或 null 数量跳过。
-     *
-     * @param fifoSegments 分段列表
-     * @return 合计数量
-     */
-    private BigDecimal sumMedicationFifoSegmentQuantities(
-        List<NurseStationExecutionInventoryAssembler.MedicationFifoSegment> fifoSegments) {
-        BigDecimal total = BigDecimal.ZERO;
-        if (fifoSegments == null) {
-            return total;
-        }
-        for (NurseStationExecutionInventoryAssembler.MedicationFifoSegment segment : fifoSegments) {
-            if (segment != null && segment.getQuantity() != null) {
-                total = total.add(segment.getQuantity());
-            }
-        }
-        return total;
-    }
-
-    /**
-     * 长期药嘱自然月累计发放 Gate（GAP-EXE-010）；须在 Procedure 创建前执行。
-     */
-    private void assertLongTermMonthlyDispenseCapBeforeWrite(
-        NurseStationOrderExecuteWriteSlotDto item,
-        WriteContextBundle context,
-        List<NurseStationExecutionInventoryAssembler.MedicationFifoSegment> fifoSegments) {
-        if (!ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())) {
-            return;
-        }
-        OrderExecutionContext orderCtx = context.resolveOrderContext(item);
-        if (!TherapyType.LONG_TERM.getCode().equals(orderCtx.therapyEnum)) {
-            return;
-        }
-        MedicationRequestListQueryModel med = orderCtx.medDetail;
-        if (med == null) {
-            return;
-        }
-        this.longTermMedicationMonthlyDispenseCapGate.assertMonthlyDispenseWithinCap(
-            med,
-            item.getPlanTime(),
-            this.sumMedicationFifoSegmentQuantities(fifoSegments));
-    }
-
-    /**
      * 诊疗执行：每次 planTime 新建待结算 Charge（长临同构，BR-IP-EXE-018）。
+     *
+     * <p>嘱托例外（BR-IP-ORD-028⑤ / BR-IP-EXE-033）：仅写 Procedure，禁止创建 ChargeItem。</p>
      */
     private void executeServicePath(
         NurseStationOrderExecuteWriteSlotDto item,
@@ -522,7 +509,26 @@ public class NurseStationOrderExecuteAppService {
         Long orgId,
         WriteContextBundle context) {
         ServiceRequestListModel svc = orderCtx.svcDetail;
-        if (svc == null || svc.getQuantity() == null || svc.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
+        if (svc == null) {
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_EXE_303,
+                DoctorStationAdviceConstants.MSG_CHARGE_QUANTITY_REQUIRED);
+        }
+        Long activityId = order.getActivityId();
+        if (svc.getActivityId() != null) {
+            activityId = svc.getActivityId();
+        }
+        ProductDefinitionDisplayDto activityProduct =
+            this.loadProductDefinition(context, TableNameConstants.WKF_ACTIVITY_DEFINITION, activityId);
+        String activityName = null;
+        if (activityProduct != null) {
+            activityName = activityProduct.getProductName();
+        }
+        // 嘱托：校对/执行写 Procedure，但禁止建账单（BR-IP-ORD-028⑤ → BR-IP-EXE-033）
+        if (inpatientEntrustOrderGateSupport.isEntrustActivity(svc.getCategoryEnum(), activityName)) {
+            return;
+        }
+        if (svc.getQuantity() == null || svc.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_EXE_303,
                 DoctorStationAdviceConstants.MSG_CHARGE_QUANTITY_REQUIRED);
@@ -532,10 +538,6 @@ public class NurseStationOrderExecuteAppService {
         Long serviceId = item.getOrderId();
         ChargeItem template = this.findChargeTemplate(context, order.getEncounterId(),
             TableNameConstants.WKF_SERVICE_REQUEST, serviceId);
-        Long activityId = order.getActivityId();
-        if (svc.getActivityId() != null) {
-            activityId = svc.getActivityId();
-        }
         Long preferredDefinitionId = null;
         if (template != null) {
             preferredDefinitionId = template.getDefinitionId();
@@ -546,8 +548,6 @@ public class NurseStationOrderExecuteAppService {
             activityId,
             preferredDefinitionId,
             null);
-        ProductDefinitionDisplayDto activityProduct =
-            this.loadProductDefinition(context, TableNameConstants.WKF_ACTIVITY_DEFINITION, activityId);
         chargeItemDomainService.createPlannedChargeItemFromOrderExecution(
             nurseStationOrderExecuteMapper.toCreatePlannedChargeItemFromOrderExecutionCommand(
                 order,
@@ -555,6 +555,7 @@ public class NurseStationOrderExecuteAppService {
                 priceLine,
                 item.getAccountId(),
                 procedureId,
+                // 账单 occurrence = 计划槽位（逻辑归并）；展示执行时刻读 Procedure.recorded
                 item.getPlanTime(),
                 quantity,
                 unitCode,
@@ -566,10 +567,11 @@ public class NurseStationOrderExecuteAppService {
     }
 
     /**
-     * 绑定项写路径（BR-IP-EXE-019～020）。
+     * 绑定项写路径（BR-IP-EXE-019～020；成组 **BR-IP-NUR-004-GRP-003**）。
      *
      * <p>前端勾选/回传的 bindItems 逐条处理：{@code activityId} 走绑定诊疗派生，
-     * {@code deviceId} 走绑定耗材派生。无 bindItems 或空列表时直接返回，不影响主医嘱执行。</p>
+     * {@code deviceId} 走绑定耗材派生。无 bindItems 或空列表时直接返回，不影响主医嘱执行。
+     * 成组扩行后仅代表行携带 bindItems，故同组自动带耗材/诊疗整组只落一次。</p>
      */
     private void executeBindItems(
         NurseStationOrderExecuteWriteSlotDto item,
@@ -587,6 +589,11 @@ public class NurseStationOrderExecuteAppService {
         for (NurseStationOrderExecuteBindItemDto bindItem : item.getBindItems()) {
             if (bindItem == null) {
                 // 忽略前端误传的空元素
+                continue;
+            }
+            // 数量为 0：护士本趟不带出，跳过派生（不建 SR/DR/Charge）
+            BigDecimal bindQuantity = this.resolveBindItemQuantity(bindItem);
+            if (bindQuantity.compareTo(BigDecimal.ZERO) <= 0) {
                 continue;
             }
             if (bindItem.getActivityId() != null) {
@@ -629,6 +636,11 @@ public class NurseStationOrderExecuteAppService {
         line.setEncounterId(order.getEncounterId());
         line.setPatientId(order.getPatientId());
         line.setRequesterId(performerId);
+        // 绑定诊疗数量/单位与 Charge 同源：护士手改 quantityNumerator 原样落派生 SR（供下次列表回显）
+        BigDecimal quantity = this.resolveBindItemQuantity(bindItem);
+        String unitCode = trimToNull(bindItem.getUnitCode());
+        line.setQuantity(quantity);
+        line.setUnitCode(unitCode);
         command.setItems(List.of(line));
         // 领域层返回派生 serviceRequestId，后续 Procedure/Charge 均挂此 id
         Long derivedServiceRequestId = serviceRequestDomainService.createExecutedServiceRequest(command);
@@ -651,13 +663,12 @@ public class NurseStationOrderExecuteAppService {
         procedureDomainService.startProcedureExecution(
             nurseStationOrderExecuteMapper.toStartProcedureExecutionCommand(bindProcedureId, operatorId));
         procedureDomainService.completeProcedureRecord(
-            nurseStationOrderExecuteMapper.toCompleteProcedureRecordCommand(bindProcedureId, operatorId));
+            nurseStationOrderExecuteMapper.toCompleteProcedureRecordCommand(
+                bindProcedureId, operatorId, actualTime));
         // Cmd：绑定诊疗 Procedure 同样登记主执行人。
         procedureExecutionPerformerOrchestrator.registerPrimaryPerformer(
             bindProcedureId, performerId, operatorId, actualTime);
         // ③ 新建待结算 Charge，service=派生 Request，product=ActivityDefinition
-        BigDecimal quantity = this.resolveBindItemQuantity(bindItem);
-        String unitCode = trimToNull(bindItem.getUnitCode());
         ChargeItemDefinition priceLine = this.requirePriceLineForExecution(
             context,
             TableNameConstants.WKF_ACTIVITY_DEFINITION,
@@ -718,6 +729,14 @@ public class NurseStationOrderExecuteAppService {
         }
         String basedOnTable = this.resolveRequestTable(item.getOrderType());
         Long basedOnId = item.getOrderId();
+        // 组套：与主药嘱 package_id 对齐（成组输液组内任一行同源即可）
+        Long packageId = null;
+        if (context != null) {
+            OrderExecutionContext orderCtx = context.resolveOrderContext(item);
+            if (orderCtx != null && orderCtx.medDetail != null) {
+                packageId = orderCtx.medDetail.getPackageId();
+            }
+        }
         List<Long> deviceReqIds = deviceRequestDomainService.createExecutedDeviceOrder(
             nurseStationOrderExecuteMapper.toCreateExecutedDeviceOrderCommand(
                 deviceDefId,
@@ -728,6 +747,7 @@ public class NurseStationOrderExecuteAppService {
                 order.getPatientId(),
                 basedOnTable,
                 basedOnId,
+                packageId,
                 operatorId));
         Long deviceReqId = deviceReqIds.get(0);
         deviceDispenseDomainService.generateDeviceDispenseFromTemporaryPath(
@@ -857,9 +877,308 @@ public class NurseStationOrderExecuteAppService {
     }
 
     /**
+     * 临嘱执行写路径：强制 {@code planTime == actualTime}（BR-IP-EXE-006 临嘱双轨收敛）。
+     *
+     * <p>长期双轨允许 occurrence≠recorded；临时无频次「第几次」身份，预计与执行存库永远同值——
+     * 护士不改时分则同为开立锚点，改了 HH:mm 则两字段一起变为改后时刻（发药 plannedDispenseTime /
+     * 账单 occurrence / Procedure.occurrence / recorded 均同此值）。</p>
+     *
+     * @param items   已补齐 actualTime 默认值的写槽位
+     * @param context 预加载上下文（解析长临）
+     */
+    private void alignTemporaryExecutePlanAndActualTimes(
+        List<NurseStationOrderExecuteWriteSlotDto> items,
+        WriteContextBundle context) {
+        if (items == null || context == null) {
+            return;
+        }
+        for (NurseStationOrderExecuteWriteSlotDto item : items) {
+            if (item == null || item.getActualTime() == null) {
+                continue;
+            }
+            OrderExecutionContext orderCtx = context.resolveOrderContext(item);
+            String therapy = trimToEmpty(orderCtx.therapyEnum);
+            if (!TherapyType.TEMPORARY.getCode().equals(therapy)) {
+                // 长期保持双轨：planTime 锚频次槽，actualTime 可同日改时分
+                continue;
+            }
+            // 临嘱：occurrence/发药/账单/recorded 全部落到同一时刻
+            item.setPlanTime(item.getActualTime());
+        }
+    }
+
+    /**
+     * 执行写路径：补齐 actualTime 默认值并校验与 planTime 同自然日。
+     *
+     * <p>开嘱日首次槽默认开嘱时刻（BR-IP-EXE-032）；已停嘱时停嘱日末槽默认停嘱时刻
+     * （同槽开嘱优先）；其余默认 planTime（BR-IP-EXE-030）。</p>
+     *
+     * @param items   写槽位
+     * @param context 预加载上下文
+     */
+    private void applyExecutionActualTimeDefaults(
+        List<NurseStationOrderExecuteWriteSlotDto> items,
+        WriteContextBundle context) {
+        if (items == null) {
+            return;
+        }
+        for (NurseStationOrderExecuteWriteSlotDto item : items) {
+            if (item == null || item.getPlanTime() == null) {
+                continue;
+            }
+            LocalDateTime planTime = item.getPlanTime();
+            LocalDateTime actualTime = item.getActualTime();
+            // Gate：已传 actualTime 须与 planTime 同一自然日（禁止跨日改展示时刻）
+            if (actualTime != null && !actualTime.toLocalDate().equals(planTime.toLocalDate())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
+                    InpatientNurseStationConstants.MSG_ACTUAL_TIME_DATE_MUST_MATCH_PLAN);
+            }
+            // Pre：边界默认 actualTime（开嘱优先于停嘱）
+            LocalDateTime boundaryOverride = this.resolveBoundaryActualTimeOverride(item, context);
+            if (boundaryOverride != null) {
+                // 前端未改时分（空，或仍等于 planTime）才盖边界默认；护士显式改过则保留
+                boolean nurseLeftDefault = actualTime == null
+                    || actualTime.withNano(0).equals(planTime.withNano(0));
+                if (nurseLeftDefault) {
+                    item.setActualTime(boundaryOverride);
+                }
+            } else if (actualTime == null) {
+                // 非边界槽：空则回落计划时点（禁止落点击瞬间 now）
+                item.setActualTime(planTime);
+            }
+            if (!item.getActualTime().toLocalDate().equals(planTime.toLocalDate())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
+                    InpatientNurseStationConstants.MSG_ACTUAL_TIME_DATE_MUST_MATCH_PLAN);
+            }
+        }
+    }
+
+    /**
+     * 写路径边界默认 actualTime：开嘱日首次=开嘱；已停嘱停嘱日末=停嘱；同槽开嘱优先。
+     *
+     * @param item    写槽位
+     * @param context 预加载上下文
+     * @return 覆盖时刻；非边界槽 null
+     */
+    private LocalDateTime resolveBoundaryActualTimeOverride(
+        NurseStationOrderExecuteWriteSlotDto item,
+        WriteContextBundle context) {
+        OrderExecutionContext orderCtx = context.resolveOrderContext(item);
+        LocalDateTime planTime = item.getPlanTime();
+        if (ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())) {
+            MedicationRequestListQueryModel med = orderCtx.medDetail;
+            LocalDateTime openedTime = this.resolveMedicationOpenedTime(med);
+            LocalDateTime firstPlanTime = this.resolveFirstPlanTimeOnOpenedDay(med);
+            if (LongTermFirstExecutionSlotSupport.isFirstExecutionSlot(planTime, firstPlanTime)
+                && openedTime != null) {
+                return openedTime;
+            }
+            // 仅已停嘱才盖停嘱日末槽默认，避免未停嘱误用残留 stop_time
+            if (med != null
+                && RequestStatus.STOPPED.getCode().equals(med.getStatusEnum())
+                && med.getStopTime() != null) {
+                LocalDateTime lastOnStop = this.resolveLastPlanTimeOnStopDay(med);
+                if (LongTermFirstExecutionSlotSupport.isLastExecutionSlotOnStopDay(planTime, lastOnStop)) {
+                    return med.getStopTime();
+                }
+            }
+            return null;
+        }
+        if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(item.getOrderType())) {
+            ServiceRequestListModel svc = orderCtx.svcDetail;
+            LocalDateTime openedTime = this.resolveServiceOpenedTime(svc);
+            LocalDateTime firstPlanTime = this.resolveFirstPlanTimeOnOpenedDayForService(svc);
+            if (LongTermFirstExecutionSlotSupport.isFirstExecutionSlot(planTime, firstPlanTime)
+                && openedTime != null) {
+                return openedTime;
+            }
+            if (svc != null
+                && RequestStatus.STOPPED.getCode().equals(svc.getStatusEnum())
+                && svc.getStopTime() != null) {
+                LocalDateTime lastOnStop = this.resolveLastPlanTimeOnStopDayForService(svc);
+                if (LongTermFirstExecutionSlotSupport.isLastExecutionSlotOnStopDay(planTime, lastOnStop)) {
+                    return svc.getStopTime();
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 解析开立日首次频次 planTime（与列表裁剪同源；禁止写死时钟）。
+     *
+     * @param med 药品明细
+     * @return 首次 planTime；无法解析时 null
+     */
+    private LocalDateTime resolveFirstPlanTimeOnOpenedDay(MedicationRequestListQueryModel med) {
+        LocalDateTime openedTime = this.resolveMedicationOpenedTime(med);
+        if (openedTime == null) {
+            return null;
+        }
+        if (StringUtils.isEmpty(med.getRateCode())) {
+            return null;
+        }
+        LocalDateTime dayStart = openedTime.toLocalDate().atStartOfDay();
+        LocalDateTime dayEnd = openedTime.toLocalDate().atTime(23, 59, 59);
+        try {
+            List<FrequencyExecutionTimePointQueryModel> points =
+                frequencyQueryService.computeExecutionTimePoints(med.getRateCode(), dayStart, dayEnd);
+            List<LocalDateTime> rawTimes = new ArrayList<>();
+            if (points != null) {
+                for (FrequencyExecutionTimePointQueryModel point : points) {
+                    if (point != null && point.getExecutionAt() != null) {
+                        rawTimes.add(point.getExecutionAt());
+                    }
+                }
+            }
+            return LongTermFirstExecutionSlotSupport.resolveFirstPlanTimeOnOpenedDay(rawTimes, openedTime);
+        } catch (BusinessException ex) {
+            // 频次不可用：不阻断写路径默认 actualTime，仅无法识别首次槽
+            return null;
+        }
+    }
+
+    /**
+     * 解析停嘱日末槽 planTime（药品；与列表同源）。
+     *
+     * @param med 药品明细
+     * @return 末槽；无法解析 null
+     */
+    private LocalDateTime resolveLastPlanTimeOnStopDay(MedicationRequestListQueryModel med) {
+        if (med == null || med.getStopTime() == null || StringUtils.isEmpty(med.getRateCode())) {
+            return null;
+        }
+        LocalDateTime stopTime = med.getStopTime();
+        LocalDateTime openedTime = this.resolveMedicationOpenedTime(med);
+        LocalDateTime dayStart = stopTime.toLocalDate().atStartOfDay();
+        if (!stopTime.isAfter(dayStart)) {
+            return null;
+        }
+        try {
+            List<FrequencyExecutionTimePointQueryModel> points =
+                frequencyQueryService.computeExecutionTimePoints(med.getRateCode(), dayStart, stopTime);
+            List<LocalDateTime> rawTimes = new ArrayList<>();
+            if (points != null) {
+                for (FrequencyExecutionTimePointQueryModel point : points) {
+                    if (point != null && point.getExecutionAt() != null) {
+                        rawTimes.add(point.getExecutionAt().withNano(0));
+                    }
+                }
+            }
+            // 开立日与停嘱日同一天时先裁首次槽，再取停嘱日末槽
+            Set<LocalDateTime> clipped =
+                LongTermFirstExecutionSlotSupport.applyOpenedDayFirstSlotRule(rawTimes, openedTime);
+            return LongTermFirstExecutionSlotSupport.resolveLastPlanTimeOnStopDay(
+                new ArrayList<>(clipped), stopTime);
+        } catch (BusinessException ex) {
+            return null;
+        }
+    }
+
+    /**
+     * 诊疗开立日首次 planTime（与药品同口径）。
+     *
+     * @param svc 诊疗明细
+     * @return 首次 planTime；无法解析 null
+     */
+    private LocalDateTime resolveFirstPlanTimeOnOpenedDayForService(ServiceRequestListModel svc) {
+        LocalDateTime openedTime = this.resolveServiceOpenedTime(svc);
+        if (openedTime == null || svc == null || StringUtils.isEmpty(svc.getRateCode())) {
+            return null;
+        }
+        LocalDateTime dayStart = openedTime.toLocalDate().atStartOfDay();
+        LocalDateTime dayEnd = openedTime.toLocalDate().atTime(23, 59, 59);
+        try {
+            List<FrequencyExecutionTimePointQueryModel> points =
+                frequencyQueryService.computeExecutionTimePoints(svc.getRateCode(), dayStart, dayEnd);
+            List<LocalDateTime> rawTimes = new ArrayList<>();
+            if (points != null) {
+                for (FrequencyExecutionTimePointQueryModel point : points) {
+                    if (point != null && point.getExecutionAt() != null) {
+                        rawTimes.add(point.getExecutionAt());
+                    }
+                }
+            }
+            return LongTermFirstExecutionSlotSupport.resolveFirstPlanTimeOnOpenedDay(rawTimes, openedTime);
+        } catch (BusinessException ex) {
+            return null;
+        }
+    }
+
+    /**
+     * 解析停嘱日末槽 planTime（诊疗）。
+     *
+     * @param svc 诊疗明细
+     * @return 末槽；无法解析 null
+     */
+    private LocalDateTime resolveLastPlanTimeOnStopDayForService(ServiceRequestListModel svc) {
+        if (svc == null || svc.getStopTime() == null || StringUtils.isEmpty(svc.getRateCode())) {
+            return null;
+        }
+        LocalDateTime stopTime = svc.getStopTime();
+        LocalDateTime openedTime = this.resolveServiceOpenedTime(svc);
+        LocalDateTime dayStart = stopTime.toLocalDate().atStartOfDay();
+        if (!stopTime.isAfter(dayStart)) {
+            return null;
+        }
+        try {
+            List<FrequencyExecutionTimePointQueryModel> points =
+                frequencyQueryService.computeExecutionTimePoints(svc.getRateCode(), dayStart, stopTime);
+            List<LocalDateTime> rawTimes = new ArrayList<>();
+            if (points != null) {
+                for (FrequencyExecutionTimePointQueryModel point : points) {
+                    if (point != null && point.getExecutionAt() != null) {
+                        rawTimes.add(point.getExecutionAt().withNano(0));
+                    }
+                }
+            }
+            Set<LocalDateTime> clipped =
+                LongTermFirstExecutionSlotSupport.applyOpenedDayFirstSlotRule(rawTimes, openedTime);
+            return LongTermFirstExecutionSlotSupport.resolveLastPlanTimeOnStopDay(
+                new ArrayList<>(clipped), stopTime);
+        } catch (BusinessException ex) {
+            return null;
+        }
+    }
+
+    /**
+     * 药品开立时刻：优先 {@code reqOpenedTime}，空回落 {@code reqAuthoredTime}（兼容存量）。
+     *
+     * @param med 药品明细
+     * @return 开立时刻；med 为空时 null
+     */
+    private LocalDateTime resolveMedicationOpenedTime(MedicationRequestListQueryModel med) {
+        if (med == null) {
+            return null;
+        }
+        if (med.getReqOpenedTime() != null) {
+            return med.getReqOpenedTime();
+        }
+        return med.getReqAuthoredTime();
+    }
+
+    /**
+     * 诊疗开立时刻：优先 {@code reqOpenedTime}，空回落 {@code reqAuthoredTime}。
+     *
+     * @param svc 诊疗明细
+     * @return 开立时刻；svc 为空时 null
+     */
+    private LocalDateTime resolveServiceOpenedTime(ServiceRequestListModel svc) {
+        if (svc == null) {
+            return null;
+        }
+        if (svc.getReqOpenedTime() != null) {
+            return svc.getReqOpenedTime();
+        }
+        return svc.getReqAuthoredTime();
+    }
+
+    /**
      * 构建库存 Gate 需求行（BR-IP-EXE-014，<b>仅药嘱</b>）。
      *
-     * <p>遍历批量写槽位，跳过非 MED_REQUEST、无 medicationId、长临未知的行；
+     * <p>遍历批量写槽位，跳过非 MED_REQUEST、无 medicationId、therapy 非长临/出院带药的行；
      * 绑定耗材 deliberately 不进入 demandLines。</p>
      *
      * @param items   待执行槽位
@@ -871,21 +1190,11 @@ public class NurseStationOrderExecuteAppService {
         WriteContextBundle context) {
         List<NurseStationExecutionInventoryAssembler.InventoryGateDemandLine> lines = new ArrayList<>();
         for (NurseStationOrderExecuteWriteSlotDto item : items) {
-            // 非药嘱不参与库存 Gate
-            if (!ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())) {
+            if (!this.shouldIncludeMedicationSlotInInventoryGate(item, context)) {
                 continue;
             }
             OrderExecutionContext orderCtx = context.resolveOrderContext(item);
             MedicationRequestListQueryModel med = orderCtx.medDetail;
-            if (med == null || med.getMedicationId() == null) {
-                // 无药品定义则无法做 FIFO，跳过（Gate 阶段不应到达写路径）
-                continue;
-            }
-            if (!TherapyType.LONG_TERM.getCode().equals(orderCtx.therapyEnum)
-                && !TherapyType.TEMPORARY.getCode().equals(orderCtx.therapyEnum)) {
-                // 长临未知的不纳入 Gate 汇总
-                continue;
-            }
             NurseStationExecutionInventoryAssembler.InventoryGateDemandLine line =
                 new NurseStationExecutionInventoryAssembler.InventoryGateDemandLine();
             InpatientOrderListSkeleton order = context.orderByKey.get(this.buildOrderKey(item));
@@ -894,10 +1203,19 @@ public class NurseStationOrderExecuteAppService {
             line.setMedicationId(med.getMedicationId());
             line.setMethodCode(med.getMethodCode());
             // categoryCode 由库存装配器按产品读模型 category_code 解析（与住院医生站 FIFO 口径一致）
-            line.setBusinessQuantity(InpatientMedicationRequestExecutionMeasureHelper.resolveDispenseQuantityFromRequest(
-                med.getQuantity()));
-            line.setUnitCode(InpatientMedicationRequestExecutionMeasureHelper.resolveDispenseUnitCodeFromRequest(
-                med.getUnitCode()));
+            LocalDateTime firstPlanTime = this.resolveFirstPlanTimeOnOpenedDay(med);
+            line.setBusinessQuantity(InpatientMedicationRequestExecutionMeasureHelper.resolveDispenseQuantityForExecutionSlot(
+                med.getTherapyEnum(),
+                med.getQuantity(),
+                med.getFirstDose(),
+                item.getPlanTime(),
+                firstPlanTime));
+            line.setUnitCode(InpatientMedicationRequestExecutionMeasureHelper.resolveDispenseUnitCodeForExecutionSlot(
+                med.getTherapyEnum(),
+                med.getUnitCode(),
+                med.getFirstDoseUnitCode(),
+                item.getPlanTime(),
+                firstPlanTime));
             lines.add(line);
         }
         return lines;
@@ -909,11 +1227,12 @@ public class NurseStationOrderExecuteAppService {
     private Map<String, List<NurseStationExecutionInventoryAssembler.MedicationFifoSegment>> indexFifoSegmentsByMedicationSlot(
         List<NurseStationExecutionInventoryAssembler.InventoryGateDemandLine> gateLines,
         List<NurseStationOrderExecuteWriteSlotDto> items,
+        WriteContextBundle context,
         NurseStationExecutionInventoryAssembler.MedicationFifoBatchPlan fifoBatchPlan) {
         Map<String, List<NurseStationExecutionInventoryAssembler.MedicationFifoSegment>> indexed = new HashMap<>();
         int gateIndex = 0;
         for (NurseStationOrderExecuteWriteSlotDto item : items) {
-            if (!ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())) {
+            if (!this.shouldIncludeMedicationSlotInInventoryGate(item, context)) {
                 continue;
             }
             indexed.put(this.buildMedicationGateSlotKey(item), fifoBatchPlan.getSegments(gateIndex));
@@ -923,6 +1242,36 @@ public class NurseStationOrderExecuteAppService {
             throw new BusinessException(InpatientNurseStationConstants.EX_IP_EXE_302, "库存 Gate 索引不一致");
         }
         return indexed;
+    }
+
+    /**
+     * 药嘱 therapy 是否参与库存 Gate（长/临/出院带药；数量语义均为执行扣减口径）。
+     */
+    private boolean isMedicationInventoryGateTherapy(String therapyEnum) {
+        if (StringUtils.isEmpty(therapyEnum)) {
+            return false;
+        }
+        String code = trimToEmpty(therapyEnum);
+        return TherapyType.LONG_TERM.getCode().equals(code)
+            || TherapyType.TEMPORARY.getCode().equals(code)
+            || TherapyType.DISCHARGE_MEDICATION.getCode().equals(code);
+    }
+
+    /**
+     * 槽位是否纳入药嘱库存 Gate（{@link #buildInventoryGateDemands} 与索引分段须同口径）。
+     */
+    private boolean shouldIncludeMedicationSlotInInventoryGate(
+        NurseStationOrderExecuteWriteSlotDto item,
+        WriteContextBundle context) {
+        if (!ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())) {
+            return false;
+        }
+        OrderExecutionContext orderCtx = context.resolveOrderContext(item);
+        MedicationRequestListQueryModel med = orderCtx.medDetail;
+        if (med == null || med.getMedicationId() == null) {
+            return false;
+        }
+        return this.isMedicationInventoryGateTherapy(orderCtx.therapyEnum);
     }
 
     /**
@@ -1112,7 +1461,7 @@ public class NurseStationOrderExecuteAppService {
     }
 
     /**
-     * 中药方勾选槽位时按 prescription_no 扩成全方各味药行（同 planTime）。
+     * 药嘱勾选槽位扩行：中药按 prescription_no / lineRequestIds；西药按 group_id / lineRequestIds（同 planTime）。
      *
      * @param items 原始写槽位
      * @return 扩行后的槽位（按 orderType+orderId+planTime 去重）
@@ -1161,6 +1510,8 @@ public class NurseStationOrderExecuteAppService {
                 continue;
             }
             List<Long> requestIds = this.resolveExecuteWriteMedRequestIds(item, medByEncounter);
+            // 成组/整方扩行：主药各行各自发药/账单；自动带 bindItems 仅挂代表行一次（BR-IP-NUR-004-GRP-003）
+            boolean bindItemsAttached = false;
             for (Long requestId : requestIds) {
                 String dedupeKey = item.getOrderType() + ":" + requestId + ":" + item.getPlanTime();
                 if (dedupe.contains(dedupeKey)) {
@@ -1173,8 +1524,15 @@ public class NurseStationOrderExecuteAppService {
                 clone.setPlanTime(item.getPlanTime());
                 clone.setActualTime(item.getActualTime());
                 clone.setAccountId(item.getAccountId());
-                clone.setBindItems(item.getBindItems());
                 clone.setPrescriptionNo(item.getPrescriptionNo());
+                // 仅首个扩出行携带 bindItems；其余清空，避免同组自动带耗材/诊疗重复落库
+                if (!bindItemsAttached) {
+                    clone.setBindItems(item.getBindItems());
+                    bindItemsAttached = true;
+                } else {
+                    clone.setBindItems(null);
+                }
+                // lineRequestIds 不必再下传：已按成员拆成单行
                 expanded.add(clone);
             }
         }
@@ -1182,7 +1540,7 @@ public class NurseStationOrderExecuteAppService {
     }
 
     /**
-     * 解析写槽位对应药品 req id：优先列表回传 {@code lineRequestIds}，否则按处方号扩行。
+     * 解析写槽位对应药品 req id：优先列表回传 {@code lineRequestIds}，否则中药整方 / 西药成组扩行。
      *
      * @param item           写槽位
      * @param medByEncounter 就诊药品明细（仅回退扩行时需要）
@@ -1208,12 +1566,12 @@ public class NurseStationOrderExecuteAppService {
         if (encounterId != null && medByEncounter != null) {
             encounterMeds = medByEncounter.get(encounterId);
         }
-        return inpatientNurseStationTcmOrchestrator.expandMedRequestIdsByPrescriptionNo(
+        return inpatientNurseStationTcmOrchestrator.expandMedRequestIdsForNurseWrite(
             encounterId, item.getOrderId(), encounterMeds);
     }
 
     /**
-     * 加载写路径涉及的就诊药品明细（整方扩行用）。
+     * 加载写路径涉及的就诊药品明细（中药整方 / 西药成组扩行用）。
      *
      * @param encounterIds 就诊主键集合
      * @return 就诊 → 药品明细
@@ -1334,6 +1692,8 @@ public class NurseStationOrderExecuteAppService {
             }
         }
         bundle.encounterOrgIds = this.indexEncounterOrgIds(matchedVisibleRows);
+        // Pre：就诊患者姓名索引，供 BR-IP-EXE-034 软提示文案（避免写循环再查）
+        bundle.encounterPatientNames = this.indexEncounterPatientNames(matchedVisibleRows);
         // Gate：待结算就诊禁止执行/不执行（EX-IP-EXE-307）
         inpatientPendingSettlementClinicalGate.assertEncountersAllowOrderClinicalMutation(
             matchedVisibleRows,
@@ -1536,12 +1896,12 @@ public class NurseStationOrderExecuteAppService {
     }
 
     /**
-     * 执行写路径单槽位 Gate（BR-IP-EXE-014/023）。
+     * 执行写路径单槽位 Gate（BR-IP-EXE-014/023/024）。
      *
      * @param item                写槽位
      * @param context             预加载上下文
      * @param performerId         当前医务人员
-     * @throws BusinessException EX-IP-EXE-301 槽位已变更；EX-IP-EXE-303 可见性/状态不满足
+     * @throws BusinessException EX-IP-EXE-301 槽位已变更；EX-IP-EXE-303 可见性/状态/时间边界不满足
      */
     private void assertWriteSlotExecutable(
         NurseStationOrderExecuteWriteSlotDto item,
@@ -1570,6 +1930,8 @@ public class NurseStationOrderExecuteAppService {
             order, orderCtx.medDetail, orderCtx.svcDetail, item.getPlanTime())) {
             throw new BusinessException(InpatientNurseStationConstants.EX_IP_EXE_303, "计划点晚于停嘱时间，不可执行");
         }
+        // Gate：actualTime 不得早于开立（BR-IP-EXE-024；秒级；缺开立字段则跳过）
+        this.assertActualTimeNotBeforeOpened(item, orderCtx);
         // occurrence 净态 Gate：仅 pending / cancelled 可正向执行；已执行/不执行拒绝（EX-IP-EXE-301）
         List<ProcedureRecordQueryModel> procedures = context.proceduresByOrderKey.get(this.buildOrderKey(item));
         boolean executable = nurseStationOrderExecuteListAssembler.isPlanTimeExecutable(
@@ -1580,6 +1942,41 @@ public class NurseStationOrderExecuteAppService {
             procedures);
         if (!executable) {
             throw new BusinessException(InpatientNurseStationConstants.EX_IP_EXE_301, "该计划点已执行或已登记不执行，请刷新后重试");
+        }
+    }
+
+    /**
+     * 执行写路径：拒绝 {@code actualTime} 早于医嘱开立时刻（BR-IP-EXE-024）。
+     *
+     * <p>开立优先 {@code reqOpenedTime}，空回落 {@code reqAuthoredTime}；缺开立字段不拦主路径。
+     * 与前端 {@code validateNurseExecuteActualTimeBounds} 秒级口径一致（相等允许）。</p>
+     *
+     * @param item     已补齐默认 actualTime 的写槽位
+     * @param orderCtx 药/诊明细上下文
+     */
+    private void assertActualTimeNotBeforeOpened(
+        NurseStationOrderExecuteWriteSlotDto item,
+        OrderExecutionContext orderCtx) {
+        LocalDateTime actualTime = item.getActualTime();
+        if (actualTime == null) {
+            // 上游 assertWriteSlotExecutable 已要求非空；此处防御
+            return;
+        }
+        LocalDateTime openedTime = null;
+        if (ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())) {
+            openedTime = this.resolveMedicationOpenedTime(orderCtx.medDetail);
+        } else if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(item.getOrderType())) {
+            openedTime = this.resolveServiceOpenedTime(orderCtx.svcDetail);
+        }
+        // 缺开立字段：无法判定，不阻断正常执行
+        if (openedTime == null) {
+            return;
+        }
+        // 秒级比较：去掉纳秒，避免同秒落库精度误伤
+        if (actualTime.withNano(0).isBefore(openedTime.withNano(0))) {
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_EXE_303,
+                InpatientNurseStationConstants.MSG_ACTUAL_TIME_BEFORE_OPENED);
         }
     }
 
@@ -1668,12 +2065,21 @@ public class NurseStationOrderExecuteAppService {
                 throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "医嘱类型须为 MED_REQUEST 或 SERVICE_REQUEST");
             }
             if (item.getPlanTime() == null) {
-                // planTime = Procedure occurrence_time，标识「哪一次计划」（如 22 日 8:00）
+                // planTime = Procedure occurrence_time，标识「哪一次计划」（如 22 日 8:00）；发药/账单/防重逻辑锚点
                 throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "计划执行时刻不能为空");
             }
-            if (executePath && item.getActualTime() == null) {
-                // actualTime = recorded_time，护士实际操作时刻，与 planTime 无先后约束
-                throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "实际执行时刻不能为空");
+            if (executePath) {
+                LocalDateTime actualTime = item.getActualTime();
+                if (actualTime == null) {
+                    // 暂留空：预加载明细后由 applyExecutionActualTimeDefaults 填开嘱时刻或 planTime
+                    continue;
+                }
+                // Gate：仅允许同自然日调整时分，禁止改日期（展示用 recorded，逻辑仍用 planTime）
+                if (!actualTime.toLocalDate().equals(item.getPlanTime().toLocalDate())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
+                        InpatientNurseStationConstants.MSG_ACTUAL_TIME_DATE_MUST_MATCH_PLAN);
+                }
             }
             if (executePath && item.getAccountId() == null) {
                 // 执行新建费用须锚定就诊账户，由 IF-IP-NUR-02/IF-IP-EXE-01 列表回传后原样提交
@@ -1839,6 +2245,311 @@ public class NurseStationOrderExecuteAppService {
     }
 
     /**
+     * 构建 encounterId → 患者姓名索引，供执行软提示文案（BR-IP-EXE-034）。
+     *
+     * @param rows 住院信息行；可 null
+     * @return 就诊到患者姓名的映射
+     */
+    private Map<Long, String> indexEncounterPatientNames(List<InpatientEncounterContextQueryModel> rows) {
+        Map<Long, String> map = new HashMap<>();
+        if (rows == null) {
+            return map;
+        }
+        for (InpatientEncounterContextQueryModel row : rows) {
+            if (row == null || row.getEncounterId() == null) {
+                continue;
+            }
+            map.put(row.getEncounterId(), StringUtils.nullToEmpty(row.getPatientName()));
+        }
+        return map;
+    }
+
+    /**
+     * BR-IP-EXE-034：长嘱皮试药跨批软提示。
+     *
+     * <p>仅针对 {@code therapy=LONG_TERM} 且 {@code skinTestFlag=true} 的药嘱槽位；
+     * 比较本次 FIFO 段批号与该药<strong>上次皮试登记批号</strong>（companion 皮试检查 SR → AllergyIntolerance
+     * 最新 {@code recordedDate} 的 {@code lotNumber}）。无既往皮试批号视为首次使用，不提示；
+     * 临嘱跳过。本方法只组装文案，永不抛业务异常。</p>
+     *
+     * @param items                   本批已成功执行的写槽位
+     * @param context                 写上下文（患者姓名、药明细、产品缓存）
+     * @param fifoSegmentsBySlotKey   槽位 → FIFO 分段（含批号）
+     * @return 软提示文案列表；无跨批时为空列表
+     */
+    private List<String> collectLongTermSkinTestCrossLotWarnings(
+        List<NurseStationOrderExecuteWriteSlotDto> items,
+        WriteContextBundle context,
+        Map<String, List<NurseStationExecutionInventoryAssembler.MedicationFifoSegment>> fifoSegmentsBySlotKey) {
+        List<String> warnings = new ArrayList<>();
+        if (items == null || items.isEmpty() || context == null) {
+            return warnings;
+        }
+        // Pre：收集本批长嘱皮试药 requestId（去重），供批量加载 companion SR / Allergy
+        LinkedHashSet<Long> longTermSkinTestMedReqIds = new LinkedHashSet<>();
+        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
+        for (NurseStationOrderExecuteWriteSlotDto item : items) {
+            if (item == null || !ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())) {
+                continue;
+            }
+            OrderExecutionContext orderCtx = context.resolveOrderContext(item);
+            MedicationRequestListQueryModel med = orderCtx.medDetail;
+            // 临嘱或不皮试：跳过（BR-IP-EXE-034 仅长嘱皮试药）
+            if (med == null || !Boolean.TRUE.equals(med.getSkinTestFlag())) {
+                continue;
+            }
+            if (!TherapyType.LONG_TERM.getCode().equals(orderCtx.therapyEnum)) {
+                continue;
+            }
+            if (med.getId() != null) {
+                longTermSkinTestMedReqIds.add(med.getId());
+            }
+            InpatientOrderListSkeleton order = context.orderByKey.get(this.buildOrderKey(item));
+            if (order != null && order.getEncounterId() != null) {
+                encounterIds.add(order.getEncounterId());
+            }
+        }
+        // 本批无长嘱皮试药：无软提示
+        if (longTermSkinTestMedReqIds.isEmpty()) {
+            return warnings;
+        }
+        // Pre：批量加载上次皮试批号（medReqId → lotNumber）；失败则整批不加提示（软路径）
+        Map<Long, String> lastSkinTestLotByMedReqId =
+            this.loadLastSkinTestLotByMedicationRequestId(longTermSkinTestMedReqIds, encounterIds);
+        // 同药多槽位只提示一次
+        Set<Long> warnedMedReqIds = new HashSet<>();
+        for (NurseStationOrderExecuteWriteSlotDto item : items) {
+            if (item == null || !ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())) {
+                continue;
+            }
+            OrderExecutionContext orderCtx = context.resolveOrderContext(item);
+            MedicationRequestListQueryModel med = orderCtx.medDetail;
+            if (med == null || med.getId() == null) {
+                continue;
+            }
+            if (!Boolean.TRUE.equals(med.getSkinTestFlag())) {
+                continue;
+            }
+            if (!TherapyType.LONG_TERM.getCode().equals(orderCtx.therapyEnum)) {
+                continue;
+            }
+            if (warnedMedReqIds.contains(med.getId())) {
+                continue;
+            }
+            String lastSkinTestLot = lastSkinTestLotByMedReqId.get(med.getId());
+            // 无既往皮试批号：首次使用，不提示
+            if (StringUtils.isEmpty(lastSkinTestLot)) {
+                continue;
+            }
+            List<NurseStationExecutionInventoryAssembler.MedicationFifoSegment> fifoSegments =
+                fifoSegmentsBySlotKey.get(this.buildMedicationGateSlotKey(item));
+            // 本次 FIFO 任一段批号非空且与上次皮试批号不等 → 跨批软提示
+            if (!this.hasFifoLotDifferentFrom(fifoSegments, lastSkinTestLot)) {
+                continue;
+            }
+            InpatientOrderListSkeleton order = context.orderByKey.get(this.buildOrderKey(item));
+            String patientName = "";
+            if (order != null && order.getEncounterId() != null
+                && context.encounterPatientNames != null) {
+                patientName = StringUtils.nullToEmpty(context.encounterPatientNames.get(order.getEncounterId()));
+            }
+            String medicationName = this.resolveMedicationDisplayName(context, med.getMedicationId());
+            String message = InpatientNurseStationConstants.MSG_EXE_LONG_TERM_SKIN_TEST_CROSS_LOT
+                .replace("{patientName}", patientName)
+                .replace("{medicationName}", medicationName)
+                .replace("{lastSkinTestLot}", lastSkinTestLot);
+            warnings.add(message);
+            warnedMedReqIds.add(med.getId());
+        }
+        return warnings;
+    }
+
+    /**
+     * 批量解析皮试药 → 上次皮试登记批号（companion SR 全部索引，Allergy 取最新 recordedDate）。
+     *
+     * <p>与医生站「最新覆盖」同口径：同一皮试药可挂多条 companion 皮试检查 SR，取 Allergy
+     * {@code recordedDate} 最新一条的 {@code lotNumber}；无记录则不入表。</p>
+     *
+     * @param medicationRequestIds 长嘱皮试药 requestId 集合
+     * @param encounterIds         本批涉及就诊（按就诊批量拉 Allergy，避免 N+1）
+     * @return medReqId → 上次皮试批号；无则缺键
+     */
+    private Map<Long, String> loadLastSkinTestLotByMedicationRequestId(
+        Set<Long> medicationRequestIds,
+        Set<Long> encounterIds) {
+        Map<Long, String> lastLotByMedReqId = new HashMap<>();
+        if (medicationRequestIds == null || medicationRequestIds.isEmpty()) {
+            return lastLotByMedReqId;
+        }
+        Long skinTestActivityId;
+        try {
+            skinTestActivityId = activityDefinitionQueryService.requireIdByExactName(
+                GeneralSharedConstants.SKIN_TEST_INSPECTION_ACTIVITY_NAME);
+        } catch (BusinessException ex) {
+            // 软路径：皮试活动未配置时不加提示
+            return lastLotByMedReqId;
+        }
+        List<ServiceRequest> companionServiceRequests =
+            serviceRequestQueryService.listServiceRequestsByBasedOnAnchors(
+                TableNameConstants.MED_MEDICATION_REQUEST, medicationRequestIds);
+        // 皮试药 id → 全部 companion 皮试检查 SR id（换批可多条，禁止 putIfAbsent 只留首条）
+        Map<Long, Set<Long>> companionSrIdsByMedReqId = new HashMap<>();
+        String doctorPrescriptionSource = GenerateSource.DOCTOR_PRESCRIPTION.getCode();
+        for (ServiceRequest companion : companionServiceRequests) {
+            if (companion == null || Boolean.TRUE.equals(companion.getIsDeleted())) {
+                continue;
+            }
+            if (!doctorPrescriptionSource.equals(companion.getGenerateSourceEnum())) {
+                continue;
+            }
+            if (!skinTestActivityId.equals(companion.getActivityId())) {
+                continue;
+            }
+            if (companion.getBasedOnId() == null || companion.getId() == null) {
+                continue;
+            }
+            Set<Long> companionIds = companionSrIdsByMedReqId.get(companion.getBasedOnId());
+            if (companionIds == null) {
+                companionIds = new LinkedHashSet<>();
+                companionSrIdsByMedReqId.put(companion.getBasedOnId(), companionIds);
+            }
+            companionIds.add(companion.getId());
+        }
+        if (companionSrIdsByMedReqId.isEmpty()) {
+            return lastLotByMedReqId;
+        }
+        // 按就诊批量拉 Allergy，再按 companion requestId 归并取最新
+        List<AllergyIntoleranceRecordQueryModel> allergyRecords = new ArrayList<>();
+        if (encounterIds != null) {
+            for (Long encounterId : encounterIds) {
+                List<AllergyIntoleranceRecordQueryModel> rows =
+                    allergyIntoleranceQueryService.getRecordInfo(encounterId);
+                if (rows == null || rows.isEmpty()) {
+                    continue;
+                }
+                allergyRecords.addAll(rows);
+            }
+        }
+        for (Map.Entry<Long, Set<Long>> entry : companionSrIdsByMedReqId.entrySet()) {
+            AllergyIntoleranceRecordQueryModel latest = null;
+            for (AllergyIntoleranceRecordQueryModel allergy : allergyRecords) {
+                if (allergy == null || allergy.getRequestId() == null) {
+                    continue;
+                }
+                if (!entry.getValue().contains(allergy.getRequestId())) {
+                    continue;
+                }
+                if (this.isLaterAllergyRecord(allergy, latest)) {
+                    latest = allergy;
+                }
+            }
+            if (latest == null) {
+                continue;
+            }
+            if (StringUtils.isEmpty(latest.getLotNumber())) {
+                continue;
+            }
+            lastLotByMedReqId.put(entry.getKey(), latest.getLotNumber());
+        }
+        return lastLotByMedReqId;
+    }
+
+    /**
+     * 判断 candidate 是否比 baseline 更新（recordedDate 优先，空排后；同刻取更大 id）。
+     *
+     * @param candidate 候选 Allergy 记录
+     * @param baseline  当前最新；可空表示尚无基准
+     * @return true 表示 candidate 应覆盖 baseline
+     */
+    private boolean isLaterAllergyRecord(
+        AllergyIntoleranceRecordQueryModel candidate,
+        AllergyIntoleranceRecordQueryModel baseline) {
+        if (candidate == null) {
+            return false;
+        }
+        if (baseline == null) {
+            return true;
+        }
+        LocalDateTime candidateDate = candidate.getRecordedDate();
+        LocalDateTime baselineDate = baseline.getRecordedDate();
+        // recordedDate 非空优先于空（nulls last）
+        if (candidateDate != null && baselineDate == null) {
+            return true;
+        }
+        if (candidateDate == null && baselineDate != null) {
+            return false;
+        }
+        if (candidateDate != null && baselineDate != null) {
+            int cmp = candidateDate.compareTo(baselineDate);
+            if (cmp > 0) {
+                return true;
+            }
+            if (cmp < 0) {
+                return false;
+            }
+        }
+        // 同刻或均空：更大 id 优先
+        Long candidateId = candidate.getId();
+        Long baselineId = baseline.getId();
+        if (candidateId == null) {
+            return false;
+        }
+        if (baselineId == null) {
+            return true;
+        }
+        return candidateId.compareTo(baselineId) > 0;
+    }
+
+    /**
+     * 本次 FIFO 段是否存在非空批号且与上次皮试批号不等。
+     *
+     * @param fifoSegments     本槽位 FIFO 分段
+     * @param lastSkinTestLot  上次皮试批号（调用方保证非空）
+     * @return true 表示出现跨批
+     */
+    private boolean hasFifoLotDifferentFrom(
+        List<NurseStationExecutionInventoryAssembler.MedicationFifoSegment> fifoSegments,
+        String lastSkinTestLot) {
+        if (fifoSegments == null || fifoSegments.isEmpty()) {
+            return false;
+        }
+        for (NurseStationExecutionInventoryAssembler.MedicationFifoSegment segment : fifoSegments) {
+            if (segment == null) {
+                continue;
+            }
+            String segmentLot = segment.getLotNumber();
+            // 段批号空：忽略该段
+            if (StringUtils.isEmpty(segmentLot)) {
+                continue;
+            }
+            // 段批号与上次皮试批号不等 → 跨批
+            if (!segmentLot.equals(lastSkinTestLot)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 解析药品展示名（优先写上下文已预热的产品读模型）。
+     *
+     * @param context      写上下文
+     * @param medicationId 药品定义主键
+     * @return 展示名；未命中时空串
+     */
+    private String resolveMedicationDisplayName(WriteContextBundle context, Long medicationId) {
+        ProductDefinitionDisplayDto product =
+            this.loadMedicationProductDefinition(context, medicationId);
+        if (product == null) {
+            return "";
+        }
+        if (StringUtils.isNotEmpty(product.getProductName())) {
+            return product.getProductName();
+        }
+        return StringUtils.nullToEmpty(product.getMerchandiseName());
+    }
+
+    /**
      * 校验 executeTab 是否为 AS 约定的合法 Tab code。
      *
      * @param tab pending/executed/skipped/cancelled
@@ -1905,6 +2616,8 @@ public class NurseStationOrderExecuteAppService {
         private Set<Long> visibleEncounterIds = new HashSet<>();
         /** encounterId → organizationId。 */
         private Map<Long, Long> encounterOrgIds = new HashMap<>();
+        /** encounterId → 患者姓名（BR-IP-EXE-034 软提示）。 */
+        private Map<Long, String> encounterPatientNames = new HashMap<>();
         /** 绑定耗材自动扣库时按 inventoryItemId 累计待扣数量（批次末合并扣减）。 */
         private final Map<Long, BigDecimal> deviceInventoryDecreaseAccumulator = new HashMap<>();
 

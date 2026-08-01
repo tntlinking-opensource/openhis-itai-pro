@@ -15,8 +15,8 @@ import lombok.EqualsAndHashCode;
 @EqualsAndHashCode(callSuper = true)
 public class QueryActivityDefinitionForExecuteLocationRequest extends AbstractHealthPageRequest {
 
-    /** 执行科室上下文（校验必填，用于接口权限或后续扩展过滤）。 */
-    private Long executionOrgId;
+    /** 开立科室上下文（校验必填，与配置页左侧选中科室一致）。 */
+    private Long organizationId;
     /** 诊疗大类，必填；与读模型 category 过滤一致。 */
     private String activityCategoryCode;
 }

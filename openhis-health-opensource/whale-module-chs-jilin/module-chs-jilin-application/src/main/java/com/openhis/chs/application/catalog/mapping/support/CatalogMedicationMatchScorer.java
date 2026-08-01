@@ -26,6 +26,8 @@ public final class CatalogMedicationMatchScorer {
     private static final int SCORE_SPEC_EXACT = 25;
     private static final int SCORE_SPEC_CONTAINS = 15;
     private static final int SCORE_NAME_CONTAINS = 15;
+    private static final int SCORE_PINYIN_CONTAINS = 12;
+    private static final int SCORE_CODE_CONTAINS = 10;
 
     private CatalogMedicationMatchScorer() {
     }
@@ -83,9 +85,15 @@ public final class CatalogMedicationMatchScorer {
             case "UNIQUE_SUGGEST" -> "系统找到一条高置信候选（得分 "
                 + candidates.get(0).getMatchScore()
                 + "），请核对后确认选用；不会自动保存。";
-            case "NO_MATCH" -> "未找到可用候选。批准文号/规格需本地 1301 目录明细，请先执行 1301 下载后再试。";
-            default -> "存在多条相近候选（最高得分 " + candidates.get(0).getMatchScore()
-                + "），请人工选择正确医保编码。";
+            case "NO_MATCH" -> "未找到可用候选（已排除平台停用/过期）。可调整关键字后再搜，"
+                + "或先到「国家目录」下载对应镜像（药品 1301/1312，诊疗 1305/1312，耗材 1306/1312）后再试。";
+            default -> {
+                if (candidates == null || candidates.isEmpty()) {
+                    yield "未找到可用候选，请人工检索或补库后再选。";
+                }
+                yield "存在多条相近候选（最高得分 " + candidates.get(0).getMatchScore()
+                    + "），请人工选择正确医保编码。";
+            }
         };
     }
 
@@ -128,6 +136,19 @@ public final class CatalogMedicationMatchScorer {
             && containsNormalized(catalogName, name)) {
             score += SCORE_NAME_CONTAINS;
             reasons.add("名称匹配");
+        }
+        String catalogPinyin = trim(item.getPinyin());
+        if (isNotEmpty(name) && isNotEmpty(catalogPinyin)
+            && containsNormalized(catalogPinyin, name)) {
+            score += SCORE_PINYIN_CONTAINS;
+            reasons.add("拼音匹配");
+        }
+        String catalogCode = trim(item.getHilistCode());
+        if (isNotEmpty(name) && isNotEmpty(catalogCode)
+            && !name.equalsIgnoreCase(catalogCode)
+            && containsNormalized(catalogCode, name)) {
+            score += SCORE_CODE_CONTAINS;
+            reasons.add("编码匹配");
         }
         if (score == 0 && isNotEmpty(name) && !isNotEmpty(approval) && !isNotEmpty(nationalCode)) {
             return new ScoreResult(0, "");

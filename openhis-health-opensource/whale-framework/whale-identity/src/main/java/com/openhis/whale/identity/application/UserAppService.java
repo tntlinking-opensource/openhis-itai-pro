@@ -230,8 +230,31 @@ public class UserAppService {
         }
 
         userRepository.save(user);  // 保存更新（软删除）
-        // Event：发布 UserDeletedEvent，health 联动 retire 绑定 adm_practitioner
+        // Cmd：用户软删时同步软删登录角色绑定，避免残留 whale_user_roles
+        this.softDeleteUserRoles(user.getId());
+        // Event：发布 UserDeletedEvent，health 联动 retire 绑定 adm_practitioner / adm_pr_assign
         domainEventPublisher.publish(new UserDeletedEvent(user.getId(), currentUserId));
+    }
+
+    /**
+     * 软删指定用户全部有效 {@code whale_user_roles} 行。
+     *
+     * @param userId 用户主键
+     */
+    private void softDeleteUserRoles(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        List<UserRole> existingRows = userRoleRepository.findByUserId(userId);
+        LocalDateTime deletedAt = LocalDateTime.now();
+        for (UserRole row : existingRows) {
+            if (row == null || Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            row.setIsDeleted(true);
+            row.setDeletedAt(deletedAt);
+            userRoleRepository.save(row);
+        }
     }
 
     /**
@@ -294,30 +317,40 @@ public class UserAppService {
     }
 
     /**
-     * 修改密码
+     * 修改密码（用户管理「改密」）。
+     * <p>入参与前端 {@code { id, newPassword }} 对齐为单 DTO，避免双简单类型依赖方法参数名绑定；
+     * 写哈希后同步解锁，避免「密码已改但仍因锁定无法登录」被误认为改密无效。</p>
+     *
+     * @param request 用户 ID 与新密码
      */
-    public void changePassword(Long id, String newPassword) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new EntityNotFoundException("用户", id));
-        user.setPasswordHash(passwordEncoder.encode(newPassword));
-        userRepository.save(user);
+    public void changePassword(ResetPasswordRequest request) {
+        resetPassword(request);
     }
 
     /**
-     * 重置密码
+     * 重置密码：校验入参、更新密码哈希，并清除锁定状态。
+     *
+     * @param request 用户 ID 与新密码
      */
     public void resetPassword(ResetPasswordRequest request) {
+        if (request == null) {
+            throw new ValidationException("重置密码请求不能为空");
+        }
         if (request.getId() == null) {
             throw new ValidationException("用户ID不能为空");
         }
         if (request.getNewPassword() == null || request.getNewPassword().trim().isEmpty()) {
             throw new ValidationException("新密码不能为空");
         }
+        String newPassword = request.getNewPassword().trim();
+        if (newPassword.length() < 6) {
+            throw new ValidationException("密码长度至少6位");
+        }
 
         User user = userRepository.findById(request.getId())
                 .orElseThrow(() -> new EntityNotFoundException("用户", request.getId()));
-        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
-        // 重置密码后解锁用户
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        // 重置/改密后解锁，避免旧锁定状态挡住新密码登录
         user.setIsLockedOut(false);
         user.setLockoutEnd(null);
         user.setAccessFailedCount(0);
@@ -422,6 +455,21 @@ public class UserAppService {
     }
 
     /**
+     * 判定是否为平台 admin 登录账号（用户名 {@code admin}，大小写不敏感）。
+     *
+     * <p>与角色全量同步、科室/药房运行时超管范围同源判定。</p>
+     *
+     * @param userId 用户主键；{@code null} 时返回 {@code false}
+     * @return {@code true} 表示平台 admin 账号
+     */
+    public boolean isAdminAccount(Long userId) {
+        if (userId == null) {
+            return false;
+        }
+        return userRepository.findById(userId).map(UserAppService::isAdminAccount).orElse(false);
+    }
+
+    /**
      * 将平台 admin 账号与当前租户下全部有效角色对齐（新建角色、打开用户详情时补偿同步）。
      */
     public void syncAllRolesForAdminUser(Long userId) {
@@ -523,6 +571,41 @@ public class UserAppService {
             activeUserIds.add(user.getId());
         }
         return activeUserIds;
+    }
+
+    /**
+     * 持有指定平台角色且账号仍启用的用户主键列表（读 {@code whale_user_roles}）。
+     *
+     * @param roleCode 平台角色 code，如 {@code ROLE_FINANCE_APPROVER}；空白返回空列表
+     * @return 启用用户主键；角色不存在或无绑定时为空列表
+     */
+    public List<Long> listActiveUserIdsByRoleCode(String roleCode) {
+        Long roleId = this.findRoleIdByCode(roleCode);
+        if (roleId == null) {
+            return List.of();
+        }
+        List<UserRole> userRoles = this.userRoleRepository.findByRoleId(roleId);
+        LinkedHashSet<Long> candidateUserIds = new LinkedHashSet<>();
+        for (UserRole userRole : userRoles) {
+            if (userRole == null || userRole.getUserId() == null) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(userRole.getIsDeleted())) {
+                continue;
+            }
+            candidateUserIds.add(userRole.getUserId());
+        }
+        if (candidateUserIds.isEmpty()) {
+            return List.of();
+        }
+        Set<Long> activeUserIds = this.findActiveBoundUserIds(candidateUserIds);
+        List<Long> result = new ArrayList<>();
+        for (Long userId : candidateUserIds) {
+            if (activeUserIds.contains(userId)) {
+                result.add(userId);
+            }
+        }
+        return result;
     }
 
     /**
@@ -681,6 +764,20 @@ public class UserAppService {
 
                 if (request.getIsLockedOut() != null) {
                     predicates.add(cb.equal(root.get("isLockedOut"), request.getIsLockedOut()));
+                }
+
+                // 角色多选：命中任一所选角色即纳入结果
+                List<Long> roleIds = request.getRoleIds();
+                if (roleIds != null && !roleIds.isEmpty() && query != null) {
+                    Subquery<Long> roleSub = query.subquery(Long.class);
+                    Root<UserRole> ur = roleSub.from(UserRole.class);
+                    roleSub.select(ur.get("id"));
+                    roleSub.where(
+                        cb.equal(ur.get("userId"), root.get("id")),
+                        ur.get("roleId").in(roleIds),
+                        cb.isFalse(ur.get("isDeleted"))
+                    );
+                    predicates.add(cb.exists(roleSub));
                 }
 
                 return predicates.isEmpty() ? cb.conjunction() : cb.and(predicates.toArray(new Predicate[0]));

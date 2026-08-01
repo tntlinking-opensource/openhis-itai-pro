@@ -8,6 +8,7 @@ import com.openhis.health.domain.administration.healthcareservice.entity.Healthc
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -22,4 +23,7 @@ public interface HealthcareServiceRepository extends JpaRepository<HealthcareSer
 
     /** 按状态枚举查询全部医疗服务（如草稿、已发布、退役等）。 */
     List<HealthcareService> findAllByStatusEnum(String statusEnum);
+
+    /** 按多个状态枚举查询医疗服务（挂号类型维护台等需同时展示启用与停用）。 */
+    List<HealthcareService> findAllByStatusEnumIn(Collection<String> statusEnums);
 }

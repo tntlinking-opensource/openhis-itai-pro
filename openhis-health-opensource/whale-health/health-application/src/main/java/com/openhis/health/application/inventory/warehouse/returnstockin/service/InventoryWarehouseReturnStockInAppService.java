@@ -4,9 +4,18 @@
  */
 package com.openhis.health.application.inventory.warehouse.returnstockin.service;
 
+import com.openhis.health.application.inventory.warehouse.returnstockin.dto.ReturnStockInDetailLineDto;
+import com.openhis.health.application.inventory.warehouse.returnstockin.dto.ReturnStockInListRowDto;
 import com.openhis.health.application.inventory.warehouse.returnstockin.mapper.InventoryWarehouseReturnStockInMapper;
 import com.openhis.health.application.inventory.warehouse.returnstockin.request.*;
 import com.openhis.health.application.inventory.warehouse.returnstockin.response.*;
+import com.openhis.health.application.shared.inventory.InventoryListPractitionerNameResolver;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogEditorHintsAssembler;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.application.shared.validator.CurrentManagedLocationIdsResolver;
+import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
+import com.openhis.health.application.shared.validator.PageWindowGate;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
@@ -14,27 +23,26 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InventoryWarehouseConstants;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionSelectionTerminologyMaps;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.EnumUtil;
+import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
+import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyByBusNoBatchQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyByBusNoQuery;
-import com.openhis.health.domain.workflow.supplyrequest.queries.WarehouseDocumentDetailPageQuery;
+import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyRequestDocumentListQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
-import com.openhis.health.application.shared.pagination.PageQueryBinder;
-import com.openhis.health.application.shared.validator.CurrentManagedLocationIdsResolver;
-import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.application.shared.validator.PageWindowGate;
-import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
-import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.whale.core.application.exception.BusinessException;
+import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import com.openhis.whale.core.application.util.StringUtils;
-import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -59,6 +67,7 @@ public class InventoryWarehouseReturnStockInAppService {
     private final SupplierQueryService supplierQueryService;
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final InventoryWarehouseReturnStockInMapper returnStockInMapper;
+    private final InventoryListPractitionerNameResolver listPractitionerNameResolver;
 
     /**
      * 加载退库入库单页主数据（管辖药库、药房、科室与供应商下拉）。
@@ -70,12 +79,12 @@ public class InventoryWarehouseReturnStockInAppService {
         // Gate：机构会话上下文
         this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_RSI_101, "机构上下文缺失");
         try {
-            // Pre：装载管辖范围内启用位置
+            // Pre：装载管辖范围内启用位置（源侧药房族：药房+科室药房，退库壳单双侧同源）
             List<Location> warehouses = this.locationQueryService.listAllActiveWarehouses();
             List<Location> gatedWarehouses = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(warehouses);
             List<Location> wards = this.locationQueryService.listAllActiveWards();
             List<Location> gatedWards = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(wards);
-            List<Location> pharmacies = this.locationQueryService.listAllActivePharmacies();
+            List<Location> pharmacies = this.locationQueryService.listAllActivePharmacyPartyLocations();
             List<Location> gatedPharmacies = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(pharmacies);
             List<com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel> suppliers =
                 this.supplierQueryService.listSuppliersByTypeAndActive(
@@ -116,38 +125,48 @@ public class InventoryWarehouseReturnStockInAppService {
         this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_RSI_101, "机构上下文缺失");
         Set<Long> allowedWarehouses = this.resolveGatedWarehouseLocationIds();
 
-        // Pre：组装列表查询
-        WarehouseDocumentDetailPageQuery query = new WarehouseDocumentDetailPageQuery();
-        query.setTypeEnum(SupplyType.CABINET_RETURN_STOCK_IN.getCode());
+        // Pre：组装按 bus_no 聚合列表查询
+        SupplyRequestDocumentListQuery listQuery = new SupplyRequestDocumentListQuery();
+        listQuery.setTypeEnum(SupplyType.CABINET_RETURN_STOCK_IN.getCode());
         // Pre：purposeLocationId=0 表示当前用户可见的全部药库；否则单库且须在管辖门控内
         if (Long.valueOf(InventoryWarehouseConstants.ALL_WAREHOUSES_LIST_FILTER_LOCATION_ID)
             .equals(purposeLocationId)) {
             if (allowedWarehouses.isEmpty()) {
                 // 无可见药库：占位 id 收窄为空页，避免无约束全表扫描
-                query.setPurposeLocationIds(
+                listQuery.setPurposeLocationIds(
                     List.of(InventoryWarehouseConstants.LIST_FILTER_NO_VISIBLE_WAREHOUSE_PLACEHOLDER_ID));
             } else {
                 // 多药库 IN 查询：下推当前用户可见 id 集合
-                query.setPurposeLocationIds(new ArrayList<>(allowedWarehouses));
+                listQuery.setPurposeLocationIds(new ArrayList<>(allowedWarehouses));
             }
         } else {
             // 单药库筛选（防横向越权）
             this.assertWarehouseLocationAllowed(purposeLocationId, allowedWarehouses);
-            query.setPurposeLocationId(purposeLocationId);
+            listQuery.setPurposeLocationId(purposeLocationId);
         }
         if (request.getStatusEnum() != null) {
             SupplyStatus st = EnumUtil.requireFromSortOrder(SupplyStatus.class, request.getStatusEnum().longValue());
-            query.setStatusEnum(st.getCode());
+            listQuery.setStatusEnum(st.getCode());
         }
-        PageQueryBinder.bind(request, query);
-        query.setApplyTimeStart(request.getApplyTimeFrom());
-        query.setApplyTimeEnd(request.getApplyTimeTo());
+        PageQueryBinder.bind(request, listQuery);
+        listQuery.setStartDate(request.getApplyTimeFrom());
+        listQuery.setEndDate(request.getApplyTimeTo());
         try {
-            // Cmd：领域分页查询
-            Page<com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel> page =
-                this.supplyRequestQueryService.pageWarehouseDocumentDetail(query);
-            // Asm：映射分页响应
-            return this.returnStockInMapper.toPageReturnStockInsResponse(page);
+            // Cmd：按 bus_no 聚合分页查询退库入库壳单
+            long mergedTotal = this.supplyRequestQueryService.countDistinctBusNo(listQuery);
+            List<String> busNos = this.supplyRequestQueryService.listDistinctBusNoPage(listQuery);
+            List<SupplyRequestModel> lines = this.supplyRequestQueryService.listByBusNosWithFilter(listQuery, busNos);
+            List<ReturnStockInListRowDto> records =
+                this.returnStockInMapper.toReturnStockInListAggregated(busNos, lines);
+            // Pre：历史壳单可能未落 approverId，按 originalBusNo 回填下游退库审批人
+            this.fillMissingApproverFromOriginalReturn(records);
+            // Pre：侧栏卡片制单人/审核人/供应商展示名批量富化
+            this.enrichReturnStockInListDisplayNames(records);
+            int pageNo = request.getPageNo().intValue();
+            int pageSize = listQuery.getBoundedPageSize();
+            // Asm：映射聚合分页响应
+            return this.returnStockInMapper.toPageReturnStockInsAggregatedResponse(
+                mergedTotal, pageNo, pageSize, records);
         } catch (RuntimeException ex) {
             log.warn("pageReturnStockIns failed", ex);
             throw new BusinessException(ErrorCodeConstants.WHS_RSI_102, "退库入库单列表查询失败");
@@ -192,8 +211,29 @@ public class InventoryWarehouseReturnStockInAppService {
             log.warn("batchGetProductByIds degraded for return inbound detail", ex);
             products = new HashMap<>();
         }
-        // Asm：映射详情响应
-        return this.returnStockInMapper.toGetReturnStockInDetailResponse(lines, products);
+        // Pre：术语字典 + 按行装配目录编辑提示（数量/单位回显；不读当前目录价覆盖落库价）
+        ProductDefinitionSelectionTerminologyMaps terminologyMaps =
+            this.productDefinitionDisplayTerminologyAssembler.loadSelectionTerminologyMaps();
+        Map<Long, ProductDefinitionCatalogEditorHintsDto> hints = new HashMap<>();
+        for (SupplyRequestModel line : lines) {
+            if (line == null || line.getId() == null) {
+                // 无行主键无法挂 productCatalog
+                continue;
+            }
+            String key = ProductDefinitionKeyUtil.buildCompositeKey(line.getItemTable(), line.getItemId());
+            ProductDefinitionDisplayDto pr = products.get(key);
+            ProductDefinitionCatalogEditorHintsDto hint =
+                ProductDefinitionCatalogEditorHintsAssembler.fromDisplayDto(pr, terminologyMaps);
+            if (hint != null) {
+                hints.put(line.getId(), hint);
+            }
+        }
+        // Asm：映射详情响应（品名/单位展示名/productCatalog）
+        GetReturnStockInDetailResponse response =
+            this.returnStockInMapper.toGetReturnStockInDetailResponse(lines, products, hints);
+        // Pre：历史壳单 reason 可能为空，按关联退库单同行回填（只读出参，不写库）
+        this.fillMissingReasonsFromOriginalReturn(response);
+        return response;
     }
 
     /**
@@ -370,6 +410,199 @@ public class InventoryWarehouseReturnStockInAppService {
             if (!SupplyType.CABINET_RETURN_STOCK_IN.getCode().equals(line.getTypeEnum())) {
                 // 防止按 busNo 误读其它供应类型
                 throw new BusinessException(ErrorCodeConstants.WHS_RSI_103, "单据类型非退库入库单");
+            }
+        }
+    }
+
+    /**
+     * 为退库入库壳单列表行批量填充供应商名、制单人名、审批人名（IF-WHS-RSI-02 侧栏卡片展示）。
+     *
+     * @param rows 当前页聚合列表行
+     */
+    private void enrichReturnStockInListDisplayNames(List<ReturnStockInListRowDto> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        Set<Long> supplierIds = new HashSet<>();
+        Set<Long> practitionerIds = new HashSet<>();
+        for (ReturnStockInListRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getSupplierId() != null) {
+                supplierIds.add(row.getSupplierId());
+            }
+            if (row.getApplicantId() != null) {
+                practitionerIds.add(row.getApplicantId());
+            }
+            if (row.getApproverId() != null) {
+                practitionerIds.add(row.getApproverId());
+            }
+        }
+        Map<Long, String> supplierNameById = new HashMap<>();
+        for (Long supplierId : supplierIds) {
+            // B.6.4：跨聚合读 SupplierQueryService，仅取展示名
+            this.supplierQueryService.findSupplierNameIfPresent(supplierId)
+                .ifPresent(name -> supplierNameById.put(supplierId, name));
+        }
+        Map<Long, String> practitionerNameById =
+            this.listPractitionerNameResolver.resolveNamesByIds(practitionerIds);
+        for (ReturnStockInListRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getSupplierId() != null) {
+                String supplierName = supplierNameById.get(row.getSupplierId());
+                if (supplierName != null) {
+                    row.setSupplierName(supplierName);
+                }
+            }
+            if (row.getApplicantId() != null) {
+                String creatorName = practitionerNameById.get(row.getApplicantId());
+                if (creatorName != null) {
+                    row.setCreatorName(creatorName);
+                }
+            }
+            if (row.getApproverId() != null) {
+                String approverName = practitionerNameById.get(row.getApproverId());
+                if (approverName != null) {
+                    row.setApproverName(approverName);
+                }
+            }
+        }
+    }
+
+    /**
+     * 历史退库入库壳单可能未落 {@code approverId}：按 {@code originalBusNo}（下游退库单）头行审批人回填侧栏展示。
+     *
+     * <p>仅影响本页列表出参，不写库；新生成壳单已在 agree 编排写入审批人。</p>
+     *
+     * @param rows 当前页聚合列表行
+     */
+    private void fillMissingApproverFromOriginalReturn(List<ReturnStockInListRowDto> rows) {
+        // Gate：空列表无需回填
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        // Pre：收集缺审批人且带关联退库单号的壳单
+        List<String> originalBusNos = new ArrayList<>();
+        for (ReturnStockInListRowDto row : rows) {
+            if (row == null || row.getApproverId() != null) {
+                // 已有审批人或空行：跳过
+                continue;
+            }
+            if (StringUtils.isEmpty(row.getOriginalBusNo())) {
+                // 无关联退库单号：无法回填
+                continue;
+            }
+            originalBusNos.add(row.getOriginalBusNo().trim());
+        }
+        if (originalBusNos.isEmpty()) {
+            return;
+        }
+        // Pre：批量回读下游退库单（B.6.4：经本聚合 SupplyRequestQueryService）
+        SupplyByBusNoBatchQuery batchQuery = new SupplyByBusNoBatchQuery();
+        batchQuery.setBusNoList(originalBusNos);
+        List<SupplyRequestModel> originalLines;
+        try {
+            originalLines = this.supplyRequestQueryService.getSupplyByBusNoBatch(batchQuery);
+        } catch (RuntimeException ex) {
+            // 读库批读失败：降级为空审批人，不阻断列表
+            log.warn("fillMissingApproverFromOriginalReturn degraded", ex);
+            return;
+        }
+        // Pre：按退库单号取首行审批人（同号多行共享 approverId）
+        Map<String, Long> approverByOriginalBusNo = new HashMap<>();
+        for (SupplyRequestModel line : originalLines) {
+            if (line == null || StringUtils.isEmpty(line.getBusNo()) || line.getApproverId() == null) {
+                continue;
+            }
+            String busNo = line.getBusNo().trim();
+            if (!approverByOriginalBusNo.containsKey(busNo)) {
+                // 同号仅取首个非空审批人，避免后行覆盖
+                approverByOriginalBusNo.put(busNo, line.getApproverId());
+            }
+        }
+        // Asm：写回列表行 approverId，供后续 practitioner 名富化
+        for (ReturnStockInListRowDto row : rows) {
+            if (row == null || row.getApproverId() != null || StringUtils.isEmpty(row.getOriginalBusNo())) {
+                continue;
+            }
+            Long approverId = approverByOriginalBusNo.get(row.getOriginalBusNo().trim());
+            if (approverId != null) {
+                row.setApproverId(approverId);
+            }
+        }
+    }
+
+    /**
+     * 历史壳单明细 {@code reason} 为空时，按关联退库单同行（itemId+lotNumber）回填退货原因。
+     *
+     * <p>仅影响详情出参，不写库；新生成壳单已在 agree 编排拷贝 reason。</p>
+     *
+     * @param response 详情响应
+     */
+    private void fillMissingReasonsFromOriginalReturn(GetReturnStockInDetailResponse response) {
+        // Gate：无关联退库单号则无法回填
+        if (response == null || StringUtils.isEmpty(response.getOriginalBusNo())) {
+            return;
+        }
+        List<ReturnStockInDetailLineDto> detailLines = response.getLines();
+        if (detailLines == null || detailLines.isEmpty()) {
+            return;
+        }
+        // Pre：仅当存在空 reason 行时才回读原单，避免多余 I/O
+        boolean needFill = false;
+        for (ReturnStockInDetailLineDto line : detailLines) {
+            if (line != null && StringUtils.isEmpty(line.getReason())) {
+                needFill = true;
+                break;
+            }
+        }
+        if (!needFill) {
+            return;
+        }
+        SupplyByBusNoQuery q = new SupplyByBusNoQuery();
+        q.setBusNo(response.getOriginalBusNo().trim());
+        List<SupplyRequestModel> originalLines;
+        try {
+            originalLines = this.supplyRequestQueryService.getSupplyByBusNo(q);
+        } catch (RuntimeException ex) {
+            // 原单回读失败：保留空 reason，不阻断详情
+            log.warn("fillMissingReasonsFromOriginalReturn degraded", ex);
+            return;
+        }
+        if (originalLines == null || originalLines.isEmpty()) {
+            return;
+        }
+        // Pre：按 itemId+批号索引退库原因（同键取首个非空）
+        Map<String, String> reasonByItemLot = new HashMap<>();
+        for (SupplyRequestModel line : originalLines) {
+            if (line == null || line.getItemId() == null || StringUtils.isEmpty(line.getReason())) {
+                continue;
+            }
+            String lot = "";
+            if (line.getLotNumber() != null) {
+                lot = line.getLotNumber().trim();
+            }
+            String key = line.getItemId() + "|" + lot;
+            if (!reasonByItemLot.containsKey(key)) {
+                reasonByItemLot.put(key, line.getReason());
+            }
+        }
+        // Asm：仅回填壳单空 reason 行
+        for (ReturnStockInDetailLineDto line : detailLines) {
+            if (line == null || !StringUtils.isEmpty(line.getReason()) || line.getItemId() == null) {
+                continue;
+            }
+            String lot = "";
+            if (line.getLotNumber() != null) {
+                lot = line.getLotNumber().trim();
+            }
+            String key = line.getItemId() + "|" + lot;
+            String reason = reasonByItemLot.get(key);
+            if (reason != null) {
+                line.setReason(reason);
             }
         }
     }
