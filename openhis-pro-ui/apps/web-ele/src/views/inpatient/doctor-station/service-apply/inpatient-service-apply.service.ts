@@ -1,14 +1,29 @@
-import type { SaveDoctorStationServiceApplyFormRequest } from '#/api/doctor-station/advice.types';
+import type {
+  DoctorStationAdviceCatalogRowDto,
+  SaveDoctorStationServiceApplyFormRequest,
+} from '#/api/doctor-station/advice.types';
 import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
+import type { ServiceApplyKind } from '#/views/outpatient/doctor-station/service-apply/service-apply.types';
 
 import {
   httpInitInpatientDoctorStationAdvice,
-  httpListInpatientActivityExecutionLocations,
   httpPageInpatientDoctorStationAdviceCatalog,
   httpSaveInpatientDoctorStationServiceApplyForm,
   httpSignInpatientDoctorStationAdviceBatch,
 } from '#/api/inpatient/doctor-station/inpatient-doctor-station-advice.http';
 import { fetchEncounterDiagnosisDisplayList } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis.service';
+import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { loadAllDepartmentPerformOrgOptions } from '#/views/doctor-station/advice-shared/perform-org-options.service';
+import {
+  SERVICE_APPLY_ACTIVITY_TABLE,
+  SERVICE_APPLY_CATALOG_PAGE_SIZE,
+  SERVICE_APPLY_SIGN_PRODUCT_TABLE,
+} from '#/views/outpatient/doctor-station/service-apply/service-apply.constants';
+import {
+  isValidServiceApplyCatalogRow,
+  resolveServiceApplyCategoryEnum,
+} from '#/views/outpatient/doctor-station/service-apply/service-apply.service';
 
 export {
   buildDetailItems,
@@ -30,22 +45,6 @@ export {
 export type {
   ServiceApplyInitOptions,
   ServiceApplyOrgOption,
-} from '#/views/outpatient/doctor-station/service-apply/service-apply.service';
-
-import type { ServiceApplyKind } from '#/views/outpatient/doctor-station/service-apply/service-apply.types';
-import {
-  SERVICE_APPLY_ACTIVITY_TABLE,
-  SERVICE_APPLY_CATALOG_PAGE_SIZE,
-  SERVICE_APPLY_SIGN_PRODUCT_TABLE,
-} from '#/views/outpatient/doctor-station/service-apply/service-apply.constants';
-import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
-
-import type { DoctorStationAdviceCatalogRowDto } from '#/api/doctor-station/advice.types';
-
-import {
-  isValidServiceApplyCatalogRow,
-  resolveServiceApplyCategoryEnum,
 } from '#/views/outpatient/doctor-station/service-apply/service-apply.service';
 
 /** 拉取当前住院就诊已保存诊断行（中医病证组合并展示） */
@@ -72,13 +71,13 @@ export async function loadServiceApplyInitOptions(
 
 /** 分页检索住院申请单可选诊疗项目 */
 export async function loadServiceApplyCatalog(params: {
-  encounterId: string;
-  patientId: string;
   applyKind: ServiceApplyKind;
+  encounterId: string;
   keyword?: string;
+  organizationUnitId?: string;
   pageNo?: number;
   pageSize?: number;
-  organizationUnitId?: string;
+  patientId: string;
 }): Promise<{ rows: DoctorStationAdviceCatalogRowDto[]; totalCount: number }> {
   const res = await httpPageInpatientDoctorStationAdviceCatalog({
     encounterId: params.encounterId,
@@ -91,65 +90,30 @@ export async function loadServiceApplyCatalog(params: {
     categoryEnum: resolveServiceApplyCategoryEnum(params.applyKind),
   });
   const { content, totalCount } = parsePagedRowsFromApiData<DoctorStationAdviceCatalogRowDto>(res);
-  const rows = content.filter(isValidServiceApplyCatalogRow);
+  const rows = content.filter((row) => isValidServiceApplyCatalogRow(row));
   return { rows, totalCount };
 }
 
-/** 按诊疗定义拉取可执行科室（住院 execution locations） */
-export async function loadServiceApplyOrgOptions(params: {
+/** 申请单执行科室为整单全局字段，下拉始终全院科室（与门诊一致，不按单项目规则收窄） */
+export async function loadServiceApplyOrgOptions(_params?: {
+  activityDefinitionId: string;
   encounterId: string;
   patientId: string;
-  activityDefinitionId: string;
 }): Promise<
   import('#/views/outpatient/doctor-station/service-apply/service-apply.service').ServiceApplyOrgOption[]
 > {
-  const activityDefinitionId = preserveApiIdForRequest(params.activityDefinitionId);
-  if (!activityDefinitionId) return [];
-  const res = await httpListInpatientActivityExecutionLocations({
-    encounterId: params.encounterId,
-    patientId: params.patientId,
-    activityDefinitionId,
-  });
-  const map = new Map<string, string>();
-  for (const rule of res.rules ?? []) {
-    const orgId = String(rule.executionOrgId ?? '').trim();
-    if (!orgId) continue;
-    const orgName = String(rule.executionOrgName ?? '').trim();
-    if (orgName) {
-      map.set(orgId, orgName);
-    } else if (!map.has(orgId)) {
-      map.set(orgId, orgId);
-    }
-  }
-  return [...map.entries()].map(([value, label]) => ({ value, label }));
+  return loadAllDepartmentPerformOrgOptions();
 }
 
-/** 合并多个诊疗项的执行科室下拉 */
-export async function mergeServiceApplyOrgOptions(params: {
+/** 整单执行科室下拉：全局选一个，清单内全部项目共用该科室（与门诊一致） */
+export async function mergeServiceApplyOrgOptions(_params?: {
+  activityDefinitionIds: string[];
   encounterId: string;
   patientId: string;
-  activityDefinitionIds: string[];
 }): Promise<
   import('#/views/outpatient/doctor-station/service-apply/service-apply.service').ServiceApplyOrgOption[]
 > {
-  const map = new Map<string, string>();
-  const ids = [
-    ...new Set(params.activityDefinitionIds.map((id) => String(id).trim()).filter(Boolean)),
-  ];
-  for (const activityDefinitionId of ids) {
-    const options = await loadServiceApplyOrgOptions({
-      encounterId: params.encounterId,
-      patientId: params.patientId,
-      activityDefinitionId,
-    });
-    for (const opt of options) {
-      const prev = map.get(opt.value);
-      if (!prev || (prev === opt.value && opt.label !== opt.value)) {
-        map.set(opt.value, opt.label);
-      }
-    }
-  }
-  return [...map.entries()].map(([value, label]) => ({ value, label }));
+  return loadAllDepartmentPerformOrgOptions();
 }
 
 /** 保存住院申请单（整张），返回新 AR 号与 requestIds */

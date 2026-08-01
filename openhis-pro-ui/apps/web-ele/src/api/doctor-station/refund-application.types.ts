@@ -13,6 +13,8 @@ export interface RefundableChargeLineItemDto {
   refundStatusText: string;
   itemDisplayName?: string;
   quantity?: null | number | string;
+  /** 数量单位展示（如克/盒） */
+  quantityUnit?: null | string;
   lineTotalAmount?: null | number | string;
   paymentGroupSortKey: string;
 }

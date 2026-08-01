@@ -1,0 +1,13 @@
+/**
+ * StationTriPaneLayout 栅格列宽。
+ * 不走 SFC scoped style：院点构建下 #/ 绝对路径解析曾导致 scoped CSS 丢失，左右栏叠成一列。
+ */
+.station-tri-pane-layout__grid {
+  grid-template-columns: var(--stp-grid-cols);
+}
+
+@media (min-width: 1024px) {
+  .station-tri-pane-layout__grid {
+    grid-template-columns: var(--stp-grid-cols-lg);
+  }
+}

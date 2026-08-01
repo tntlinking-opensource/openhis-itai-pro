@@ -6,4 +6,5 @@ export * from './case-record-homepage';
 export * from './case-record-lookup';
 export * from './case-record-qc';
 export * from './case-record-volume';
+export * from './outpatient-record';
 export * from './types';

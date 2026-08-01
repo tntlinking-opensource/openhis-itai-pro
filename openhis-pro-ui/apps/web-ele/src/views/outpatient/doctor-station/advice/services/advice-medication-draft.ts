@@ -5,11 +5,14 @@ import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.ty
 import type { DiagnosisItem } from '#/components/doctor-station/diagnosis';
 
 import {
-  pickMainDiagnosisDisplayName,
+  filterValidEncounterDiagnosisIds,
+  joinEncounterDiagnosisIds,
+  parseEncounterDiagnosisIds,
   resolveConditionDefinitionIdFromEncounterRows,
-  resolveMedicationContractId,
-  resolveMedicationEncounterDiagnosisId,
-} from './advice-edit';
+} from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-select';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+
+import { resolveMedicationContractId, resolveMedicationEncounterDiagnosisId } from './advice-edit';
 import {
   inferAdviceLineEditorKind,
   parseColonDefinitionId,
@@ -18,6 +21,7 @@ import {
 import {
   assignMedicationSortNumbersBeforeSave,
   resolveMedicationDraftSortNumber,
+  resolveOptionalDraftSortNumber,
 } from './advice-sort-number';
 import { MEDICATION_DEFINITION_TABLE } from './advice-tab.constants';
 import { resolveMedicationDraftDosePayload } from './medication-unit-bands';
@@ -30,7 +34,57 @@ function normalizeMedicationDaysForGroupCompare(raw: unknown): number | undefine
   return Math.trunc(n);
 }
 
-/** 同组成组药品：用法、用药天数须一致（保存前校验） */
+/** 编辑行是否为输液/注射药品（目录 inject_flag 或列表回填） */
+export function isInfusionMedicationDrugItem(item: Pick<AdviceDrugItem, 'injectFlag'>): boolean {
+  return item.injectFlag === true;
+}
+
+/** 主表行是否为输液/注射药品（列表 injectionFlag） */
+export function isInfusionMedicationAdviceRow(row: Pick<AdviceRowItem, 'injectionFlag'>): boolean {
+  return row.injectionFlag === true;
+}
+
+/** 同组诊断比对键：优先就诊诊断有序 ids，否则回落展示名 */
+function normalizeMedicationDiagnosisForGroupCompare(
+  encounterDiagnosisIds: string | string[] | null | undefined,
+  diagnosisName?: null | string,
+): string {
+  const ids = parseEncounterDiagnosisIds(encounterDiagnosisIds);
+  if (ids.length > 0) {
+    return ids.join(',');
+  }
+  const name = String(diagnosisName ?? '').trim();
+  return name === '—' ? '' : name;
+}
+
+type MedicationGroupSharedFields = {
+  usage: string;
+  frequency: string;
+  days: number | undefined;
+  diagnosis: string;
+};
+
+/** 同组字段（用法/频次/用药天数/诊断）不一致时的提示文案 */
+function medicationGroupSharedFieldMismatchMessage(
+  leader: MedicationGroupSharedFields,
+  member: MedicationGroupSharedFields,
+): string | undefined {
+  if (member.usage !== leader.usage) {
+    return '同组药品的用法必须一致';
+  }
+  if (member.frequency !== leader.frequency) {
+    return '同组药品的频次必须一致';
+  }
+  if (member.days !== leader.days) {
+    return '同组药品的用药天数必须一致';
+  }
+  if (member.diagnosis !== leader.diagnosis) {
+    return '同组药品的诊断必须一致';
+  }
+  return undefined;
+}
+
+/** 同组成组药品：须用法、频次、用药天数、诊断一致（保存前校验） */
 export function validateMedicationGroupSharedFields(items: AdviceDrugItem[]): string | undefined {
   const byGroup = new Map<string, AdviceDrugItem[]>();
   for (const item of items) {
@@ -54,24 +108,77 @@ export function validateMedicationGroupSharedFields(items: AdviceDrugItem[]): st
     if (!leader) {
       continue;
     }
-    const leaderUsage = String(leader.usage ?? '').trim();
-    const leaderDays = normalizeMedicationDaysForGroupCompare(leader.medicationDays);
+    const leaderFields: MedicationGroupSharedFields = {
+      usage: String(leader.usage ?? '').trim(),
+      frequency: String(leader.frequency ?? '').trim(),
+      days: normalizeMedicationDaysForGroupCompare(leader.medicationDays),
+      diagnosis: normalizeMedicationDiagnosisForGroupCompare(
+        leader.encounterDiagnosisIds,
+        leader.diagnosis,
+      ),
+    };
     for (let i = 1; i < members.length; i += 1) {
       const member = members[i];
       if (!member) {
         continue;
       }
-      const memberUsage = String(member.usage ?? '').trim();
-      if (memberUsage !== leaderUsage) {
-        return '同组药品的用法必须一致';
-      }
-      const memberDays = normalizeMedicationDaysForGroupCompare(member.medicationDays);
-      if (memberDays !== leaderDays) {
-        return '同组药品的用药天数必须一致';
+      const mismatch = medicationGroupSharedFieldMismatchMessage(leaderFields, {
+        usage: String(member.usage ?? '').trim(),
+        frequency: String(member.frequency ?? '').trim(),
+        days: normalizeMedicationDaysForGroupCompare(member.medicationDays),
+        diagnosis: normalizeMedicationDiagnosisForGroupCompare(
+          member.encounterDiagnosisIds,
+          member.diagnosis,
+        ),
+      });
+      if (mismatch) {
+        return mismatch;
       }
     }
   }
 
+  return undefined;
+}
+
+/** 并组前：勾选草稿须用法/频次/用药天数/诊断一致 */
+export function validateMedicationAssignGroupRows(rows: AdviceRowItem[]): string | undefined {
+  if (rows.length === 0) {
+    return undefined;
+  }
+  if (rows.length <= 1) {
+    return undefined;
+  }
+  const leader = rows[0];
+  if (!leader) {
+    return undefined;
+  }
+  const leaderFields: MedicationGroupSharedFields = {
+    usage: String(leader.methodCode ?? '').trim(),
+    frequency: String(leader.rateCode ?? '').trim(),
+    days: normalizeMedicationDaysForGroupCompare(leader.dispensePerDuration),
+    diagnosis: normalizeMedicationDiagnosisForGroupCompare(
+      leader.encounterDiagnosisIds,
+      leader.conditionDefinitionName || leader.diagnosisSummary,
+    ),
+  };
+  for (let i = 1; i < rows.length; i += 1) {
+    const member = rows[i];
+    if (!member) {
+      continue;
+    }
+    const mismatch = medicationGroupSharedFieldMismatchMessage(leaderFields, {
+      usage: String(member.methodCode ?? '').trim(),
+      frequency: String(member.rateCode ?? '').trim(),
+      days: normalizeMedicationDaysForGroupCompare(member.dispensePerDuration),
+      diagnosis: normalizeMedicationDiagnosisForGroupCompare(
+        member.encounterDiagnosisIds,
+        member.conditionDefinitionName || member.diagnosisSummary,
+      ),
+    });
+    if (mismatch) {
+      return mismatch;
+    }
+  }
   return undefined;
 }
 
@@ -98,7 +205,7 @@ export function resolveConditionDefinitionIdFromDiagnosisName(
   return did || undefined;
 }
 
-/** 组包药品草稿：优先按行诊断名匹配，再回落就诊诊断快照 / 主诊断 / 唯一诊断。 */
+/** 组包药品草稿：按行诊断名匹配；无名称时仅唯一诊断可回落（不默认主诊）。 */
 export function resolveMedicationConditionDefinitionId(
   diagnosisName: string,
   patientDiagnoses: DiagnosisItem[],
@@ -112,17 +219,6 @@ export function resolveMedicationConditionDefinitionId(
     if (fromEncounter) return fromEncounter;
   }
 
-  const mainName = pickMainDiagnosisDisplayName(encounterRows);
-  if (mainName) {
-    const mainFromList = resolveConditionDefinitionIdFromDiagnosisName(mainName, patientDiagnoses);
-    if (mainFromList) return mainFromList;
-    const mainFromEncounter = resolveConditionDefinitionIdFromEncounterRows(
-      mainName,
-      encounterRows,
-    );
-    if (mainFromEncounter) return mainFromEncounter;
-  }
-
   const withId = patientDiagnoses
     .map((d) => String(d.conditionDefinitionId ?? '').trim())
     .filter(Boolean);
@@ -130,9 +226,53 @@ export function resolveMedicationConditionDefinitionId(
   return undefined;
 }
 
+/** 药品行 → 有序就诊诊断有序 ids 串（主诊第一；兼容仅有展示名；不默认主诊） */
+function resolveMedicationEncounterDiagnosisIds(
+  item: Pick<AdviceDrugItem, 'diagnosis' | 'encounterDiagnosisIds'>,
+  encounterRows: EncounterDiagnosisRowDto[],
+): string | undefined {
+  // 仅保留属于本次就诊的诊断 id，避免历史/脏 id 透传
+  let ids = filterValidEncounterDiagnosisIds(item.encounterDiagnosisIds, encounterRows);
+  if (ids.length === 0) {
+    const fromName = resolveMedicationEncounterDiagnosisId(item.diagnosis, encounterRows);
+    if (fromName) {
+      ids = [fromName];
+    }
+  }
+  if (ids.length === 0) return undefined;
+  const idsText = joinEncounterDiagnosisIds(ids, encounterRows);
+  if (!idsText) return undefined;
+  // 逐段保 Long 精度后再拼 ids 串
+  return parseEncounterDiagnosisIds(idsText)
+    .map((id) => preserveApiIdForRequest(id) ?? id)
+    .join(',');
+}
+
+/** 诊疗/耗材：仅在行上已显式绑定时透传 ids 串（不默认主诊，对齐 AS 本期口径） */
+function resolveOptionalEncounterDiagnosisIds(
+  item: Pick<AdviceDrugItem, 'diagnosis' | 'encounterDiagnosisIds'>,
+  encounterRows: EncounterDiagnosisRowDto[],
+): string | undefined {
+  // 仅保留属于本次就诊的诊断 id
+  let ids = filterValidEncounterDiagnosisIds(item.encounterDiagnosisIds, encounterRows);
+  if (ids.length === 0) {
+    const name = String(item.diagnosis ?? '').trim();
+    if (!name) return undefined;
+    const fromName = resolveMedicationEncounterDiagnosisId(name, encounterRows);
+    if (fromName) {
+      ids = [fromName];
+    }
+  }
+  if (ids.length === 0) return undefined;
+  const idsText = joinEncounterDiagnosisIds(ids, encounterRows);
+  if (!idsText) return undefined;
+  return parseEncounterDiagnosisIds(idsText)
+    .map((id) => preserveApiIdForRequest(id) ?? id)
+    .join(',');
+}
+
 function buildMedicationDraftLine(
   item: AdviceDrugItem,
-  patientDiagnoses: DiagnosisItem[],
   encounterRows: EncounterDiagnosisRowDto[],
 ): DoctorStationAdviceDraftLineRequest {
   const defId = parseMedicationDefinitionId(item.selectedId);
@@ -141,12 +281,7 @@ function buildMedicationDraftLine(
   if (op === 'CREATE' && !defId) {
     throw new Error('请从目录选择药品后再保存（需带 med_medication_definition 主键）');
   }
-  const conditionDefinitionId = resolveMedicationConditionDefinitionId(
-    item.diagnosis,
-    patientDiagnoses,
-    encounterRows,
-  );
-  const encounterDiagnosisId = resolveMedicationEncounterDiagnosisId(item.diagnosis, encounterRows);
+  const encounterDiagnosisIds = resolveMedicationEncounterDiagnosisIds(item, encounterRows);
   const contractId = resolveMedicationContractId(item);
   const qtyRaw = Number(item.totalAmount ?? 1);
   const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
@@ -178,8 +313,7 @@ function buildMedicationDraftLine(
     ...(methodCode ? { methodCode } : {}),
     ...(rateCode ? { rateCode } : {}),
     ...(dispenseLocationId ? { dispenseLocationId } : {}),
-    ...(conditionDefinitionId ? { conditionDefinitionId } : {}),
-    ...(encounterDiagnosisId ? { encounterDiagnosisId } : {}),
+    ...(encounterDiagnosisIds ? { encounterDiagnosisIds } : {}),
     ...(contractId ? { contractId } : {}),
     ...(gid ? { groupId: gid } : {}),
   };
@@ -196,7 +330,7 @@ function buildMedicationDraftLine(
 /** 诊疗：定义主键、数量、频次、执行次数、单位等与 `servicePayload` 顶层字段一致。 */
 function buildServiceDraftLine(
   item: AdviceDrugItem,
-  _patientDiagnoses: DiagnosisItem[],
+  encounterRows: EncounterDiagnosisRowDto[],
 ): DoctorStationAdviceDraftLineRequest {
   const defId = parseColonDefinitionId(item.selectedId);
   const rid = item.medicationRequestId?.trim();
@@ -220,6 +354,8 @@ function buildServiceDraftLine(
     );
   }
   const rateCode = String(item.frequency || '').trim() || undefined;
+  const encounterDiagnosisIds = resolveOptionalEncounterDiagnosisIds(item, encounterRows);
+  const sortNumber = resolveOptionalDraftSortNumber(item);
   const servicePayload: NonNullable<DoctorStationAdviceDraftLineRequest['servicePayload']> = {
     activityDefinitionId: defId || '',
     quantity,
@@ -227,17 +363,22 @@ function buildServiceDraftLine(
     ...(performOrgRaw && /^\d+$/.test(performOrgRaw) ? { performOrgId: performOrgRaw } : {}),
     ...(rateCode ? { rateCode } : {}),
     executionCount,
+    ...(encounterDiagnosisIds ? { encounterDiagnosisIds } : {}),
   };
   return {
     lineOp: op,
     requestId: rid || undefined,
     productTableName,
+    ...(sortNumber === undefined ? {} : { sortNumber }),
     servicePayload,
   };
 }
 
-/** 耗材：定义主键、数量、单位与目录选行回填一致。 */
-function buildDeviceDraftLine(item: AdviceDrugItem): DoctorStationAdviceDraftLineRequest {
+/** 耗材：定义主键、数量、单位与目录选行回填一致（不绑定诊断）。 */
+function buildDeviceDraftLine(
+  item: AdviceDrugItem,
+  _encounterRows: EncounterDiagnosisRowDto[],
+): DoctorStationAdviceDraftLineRequest {
   const defId = parseColonDefinitionId(item.selectedId);
   const rid = item.medicationRequestId?.trim();
   const op = rid ? 'UPDATE' : 'CREATE';
@@ -252,6 +393,7 @@ function buildDeviceDraftLine(item: AdviceDrugItem): DoctorStationAdviceDraftLin
     parseProductTableNameFromSelectedId(item.selectedId) ||
     'adm_device_definition';
   const performOrgRaw = String(item.performOrgId ?? '').trim();
+  const sortNumber = resolveOptionalDraftSortNumber(item);
   const devicePayload: NonNullable<DoctorStationAdviceDraftLineRequest['devicePayload']> = {
     deviceDefinitionId: defId || '',
     quantity: qty,
@@ -262,6 +404,7 @@ function buildDeviceDraftLine(item: AdviceDrugItem): DoctorStationAdviceDraftLin
     lineOp: op,
     requestId: rid || undefined,
     productTableName,
+    ...(sortNumber === undefined ? {} : { sortNumber }),
     devicePayload,
   };
 }
@@ -271,7 +414,7 @@ function buildDeviceDraftLine(item: AdviceDrugItem): DoctorStationAdviceDraftLin
  */
 export interface BuildAdviceDraftLinesOptions {
   encounterDiagnosisRows?: EncounterDiagnosisRowDto[];
-  /** 当前就诊主表行，用于药品 sortNumber 追加分配 */
+  /** 当前就诊主表行，用于药/诊/材 sortNumber 追加分配 */
   existingAdviceRows?: AdviceRowItem[];
 }
 
@@ -330,11 +473,11 @@ export function buildAdviceDraftLines(
   return itemsWithSort.map((item) => {
     const kind = inferAdviceLineEditorKind(item);
     if (kind === 'SERVICE') {
-      return buildServiceDraftLine(item, patientDiagnoses);
+      return buildServiceDraftLine(item, encounterRows);
     }
     if (kind === 'DEVICE') {
-      return buildDeviceDraftLine(item);
+      return buildDeviceDraftLine(item, encounterRows);
     }
-    return buildMedicationDraftLine(item, patientDiagnoses, encounterRows);
+    return buildMedicationDraftLine(item, encounterRows);
   });
 }

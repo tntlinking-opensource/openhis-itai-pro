@@ -12,14 +12,50 @@ export const PRINT_SCENARIO = {
   opTreatmentPrint: 'op-treatment-print',
   /** 输液瓶签（护士站） */
   opInfusionLabelPrint: 'op-infusionLabel-print',
+  /** 采血贴（护士站；50×30mm 条码） */
+  opSpecimenBarcodePrint: 'op-specimenBarcode-print',
   /** 门诊费用日结单 */
   opDailySettlementPrint: 'op-dailySettlement-print',
+  /** 药房日结单（门诊/住院共用） */
+  pharmacyDailySettlementPrint: 'pharmacy-dailySettlement-print',
   /** 检查申请单（门诊医生站） */
   examinationPrint: 'examination-print',
   /** 检验申请单（门诊医生站） */
   testPrint: 'test-print',
   /** 住院护理记录单（护士站） */
   ipNursingRecordPrint: 'ip-nursingRecord-print',
+  /** 住院费用清单（护士站打印中心） */
+  ipFeeListPrint: 'ip-feeList-print',
+  /** 住院临嘱执行记录（护士站打印中心） */
+  ipTempOrderPrint: 'ip-tempOrder-print',
+  /** 住院长嘱执行记录（护士站打印中心） */
+  ipLongOrderPrint: 'ip-longOrder-print',
+  /** 住院汇总领药单（护士站打印中心） */
+  ipDispenseSummaryPrint: 'ip-dispenseSummary-print',
+  /** 住院摆药单（护士站打印中心） */
+  ipDispenseSheetPrint: 'ip-dispenseSheet-print',
+  /** 住院输液巡视卡（护士站打印中心） */
+  ipPatrolCardPrint: 'ip-patrolCard-print',
+  /** 住院腕带（护士站打印中心） */
+  ipWristbandPrint: 'ip-wristband-print',
+  /** 住院口服药贴（护士站打印中心） */
+  ipOralMedLabelPrint: 'ip-oralMedLabel-print',
+  /** 住院输液瓶签（护士站打印中心；勿复用门诊瓶签） */
+  ipInfusionLabelPrint: 'ip-infusionLabel-print',
+  /** 住院检查申请单（护士站医嘱执行） */
+  ipExamApplyPrint: 'ip-examApply-print',
+  /** 住院检验申请单（护士站医嘱执行） */
+  ipLabApplyPrint: 'ip-labApply-print',
+  /** 库存计价流转单（进货/出库/调拨/请领等） */
+  invMovementPrint: 'inv-movement-print',
+  /** 库存盘点盈亏单 */
+  invStocktakePrint: 'inv-stocktake-print',
+  /** 库存退货单 */
+  invReturnPrint: 'inv-return-print',
+  /** 体检总检报告 */
+  peisReportPrint: 'peis-report-print',
+  /** 财务调价单 */
+  finPriceAdjustmentPrint: 'fin-price-adjustment-print',
 } as const;
 
 export type PrintScenario = (typeof PRINT_SCENARIO)[keyof typeof PRINT_SCENARIO];

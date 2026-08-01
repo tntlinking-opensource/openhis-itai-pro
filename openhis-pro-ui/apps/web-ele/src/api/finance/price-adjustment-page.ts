@@ -130,6 +130,8 @@ export function mapLineDtoToRow(dto: PriceAdjustmentLineDto): PriceAdjustmentLin
     itemCode: dto.itemCode,
     specification: dto.specification,
     manufacturer: dto.manufacturer,
+    categoryCodeDictText: dto.categoryCodeDictText,
+    unitName: dto.unitName,
     ...displayPrices,
     quantity: sumDetailQuantities(details),
     newPurchaseAmount: dto.newPurchaseAmount,

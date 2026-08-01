@@ -33,7 +33,10 @@ export interface LoadDepartmentRequisitionFormInitRequest {
 export interface LoadDepartmentRequisitionFormInitResponse {
   pharmacyLocationOptions?: RequisitionOptionDto[];
   warehouseLocationOptions?: RequisitionOptionDto[];
+  inboundItemTableTypeOptions?: RequisitionOptionDto[];
   statusOptions?: RequisitionOptionDto[];
+  pharmacistOptions?: RequisitionOptionDto[];
+  warehouseKeeperOptions?: RequisitionOptionDto[];
 }
 
 export interface DepartmentRequisitionListRowDto {
@@ -45,6 +48,11 @@ export interface DepartmentRequisitionListRowDto {
   purposeLocationId?: number | string;
   applyTime?: string;
   approvalTime?: string;
+  applicantId?: number | string;
+  creatorName?: string;
+  approverId?: number | string;
+  approverName?: string;
+  totalAmount?: number | string;
 }
 
 export interface PageDepartmentRequisitionsRequest {
@@ -112,6 +120,8 @@ export interface DepartmentRequisitionLineDto {
   itemQuantity?: number;
   unitCode?: string;
   lotNumber?: string;
+  startTime?: string;
+  endTime?: string;
   traceNo?: string;
   price?: number;
   totalPrice?: number;
@@ -200,6 +210,8 @@ export interface PageProductsForDepartmentRequisitionRequest {
   manufacturer?: string;
   includeInventory?: boolean;
   sourceLocationId?: number | string;
+  /** true=仅返回账面量>0；false/未传=含零库存 */
+  positiveQuantityOnly?: boolean;
   pageNo: number;
   pageSize: number;
   sortField?: string;
@@ -322,6 +334,20 @@ export function mapDepartmentRequisitionInitToCabinetRows(
   return mapInitOptionsToCabinetRowsWithAll(list ?? [], INV_ALL_DEPT_PHARMACIES_LABEL);
 }
 
+/** 列表行 → 侧栏卡片队列字段（制单人/审批人/总金额 enrich 对齐进货单）。 */
+export function mapDepartmentRequisitionListRowToQueueCard(
+  r: DepartmentRequisitionListRowDto,
+): Record<string, unknown> {
+  return {
+    ...r,
+    supplyBusNo: r.busNo,
+    applicantId_dictText: r.creatorName ?? '',
+    approverId_dictText: r.approverName ?? '',
+    totalPrice: r.totalAmount,
+    totalAmount: r.totalAmount,
+  };
+}
+
 /** 工作站左侧列表：purposeLocationId=0 表示全部；日期/关键字在前端筛。 */
 export async function pageDepartmentRequisitionWorkbenchListApi(params: {
   purposeLocationId?: number | string;
@@ -331,7 +357,7 @@ export async function pageDepartmentRequisitionWorkbenchListApi(params: {
   applyTimeEnd?: string;
   pageNo?: number;
   pageSize?: number;
-}): Promise<{ records: DepartmentRequisitionListRowDto[]; total: number }> {
+}): Promise<{ records: Record<string, unknown>[]; total: number }> {
   const pid = resolveWorkbenchListPurposeLocationId(params.purposeLocationId);
   const res = await pageDepartmentRequisitionsApi({
     purposeLocationId: pid,
@@ -351,7 +377,7 @@ export async function pageDepartmentRequisitionWorkbenchListApi(params: {
   const records = filterWorkbenchListRowsByKeyword(
     dateFiltered as Record<string, unknown>[],
     params.keyword,
-  ) as DepartmentRequisitionListRowDto[];
+  ).map((r) => mapDepartmentRequisitionListRowToQueueCard(r as DepartmentRequisitionListRowDto));
   const filtered = (params.applyTimeBegin && params.applyTimeEnd) || params.keyword?.trim();
   return { records, total: filtered ? records.length : totalCount };
 }

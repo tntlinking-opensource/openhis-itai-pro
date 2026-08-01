@@ -134,6 +134,9 @@ export default {
     ...tailwindPackages.map((item) =>
       path.join(item, 'src/**/*.{vue,js,ts,jsx,tsx,svelte,astro,html}'),
     ),
+    // 院点 overrides 在 workspace 包外，必须显式纳入，否则其中用到的 Tailwind 类生产构建会被 purge
+    path.join(process.cwd(), 'projects/*/overrides/**/*.{vue,js,ts,jsx,tsx}'),
+    path.join(process.cwd(), '../../projects/*/overrides/**/*.{vue,js,ts,jsx,tsx}'),
   ],
   darkMode: 'selector',
   plugins: [animate, typographyPlugin, addDynamicIconSelectors(), enterAnimationPlugin],

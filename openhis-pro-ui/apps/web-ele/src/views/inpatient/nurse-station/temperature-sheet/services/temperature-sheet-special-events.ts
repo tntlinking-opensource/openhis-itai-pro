@@ -181,22 +181,28 @@ export function resolveSpecialEventPickerSlots(row: TemperatureSheetFillRowDraft
   return Array.from({ length: row.specialEvents.length + 1 }, (_item, index) => index);
 }
 
-/** 链式单选：读取某槽已选值 */
+/** 链式单选：读取某槽已选值（空槽用 undefined，避免 ElSelect 空串不回显） */
 export function resolveSpecialEventPickerValue(
   row: TemperatureSheetFillRowDraft,
   slotIndex: number,
-): string {
-  return row.specialEvents[slotIndex] ?? '';
+): string | undefined {
+  const code = row.specialEvents[slotIndex]?.trim();
+  return code || undefined;
 }
 
-/** 链式单选：排除其它槽已选项 */
+/** 链式单选：排除其它槽已选项；当前值若不在字典中则补条以保证回显 */
 export function resolveSpecialEventPickerOptions(
   row: TemperatureSheetFillRowDraft,
   slotIndex: number,
   options: TemperatureSheetSpecialEventOption[],
 ): TemperatureSheetSpecialEventOption[] {
   const usedCodes = new Set(row.specialEvents.filter((_code, index) => index !== slotIndex));
-  return options.filter((option) => !usedCodes.has(option.value));
+  const filtered = options.filter((option) => !usedCodes.has(option.value));
+  const current = row.specialEvents[slotIndex]?.trim();
+  if (current && !filtered.some((option) => option.value === current)) {
+    return [{ label: current, value: current }, ...filtered];
+  }
+  return filtered;
 }
 
 /** 链式单选：选中/清空后更新 specialEvents 并同步时间 */

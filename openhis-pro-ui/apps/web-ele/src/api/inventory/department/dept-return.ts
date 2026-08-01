@@ -1,5 +1,6 @@
 /**
- * 科室退库单 — 对接 {@code POST /api/app/inventoryDeptReturn/<method>}
+ * 科室退库单 — 对接 {@code POST /api/app/inventoryDepartmentReturnToWarehouse/<method>}
+ * 方法名与 {@code InventoryDepartmentReturnToWarehouseAppService} 一致。
  */
 import type { ApiResponse } from '#/types/api-response';
 
@@ -13,7 +14,7 @@ import {
   mapInitOptionsToCabinetRowsWithAll,
 } from '#/utils/inventory/inventory-workbench-list';
 
-const BASE = '/inventoryDeptReturn';
+const BASE = '/inventoryDepartmentReturnToWarehouse';
 
 export interface LocationOptionDto {
   locationId?: number | string;
@@ -25,9 +26,24 @@ export interface LoadDeptReturnFormInitRequest {
   organizationId?: number;
 }
 
+export interface PractitionerOptionDto {
+  sort?: string;
+  value?: string;
+  label?: string;
+}
+
 export interface LoadDeptReturnFormInitResponse {
-  sourceDeptLocationOptions: LocationOptionDto[];
-  purposeWarehouseOptions: LocationOptionDto[];
+  /** 源科室药房（与后端 departmentPharmacyLocationOptions 对齐） */
+  departmentPharmacyLocationOptions?: LocationOptionDto[];
+  /** 目的药库（与后端 warehouseLocationOptions 对齐） */
+  warehouseLocationOptions?: LocationOptionDto[];
+  /** @deprecated 旧字段名，勿再读；保留兼容 */
+  sourceDeptLocationOptions?: LocationOptionDto[];
+  /** @deprecated 旧字段名，勿再读；保留兼容 */
+  purposeWarehouseOptions?: LocationOptionDto[];
+  pharmacistOptions?: PractitionerOptionDto[];
+  warehouseKeeperOptions?: PractitionerOptionDto[];
+  supplierOptions?: { supplierId?: number | string; displayName?: string }[];
 }
 
 export interface DeptReturnListRowDto {
@@ -39,10 +55,17 @@ export interface DeptReturnListRowDto {
   sourceLocationId?: number;
   purposeLocationId?: number;
   supplierId?: number;
+  supplierName?: string;
   itemId?: number;
   itemTable?: string;
   itemQuantity?: number;
   unitCode?: string;
+  totalPrice?: number;
+  totalAmount?: number;
+  applicantId?: number;
+  creatorName?: string;
+  approverId?: number;
+  approverName?: string;
   applyTime?: string;
   approvalTime?: string;
 }
@@ -75,12 +98,21 @@ export interface DeptReturnDetailLineDto {
   itemId?: number;
   itemQuantity?: number;
   unitCode?: string;
+  /** 计量单位展示名；无则勿用 unitCode 冒充 */
+  unitCodeDictText?: string;
   lotNumber?: string;
   traceNo?: string;
   occurrenceTime?: string;
   reason?: string;
   remake?: string;
   productName?: string;
+  specification?: string;
+  manufacturer?: string;
+  productCatalog?: {
+    unitBands?: unknown;
+    unitBandsJson?: unknown;
+    [key: string]: unknown;
+  };
 }
 
 export interface GetDeptReturnDetailResponse {
@@ -94,6 +126,9 @@ export interface GetDeptReturnDetailResponse {
   sourceTypeEnum?: number;
   purposeTypeEnum?: number;
   categoryEnum?: number;
+  practitionerId?: number | string;
+  applicantId?: number | string;
+  applicantName?: string;
   lines: DeptReturnDetailLineDto[];
 }
 
@@ -113,6 +148,7 @@ export interface CreateDeptReturnRequest {
   originalBusNo: string;
   sourceLocationId: number | string;
   purposeLocationId: number | string;
+  practitionerId?: number | string;
   sourceTypeEnum?: number;
   purposeTypeEnum?: number;
   categoryEnum?: number;
@@ -124,6 +160,7 @@ export interface UpdateDeptReturnRequest {
   busNo: string;
   sourceLocationId: number | string;
   purposeLocationId: number | string;
+  practitionerId?: number | string;
   sourceTypeEnum?: number;
   purposeTypeEnum?: number;
   categoryEnum?: number;
@@ -221,65 +258,77 @@ export interface PageLinkableReturnSourceDocumentsRequest {
 
 export async function loadDeptReturnFormInitApi(body?: LoadDeptReturnFormInitRequest) {
   return requestClient.post<ApiResponse<LoadDeptReturnFormInitResponse>>(
-    `${BASE}/loadDeptReturnFormInit`,
+    `${BASE}/loadReturnToWarehouseFormInit`,
     body ?? {},
   );
 }
 
 export async function pageDeptReturnsApi(body: PageDeptReturnsRequest) {
-  return requestClient.post<ApiResponse<PageDeptReturnsResponse>>(`${BASE}/pageDeptReturns`, body);
+  return requestClient.post<ApiResponse<PageDeptReturnsResponse>>(
+    `${BASE}/pageReturnToWarehouses`,
+    body,
+  );
 }
 
 export async function getDeptReturnDetailApi(body: GetDeptReturnDetailRequest) {
   return requestClient.post<ApiResponse<GetDeptReturnDetailResponse>>(
-    `${BASE}/getDeptReturnDetail`,
+    `${BASE}/getReturnToWarehouseDetail`,
     body,
   );
 }
 
 export async function createDeptReturnApi(body: CreateDeptReturnRequest) {
   return requestClient.post<ApiResponse<CreateDeptReturnResponse>>(
-    `${BASE}/createDeptReturn`,
+    `${BASE}/createReturnToWarehouse`,
     body,
   );
 }
 
 export async function updateDeptReturnApi(body: UpdateDeptReturnRequest) {
   return requestClient.post<ApiResponse<UpdateDeptReturnResponse>>(
-    `${BASE}/updateDeptReturn`,
+    `${BASE}/updateReturnToWarehouse`,
     body,
   );
 }
 
 export async function submitDeptReturnApprovalApi(body: SubmitDeptReturnApprovalRequest) {
   return requestClient.post<ApiResponse<SubmitDeptReturnApprovalResponse>>(
-    `${BASE}/submitDeptReturnApproval`,
+    `${BASE}/submitReturnToWarehouseApproval`,
     body,
   );
 }
 
 export async function withdrawDeptReturnApprovalApi(body: WithdrawDeptReturnApprovalRequest) {
   return requestClient.post<ApiResponse<WithdrawDeptReturnApprovalResponse>>(
-    `${BASE}/withdrawDeptReturnApproval`,
+    `${BASE}/withdrawReturnToWarehouseApproval`,
     body,
   );
 }
 
 export async function agreeDeptReturnApi(body: AgreeDeptReturnRequest) {
-  return requestClient.post<ApiResponse<{ success?: boolean }>>(`${BASE}/agreeDeptReturn`, body);
+  return requestClient.post<ApiResponse<{ success?: boolean }>>(
+    `${BASE}/agreeReturnToWarehouse`,
+    body,
+  );
 }
 
 export async function rejectDeptReturnApi(body: RejectDeptReturnRequest) {
-  return requestClient.post<ApiResponse<{ success?: boolean }>>(`${BASE}/rejectDeptReturn`, body);
+  return requestClient.post<ApiResponse<{ success?: boolean }>>(
+    `${BASE}/rejectReturnToWarehouse`,
+    body,
+  );
 }
 
 export async function removeDeptReturnApi(body: RemoveDeptReturnRequest) {
-  return requestClient.post<ApiResponse<{ success?: boolean }>>(`${BASE}/removeDeptReturn`, body);
+  return requestClient.post<ApiResponse<{ success?: boolean }>>(
+    `${BASE}/removeReturnToWarehouse`,
+    body,
+  );
 }
 
 export async function pageProductsForDeptReturnApi(body: PageProductsForDeptReturnRequest) {
   return requestClient.post<ApiResponse<PageProductsForDeptReturnResponse>>(
-    `${BASE}/pageProductsForDeptReturn`,
+    `${BASE}/pageProductsForReturnToWarehouse`,
     body,
   );
 }

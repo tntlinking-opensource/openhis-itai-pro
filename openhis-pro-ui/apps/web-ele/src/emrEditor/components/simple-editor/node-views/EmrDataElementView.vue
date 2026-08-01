@@ -2,7 +2,9 @@
 import type { EmrDataElementWidget } from '../data-element-types';
 import type { InlineFieldNavMode } from '../use-inline-field-keydown';
 
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import type { ComputedRef } from 'vue';
+
+import { computed, inject, nextTick, onMounted, ref, watch } from 'vue';
 
 import { nodeViewProps, NodeViewWrapper } from '@tiptap/vue-3';
 
@@ -19,7 +21,8 @@ const props = defineProps(nodeViewProps);
 
 const elementId = computed(() => String(props.node.attrs.elementId ?? ''));
 const labelSnapshot = computed(() => String(props.node.attrs.labelSnapshot ?? ''));
-const placeholder = computed(
+/** 字段提示（title / 文书态占位）；模板态正文不再重复展示字段名 */
+const fieldHint = computed(
   () => String(props.node.attrs.placeholder ?? '') || labelSnapshot.value || '填写',
 );
 const valueStr = computed(() => String(props.node.attrs.value ?? ''));
@@ -36,6 +39,17 @@ const effectiveWidget = computed((): EmrDataElementWidget => {
 });
 
 const isTextWidget = computed(() => effectiveWidget.value === 'text');
+
+/** 文书 / 模板均贴近打印：无蓝括号，用下划线槽位辨认填写位 */
+const surfaceInject = inject<ComputedRef<'document' | 'template'>>('emrEditorSurface');
+const surface = computed(() => surfaceInject?.value ?? 'document');
+const printLike = computed(() => true);
+const showBrackets = computed(() => false);
+
+/** 模板态空值不回填字段名，避免「过敏史：过敏史」；绑定信息见 title */
+const displayText = computed(() => valueStr.value);
+
+const visualPlaceholder = computed(() => (surface.value === 'template' ? '' : fieldHint.value));
 
 function parseSelectOptions(json: string): { label: string; value: string }[] {
   try {
@@ -62,7 +76,7 @@ const selectOptions = computed(() => parseSelectOptions(optionsJson.value));
 
 const titleTip = computed(() => {
   if (!elementId.value) {
-    return `自由文本（不绑定数据元）· ${placeholder.value}`;
+    return `自由文本（不绑定数据元）· ${fieldHint.value}`;
   }
   const n = labelSnapshot.value || def.value?.name || elementId.value;
   const mode = editable.value ? '可编辑' : '随患者信息更新';
@@ -80,6 +94,16 @@ const domEditable = useEmrIslandDomEditable(islandWhenLocked);
 
 const textFieldRef = ref<HTMLElement | null>(null);
 const lineInputRef = ref<HTMLInputElement | null>(null);
+const textareaRef = ref<HTMLTextAreaElement | null>(null);
+
+function syncTextareaHeight() {
+  nextTick(() => {
+    const el = textareaRef.value;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.max(el.scrollHeight, 40)}px`;
+  });
+}
 
 function syncTextFieldFromAttrs() {
   nextTick(() => {
@@ -128,6 +152,7 @@ function onNumberInput(e: Event) {
 
 function onTextareaInput(e: Event) {
   props.updateAttributes({ value: (e.target as HTMLTextAreaElement).value });
+  syncTextareaHeight();
 }
 
 function onSelectChange(e: Event) {
@@ -162,6 +187,9 @@ onMounted(() => {
   if (editable.value && effectiveWidget.value === 'number') {
     syncLineInputWidth();
   }
+  if (editable.value && effectiveWidget.value === 'multiline') {
+    syncTextareaHeight();
+  }
 });
 
 watch([valueStr, effectiveWidget, editable], () => {
@@ -170,6 +198,9 @@ watch([valueStr, effectiveWidget, editable], () => {
   }
   if (editable.value && effectiveWidget.value === 'number') {
     syncLineInputWidth();
+  }
+  if (editable.value && effectiveWidget.value === 'multiline') {
+    syncTextareaHeight();
   }
 });
 </script>
@@ -184,6 +215,7 @@ watch([valueStr, effectiveWidget, editable], () => {
       'emr-de--readonly': !editable,
       'emr-de--multiline': effectiveWidget === 'multiline',
       'emr-de--text': isTextWidget,
+      'emr-de--print-like': printLike,
     }"
     data-node-view-wrapper=""
     :title="titleTip"
@@ -202,45 +234,52 @@ watch([valueStr, effectiveWidget, editable], () => {
       <span
         v-else-if="effectiveWidget === 'multiline'"
         class="emr-de__readonly-val emr-de__readonly-val--multiline"
-        >{{ valueStr }}</span
+        >{{ displayText }}</span
       >
       <span
         v-else-if="effectiveWidget === 'text'"
         class="emr-de-text-bracket emr-de-text-bracket--readonly"
+        :class="{ 'emr-de-text-bracket--plain': !showBrackets }"
       >
-        <span class="emr-bracket-field__bracket" aria-hidden="true">[</span>
+        <span v-if="showBrackets" class="emr-bracket-field__bracket" aria-hidden="true">[</span>
         <span
-          class="emr-de__readonly-val emr-de__readonly-val--wrap emr-de__readonly-val--bracket"
-          >{{ valueStr }}</span
+          class="emr-de__readonly-val emr-de__readonly-val--wrap"
+          :class="{ 'emr-de__readonly-val--bracket': showBrackets }"
+          >{{ displayText }}</span
         >
-        <span class="emr-bracket-field__bracket" aria-hidden="true">]</span>
+        <span v-if="showBrackets" class="emr-bracket-field__bracket" aria-hidden="true">]</span>
       </span>
-      <span v-else class="emr-de__readonly-val emr-de__readonly-val--wrap">{{ valueStr }}</span>
+      <span v-else class="emr-de__readonly-val emr-de__readonly-val--wrap">{{ displayText }}</span>
     </template>
 
     <template v-else>
-      <span v-if="effectiveWidget === 'text'" class="emr-de-text-bracket">
-        <span class="emr-bracket-field__bracket" aria-hidden="true">[</span>
+      <span
+        v-if="effectiveWidget === 'text'"
+        class="emr-de-text-bracket"
+        :class="{ 'emr-de-text-bracket--plain': !showBrackets }"
+      >
+        <span v-if="showBrackets" class="emr-bracket-field__bracket" aria-hidden="true">[</span>
         <span
           ref="textFieldRef"
           role="textbox"
           class="emr-inline-text__field emr-de__text-field"
           tabindex="0"
           spellcheck="false"
-          :data-placeholder="placeholder"
+          :data-placeholder="visualPlaceholder"
           :contenteditable="domEditable ? 'true' : 'false'"
           :aria-label="titleTip"
           @input="onTextFieldInput"
           @paste="onTextFieldPaste"
           @keydown="onTextFieldKeydown"
         ></span>
-        <span class="emr-bracket-field__bracket" aria-hidden="true">]</span>
+        <span v-if="showBrackets" class="emr-bracket-field__bracket" aria-hidden="true">]</span>
       </span>
       <textarea
         v-else-if="effectiveWidget === 'multiline'"
+        ref="textareaRef"
         class="emr-de__control emr-de__control--textarea"
         :value="valueStr"
-        :placeholder="placeholder"
+        :placeholder="visualPlaceholder"
         rows="2"
         :disabled="!domEditable"
         :aria-label="titleTip"
@@ -254,7 +293,7 @@ watch([valueStr, effectiveWidget, editable], () => {
         class="emr-de__control emr-de__control--number"
         type="number"
         :value="valueStr"
-        :placeholder="placeholder"
+        :placeholder="visualPlaceholder"
         :disabled="!domEditable"
         :aria-label="titleTip"
         @input="onNumberInput"
@@ -269,7 +308,7 @@ watch([valueStr, effectiveWidget, editable], () => {
         @change="onSelectChange"
         @keydown="keydownHandler('select')"
       >
-        <option v-if="selectOptions.length === 0" value="">{{ placeholder }}</option>
+        <option v-if="selectOptions.length === 0" value="">{{ fieldHint }}</option>
         <option v-for="opt in selectOptions" :key="opt.value" :value="opt.value">
           {{ opt.label }}
         </option>
@@ -284,7 +323,7 @@ watch([valueStr, effectiveWidget, editable], () => {
           @change="onCheckboxChange"
           @keydown="keydownHandler('checkbox')"
         />
-        <span class="emr-de__checkbox-label">{{ labelSnapshot || placeholder }}</span>
+        <span class="emr-de__checkbox-label">{{ labelSnapshot || fieldHint }}</span>
       </label>
     </template>
   </NodeViewWrapper>
@@ -338,6 +377,48 @@ watch([valueStr, effectiveWidget, editable], () => {
 
 .emr-de__readonly-val--bracket {
   color: #64748b;
+}
+
+/* 文书态：已填值接近打印正文；可填项仍保留浅底/下划线锚点（见 simple-editor.scss surface-document） */
+.emr-de--print-like.emr-de--text {
+  margin: 0;
+  padding: 0;
+  min-width: 2.5em;
+}
+
+.emr-de--print-like .emr-de__readonly-val {
+  color: #111827;
+}
+
+.emr-de--print-like .emr-de__text-field {
+  color: #111827;
+  min-width: 3ch;
+}
+
+.emr-de--print-like .emr-de__text-field:empty::before {
+  color: #9ca3af;
+}
+
+.emr-de--print-like .emr-de__control--textarea {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  min-height: 2.5em;
+  resize: none;
+  overflow: hidden;
+  width: 100%;
+  max-width: 100%;
+  color: #111827;
+}
+
+.emr-de--print-like:not(.emr-de--readonly).emr-de--multiline .emr-de__control--textarea {
+  min-height: 2.8em;
+}
+
+.emr-de--print-like .emr-de__text-field:focus {
+  box-shadow: inset 0 -1.5px 0 0 #3b82f6;
+  border-radius: 1px;
 }
 
 .emr-de--free:not(.emr-de--text) {
@@ -437,13 +518,17 @@ watch([valueStr, effectiveWidget, editable], () => {
 }
 
 .emr-de__control--textarea {
-  display: inline-block;
-  vertical-align: bottom;
-  min-width: 120px;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 2.5em;
-  resize: vertical;
+  resize: none;
+  overflow: hidden;
   white-space: pre-wrap;
   word-break: break-word;
+  box-sizing: border-box;
+  field-sizing: content;
 }
 
 .emr-de__control--select {

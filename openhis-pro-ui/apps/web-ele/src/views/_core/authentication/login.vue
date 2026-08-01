@@ -2,6 +2,7 @@
 import type { VbenFormSchema } from '@vben-core/form-ui';
 
 import type { AuthApi } from '#/api/core/auth';
+import type { LoginScopeHospital, LoginScopeOrganization } from '#/utils/auth/login-scope-flow';
 
 import { computed, nextTick, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -19,46 +20,21 @@ import { Loading } from '@element-plus/icons-vue';
 import { ElButton, ElIcon, ElMessage } from 'element-plus';
 import { z } from 'zod';
 
-import {
-  loginByOrgApi,
-  selectHospitalApi,
-  skipOrganizationUnitSelectionApi,
-} from '#/api/core/auth';
+import { loginByOrgApi } from '#/api/core/auth';
 import { getMenuTreeByLoginUserApi } from '#/api/core/system/menu';
 import { resolvePostLoginPath } from '#/constants/app';
 import { useAuthStore } from '#/store';
 import { convertMenuData } from '#/utils/auth/convert-menu-data';
-import type { LoginScopeHospital, LoginScopeOrganization } from '#/utils/auth/login-scope-flow';
-
 import {
   LOGIN_DEPARTMENT_LOAD_FAILED_MESSAGE,
-  LOGIN_NO_DEPARTMENT_FOR_HOSPITAL_MESSAGE,
   LOGIN_NO_DEPARTMENT_MESSAGE,
-  LOGIN_PLATFORM_ADMIN_BOOTSTRAP_MESSAGE,
-  resolveHospitalsAfterTenant,
-  resolveLoginDepartmentStep,
+  resolveDepartmentOutcomeFromList,
+  resolveDepartmentsAfterHospital,
+  resolveLoginScopeAfterTenant,
 } from '#/utils/auth/login-scope-flow';
-import { canSkipLoginDepartmentSelection } from '#/utils/auth/platform-admin';
 import { requireLoginScopeReady } from '#/utils/auth/require-login-scope-ready';
 
 defineOptions({ name: 'Login' });
-
-interface QuickLoginAccount {
-  label: string;
-  userName: string;
-  password: string;
-}
-
-/** 登录页快捷账号：拼音用户名，统一密码 123456 */
-const QUICK_LOGIN_ACCOUNTS: QuickLoginAccount[] = [
-  { label: '医生', userName: 'yisheng', password: '123456' },
-  { label: '住院医生', userName: 'zyyisheng', password: '123456' },
-  { label: '护士', userName: 'hushi', password: '123456' },
-  { label: '收费', userName: 'shoufei', password: '123456' },
-  { label: '药房', userName: 'yaofang', password: '123456' },
-  { label: '库管', userName: 'kuguan', password: '123456' },
-  { label: '财务', userName: 'caiwu', password: '123456' },
-];
 
 const authStore = useAuthStore();
 const accessStore = useAccessStore();
@@ -137,107 +113,65 @@ function revertAfterNoDepartment(options?: { fromHospital?: boolean }) {
   loginSuccess.value = false;
 }
 
-/** 进入科室选择：仅多科室或异常时才展示科室面板，单科室自动进入系统 */
-async function enterDepartmentStep() {
-  showOrganizationList.value = false;
-  organizationLoading.value = true;
-  scopeLoadingMessage.value = '正在获取可登录科室...';
-  departmentStepHint.value = '';
-  try {
-    const outcome = await resolveLoginDepartmentStep();
-    if (outcome.kind === 'auto') {
-      scopeLoadingMessage.value = '正在进入系统...';
-      await handleOrganizationChange(outcome.department);
-      return;
-    }
-    if (outcome.kind === 'pick') {
-      organizations.value = outcome.departments;
-      showOrganizationList.value = true;
-      await nextTick();
-      return;
-    }
-    organizations.value = [];
-    if (outcome.kind === 'empty') {
-      if (shouldSkipLoginDepartmentSelection()) {
-        scopeLoadingMessage.value = LOGIN_PLATFORM_ADMIN_BOOTSTRAP_MESSAGE;
-        await proceedToSystemWithoutOrganization();
-        return;
-      }
-      showOrganizationList.value = true;
-      const hasSelectedHospital = !!selectedHospitalId.value || !!authStore.getSelectedHospital();
-      departmentStepHint.value = hasSelectedHospital
-        ? LOGIN_NO_DEPARTMENT_FOR_HOSPITAL_MESSAGE
-        : LOGIN_NO_DEPARTMENT_MESSAGE;
-      ElMessage.warning(departmentStepHint.value);
-      return;
-    }
-    showOrganizationList.value = true;
-    departmentStepHint.value = outcome.message || LOGIN_DEPARTMENT_LOAD_FAILED_MESSAGE;
-    ElMessage.error(departmentStepHint.value);
-  } finally {
-    organizationLoading.value = false;
-  }
-}
-
-/** 点击快捷账号：回填表单并走与普通登录相同的提交流程 */
-async function handleQuickLogin(account: QuickLoginAccount) {
-  if (authStore.loginLoading) {
+/** 按科室步骤结果：空=医院级、单=自动进、多=选科面板 */
+async function applyDepartmentOutcome(
+  outcome: import('#/utils/auth/login-scope-flow').LoginDepartmentStepOutcome,
+) {
+  if (outcome.kind === 'auto') {
+    await handleOrganizationChange(outcome.department);
     return;
   }
-
-  const formApi = authenticationLoginRef.value?.getFormApi?.();
-  if (formApi) {
-    await formApi.setFieldValue('userName', account.userName);
-    await formApi.setFieldValue('password', account.password);
+  if (outcome.kind === 'pick') {
+    loginSuccess.value = true;
+    organizations.value = outcome.departments;
+    showOrganizationList.value = true;
+    await nextTick();
+    return;
   }
-
-  await handleLogin({
-    userName: account.userName,
-    password: account.password,
-  });
-}
-
-function shouldSkipLoginDepartmentSelection(): boolean {
-  if (authStore.getPlatformAdmin()) {
-    return true;
+  organizations.value = [];
+  if (outcome.kind === 'empty') {
+    await proceedToSystemWithoutOrganization();
+    return;
   }
-  const userInfo = userStore.userInfo as {
-    roles?: string[];
-    userName?: string;
-    username?: string;
-  } | null;
-  return canSkipLoginDepartmentSelection({
-    roles: userInfo?.roles,
-    username: userInfo?.userName ?? userInfo?.username,
-  });
+  loginSuccess.value = true;
+  showOrganizationList.value = true;
+  departmentStepHint.value = outcome.message || LOGIN_DEPARTMENT_LOAD_FAILED_MESSAGE;
+  ElMessage.error(departmentStepHint.value);
 }
 
 async function handleLogin(values: any) {
   try {
     await authStore.authLogin(values, async ({ tenants: tenantsList, userInfo, configuration }) => {
       if (userInfo) {
-        userStore.setUserInfo(userInfo as any);
+        userStore.setUserInfo({
+          ...userInfo,
+          roles: configuration?.currentUser?.roles,
+        } as any);
       }
-      loginSuccess.value = true;
-      scopeLoadingMessage.value = '正在准备登录环境...';
-      if (tenantsList && tenantsList.length > 0) {
-        tenants.value = transformTenantData(tenantsList);
-
-        if (tenantsList.length === 1) {
-          const singleTenant = tenants.value[0];
-          await handleTenantSelect(singleTenant);
-        } else {
-          showTenantList.value = true;
-        }
-      } else {
-        showTenantList.value = true;
+      if (configuration?.currentUser?.roles?.length) {
+        userStore.setUserRoles(configuration.currentUser.roles);
       }
       if (configuration?.auth.grantedPolicies) {
         const permissions = configuration.auth.grantedPolicies;
         accessStore.setAccessCodes(Object.keys(permissions).filter((k) => permissions[k]));
       }
+
+      // 多租户才切到选租户面板；单租户自动进系统时保持登录表单 loading，不插中间转圈页
+      if (tenantsList && tenantsList.length > 0) {
+        tenants.value = transformTenantData(tenantsList);
+        if (tenantsList.length === 1) {
+          await handleTenantSelect(tenants.value[0]);
+          return;
+        }
+        loginSuccess.value = true;
+        showTenantList.value = true;
+        return;
+      }
+      loginSuccess.value = true;
+      showTenantList.value = true;
     });
   } catch (error: any) {
+    loginSuccess.value = false;
     const errorMessage =
       error?.response?.data?.msg ||
       error?.response?.data?.message ||
@@ -283,21 +217,25 @@ async function handleTenantSelect(tenant: any) {
   showHospitalList.value = false;
   showOrganizationList.value = false;
   organizationLoading.value = true;
-  scopeLoadingMessage.value = '正在准备登录环境...';
 
   try {
-    const hospitalList = await resolveHospitalsAfterTenant(tenant.id);
-    hospitals.value = hospitalList;
-    if (hospitalList.length === 0 || hospitalList.length === 1) {
-      if (hospitalList.length === 1) {
-        selectedHospitalId.value = hospitalList[0]!.id;
-        authStore.setSelectedHospital(String(hospitalList[0]!.id));
-      }
-      await enterDepartmentStep();
+    // 一次拉齐医院+（单院）科室，避免 getHospitals→selectHospital→getDepts 三连慢
+    const scope = await resolveLoginScopeAfterTenant(tenant.id);
+    hospitals.value = scope.hospitals;
+    if (scope.hospitals.length > 1) {
+      loginSuccess.value = true;
+      await nextTick();
+      showHospitalList.value = true;
       return;
     }
-    await nextTick();
-    showHospitalList.value = true;
+    if (scope.hospitals.length === 1) {
+      selectedHospitalId.value = scope.hospitals[0]!.id;
+      authStore.setSelectedHospital(
+        String(scope.hospitals[0]!.id),
+        String(scope.hospitals[0]!.name ?? '').trim(),
+      );
+    }
+    await applyDepartmentOutcome(resolveDepartmentOutcomeFromList(scope.departments));
   } catch (error: unknown) {
     console.error('Failed to resolve hospitals:', error);
     const message =
@@ -305,9 +243,10 @@ async function handleTenantSelect(tenant: any) {
         ? error.message
         : (error as { message?: string })?.message || '获取医院列表失败，请稍后重试';
     ElMessage.error(message);
-    showTenantList.value = tenants.value.length > 1;
-    loginSuccess.value = tenants.value.length > 1;
-    if (tenants.value.length <= 1) {
+    if (tenants.value.length > 1) {
+      loginSuccess.value = true;
+      showTenantList.value = true;
+    } else {
       selectedTenantId.value = undefined;
       authStore.setSelectedTenant('');
       loginSuccess.value = false;
@@ -320,12 +259,12 @@ async function handleTenantSelect(tenant: any) {
 /** 用户选定医院后写入会话，再拉取该医院下可登录科室 */
 async function handleHospitalSelect(hospital: LoginScopeHospital) {
   selectedHospitalId.value = hospital.id;
-  authStore.setSelectedHospital(String(hospital.id));
+  authStore.setSelectedHospital(String(hospital.id), String(hospital.name ?? '').trim());
   showHospitalList.value = false;
-  scopeLoadingMessage.value = '正在获取可登录科室...';
+  organizationLoading.value = true;
   try {
-    await selectHospitalApi({ hospitalId: hospital.id });
-    await enterDepartmentStep();
+    const outcome = await resolveDepartmentsAfterHospital(hospital.id);
+    await applyDepartmentOutcome(outcome);
   } catch (error: unknown) {
     console.error('Failed to select hospital:', error);
     const message =
@@ -335,6 +274,8 @@ async function handleHospitalSelect(hospital: LoginScopeHospital) {
     ElMessage.error(message);
     showOrganizationList.value = false;
     showHospitalList.value = true;
+  } finally {
+    organizationLoading.value = false;
   }
 }
 
@@ -442,10 +383,9 @@ async function proceedToSystem(organizationId: string) {
   }
 }
 
-/** 平台管理员在无科室时跳过选科并进入系统 */
+/** 无可登录科室时以医院级进入：选租户/医院后会话已无科室，不再打 skip（省一轮 OU 校验） */
 async function proceedToSystemWithoutOrganization() {
   try {
-    await skipOrganizationUnitSelectionApi();
     authStore.setOrganizationUnitSkipped(true);
     authStore.setSelectedOrganization('');
     await finishLoginAndNavigate();
@@ -462,11 +402,11 @@ async function proceedToSystemWithoutOrganization() {
   }
 }
 
-/** 登录范围就绪后拉菜单、注册路由并跳转首页 */
+/** 登录范围就绪后拉菜单并跳转；配置刷新后台进行，不挡进首页 */
 async function finishLoginAndNavigate() {
-  await authStore.refreshApplicationConfiguration();
-
   const menus = await getMenuTreeByLoginUserApi();
+  // 权限配置与进首页解耦，避免医院级登录多等一轮
+  void authStore.refreshApplicationConfiguration();
   const menuData = menus || [];
 
   const convertedMenus = convertMenuData(menuData);
@@ -544,7 +484,6 @@ const formSchema = computed((): VbenFormSchema[] => {
       },
       fieldName: 'userName',
       label: $t('authentication.username'),
-      defaultValue: 'admin',
       rules: z.string().min(1, { message: $t('authentication.usernameTip') }),
     },
     {
@@ -554,7 +493,6 @@ const formSchema = computed((): VbenFormSchema[] => {
       },
       fieldName: 'password',
       label: $t('authentication.password'),
-      defaultValue: 'Admin@123456',
       rules: z.string().min(1, { message: $t('authentication.passwordTip') }),
     },
     // {
@@ -584,19 +522,6 @@ const formSchema = computed((): VbenFormSchema[] => {
         :loading="authStore.loginLoading"
         @submit="handleLogin"
       />
-
-      <div class="mt-2 flex items-center justify-center gap-5">
-        <ElButton
-          v-for="account in QUICK_LOGIN_ACCOUNTS"
-          :key="account.userName"
-          :disabled="authStore.loginLoading"
-          link
-          type="primary"
-          @click="handleQuickLogin(account)"
-        >
-          {{ account.label }}
-        </ElButton>
-      </div>
     </div>
 
     <div v-else-if="showTenantList" class="mx-auto h-full w-full sm:max-w-3xl">

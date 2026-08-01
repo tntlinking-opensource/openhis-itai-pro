@@ -66,12 +66,21 @@ export interface PendingChargeItemRowDto {
   chargeItemId: string;
   /** 费用性质合同主键（医保读卡/预结算） */
   contractId?: null | string;
+  /**
+   * 费用性质合同分类码（fin_contract.category_enum，如 3=省医保）。
+   * 与 chargeCategoryCode（药品/项目目录分类）不同，收银读卡判断用本字段。
+   */
+  contractCategoryCode?: null | string;
   discountRateDisplay?: null | string;
   /** 费用性质展示（后端补齐后展示） */
   feeNatureDisplay?: null | string;
   itemName?: null | string;
   /** 医保编码（后端补齐后展示） */
   medicalInsuranceCode?: null | string;
+  /** 医保类别码（CHRGITM_LV） */
+  chrgitmLv?: null | number | string;
+  /** 医保类别展示（甲类/乙类/丙类） */
+  chrgitmLvText?: null | string;
   /** 医疗类别 med_type */
   medTypeCode?: null | string;
   quantityDisplay?: null | string;
@@ -89,6 +98,71 @@ export interface PendingChargeItemRowDto {
 export interface LoadPendingChargeItemsRequest {
   encounterId: string;
   includePriceExtension?: boolean;
+  /** 队列行最近成功支付流水；用于已结算医保摘要 */
+  paymentId?: null | string;
+}
+
+/** 国家局 2206/2207 setlinfo 常见分摊字段（正式结算回执） */
+export interface ChargeSettlementSetlinfoDto {
+  acctMulaidPay?: null | number | string;
+  acctPay?: null | number | string;
+  actPayDedc?: null | number | string;
+  balc?: null | number | string;
+  chrgBchno?: null | string;
+  clrOptins?: null | string;
+  clrType?: null | string;
+  clrWay?: null | string;
+  cvlservPay?: null | number | string;
+  fulamtOwnpayAmt?: null | number | string;
+  fundPaySumamt?: null | number | string;
+  hifdmPay?: null | number | string;
+  hifesPay?: null | number | string;
+  hifmiPay?: null | number | string;
+  hifobPay?: null | number | string;
+  hifpPay?: null | number | string;
+  hospPartAmt?: null | number | string;
+  inscpScpAmt?: null | number | string;
+  mafPay?: null | number | string;
+  mdtrtId?: null | string;
+  medfeeSumamt?: null | number | string;
+  othPay?: null | number | string;
+  overlmtSelfpay?: null | number | string;
+  poolPropSelfpay?: null | number | string;
+  preselfpayAmt?: null | number | string;
+  psnCashPay?: null | number | string;
+  psnPartAmt?: null | number | string;
+  setlId?: null | string;
+}
+
+/** 已结算支付医保分摊摘要（与收费小票结算单口径一致） */
+export interface ChargeSettlementInsuranceSummaryDto {
+  acctPay?: null | number | string;
+  billDate?: null | string;
+  /** 本支付单据关联的收费项主键 */
+  chargeItemIds?: null | string[];
+  /** 本支付关联收费明细（只读；可含收银台列表外的挂号费/已退费项） */
+  chargeLines?: null | ChargeSettlementPaymentLineDto[];
+  displayAmount?: null | number | string;
+  fundPaySumamt?: null | number | string;
+  insuranceSettled?: boolean;
+  medfeeSumamt?: null | number | string;
+  paymentId?: null | string;
+  paymentNo?: null | string;
+  psnCashPay?: null | string | number;
+  /** 2206/2207 setlinfo 细项；无正式回执时为空 */
+  setlinfo?: ChargeSettlementSetlinfoDto | null;
+}
+
+/** 支付记录弹窗只读明细行 */
+export interface ChargeSettlementPaymentLineDto {
+  busNo?: null | string;
+  chargeItemId?: null | string;
+  itemName?: null | string;
+  quantityDisplay?: null | string;
+  quantityUnit?: null | string;
+  statusCode?: null | string;
+  statusText?: null | string;
+  totalPrice?: null | number | string;
 }
 
 /** IF-OPC-03 响应 */
@@ -97,6 +171,10 @@ export interface LoadPendingChargeItemsResponse {
   accountSwitchEnabled?: boolean;
   encounterId: string;
   items: PendingChargeItemRowDto[];
+  /** 本就诊全部成功支付摘要（账单时间倒序）；供切换支付单据 */
+  settlementInsuranceOptions?: ChargeSettlementInsuranceSummaryDto[] | null;
+  /** 当前选中支付的结算摘要；无成功支付时为空 */
+  settlementInsuranceSummary?: ChargeSettlementInsuranceSummaryDto | null;
 }
 
 /** IF-OPC-04 / 05 切换账户响应 */

@@ -40,10 +40,19 @@ export interface TransferInListRowDto {
   busNo?: string;
   originalBusNo?: string;
   statusEnum?: string | number;
+  statusEnumText?: string;
   sourceLocationId?: number | string;
+  sourceLocationName?: string;
   purposeLocationId?: number | string;
   applyTime?: string;
   approvalTime?: string;
+  applicantId?: number | string;
+  approverId?: number | string;
+  /** 制单人姓名（后端 enrich） */
+  creatorName?: string;
+  approverName?: string;
+  /** 同号各行 totalPrice 之和 */
+  totalAmount?: number | string;
 }
 
 export interface PageTransferInsRequest {
@@ -83,6 +92,8 @@ export interface TransferInDetailLineDto {
   traceNo?: string;
   price?: number;
   totalPrice?: number;
+  /** 源库可用量（拆零） */
+  availableQuantity?: number;
   remake?: string;
   occurrenceTime?: string;
   productCatalog?: {
@@ -103,6 +114,7 @@ export interface GetTransferInDetailResponse {
   purposeTypeEnum?: string;
   categoryEnum?: string;
   practitionerId?: number | string;
+  practitionerName?: string;
   lines: TransferInDetailLineDto[];
 }
 
@@ -131,6 +143,19 @@ export function mapDepartmentTransferInInitToCabinetRows(
   return mapInitOptionsToCabinetRowsWithAll(list ?? [], INV_ALL_DEPT_PHARMACIES_LABEL);
 }
 
+/** 列表行 → 侧栏卡片队列字段（对齐出库/进货列表 enrich）。 */
+function mapTransferInListRowToQueueCard(r: TransferInListRowDto): Record<string, unknown> {
+  return {
+    ...r,
+    supplyBusNo: r.busNo,
+    statusEnum_enumText: r.statusEnumText ?? '',
+    applicantId_dictText: r.creatorName ?? '',
+    approverId_dictText: r.approverName ?? '',
+    totalPrice: r.totalAmount,
+    totalAmount: r.totalAmount,
+  };
+}
+
 /** 工作站左侧列表（只读）：purposeLocationId=0 表示全部；日期/关键字在前端筛。 */
 export async function pageDepartmentTransferInWorkbenchListApi(params: {
   purposeLocationId?: number | string;
@@ -140,7 +165,7 @@ export async function pageDepartmentTransferInWorkbenchListApi(params: {
   applyTimeEnd?: string;
   pageNo?: number;
   pageSize?: number;
-}): Promise<{ records: TransferInListRowDto[]; total: number }> {
+}): Promise<{ records: Record<string, unknown>[]; total: number }> {
   const pid = resolveWorkbenchListPurposeLocationId(params.purposeLocationId);
   const res = await pageTransferInsApi({
     purposeLocationId: pid,
@@ -158,7 +183,7 @@ export async function pageDepartmentTransferInWorkbenchListApi(params: {
   const records = filterWorkbenchListRowsByKeyword(
     dateFiltered as Record<string, unknown>[],
     params.keyword,
-  ) as TransferInListRowDto[];
+  ).map((r) => mapTransferInListRowToQueueCard(r as TransferInListRowDto));
   const filtered = (params.applyTimeBegin && params.applyTimeEnd) || params.keyword?.trim();
   return { records, total: filtered ? records.length : totalCount };
 }

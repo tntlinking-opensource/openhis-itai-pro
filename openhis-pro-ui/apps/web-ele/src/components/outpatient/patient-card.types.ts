@@ -66,6 +66,7 @@ export interface PatientInfoBarPayload {
  * - default：通用队列（与未传 variant 行为一致）
  * - doctor：医生站患者列表
  * - nurse：护士站队列（待执行数、风险提示）
- * - dispense：门诊发药队列（不展示支付类型、就诊状态标签；就诊号用队列 `visitNo` 全量）
+ * - dispense：门诊发药队列（不展示就诊状态标签；展示费用性质胶囊与电话；右上角第三段优先 `organizationName`；
+ *   就诊号用队列 `visitNo` 全量）
  */
 export type PatientCardVariant = 'default' | 'dispense' | 'doctor' | 'nurse';

@@ -78,7 +78,10 @@ export interface RevokeMedicationCatalog3302Params {
   listType?: string;
 }
 
-/** 药品维护页：推荐国家医保目录编码（可触发 1312 补库）。 */
+/**
+ * 药品/项目维护页：推荐国家医保目录编码。
+ * <p>选码弹窗应传 {@code queryPlatformIfMiss:false}，仅打本地镜像；补库请走目录下载页。</p>
+ */
 export async function suggestMedicationCatalogMappingApi(
   params: SuggestMedicationCatalogParams,
 ): Promise<MedicationCatalogMappingSuggest> {

@@ -7,7 +7,6 @@ import type {
   PrepickedProductKeyDto,
   TerminologyOptionDto,
 } from '#/api/doctor-station/advice.types';
-import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
 import type { MedicationLineDraftSlice } from '#/views/basic/ordertemplate/order-template-medication-units';
 
 import { pageFrequencyApi } from '#/api/basic/frequency';
@@ -21,7 +20,6 @@ import {
   httpPageInpatientDoctorStationAdviceCatalog,
   httpSaveInpatientDoctorStationAdviceDraftBatch,
 } from '#/api/inpatient/doctor-station/inpatient-doctor-station-advice.http';
-import { fetchEncounterDiagnosisDisplayList } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis.service';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import {
   convertAdviceCatalogSplitQtyToPackageDisplay,
@@ -44,12 +42,12 @@ import {
   buildWesternProductSelectPatch,
   createAdviceDrugItem,
   inferDoseBandConvertK,
-  pickMainDiagnosisDisplayName,
 } from './advice-edit';
 import { mapCatalogRowToOption } from './advice-list';
 import { buildAdviceDraftLines } from './advice-medication-draft';
 import {
   inferAdviceLineEditorKind,
+  isInpatientDischargeMedicationTherapy,
   isInpatientLongTermMedicationTherapy,
   validateWesternEditLineItem,
 } from './advice-row';
@@ -255,6 +253,33 @@ function convertRequiredQtyToPackageDisplay(
   return convertAdviceCatalogSplitQtyToPackageDisplay(splitQty, unitBands);
 }
 
+/** 组套行展示名（预览 enrich 后的 productName 优先） */
+function resolveTemplateLineProductName(line: OrderTemplateLineRowItem, index: number): string {
+  const fromLine = String(line.productName ?? '').trim();
+  if (fromLine) {
+    return fromLine;
+  }
+  return `第 ${index + 1} 项`;
+}
+
+/** 可开立目录未命中：按行类型给出友好原因（停供/停用/无库存） */
+function resolveCatalogMissingApplyMessage(line: OrderTemplateLineRowItem, index: number): string {
+  const name = resolveTemplateLineProductName(line, index);
+  const kind = String(line.lineKindEnum ?? '')
+    .trim()
+    .toUpperCase();
+  if (kind === ORDER_TEMPLATE_LINE_KIND_MEDICATION) {
+    return `药品「${name}」暂无库存，无法套用组套`;
+  }
+  if (kind === ORDER_TEMPLATE_LINE_KIND_SERVICE) {
+    return `诊疗项目「${name}」已停用，无法套用组套`;
+  }
+  if (kind === ORDER_TEMPLATE_LINE_KIND_DEVICE) {
+    return `耗材「${name}」暂不可用，无法套用组套`;
+  }
+  return `「${name}」当前不可开立，无法套用组套`;
+}
+
 /** 校验单条药品行库存；不足时返回明细文案 */
 function resolveMedicationStockIssue(
   line: OrderTemplateLineRowItem,
@@ -262,10 +287,9 @@ function resolveMedicationStockIssue(
 ): null | OrderTemplateMedicationStockIssue {
   const productName = String(line.productName ?? catalog.name ?? '').trim() || '未命名药品';
   if (isAdviceCatalogZeroStock(catalog)) {
-    const availableText = formatAdviceCatalogStockCellText(catalog);
     return {
       productName,
-      detail: `库存不足（当前 ${availableText}）`,
+      detail: '暂无库存',
     };
   }
 
@@ -403,6 +427,9 @@ function resolveOrderTemplateApplyLineGap(
     return undefined;
   }
   if (kind === 'SERVICE') {
+    if (isInpatientDischargeMedicationTherapy(therapyCode)) {
+      return '出院带药仅允许药品，组套含诊疗行';
+    }
     if (!(Number(item.serviceQuantity) > 0)) {
       return '诊疗数量须大于 0';
     }
@@ -416,9 +443,6 @@ function resolveOrderTemplateApplyLineGap(
       return '诊疗执行次数须大于 0';
     }
     return undefined;
-  }
-  if (!String(item.diagnosis ?? '').trim()) {
-    return '缺少诊断（请先录入就诊主诊断）';
   }
   if (!String(item.contractId ?? '').trim()) {
     return '缺少费别';
@@ -490,7 +514,6 @@ function buildAdviceDrugItemFromTemplateLine(
   catalog: AdviceProductOption,
   params: ApplyOrderTemplateParams,
   rateCodeMap: Map<string, string>,
-  mainDiagnosisName: string,
 ): AdviceDrugItem {
   const ctx = {
     feeNatureOptions: params.feeNatureOptions,
@@ -533,7 +556,7 @@ function buildAdviceDrugItemFromTemplateLine(
         selectedDrugSpec: catalog.spec || '',
         productTableName: catalog.productTableName,
         selectedDrugPrice: catalog.price ?? '',
-        diagnosis: mainDiagnosisName,
+        diagnosis: '',
         serviceQuantity: templateQty,
         totalAmount: executionCount,
         totalAmountUnit: uCode,
@@ -563,7 +586,7 @@ function buildAdviceDrugItemFromTemplateLine(
       productTableName: catalog.productTableName,
       selectedDrugPrice: catalog.price ?? '',
       unitBands: catalog.unitBands,
-      diagnosis: mainDiagnosisName,
+      diagnosis: '',
       totalAmount: templateQty,
       totalAmountUnit: uCode,
       totalUnitSalesCode: uCode,
@@ -584,7 +607,7 @@ function buildAdviceDrugItemFromTemplateLine(
     selectedDrugName: catalog.name || seed.selectedDrugName,
     selectedDrugSpec: catalog.spec || seed.selectedDrugSpec,
     productTableName: catalog.productTableName,
-    diagnosis: mainDiagnosisName,
+    diagnosis: '',
     usage: routeCode || catalogPatch.usage || seed.usage,
     frequency: rateCode || catalogPatch.frequency || seed.frequency,
     medicationDays,
@@ -598,14 +621,6 @@ function buildAdviceDrugItemFromTemplateLine(
   };
   applyTemplateDosageTextToDrugItem(item, line.dosageText);
   return hydrateMedicationSingleDoseIfMissing(inferDoseBandConvertK(item));
-}
-
-/** 加载就诊诊断快照（静默套用写草稿用；中医病证组合并展示） */
-async function loadEncounterDiagnosisRows(
-  encounterId: string,
-  patientId: string,
-): Promise<EncounterDiagnosisRowDto[]> {
-  return fetchEncounterDiagnosisDisplayList({ encounterId, patientId }, 'inpatient');
 }
 
 /** 组套套用至当前就诊草稿（静默保存） */
@@ -637,12 +652,11 @@ export async function applyOrderTemplateToAdviceDraft(
     throw new OrderTemplateApplyError('组套明细存在无效项目，无法套用');
   }
 
-  const [catalogList, rateCodeMap, encounterDiagnosisRows] = await Promise.all([
+  const [catalogList, rateCodeMap] = await Promise.all([
     fetchCatalogOptionsByPrepickedKeys(prepickedKeys, params),
     buildRateCodeMapByFrequencyIds(
       normalizedLines.map((line) => preserveApiIdForRequest(line.frequencyId) ?? ''),
     ),
-    loadEncounterDiagnosisRows(encounterId, patientId),
   ]);
 
   const catalogMap = new Map<string, AdviceProductOption>();
@@ -654,19 +668,20 @@ export async function applyOrderTemplateToAdviceDraft(
     }
   }
 
-  const mainDiagnosisName = pickMainDiagnosisDisplayName(encounterDiagnosisRows);
   const stockIssues: OrderTemplateMedicationStockIssue[] = [];
+  const catalogMissingMessages: string[] = [];
   const drugItems: AdviceDrugItem[] = [];
 
-  for (const line of normalizedLines) {
+  for (let index = 0; index < normalizedLines.length; index += 1) {
+    const line = normalizedLines[index];
     const key = prepickedKeyFromTemplateLine(line);
     if (!key) {
       continue;
     }
     const catalog = catalogMap.get(`${key.productTableName}:${key.productDefinitionId}`);
     if (!catalog) {
-      const name = String(line.productName ?? '').trim() || '未知项目';
-      throw new OrderTemplateApplyError(`目录中未找到「${name}」，无法套用组套`);
+      catalogMissingMessages.push(resolveCatalogMissingApplyMessage(line, index));
+      continue;
     }
 
     if (line.lineKindEnum === ORDER_TEMPLATE_LINE_KIND_MEDICATION) {
@@ -676,14 +691,16 @@ export async function applyOrderTemplateToAdviceDraft(
       }
     }
 
-    drugItems.push(
-      buildAdviceDrugItemFromTemplateLine(line, catalog, params, rateCodeMap, mainDiagnosisName),
-    );
+    drugItems.push(buildAdviceDrugItemFromTemplateLine(line, catalog, params, rateCodeMap));
+  }
+
+  if (catalogMissingMessages.length > 0) {
+    throw new OrderTemplateApplyError(catalogMissingMessages.join('；'));
   }
 
   if (stockIssues.length > 0) {
-    const names = stockIssues.map((item) => `「${item.productName}」${item.detail}`).join('；');
-    throw new OrderTemplateApplyError(`以下药品库存不足：${names}`, stockIssues);
+    const names = stockIssues.map((item) => `药品「${item.productName}」${item.detail}`).join('；');
+    throw new OrderTemplateApplyError(`${names}，无法套用组套`, stockIssues);
   }
 
   const invalidIndex = drugItems.findIndex(
@@ -699,10 +716,7 @@ export async function applyOrderTemplateToAdviceDraft(
     );
   }
 
-  const draftLines = buildAdviceDraftLines(drugItems, [], {
-    encounterDiagnosisRows,
-    existingAdviceRows: params.existingAdviceRows ?? [],
-  });
+  const draftLines = buildAdviceDraftLines(drugItems);
   const saveRes = await httpSaveInpatientDoctorStationAdviceDraftBatch({
     encounterId,
     patientId,

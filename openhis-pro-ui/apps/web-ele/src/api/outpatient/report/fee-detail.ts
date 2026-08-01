@@ -64,7 +64,6 @@ export interface OutpatientFeeDetailLineDto {
   billDate?: string;
   tradeDirection?: string;
   insuranceLevelDisplay?: string;
-  insuranceTypeDisplay?: string;
   baseAmount?: number | string;
   discountAmount?: number | string;
   receivableAmount?: number | string;

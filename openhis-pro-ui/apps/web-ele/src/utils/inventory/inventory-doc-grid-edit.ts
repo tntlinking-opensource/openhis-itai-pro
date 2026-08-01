@@ -18,10 +18,20 @@ export interface InventoryDocGridVmLike {
   getColumnByField?: (field: string) => { field?: string; id?: string } | null;
   getColumnById?: (colid: string) => { field?: string } | null;
   getColumnNode?: (cell: Element) => { item?: { field?: string } } | null;
+  /** vxe 4.17+：取当前编辑单元格（替代已废弃的 getEditRecord） */
+  getEditCell?: () => { column?: { field?: string }; row?: unknown } | null;
+  /** @deprecated 请用 getEditCell；保留兼容旧调用方 */
   getEditRecord?: () => { column?: { field?: string }; row?: unknown } | null;
   getFullData?: () => unknown[];
   getRowNode?: (tr: Element) => { row?: unknown } | null;
   setEditRow?: (row: unknown) => void | Promise<void>;
+}
+
+/** 当前编辑行/列（优先 getEditCell，兼容旧 getEditRecord） */
+function resolveInventoryDocGridEditCell(
+  g: InventoryDocGridVmLike,
+): { column?: { field?: string }; row?: unknown } | null {
+  return g.getEditCell?.() ?? g.getEditRecord?.() ?? null;
 }
 
 export interface InventoryDocGridEditConfig<TRow extends object> {
@@ -317,7 +327,7 @@ export async function ensureInventoryDocGridRowEdit<TRow extends object>(
 ): Promise<boolean> {
   const g = resolveInventoryDocGridVm(session.gridApi);
   if (!g?.setEditRow) return false;
-  const editingRow = g.getEditRecord?.()?.row;
+  const editingRow = resolveInventoryDocGridEditCell(g)?.row;
   if (editingRow === row) return true;
   if (editingRow) {
     const prev = editingRow as TRow;
@@ -445,7 +455,7 @@ export function handleInventoryDocGridCellClick<TRow extends object>(
   session.formModeRegistry.enter(params.row, session.config.rowKey);
   void syncInventoryRowFormModeComplete(session, params.row);
 
-  const editingRow = g.getEditRecord?.()?.row as TRow | undefined;
+  const editingRow = resolveInventoryDocGridEditCell(g)?.row as TRow | undefined;
 
   if (editingRow === params.row) {
     if (
@@ -487,7 +497,7 @@ export function handleInventoryDocGridSurfaceMouseDown<TRow extends object>(
   const g = resolveInventoryDocGridVm(session.gridApi);
   if (!g) return;
 
-  const editingRow = g.getEditRecord?.()?.row as TRow | undefined;
+  const editingRow = resolveInventoryDocGridEditCell(g)?.row as TRow | undefined;
   if (!editingRow) return;
 
   const rowEl = target.closest('tr.vxe-body--row');
@@ -545,7 +555,7 @@ export async function handleInventoryDocGridKeydown<TRow extends object>(
   const g = resolveInventoryDocGridVm(session.gridApi);
   if (!g?.setEditRow) return;
 
-  const editRec = g.getEditRecord?.();
+  const editRec = resolveInventoryDocGridEditCell(g);
   const currentRow = (editRec?.row ?? resolveEditRowFromTarget<TRow>(target, g)) as
     | TRow
     | undefined;

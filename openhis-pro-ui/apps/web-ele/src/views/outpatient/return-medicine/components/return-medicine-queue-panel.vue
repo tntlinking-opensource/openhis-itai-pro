@@ -14,6 +14,7 @@ import { ElButton, ElDatePicker, ElInput, ElRadio, ElRadioGroup } from 'element-
 
 import SectionTitle from '#/components/layouts/section-title.vue';
 import PatientCard from '#/components/outpatient/patient-card.vue';
+import { useSingleDayDatePickerShortcuts } from '#/composables/use-single-day-date-picker-shortcuts';
 
 import { toReturnPatientCardModel } from './return-patient-card-map';
 
@@ -42,6 +43,14 @@ const keyword = defineModel<string>('keyword', { required: true });
 const queueDate = defineModel<string>('queueDate', { required: true });
 /** 与门诊发药 pending/completed 同构，父级映射为 PENDING_REFUND / REFUNDED */
 const queueScope = defineModel<'completed' | 'pending'>('queueScope', { required: true });
+
+const { dateShortcuts, singleDayPopperClass } = useSingleDayDatePickerShortcuts(
+  () => queueDate.value,
+  (ymd) => {
+    queueDate.value = ymd;
+    emit('queueDateChange', ymd);
+  },
+);
 
 const isQueueListRefreshing = ref(false);
 
@@ -87,6 +96,8 @@ function onPatientCardSelect(card: PatientCardPatient) {
           format="YYYY-MM-DD"
           value-format="YYYY-MM-DD"
           placeholder="请选择日期"
+          :shortcuts="dateShortcuts"
+          :popper-class="singleDayPopperClass"
           @change="emit('queueDateChange', $event as string | undefined)"
         />
         <ElButton type="default" class="!px-2" :loading="props.loadingQueue" @click="handleRefresh">

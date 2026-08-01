@@ -28,6 +28,8 @@ export interface QueryNurseStationInpatientCostDetailRequest {
   dateTo: string;
   presentationMode: NurseStationCostDetailPresentationMode;
   statusEnum: NurseStationCostDetailStatusFilter;
+  /** 项目关键字：名称或院内编码模糊（可选） */
+  keyword?: string;
 }
 
 /** 查询住院费用明细响应 */
@@ -51,6 +53,8 @@ export interface NurseStationCostDetailLineDto {
   unitPrice?: number | string;
   totalPrice?: number | string;
   businessDateTime?: string;
+  /** 展示时间（执行 recorded；无则回落 businessDateTime） */
+  displayDateTime?: string;
   statusEnum?: string;
   statusDisplay?: string;
   generateSourceEnum?: string;
@@ -78,7 +82,26 @@ export interface NurseStationCostSummaryLineDto {
   splitUnitDisplay?: string;
   expenseBlockCode?: string;
   expenseBlockDisplay?: string;
+  activityLines?: NurseStationCostSummaryActivityLineDto[];
 }
+
+/** 汇总展开：单次执行或划价记录 */
+export interface NurseStationCostSummaryActivityLineDto {
+  chargeItemId?: number | string;
+  activityDateTime?: string;
+  /** 展示时间（执行 recorded；无则回落 activityDateTime） */
+  displayDateTime?: string;
+  operatorName?: string;
+  quantityValue?: number | string;
+  quantityUnit?: string;
+  quantityUnitDisplay?: string;
+  activityTypeEnum?: NurseStationCostSummaryActivityType | string;
+  activityTypeDisplay?: string;
+  cancelHighlight?: boolean;
+}
+
+/** 汇总展开活动类型（与后端 code 一致） */
+export type NurseStationCostSummaryActivityType = 'EXECUTE' | 'PRICING' | 'AUTO_ROLL';
 
 /** 费用合计 */
 export interface NurseStationCostDetailTotalsDto {

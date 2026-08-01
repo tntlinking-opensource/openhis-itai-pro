@@ -67,12 +67,14 @@ const formItems = computed<FormItemConfig[]>(() => [
     type: 'select',
     clearable: true,
     filterable: true,
+    multiple: false,
     options: [{ label: '全部', value: '' }, ...METADATA_VALUE_SOURCE_OPTIONS],
   },
   {
     label: '状态',
     prop: 'isEnabled',
     type: 'select',
+    multiple: false,
     options: [
       { label: '全部', value: undefined },
       { label: '启用', value: true },

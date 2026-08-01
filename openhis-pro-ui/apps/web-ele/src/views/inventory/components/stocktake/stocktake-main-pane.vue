@@ -25,16 +25,20 @@ import {
   ElMessage,
   ElMessageBox,
   ElOption,
+  ElPagination,
   ElSelect,
 } from 'element-plus';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
+import { useFromFinanceApproval } from '#/composables/use-from-finance-approval';
+import { bindInvDocCompactColumns } from '#/composables/use-inv-doc-compact-columns';
 import { useInventoryDocGridEdit } from '#/composables/use-inventory-doc-grid-edit';
 import { useInvDocParentSyncSession } from '#/composables/use-inv-doc-parent-sync-session';
 import {
   agreePharmacyStocktakeApi,
   createPharmacyStocktakeApi,
   getPharmacyStocktakeDetailApi,
+  pageProductsForPharmacyStocktakeApi,
   PHA_STOCKTAKE_CATEGORY_ENUM,
   rejectPharmacyStocktakeApi,
   removePharmacyStocktakeApi,
@@ -48,6 +52,7 @@ import {
   agreeDeptStocktakeApi,
   createDeptStocktakeApi,
   getDeptStocktakeDetailApi,
+  pageProductsForDeptStocktakeApi,
   DEP_STOCKTAKE_CATEGORY_ENUM,
   rejectDeptStocktakeApi,
   removeDeptStocktakeApi,
@@ -61,6 +66,7 @@ import {
   agreeWarehouseStocktakeApi,
   createWarehouseStocktakeApi,
   getWarehouseStocktakeDetailApi,
+  pageProductsForWarehouseStocktakeApi,
   WHS_STOCKTAKE_CATEGORY_ENUM,
   rejectWarehouseStocktakeApi,
   removeWarehouseStocktakeApi,
@@ -71,6 +77,7 @@ import {
   type WarehouseStocktakeLocationOption,
 } from '#/api/inventory/warehouse/stocktake';
 import SectionTitle from '#/components/layouts/section-title.vue';
+import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { decimalAdd, decimalSub } from '#/utils/format/decimal-util';
 import { formatInventoryLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
 import {
@@ -97,14 +104,17 @@ import {
   inventoryPickMedicineCell,
   inventoryPickNumberField,
   inventoryPickStringField,
+  mapInventoryProductPickListRow,
 } from '#/utils/inventory/inventory-product-pick-list';
-import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
 import {
+  buildInventoryDocPractitionerSelectOptions,
+  coercePractitionerIdForSelect,
   INV_ITEM_TABLE_TYPE_DEVICE,
   INV_ITEM_TABLE_TYPE_MEDICATION,
   isSpecificInventoryLocationId,
   normalizeInventoryItemTableTypeOptions,
   resolveDefaultInventoryItemTableType,
+  resolveDefaultPractitionerIdForSelect,
   resolveDocHeadProductPickLocationId,
   warnInventoryLocationRequiredByLabel,
 } from '#/utils/inventory/inventory-workbench-list';
@@ -114,10 +124,13 @@ import {
   validateInventoryHeadFormFields,
 } from '#/utils/inventory/inventory-doc-head-form-validation';
 import {
+  applyInventoryRowCategoryCode,
   INV_DOC_HEAD_FORM_GRID_CLASS,
   INV_DOC_HEAD_SECTION_CLASS,
 } from '#/utils/inventory/inventory-doc-grid-common';
 import { refreshInventoryDocGridRow } from '#/utils/inventory/inventory-doc-grid-edit';
+import { buildInvDocumentTitle, printInvDocument } from '#/utils/print/print-inv-document';
+import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 
 defineOptions({ name: 'InventoryStocktakeMainPane' });
 
@@ -132,6 +145,8 @@ interface StocktakePreviewRow {
   itemTable?: string;
   itemId?: number | string;
   inventoryItemId?: number | string;
+  /** 药品分类码；中药=4 时单价三位展示 */
+  categoryCode?: string;
   spec: string;
   manufacturer: string;
   lotNumber: string;
@@ -162,6 +177,7 @@ interface Props {
     | PharmacyStocktakeLocationOption[]
     | WarehouseStocktakeLocationOption[];
   itemTableTypeOptions?: ApiOptionItem[];
+  practitionerOptions?: ApiOptionItem[];
   /** 单头区库房标签 */
   locationFieldLabel?: string;
   /** 单头区标题 */
@@ -175,6 +191,7 @@ const props = withDefaults(defineProps<Props>(), {
   sidebarPurposeLocationId: undefined,
   locationOptions: () => [],
   itemTableTypeOptions: () => [],
+  practitionerOptions: () => [],
   locationFieldLabel: '盘点库房',
   headSectionTitle: '盘点单信息',
 });
@@ -185,6 +202,26 @@ const emit = defineEmits<{
 }>();
 
 const userStore = useUserStore();
+
+const pinnedPractitionerOptions = ref<ApiOptionItem[]>([]);
+
+const effectivePractitionerOptions = computed(() =>
+  buildInventoryDocPractitionerSelectOptions(props.practitionerOptions, {
+    pinned: pinnedPractitionerOptions.value,
+    userInfo: userStore.userInfo as null | Record<string, unknown>,
+  }),
+);
+
+/** 详情经手人不在下拉时临时 pin，避免 ElSelect 只显示裸 id。 */
+function pinPractitionerOption(id: unknown, label?: string) {
+  const v = String(id ?? '').trim();
+  if (v === '') return;
+  const lbl = String(label ?? '').trim();
+  if (effectivePractitionerOptions.value.some((o) => o.value === v)) return;
+  if (lbl !== '' && lbl !== v) {
+    pinnedPractitionerOptions.value = [{ label: lbl, value: v }];
+  }
+}
 
 /** 选品门禁：优先单头「盘点药库」，与侧栏「全部」筛选解耦。 */
 const productPickGateLocationId = computed(() =>
@@ -233,12 +270,16 @@ const headFormRules = computed(() =>
 );
 
 const headItemTableType = ref(firstItemTableTypeValue());
+const practitionerId = ref<number | string | undefined>(undefined);
 const saving = ref(false);
 
 const isNewDraft = computed(() => !headerBusNo.value);
+const { fromFinanceApproval } = useFromFinanceApproval();
 
 const documentEditable = computed(
-  () => isNewDraft.value || isStockOutDocumentEditableStatus(detailStatusEnum.value),
+  () =>
+    !fromFinanceApproval.value &&
+    (isNewDraft.value || isStockOutDocumentEditableStatus(detailStatusEnum.value)),
 );
 
 const headerStatusText = computed(() => {
@@ -247,8 +288,9 @@ const headerStatusText = computed(() => {
 });
 
 const docActionFlags = computed(() => {
+  const hasPersistedBusNo = Boolean(headerBusNo.value);
   const base = buildStocktakeDocActionFlags({
-    hasPersistedBusNo: Boolean(headerBusNo.value),
+    hasPersistedBusNo,
     isDraft: isNewDraft.value,
     status: detailStatusEnum.value,
   });
@@ -257,6 +299,8 @@ const docActionFlags = computed(() => {
     ...base,
     saveDisabled: base.saveDisabled || busy,
     saveAndSubmitDisabled: base.saveAndSubmitDisabled || busy,
+    // 已落库单据才可打印
+    printDisabled: busy || !hasPersistedBusNo,
   };
 });
 
@@ -310,7 +354,9 @@ function handleStocktakeUnitBandChanged(row: StocktakePreviewRow) {
 /** 详情回显：持久化金额原样格式化，禁止 load 时用单价×数量重算覆盖后端 total_price。 */
 function formatStocktakeDetailPersistedAmount(total: unknown): string {
   if (total === undefined || total === null || total === '') return '';
-  return formatMoneyDisplay(total);
+  const n = Number(total);
+  if (!Number.isFinite(n)) return String(total).trim();
+  return formatMoneyDisplay(n);
 }
 
 function refreshStocktakeLineAmounts(row: StocktakePreviewRow) {
@@ -422,6 +468,7 @@ function syncRowFromStocktakePick(pick: Record<string, unknown>, row: StocktakeP
   row.spec = inventoryPickStringField(pick, 'specification');
   row.manufacturer = inventoryPickStringField(pick, 'manufacturer');
   row.lotNumber = inventoryPickStringField(pick, 'lotNumber');
+  applyInventoryRowCategoryCode(row as unknown as Record<string, unknown>, pick);
 
   const bookQty = resolveStocktakeBookQtyFromPick(pick);
   row.bookQuantity = bookQty;
@@ -560,6 +607,10 @@ function mapDetailLineToGrid(
     }
   }
 
+  applyInventoryRowCategoryCode(base as unknown as Record<string, unknown>, {
+    productCatalog: catalog ?? undefined,
+    categoryCode: catalog?.categoryCode,
+  });
   return base;
 }
 
@@ -822,6 +873,12 @@ const [Grid, gridApi] = useVbenVxeGrid<StocktakePreviewRow>({
   class: 'min-h-0 flex-1 !rounded-none !bg-transparent shadow-none',
   gridClass: '!p-0',
 });
+bindInvDocCompactColumns({
+  baseColumns: columns,
+  gridOptions,
+  getGrid: () =>
+    gridApi?.grid as { loadColumn?: (cols: VxeGridPropTypes.Column[]) => void } | null | undefined,
+});
 
 stocktakeGridEdit = useInventoryDocGridEdit<StocktakePreviewRow>({
   getGridApi: () => gridApi ?? null,
@@ -846,6 +903,7 @@ function patchStocktakeGridEditConfig() {
     editConfig: {
       ...(gridOptions.editConfig as Record<string, unknown>),
       enabled: documentEditable.value,
+      showIcon: documentEditable.value,
     },
   });
   Object.assign(gridOptions, patched);
@@ -902,9 +960,15 @@ function handleOpenTraceScan(): void {
 function resetDetailForCreate() {
   headerBusNo.value = undefined;
   detailStatusEnum.value = undefined;
+  pinnedPractitionerOptions.value = [];
   purposeLocationId.value = undefined;
+  practitionerId.value = resolveDefaultPractitionerIdForSelect(
+    effectivePractitionerOptions.value,
+    userStore.userInfo as null | Record<string, unknown>,
+  );
   clearInventoryHeadFormValidation(headFormRef.value);
   stocktakeGridEdit.resetFormMode();
+  exitBatchMode();
   void nextTick(() => {
     gridApi?.grid?.loadData([]);
     patchStocktakeGridEditConfig();
@@ -914,6 +978,7 @@ function resetDetailForCreate() {
 async function loadDetail(busNo: string, loadGen?: number) {
   stocktakeGridEdit.resetFormMode();
   stocktakeGridEdit.clearGridEdit();
+  exitBatchMode();
   try {
     const res =
       props.variant === 'pharmacy'
@@ -930,6 +995,15 @@ async function loadDetail(busNo: string, loadGen?: number) {
     headerBusNo.value = data.busNo;
     detailStatusEnum.value = normalizeStocktakeStatusSort(data.statusEnum);
     purposeLocationId.value = data.purposeLocationId ?? undefined;
+    pinnedPractitionerOptions.value = [];
+    const detailPractitionerId = data.practitionerId ?? data.applicantId;
+    const detailPractitionerLabel =
+      'applicantName' in data && data.applicantName ? String(data.applicantName) : undefined;
+    pinPractitionerOption(detailPractitionerId, detailPractitionerLabel);
+    practitionerId.value = coercePractitionerIdForSelect(
+      detailPractitionerId,
+      effectivePractitionerOptions.value,
+    );
 
     const gridRows = (data.lines ?? []).map((ln, i) => mapDetailLineToGrid(ln, i));
     // 详情回显：单价/实盘金额/盈亏金额以后端 SupplyRequest 落库为准，不在 load 时重算
@@ -995,6 +1069,10 @@ function validateBeforeSave(rows: StocktakePreviewRow[]): boolean {
     warnInventoryLocationRequiredByLabel(props.locationFieldLabel);
     return false;
   }
+  if (!practitionerId.value) {
+    ElMessage.warning('请选择经手人');
+    return false;
+  }
   if (rows.length === 0) {
     ElMessage.warning('请至少添加一行盘点明细');
     return false;
@@ -1044,14 +1122,13 @@ async function persistStocktake(): Promise<string | undefined> {
     ElMessage.warning('当前状态不允许修改');
     return undefined;
   }
-  const rows = collectGridRows();
+  // 批量分页模式需汇总全部页（含缓存与未访问页默认值）
+  const rows = batchMode.value ? await collectAllBatchModeRows() : collectGridRows();
   if (!validateBeforeSave(rows)) return undefined;
 
-  const practitionerId = resolveLoginPractitionerIdForRequest(
-    userStore.userInfo as null | Record<string, unknown>,
-  );
-  if (!practitionerId) {
-    ElMessage.warning('无法获取当前操作人员，请重新登录');
+  const handlerId = practitionerId.value;
+  if (!handlerId) {
+    ElMessage.warning('请选择经手人');
     return undefined;
   }
 
@@ -1060,7 +1137,7 @@ async function persistStocktake(): Promise<string | undefined> {
     const lines = buildLinesPayload(rows);
     const common = {
       purposeLocationId: purposeLocationId.value as number | string,
-      practitionerId,
+      practitionerId: String(handlerId),
       categoryEnum: categoryEnum.value,
       lines,
     };
@@ -1236,6 +1313,106 @@ async function handleReject() {
   }
 }
 
+/** 解析下拉选项展示名 */
+function resolvePrintOptionLabel(options: ApiOptionItem[] | undefined, value: unknown): string {
+  const key = String(value ?? '').trim();
+  if (!key) return '';
+  const hit = options?.find((item) => String(item.value ?? '') === key);
+  return String(hit?.label ?? '').trim();
+}
+
+/** 解析盘点库房展示名 */
+function resolvePrintLocationName(value: unknown): string {
+  const key = String(value ?? '').trim();
+  if (!key) return '';
+  const hit = (props.locationOptions ?? []).find((row) => String(row.locationId ?? '') === key);
+  return String(hit?.displayName ?? hit?.locationId ?? '').trim();
+}
+
+/** 明细行项目名称（选品单元格） */
+function resolveStocktakePrintProductName(row: StocktakePreviewRow): string {
+  const pick = row.medicinePick;
+  if (pick && typeof pick === 'object' && 'name' in pick) {
+    return String((pick as { name?: string }).name ?? '').trim();
+  }
+  return '';
+}
+
+/** 明细行当前计量单位展示文案 */
+function resolveStocktakePrintUnitLabel(row: StocktakePreviewRow): string {
+  const kind = String(row.selectedBandKind ?? '').trim();
+  const byKind = row.unitList?.find((item) => String(item.value ?? '') === kind);
+  if (byKind) {
+    return String(byKind.label ?? '').trim();
+  }
+  return String(row.unitCode ?? '').trim();
+}
+
+/** 打印盘点单 */
+async function handlePrint() {
+  const busNo = String(headerBusNo.value ?? '').trim();
+  if (!busNo) {
+    ElMessage.warning('请先保存单据后再打印');
+    return;
+  }
+  const gridRows = batchMode.value ? await collectAllBatchModeRows() : collectGridRows();
+  const productRows = gridRows.filter((row) => isPresentItemId(row.itemId));
+  if (productRows.length === 0) {
+    ElMessage.warning('没有可打印的明细');
+    return;
+  }
+
+  const locationName = resolvePrintLocationName(purposeLocationId.value);
+  const itemTypeText = resolvePrintOptionLabel(
+    normalizedItemTableTypeOptions.value,
+    headItemTableType.value,
+  );
+  const practitionerName = resolvePrintOptionLabel(
+    effectivePractitionerOptions.value,
+    practitionerId.value,
+  );
+  const documentTitle = buildInvDocumentTitle(locationName, '盘点单');
+  // 取首行发生时间作制单时间展示（单头未单独缓存 applyTime）
+  const applyTimeText = String(productRows[0]?._occurrenceTime ?? '')
+    .trim()
+    .replace('T', ' ');
+
+  // 按当前网格展示值组装盈亏明细
+  const lineRows = productRows.map((row) => ({
+    productName: resolveStocktakePrintProductName(row),
+    specText: String(row.spec ?? '').trim(),
+    manufacturerText: String(row.manufacturer ?? '').trim(),
+    lotNumber: String(row.lotNumber ?? '').trim(),
+    bookQty: row.bookQuantity,
+    actualQty: row.actualQuantity,
+    diffQty: row.profitLossQuantity,
+    unitLabel: resolveStocktakePrintUnitLabel(row),
+    unitPrice: row.price,
+    actualAmount: row.actualAmount,
+    diffAmount: row.profitLossAmount,
+    reasonText: String(row.remark ?? '').trim(),
+  }));
+
+  await printInvDocument({
+    family: 'stocktake',
+    source: {
+      hospitalName: resolvePrintHospitalName(),
+      documentTitle,
+      docNo: busNo,
+      applyTimeText,
+      itemTypeText,
+      sourceLocationText: locationName,
+      destLocationText: '',
+      practitionerName,
+      lineRows,
+      preparedByName: practitionerName,
+      approvedByName: '',
+    },
+    bizRef: { busNo, docKind: 'stocktake', variant: props.variant },
+    jobName: documentTitle,
+  });
+}
+
 async function addItem() {
   if (!documentEditable.value) return;
   if (!(await validateInventoryHeadFormFields(headFormRef.value, 'purposeLocationId'))) {
@@ -1259,11 +1436,209 @@ async function deleteItem(row: 'select' | StocktakePreviewRow) {
   const checked = $grid.getCheckboxRecords() as StocktakePreviewRow[];
   if (row === 'select' && checked.length === 0) return;
   await $grid.remove(row === 'select' ? checked : row);
+  // 批量模式下同步当前页缓存，避免删行后切页又恢复
+  if (batchMode.value) {
+    flushCurrentBatchPageToCache();
+  }
+}
+
+const BATCH_PAGE_SIZE = 10;
+
+/** 批量盘点：分页加载库存行到明细表，并缓存各页已编辑数据 */
+const batchMode = ref(false);
+const batchPageNo = ref(1);
+const batchTotal = ref(0);
+const batchLoading = ref(false);
+/** 各页快照（含用户改过的实盘/备注等），切页时回写/恢复 */
+const batchPageCache = ref(new Map<number, StocktakePreviewRow[]>());
+
+/** 深拷贝当前页明细，避免缓存与网格互相污染 */
+function cloneStocktakeRows(rows: StocktakePreviewRow[]): StocktakePreviewRow[] {
+  return rows.map((r) => ({
+    ...r,
+    medicinePick: r.medicinePick ? { ...(r.medicinePick as object) } : undefined,
+    unitBands: r.unitBands?.map((b) => ({ ...b })),
+    unitList: r.unitList?.map((u) => ({ ...u })),
+  }));
+}
+
+/** 退出批量盘点分页模式，恢复整表编辑 */
+function exitBatchMode() {
+  batchMode.value = false;
+  batchPageNo.value = 1;
+  batchTotal.value = 0;
+  batchPageCache.value = new Map();
+  batchLoading.value = false;
+}
+
+/** 把当前页网格数据写入页缓存 */
+function flushCurrentBatchPageToCache() {
+  if (!batchMode.value) return;
+  const pageNo = batchPageNo.value;
+  batchPageCache.value.set(pageNo, cloneStocktakeRows(collectGridRows()));
+}
+
+/** 选品接口按 variant 分流 */
+async function fetchStocktakePickPage(pageNo: number, pageSize: number) {
+  const purposeLocationId = productPickGateLocationId.value;
+  const productTableName = String(headItemTableType.value ?? '').trim();
+  const body = {
+    purposeLocationId: purposeLocationId as number | string,
+    productTableName,
+    pageNo,
+    pageSize,
+    // 与单行选品默认一致：含零库存
+    positiveQuantityOnly: false,
+  };
+  if (props.variant === 'pharmacy') {
+    return pageProductsForPharmacyStocktakeApi(body);
+  }
+  if (props.variant === 'department') {
+    return pageProductsForDeptStocktakeApi(body);
+  }
+  return pageProductsForWarehouseStocktakeApi(body);
+}
+
+/** 选品行映射为盘点明细（实盘默认等于账面） */
+function mapPickToStocktakeRow(pick: Record<string, unknown>): StocktakePreviewRow {
+  const row = createEmptyStocktakeRow();
+  syncRowFromStocktakePick(mapInventoryProductPickListRow(pick), row);
+  return row;
+}
+
+/** 加载指定页：优先用缓存，否则请求选品接口 */
+async function loadBatchPage(pageNo: number) {
+  const cached = batchPageCache.value.get(pageNo);
+  if (cached) {
+    batchPageNo.value = pageNo;
+    gridApi?.grid?.loadData(cloneStocktakeRows(cached));
+    await enterBatchPageEditMode();
+    return;
+  }
+  batchLoading.value = true;
+  try {
+    const res = await fetchStocktakePickPage(pageNo, BATCH_PAGE_SIZE);
+    const parsed = parsePagedRowsFromApiData<Record<string, unknown>>(res.data);
+    batchTotal.value = parsed.totalCount;
+    // 映射为本页明细行，并写入缓存
+    const rows = parsed.content.map((r) => mapPickToStocktakeRow(r));
+    batchPageCache.value.set(pageNo, cloneStocktakeRows(rows));
+    batchPageNo.value = pageNo;
+    gridApi?.grid?.loadData(rows);
+    await enterBatchPageEditMode();
+  } catch {
+    gridApi?.grid?.loadData([]);
+  } finally {
+    batchLoading.value = false;
+  }
+}
+
+/** 本页明细进入表单编辑态，并聚焦首行实盘数量 */
+async function enterBatchPageEditMode() {
+  await nextTick();
+  const rows = collectGridRows().filter((r) => isPresentItemId(r.itemId));
+  if (rows.length === 0) return;
+  // 全部标记为表单态，便于直接改实盘
+  for (const row of rows) {
+    stocktakeGridEdit.markRowFormMode(row);
+  }
+  const first = rows[0];
+  if (!first) return;
+  await gridApi?.grid?.scrollToRow?.(first);
+  await stocktakeGridEdit.enterRowFormMode(first, '_actualQtyUnit');
+}
+
+/** 底部分页切换：先缓存当前页，再加载目标页 */
+async function handleBatchPageChange(currentPage: number) {
+  if (!batchMode.value || batchLoading.value) return;
+  if (currentPage === batchPageNo.value) return;
+  // 先落缓存再清编辑态，避免未提交单元格改动丢失
+  flushCurrentBatchPageToCache();
+  stocktakeGridEdit.clearGridEdit();
+  await loadBatchPage(currentPage);
+}
+
+/** 汇总批量模式下全部页明细（保存前用；未访问页现场拉取默认实盘=账面） */
+async function collectAllBatchModeRows(): Promise<StocktakePreviewRow[]> {
+  flushCurrentBatchPageToCache();
+  const total = batchTotal.value;
+  if (total <= 0) return [];
+  const pageCount = Math.max(1, Math.ceil(total / BATCH_PAGE_SIZE));
+  const allRows: StocktakePreviewRow[] = [];
+  batchLoading.value = true;
+  try {
+    // 按页拼齐：已访问页用缓存，未访问页拉接口默认值
+    for (let pageNo = 1; pageNo <= pageCount; pageNo++) {
+      const cached = batchPageCache.value.get(pageNo);
+      if (cached) {
+        allRows.push(...cloneStocktakeRows(cached));
+        continue;
+      }
+      const res = await fetchStocktakePickPage(pageNo, BATCH_PAGE_SIZE);
+      const parsed = parsePagedRowsFromApiData<Record<string, unknown>>(res.data);
+      const rows = parsed.content.map((r) => mapPickToStocktakeRow(r));
+      batchPageCache.value.set(pageNo, cloneStocktakeRows(rows));
+      allRows.push(...rows);
+    }
+  } finally {
+    batchLoading.value = false;
+  }
+  return allRows;
+}
+
+/** 开始批量盘点：按选品列表分页载入操作明细 */
+async function startBatchStocktake() {
+  if (!documentEditable.value) return;
+  if (!(await validateInventoryHeadFormFields(headFormRef.value, 'purposeLocationId'))) {
+    return;
+  }
+  const productTableName = String(headItemTableType.value ?? '').trim();
+  if (!productTableName) {
+    ElMessage.warning('请先选择项目类型');
+    return;
+  }
+  if (!productPickGateLocationId.value) {
+    warnInventoryLocationRequiredByLabel(props.locationFieldLabel);
+    return;
+  }
+
+  const existing = collectGridRows().filter((r) => isPresentItemId(r.itemId));
+  if (existing.length > 0 && !batchMode.value) {
+    try {
+      await ElMessageBox.confirm(
+        '批量盘点将按当前库房与项目类型重新加载库存行到明细表，现有明细将被替换，是否继续？',
+        '批量盘点',
+        { type: 'warning', confirmButtonText: '继续', cancelButtonText: '取消' },
+      );
+    } catch {
+      return;
+    }
+  }
+
+  stocktakeGridEdit.clearGridEdit();
+  stocktakeGridEdit.resetFormMode();
+  batchPageCache.value = new Map();
+  batchMode.value = true;
+  batchPageNo.value = 1;
+  batchTotal.value = 0;
+  gridApi?.grid?.loadData([]);
+  await loadBatchPage(1);
+  if (batchTotal.value === 0) {
+    ElMessage.warning('当前条件下暂无可盘点库存');
+    exitBatchMode();
+    return;
+  }
+  ElMessage.success(`已加载盘点明细，共 ${batchTotal.value} 条，每页 ${BATCH_PAGE_SIZE} 条`);
 }
 
 interface StocktakeDraftSnap {
   purposeLocationId?: number | string;
+  practitionerId?: number | string;
   rows: StocktakePreviewRow[];
+  batchMode?: boolean;
+  batchPageNo?: number;
+  batchTotal?: number;
+  batchPages?: [number, StocktakePreviewRow[]][];
 }
 
 const parentSync = useInvDocParentSyncSession<StocktakeDraftSnap>();
@@ -1274,17 +1649,48 @@ async function syncFromParentContext() {
     { isDraftOrder: Boolean(props.isDraftOrder), parentBusNo: props.busNo },
     {
       getLocalPersistedBusNo: () => headerBusNo.value,
-      captureDraft: () => ({
-        purposeLocationId: purposeLocationId.value,
-        rows: collectGridRows().map((r) => ({ ...r })),
-      }),
+      captureDraft: () => {
+        if (batchMode.value) {
+          flushCurrentBatchPageToCache();
+        }
+        return {
+          purposeLocationId: purposeLocationId.value,
+          practitionerId: practitionerId.value,
+          rows: collectGridRows().map((r) => ({ ...r })),
+          batchMode: batchMode.value,
+          batchPageNo: batchPageNo.value,
+          batchTotal: batchTotal.value,
+          batchPages: batchMode.value
+            ? Array.from(batchPageCache.value.entries()).map(
+                ([pageNo, rows]) =>
+                  [pageNo, cloneStocktakeRows(rows)] as [number, StocktakePreviewRow[]],
+              )
+            : undefined,
+        };
+      },
       restoreDraft: async (snap) => {
         headerBusNo.value = undefined;
         detailStatusEnum.value = undefined;
         purposeLocationId.value = snap.purposeLocationId;
+        practitionerId.value = snap.practitionerId;
         stocktakeGridEdit.resetFormMode();
         await nextTick();
-        gridApi?.grid?.loadData(snap.rows);
+        if (snap.batchMode) {
+          batchMode.value = true;
+          batchPageNo.value = snap.batchPageNo ?? 1;
+          batchTotal.value = snap.batchTotal ?? 0;
+          batchPageCache.value = new Map(
+            (snap.batchPages ?? []).map(
+              ([pageNo, rows]) =>
+                [pageNo, cloneStocktakeRows(rows)] as [number, StocktakePreviewRow[]],
+            ),
+          );
+          const cached = batchPageCache.value.get(batchPageNo.value);
+          gridApi?.grid?.loadData(cached ? cloneStocktakeRows(cached) : snap.rows);
+        } else {
+          exitBatchMode();
+          gridApi?.grid?.loadData(snap.rows);
+        }
         patchStocktakeGridEditConfig();
       },
       resetForCreate: () => {
@@ -1311,6 +1717,21 @@ watch(
   },
   { immediate: true },
 );
+
+watch(
+  effectivePractitionerOptions,
+  (opts) => {
+    if (opts.length === 0) return;
+    const current = String(practitionerId.value ?? '').trim();
+    if (!current || !opts.some((o) => o.value === current)) {
+      practitionerId.value = resolveDefaultPractitionerIdForSelect(
+        opts,
+        userStore.userInfo as null | Record<string, unknown>,
+      );
+    }
+  },
+  { deep: true },
+);
 </script>
 
 <template>
@@ -1322,8 +1743,10 @@ watch(
       <template #actionBar>
         <div class="flex w-full flex-wrap items-center justify-end gap-2">
           <InvDocActions
+            require-finance-approval-role
             v-bind="docActionFlags"
             @approve="handleApprove"
+            @print="handlePrint"
             @reject="handleReject"
             @remove-doc="handleRemoveDoc"
             @save="handleSaveDoc"
@@ -1376,6 +1799,23 @@ watch(
                   />
                 </ElSelect>
               </ElFormItem>
+              <ElFormItem label="经手人">
+                <ElSelect
+                  v-model="practitionerId"
+                  class="w-full"
+                  filterable
+                  clearable
+                  placeholder="请选择经手人"
+                  :disabled="!documentEditable"
+                >
+                  <ElOption
+                    v-for="p in effectivePractitionerOptions"
+                    :key="String(p.value)"
+                    :label="p.label"
+                    :value="p.value"
+                  />
+                </ElSelect>
+              </ElFormItem>
               <ElFormItem label="项目类型">
                 <ElSelect
                   v-model="headItemTableType"
@@ -1403,18 +1843,21 @@ watch(
           <Grid class="min-h-0 flex-1">
             <template #toolbar-actions>
               <InvDocGridToolbar
-                :disabled="!documentEditable"
+                v-if="documentEditable"
+                show-batch-add
+                batch-add-label="批量盘点"
                 show-trace-scan
                 @add="addItem"
+                @batch-add="startBatchStocktake"
                 @delete-selected="deleteItem('select')"
                 @trace-scan="handleOpenTraceScan"
               />
             </template>
             <template #action="{ row }">
               <ElButton
+                v-if="documentEditable"
                 type="danger"
                 text
-                :disabled="!documentEditable"
                 @click="deleteItem(row as StocktakePreviewRow)"
               >
                 <Trash2 class="size-4" />
@@ -1422,11 +1865,29 @@ watch(
               </ElButton>
             </template>
           </Grid>
+          <div
+            v-if="batchMode && batchTotal > 0"
+            class="stocktake-main-pane__pager flex shrink-0 items-center justify-end py-2"
+          >
+            <ElPagination
+              background
+              layout="total, prev, pager, next"
+              :current-page="batchPageNo"
+              :page-size="BATCH_PAGE_SIZE"
+              :total="batchTotal"
+              :disabled="batchLoading || !documentEditable"
+              @current-change="handleBatchPageChange"
+            />
+          </div>
         </div>
       </div>
     </InvMainShell>
   </div>
-  <InvDocTraceScanBridge ref="traceScanBridgeRef" scene="stocktake" />
+  <InvDocTraceScanBridge
+    ref="traceScanBridgeRef"
+    scene="stocktake"
+    :default-location-id="purposeLocationId"
+  />
 </template>
 
 <style scoped lang="scss">
@@ -1443,7 +1904,12 @@ watch(
 }
 
 .stocktake-main-pane__grid-wrap :deep(.vxe-grid) {
-  min-height: 200px;
+  flex: 1;
+  min-height: 0;
+}
+
+.stocktake-main-pane__pager {
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 
 @keyframes stocktake-pane-flash {

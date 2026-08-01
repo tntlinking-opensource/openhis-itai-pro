@@ -79,28 +79,44 @@ export interface DoctorStationAdviceRowDto {
   patientId?: string;
   statusEnum?: string;
   statusEnumText?: string;
-  /** 列表「状态」列展示码（退费优先于请求态） */
+  /** 合并展示码（退费优先于请求态；列表已分列，仅历史/兼容消费者使用） */
   displayStatusEnum?: string;
-  /** 列表「状态」列展示文案（待退费/已退费或请求态） */
+  /** 合并展示文案（待退费/已退费或请求态；列表已分列，仅历史/兼容消费者使用） */
   displayStatusEnumText?: string;
   contentSummary?: string;
   prescriptionNo?: string;
   groupId?: string;
+  /** 组套标识；成组药嘱与 groupId 同源，绑定耗材可对齐 */
+  packageId?: string;
+  /** 行级费用状态码（ChargeItemStatus） */
   chargeStatusEnum?: string;
+  /** 行级费用状态文案 */
   chargeStatusEnumText?: string;
+  /** 费用性质主键（药品：med_medication_request.contract_id） */
+  contractId?: string;
+  /** 费用性质分类展示文案（自费/公费/省医保/市医保/职工医保） */
+  feeNatureText?: string;
   skinTestFlag?: boolean;
   injectionFlag?: boolean;
   authoredById?: string;
   authoredByName?: string;
-  authoredAt?: string;
+  /** 停嘱人主键（后端 stopper_id） */
+  stopperId?: string;
+  /** 停嘱人姓名 */
+  stopperName?: string;
+  /** 开立时间（后端 req_opened_time） */
+  reqOpenedTime?: string;
   /** 列表行诊断摘要（装配器若返回则展示） */
   diagnosisSummary?: string;
-  /** 诊断定义名称（列表「诊断」列，由 conditionDefinitionId 批量解析） */
+  /** 诊断定义名称（列表「诊断」列，由 encounterDiagnosisIds 批量解析） */
   conditionDefinitionName?: string;
+  /** 绑定就诊诊断有序 ids 串（有序；主诊第一） */
+  encounterDiagnosisIds?: string;
   /** 列表行金额合计（装配器若返回则展示） */
   lineTotalAmount?: number | string;
   signedById?: string;
-  signedAt?: string;
+  /** 签发时间（后端 req_authored_time） */
+  reqAuthoredTime?: string;
 
   /** 统一列表行稳定键（新契约） */
   listRowKey?: string;
@@ -120,6 +136,23 @@ export interface DoctorStationAdviceRowDto {
   dose?: number | string;
   doseUnitCode?: string;
   doseUnitName?: string;
+  /** 是否中药饮片行（tcm_flag） */
+  tcmFlag?: boolean | null;
+  /** 中药付数（方头 chinese_herbs_dose_quantity；非请求总量） */
+  chineseHerbsDoseQuantity?: null | number | string;
+  /**
+   * 单次剂量展示串（后端）：最小单位为主，必要时括号附计量单位，末尾带 /次；单位相同时无括号。
+   * 例：`1支(2ml)/次` / `1片/次`
+   */
+  dosageDisplay?: string;
+  /** 单次剂量对应的最小单位数量 */
+  splitDose?: number | string;
+  splitDoseUnitCode?: string;
+  splitDoseUnitName?: string;
+  /** 首日/首次用量（仅住院长期；BR-IP-ORD-030） */
+  firstDose?: number | string;
+  firstDoseUnitCode?: string;
+  firstDoseUnitName?: string;
   methodCode?: string;
   methodName?: string;
   rateCode?: string;
@@ -132,27 +165,43 @@ export interface DoctorStationAdviceRowDto {
   skinTestFlagText?: string;
   skinTestOutcomeCode?: string;
   skinTestOutcomeText?: string;
+  /** 长嘱皮试药换批提示：建议追加皮试检查（住院 IF-IP-DOR-27） */
+  needAppendSkinTestFlag?: boolean;
+  /** 皮试检查关联的皮试药 requestId（companion based_on） */
+  basedOnMedicationRequestId?: string;
+  /** 皮试检查关联的皮试药名称 */
+  skinTestLinkedMedicationName?: string;
   /** 医生站主表展示排序号（AS BR-ORD-018） */
   sortNumber?: number | string | null;
   /** 诊疗执行次数（结构-only 行） */
   executionCount?: number | string | null;
   /** 目录分类码（如 2 西药、11 耗材、21 治疗、26 护理级别） */
   catalogCategoryCode?: string;
-  /** 诊疗服务类目持久化码（如 26 护理级别、出院/转科特殊类目） */
+  /** 医保项目等级码（CHRGITM_LV；常见 1/2/3） */
+  chrgitmLv?: number | string;
+  /** 医保项目等级展示（甲类/乙类/丙类） */
+  chrgitmLvText?: string;
+  /** 诊疗服务类目持久化码（如 26 护理级别、52 嘱托、出院/转科特殊类目） */
   serviceCategoryEnum?: string;
   /** 活动类型码/名（诊疗） */
   activityTypeCode?: string;
   activityTypeName?: string;
+  /**
+   * 嘱托医嘱正文（`wkf_service_request.entrust_content`）；
+   * 嘱托行内容列优先本字段（AS-IP-DOR-003 · BR-IP-ORD-028）。
+   */
+  entrustContent?: string;
   /** 执行科室 */
   performLocationId?: string;
   performLocationName?: string;
   fifoDispenseLocationId?: string;
   fifoDispenseLocationName?: string;
-  /** 住院：长临医嘱 LONG_TERM / TEMPORARY */
+  /** 住院：LONG_TERM / TEMPORARY / DISCHARGE_MEDICATION */
   therapyTypeCode?: string;
-  /** 住院：长临展示文案（如 长期、临时） */
+  /** 住院：治疗类型展示文案（长期医嘱 / 临时医嘱 / 出院带药） */
   therapyTypeText?: string;
   generateSourceEnum?: string;
+  /** 停嘱时间（后端 stop_time） */
   stopTime?: string;
   conditionDefinitionId?: string;
   /** 前置服务申请主键（锚定 SR 时） */
@@ -166,6 +215,9 @@ export interface DoctorStationAdviceRowDto {
 }
 
 export interface ListDoctorStationAdviceResponse {
+  /** 标准分页列表（后端 PagedResult） */
+  content?: DoctorStationAdviceRowDto[];
+  /** @deprecated 兼容旧字段；实际 list 在 content */
   rows?: DoctorStationAdviceRowDto[];
   totalCount?: number;
 }
@@ -223,6 +275,8 @@ export interface DoctorStationAdviceCatalogRowDto {
   productTableName?: string;
   busNo?: string;
   name?: string;
+  /** 商品名称（药品 merchandise_name；诊疗/耗材通常为空） */
+  merchandiseName?: string;
   pyCode?: string;
   wbCode?: string;
   categoryCode?: string;
@@ -244,7 +298,19 @@ export interface DoctorStationAdviceCatalogRowDto {
   /** 药品默认用法（给药途径）编码 */
   methodCode?: string;
   methodCodeDictText?: string;
+  /** 默认单次剂量（剂量单位） */
+  dose?: number | string;
+  /** 单次最小剂量（剂量单位） */
+  minUnit?: number | string;
+  /** 单次最大剂量（剂量单位） */
+  maxUnit?: number | string;
   availableQuantity?: number | string;
+  /** 满包整数 + 拆零余量展示（如 4盒6片），优先于 availableQuantity 小数盒 */
+  availableQuantityText?: string;
+  /**
+   * 生产厂家/产地。
+   */
+  manufacturer?: string;
   inventoryList?: DoctorStationAdviceInventoryRowDto[];
   /** 零售价等单价（与目录接口返回字段对齐） */
   unitPrice?: number | string;
@@ -260,6 +326,16 @@ export interface DoctorStationAdviceCatalogRowDto {
   /** 住院临时医嘱拆分属性 */
   thoPartAttributeEnum?: string;
   thoPartAttributeEnumDictText?: string;
+  /** 医保收费项目等级码（CHRGITM_LV，如 1/2/3） */
+  chrgitmLv?: number | string;
+  /** 医保等级展示名（甲类/乙类/丙类） */
+  chrgitmLvText?: string;
+  /** 注射/输液药品标志（目录 med_medication_definition.inject_flag） */
+  injectFlag?: boolean;
+  /** 中药特殊煎法术语码（目录 dosage_instruction） */
+  dosageInstruction?: string;
+  /** 中药特殊煎法展示名 */
+  dosageInstructionDictText?: string;
 }
 
 export interface PageDoctorStationAdviceCatalogResponse {
@@ -350,21 +426,25 @@ export interface SaveMedicationAdviceDraftLinePayload {
   dose?: number | string;
   /** 单次用量单位编码（对应 dose_unit_code） */
   doseUnitCode?: string;
+  /** 首日/首次用量（仅住院长期；BR-IP-ORD-030） */
+  firstDose?: number | string;
+  /** 首日用量单位编码 */
+  firstDoseUnitCode?: string;
   /** 用药天数（对应 dispense_per_duration） */
   dispensePerDuration?: number;
   methodCode?: string;
   rateCode?: string;
   groupId?: string;
   dispenseLocationId?: string;
-  /** 绑定诊断定义主键，与就诊诊断 `conditionDefinitionId` 一致 */
-  conditionDefinitionId?: string;
-  /** 就诊诊断主键（落库 `encounter_diagnosis_id`） */
-  encounterDiagnosisId?: string;
+  /** 绑定就诊诊断有序 ids 串（有序；主诊第一；落库 encounter_diagnosis_ids） */
+  encounterDiagnosisIds?: string;
   contractId?: string;
   /** 皮试标记（与列表 `skinTestFlag` 对齐） */
   skinTestFlag?: boolean;
   /** 用药方式：LONG_TERM 长期 / TEMPORARY 临时（住院） */
   therapyEnum?: string;
+  /** 医嘱备注（落库 med_medication_request.remark） */
+  remark?: string;
 }
 
 export interface SaveServiceAdviceDraftLinePayload {
@@ -378,10 +458,19 @@ export interface SaveServiceAdviceDraftLinePayload {
   quantity: number | string;
   /** 单位 code */
   unitCode?: string;
-  /** 绑定诊断定义主键，与就诊诊断 `conditionDefinitionId` 一致 */
-  conditionDefinitionId?: string;
+  /** 绑定就诊诊断有序 ids 串（有序；主诊第一） */
+  encounterDiagnosisIds?: string;
   /** 套餐子项覆盖 JSON（仅套餐展开子项覆盖，不含频次/次数/单位） */
   childOverridesJson?: string;
+  /**
+   * 嘱托正文（落库 `entrust_content`）；嘱托行（类目 52 / 名「嘱托」）必填（BR-IP-ORD-028）。
+   */
+  entrustContent?: string;
+  /**
+   * 医嘱备注（落库 `wkf_service_request.remark`；与嘱托正文分立；
+   * 有套餐子项覆盖时后端优先写覆盖 JSON，本字段可不生效）。
+   */
+  remark?: string;
 }
 
 export interface SaveDeviceAdviceDraftLinePayload {
@@ -389,6 +478,8 @@ export interface SaveDeviceAdviceDraftLinePayload {
   quantity: number | string;
   unitCode: string;
   performOrgId?: string;
+  /** 绑定就诊诊断有序 ids 串（有序；主诊第一） */
+  encounterDiagnosisIds?: string;
 }
 
 export interface DoctorStationAdviceDraftLineRequest {
@@ -403,8 +494,13 @@ export interface DoctorStationAdviceDraftLineRequest {
   sortNumber?: number;
   /** 派生绑定行锚定表（IF-DOR-23 → IF-DOR-14） */
   basedOnTable?: string;
-  /** 派生绑定行锚定主键（IF-DOR-23 → IF-DOR-14） */
+  /** 派生绑定行锚定主键（IF-DOR-23 → IF-DOR-14；成组可任取组内一条） */
   basedOnId?: string;
+  /**
+   * 组套标识：成组用法绑定耗材与主药 packageId/groupId 对齐；非成组可空。
+   * 仅耗材草稿落库；诊疗无 package_id 列。
+   */
+  packageId?: string;
   medicationPayload?: SaveMedicationAdviceDraftLinePayload;
   servicePayload?: SaveServiceAdviceDraftLinePayload;
   devicePayload?: SaveDeviceAdviceDraftLinePayload;
@@ -532,10 +628,10 @@ export interface SaveDoctorStationServiceApplyFormRequest {
   /** 检验 PROOF/22、检查 TEST/23、治疗 TREATMENT/21 */
   categoryEnum: string;
   orgId: string;
-  /** 整单绑定诊断定义主键（与 orgId 同级，写入全部 ServiceRequest） */
-  conditionDefinitionId?: string;
-  /** 整单绑定就诊诊断主键 */
-  encounterDiagnosisId?: string;
+  /** 整单执行次数（各明细行共用；空则后端回落 1） */
+  executionCount?: number;
+  /** 整单绑定就诊诊断有序 ids 串（有序；主诊第一；写入全部 ServiceRequest） */
+  encounterDiagnosisIds?: string;
   /** 编辑时待替换的旧 AR 申请单号 */
   previousPrescriptionNo?: string;
   lines: ServiceApplyFormLineRequest[];
@@ -571,7 +667,8 @@ export interface ServiceApplyFormHeaderDto {
   categoryEnum?: string;
   orgId?: string;
   orgName?: string;
-  authoredAt?: string;
+  /** 开立时间（后端 req_opened_time） */
+  reqOpenedTime?: string;
   statusSummary?: string;
   lines?: ServiceApplyFormLineDto[];
 }

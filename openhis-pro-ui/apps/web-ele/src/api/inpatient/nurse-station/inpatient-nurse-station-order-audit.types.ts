@@ -30,17 +30,26 @@ export interface NurseStationOrderAuditRowDto {
   therapyEnum?: string;
   therapyDisplay?: string;
   adviceDisplayName?: string;
+  /** 医嘱备注（随医嘱内容展示） */
+  remark?: string;
   specificationText?: string;
   dosageDisplay?: string;
   usageDisplay?: string;
   frequencyDisplay?: string;
-  authoredTime?: string;
+  /** 开立时间（后端 req_opened_time） */
+  reqOpenedTime?: string;
   stopTime?: string;
   requesterName?: string;
+  stopperId?: string;
+  stopperName?: string;
   performerLocationDisplay?: string;
+  /** 校对人姓名（已校对及后续 Tab 展示） */
+  performerCheckName?: string;
   categoryEnum?: string;
   /** 类型列展示：药品/诊疗/出院/转科/护理 */
   orderKindDisplay?: string;
+  /** 药品成组号（与医生站 group_id 同源；未成组可空） */
+  groupId?: string;
   groupNo?: number;
   sortNumber?: number;
   /** 是否中药饮片方（方级折叠行） */
@@ -50,6 +59,8 @@ export interface NurseStationOrderAuditRowDto {
   lineRequestIds?: string[];
   sufferingFlag?: boolean;
   chineseHerbsDoseQuantity?: number | string;
+  /** 是否皮试药（仅药嘱；true 时校对列表提示需皮试） */
+  skinTestFlag?: boolean;
 }
 
 /** 按就诊分组的医嘱列表 */

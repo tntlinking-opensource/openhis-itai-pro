@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import type { PatientQueueScopeFilter, PatientStatusFilter } from './patient-list-panel.context';
+import type { PatientStatusFilter } from './patient-list-panel.context';
 
 import { inject, toRef } from 'vue';
 
-import { DArrowLeft, DArrowRight, Refresh } from '@element-plus/icons-vue';
+import { DArrowLeft, DArrowRight, FullScreen, Refresh } from '@element-plus/icons-vue';
 
 import { encounterStatusToNurseStationLabel } from '../services/map-inpatient-nurse-station-api';
 import {
-  formatInpatientAccountBalancePrimaryText,
   formatInpatientAccountBalanceSecondaryText,
   formatNurseStationAccountBalance,
   resolveInpatientAccountBalanceLabel,
@@ -28,7 +27,6 @@ const context = injectedContext;
 const {
   availableWards,
   changeKeyword,
-  changeQueueScopeFilter,
   changeRegionIds,
   changeStatusFilter,
   changeWardIds,
@@ -38,11 +36,9 @@ const {
   onPatientCardDblClick,
   onPatientDragEnd,
   onPatientDragStart,
-  onRecallPatient,
+  openPatientLargeScreen,
   pendingAuditCount,
   pendingExecuteCount,
-  queueScopeFilter,
-  queueScopeOptions,
   regionNameByIdRecord,
   selectedRegionIds,
   selectedWardIds,
@@ -67,22 +63,6 @@ function handleStatusFilterChange(value: PatientStatusFilter) {
   changeStatusFilter(value);
 }
 
-/** 切换列表范围（在院 / 已出院结算）并拉取队列。 */
-function handleQueueScopeFilterChange(value: PatientQueueScopeFilter) {
-  changeQueueScopeFilter(value);
-}
-
-/** 已出院结算列表不可拖拽分床 */
-function isRecallListMode(): boolean {
-  return queueScopeFilter.value === 'settled-discharged';
-}
-
-/** 召回行操作：阻止冒泡后提交出院召回 */
-function handleRecallClick(event: MouseEvent, patient: (typeof filteredPatients.value)[number]) {
-  event.stopPropagation();
-  onRecallPatient(patient);
-}
-
 /** 病区勾选变化后拉取队列。 */
 function handleRegionIdsChange(value: string[]) {
   changeRegionIds(value);
@@ -103,27 +83,23 @@ function handleRefreshFilters() {
   void context.refreshPatientFilters();
 }
 
-/** 卡片点击切换患者选中（已出院结算列表不可选）。 */
+/** 展开患者一览大屏（由工作台根层渲染，铺满工作站）。 */
+function handleOpenLargeScreen() {
+  openPatientLargeScreen();
+}
+
+/** 卡片点击切换患者选中。 */
 function handleCardClick(id: string) {
-  if (isRecallListMode()) {
-    return;
-  }
   togglePatientCardSelection(id);
 }
 
 /** 双击卡片打开患者入科选床弹窗。 */
 function handleCardDblClick(patient: (typeof filteredPatients.value)[number]) {
-  if (isRecallListMode()) {
-    return;
-  }
   onPatientCardDblClick(patient);
 }
 
-/** 勾选框选择变化后同步到父层（已出院结算列表不可选）。 */
+/** 勾选框选择变化后同步到父层。 */
 function handleCheckboxChange(id: string, value: boolean) {
-  if (isRecallListMode()) {
-    return;
-  }
   togglePatientSelection(id, value);
 }
 
@@ -204,7 +180,15 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
             <div class="nurse-top-stat__value">{{ pendingExecuteCount }}</div>
           </div>
         </div>
-        <div class="nurse-top-overview__right"></div>
+        <div class="nurse-top-overview__right">
+          <ElButton
+            :icon="FullScreen"
+            circle
+            class="nurse-top-overview__expand"
+            title="展开患者大屏"
+            @click.stop="handleOpenLargeScreen"
+          />
+        </div>
       </div>
     </div>
 
@@ -227,18 +211,6 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
           />
         </div>
         <div class="nurse-search-bar__row">
-          <ElSelect
-            :model-value="queueScopeFilter"
-            class="nurse-search-bar__scope"
-            @update:model-value="handleQueueScopeFilterChange"
-          >
-            <ElOption
-              v-for="item in queueScopeOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </ElSelect>
           <ElSelect
             :model-value="statusFilter"
             class="nurse-search-bar__status"
@@ -313,27 +285,18 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
                   <div
                     v-for="row in filteredPatients"
                     :key="row.id"
-                    class="nurse-patient-card"
-                    :class="{
-                      'nurse-patient-card--draggable': !isRecallListMode(),
-                      'nurse-patient-card--recall-only': isRecallListMode(),
-                      'is-selected': !isRecallListMode() && row.selected,
-                    }"
-                    :title="
-                      isRecallListMode()
-                        ? '已出院结算患者，仅可点击「召回」'
-                        : '按住拖动到右侧「入出转管理」床位图，在目标床位上松开以分床或换床'
-                    "
-                    :draggable="!isRecallListMode()"
-                    @dragstart="!isRecallListMode() && handlePatientDragStart($event, row)"
+                    class="nurse-patient-card nurse-patient-card--draggable"
+                    :class="{ 'is-selected': row.selected }"
+                    title="按住拖动到右侧「入出转管理」床位图，在目标床位上松开以分床或换床"
+                    draggable="true"
+                    @dragstart="handlePatientDragStart($event, row)"
                     @dragend="handlePatientDragEnd"
-                    @click="!isRecallListMode() && handleCardClick(row.id)"
+                    @click="handleCardClick(row.id)"
                     @dblclick.stop="handleCardDblClick(row)"
                   >
                     <div class="nurse-patient-card__line1">
                       <ElCheckbox
                         v-model="row.selected"
-                        :disabled="isRecallListMode()"
                         @click.stop
                         @mousedown.stop
                         @change="(value: boolean) => handleCheckboxChange(row.id, value)"
@@ -405,15 +368,6 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
                         </span>
                       </div>
                       <div class="nurse-patient-card__tasks">
-                        <ElButton
-                          v-if="row.recallEnabled"
-                          link
-                          size="small"
-                          type="primary"
-                          @click="handleRecallClick($event, row)"
-                        >
-                          召回
-                        </ElButton>
                         <span class="nurse-patient-card__audit">校 {{ row.pendingAudit }}</span>
                         <span class="nurse-patient-card__execute">执 {{ row.pendingExecute }}</span>
                       </div>
@@ -454,12 +408,21 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
   padding: 0 8px;
 }
 .nurse-top-overview__right {
-  min-width: 12px;
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  margin-left: 4px;
+  min-width: 0;
+}
+
+.nurse-top-overview__expand {
+  flex-shrink: 0;
 }
 .nurse-top-stats {
   display: flex;
+  flex: 1;
   gap: 0;
-  width: 100%;
+  min-width: 0;
 }
 .nurse-top-stat {
   align-items: center;
@@ -580,7 +543,6 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
 .nurse-search-bar__refresh {
   flex-shrink: 0;
 }
-.nurse-search-bar__scope,
 .nurse-search-bar__status {
   flex: 1;
   min-width: 0;
@@ -806,14 +768,5 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
 
 .nurse-patient-card--draggable:active {
   cursor: grabbing;
-}
-
-.nurse-patient-card--recall-only {
-  cursor: default;
-}
-
-.nurse-patient-card--recall-only:hover {
-  background: #fff;
-  border-color: var(--el-border-color-lighter);
 }
 </style>

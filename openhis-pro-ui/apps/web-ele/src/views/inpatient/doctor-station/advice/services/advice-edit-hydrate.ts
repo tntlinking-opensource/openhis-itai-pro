@@ -2,7 +2,7 @@ import type { PrepickedProductKeyDto } from '#/api/doctor-station/advice.types';
 
 import type { AdviceDrugItem, AdviceProductOption, AdviceRowItem } from './advice.types';
 import type { WesternProductSelectPatchOptions } from './advice-edit';
-import { buildWesternProductSelectPatch } from './advice-edit';
+import { buildWesternProductSelectPatch, pickCatalogChrgitmLvPatch } from './advice-edit';
 import { isInpatientLongTermMedicationTherapy } from './advice-row';
 import {
   hydrateAdviceRowDoseFromBackend,
@@ -12,6 +12,10 @@ import {
 type AdviceDrugItemSeed = Partial<AdviceDrugItem> & {
   listDose?: number;
   listDoseUnitCode?: string;
+  listFirstDose?: number;
+  listFirstDoseUnitCode?: string;
+  firstDose?: number;
+  firstDoseUnitCode?: string;
 };
 
 /** 列表行 → 目录 prepicked 键 */
@@ -41,9 +45,10 @@ export function buildAdviceDrugItemSeedFromListRow(row: AdviceRowItem): AdviceDr
   const rt = String(row.resourceType ?? '')
     .trim()
     .toUpperCase();
-  const isService = rt === 'SERVICE';
+  const isService = rt === 'SERVICE' || tbl.toLowerCase() === 'wkf_activity_definition';
   const qty = row.listQuantity;
   const unitCode = String(row.listUnitCode ?? '').trim();
+  const unitName = String(row.listUnitName ?? '').trim();
   const diagnosisRaw = String(row.conditionDefinitionName ?? row.diagnosisSummary ?? '').trim();
   const diagnosis = diagnosisRaw === '—' ? '' : diagnosisRaw;
   const displayName = String(row.adviceDisplayName ?? '').trim();
@@ -69,12 +74,28 @@ export function buildAdviceDrugItemSeedFromListRow(row: AdviceRowItem): AdviceDr
     groupId: String(row.groupId ?? '').trim() || undefined,
     therapyEnum: String(row.therapyTypeCode ?? '').trim() || undefined,
     medicationRequestId: String(row.requestId ?? '').trim() || undefined,
+    catalogCategoryCode:
+      String(row.catalogCategoryCode ?? row.serviceCategoryEnum ?? '').trim() || undefined,
+    entrustContent: String(row.entrustContent ?? '').trim() || undefined,
+    remark: String(row.remark ?? '').trim() || undefined,
     listDose: row.listDose,
     listDoseUnitCode: row.listDoseUnitCode,
+    firstDose: row.listFirstDose,
+    firstDoseUnitCode: row.listFirstDoseUnitCode,
     ...(isService
       ? {
-          serviceQuantity: qty,
+          serviceQuantity: qty ?? 1,
+          // 临时：执行次数与数量分立；长期无执行次数时回落数量
+          totalAmount: positiveInt(row.listExecutionCount) ?? qty ?? 1,
           totalAmountUnit: unitCode || '次',
+          ...(unitCode
+            ? {
+                totalUnitSalesCode: unitCode,
+                totalUnitSalesName: unitName || unitCode,
+              }
+            : {}),
+          performOrgId: String(row.performOrgId ?? '').trim() || undefined,
+          performOrgName: String(row.performOrgName ?? '').trim() || undefined,
         }
       : {
           totalAmount: qty,
@@ -123,13 +144,34 @@ export function mergeCatalogIntoAdviceDrugItemForEdit(
     totalAmountUnit: seed.totalAmountUnit,
     performOrgId: seed.performOrgId,
     performOrgName: seed.performOrgName,
+    catalogCategoryCode: seed.catalogCategoryCode,
+    entrustContent: seed.entrustContent,
+    remark: seed.remark,
   };
 
   if (tbl === 'wkf_activity_definition') {
+    const performOrgId =
+      String(seed.performOrgId ?? catalog.defaultPerformOrgId ?? '').trim() || undefined;
+    const performOrgName =
+      String(seed.performOrgName ?? catalog.defaultPerformOrgName ?? '').trim() || undefined;
+    const uCode = String(seed.totalAmountUnit ?? catalog.defaultUnitCode ?? '').trim();
+    const uName = String(seed.totalUnitSalesName ?? catalog.defaultUnitName ?? '').trim();
     return {
       ...base,
       ...preserved,
+      ...pickCatalogChrgitmLvPatch(catalog),
+      performOrgId,
+      performOrgName,
       selectedDrugPrice: catalog.price ?? seed.selectedDrugPrice ?? '',
+      catalogCategoryCode:
+        String(catalog.categoryCode ?? seed.catalogCategoryCode ?? '').trim() || undefined,
+      ...(uCode
+        ? {
+            totalAmountUnit: uCode,
+            totalUnitSalesCode: uCode,
+            totalUnitSalesName: uName || uCode,
+          }
+        : {}),
     };
   }
 
@@ -139,6 +181,7 @@ export function mergeCatalogIntoAdviceDrugItemForEdit(
     return {
       ...base,
       ...preserved,
+      ...pickCatalogChrgitmLvPatch(catalog),
       selectedDrugPrice: catalog.price ?? seed.selectedDrugPrice ?? '',
       unitBands: catalog.unitBands,
       totalUnitSalesCode: uCode || undefined,
@@ -182,6 +225,9 @@ export function mergeCatalogIntoAdviceDrugItemForEdit(
     ...doseHydrated,
     ...base,
     ...preserved,
+    // 列表回填首日用量（仅长期药编辑卡使用）
+    firstDose: seed.firstDose ?? seed.listFirstDose,
+    firstDoseUnitCode: seed.firstDoseUnitCode ?? seed.listFirstDoseUnitCode,
     totalAmountUnit: totalUnit,
     selectedDrugPrice,
   };

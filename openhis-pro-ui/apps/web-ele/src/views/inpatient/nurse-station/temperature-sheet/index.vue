@@ -35,6 +35,7 @@ import {
   resolveTemperatureSheetWindowStartDate,
   TEMPERATURE_SHEET_FOOTER_SUPPLEMENT_ROWS,
 } from './services/map-nurse-station-temperature-sheet';
+import { printTemperatureSheetPaper } from './services/temperature-sheet-browser-print';
 import {
   buildChartTextMarkers,
   buildPhysicalCoolingChartPoints,
@@ -122,6 +123,7 @@ const chartCooledEmptyCircleSymbol = `image://data:image/svg+xml,${encodeURIComp
 )}`;
 const chartRef = ref<EchartsUIType>();
 const plotAreaRef = ref<HTMLElement>();
+const sheetPaperRef = ref<HTMLElement>();
 const sheetViewportRef = ref<HTMLElement>();
 const { isFullscreen, toggleFullscreen } = usePaperSheetFullscreen();
 const {
@@ -292,6 +294,39 @@ function handleBatchFillSaved(): void {
   }
 }
 
+/** 浏览器打印当前体温单纸面（同文档克隆宿主，避免空白/缩角） */
+async function handlePrint(): Promise<void> {
+  if (!selectedPatientContext.value) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  const paper = sheetPaperRef.value;
+  if (!paper) {
+    ElMessage.warning('体温单纸面未就绪');
+    return;
+  }
+  const loading = ElLoading.service({
+    lock: true,
+    text: '正在准备打印…',
+    background: 'rgba(255, 255, 255, 0.6)',
+  });
+  try {
+    await nextTick();
+    await renderTemperatureChart();
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+    // 必须在调起系统打印前关闭遮罩，否则可能进入打印 DOM
+    loading.close();
+    await printTemperatureSheetPaper(paper);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '打印失败';
+    ElMessage.error(message);
+  } finally {
+    loading.close();
+  }
+}
+
 /** 底部血压半日列 span */
 function resolveFooterBpHalfSpan(daySpan: number): number {
   return Math.max(1, Math.floor(daySpan / 2));
@@ -306,11 +341,6 @@ const chartColumns = computed(() => visiblePoints.value.length);
 const slotGridStyle = computed(() => ({
   gridTemplateColumns: `repeat(${chartColumns.value}, minmax(0, 1fr))`,
 }));
-const dayDividerColumns = computed(() =>
-  visiblePoints.value
-    .map((_item, index) => (isDayDividerColumn(index) ? index : null))
-    .filter((item): item is number => item !== null && item < visiblePoints.value.length - 1),
-);
 const chartTextMarkers = computed(() =>
   buildChartTextMarkers(
     visiblePoints.value,
@@ -460,10 +490,6 @@ function percentToTempValue(percent: number): number {
 }
 
 const chartOption = computed(() => {
-  const dividerPositionSet = new Set(dayDividerColumns.value.map((index) => index + 1));
-  const xGridLineColors = Array.from({ length: chartColumns.value + 1 }, (_item, index) =>
-    dividerPositionSet.has(index) ? 'transparent' : '#9ca3af',
-  );
   const coolingPointMap = new Map<number, TemperatureSheetPhysicalCoolingChartPoint>(
     physicalCoolingChartPoints.value.map((item) => [item.slotIndex, item]),
   );
@@ -511,7 +537,8 @@ const chartOption = computed(() => {
       interval: 1,
       max: chartColumns.value,
       min: 0,
-      splitLine: { lineStyle: { color: xGridLineColors, width: 1 }, show: true },
+      // 纵向框线改由 CSS 与表头/表尾同构绘制，避免 ECharts splitLine 相对 border-right 偏右 1px
+      splitLine: { show: false },
       type: 'value' as const,
     },
     yAxis: {
@@ -526,7 +553,8 @@ const chartOption = computed(() => {
     },
     series: [
       {
-        connectNulls: false,
+        // 时间点不连续时也要跨空槽连线（如仅 16 日/17 日各两点）
+        connectNulls: true,
         data: pulseSeriesData,
         itemStyle: { color: chartColorPulse },
         lineStyle: { color: chartColorPulse, width: 1 },
@@ -538,7 +566,8 @@ const chartOption = computed(() => {
         z: 2,
       },
       {
-        connectNulls: false,
+        // 时间点不连续时也要跨空槽连线（如仅 16 日/17 日各两点）
+        connectNulls: true,
         data: tempSeriesData,
         itemStyle: { color: chartColorTemp },
         lineStyle: { color: chartColorTemp, width: 1 },
@@ -670,7 +699,11 @@ watch(isFullscreen, () => {
               width: `${sheetShellWidth}px`,
             }"
           >
-            <section class="sheet-paper" :style="{ transform: `scale(${sheetScale})` }">
+            <section
+              ref="sheetPaperRef"
+              class="sheet-paper"
+              :style="{ transform: `scale(${sheetScale})` }"
+            >
               <header class="sheet-title">体 温 单</header>
 
               <div class="patient-info-line">
@@ -719,37 +752,40 @@ watch(isFullscreen, () => {
                 </div>
               </div>
               <div class="chart-wrapper">
-                <aside class="axis axis-left">
-                  <div class="axis-title">脉搏(次/分)</div>
-                  <div class="axis-values">
-                    <span
-                      v-for="item in pulseTickStyles"
-                      :key="`pulse-${item.pulse}`"
-                      class="axis-value axis-value-pulse"
-                      :style="item.style"
-                      >{{ item.pulse }}</span
-                    >
-                  </div>
-                </aside>
-                <aside class="axis axis-mid">
-                  <div class="axis-title">体温(℃)</div>
-                  <div class="axis-values">
-                    <span
-                      v-for="item in tempTickStyles"
-                      :key="`temp-${item.temp}`"
-                      class="axis-value axis-value-temp"
-                      :style="item.style"
-                      >{{ item.temp }}</span
-                    >
-                  </div>
-                </aside>
+                <div class="chart-axis-rail">
+                  <aside class="axis axis-left">
+                    <div class="axis-title">脉搏(次/分)</div>
+                    <div class="axis-values">
+                      <span
+                        v-for="item in pulseTickStyles"
+                        :key="`pulse-${item.pulse}`"
+                        class="axis-value axis-value-pulse"
+                        :style="item.style"
+                        >{{ item.pulse }}</span
+                      >
+                    </div>
+                  </aside>
+                  <aside class="axis axis-mid">
+                    <div class="axis-title">体温(℃)</div>
+                    <div class="axis-values">
+                      <span
+                        v-for="item in tempTickStyles"
+                        :key="`temp-${item.temp}`"
+                        class="axis-value axis-value-temp"
+                        :style="item.style"
+                        >{{ item.temp }}</span
+                      >
+                    </div>
+                  </aside>
+                </div>
                 <main class="chart-main">
-                  <div class="day-divider-overlay" :style="slotGridStyle">
+                  <!-- 与表头时间格 / 表尾呼吸格同构：每槽 border-right，保证纵向框线对齐 -->
+                  <div class="slot-vline-overlay" :style="slotGridStyle">
                     <span
-                      v-for="index in dayDividerColumns"
-                      :key="`divider-${index}`"
-                      class="day-divider-marker"
-                      :style="{ gridColumn: `${index + 1}` }"
+                      v-for="(point, index) in visiblePoints"
+                      :key="`slot-vline-${point.fullDate}-${point.timeSlot}-${index}`"
+                      class="slot-vline"
+                      :class="{ 'is-day-divider': isInnerDayDividerColumn(index) }"
                     ></span>
                   </div>
                   <div
@@ -833,6 +869,7 @@ watch(isFullscreen, () => {
             <ElButton size="small" @click="toggleFullscreen">
               {{ isFullscreen ? '退出全屏' : '全屏' }}
             </ElButton>
+            <ElButton size="small" type="primary" @click="handlePrint">打印当前页</ElButton>
             <ElButton size="small" plain type="primary" @click="openBatchFillDrawer">
               按时点批量录入
             </ElButton>
@@ -1025,16 +1062,26 @@ watch(isFullscreen, () => {
   border-right: 1px solid #b91c1c;
 }
 .chart-wrapper {
-  display: flex;
+  /* 与 sheet-head-grid / sheet-footer-grid 同列模板，保证内容区左缘与竖线对齐 */
+  display: grid;
+  grid-template-columns: var(--axis-total-width) minmax(0, 1fr);
   flex: 1;
   min-height: 0;
   border: 1px solid #222;
   border-top: 0;
 }
+.chart-axis-rail {
+  box-sizing: border-box;
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  border-right: 1px solid #222;
+}
 .axis {
   box-sizing: border-box;
-  width: var(--axis-column-width);
-  border-right: var(--axis-border-width) solid #222;
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
   position: relative;
   display: flex;
   align-items: stretch;
@@ -1042,6 +1089,7 @@ watch(isFullscreen, () => {
   padding: 0;
 }
 .axis-left {
+  border-right: var(--axis-border-width) solid #222;
   color: #dc2626;
 }
 .axis-mid {
@@ -1084,7 +1132,6 @@ watch(isFullscreen, () => {
   transform: translateY(-50%);
 }
 .chart-main {
-  flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -1102,17 +1149,18 @@ watch(isFullscreen, () => {
   letter-spacing: 1px;
   pointer-events: none;
 }
-.day-divider-overlay {
+.slot-vline-overlay {
   position: absolute;
   inset: 0;
   display: grid;
   pointer-events: none;
   z-index: 3;
 }
-.day-divider-marker {
-  justify-self: end;
-  width: 0;
-  height: 100%;
+.slot-vline {
+  box-sizing: border-box;
+  border-right: 1px solid #9ca3af;
+}
+.slot-vline.is-day-divider {
   border-right: 1px solid #b91c1c;
 }
 .day-row,
@@ -1207,82 +1255,5 @@ watch(isFullscreen, () => {
   padding: 0 4px;
   line-height: 1.2;
   word-break: break-all;
-}
-
-@media print {
-  @page {
-    size: A4 portrait;
-    margin: 0;
-  }
-
-  :global(body *) {
-    visibility: hidden;
-  }
-
-  :global(body .temperature-sheet),
-  :global(body .temperature-sheet *) {
-    visibility: visible;
-  }
-
-  :global(body),
-  :global(html),
-  :global(#app) {
-    margin: 0 !important;
-    padding: 0 !important;
-    height: auto !important;
-    overflow: visible !important;
-    transform: none !important;
-    position: static !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-
-  .temperature-sheet {
-    position: fixed !important;
-    top: 4mm !important;
-    left: 4mm !important;
-    z-index: 99999 !important;
-    display: block;
-    width: 794px !important;
-    height: 1123px !important;
-    margin: 0 !important;
-    padding: 0;
-    background: #fff;
-    overflow: visible;
-    transform: scale(0.96);
-    transform-origin: top left;
-  }
-
-  .sheet-viewport {
-    display: block;
-    width: 794px !important;
-    height: 1123px !important;
-    margin: 0 !important;
-    overflow: visible;
-    padding: 0;
-  }
-
-  .sheet-stage {
-    display: block;
-    width: 794px !important;
-    height: 1123px !important;
-    margin: 0;
-  }
-
-  .sheet-paper {
-    position: static;
-    transform: none !important;
-  }
-
-  .sheet-paper-shell {
-    width: 794px !important;
-    height: 1123px !important;
-    margin: 0 !important;
-    overflow: visible;
-  }
-
-  .sheet-action-panel {
-    display: none !important;
-  }
 }
 </style>

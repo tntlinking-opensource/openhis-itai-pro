@@ -1,5 +1,6 @@
 /**
- * 科室损益单 — 对接 Whale {@code POST /api/app/inventoryDeptGainLoss/<method>}
+ * 科室损益单 — 对接 Whale {@code POST /api/app/inventoryDepartmentGainLoss/<method>}
+ * 方法名与 {@code InventoryDepartmentGainLossAppService} 一致（无 Dept 前缀）。
  */
 import type { ApiOptionItem, ApiResponse } from '#/types/api-response';
 
@@ -16,7 +17,7 @@ import {
 } from '#/utils/inventory/inventory-workbench-list';
 import { mapGainLossListRowToQueueCard } from '#/api/inventory/warehouse/gain-loss';
 
-const BASE = '/inventoryDeptGainLoss';
+const BASE = '/inventoryDepartmentGainLoss';
 
 export const DEP_GAIN_LOSS_CATEGORY_ENUM = 'STOCK_SUPPLY';
 
@@ -36,7 +37,8 @@ export interface LoadDeptGainLossFormInitResponse {
   pharmacyLocationOptions?: DeptGainLossOptionDto[];
   inboundItemTableTypeOptions?: DeptGainLossOptionDto[];
   statusOptions?: DeptGainLossOptionDto[];
-  nurseOptions?: DeptGainLossOptionDto[];
+  /** 后端药师下拉 */
+  pharmacistOptions?: DeptGainLossOptionDto[];
   warehouseKeeperOptions?: DeptGainLossOptionDto[];
 }
 
@@ -48,6 +50,8 @@ export interface DeptGainLossListRowDto {
   purposeLocationName?: string;
   itemCount?: number;
   gainLossQuantitySum?: number;
+  /** 盈亏金额合计（可负；侧栏总金额） */
+  gainLossAmountSum?: number;
   actualAmountSum?: number;
   applicantId?: number | string;
   applicantName?: string;
@@ -55,6 +59,8 @@ export interface DeptGainLossListRowDto {
   approverId?: number | string;
   approverName?: string;
   approvalTime?: string;
+  /** 驳回态侧栏回显 */
+  rejectReason?: string;
 }
 
 export interface PageDeptGainLosssRequest {
@@ -189,6 +195,8 @@ export interface PageProductsForDeptGainLossRequest {
   productTableName?: string;
   keyword?: string;
   purposeLocationId?: number | string;
+  /** true=仅返回账面量>0；false/未传=含零库存 */
+  positiveQuantityOnly?: boolean;
   pageNo: number;
   pageSize: number;
 }
@@ -211,28 +219,25 @@ export interface PageProductsForDeptGainLossResponse {
 
 export async function loadDeptGainLossFormInitApi(body?: LoadDeptGainLossFormInitRequest) {
   return requestClient.post<ApiResponse<LoadDeptGainLossFormInitResponse>>(
-    `${BASE}/loadDeptGainLossFormInit`,
+    `${BASE}/loadGainLossFormInit`,
     body ?? {},
   );
 }
 
 export async function pageDeptGainLosssApi(body: PageDeptGainLosssRequest) {
-  return requestClient.post<ApiResponse<PageDeptGainLosssResponse>>(
-    `${BASE}/pageDeptGainLosss`,
-    body,
-  );
+  return requestClient.post<ApiResponse<PageDeptGainLosssResponse>>(`${BASE}/pageGainLosss`, body);
 }
 
 export async function getDeptGainLossDetailApi(body: GetDeptGainLossDetailRequest) {
   return requestClient.post<ApiResponse<GetDeptGainLossDetailResponse>>(
-    `${BASE}/getDeptGainLossDetail`,
+    `${BASE}/getGainLossDetail`,
     body,
   );
 }
 
 export async function createDeptGainLossApi(body: CreateDeptGainLossRequest) {
   return requestClient.post<ApiResponse<CreateDeptGainLossResponse>>(
-    `${BASE}/createDeptGainLoss`,
+    `${BASE}/createGainLoss`,
     body,
   );
 }
@@ -247,33 +252,33 @@ export async function updateDeptGainLossApi(body: UpdateDeptGainLossRequest) {
 
 export async function submitDeptGainLossApprovalApi(body: SubmitDeptGainLossApprovalRequest) {
   return requestClient.post<ApiResponse<SubmitDeptGainLossApprovalResponse>>(
-    `${BASE}/submitDeptGainLossApproval`,
+    `${BASE}/submitGainLossApproval`,
     body,
   );
 }
 
 export async function withdrawDeptGainLossApprovalApi(body: WithdrawDeptGainLossApprovalRequest) {
   return requestClient.post<ApiResponse<WithdrawDeptGainLossApprovalResponse>>(
-    `${BASE}/withdrawDeptGainLossApproval`,
+    `${BASE}/withdrawGainLossApproval`,
     body,
   );
 }
 
 export async function agreeDeptGainLossApi(body: AgreeDeptGainLossRequest) {
-  return requestClient.post<ApiResponse<{ success?: boolean }>>(`${BASE}/agreeDeptGainLoss`, body);
+  return requestClient.post<ApiResponse<{ success?: boolean }>>(`${BASE}/agreeGainLoss`, body);
 }
 
 export async function rejectDeptGainLossApi(body: RejectDeptGainLossRequest) {
-  return requestClient.post<ApiResponse<{ success?: boolean }>>(`${BASE}/rejectDeptGainLoss`, body);
+  return requestClient.post<ApiResponse<{ success?: boolean }>>(`${BASE}/rejectGainLoss`, body);
 }
 
 export async function removeDeptGainLossApi(body: RemoveDeptGainLossRequest) {
-  return requestClient.post<ApiResponse<{ success?: boolean }>>(`${BASE}/removeDeptGainLoss`, body);
+  return requestClient.post<ApiResponse<{ success?: boolean }>>(`${BASE}/removeGainLoss`, body);
 }
 
 export async function pageProductsForDeptGainLossApi(body: PageProductsForDeptGainLossRequest) {
   return requestClient.post<ApiResponse<PageProductsForDeptGainLossResponse>>(
-    `${BASE}/pageProductsForDeptGainLoss`,
+    `${BASE}/pageProductsForGainLoss`,
     body,
   );
 }

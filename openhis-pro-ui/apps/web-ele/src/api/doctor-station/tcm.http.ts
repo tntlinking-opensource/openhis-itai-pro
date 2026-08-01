@@ -37,6 +37,9 @@ export const httpSignTcmHerbalPrescriptionBatch =
 export const httpWithdrawOrDeleteTcmHerbalPrescription =
   outpatientTcmHttp.httpWithdrawOrDeleteTcmHerbalPrescription;
 
+/** 单独取消已签发中药方的代煎费 */
+export const httpVoidTcmDecoctionCharge = outpatientTcmHttp.httpVoidTcmDecoctionCharge;
+
 /** 查询患者历史中药处方 */
 export const httpListPatientTcmHerbalPrescriptionHistory =
   outpatientTcmHttp.httpListPatientTcmHerbalPrescriptionHistory;

@@ -8,6 +8,7 @@ import {
   httpWorkInjurySubmitInvokeResult,
 } from './work-injury.http';
 import { invokeWorkInjuryPlugin, isWorkInjuryPluginOnline } from './work-injury-plugin';
+import { normalizeWorkInjuryWinOutput } from './probe-work-injury-filing';
 import { runWorkInjuryPhase } from './run-work-injury-phase';
 import type { WorkInjury2301FormValues } from './work-injury-2301-form';
 import { toWorkInjury2301Context } from './work-injury-2301-form';
@@ -23,10 +24,12 @@ export interface RunWorkInjuryRegister2301Params extends RunWorkInjuryRegister91
 }
 
 /**
- * 挂号预结算后 invoke 9102（REG_QUERY），必要时 bindQualification。
+ * 挂号预结算后 invoke REG_QUERY（1101→9102），必要时 bindQualification。
+ * @param options.silent 为 true 时不弹成功提示（详情弹窗内刷新用）。
  */
 export async function runWorkInjuryRegister9102(
   params: RunWorkInjuryRegister9102Params,
+  options?: { silent?: boolean },
 ): Promise<void> {
   if (!(await isWorkInjuryPluginOnline())) {
     throw new Error('请启动 OpenHIS.Win 并启用工伤模块（/api/work-injury/health）');
@@ -38,7 +41,9 @@ export async function runWorkInjuryRegister9102(
       contractId: params.contractId,
     },
   });
-  ElMessage.success('工伤审批查询（9102）已完成');
+  if (!options?.silent) {
+    ElMessage.success('工伤人员查询（1101）与审批查询（9102）已完成');
+  }
 }
 
 /** 2301 审批上传（REG_APPROVAL：2301→9102）。 */
@@ -73,26 +78,32 @@ export async function bindWorkInjuryQualification(params: {
 
 /** 解析 9102 submit 出参中的 qualification 列表（供 UI 选择）。 */
 export function parse9102QualificationRows(
-  output?: Record<string, unknown>,
+  output?: Record<string, unknown> | unknown[],
 ): Array<{ qualificationId: string; label: string }> {
   if (!output) {
     return [];
   }
-  const raw = output.approveinfo as unknown;
-  if (!Array.isArray(raw)) {
-    return [];
-  }
+  const root = normalizeWorkInjuryWinOutput(output);
+  const raw =
+    (Array.isArray(root.output) && root.output) ||
+    (Array.isArray(root.approveinfo) && root.approveinfo) ||
+    (Array.isArray(root.rows) && root.rows) ||
+    [];
   const rows: Array<{ qualificationId: string; label: string }> = [];
   for (const item of raw) {
     if (!item || typeof item !== 'object') {
       continue;
     }
     const row = item as Record<string, unknown>;
-    const qid = String(row.qualification_id ?? row.qualificationId ?? '').trim();
-    if (!qid) {
+    const qid = String(
+      row.qualification_id ?? row.qualificationId ?? row.referral_id ?? row.referralId ?? '',
+    ).trim();
+    if (!qid || qid === '0') {
       continue;
     }
-    const name = String(row.injure_affirm_id ?? row.approve_type ?? qid).trim();
+    const name = String(
+      row.injure_affirm_id ?? row.approveType ?? row.approve_type ?? row.terminReason ?? qid,
+    ).trim();
     rows.push({ qualificationId: qid, label: name || qid });
   }
   return rows;

@@ -14,7 +14,6 @@ import { computed, nextTick, ref, watch } from 'vue';
 
 import {
   ElButton,
-  ElDialog,
   ElEmpty,
   ElOption,
   ElRadioButton,
@@ -44,27 +43,39 @@ const props = withDefaults(
     /** 当前 tab 下表格用处方块 */
     prescriptionBlocks: DispensePrescriptionBlock[];
     prescriptionRowCount: number;
-    /** 处方单弹窗：就诊下全部处方块（由父级单独拉全量 slip 后传入） */
+    /** 发药单视图：就诊下全部处方块（由父级单独拉全量 slip 后传入） */
     prescriptionSheetBlocks?: DispensePrescriptionBlock[];
-    /** 处方单弹窗：中医主诊断（病证合并） */
+    /** 发药单视图：中医主诊断（病证合并） */
     sheetTcmDiagnosisText?: string;
+    /** 发药单数据加载中（切换就诊时） */
+    sheetLoading?: boolean;
     printPrescriptionsDisabled?: boolean;
+    /** 扫码后各发放行追溯码（回显到发药单卡片） */
+    traceCodeByLineId?: Record<string, string>;
     /** 中西药 tab 角标（处方块数） */
     rxKindBadgeCounts?: DispenseRxKindBadgeCounts;
+    /** 是否启用发药单视图（住院按患者发药关闭，仅列表明细） */
+    enableSheetView?: boolean;
     selectedPatient: DispenseQueuePatient | null;
   }>(),
   {
     prescriptionSheetBlocks: () => [],
     rxKindBadgeCounts: () => ({ western: 0, herbal: 0 }),
     printPrescriptionsDisabled: false,
+    sheetLoading: false,
+    traceCodeByLineId: () => ({}),
+    enableSheetView: true,
   },
 );
 
 const emit = defineEmits<{
   batchDispense: [];
   batchTraceScan: [];
+  /** 发药单视图：按处方块单独发药 */
+  dispensePrescription: [rxId: string];
+  /** 发药单视图：按处方块单独打印 */
+  printPrescription: [rxId: string];
   printPrescriptions: [];
-  viewPrescription: [];
 }>();
 
 const activeRxKind = defineModel<'herbal' | 'western'>('activeRxKind', { required: true });
@@ -97,22 +108,36 @@ const inventoryPickEditLineId = ref<null | string>(null);
 const inventoryPickDidOpen = ref(false);
 const inventoryPickSelectRef = ref<null | { focus?: () => void }>(null);
 
-/** 纸质处方单在弹窗中展示 */
-const prescriptionSheetDialogVisible = ref(false);
+/** 右侧工作区：发药单（默认）/ 列表明细；enableSheetView=false 时强制明细 */
+const workbenchViewMode = ref<'list' | 'sheet'>(props.enableSheetView ? 'sheet' : 'list');
+/** 发药单视图多选的处方块 id（批量发药） */
+const selectedSheetRxIds = ref<string[]>([]);
+
+/** 实际展示模式：关闭笺面时始终为列表明细 */
+const resolvedViewMode = computed(() => (props.enableSheetView ? workbenchViewMode.value : 'list'));
 
 watch(
   () => props.selectedPatient?.id,
   () => {
     inventoryPickEditLineId.value = null;
     inventoryPickDidOpen.value = false;
-    prescriptionSheetDialogVisible.value = false;
+    selectedSheetRxIds.value = [];
+    // 换患者后：有笺面则回发药单，否则保持明细
+    workbenchViewMode.value = props.enableSheetView ? 'sheet' : 'list';
+  },
+);
+
+watch(
+  () => props.enableSheetView,
+  (enabled) => {
+    if (!enabled) workbenchViewMode.value = 'list';
   },
 );
 
 watch(activeRxKind, () => {
   inventoryPickEditLineId.value = null;
   inventoryPickDidOpen.value = false;
-  prescriptionSheetDialogVisible.value = false;
+  selectedSheetRxIds.value = [];
 });
 
 /** 处方组首行且可批量发药：待发 / 已配药 / 部分可发（已发、拦截不默认勾选） */
@@ -149,21 +174,73 @@ watch(
   { flush: 'post' },
 );
 
-/** 处方单弹窗内多张处方单数据（每张处方号一块） */
+/** 单张处方是否可单独发药（与表格默认可勾选态一致） */
+function isSheetDispensableStatus(status: DispensePrescriptionBlock['status']): boolean {
+  return status === 'pending' || status === 'prepared' || status === 'partial';
+}
+
+/** 发药单视图：按当前中西药 tab 过滤后的笺面（与列表明细同源切换） */
 const prescriptionSheetViewItems = computed(() => {
   const patient = props.selectedPatient;
-  const blocks = props.prescriptionSheetBlocks;
-  if (!patient || blocks.length === 0) return [];
-  const dispensingLabel = props.dispenserOptions.find(
-    (o) => o.value === selectedDispenserId.value,
-  )?.label;
+  if (!patient) return [];
+  // 只展示当前西药/中药 tab 下的处方块
+  const blocks = props.prescriptionSheetBlocks.filter(
+    (block) => block.rxType === activeRxKind.value,
+  );
+  if (blocks.length === 0) return [];
   return blocks.map((block) => ({
     key: block.id,
+    rxId: block.id,
+    canDispense: isSheetDispensableStatus(block.status),
     data: buildPrescriptionSheetData(patient, block, {
-      dispensingName: dispensingLabel,
       tcmDiagnosisText: props.sheetTcmDiagnosisText,
+      traceCodeByLineId: props.traceCodeByLineId,
     }),
+    /** 该处方下发放行主键（批量/单张发药取 id；排除代煎费合成行） */
+    lineIds: block.items.filter((line) => line.lineKind !== 'decoctionFee').map((line) => line.id),
   }));
+});
+
+/** 当前笺面可勾选的处方块 id */
+const selectableSheetRxIds = computed(() =>
+  prescriptionSheetViewItems.value.filter((item) => item.canDispense).map((item) => item.rxId),
+);
+
+/** 笺面加载后默认勾选全部可发处方（与表格默认勾选一致） */
+watch(
+  () => {
+    const pid = props.selectedPatient?.id ?? '';
+    const ids = selectableSheetRxIds.value.join('|');
+    const disabled = props.batchDispenseDisabled ?? false;
+    return { pid, ids, disabled };
+  },
+  ({ pid, ids, disabled }) => {
+    if (!pid || !ids || disabled) {
+      selectedSheetRxIds.value = [];
+      return;
+    }
+    selectedSheetRxIds.value = ids.split('|').filter(Boolean);
+  },
+  { immediate: true },
+);
+
+/** 更新单张笺面勾选 */
+function setSheetSelected(rxId: string, selected: boolean) {
+  const set = new Set(selectedSheetRxIds.value);
+  if (selected) set.add(rxId);
+  else set.delete(rxId);
+  selectedSheetRxIds.value = [...set];
+}
+
+/** 笺面是否已勾选 */
+function isSheetSelected(rxId: string): boolean {
+  return selectedSheetRxIds.value.includes(rxId);
+}
+
+/** 发药单空态文案 */
+const sheetEmptyText = computed(() => {
+  if (!props.selectedPatient) return '请从左侧选择患者';
+  return '当前类型下无处方，请切换上方西药/中药';
 });
 
 /** 无患者或无处方时用空表数据，表头与表格框架仍展示 */
@@ -188,18 +265,17 @@ function formatRxKindTabLabel(base: string, count: number): string {
   return `${base} (${count})`;
 }
 
-/** 父级在切换患者/中西药后清空表格勾选 */
+/** 父级在切换患者/中西药后清空表格与笺面勾选 */
 async function clearRxTableSelection() {
+  selectedSheetRxIds.value = [];
   await nextTick();
   rxTableRef.value?.clearSelection();
 }
 
-/** 工具栏「处方查看」：打开纸质处方单弹窗（数据由父级先写入 prescriptionSheetBlocks） */
-async function openSheetViewMode() {
-  // 父级刚写入 sheetViewBlocks 时 props 可能尚未下发到子组件，需等一次 DOM 更新后再判断
-  await nextTick();
-  if (!props.selectedPatient || props.prescriptionSheetBlocks.length === 0) return;
-  prescriptionSheetDialogVisible.value = true;
+/** 切到发药单视图（父级在拉完笺面数据后调用；笺面关闭时无效） */
+function switchToSheetView() {
+  if (!props.enableSheetView) return;
+  workbenchViewMode.value = 'sheet';
 }
 
 /** 间隔行判定，用于 span 与行 class */
@@ -207,8 +283,21 @@ function isSpacerRow(row: DispenseRxTableRow): row is DispenseRxTableSpacerRow {
   return 'rowKind' in row && row.rowKind === 'spacer';
 }
 
-/** 取表格勾选处方下的全部发放行主键（跳过间隔行） */
+/**
+ * 取勾选处方下的全部发放行主键。
+ * 发药单视图用笺面多选；列表明细视图用表格多选。
+ */
 function getSelectedDispenseLineIds(): string[] {
+  if (resolvedViewMode.value === 'sheet') {
+    const rxIds = new Set(selectedSheetRxIds.value);
+    if (rxIds.size === 0) return [];
+    const ids: string[] = [];
+    for (const item of prescriptionSheetViewItems.value) {
+      if (!rxIds.has(item.rxId)) continue;
+      ids.push(...item.lineIds);
+    }
+    return ids;
+  }
   const selected = (rxTableRef.value?.getSelectionRows() ?? []) as DispenseRxTableRow[];
   if (selected.length === 0) return [];
   const rxIds = new Set<string>();
@@ -219,6 +308,8 @@ function getSelectedDispenseLineIds(): string[] {
   const ids: string[] = [];
   for (const row of props.displayTableRows) {
     if (isSpacerRow(row)) continue;
+    // 代煎费为合成展示行，不参与发药提交
+    if (row.lineKind === 'decoctionFee') continue;
     if (rxIds.has(row.rxId)) ids.push(row.id);
   }
   return ids;
@@ -227,7 +318,7 @@ function getSelectedDispenseLineIds(): string[] {
 defineExpose({
   clearRxTableSelection,
   getSelectedDispenseLineIds,
-  openSheetViewMode,
+  switchToSheetView,
 });
 
 /** 单表 rowspan：前三列按处方合并，间隔行整行合并 */
@@ -260,7 +351,7 @@ function rxStatusTagRow(row: DispensePrescriptionItemRow) {
   if (row.status === 'blocking') return { text: '拦截', type: 'danger' as const };
   if (row.status === 'partial') return { text: '部分可发', type: 'warning' as const };
   if (row.status === 'prepared') return { text: '已配药', type: 'warning' as const };
-  if (row.status === 'completed') return { text: '已发', type: 'info' as const };
+  if (row.status === 'completed') return { text: '已发', type: 'success' as const };
   return { text: '待发', type: 'success' as const };
 }
 
@@ -320,11 +411,11 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
   <div class="flex h-full min-h-0 flex-col overflow-hidden">
     <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-3 pb-2 pt-2">
       <div
-        class="dispense-rx-toolbar flex flex-col gap-2 border-b border-[var(--el-border-color-lighter)] pb-2"
+        class="dispense-rx-toolbar flex flex-col gap-1.5 border-b border-[var(--el-border-color-lighter)] pb-2"
       >
         <SectionTitle title="处方列表" class="!mb-0 shrink-0" />
-        <div class="mb-2 flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-2">
-          <div class="flex flex-wrap items-center gap-1">
+        <div class="dispense-rx-toolbar-bar">
+          <div class="dispense-rx-toolbar-group">
             <ElButton
               type="primary"
               :disabled="!props.selectedPatient || props.batchDispenseDisabled"
@@ -340,10 +431,8 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
             >
               扫追溯码
             </ElButton>
-            <ElButton plain :disabled="!props.selectedPatient" @click="emit('viewPrescription')">
-              处方查看
-            </ElButton>
             <ElButton
+              type="primary"
               plain
               :disabled="!props.selectedPatient || props.printPrescriptionsDisabled"
               @click="emit('printPrescriptions')"
@@ -351,35 +440,88 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
               处方打印
             </ElButton>
           </div>
-          <ElRadioGroup v-model="activeRxKind" class="dispense-rx-kind w-fit shrink-0">
-            <ElRadioButton value="western">
-              {{ formatRxKindTabLabel('西药 / 成药', props.rxKindBadgeCounts.western) }}
-            </ElRadioButton>
-            <ElRadioButton value="herbal">
-              {{ formatRxKindTabLabel('中药饮片', props.rxKindBadgeCounts.herbal) }}
-            </ElRadioButton>
-          </ElRadioGroup>
-          <div class="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
-            <span class="text-xs text-[var(--el-text-color-secondary)]">调配药师</span>
-            <ElSelect
-              v-model="selectedDispenserId"
-              placeholder="请选择调配药师"
-              clearable
-              filterable
-              class="dispense-pharmacist-select !w-44 shrink-0"
-            >
-              <ElOption
-                v-for="opt in props.dispenserOptions"
-                :key="opt.value"
-                :label="opt.label"
-                :value="opt.value"
-              />
-            </ElSelect>
+          <div class="dispense-rx-toolbar-split" aria-hidden="true"></div>
+          <div class="dispense-rx-toolbar-group">
+            <ElRadioGroup v-model="activeRxKind" class="dispense-rx-kind w-fit shrink-0">
+              <ElRadioButton value="western">
+                {{ formatRxKindTabLabel('西药 / 成药', props.rxKindBadgeCounts.western) }}
+              </ElRadioButton>
+              <ElRadioButton value="herbal">
+                {{ formatRxKindTabLabel('中药饮片', props.rxKindBadgeCounts.herbal) }}
+              </ElRadioButton>
+            </ElRadioGroup>
+            <div class="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
+              <span class="text-xs text-[var(--el-text-color-secondary)]">调配药师</span>
+              <ElSelect
+                v-model="selectedDispenserId"
+                placeholder="请选择调配药师"
+                clearable
+                filterable
+                class="dispense-pharmacist-select !w-40 shrink-0"
+              >
+                <ElOption
+                  v-for="opt in props.dispenserOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </ElSelect>
+            </div>
           </div>
+          <template v-if="props.enableSheetView">
+            <div class="dispense-rx-toolbar-spacer"></div>
+            <div class="dispense-rx-toolbar-group dispense-rx-toolbar-group--view">
+              <ElRadioGroup
+                v-model="workbenchViewMode"
+                class="dispense-rx-view-mode w-fit shrink-0"
+              >
+                <ElRadioButton value="sheet">发药单</ElRadioButton>
+                <ElRadioButton value="list">列表明细</ElRadioButton>
+              </ElRadioGroup>
+            </div>
+          </template>
         </div>
       </div>
       <div class="dispense-rx-body-wrap flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <!-- 发药单视图（默认）：居左横向多张；笺内勾选可批量发药 -->
+        <div
+          v-if="props.enableSheetView"
+          v-show="resolvedViewMode === 'sheet'"
+          v-loading="props.sheetLoading"
+          class="dispense-rx-sheet-pane min-h-0 flex-1 overflow-hidden pb-1"
+        >
+          <div
+            v-if="prescriptionSheetViewItems.length > 0"
+            class="dispense-rx-sheet-row flex h-full min-h-0 items-start justify-start gap-4 overflow-x-auto overflow-y-auto"
+          >
+            <PrescriptionSheetView
+              v-for="item in prescriptionSheetViewItems"
+              :key="item.key"
+              class="dispense-rx-sheet-card shrink-0"
+              :data="item.data"
+              comfortable
+              workbench-actions
+              :selected="isSheetSelected(item.rxId)"
+              :selectable="item.canDispense && !props.batchDispenseDisabled"
+              :can-dispense="item.canDispense"
+              :dispense-disabled="props.batchDispenseDisabled"
+              :print-disabled="props.printPrescriptionsDisabled"
+              @update:selected="(v) => setSheetSelected(item.rxId, v)"
+              @dispense="emit('dispensePrescription', item.rxId)"
+              @print="emit('printPrescription', item.rxId)"
+            />
+          </div>
+          <ElEmpty
+            v-else
+            class="dispense-rx-empty flex h-full flex-col justify-center"
+            :description="sheetEmptyText"
+            :image-size="72"
+          />
+        </div>
+
+        <!-- 列表明细：有笺面时 v-show 保持挂载以便切回保留勾选 -->
         <ElTable
+          v-show="resolvedViewMode === 'list'"
           v-if="props.selectedPatient && props.prescriptionRowCount > 0"
           ref="rxTableRef"
           :data="rxTableBodyRows"
@@ -428,6 +570,14 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
             show-overflow-tooltip
           />
           <ElTableColumn
+            prop="diagnosis"
+            label="诊断"
+            width="160"
+            align="center"
+            header-align="center"
+            show-overflow-tooltip
+          />
+          <ElTableColumn
             prop="quantity"
             label="数量"
             width="100"
@@ -470,8 +620,14 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
           <ElTableColumn label="发放库房" width="200" align="center" header-align="center">
             <template #default="{ row }">
               <template v-if="!isSpacerRow(row)">
+                <span
+                  v-if="row.lineKind === 'decoctionFee'"
+                  class="text-[var(--el-text-color-regular)]"
+                >
+                  —
+                </span>
                 <div
-                  v-if="row.inventoryPickOptions?.length"
+                  v-else-if="row.inventoryPickOptions?.length"
                   class="flex min-h-8 min-w-[140px] items-center justify-center"
                   @click.stop
                   @dblclick.stop
@@ -521,40 +677,20 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
           />
         </ElTable>
         <ElEmpty
-          v-else-if="!props.selectedPatient"
+          v-show="resolvedViewMode === 'list'"
+          v-if="!props.selectedPatient"
           class="dispense-rx-empty flex flex-1 flex-col justify-center"
           description="请从左侧选择患者"
           :image-size="72"
         />
         <ElEmpty
-          v-else
+          v-show="resolvedViewMode === 'list'"
+          v-else-if="!(props.selectedPatient && props.prescriptionRowCount > 0)"
           class="dispense-rx-empty flex flex-1 flex-col justify-center"
           description="当前类型下无处方，请切换上方西药/中药"
           :image-size="56"
         />
       </div>
-
-      <ElDialog
-        v-model="prescriptionSheetDialogVisible"
-        title="处方单查看"
-        width="min(920px, 94vw)"
-        append-to-body
-        align-center
-        class="dispense-rx-sheet-dialog"
-      >
-        <div class="dispense-rx-sheet-scroll max-h-[min(720px,78vh)] min-h-0 overflow-auto pb-1">
-          <template v-if="prescriptionSheetViewItems.length > 0">
-            <div
-              v-for="item in prescriptionSheetViewItems"
-              :key="item.key"
-              class="dispense-rx-sheet-stack-item mb-6 last:mb-0"
-            >
-              <PrescriptionSheetView :data="item.data" comfortable />
-            </div>
-          </template>
-          <ElEmpty v-else description="暂无处方单数据" :image-size="56" />
-        </div>
-      </ElDialog>
     </div>
   </div>
 </template>
@@ -755,18 +891,74 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
   margin-bottom: 0;
 }
 
-/* 处方单弹窗：垂直居中、正文区无底色（灰色仅在处方单组件内部） */
-:deep(.dispense-rx-sheet-dialog.el-dialog) {
-  margin-top: 0 !important;
-  margin-bottom: 0 !important;
+.dispense-rx-toolbar-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-width: 0;
+  padding: 0;
 }
 
-:deep(.dispense-rx-sheet-dialog .el-dialog__body) {
-  padding-top: 8px;
+.dispense-rx-toolbar-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
+}
+
+.dispense-rx-toolbar-group--view {
+  margin-left: auto;
+}
+
+.dispense-rx-toolbar-split {
+  flex-shrink: 0;
+  width: 1px;
+  height: 22px;
+  background: var(--el-border-color-lighter);
+}
+
+.dispense-rx-toolbar-spacer {
+  flex: 1 1 8px;
+  min-width: 8px;
+}
+
+/** 中西药切换、视图切换：选中用 plain 观感，避免抢主操作按钮 */
+:deep(.dispense-rx-kind .el-radio-button__inner),
+:deep(.dispense-rx-view-mode .el-radio-button__inner) {
+  color: var(--el-text-color-regular);
+  background-color: var(--el-fill-color-blank);
+  border-color: var(--el-border-color);
+  box-shadow: none !important;
+}
+
+:deep(.dispense-rx-kind .el-radio-button.is-active .el-radio-button__inner),
+:deep(.dispense-rx-view-mode .el-radio-button.is-active .el-radio-button__inner) {
+  color: var(--el-color-primary);
+  background-color: var(--el-color-primary-light-9);
+  border-color: var(--el-color-primary-light-5);
+  box-shadow: none !important;
+}
+
+:deep(.dispense-rx-kind .el-radio-button:not(.is-active) .el-radio-button__inner:hover),
+:deep(.dispense-rx-view-mode .el-radio-button:not(.is-active) .el-radio-button__inner:hover) {
+  color: var(--el-color-primary);
+}
+
+.dispense-rx-sheet-pane {
   background-color: transparent;
 }
 
-.dispense-rx-sheet-scroll {
-  background-color: transparent;
+.dispense-rx-sheet-row {
+  padding-bottom: 4px;
+}
+
+.dispense-rx-sheet-card :deep(.prescription-dialog-wrapper) {
+  width: 100%;
 }
 </style>

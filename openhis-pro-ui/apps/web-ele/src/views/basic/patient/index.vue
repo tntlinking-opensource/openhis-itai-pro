@@ -19,8 +19,9 @@ import {
   patientInitApi,
 } from '#/api/basic/patient';
 
+import { BASIC_TABLE_MAX_HEIGHT } from '../basic-table-max-height';
 import EditDialog from './edit-dialog.vue';
-import StudentInfoDialog from './student-info-dialog.vue';
+// 学籍相关 UI 暂隐藏（产品未上线）；入口恢复时再挂回 StudentInfoDialog。
 
 defineOptions({
   name: 'PatientList',
@@ -35,9 +36,6 @@ const initQueryParams: GetPatientPageParams = {
   pageSize: 10,
   keyword: '',
 };
-
-/** 表格最大高度（表体超出时在内部滚动） */
-const PATIENT_TABLE_MAX_HEIGHT = 700;
 
 const queryParams = reactive<GetPatientPageParams>({ ...initQueryParams });
 
@@ -140,23 +138,14 @@ async function loadPatientList() {
 
 /** 证件类型下拉选项（来自 init 的 identityDocumentType，排除身份证后供「其他证件」使用） */
 const certTypeOptions = ref<ApiOptionItem[]>([]);
-/** 编辑弹窗用：婚姻状况、血型 ABO、Rh 血型（来自 patient/init） */
+/** 编辑弹窗用：婚姻状况、血型 ABO、Rh 血型、性别（来自 patient/init） */
 const maritalStatusOptions = ref<ApiOptionItem[]>([]);
 const bloodTypeAboOptions = ref<ApiOptionItem[]>([]);
 const bloodTypeRhOptions = ref<ApiOptionItem[]>([]);
-/** 学籍弹窗用：性别、学历、学习形式、在校状态、体检结果（来自 patient/init） */
-const sexOptionsForStudent = ref<ApiOptionItem[]>([]);
-const educationLevelOptions = ref<ApiOptionItem[]>([]);
-const studyModeOptions = ref<ApiOptionItem[]>([]);
-const studentStatusOptions = ref<ApiOptionItem[]>([]);
-const physicalExamResultOptions = ref<ApiOptionItem[]>([]);
-const showStudentInfoButton = ref(false);
+const sexOptions = ref<ApiOptionItem[]>([]);
 
 const dialogVisible = ref(false);
 const dialogFormData = ref<null | Partial<Patient>>(null);
-
-const studentDialogVisible = ref(false);
-const studentPatient = ref<null | Patient>(null);
 
 /** 新增：打开弹窗，不传表单数据 */
 const handleAdd = () => {
@@ -178,17 +167,6 @@ const handleEdit = async (row: Patient) => {
     console.error('获取患者详情失败:', error);
     ElMessage.error('获取患者详情失败，请稍后重试');
   }
-};
-
-/** 学籍信息：须患者主档证件号非空 */
-const handleStudentInfo = (row: Patient) => {
-  const idCard = row.idCard?.trim();
-  if (!idCard) {
-    ElMessage.warning('请先维护患者证件号后再操作学籍信息');
-    return;
-  }
-  studentPatient.value = row;
-  studentDialogVisible.value = true;
 };
 
 const handleDelete = async (row: Patient) => {
@@ -225,15 +203,9 @@ onMounted(async () => {
     maritalStatusOptions.value = initRes?.maritalStatus ?? [];
     bloodTypeAboOptions.value = initRes?.bloodTypeABO ?? [];
     bloodTypeRhOptions.value = initRes?.bloodTypeRH ?? [];
-    sexOptionsForStudent.value = initRes?.sex ?? [];
-    educationLevelOptions.value = initRes?.educationLevelOptions ?? [];
-    studyModeOptions.value = initRes?.studyModeOptions ?? [];
-    studentStatusOptions.value = initRes?.studentStatusOptions ?? [];
-    physicalExamResultOptions.value = initRes?.physicalExamResultOptions ?? [];
-    showStudentInfoButton.value = String(initRes?.studentSwitchValue ?? '') === '1';
+    sexOptions.value = initRes?.sex ?? [];
   } catch (error) {
     console.error('患者管理初始化失败:', error);
-    showStudentInfoButton.value = false;
   }
   void loadPatientList();
 });
@@ -248,7 +220,7 @@ onMounted(async () => {
       :query-params="queryParams"
       :form-items="formItems"
       :table-columns="tableColumns"
-      :max-height="PATIENT_TABLE_MAX_HEIGHT"
+      :max-height="BASIC_TABLE_MAX_HEIGHT"
       :show-top-query="true"
       :show-pagination="true"
       row-key="id"
@@ -261,9 +233,6 @@ onMounted(async () => {
       </template>
       <template #action="{ row }">
         <ElButton type="primary" link @click="handleEdit(row)">编辑</ElButton>
-        <ElButton v-if="showStudentInfoButton" type="primary" link @click="handleStudentInfo(row)">
-          学籍信息
-        </ElButton>
         <ElButton type="danger" link @click="handleDelete(row)">删除</ElButton>
       </template>
     </TableLayout>
@@ -273,18 +242,8 @@ onMounted(async () => {
       :marital-status-options="maritalStatusOptions"
       :blood-type-abo-options="bloodTypeAboOptions"
       :blood-type-rh-options="bloodTypeRhOptions"
-      :sex-options="sexOptionsForStudent"
+      :sex-options="sexOptions"
       :form-data="dialogFormData || undefined"
-      @success="handleQuery"
-    />
-    <StudentInfoDialog
-      v-model:visible="studentDialogVisible"
-      :patient="studentPatient"
-      :sex-options="sexOptionsForStudent"
-      :education-level-options="educationLevelOptions"
-      :study-mode-options="studyModeOptions"
-      :student-status-options="studentStatusOptions"
-      :physical-exam-result-options="physicalExamResultOptions"
       @success="handleQuery"
     />
   </Page>

@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import type { ComputedRef } from 'vue';
+
+import { computed, inject, nextTick, onMounted, ref, watch } from 'vue';
 
 import { nodeViewProps, NodeViewWrapper } from '@tiptap/vue-3';
 
@@ -17,6 +19,13 @@ const label = computed(() => String(props.node.attrs.label ?? ''));
 const editable = computed(() => props.node.attrs.editable !== false);
 const value = computed(() => String(props.node.attrs.value ?? ''));
 
+const surfaceInject = inject<ComputedRef<'document' | 'template'>>('emrEditorSurface');
+const surface = computed(() => surfaceInject?.value ?? 'document');
+/** 模板 / 文书均不展示蓝括号，绑定名见 title */
+const showBrackets = computed(() => false);
+
+const displayValue = computed(() => value.value);
+
 const isSignatureImage = computed(() => value.value.trim().startsWith('data:image/'));
 
 const islandWhenLocked = computed(() => editable.value);
@@ -31,6 +40,10 @@ const titleTip = computed(() => {
   if (k && l) return `字段 ${k}（${l}）· ${mode}`;
   return k ? `字段 ${k} · ${mode}` : l || '元数据字段';
 });
+
+const visualPlaceholder = computed(() =>
+  surface.value === 'template' ? '' : label.value || fieldKey.value || '填写',
+);
 
 function syncDomFromAttrs() {
   nextTick(() => {
@@ -77,11 +90,12 @@ watch(value, () => {
     class="emr-metadata-chip emr-bracket-field"
     :class="{
       'emr-metadata-chip--readonly': !editable,
+      'emr-metadata-chip--plain': !showBrackets,
     }"
     data-node-view-wrapper=""
     :title="titleTip"
   >
-    <span class="emr-bracket-field__bracket" aria-hidden="true">[</span>
+    <span v-if="showBrackets" class="emr-bracket-field__bracket" aria-hidden="true">[</span>
     <span
       v-if="editable"
       ref="textFieldRef"
@@ -89,7 +103,7 @@ watch(value, () => {
       class="emr-inline-text__field emr-bracket-field__body emr-metadata-chip__text"
       tabindex="0"
       spellcheck="false"
-      :data-placeholder="label || fieldKey || '填写'"
+      :data-placeholder="visualPlaceholder"
       :contenteditable="domEditable ? 'true' : 'false'"
       :aria-label="titleTip"
       @input="onEditableInput"
@@ -103,8 +117,8 @@ watch(value, () => {
       class="emr-metadata-chip__signature-img"
       :aria-label="titleTip"
     />
-    <span v-else class="emr-metadata-chip__value" :aria-label="titleTip">{{ value }}</span>
-    <span class="emr-bracket-field__bracket" aria-hidden="true">]</span>
+    <span v-else class="emr-metadata-chip__value" :aria-label="titleTip">{{ displayValue }}</span>
+    <span v-if="showBrackets" class="emr-bracket-field__bracket" aria-hidden="true">]</span>
   </NodeViewWrapper>
 </template>
 
@@ -124,6 +138,7 @@ watch(value, () => {
   vertical-align: baseline;
   white-space: normal;
   box-sizing: border-box;
+  min-width: 2.5em;
 }
 
 .emr-bracket-field__bracket {
@@ -151,7 +166,9 @@ watch(value, () => {
   overflow-wrap: anywhere;
   word-break: break-word;
   vertical-align: baseline;
-  color: #64748b;
+  color: #111827;
+  min-width: 2ch;
+  min-height: 1em;
 }
 
 .emr-metadata-chip__text {
@@ -164,11 +181,7 @@ watch(value, () => {
   overflow-wrap: anywhere;
   word-break: break-word;
   vertical-align: baseline;
-  color: #9ca3af;
-}
-
-.emr-metadata-chip__text:not(:empty) {
-  color: #64748b;
+  color: #111827;
 }
 
 .emr-metadata-chip__text:empty::before {

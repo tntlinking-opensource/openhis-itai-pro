@@ -145,7 +145,7 @@ onMounted(() => {
       </p>
       <ElButton class="mt-2" :loading="loading" @click="probeClient">重新检测</ElButton>
     </div>
-    <ElTable v-loading="loading" :data="rows" border stripe>
+    <ElTable v-loading="loading" :data="rows" border stripe max-height="420">
       <ElTableColumn prop="label" label="打印场景" min-width="120" />
       <ElTableColumn label="默认打印机" min-width="200">
         <template #default="{ row }">

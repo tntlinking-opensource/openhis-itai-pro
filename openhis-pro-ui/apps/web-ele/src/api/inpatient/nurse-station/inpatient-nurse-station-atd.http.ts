@@ -11,8 +11,8 @@ import type {
   ListDischargePendingExecutionsResponse,
   ListDischargePendingMedicationsRequest,
   ListDischargePendingMedicationsResponse,
-  RecallInpatientDischargeRequest,
-  RecallInpatientDischargeResponse,
+  ListMissingDispenseTraceTipsRequest,
+  ListMissingDispenseTraceTipsResponse,
 } from './inpatient-nurse-station-atd.types';
 
 import { publicRequestClient } from '#/api/request';
@@ -49,12 +49,12 @@ export async function httpClearDischargedBed(
   return publicRequestClient.post<ClearDischargedBedResponse>(`${BASE}/clearDischargedBed`, body);
 }
 
-/** 出院召回（已出院结算列表） */
-export async function httpRecallInpatientDischarge(
-  body: RecallInpatientDischargeRequest,
-): Promise<RecallInpatientDischargeResponse> {
-  return publicRequestClient.post<RecallInpatientDischargeResponse>(
-    `${BASE}/recallInpatientDischarge`,
+/** 清床前缺追溯码软提示列表（不硬拦） */
+export async function httpListMissingDispenseTraceTips(
+  body: ListMissingDispenseTraceTipsRequest,
+): Promise<ListMissingDispenseTraceTipsResponse> {
+  return publicRequestClient.post<ListMissingDispenseTraceTipsResponse>(
+    `${BASE}/listMissingDispenseTraceTips`,
     body,
   );
 }

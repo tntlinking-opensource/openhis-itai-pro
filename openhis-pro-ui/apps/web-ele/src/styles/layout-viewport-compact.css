@@ -49,6 +49,10 @@ html.layout-viewport-compact {
   --vxe-ui-font-size-small: 13px;
   --vxe-ui-table-row-height-small: 34px;
 
+  /* SectionTitle 通用（section-title.vue 读变量；default 16 / bar 14） */
+  --section-title-font-size: 14px;
+  --section-title-bar-height: 12px;
+
   /*
    * medium 档全局变量预留：库房单据 createDefaultInvDocGridOptions 用 medium。
    * 订货单已在 inventory-viewport-compact.css 试点覆盖；批量铺开时可改为全局生效。

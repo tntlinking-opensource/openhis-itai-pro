@@ -6,6 +6,8 @@ import type {
 import { formatDateTime } from '@vben/utils';
 
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
+import { formatMedicationNameWithMerchandise } from '#/utils/medication/format-medication-name-with-merchandise';
+import { unionDiagnosisDisplayNamesOrDash } from '#/utils/diagnosis/union-diagnosis-display-names';
 
 import type { DispensePrescriptionBlock } from '#/views/outpatient/dispense/components/types';
 
@@ -34,6 +36,8 @@ export function mapInpatientPendingQueueRowToPatient(
   row: PendingDispenseInpatientEncounterQueueRowDto,
 ): InpatientDispenseQueuePatient {
   const start = row.startTime ? formatDateTime(row.startTime) : '';
+  // 费用性质：透传后端合同名；空则卡片组件回落「自费」
+  const feeNature = row.contractDisplay?.trim() || undefined;
   return {
     id: row.encounterId,
     patientId: row.patientId?.trim() || undefined,
@@ -46,6 +50,7 @@ export function mapInpatientPendingQueueRowToPatient(
     admissionTimeLabel: start || '—',
     attendingDoctorName: row.attendingDoctorName?.trim() || '—',
     statusText: row.statusEnumText?.trim() || '—',
+    feeNatureLabel: feeNature,
   };
 }
 
@@ -88,22 +93,30 @@ export function mapInpatientSlipRowsToPrescriptionBlocks(
 
   const blocks: DispensePrescriptionBlock[] = [];
   for (const [, groupRows] of groups) {
-    groupRows.sort((a, b) =>
-      (a.requestAuthoredTime ?? '').localeCompare(b.requestAuthoredTime ?? ''),
-    );
+    groupRows.sort((a, b) => (a.requestOpenedTime ?? '').localeCompare(b.requestOpenedTime ?? ''));
     const head = groupRows[0];
     if (!head) continue;
     const tcm = isHerbalSlipRow(head);
     const rxNo = resolvePrescriptionBlockNo(head);
     const issued =
-      head.requestAuthoredTime != null && head.requestAuthoredTime !== ''
-        ? formatDateTime(head.requestAuthoredTime)
+      head.requestOpenedTime != null && head.requestOpenedTime !== ''
+        ? formatDateTime(head.requestOpenedTime)
         : '—';
     const items = groupRows.map((line) => ({
       id: line.dispenseId,
       medicationId: String(line.medicationId ?? '').trim() || undefined,
-      itemName: line.medicationName?.trim() || line.merchandiseName?.trim() || '—',
+      itemName:
+        formatMedicationNameWithMerchandise(line.medicationName, line.merchandiseName) || '—',
       quantity: formatDispenseQuantityLabel(line),
+      unitCode: String(line.unitCode ?? '').trim() || undefined,
+      quantityValue: parseSlipQuantityValue(line.quantity),
+      packageUnitCode: String(line.packageUnitCode ?? '').trim() || undefined,
+      packageUnitRatio: parseOptionalPositiveNumber(line.packageUnitRatio),
+      splitUnitCode: String(line.splitUnitCode ?? '').trim() || undefined,
+      // 主档贴码快照：待扫个数换算真源（与门诊同口径）
+      traceUnitCode: String(line.traceUnitCode ?? '').trim() || undefined,
+      traceUnitRatio: parseOptionalPositiveNumber(line.traceUnitRatio),
+      lotHasTraceMaster: line.lotHasTraceMaster === true,
       spec: line.specificationText?.trim() || '—',
       traceCode: line.traceNo?.trim() || '—',
       batchNo: line.lotNumber?.trim() || '—',
@@ -123,12 +136,23 @@ export function mapInpatientSlipRowsToPrescriptionBlocks(
       dosageInstructionText:
         line.dosageInstructionText?.trim() || line.dosageInstructionCode?.trim() || '—',
     }));
+    // 西药：同方诊断并集去重，覆盖行级单诊
+    if (!tcm && items.length > 0) {
+      const unionDiagnosis = unionDiagnosisDisplayNamesOrDash(
+        ...items.map((item) => item.diagnosis),
+      );
+      for (const item of items) {
+        item.diagnosis = unionDiagnosis;
+      }
+    }
     blocks.push({
       id: `block-${head.dispenseId}-${rxNo}`,
       rxNo,
       rxType: tcm ? 'herbal' : 'western',
       deptName: head.orderingDepartmentName?.trim() || '—',
       doctorName: head.orderingPractitionerName?.trim() || '—',
+      // 费用性质：接口 feeNatureText；空时由 buildPrescriptionSheetData 用患者信息补偿
+      feeNatureLabel: head.feeNatureText?.trim() || undefined,
       issuedAt: issued,
       status: blockStatusFromRows(groupRows),
       items,
@@ -152,4 +176,20 @@ function formatDispenseQuantityLabel(line: EncounterMedicationDispenseSlipRowDto
   if (!u) return q || '—';
   if (!q) return u;
   return `${q}${u}`;
+}
+
+/** slip.quantity → 数值；无效时 undefined */
+function parseSlipQuantityValue(raw: null | number | string | undefined): number | undefined {
+  if (raw === null || raw === undefined || raw === '') return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  return n;
+}
+
+/** 可选正数（包装倍数/主档贴码比）；无效时 undefined */
+function parseOptionalPositiveNumber(raw: null | number | string | undefined): number | undefined {
+  if (raw === null || raw === undefined || raw === '') return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  return n;
 }

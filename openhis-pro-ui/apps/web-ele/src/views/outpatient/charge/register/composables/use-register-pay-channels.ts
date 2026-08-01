@@ -19,6 +19,7 @@ export const useRegisterPayChannels = createSharedComposable(() => {
 
   const {
     scanPayEnabled,
+    hasScanPayChannel,
     effectivePayChannelOptions,
     refreshUnionPayCapabilities,
     unionPayWinReady,
@@ -53,6 +54,7 @@ export const useRegisterPayChannels = createSharedComposable(() => {
   return {
     payChannelOptions,
     scanPayEnabled,
+    hasScanPayChannel,
     effectivePayChannelOptions,
     refreshUnionPayCapabilities,
     ensurePayChannelsLoaded,

@@ -1,10 +1,10 @@
 <!--
-  订货单左侧：历史单据检索 + 卡片队列 + 新增（与进货侧栏同构，文案区分订货）。
+  订货单左侧：历史单据检索 + 卡片队列 + 空白新增（从申请单新建入口在右侧操作区）。
 -->
 <script setup lang="ts">
 import type { ApiOptionItem } from '#/types/api-response';
 
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 
 import { RotateCw, Search } from '@vben/icons';
 
@@ -16,8 +16,15 @@ import isoWeek from 'dayjs/plugin/isoWeek';
 import { ElButton, ElDatePicker, ElInput, ElOption, ElSelect } from 'element-plus';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
+import { useCompactViewport } from '#/composables/use-compact-viewport';
 
 defineOptions({ name: 'PurchaseOrderAsidePane' });
+
+const { isCompactViewport } = useCompactViewport();
+/** 窄屏检索区间距略收，腾出队列可视高度 */
+const asideHeaderStackClass = computed(() =>
+  isCompactViewport.value ? 'flex flex-col gap-1' : 'flex flex-col gap-1.5',
+);
 
 withDefaults(
   defineProps<{
@@ -119,7 +126,7 @@ function handleAdd() {
 <template>
   <InvAsideShell class="purchase-order-aside-pane">
     <template #header>
-      <div class="flex flex-col gap-1.5">
+      <div :class="asideHeaderStackClass">
         <SectionTitle title="历史订货单" />
         <ElInput
           v-model="keyword"
@@ -178,6 +185,8 @@ function handleAdd() {
         :practitioner-option="practitionerOption"
         :selected-order="selectedOrder"
         :show-supplier="showSupplierInQueue"
+        empty-description="暂无订货单"
+        empty-add-label="新增订货单"
         @add="handleAdd"
         @select="handleQueueSelect"
       />

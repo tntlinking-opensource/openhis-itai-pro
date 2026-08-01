@@ -21,6 +21,7 @@ import {
   BUILTIN_ROLE_STAFF_SCOPES,
   getEditableScopesForCurrentUserApi,
   getStaffDetailApi,
+  resolveStaffScopesByRoleIdsApi,
   saveStaffApi,
   STAFF_SCOPE,
 } from '#/api/basic/staff';
@@ -31,7 +32,11 @@ import {
   isWarehouseFormEnum,
 } from '#/api/basic/warehouse';
 import { getTreeForResponsibilityDeptApi } from '#/api/core/common';
-import { getRegistrationTypeListApi } from '#/api/core/system/registration';
+import { getDepartmentApi } from '#/api/core/system/department';
+import {
+  getRegistrationTypeListApi,
+  isRegistrationTypeActive,
+} from '#/api/core/system/registration';
 import { getRoleListApi } from '#/api/user/role';
 import { getUserRolesApi } from '#/api/user/user';
 import { unwrapApiList } from '#/utils/api/unwrap-api-list';
@@ -119,15 +124,21 @@ const registrationTypeOptions = ref<SelectOption[]>([]);
 /** 当前操作者可编辑的人员维护块（StaffScope 并集） */
 const editableScopes = ref<StaffScopeCode[]>([]);
 
+/** 已选角色对应的人员维护块（声明并集，含自定义角色） */
+const activeStaffScopes = ref<StaffScopeCode[]>([]);
+
+/** 防止角色切换时过期的 StaffScope 请求回写 */
+let activeStaffScopesRequestSeq = 0;
+
 /** 动态岗位 schema 挂载完成前暂存回显数据，避免二次打开编辑丢值 */
-const pendingStaffFormEcho = ref<Record<string, unknown> | null>(null);
+const pendingStaffFormEcho = ref<null | Record<string, unknown>>(null);
 
 /** 批量回显进行中，避免 watch 重复触发 */
 const isApplyingStaffFormEcho = ref(false);
 
 let staffEchoApplyToken = 0;
-let formOptionsLoadPromise: Promise<void> | null = null;
-let editableScopesLoadPromise: Promise<void> | null = null;
+let formOptionsLoadPromise: null | Promise<void> = null;
+let editableScopesLoadPromise: null | Promise<void> = null;
 const formOptionsReady = ref(false);
 const editableScopesReady = ref(false);
 
@@ -141,7 +152,7 @@ const USER_FORM_MULTI_SELECT_COLLAPSE_PROPS = {
   maxCollapseTags: 6,
 } as const;
 
-/** 将科室树转为 ApiTreeSelect 选项 */
+/** 将科室树转为 ApiTreeSelect 选项（仅展示 org 表真实科室名） */
 function toTreeOptions<T extends { children?: T[]; id: string; name: string }>(
   list: T[] | undefined,
 ): TreeOption[] {
@@ -153,6 +164,20 @@ function toTreeOptions<T extends { children?: T[]; id: string; name: string }>(
     value: String(item.id),
     children: item.children?.length ? toTreeOptions(item.children) : undefined,
   }));
+}
+
+/**
+ * 判断接口返回的 typeEnum 是否为科室层级（非医院）。
+ * 兼容数字 sortOrder=2、code=DEPARTMENT。
+ */
+function isDepartmentTypeEnum(typeEnum: unknown): boolean {
+  if (typeEnum === 2 || typeEnum === '2') {
+    return true;
+  }
+  if (typeof typeEnum === 'string' && typeEnum.toUpperCase() === 'DEPARTMENT') {
+    return true;
+  }
+  return false;
 }
 
 /** 解析用户 extraProperties 为结构化扩展字段 */
@@ -272,7 +297,7 @@ function ensureAdminRoleIncluded(roleIds: string[]): string[] {
   return [adminRoleId, ...normalized];
 }
 
-/** 按角色 id 解析内置业务 code（兼容 code/name 缺失场景） */
+/** 按角色 id 解析内置业务 code（接口失败时本地兜底） */
 function resolveBuiltinRoleCode(roleId: string): string | undefined {
   const role = allRoles.value.find((item) => roleIdFromRole(item) === roleId);
   if (!role) {
@@ -289,23 +314,50 @@ function resolveBuiltinRoleCode(roleId: string): string | undefined {
   return code || name;
 }
 
-/** 根据已选角色 code 汇总需展示的岗位维护块 */
-const activeStaffScopes = computed(() => {
+/** 接口不可用时按内置角色 code 本地汇总岗位块 */
+function resolveBuiltinStaffScopesFallback(roleIds: string[]): StaffScopeCode[] {
   const scopes = new Set<StaffScopeCode>();
-  for (const roleId of selectedRoleIds.value) {
+  for (const roleId of roleIds) {
     const code = resolveBuiltinRoleCode(roleId);
     if (!code) {
       continue;
     }
     const mapped = BUILTIN_ROLE_STAFF_SCOPES[code];
-    if (mapped) {
-      for (const scope of mapped) {
-        scopes.add(scope);
-      }
+    if (!mapped) {
+      continue;
+    }
+    // 汇总内置模板中的岗位块
+    for (const scope of mapped) {
+      scopes.add(scope);
     }
   }
   return [...scopes];
-});
+}
+
+/** 按已选角色拉取 StaffScope 并集（自定义角色声明优先） */
+async function refreshActiveStaffScopes(roleIds: string[]) {
+  const requestSeq = ++activeStaffScopesRequestSeq;
+  const normalizedRoleIds = normalizeIdArray(roleIds);
+  if (normalizedRoleIds.length === 0) {
+    if (requestSeq === activeStaffScopesRequestSeq) {
+      activeStaffScopes.value = [];
+    }
+    return;
+  }
+  try {
+    const scopes = await resolveStaffScopesByRoleIdsApi(normalizedRoleIds);
+    if (requestSeq !== activeStaffScopesRequestSeq) {
+      return;
+    }
+    activeStaffScopes.value = scopes.filter(Boolean) as StaffScopeCode[];
+  } catch (error) {
+    console.error('加载角色人员维护块失败，回退内置模板:', error);
+    if (requestSeq !== activeStaffScopesRequestSeq) {
+      return;
+    }
+    activeStaffScopes.value = resolveBuiltinStaffScopesFallback(normalizedRoleIds);
+  }
+}
 
 /** 已选角色是否关联某岗位块 */
 function roleScopeLinked(scope: StaffScopeCode): boolean {
@@ -357,12 +409,12 @@ function normalizeIdArray(raw: unknown): string[] {
 }
 
 /** 从岗位详情列表提取 orgId 数组 */
-function mapOrgIdsFromList(list?: { orgId?: string | number }[]): string[] {
+function mapOrgIdsFromList(list?: { orgId?: number | string }[]): string[] {
   return normalizeIdArray((list ?? []).map((item) => item.orgId));
 }
 
 /** 从岗位详情列表提取 locationId 数组 */
-function mapLocationIdsFromList(list?: { locationId?: string | number }[]): string[] {
+function mapLocationIdsFromList(list?: { locationId?: number | string }[]): string[] {
   return normalizeIdArray((list ?? []).map((item) => item.locationId));
 }
 
@@ -381,13 +433,37 @@ function collectTreeValues(nodes: TreeOption[]): Set<string> {
   return values;
 }
 
-/** 为树形下拉补齐已保存但不在树中的节点，避免编辑不回显 */
-function mergeOrphanIdsIntoTree(tree: TreeOption[], ids: string[]): TreeOption[] {
+/** 为树形下拉补齐已保存且确为科室的节点；禁止拼「科室（id）」假选项 */
+async function mergeValidDepartmentOrphansIntoTree(
+  tree: TreeOption[],
+  ids: string[],
+): Promise<{ invalidIds: string[]; tree: TreeOption[] }> {
   const existing = collectTreeValues(tree);
-  const orphans = ids
-    .filter((id) => id && !existing.has(id))
-    .map((id) => ({ label: `科室（${id}）`, value: id }));
-  return orphans.length ? [...orphans, ...tree] : tree;
+  const orphanIds = ids.filter((id) => id && !existing.has(id));
+  if (orphanIds.length === 0) {
+    return { tree, invalidIds: [] };
+  }
+
+  const extras: TreeOption[] = [];
+  const invalidIds: string[] = [];
+  // 逐个按 org 主键拉真实科室名；非科室/不存在则记为非法，不进下拉
+  for (const id of orphanIds) {
+    try {
+      const dept = await getDepartmentApi(id);
+      const name = String(dept?.name || dept?.displayName || '').trim();
+      if (!name || !isDepartmentTypeEnum(dept?.typeEnum)) {
+        invalidIds.push(id);
+        continue;
+      }
+      extras.push({ label: name, value: id });
+    } catch {
+      invalidIds.push(id);
+    }
+  }
+  return {
+    tree: extras.length > 0 ? [...extras, ...tree] : tree,
+    invalidIds,
+  };
 }
 
 /** 为普通下拉补齐已保存但不在选项中的值 */
@@ -502,23 +578,29 @@ function mergeStaffDetailIntoForm(
     genderEnum: detail.genderEnum ?? extra.genderEnum ?? '',
     ybNo: detail.ybNo ?? extra.ybNo ?? '',
     drProfttlCode:
-      detail.drProfttlCode != null && String(detail.drProfttlCode) !== ''
+      detail.drProfttlCode !== undefined &&
+      detail.drProfttlCode !== null &&
+      String(detail.drProfttlCode) !== ''
         ? String(detail.drProfttlCode)
         : (extra.drProfttlCode ?? ''),
     pharPracCertNo: detail.pharPracCertNo ?? extra.pharPracCertNo ?? '',
     roleIds,
-    consultDeptIds: mapOrgIdsFromList(detail.doctorVisitOrgList).length
-      ? mapOrgIdsFromList(detail.doctorVisitOrgList)
-      : (extra.consultDeptIds ?? []),
-    manageWarehouseIds: mapLocationIdsFromList(detail.warehouseLocationList).length
-      ? mapLocationIdsFromList(detail.warehouseLocationList)
-      : (extra.manageWarehouseIds ?? []),
-    managePharmacyIds: mapLocationIdsFromList(detail.pharmacyLocationList).length
-      ? mapLocationIdsFromList(detail.pharmacyLocationList)
-      : (extra.managePharmacyIds ?? []),
-    manageWardIds: mapLocationIdsFromList(detail.nurseWardLocationList).length
-      ? mapLocationIdsFromList(detail.nurseWardLocationList)
-      : normalizeIdArray(extra.manageWardIds),
+    consultDeptIds:
+      mapOrgIdsFromList(detail.doctorVisitOrgList).length > 0
+        ? mapOrgIdsFromList(detail.doctorVisitOrgList)
+        : (extra.consultDeptIds ?? []),
+    manageWarehouseIds:
+      mapLocationIdsFromList(detail.warehouseLocationList).length > 0
+        ? mapLocationIdsFromList(detail.warehouseLocationList)
+        : (extra.manageWarehouseIds ?? []),
+    managePharmacyIds:
+      mapLocationIdsFromList(detail.pharmacyLocationList).length > 0
+        ? mapLocationIdsFromList(detail.pharmacyLocationList)
+        : (extra.managePharmacyIds ?? []),
+    manageWardIds:
+      mapLocationIdsFromList(detail.nurseWardLocationList).length > 0
+        ? mapLocationIdsFromList(detail.nurseWardLocationList)
+        : normalizeIdArray(extra.manageWardIds),
     doctorServiceIds: normalizeIdArray(detail.doctorServiceIds ?? extra.doctorServiceIds),
     defaultLoginOrgId: detail.primaryOrgId ? String(detail.primaryOrgId) : '',
   };
@@ -545,7 +627,7 @@ function resolveRoleIds(...roleLists: Array<RoleInfo[] | undefined>): string[] {
 
 /** 将已分配角色补进下拉选项，避免选项未加载时无法回显 */
 function mergeAssignedRolesIntoOptions(assignedRoles: RoleInfo[]) {
-  if (!assignedRoles.length) {
+  if (assignedRoles.length === 0) {
     return;
   }
   const byId = new Map(
@@ -622,8 +704,8 @@ async function applyPositionFieldsToForm(formData: Record<string, unknown>) {
   await formApi.setValues(patch);
 }
 
-/** 为编辑回显补齐下拉/树选项中缺失的已保存值 */
-function ensureEchoOptionsForStaffForm(formData: Record<string, unknown>) {
+/** 为编辑回显补齐下拉/树选项；默认登录/出诊科室仅允许 org 表真实科室 */
+async function ensureEchoOptionsForStaffForm(formData: Record<string, unknown>) {
   const consultDeptIds = normalizeIdArray(formData.consultDeptIds);
   const defaultLoginOrgIds =
     formData.defaultLoginOrgId !== undefined &&
@@ -636,10 +718,23 @@ function ensureEchoOptionsForStaffForm(formData: Record<string, unknown>) {
   const manageWardIds = normalizeIdArray(formData.manageWardIds);
   const doctorServiceIds = normalizeIdArray(formData.doctorServiceIds);
 
-  departmentTreeOptions.value = mergeOrphanIdsIntoTree(departmentTreeOptions.value, [
-    ...consultDeptIds,
-    ...defaultLoginOrgIds,
-  ]);
+  const { tree, invalidIds } = await mergeValidDepartmentOrphansIntoTree(
+    departmentTreeOptions.value,
+    [...consultDeptIds, ...defaultLoginOrgIds],
+  );
+  departmentTreeOptions.value = tree;
+
+  // 默认登录科室若指向医院/脏 id：清空，避免下拉出现「科室（id）」
+  const defaultLoginOrgId = defaultLoginOrgIds[0];
+  if (defaultLoginOrgId && invalidIds.includes(defaultLoginOrgId)) {
+    formData.defaultLoginOrgId = '';
+  }
+  // 出诊科室去掉非法 id，只保留可在树中展示的项
+  if (invalidIds.length > 0 && consultDeptIds.length > 0) {
+    const invalidSet = new Set(invalidIds);
+    formData.consultDeptIds = consultDeptIds.filter((id) => !invalidSet.has(id));
+  }
+
   warehouseOptions.value = mergeSelectOptionsWithMissingValues(
     warehouseOptions.value,
     manageWarehouseIds,
@@ -680,11 +775,13 @@ async function applyStaffFormValues(formData: Record<string, unknown>) {
   const token = ++staffEchoApplyToken;
   isApplyingStaffFormEcho.value = true;
   try {
-    ensureEchoOptionsForStaffForm(formData);
+    await ensureEchoOptionsForStaffForm(formData);
     pendingStaffFormEcho.value = { ...formData };
 
     const normalizedFormData = normalizeStaffFormEcho(formData);
     selectedRoleIds.value = normalizedFormData.roleIds;
+    // 先按角色声明挂载岗位块，再写值，避免自定义角色药房等字段尚未渲染
+    await refreshActiveStaffScopes(normalizedFormData.roleIds);
     await nextTick();
 
     if (token !== staffEchoApplyToken) {
@@ -702,6 +799,11 @@ async function applyStaffFormValues(formData: Record<string, unknown>) {
   } finally {
     isApplyingStaffFormEcho.value = false;
   }
+  // 岗位块 schema 可能在 apply 期间才挂载；watch 会因 isApplying 提前返回，结束后再补写一次
+  if (token === staffEchoApplyToken) {
+    await nextTick();
+    await reapplyPendingStaffFormEcho();
+  }
 }
 
 /** 岗位块 schema 变更后，用暂存数据补写岗位多选/树形回显（不覆盖用户已选角色） */
@@ -718,11 +820,13 @@ async function reapplyPendingStaffFormEcho() {
   await applyPositionFieldsToForm(normalized);
 }
 
-/** 加载出诊科室树（排除医院根节点，仅含已维护科室分类的机构） */
+/** 加载出诊/默认登录科室树：仅 org 表科室节点（排除医院） */
 async function loadStaffDeptTrees() {
   try {
     const data = unwrapApiList<ResponsibilityDept>(await getTreeForResponsibilityDeptApi());
-    departmentTreeOptions.value = toTreeOptions(data);
+    // 后端已滤科室层级；前端再挡一层非科室 type，避免脏数据进下拉
+    const departmentsOnly = data.filter((item) => isDepartmentTypeEnum(item.typeEnum));
+    departmentTreeOptions.value = toTreeOptions(departmentsOnly);
   } catch (error) {
     console.error('加载科室树失败:', error);
     departmentTreeOptions.value = [];
@@ -750,10 +854,13 @@ async function loadWarehouseOptions() {
 async function loadRegistrationTypeOptions() {
   try {
     const list = await getRegistrationTypeListApi();
-    registrationTypeOptions.value = (list ?? []).map((item) => ({
-      label: item.name,
-      value: String(item.id),
-    }));
+    // 医生岗位仅展示启用中的号源类型
+    registrationTypeOptions.value = (list ?? [])
+      .filter((item) => isRegistrationTypeActive(item))
+      .map((item) => ({
+        label: item.name,
+        value: String(item.id),
+      }));
   } catch (error) {
     console.error('加载号源类型失败:', error);
     registrationTypeOptions.value = [];
@@ -998,6 +1105,7 @@ async function loadFormData() {
     if (props.user?.id) {
       ++staffEchoApplyToken;
       selectedRoleIds.value = [];
+      activeStaffScopes.value = [];
       pendingStaffFormEcho.value = null;
 
       originalData.value = { ...props.user };
@@ -1037,6 +1145,7 @@ async function loadFormData() {
       await prefetchFormResources();
       originalData.value = {};
       selectedRoleIds.value = [];
+      activeStaffScopes.value = [];
       pendingStaffFormEcho.value = null;
       signaturePreview.value = '';
       await formApi.resetForm();
@@ -1145,6 +1254,7 @@ const formConfig = reactive({
             ? ensureAllRolesIncluded(value)
             : normalizeIdArray(value);
           selectedRoleIds.value = nextRoleIds;
+          await refreshActiveStaffScopes(nextRoleIds);
           if (pendingStaffFormEcho.value) {
             pendingStaffFormEcho.value = {
               ...pendingStaffFormEcho.value,
@@ -1178,6 +1288,7 @@ const formConfig = reactive({
 
     const positionFields: VbenFormSchema[] = [];
 
+    // 岗位管辖随角色 StaffScope 展示（admin 同普通用户；admin 仅锁定角色与账号）
     if (activeStaffScopes.value.length > 0) {
       positionFields.push({
         component: 'SectionTitle',
@@ -1453,6 +1564,7 @@ watch(
       modalApi.close();
       pendingStaffFormEcho.value = null;
       selectedRoleIds.value = [];
+      activeStaffScopes.value = [];
     }
   },
   { immediate: true },

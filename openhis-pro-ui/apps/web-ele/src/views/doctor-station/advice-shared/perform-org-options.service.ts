@@ -10,22 +10,38 @@ type OrgTreeOption = ApiOptionItem & { children?: OrgTreeOption[] };
 let allDepartmentOptionsCache: PerformOrgOption[] | null = null;
 let allDepartmentOptionsLoading: Promise<PerformOrgOption[]> | null = null;
 
-/** 递归扁平化机构树为下拉项，按 value 去重 */
-function flattenOrgTree(nodes: OrgTreeOption[]): PerformOrgOption[] {
+/** 开立科室树顶层 id（医院根），执行科室回落下拉须排除 */
+function collectHospitalRootIds(nodes: OrgTreeOption[]): Set<string> {
+  const ids = new Set<string>();
+  for (const node of nodes) {
+    const value = String(node.value ?? '').trim();
+    if (value) {
+      ids.add(value);
+    }
+  }
+  return ids;
+}
+
+/** 执行科室候选：扁平化时仅保留叶子节点，排除医院等非科室父节点 */
+function flattenOrgTree(nodes: OrgTreeOption[], excludeIds?: Set<string>): PerformOrgOption[] {
   const seen = new Set<string>();
   const result: PerformOrgOption[] = [];
 
   const walk = (list: OrgTreeOption[]) => {
     for (const node of list) {
+      const children = node.children ?? [];
+      // 有子节点的是医院/上级，不当作可选科室
+      if (children.length > 0) {
+        walk(children);
+        continue;
+      }
       const value = String(node.value ?? '').trim();
       const label = String(node.label ?? '').trim();
-      if (value && !seen.has(value)) {
-        seen.add(value);
-        result.push({ value, label: label || value });
+      if (!value || seen.has(value) || excludeIds?.has(value)) {
+        continue;
       }
-      if (node.children?.length) {
-        walk(node.children);
-      }
+      seen.add(value);
+      result.push({ value, label: label || value });
     }
   };
 
@@ -63,8 +79,12 @@ export async function loadAllDepartmentPerformOrgOptions(): Promise<PerformOrgOp
   allDepartmentOptionsLoading = (async () => {
     try {
       const initData = await initExecuteLocationApi();
+      const hospitalRootIds = collectHospitalRootIds(
+        (initData.organizationOptions ?? []) as OrgTreeOption[],
+      );
       const tree = (initData.executionOrgOptions ?? []) as OrgTreeOption[];
-      allDepartmentOptionsCache = flattenOrgTree(tree);
+      // 后端已过滤科室；前端再排除开立树医院根，避免脏数据把院名塞进下拉
+      allDepartmentOptionsCache = flattenOrgTree(tree, hospitalRootIds);
       return allDepartmentOptionsCache;
     } catch {
       allDepartmentOptionsCache = [];

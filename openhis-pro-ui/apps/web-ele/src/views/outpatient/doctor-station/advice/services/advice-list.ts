@@ -9,23 +9,24 @@ import type { DrugGroupDisplayItem, DrugGroupKey } from '#/utils/doctor-station/
 import { formatDateTime } from '@vben/utils';
 
 import {
+  resolveAdviceChargeStatusTagTypeFromCode,
   resolveAdviceStatusTagTypeFromCode,
   resolveSkinTestTagTypeFromCode,
 } from '#/utils/advice/advice-status-display';
-
-import { mergeConsecutiveRowsByDrugGroup } from '#/utils/doctor-station/drug-group-table';
 import { resolveAdviceQuantityUnitLabel } from '#/utils/doctor-station/advice-quantity-unit-display';
+import { mergeConsecutiveRowsByDrugGroup } from '#/utils/doctor-station/drug-group-table';
+import { formatMedicationDoseSummaryLine } from '#/utils/doctor-station/medication-dose-display';
 import { convertProductUnitPriceForDisplay } from '#/utils/doctor-station/product-unit-band-price';
+import { decimalAdd } from '#/utils/format/decimal-util';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { buildServiceApplyFormExtensionText } from '#/utils/service-apply-display';
 import {
   resolveServiceApplyFormNo,
   resolveServiceApplyFormSortKey,
 } from '#/utils/service-apply-form-group-display';
-import { buildServiceApplyFormExtensionText } from '#/utils/service-apply-display';
 
 import { formatUnitPriceYuan } from './advice-format';
 import { normalizeCatalogUnitBands } from './medication-unit-bands';
-import { decimalAdd } from '#/utils/format/decimal-util';
 
 /** 医嘱列表映射、成组合并、目录选品、库存展示、旧行回填 */
 
@@ -87,12 +88,12 @@ function resolveSkinTestCompanionMedicationRequestId(
 }
 
 /** 按开立时间与 requestId 稳定排序，供皮试药与 companion 启发式配对 */
-function compareAdviceRowAuthoredOrder(
-  a: { authoredAt: string; requestId: string },
-  b: { authoredAt: string; requestId: string },
+function compareAdviceRowOpenedOrder(
+  a: { reqOpenedTime: string; requestId: string },
+  b: { reqOpenedTime: string; requestId: string },
 ): number {
-  const authCmp = a.authoredAt.localeCompare(b.authoredAt);
-  if (authCmp !== 0) return authCmp;
+  const openedCmp = a.reqOpenedTime.localeCompare(b.reqOpenedTime);
+  if (openedCmp !== 0) return openedCmp;
   return a.requestId.localeCompare(b.requestId);
 }
 
@@ -109,7 +110,7 @@ function buildSkinTestCompanionHeuristicMap(
     .filter((d) => inferAdviceRowResourceType(d) === 'MEDICATION' && d.skinTestFlag === true)
     .map((d) => ({
       requestId: preserveApiIdForRequest(d.requestId) ?? '',
-      authoredAt: String(d.authoredAt ?? '').trim(),
+      reqOpenedTime: String(d.reqOpenedTime ?? '').trim(),
     }))
     .filter((item) => item.requestId !== '');
 
@@ -120,7 +121,7 @@ function buildSkinTestCompanionHeuristicMap(
     )
     .map((d) => ({
       requestId: preserveApiIdForRequest(d.requestId) ?? '',
-      authoredAt: String(d.authoredAt ?? '').trim(),
+      reqOpenedTime: String(d.reqOpenedTime ?? '').trim(),
     }))
     .filter((item) => item.requestId !== '');
 
@@ -129,8 +130,8 @@ function buildSkinTestCompanionHeuristicMap(
     const hit = skinTestMedications.find(
       (med) =>
         !usedMedicationRequestIds.has(med.requestId) &&
-        med.authoredAt !== '' &&
-        med.authoredAt === companion.authoredAt,
+        med.reqOpenedTime !== '' &&
+        med.reqOpenedTime === companion.reqOpenedTime,
     );
     if (!hit) continue;
     result.set(companion.requestId, hit.requestId);
@@ -140,10 +141,10 @@ function buildSkinTestCompanionHeuristicMap(
   // 第二遍：剩余按时间序一一配对
   const remainingMedications = skinTestMedications
     .filter((med) => !usedMedicationRequestIds.has(med.requestId))
-    .toSorted(compareAdviceRowAuthoredOrder);
+    .toSorted(compareAdviceRowOpenedOrder);
   const remainingCompanions = companions
     .filter((comp) => !result.has(comp.requestId))
-    .toSorted(compareAdviceRowAuthoredOrder);
+    .toSorted(compareAdviceRowOpenedOrder);
   const pairCount = Math.min(remainingMedications.length, remainingCompanions.length);
   for (let i = 0; i < pairCount; i += 1) {
     const med = remainingMedications[i];
@@ -197,26 +198,19 @@ function buildAdviceDosageSummaryLine(dto: DoctorStationAdviceRowDto): string {
   if (inferAdviceRowResourceType(dto) === 'SERVICE') {
     return buildServiceAdviceDosageSummaryLine(dto);
   }
-  const qtyRaw = dto.quantity;
-  const unit = resolveAdviceQuantityUnitLabel(dto.unitName, dto.unitCode);
-  const right =
-    qtyRaw !== null && qtyRaw !== undefined && String(qtyRaw).trim() !== '' && unit
-      ? `共${qtyRaw}${unit}`
-      : qtyRaw !== null && qtyRaw !== undefined && String(qtyRaw).trim() !== ''
-        ? `共${qtyRaw}`
-        : '';
-  const doseRaw = dto.dose;
-  const doseU = String(dto.doseUnitName ?? dto.doseUnitCode ?? '').trim();
-  const left =
-    doseRaw !== null && doseRaw !== undefined && String(doseRaw).trim() !== '' && doseU
-      ? `${doseRaw}${doseU}/次`
-      : doseRaw !== null && doseRaw !== undefined && String(doseRaw).trim() !== ''
-        ? `${doseRaw}/次`
-        : '';
-  if (left && right) return `${left}，${right}。`;
-  if (left) return `${left}。`;
-  if (right) return `${right}。`;
-  return '';
+  return formatMedicationDoseSummaryLine({
+    dosageDisplay: dto.dosageDisplay,
+    dose: dto.dose,
+    doseUnitCode: dto.doseUnitCode,
+    doseUnitName: dto.doseUnitName,
+    splitDose: dto.splitDose,
+    splitDoseUnitCode: dto.splitDoseUnitCode,
+    splitDoseUnitName: dto.splitDoseUnitName,
+    quantity: dto.quantity,
+    unitCode: dto.unitCode,
+    unitName: dto.unitName,
+    resolveTotalUnitLabel: resolveAdviceQuantityUnitLabel,
+  });
 }
 
 /** 诊疗行剂量摘要：数量 + 单位 + 执行次数（与编辑卡收起态口径一致） */
@@ -303,14 +297,21 @@ export function mapAdviceListRowDto(dto: DoctorStationAdviceRowDto): AdviceRowIt
   const key =
     listKey ||
     (requestId && resourceType ? `api-${resourceType}-${requestId}` : `api-row-${Date.now()}`);
+  // 签发态与费用态分列展示，不再使用后端合并的 displayStatus*
   const status =
-    String(dto.displayStatusEnumText ?? '').trim() ||
-    String(dto.statusEnumText ?? '').trim() ||
-    String(dto.displayStatusEnum ?? '').trim() ||
-    String(dto.statusEnum ?? '').trim() ||
-    '—';
-  const authoredRaw = String(dto.authoredAt ?? '').trim();
-  const startTime = authoredRaw ? formatDateTime(authoredRaw) : '';
+    String(dto.statusEnumText ?? '').trim() || String(dto.statusEnum ?? '').trim() || '—';
+  const chargeStatusCode = String(dto.chargeStatusEnum ?? '')
+    .trim()
+    .toUpperCase();
+  // 草稿未进入收费窗口：列表不展示「草稿」，统一显示 —
+  const chargeStatus =
+    chargeStatusCode === 'DRAFT'
+      ? '—'
+      : String(dto.chargeStatusEnumText ?? '').trim() ||
+        String(dto.chargeStatusEnum ?? '').trim() ||
+        '—';
+  const openedRaw = String(dto.reqOpenedTime ?? '').trim();
+  const startTime = openedRaw ? formatDateTime(openedRaw) : '';
   const content = buildAdviceContentTitle(dto);
   const dosageLine = buildAdviceDosageSummaryLine(dto);
   const extension = buildAdviceListExtensionLine(dto);
@@ -320,11 +321,13 @@ export function mapAdviceListRowDto(dto: DoctorStationAdviceRowDto): AdviceRowIt
   return {
     key,
     status,
+    chargeStatus,
     type: typeLabel,
     content: content || String(dto.contentSummary ?? '').trim(),
     startTime,
     extension,
     lineTotalAmount: formatAdviceRowTotalPrice(dto),
+    contractId: String(dto.contractId ?? '').trim() || undefined,
     diagnosisSummary:
       (
         dto.conditionDefinitionName ||
@@ -339,14 +342,18 @@ export function mapAdviceListRowDto(dto: DoctorStationAdviceRowDto): AdviceRowIt
     productTableName: String(dto.productTableName ?? '').trim() || undefined,
     sortNumber: normalizedListSortNumber(dto.sortNumber),
     skinTestFlag: dto.skinTestFlag,
+    injectionFlag: dto.injectionFlag === true,
     resourceType,
     requestId,
     groupId: String(dto.groupId ?? '').trim() || undefined,
-    statusEnum: dto.displayStatusEnum ?? dto.statusEnum,
+    packageId: String(dto.packageId ?? '').trim() || undefined,
+    statusEnum: dto.statusEnum,
+    chargeStatusEnum: dto.chargeStatusEnum,
     productDefinitionId: String(dto.productDefinitionId ?? '').trim() || undefined,
     adviceDisplayName: String(dto.adviceDisplayName ?? '').trim() || undefined,
     specificationText: String(dto.specificationText ?? '').trim() || undefined,
     conditionDefinitionName: String(dto.conditionDefinitionName ?? '').trim() || undefined,
+    encounterDiagnosisIds: String(dto.encounterDiagnosisIds ?? '').trim() || undefined,
     methodCode: String(dto.methodCode ?? '').trim() || undefined,
     rateCode: String(dto.rateCode ?? '').trim() || undefined,
     listDose: (() => {
@@ -436,11 +443,18 @@ export function mapCatalogRowToOption(row: DoctorStationAdviceCatalogRowDto): Ad
     id,
     code: row.busNo || '',
     name: row.name || '',
+    // 商品名始终回填，空值由选品表展示为「—」
+    merchandiseName: String(row.merchandiseName ?? '').trim(),
     category: categoryLabel,
     spec: specText,
     price,
     catalogUnitPrice,
     availableQuantity: row.availableQuantity,
+    ...(String(row.availableQuantityText ?? '').trim()
+      ? { availableQuantityText: String(row.availableQuantityText).trim() }
+      : {}),
+    // 厂家列始终回填，空值由选品表展示为「—」
+    manufacturer: String(row.manufacturer ?? '').trim(),
     ...(Array.isArray(row.inventoryList) && row.inventoryList.length > 0
       ? { inventoryList: row.inventoryList }
       : {}),
@@ -457,13 +471,51 @@ export function mapCatalogRowToOption(row: DoctorStationAdviceCatalogRowDto): Ad
     ...(String(row.partAttributeEnum ?? '').trim()
       ? { partAttributeEnum: String(row.partAttributeEnum).trim() }
       : {}),
+    ...pickPositiveCatalogDoseField(row.dose, 'dose'),
+    ...pickPositiveCatalogDoseField(row.minUnit, 'minUnit'),
+    ...pickPositiveCatalogDoseField(row.maxUnit, 'maxUnit'),
+    ...(row.chrgitmLv !== null && row.chrgitmLv !== undefined && String(row.chrgitmLv).trim() !== ''
+      ? { chrgitmLv: row.chrgitmLv }
+      : {}),
+    ...(String(row.chrgitmLvText ?? '').trim()
+      ? { chrgitmLvText: String(row.chrgitmLvText).trim() }
+      : {}),
+    ...(row.injectFlag === true ? { injectFlag: true } : {}),
+    ...(String(row.dosageInstruction ?? '').trim()
+      ? { dosageInstruction: String(row.dosageInstruction).trim() }
+      : {}),
+    ...(String(row.dosageInstructionDictText ?? '').trim()
+      ? { dosageInstructionDictText: String(row.dosageInstructionDictText).trim() }
+      : {}),
   };
+}
+
+/** 目录剂量字段：仅透出有限正数，避免 0/空串污染选品默认值。 */
+function pickPositiveCatalogDoseField(
+  raw: null | number | string | undefined,
+  key: 'dose' | 'maxUnit' | 'minUnit',
+): Partial<Pick<AdviceProductOption, 'dose' | 'maxUnit' | 'minUnit'>> {
+  if (raw === null || raw === undefined || String(raw).trim() === '') {
+    return {};
+  }
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    return {};
+  }
+  return { [key]: n };
 }
 
 export function getAdviceStatusTagType(
   row: AdviceRowItem,
 ): 'danger' | 'info' | 'primary' | 'success' | 'warning' {
   return resolveAdviceStatusTagTypeFromCode(row.statusEnum);
+}
+
+/** 费用状态列 Tag 类型：仅认 chargeStatusEnum */
+export function getAdviceChargeStatusTagType(
+  row: Pick<AdviceRowItem, 'chargeStatusEnum'>,
+): 'danger' | 'info' | 'primary' | 'success' | 'warning' {
+  return resolveAdviceChargeStatusTagTypeFromCode(row.chargeStatusEnum);
 }
 
 /** 皮试列 Tag 类型：仅认 skinTestOutcomeCode / skinTestFlag */
@@ -499,7 +551,7 @@ export function flattenAdviceRowsForResourceOps(rows: AdviceRowItem[]): AdviceRo
 }
 
 /**
- * 列表排序（BR-ORD-018）：申请单号聚邻 → 有效 sortNumber 升序 → 同号内药品成组 → 层级（药/派生/其他）→ 开立时间 → requestId。
+ * 列表排序：待签发置顶 → 申请单号聚邻 → 有效 sortNumber 升序。
  * 后端已排序；前端二次排序用于成组合并前的稳定聚邻，并补全派生行继承锚定药品 sortNumber。
  */
 function sortDoctorStationAdviceRowsStable(
@@ -507,6 +559,11 @@ function sortDoctorStationAdviceRowsStable(
 ): DoctorStationAdviceRowDto[] {
   const medicationSortByRequestId = buildMedicationSortNumberByRequestId(rows);
   return [...rows].toSorted((a, b) => {
+    const draftCmp = Number(isAdviceRowPendingSign(b)) - Number(isAdviceRowPendingSign(a));
+    if (draftCmp !== 0) {
+      return draftCmp;
+    }
+
     const leftFormKey = resolveServiceApplyFormSortKey(a.prescriptionNo);
     const rightFormKey = resolveServiceApplyFormSortKey(b.prescriptionNo);
     const formCompare = leftFormKey.localeCompare(rightFormKey);
@@ -516,24 +573,17 @@ function sortDoctorStationAdviceRowsStable(
 
     const sa = resolveEffectiveSortSeq(a, medicationSortByRequestId);
     const sb = resolveEffectiveSortSeq(b, medicationSortByRequestId);
-    if (sa !== sb) return sa - sb;
-
-    const tierCmp = resolveListRowSortTier(a) - resolveListRowSortTier(b);
-    if (tierCmp !== 0) return tierCmp;
-
-    const ag = medicationGroupMergeKey(a);
-    const bg = medicationGroupMergeKey(b);
-    const aGroupSort = ag === '' || ag === null || ag === undefined ? '\uFFFF' : String(ag);
-    const bGroupSort = bg === '' || bg === null || bg === undefined ? '\uFFFF' : String(bg);
-    const gcmp = aGroupSort.localeCompare(bGroupSort);
-    if (gcmp !== 0) return gcmp;
-
-    const authA = String(a.authoredAt ?? '');
-    const authB = String(b.authoredAt ?? '');
-    if (authA !== authB) return authB.localeCompare(authA);
-
-    return String(a.requestId ?? '').localeCompare(String(b.requestId ?? ''));
+    return sa - sb;
   });
+}
+
+/** 待签发：statusEnum = DRAFT（仅用 code，不用展示文案） */
+function isAdviceRowPendingSign(dto: DoctorStationAdviceRowDto): boolean {
+  return (
+    String(dto.statusEnum ?? '')
+      .trim()
+      .toUpperCase() === 'DRAFT'
+  );
 }
 
 function dtoSortSeq(raw: DoctorStationAdviceRowDto['sortNumber']): number {
@@ -581,18 +631,6 @@ function resolveEffectiveSortSeq(
   return medicationSortByRequestId.get(anchorId) ?? Number.MAX_SAFE_INTEGER;
 }
 
-/** 同 sortNumber 内：药品 → 锚定派生行 → 其余 */
-function resolveListRowSortTier(dto: DoctorStationAdviceRowDto): number {
-  const resourceType = inferAdviceRowResourceType(dto);
-  if (resourceType === 'MEDICATION') {
-    return 0;
-  }
-  if (preserveApiIdForRequest(dto.basedOnMedicationRequestId)) {
-    return 1;
-  }
-  return 2;
-}
-
 function medicationGroupMergeKey(dto: DoctorStationAdviceRowDto): DrugGroupKey {
   if (inferAdviceRowResourceType(dto) !== 'MEDICATION') return '';
   const gid = String(dto.groupId ?? '').trim();
@@ -613,6 +651,11 @@ function doctorStationAdviceRowDtoToDrugGroupItem(
     usage: String(dto.methodName ?? dto.methodCode ?? '').trim(),
     frequency: String(dto.rateName ?? dto.rateCode ?? '').trim(),
     medicationDays: dto.dispensePerDuration ?? '',
+    dosageDisplay: String(dto.dosageDisplay ?? '').trim() || undefined,
+    splitDose: dto.splitDose ?? undefined,
+    splitDoseUnitCode: String(dto.splitDoseUnitCode ?? '').trim() || undefined,
+    splitDoseUnitName: String(dto.splitDoseUnitName ?? '').trim() || undefined,
+    doseUnitCode: String(dto.doseUnitCode ?? '').trim() || undefined,
   };
 }
 
@@ -630,7 +673,7 @@ function sumSliceLinePriceY(slice: readonly DoctorStationAdviceRowDto[]): string
 function parseAdviceLineAmountYuan(text: string): number {
   const normalized = String(text ?? '')
     .trim()
-    .replace(/[^\d.-]/g, '');
+    .replaceAll(/[^\d.-]/g, '');
   const n = Number(normalized);
   return Number.isFinite(n) ? n : 0;
 }
@@ -648,7 +691,12 @@ export function sumAdviceListTotalAmount(rows: readonly AdviceRowItem[]): string
 export function mergeMedicationAdviceRowsForListDisplay(
   rows: readonly DoctorStationAdviceRowDto[],
 ): AdviceRowItem[] {
-  const enrichedRows = enrichSkinTestCompanionDisplayNames(rows);
+  // 代煎中药为中药方 companion，费用在中药处方页展示，不进开立医嘱列表
+  const withoutDecoction = rows.filter((dto) => {
+    const name = String(dto.adviceDisplayName ?? dto.contentSummary ?? '').trim();
+    return name !== '代煎中药';
+  });
+  const enrichedRows = enrichSkinTestCompanionDisplayNames(withoutDecoction);
   const sorted = sortDoctorStationAdviceRowsStable(enrichedRows);
   return mergeConsecutiveRowsByDrugGroup(sorted, {
     getGroupKey: medicationGroupMergeKey,
@@ -756,7 +804,11 @@ export function buildFallbackAdviceDrugItemFromRow(
   const specMatch = content.match(/【(.*?)】/);
   const pharmacyMatch = content.match(/（(.*?)）/);
   const parsedUsage = parseUsageExtensionFromRow(extension, extensionFallbacks);
-  const singleRaw = dosageText.split('/次')[0] || '';
+  // 剂量段：`1支(2ml)/次` 时括号内为计量；无括号则整段为计量/同单位
+  const doseSegment = (dosageText.split('，')[0] || '').replaceAll('/次', '').replaceAll('。', '');
+  const doseInParen =
+    doseSegment.match(/\(([^)]+)\)/)?.[1] || doseSegment.match(/（([^）]+)）/)?.[1];
+  const singleRaw = String(doseInParen ?? doseSegment).trim();
   const totalRaw = (dosageText.split('，').find((part) => part.includes('共')) || '').replace(
     '共',
     '',

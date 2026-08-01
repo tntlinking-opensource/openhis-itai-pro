@@ -76,13 +76,19 @@ export interface PharmacyStockInListRowDto {
   busNo?: string;
   typeEnum?: string;
   statusEnum?: string | number;
+  statusEnumText?: string;
   sourceLocationId?: number | string;
   sourceLocationName?: string;
   purposeLocationId?: number | string;
   applyTime?: string;
   approvalTime?: string;
   applicantId?: number | string;
-  approverId?: string;
+  approverId?: number | string;
+  /** 制单人姓名（后端 enrich） */
+  creatorName?: string;
+  approverName?: string;
+  /** 同号各行 totalPrice 之和 */
+  totalAmount?: number | string;
   originalBusNo?: string;
 }
 
@@ -387,8 +393,11 @@ function mapPharmacyStockInListRowToQueueCard(
   return {
     ...r,
     supplyBusNo: r.busNo,
-    statusEnum_enumText: pharmacyStockInStatusLabel(st),
-    applicantId_dictText: '',
+    statusEnum_enumText: r.statusEnumText ?? pharmacyStockInStatusLabel(st),
+    applicantId_dictText: r.creatorName ?? '',
+    approverId_dictText: r.approverName ?? '',
+    totalPrice: r.totalAmount,
+    totalAmount: r.totalAmount,
   };
 }
 

@@ -17,16 +17,22 @@ function str(value: null | number | string | undefined): string {
   return String(value).trim();
 }
 
-/** 单味饮片展示：药名 + 单味剂量 */
+/**
+ * 单味饮片展示：药名 + 本发放行数量（slip.quantity，与西药/发药提交同源）。
+ * 不用 doseValue：那是单付剂量，FIFO 拆行时会把 80/20 都错显成 50。
+ */
 export function formatTcmHerbDisplayFromSlipRow(
   row: EncounterMedicationDispenseSlipRowDto,
 ): string {
   const name = str(row.medicationName) || str(row.merchandiseName);
-  const doseValue = row.doseValue;
-  const doseUnit = str(row.doseUnitText);
-  if (name && doseValue !== null && doseValue !== undefined && doseValue !== '') {
-    const dose = String(doseValue).trim();
-    return doseUnit ? `${name} ${dose}${doseUnit}` : `${name} ${dose}`;
+  const qty = row.quantity;
+  // 单位优先 unitText；发药 slip 常缺 unitText，回退 doseUnitText（如「克」）
+  const unit = str(row.unitText) || str(row.doseUnitText);
+  if (name && qty !== null && qty !== undefined && qty !== '') {
+    const q = String(qty).trim();
+    if (q) {
+      return unit ? `${name} ${q}${unit}` : `${name} ${q}`;
+    }
   }
   const left = str(row.medicationDisplayLeft);
   if (left) return left.replace(/\s+X\s+.*$/i, '').trim();
@@ -63,19 +69,14 @@ export function buildTcmHerbGridRowsFromSlipRows(
   return gridRows;
 }
 
-const HERB_MEASURE_UNITS = new Set(['g', '克', 'kg', '千克', 'ml', '毫升', 'mg', '毫克']);
-
+/**
+ * 付数展示：只用方头 chineseHerbsDoseQuantity。
+ * 禁止用 requestQuantity——那是单剂×付数的请求总量（如 100g），会错显成「100付」。
+ */
 function formatTcmDoseCount(head: EncounterMedicationDispenseSlipRowDto): string {
-  const qty = str(head.requestQuantity);
-  if (!qty) return '';
-  const unit = str(head.unitText);
-  if (!unit || HERB_MEASURE_UNITS.has(unit) || HERB_MEASURE_UNITS.has(unit.toLowerCase())) {
-    return `${qty}付`;
-  }
-  if (unit === '付' || unit === '剂') {
-    return `${qty}${unit}`;
-  }
-  return `${qty}${unit}`;
+  const doseCount = str(head.chineseHerbsDoseQuantity);
+  if (!doseCount) return '';
+  return `${doseCount}付`;
 }
 
 /** 付数 + 频次 + 用法（单行） */

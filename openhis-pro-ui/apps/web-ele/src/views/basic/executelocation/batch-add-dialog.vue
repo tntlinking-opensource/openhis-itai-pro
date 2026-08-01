@@ -26,21 +26,26 @@ defineOptions({ name: 'ExecuteLocationBatchAddDialog' });
 
 interface Props {
   visible: boolean;
-  executionOrgId: string;
+  /** 开立科室（配置页左侧选中） */
+  organizationId: string;
   activityCategoryOptions: ApiOptionItem[];
-  /** 当前科室已配置的项目 ID，用于去重 */
+  /** 执行科室下拉（init.executionOrgOptions 扁平或树转扁平由父组件传入） */
+  executionOrgOptions: ApiOptionItem[];
+  /** 当前开立科室已配置的项目 ID，用于去重 */
   boundActivityDefinitionIds: string[];
 }
 
 const props = withDefaults(defineProps<Props>(), {
   visible: false,
-  executionOrgId: '',
+  organizationId: '',
   activityCategoryOptions: () => [],
+  executionOrgOptions: () => [],
   boundActivityDefinitionIds: () => [],
 });
 
 export interface BatchAddConfirmPayload {
   activityCategoryCode: string;
+  executionOrgId: string;
   items: ApiOptionItem[];
   startTime: string;
   endTime: string;
@@ -53,6 +58,7 @@ const emit = defineEmits<{
 
 const tableRef = ref<InstanceType<typeof ElTable> | null>(null);
 const activityCategoryCode = ref<string>();
+const executionOrgId = ref<string>();
 const keyword = ref('');
 const selectedRows = ref<ApiOptionItem[]>([]);
 const itemOptions = ref<ApiOptionItem[]>([]);
@@ -87,14 +93,14 @@ const filteredItems = computed(() => {
 
 /** 按诊疗大类加载可选项目 */
 async function loadItemOptions() {
-  if (!props.executionOrgId || !activityCategoryCode.value) {
+  if (!props.organizationId || !activityCategoryCode.value) {
     itemOptions.value = [];
     return;
   }
   itemLoading.value = true;
   try {
     const resp = await pageActivityDefinitionForExecuteLocationApi({
-      executionOrgId: props.executionOrgId,
+      organizationId: props.organizationId,
       activityCategoryCode: activityCategoryCode.value,
       pageNo: 1,
       pageSize: 500,
@@ -147,6 +153,7 @@ function clearSelection() {
 function handleClose() {
   dialogVisible.value = false;
   activityCategoryCode.value = undefined;
+  executionOrgId.value = undefined;
   keyword.value = '';
   selectedRows.value = [];
   itemOptions.value = [];
@@ -160,12 +167,17 @@ function handleConfirm() {
     ElMessage.warning('请选择诊疗大类');
     return;
   }
+  if (!executionOrgId.value) {
+    ElMessage.warning('请选择执行科室');
+    return;
+  }
   if (!selectedRows.value.length) {
     ElMessage.warning('请至少勾选一个项目');
     return;
   }
   emit('confirm', {
     activityCategoryCode: activityCategoryCode.value,
+    executionOrgId: executionOrgId.value,
     items: selectedRows.value,
     startTime: startTime.value,
     endTime: endTime.value,
@@ -178,6 +190,7 @@ watch(
   (open) => {
     if (open) {
       activityCategoryCode.value = undefined;
+      executionOrgId.value = undefined;
       keyword.value = '';
       selectedRows.value = [];
       itemOptions.value = [];
@@ -202,7 +215,7 @@ watch(
       :closable="false"
       show-icon
       class="execute-batch-dialog__alert"
-      title="勾选项目后确认添加至主列表，核对生效时段后逐条保存即可。"
+      title="勾选项目后确认添加至主列表，核对生效时段后点击「批量保存」保存当前全部行。"
     />
 
     <section class="execute-batch-panel">
@@ -224,7 +237,23 @@ watch(
               />
             </ElSelect>
           </ElFormItem>
-          <ElFormItem label="生效时段" class="!mb-0">
+          <ElFormItem label="执行科室" class="!mb-0">
+            <ElSelect
+              v-model="executionOrgId"
+              filterable
+              clearable
+              placeholder="请选择执行科室"
+              class="w-full"
+            >
+              <ElOption
+                v-for="item in executionOrgOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </ElSelect>
+          </ElFormItem>
+          <ElFormItem label="生效时段" class="execute-batch-form__span2 !mb-0">
             <div class="execute-batch-time">
               <ElTimePicker
                 v-model="startTime"
@@ -355,6 +384,10 @@ watch(
   grid-template-columns: 1fr 1fr;
   gap: 12px 16px;
   margin-top: 10px;
+}
+
+.execute-batch-form__span2 {
+  grid-column: 1 / -1;
 }
 
 .execute-batch-time {

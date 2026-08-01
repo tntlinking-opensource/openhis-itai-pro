@@ -31,6 +31,8 @@ import {
 import {
   SERVICE_DEVICE_BIND_TYPE_ACTIVITY,
   SERVICE_DEVICE_BIND_TYPE_USAGE,
+  SERVICE_DEVICE_RANGE_INPATIENT,
+  SERVICE_DEVICE_RANGE_OUTPATIENT,
   SERVICE_DEVICE_STATUS_ACTIVE,
   SERVICE_DEVICE_TARGET_TABLE_ACTIVITY,
   SERVICE_DEVICE_TARGET_TABLE_DEVICE,
@@ -58,9 +60,26 @@ type EditableRow = {
   __unitRequestSeq?: number;
 } & ServiceDeviceBindingItem;
 
+/** 适用范围下拉兜底：后端未升级时仍保证可选门诊/住院 */
+const DEFAULT_RANGE_OPTIONS: ApiOptionItem[] = [
+  { value: SERVICE_DEVICE_RANGE_OUTPATIENT, label: '门诊' },
+  { value: SERVICE_DEVICE_RANGE_INPATIENT, label: '住院' },
+];
+
+/** 含历史 HOSPITAL，仅用于列表回显文案 */
+const RANGE_LABEL_BY_CODE: Record<string, string> = {
+  [SERVICE_DEVICE_RANGE_OUTPATIENT]: '门诊',
+  [SERVICE_DEVICE_RANGE_INPATIENT]: '住院',
+  HOSPITAL: '全院(历史)',
+};
+
 const activeBindType = ref<string>(SERVICE_DEVICE_BIND_TYPE_USAGE);
 const selectedSourceId = ref<string>('');
 const sourceKeyword = ref('');
+/** 列表范围筛选：空表示同一来源下门诊+住院全部展示 */
+const filterRangeCode = ref<string>('');
+/** KeepAlive 首次进入时 onMounted 已加载，跳过紧随其后的 onActivated */
+let skipActivatedOnce = false;
 
 const initOptions = ref<ServiceDeviceBindingInitResponse>({});
 const tableData = ref<ServiceDeviceBindingItem[]>([]);
@@ -130,8 +149,28 @@ const targetTableOptionsForTab = computed<ApiOptionItem[]>(() => {
   return initOptions.value.targetTableOptions ?? [];
 });
 
+/** 适用范围下拉：仅门诊/住院；过滤历史 HOSPITAL，后端未升级时用本地兜底 */
+const rangeSelectOptions = computed<ApiOptionItem[]>(() => {
+  const fromApi = initOptions.value.rangeOptions ?? [];
+  const filtered = fromApi.filter((opt) => {
+    const value = String(opt.value ?? '');
+    return value === SERVICE_DEVICE_RANGE_OUTPATIENT || value === SERVICE_DEVICE_RANGE_INPATIENT;
+  });
+  if (filtered.length > 0) {
+    return filtered;
+  }
+  return DEFAULT_RANGE_OPTIONS;
+});
+
 const tableColumns: TableColumn[] = [
   { type: 'index', label: '序号', width: 60, align: 'center' },
+  {
+    prop: 'rangeName',
+    label: '适用范围',
+    width: 120,
+    align: 'center',
+    slot: 'rangeCode',
+  },
   {
     prop: 'devActTableName',
     label: '绑定目标类型',
@@ -256,12 +295,18 @@ async function loadData() {
     return;
   }
   try {
-    const data = await runPage({
-      ...queryParams.value,
+    // 空筛选不传 rangeCode，后端按来源查门诊+住院全部
+    const rangeFilter = String(filterRangeCode.value ?? '').trim();
+    const pageBody: PageServiceDeviceBindingParams = {
+      pageNo: queryParams.value.pageNo,
+      pageSize: queryParams.value.pageSize,
       bindType: activeBindType.value,
       sourceId: selectedSourceId.value,
-      rangeCode: initOptions.value.rangeOptions?.[0]?.value,
-    });
+    };
+    if (rangeFilter) {
+      pageBody.rangeCode = rangeFilter;
+    }
+    const data = await runPage(pageBody);
     const list = data?.content ?? [];
     total.value = Number(data?.totalCount ?? 0);
     tableData.value = list.map((item) => {
@@ -278,6 +323,9 @@ async function loadData() {
       if (row.statusEnum !== null && row.statusEnum !== undefined) {
         row.statusEnum = String(row.statusEnum);
       }
+      if (row.rangeCode !== null && row.rangeCode !== undefined) {
+        row.rangeCode = String(row.rangeCode);
+      }
       if (row.quantity !== null && row.quantity !== undefined) {
         row.quantity = Math.trunc(row.quantity);
       }
@@ -288,6 +336,60 @@ async function loadData() {
     tableData.value = [];
     total.value = 0;
   }
+}
+
+/** 切换/清空适用范围筛选并刷新右侧表 */
+function handleRangeFilterChange(val?: string | null) {
+  // clearable 清空时入参可能为 null/undefined，统一成空串表示「全部」
+  filterRangeCode.value = String(val ?? '').trim();
+  cancelEditingIfAny();
+  queryParams.value.pageNo = 1;
+  loadData();
+}
+
+/** 解析新增行默认适用范围：优先当前筛选，否则取门诊 */
+function resolveDefaultRangeCode(): string {
+  // ElSelect clearable 清空后可能为 undefined，不能直接 trim
+  const selected = String(filterRangeCode.value ?? '').trim();
+  if (selected === SERVICE_DEVICE_RANGE_OUTPATIENT || selected === SERVICE_DEVICE_RANGE_INPATIENT) {
+    return selected;
+  }
+  const first = rangeSelectOptions.value[0]?.value;
+  if (first) {
+    return String(first);
+  }
+  return SERVICE_DEVICE_RANGE_OUTPATIENT;
+}
+
+/** 拉取 init 后校正筛选：历史 HOSPITAL 等非法值清空为「全部」 */
+function normalizeFilterRangeCode() {
+  const current = String(filterRangeCode.value ?? '').trim();
+  if (!current) {
+    filterRangeCode.value = '';
+    return;
+  }
+  const allowed = new Set(rangeSelectOptions.value.map((o) => String(o.value)));
+  if (!allowed.has(current)) {
+    filterRangeCode.value = '';
+  }
+}
+
+/** 适用范围码转展示文案（后端未回 rangeName 时本地兜底） */
+function resolveRangeLabel(row: Pick<ServiceDeviceBindingItem, 'rangeCode' | 'rangeName'>): string {
+  const code = String(row.rangeCode ?? '').trim();
+  const name = String(row.rangeName ?? '').trim();
+  // 后端已回填中文名且不是原码时优先用
+  if (name && name !== code) {
+    return name;
+  }
+  const fromOptions = rangeSelectOptions.value.find((o) => String(o.value) === code);
+  if (fromOptions?.label) {
+    return String(fromOptions.label);
+  }
+  if (code && RANGE_LABEL_BY_CODE[code]) {
+    return RANGE_LABEL_BY_CODE[code];
+  }
+  return name || code;
 }
 
 /** 选中左侧来源项并刷新右侧绑定表 */
@@ -349,7 +451,7 @@ function addRow() {
   }
   cancelEditingIfAny();
   const row = {
-    rangeCode: initOptions.value.rangeOptions?.[0]?.value ?? '',
+    rangeCode: resolveDefaultRangeCode(),
     typeCode: activeBindType.value,
     itemNo: selectedSourceId.value,
     devActTable: undefined,
@@ -423,9 +525,13 @@ async function handleSave(row: EditableRow) {
     ElMessage.warning('请选择状态');
     return;
   }
+  if (!row.rangeCode) {
+    ElMessage.warning('请选择适用范围');
+    return;
+  }
   const payload: SaveServiceDeviceBindingParams = {
     id: row.id ? String(row.id) : undefined,
-    rangeCode: row.rangeCode ?? initOptions.value.rangeOptions?.[0]?.value,
+    rangeCode: String(row.rangeCode),
     bindType: activeBindType.value,
     sourceId: selectedSourceId.value,
     targetId: String(row.devActId),
@@ -460,13 +566,23 @@ function handleEdit(row: EditableRow) {
   if (row.statusEnum !== null && row.statusEnum !== undefined) {
     row.statusEnum = String(row.statusEnum);
   }
+  if (row.rangeCode !== null && row.rangeCode !== undefined) {
+    row.rangeCode = String(row.rangeCode);
+  }
+  // 先备份原值，再把历史 HOSPITAL 等非法范围改成可选的门诊/住院供保存
+  const originalRangeCode = row.rangeCode;
   row.__backup = {
+    rangeCode: originalRangeCode,
     devActTable: row.devActTable,
     devActId: row.devActId,
     quantity: row.quantity,
     unitCode: row.unitCode,
     statusEnum: row.statusEnum,
   };
+  const allowedRanges = new Set(rangeSelectOptions.value.map((o) => String(o.value)));
+  if (!row.rangeCode || !allowedRanges.has(String(row.rangeCode))) {
+    row.rangeCode = resolveDefaultRangeCode();
+  }
   row.__editing = true;
   editingRowKey.value = row.__rowKey;
   loadUnitOptionsForRow(row);
@@ -522,8 +638,14 @@ async function handleTargetTableChange(row: EditableRow) {
 
 /** KeepAlive 切回时刷新下拉候选（耗材/诊疗目录可能在其他 Tab 已新增） */
 onActivated(async () => {
+  // 首次进入时 onMounted 已加载，避免 init/pageBindings 连打两次
+  if (skipActivatedOnce) {
+    skipActivatedOnce = false;
+    return;
+  }
   const prevSourceId = selectedSourceId.value;
   await loadInit();
+  normalizeFilterRangeCode();
   if (prevSourceId && currentSourceOptions.value.some((o) => o.value === prevSourceId)) {
     selectedSourceId.value = prevSourceId;
     await loadData();
@@ -533,7 +655,9 @@ onActivated(async () => {
 });
 
 onMounted(async () => {
+  skipActivatedOnce = true;
   await loadInit();
+  normalizeFilterRangeCode();
   selectFirstSource();
 
   const onDocClick = (e: MouseEvent) => {
@@ -636,11 +760,45 @@ onBeforeUnmount(() => {
           @pagination="handlePagination"
         >
           <template #toolbar-actions>
-            <ElButton type="primary" @click="addRow">添加绑定</ElButton>
+            <div class="flex flex-nowrap items-center gap-2">
+              <ElButton type="primary" @click="addRow">添加绑定</ElButton>
+              <span class="shrink-0 text-sm text-[var(--el-text-color-regular)]">适用范围</span>
+              <ElSelect
+                v-model="filterRangeCode"
+                clearable
+                placeholder="全部"
+                class="sdb-range-filter shrink-0"
+                @change="handleRangeFilterChange"
+                @clear="() => handleRangeFilterChange('')"
+              >
+                <ElOption
+                  v-for="opt in rangeSelectOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="String(opt.value)"
+                />
+              </ElSelect>
+            </div>
+          </template>
+
+          <template #rangeCode="{ row }">
+            <span :ref="(el) => setRowEl(row, el)"></span>
+            <template v-if="row.__editing">
+              <ElSelect v-model="row.rangeCode" placeholder="请选择" class="w-full">
+                <ElOption
+                  v-for="opt in rangeSelectOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="String(opt.value)"
+                />
+              </ElSelect>
+            </template>
+            <template v-else>
+              <span>{{ resolveRangeLabel(row) }}</span>
+            </template>
           </template>
 
           <template #targetTable="{ row }">
-            <span :ref="(el) => setRowEl(row, el)"></span>
             <template v-if="row.__editing">
               <ElSelect
                 v-model="row.devActTable"
@@ -761,6 +919,14 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.sdb-range-filter {
+  width: 176px;
+}
+
+.sdb-range-filter :deep(.el-select__wrapper) {
+  width: 100%;
+}
+
 .sdb-qty-wrap {
   width: 100%;
   max-width: 100%;

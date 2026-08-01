@@ -5,6 +5,7 @@ import type { ApiOptionItem } from '#/types/api-response';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
+import { useUserStore } from '@vben/stores';
 import { formatDateTime } from '@vben/utils';
 
 import {
@@ -16,6 +17,7 @@ import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workst
 import {
   INV_ALL_LOCATIONS_FILTER_ID,
   mapInitOptionDtoToApiItems,
+  mapInventoryPractitionerInitOptions,
   normalizeSidebarLocationFilterValue,
   pickWorkbenchOrderAfterSave,
   resolveDefaultAllLocationsFilterValue,
@@ -31,6 +33,7 @@ import DeptIssueReturnMainPane from './dept-issue-return-main-pane.vue';
 defineOptions({ name: 'InventoryDepartmentDeptIssueReturnPage' });
 
 const route = useRoute();
+const userStore = useUserStore();
 
 function createDefaultMonthRange(): [string, string] {
   const d = new Date();
@@ -55,10 +58,21 @@ const tableForm = ref<{ purposeLocationId?: number | string }>({
 
 const cabinetListOptions = ref<Record<string, unknown>[]>([]);
 const deptPharmacyOptions = ref<ApiOptionItem[]>([]);
+const practitionerOptions = ref<ApiOptionItem[]>([]);
 const orderList = ref<Record<string, unknown>[]>([]);
 const selectedOrder = ref<null | Record<string, unknown>>(null);
 const mainPaneResetKey = ref(0);
-const isAddDisabled = ref(false);
+const mainPaneRef = ref<InstanceType<typeof DeptIssueReturnMainPane> | null>(null);
+const showWelcomeEmpty = computed(() => selectedOrder.value === null);
+
+function createDraftOrderRow(): Record<string, unknown> {
+  return {
+    _draft: true,
+    _clientDraftId: `draft:${Date.now()}:${Math.random().toString(36).slice(2, 9)}`,
+    statusEnum_enumText: '编辑中',
+    applyTime: formatDateTime(new Date()),
+  };
+}
 
 function resolveBusNo(row?: null | Record<string, unknown>): string | undefined {
   if (!row) return undefined;
@@ -79,6 +93,10 @@ async function init() {
     const res = await loadDeptIssueReturnFormInitApi({});
     const data = res.data;
     deptPharmacyOptions.value = mapInitOptionDtoToApiItems(data?.departmentPharmacies);
+    practitionerOptions.value = mapInventoryPractitionerInitOptions(
+      [data?.pharmacistOptions, data?.pharmacists],
+      userStore.userInfo,
+    );
     cabinetListOptions.value = mapDeptIssueReturnInitToCabinetRows(data?.departmentPharmacies);
     if (
       tableForm.value.purposeLocationId === undefined ||
@@ -92,6 +110,7 @@ async function init() {
     }
   } catch {
     deptPharmacyOptions.value = [];
+    practitionerOptions.value = [];
     cabinetListOptions.value = [];
   }
 }
@@ -119,18 +138,15 @@ async function getList() {
   }
 }
 
-function handleAdd() {
-  const draft = {
-    _draft: true,
-    statusEnum_enumText: '编辑中',
-    applyTime: formatDateTime(new Date()),
-  };
+/** 新增：先选可退领用单，再落本地草稿（不建空白单）。 */
+/** 选用领用单且当前非草稿：插入草稿并带入可退明细。 */
+async function handleCreateFromUpstream(row: Record<string, unknown>) {
+  const draft = createDraftOrderRow();
   orderList.value = [draft, ...orderList.value.filter((r) => !r._draft)];
   selectedOrder.value = draft;
   mainPaneResetKey.value += 1;
-  nextTick(() => {
-    isAddDisabled.value = true;
-  });
+  await nextTick();
+  await mainPaneRef.value?.applyLinkableIssueToDraft(row);
 }
 
 function handleOrderClick(order: Record<string, unknown>) {
@@ -139,7 +155,6 @@ function handleOrderClick(order: Record<string, unknown>) {
     // 切回草稿由主区 sync 恢复缓存；勿 bump resetKey，否则会冲掉恢复内容
     return;
   }
-  isAddDisabled.value = false;
 }
 
 async function handleDocumentSaved(payload: { busNo?: string }) {
@@ -148,7 +163,6 @@ async function handleDocumentSaved(payload: { busNo?: string }) {
   const busNo = payload.busNo?.trim();
   if (!busNo) return;
   selectedOrder.value = pickWorkbenchOrderAfterSave(orderList.value, busNo, resolveBusNo);
-  isAddDisabled.value = false;
 }
 
 async function handleDocumentRemoved() {
@@ -156,12 +170,10 @@ async function handleDocumentRemoved() {
     orderList.value = orderList.value.filter((r) => r !== selectedOrder.value);
     selectedOrder.value = null;
     mainPaneResetKey.value += 1;
-    isAddDisabled.value = false;
     return;
   }
   selectedOrder.value = null;
   mainPaneResetKey.value += 1;
-  isAddDisabled.value = false;
   await getList();
 }
 
@@ -187,7 +199,6 @@ onMounted(async () => {
 
 <template>
   <WarehouseDocWorkstation
-    aside-width="280px"
     queue-title=""
     aside-dense
     :show-aside-filter="false"
@@ -198,22 +209,24 @@ onMounted(async () => {
         v-model:date-range="listDateRange"
         v-model:keyword="listKeywordModel"
         v-model:location-id="tableForm.purposeLocationId"
-        :add-disabled="isAddDisabled"
         :cabinet-list-options="cabinetListOptions"
         :orders="orderList"
         :selected-order="selectedOrder"
-        @add="handleAdd"
         @search="getList"
         @select="handleOrderClick"
       />
     </template>
 
     <DeptIssueReturnMainPane
+      ref="mainPaneRef"
       class="min-h-0 flex-1"
       :bus-no="selectedBusNo"
       :dept-pharmacy-options="deptPharmacyOptions"
       :is-draft-order="isDraftOrder"
+      :practitioner-options="practitionerOptions"
       :reset-key="mainPaneResetKey"
+      :show-welcome-empty="showWelcomeEmpty"
+      @create-from-upstream="handleCreateFromUpstream"
       @document-removed="handleDocumentRemoved"
       @document-saved="handleDocumentSaved"
     />

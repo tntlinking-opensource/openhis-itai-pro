@@ -21,5 +21,4 @@
 ## 外部仍引用本目录（删目录前需先迁）
 
 - `src/adapter/vxe-table.ts` → `views/warehouse/util.ts`
-- `src/views/finance/approval/components/warehouse-adapter.vue` → `_exports.ts`
 - `src/components/warehouse/warehouse-pharmacy-stock-order-table.vue` → `purchase-return/detail/...`

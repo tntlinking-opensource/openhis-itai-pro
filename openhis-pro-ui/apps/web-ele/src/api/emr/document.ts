@@ -66,11 +66,21 @@ export interface DocumentSummaryDto {
   updatedAt?: string;
   createdBy?: number | string;
   updatedBy?: number | string;
+  /** 创建时使用的模板 ID（挂到模板树下） */
+  sourceTemplateId?: number | string;
+  /** 就诊科室名称 */
+  deptName?: string;
+  /** 保存人显示名 */
+  savedByName?: string;
 }
 
 export interface QueryDocumentParams extends PageParams {
   patientId: string;
   encounterId?: string;
+  /** 显式多就诊过滤；通常由服务端 includeLinkedEncounters 展开 */
+  encounterIds?: string[];
+  /** 为 true 时按门诊/住院 amb_encounter_id 关联展开就诊并集 */
+  includeLinkedEncounters?: boolean;
   documentTypeCode?: string;
   status?: string;
   keyword?: string;
@@ -94,4 +104,66 @@ export async function saveDocumentApi(params: SaveDocumentParams) {
 
 export async function getDocumentListApi(params: QueryDocumentParams) {
   return publicRequestClient.post<PageApiResponse<DocumentSummaryDto>>('/document/getList', params);
+}
+
+/** 与后端 PrintConfig.MarginConfig 对齐（单位 mm） */
+export interface EmrPrintMarginsMm {
+  bottomMm?: number;
+  leftMm?: number;
+  rightMm?: number;
+  topMm?: number;
+}
+
+export interface EmrPrintFooterPayload {
+  enabled?: boolean;
+  heightMm?: number;
+  /** 支持 {page} / {patientName} 等占位；长文案由服务端换行绘制 */
+  template?: string;
+  showPageNumber?: boolean;
+}
+
+export interface EmrPrintConfigPayload {
+  margins?: EmrPrintMarginsMm;
+  footer?: EmrPrintFooterPayload;
+}
+
+export interface GenerateDocumentPdfParams {
+  /** 雪花 ID 须用字符串；可与 content 同时传，正文优先用 content */
+  documentId?: string;
+  /** 当前编辑器正文（未保存也可预览/打印） */
+  content?: unknown;
+  /** true=预览；false=正式打印 */
+  previewMode?: boolean;
+  patientId?: string;
+  encounterId?: string;
+  documentTitle?: string;
+  documentTypeName?: string;
+  metadata?: Record<string, string>;
+  printConfig?: EmrPrintConfigPayload;
+}
+
+export interface GenerateDocumentPdfResult {
+  pdfBase64?: string;
+  pageCount?: number;
+  contentHash?: string;
+  previewTruncated?: boolean;
+  url?: string;
+}
+
+/** 生成文书 PDF（OpenPDF）→ POST /document/generatePdf */
+export async function generateDocumentPdfApi(params: GenerateDocumentPdfParams) {
+  return publicRequestClient.post<GenerateDocumentPdfResult>('/document/generatePdf', {
+    documentId: params.documentId,
+    content:
+      params.content === undefined || params.content === null
+        ? undefined
+        : serializeEmrDocumentContent(params.content),
+    previewMode: params.previewMode ?? true,
+    patientId: params.patientId,
+    encounterId: params.encounterId,
+    documentTitle: params.documentTitle,
+    documentTypeName: params.documentTypeName,
+    metadata: params.metadata,
+    printConfig: params.printConfig,
+  });
 }

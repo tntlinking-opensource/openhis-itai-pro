@@ -53,6 +53,10 @@ export interface LoadRegisterFormInitResult {
   /** 号源类型主键 → 挂号费销售价（元） */
   serviceTypeFeeById?: Record<string, number | string>;
   paymentChannelOptions?: OptionDto[];
+  /**
+   * 挂号时医生是否必选（全局开关 registrationDoctorRequired；true=必选，false/缺省=可只挂科室）
+   */
+  registrationDoctorRequired?: boolean;
   workInjuryCapability?: {
     enabled?: boolean;
     winRequired?: boolean;
@@ -113,9 +117,13 @@ export interface PreRegisterSettlementParams {
   practitionerId: number | string;
   serviceTypeId: number | string;
   slotId?: null | number | string;
-  /** 挂号费是否走医保预结算 */
+  /**
+   * 挂号费是否走医保预结算。
+   * 省/市医保费用性质下由前端「医保支付挂号费」勾选控制；true 才走 2201～2206。
+   * false / 缺省：全程不调 2201～2206，不写 map(12)。
+   */
   ybRegisterFee?: boolean;
-  /** 是否使用医保个人账户（acct_used_flag） */
+  /** 是否使用医保个人账户（acct_used_flag）；勾选医保支付挂号费时前端固定传 true */
   ybUseAcctPay?: boolean;
   /** 医保读卡字段 */
   psnNo?: string;
@@ -123,6 +131,10 @@ export interface PreRegisterSettlementParams {
   insutype?: string;
   ybMediumType?: string;
   ybCardInfo?: string;
+  /**
+   * 医疗类别。挂号费医保须传 {@code 12}（门诊挂号）；勿再传 11。
+   * 2201 仅在预结算 resolveMdtrtId 未命中 map 时触发。
+   */
   medType?: string;
 }
 
@@ -328,8 +340,10 @@ export interface ClinicRegisterItemDto {
   patientName: string;
   /** 待正式结算时的支付草稿 id；无则不可点「收费」 */
   paymentDraftId?: string;
-  /** 已成功缴费后的支付流水 id，供补打挂号小票 */
+  /** 已成功缴费后的挂号费支付流水 id（按挂号费 chargeItem 锚定；退号银联退货/补打挂号小票） */
   paymentId?: string;
+  /** 收费人姓名（已缴费时由支付流水 enterer 回显） */
+  cashierName?: string;
   printCount?: null | number;
   serviceTypeId: string;
   serviceTypeName: string;
@@ -582,15 +596,18 @@ export async function httpPageClinicRegisters(
   );
 }
 
-/** 当日挂号统计（不含待收费 PLANNED） */
+/** 当日挂号统计（不含 PLANNED / ENTERED_IN_ERROR；已退仅 CANCELLED） */
 export interface GetTodayRegisterSummaryParams {
   date?: string;
 }
 
 export interface GetTodayRegisterSummaryResult {
   date?: string;
+  /** 当日挂号（不含待收费、不含未收费取消） */
   totalCount?: number;
+  /** 已退号数（仅退号 CANCELLED） */
   cancelledCount?: number;
+  /** 有效 = total − cancelled */
   activeCount?: number;
 }
 
@@ -613,7 +630,7 @@ export async function httpValidateCancelable(
   );
 }
 
-/** 待挂号（PLANNED）撤销：作废草稿并可选医保退号 */
+/** 待挂号（PLANNED）作废：作废草稿；有平台则按需 2205/2202(med_type=12) */
 export interface CancelPlannedRegistrationParams {
   cancelReason?: string;
   encounterId: number | string;
@@ -633,6 +650,7 @@ export interface RefreshRegisterFeeInsurancePreSettleParams {
   psnNo?: string;
   insuplcAdmdvs?: string;
   insutype?: string;
+  /** 挂号费刷新预结算默认 {@code 12} */
   medType?: string;
 }
 

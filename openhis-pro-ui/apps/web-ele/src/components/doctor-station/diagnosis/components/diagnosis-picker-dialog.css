@@ -1,0 +1,70 @@
+/**
+ * 诊断选择弹窗外挂样式。
+ * 不走 SFC scoped：院点 build 下该弹窗 scoped CSS 会整段丢失，
+ * 表现为查询按钮掉到输入框下一行、「选择结果」标签与输入纵向堆叠。
+ */
+.dx-picker-dialog .dx-picker-dialog__search {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.dx-picker-dialog .dx-picker-dialog__search-input {
+  flex: 1 1 0;
+  min-width: 0;
+  width: 0;
+}
+
+.dx-picker-dialog .dx-picker-dialog__search-input .el-input {
+  width: 100%;
+}
+
+.dx-picker-dialog .dx-picker-dialog__search-btn {
+  flex-shrink: 0;
+}
+
+.dx-picker-dialog .dx-picker-dialog__form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dx-picker-dialog .dx-picker-dialog__form-row > .el-input {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+}
+
+.dx-picker-dialog .dx-picker-dialog__label {
+  width: 70px;
+  flex-shrink: 0;
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+  text-align: right;
+}
+
+.dx-picker-dialog .dx-picker-dialog__label.is-required::before {
+  content: '*';
+  color: var(--el-color-danger);
+  margin-right: 4px;
+}
+
+.dx-picker-dialog .dx-picker-dialog__table-wrap {
+  border: 1px solid var(--el-border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.dx-picker-dialog .dx-picker-dialog__kind .el-radio-button__inner {
+  min-width: 88px;
+  padding: 8px 14px;
+  font-size: 14px;
+}
+
+.dx-picker-dialog .dx-picker-dialog__tcm-catalog {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+}

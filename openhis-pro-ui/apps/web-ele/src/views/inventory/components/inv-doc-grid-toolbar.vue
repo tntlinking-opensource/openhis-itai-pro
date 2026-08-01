@@ -1,5 +1,5 @@
 <!--
-  库房单据明细表工具栏：添加行 / 可选批量添加 / 删除勾选行。
+  库房单据明细表工具栏：添加行 / 可选批量添加 / 预警药品 / 删除勾选行。
 -->
 <script setup lang="ts">
 import { Delete, Plus } from '@element-plus/icons-vue';
@@ -12,12 +12,18 @@ withDefaults(
     disabled?: boolean;
     showAdd?: boolean;
     showBatchAdd?: boolean;
+    /** 批量按钮文案，默认「批量添加」；盘点页可传「批量盘点」 */
+    batchAddLabel?: string;
+    /** 订货单：快捷打开效期/库存预警选品 */
+    showWarningProducts?: boolean;
     showTraceScan?: boolean;
   }>(),
   {
     disabled: false,
     showAdd: true,
     showBatchAdd: false,
+    batchAddLabel: '批量添加',
+    showWarningProducts: false,
     showTraceScan: false,
   },
 );
@@ -25,6 +31,7 @@ withDefaults(
 const emit = defineEmits<{
   add: [];
   batchAdd: [];
+  warningProducts: [];
   deleteSelected: [];
   traceScan: [];
 }>();
@@ -42,7 +49,15 @@ const emit = defineEmits<{
     添加行
   </ElButton>
   <ElButton v-if="showBatchAdd" class="mr-2" :disabled="disabled" @click="emit('batchAdd')">
-    批量添加
+    {{ batchAddLabel }}
+  </ElButton>
+  <ElButton
+    v-if="showWarningProducts"
+    class="mr-2"
+    :disabled="disabled"
+    @click="emit('warningProducts')"
+  >
+    预警药品
   </ElButton>
   <ElButton v-if="showTraceScan" class="mr-2" :disabled="disabled" @click="emit('traceScan')">
     扫追溯码

@@ -3,15 +3,29 @@ import type { NursingRecordPaperHeader, NursingRecordViewRow } from './nursing-r
 
 import { Delete } from '@element-plus/icons-vue';
 
+import { nextTick, onMounted, watch } from 'vue';
+
 import { usePaperSheetFullscreen } from '../../composables/use-paper-sheet-fullscreen';
+import {
+  composeNursingRecordDatetime,
+  getNowDateTime,
+  splitNursingRecordDatetime,
+} from '../services/map-nurse-station-nursing-record';
 
 defineOptions({
   name: 'NursingRecordPaperTable',
 });
 
+interface NurseSignatureOption {
+  label: string;
+  value: string;
+}
+
 interface Props {
   paperHeader?: NursingRecordPaperHeader | null;
   rows: NursingRecordViewRow[];
+  nurseOptions?: NurseSignatureOption[];
+  defaultNurseSignatureLabel?: string;
   savingAll?: boolean;
   unsavedCount?: number;
   weekRangeLabel?: string;
@@ -19,6 +33,8 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   paperHeader: null,
+  nurseOptions: () => [],
+  defaultNurseSignatureLabel: '',
   savingAll: false,
   unsavedCount: 0,
   weekRangeLabel: '',
@@ -27,40 +43,87 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   addRow: [];
   deleteRow: [id: string];
-  ensureDatetime: [id: string];
   markDirty: [id: string];
+  refresh: [];
   saveAll: [];
 }>();
 
 const { isFullscreen, toggleFullscreen } = usePaperSheetFullscreen();
 
-/** 将完整日期格式化为 MM-DD。 */
-function formatDateShort(date?: string) {
-  if (!date) return '';
-  const parts = date.split('-');
-  if (parts.length !== 3) return date;
-  return `${parts[1]}-${parts[2]}`;
+/** 同步日期时间选择器到行字段（支持面板选择与手动输入）。 */
+function syncRowDatetime(row: NursingRecordViewRow, value: null | string | undefined) {
+  const parts = splitNursingRecordDatetime(value);
+  row.recordDate = parts.recordDate;
+  row.recordTime = parts.recordTime;
+  emit('markDirty', row.id);
 }
 
-/** 同步 MM-DD 输入回完整日期，保留原年份。 */
-function syncDateShort(row: NursingRecordViewRow, shortValue: string) {
-  const year = row.recordDate?.slice(0, 4) || `${new Date().getFullYear()}`;
-  const match = shortValue.match(/^(\d{1,2})-(\d{1,2})$/);
-  if (!match) {
-    row.recordDate = shortValue;
-    emit('markDirty', row.id);
-    return;
+/** 行日期时间绑定值（空则 undefined，避免占位文案）。 */
+function datetimeModelValue(row: NursingRecordViewRow) {
+  return composeNursingRecordDatetime(row.recordDate, row.recordTime) || undefined;
+}
+
+/**
+ * 选中/聚焦行时带入当前时间与登录人签名（仅补空）。
+ * 不标记 dirty：仅点选空行不应进入「未保存」，真正改字段时再 dirty。
+ */
+function ensureRowDefaults(row: NursingRecordViewRow) {
+  const now = getNowDateTime();
+  if (!row.recordTime?.trim()) {
+    row.recordTime = now.time;
   }
-  const month = match[1]?.padStart(2, '0');
-  const day = match[2]?.padStart(2, '0');
-  row.recordDate = `${year}-${month}-${day}`;
-  emit('markDirty', row.id);
+  if (!row.recordDate?.trim()) {
+    row.recordDate = now.date;
+  }
+  if (!row.nurseSignature?.trim() && props.defaultNurseSignatureLabel) {
+    row.nurseSignature = props.defaultNurseSignatureLabel;
+  }
 }
 
 /** 字段变更时标记未保存。 */
 function handleFieldDirty(row: NursingRecordViewRow) {
   emit('markDirty', row.id);
 }
+
+const OBSERVATION_TEXTAREA_MIN_HEIGHT_PX = 29;
+
+/** 按内容撑开病情观察 textarea 高度。 */
+function resizeObservationTextarea(el: HTMLTextAreaElement | null) {
+  if (!el) {
+    return;
+  }
+  el.style.height = 'auto';
+  el.style.height = `${Math.max(OBSERVATION_TEXTAREA_MIN_HEIGHT_PX, el.scrollHeight)}px`;
+}
+
+/** 同步表格内全部病情观察 textarea 高度（加载/回显后）。 */
+function syncAllObservationTextareaHeights() {
+  document
+    .querySelectorAll<HTMLTextAreaElement>('.paper-record__table .paper-field--textarea')
+    .forEach((el) => resizeObservationTextarea(el));
+}
+
+/** 病情观察输入：自动增高并标记未保存。 */
+function handleObservationInput(row: NursingRecordViewRow, event: Event) {
+  resizeObservationTextarea(event.target as HTMLTextAreaElement);
+  handleFieldDirty(row);
+}
+
+watch(
+  () => props.rows,
+  () => {
+    void nextTick(() => {
+      syncAllObservationTextareaHeights();
+    });
+  },
+  { flush: 'post' },
+);
+
+onMounted(() => {
+  void nextTick(() => {
+    syncAllObservationTextareaHeights();
+  });
+});
 </script>
 
 <template>
@@ -68,6 +131,7 @@ function handleFieldDirty(row: NursingRecordViewRow) {
     <div class="paper-record" :class="{ 'is-fullscreen': isFullscreen }">
       <div class="paper-record__toolbar">
         <div class="paper-record__toolbar-main">
+          <slot name="toolbar-main" />
           <span v-if="weekRangeLabel" class="paper-record__week">{{ weekRangeLabel }}</span>
           <span v-if="unsavedCount > 0" class="paper-record__unsaved"
             >未保存 {{ unsavedCount }} 条</span
@@ -75,6 +139,7 @@ function handleFieldDirty(row: NursingRecordViewRow) {
         </div>
         <div class="paper-record__toolbar-actions">
           <slot name="toolbar-extra" />
+          <ElButton plain @click="emit('refresh')">刷新</ElButton>
           <ElButton plain @click="toggleFullscreen">
             {{ isFullscreen ? '退出全屏' : '全屏' }}
           </ElButton>
@@ -93,7 +158,7 @@ function handleFieldDirty(row: NursingRecordViewRow) {
                 <div v-if="paperHeader" class="patient-info-line">
                   <span>姓名：{{ paperHeader.name || '' }}</span>
                   <span>性别：{{ paperHeader.gender || '' }}</span>
-                  <span>年龄：{{ paperHeader.age ?? '' }}岁</span>
+                  <span>年龄：{{ paperHeader.age ?? '' }}</span>
                   <span>病室：{{ paperHeader.wardName || '' }}</span>
                   <span>床号：{{ paperHeader.bedNo || '' }}</span>
                   <span>病历号：{{ paperHeader.inpatientNo || '' }}</span>
@@ -147,24 +212,25 @@ function handleFieldDirty(row: NursingRecordViewRow) {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="row in rows" :key="row.id" class="paper-record__row">
+                  <tr
+                    v-for="row in rows"
+                    :key="row.id"
+                    class="paper-record__row"
+                    @focusin="ensureRowDefaults(row)"
+                  >
                     <td class="col-datetime">
-                      <input
-                        class="paper-field paper-field--date"
-                        type="text"
+                      <ElDatePicker
+                        class="paper-datetime-picker"
+                        type="datetime"
+                        format="MM-DD HH:mm"
+                        value-format="YYYY-MM-DD HH:mm"
+                        time-format="HH:mm"
+                        placeholder=" "
+                        :editable="true"
+                        :clearable="false"
+                        :model-value="datetimeModelValue(row)"
                         data-nav-col="0"
-                        data-nav-slot="date"
-                        :value="formatDateShort(row.recordDate)"
-                        @input="syncDateShort(row, ($event.target as HTMLInputElement).value)"
-                      />
-                      <input
-                        v-model="row.recordTime"
-                        class="paper-field paper-field--time"
-                        type="text"
-                        data-nav-col="0"
-                        data-nav-slot="time"
-                        @focus="emit('ensureDatetime', row.id)"
-                        @input="handleFieldDirty(row)"
+                        @update:model-value="syncRowDatetime(row, $event as string | null)"
                       />
                       <button
                         v-if="row.rowType === 'extra'"
@@ -299,17 +365,26 @@ function handleFieldDirty(row: NursingRecordViewRow) {
                         class="paper-field paper-field--textarea"
                         rows="1"
                         data-nav-col="14"
-                        @input="handleFieldDirty(row)"
+                        @input="handleObservationInput(row, $event)"
                       />
                     </td>
                     <td class="col-signature">
-                      <input
+                      <ElSelect
                         v-model="row.nurseSignature"
-                        class="paper-field"
-                        type="text"
+                        class="paper-signature-select"
+                        filterable
+                        clearable
+                        placeholder=" "
                         data-nav-col="15"
-                        @input="handleFieldDirty(row)"
-                      />
+                        @change="handleFieldDirty(row)"
+                      >
+                        <ElOption
+                          v-for="opt in nurseOptions"
+                          :key="opt.value"
+                          :label="opt.label"
+                          :value="opt.value"
+                        />
+                      </ElSelect>
                     </td>
                   </tr>
                 </tbody>
@@ -517,7 +592,6 @@ function handleFieldDirty(row: NursingRecordViewRow) {
 .paper-record__table tbody td {
   box-sizing: border-box;
   height: 33px;
-  min-height: 33px;
   position: relative;
   padding: 2px 0;
 }
@@ -525,7 +599,9 @@ function handleFieldDirty(row: NursingRecordViewRow) {
 /* 列宽按原 794px 比例换算为百分比，表格随父容器拉伸 */
 .paper-record__table th.col-datetime,
 .paper-record__table td.col-datetime {
-  width: 6.55%;
+  width: 13%;
+  max-width: 0;
+  overflow: hidden;
 }
 
 .paper-record__table th.col-vital,
@@ -560,7 +636,7 @@ function handleFieldDirty(row: NursingRecordViewRow) {
 
 .paper-record__table th.col-observation,
 .paper-record__table td.col-observation {
-  width: 23.68%;
+  width: 21.68%;
 }
 
 .paper-record__table th.col-signature,
@@ -601,8 +677,96 @@ function handleFieldDirty(row: NursingRecordViewRow) {
   line-height: 14px;
 }
 
-.col-datetime .paper-field {
+.col-datetime :deep(.paper-datetime-picker),
+.col-datetime :deep(.paper-datetime-picker.el-input),
+.col-datetime :deep(.paper-datetime-picker.el-date-editor) {
+  box-sizing: border-box;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  --el-date-editor-width: 100%;
+}
+
+.col-datetime :deep(.paper-datetime-picker .el-input__wrapper) {
+  box-sizing: border-box;
   width: 100%;
+  height: 29px;
+  min-height: 29px;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  justify-content: center;
+}
+
+.col-datetime :deep(.paper-datetime-picker .el-input__inner) {
+  width: 100%;
+  height: 29px;
+  padding: 0 !important;
+  line-height: 29px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #020817;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  -webkit-text-fill-color: #020817;
+}
+
+.col-datetime :deep(.paper-datetime-picker .el-input__prefix),
+.col-datetime :deep(.paper-datetime-picker .el-input__suffix),
+.col-datetime :deep(.paper-datetime-picker .el-input__prefix-inner),
+.col-datetime :deep(.paper-datetime-picker .el-input__suffix-inner) {
+  display: none !important;
+}
+
+.col-datetime :deep(.paper-datetime-picker .el-input__inner::placeholder) {
+  color: transparent;
+}
+
+.col-signature :deep(.paper-signature-select) {
+  width: 100%;
+}
+
+.col-signature :deep(.el-select__wrapper) {
+  box-sizing: border-box;
+  min-height: 29px;
+  height: 29px;
+  padding: 0 2px;
+  background: transparent;
+  box-shadow: none;
+  justify-content: center;
+}
+
+.col-signature :deep(.el-select__selection) {
+  justify-content: center;
+}
+
+/*
+ * EP 2.11：已选文案画在 .el-select__placeholder 上（无 is-transparent 时），
+ * 禁止整类 placeholder 设透明，否则默认值/选中值都看不见。
+ */
+.col-signature :deep(.el-select__placeholder),
+.col-signature :deep(.el-select__selected-item) {
+  text-align: center;
+  color: #020817;
+  -webkit-text-fill-color: #020817;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.col-signature :deep(.el-select__placeholder.is-transparent) {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.col-signature :deep(.el-select__caret),
+.col-signature :deep(.el-select__suffix) {
+  display: none;
 }
 
 .col-vital .paper-field,
@@ -633,18 +797,17 @@ function handleFieldDirty(row: NursingRecordViewRow) {
 
 .paper-field--textarea {
   box-sizing: border-box;
-  height: 29px;
   min-height: 29px;
   padding: 3px 4px;
   text-align: left;
   resize: none;
   overflow: hidden;
   word-break: break-all;
-  white-space: normal;
+  white-space: pre-wrap;
 }
 
 .paper-record__table .col-observation {
-  vertical-align: middle;
+  vertical-align: top;
 }
 
 .paper-field:focus {

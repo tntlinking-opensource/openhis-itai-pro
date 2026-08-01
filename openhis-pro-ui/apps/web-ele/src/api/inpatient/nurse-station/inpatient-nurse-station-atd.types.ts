@@ -101,17 +101,26 @@ export interface ClearDischargedBedResponse {
   succeeded?: boolean;
 }
 
-/** 出院召回 */
-export interface RecallInpatientDischargeRequest {
+/** 清床前缺追溯码软提示查询 */
+export interface ListMissingDispenseTraceTipsRequest {
   encounterId: string;
 }
 
-/** 出院召回响应 */
-export interface RecallInpatientDischargeResponse {
-  encounterId?: string;
-  requiresBedAssignment?: boolean;
-  succeeded?: boolean;
-  targetStatusEnum?: string;
+/** 缺追溯码发药提示行 */
+export interface MissingDispenseTraceTipDto {
+  dispenseId?: string;
+  /** 发药归属日 yyyy-MM-dd */
+  dispenseDate?: string;
+  medicationName?: string;
+  lotNumber?: string;
+  /** 可直接展示文案，如「2026-07-18 阿莫西林胶囊（批号 A01）未分配追溯码」 */
+  tipText?: string;
+}
+
+/** 清床前缺追溯码软提示响应 */
+export interface ListMissingDispenseTraceTipsResponse {
+  hasMissingTrace?: boolean;
+  tips?: MissingDispenseTraceTipDto[];
 }
 
 /** 出院前待执行医嘱列表 */
@@ -125,6 +134,8 @@ export interface DischargePendingExecutionItemDto {
   displayName?: string;
   doseText?: string;
   rateCode?: string;
+  reqOpenedTime?: string;
+  /** 保留类型字段，UI 不展示 */
   reqAuthoredTime?: string;
   requestId: string;
   requestTable?: string;

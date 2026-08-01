@@ -18,12 +18,15 @@ import {
   pageWarehouseStocktakeWorkbenchListApi,
 } from '#/api/inventory/warehouse/stocktake';
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
+import { useFromFinanceApproval } from '#/composables/use-from-finance-approval';
 import StocktakeAsidePane from '@inventory/components/stocktake/stocktake-aside-pane.vue';
 import StocktakeMainPane from '@inventory/components/stocktake/stocktake-main-pane.vue';
 
 defineOptions({
   name: 'InventoryWarehouseStocktakePage',
 });
+
+const { fromFinanceApproval } = useFromFinanceApproval();
 
 const route = useRoute();
 
@@ -207,9 +210,9 @@ onMounted(async () => {
 
 <template>
   <WarehouseDocWorkstation
-    aside-width="280px"
     queue-title=""
     aside-dense
+    :show-aside="!fromFinanceApproval"
     :show-aside-filter="false"
     :show-toolbar="false"
   >

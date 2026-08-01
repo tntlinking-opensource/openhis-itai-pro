@@ -16,8 +16,6 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { Page } from '@vben/common-ui';
 import { useUserStore } from '@vben/stores';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
-
 import dayjs from 'dayjs';
 import {
   ElButton,
@@ -49,6 +47,7 @@ import AppDialog from '#/components/app-dialog.vue';
 import AdmissionDiagnosisField from '#/components/admission/admission-diagnosis-field.vue';
 import type { AdmissionDiagnosisFormState } from '#/components/admission/admission-diagnosis.types';
 import { createEmptyAdmissionDiagnosisFormState } from '#/components/admission/admission-diagnosis.types';
+import RegisterStyleTableLayout from '#/components/layouts/register-style-table-layout.vue';
 import {
   buildAdmissionDiagnosesFromFormState,
   validateAdmissionDiagnosisFormState,
@@ -86,7 +85,8 @@ import {
   type InpatientRegisterContractMeta,
 } from './services/inpatient-register-contract-meta';
 import {
-  DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER,
+  DEFAULT_ADM_COND_CODE_GENERAL,
+  DEFAULT_ADMIT_SOURCE_CODE_ROUTINE,
   DEFAULT_PAY_CHANNEL_CODE,
   ENCOUNTER_STATUS,
   GENDER_OPTIONS,
@@ -140,6 +140,7 @@ const benefitYbPreview = ref<YbRegisterBenefitPreviewDto | null>(null);
 const {
   applyInsuranceSnapshot,
   benefitSyncing,
+  treatmentSyncing,
   fillInsurancePatientNameIfEmpty,
   lastContractMatch,
   lastYbCardInfo,
@@ -199,9 +200,9 @@ const registerForm = reactive({
   admissionDiagnosis: createEmptyAdmissionDiagnosisFormState(),
   contractId: '',
   startTime: '',
-  admitSourceCode: '',
+  admitSourceCode: DEFAULT_ADMIT_SOURCE_CODE_ROUTINE,
   inWayCode: '',
-  priorityEnum: '',
+  priorityEnum: DEFAULT_ADM_COND_CODE_GENERAL,
   advanceDepositAmount: 0,
   payChannelCode: DEFAULT_PAY_CHANNEL_CODE,
 });
@@ -302,21 +303,26 @@ async function syncBenefitPreview(options?: { autoApplyRecommend?: boolean }) {
   if (!isInsuranceContractCategory(category)) {
     return;
   }
-  const result = await syncInsuranceBenefit({
-    contractBusNo: getInpatientContractBusNo(contractId, contractMeta.value),
-    contractId,
-    medType: INPATIENT_MED_TYPE,
-    patientId: preserveApiIdForRequest(dialogContext.patientId),
-  });
-  if (result?.preview) {
+  const applyInpatientPreview = (preview: YbRegisterBenefitPreviewDto) => {
     const patientFallback = {
       patientBirthday: registerForm.birthDate,
       patientGender: registerForm.genderEnum,
       patientIdCard: registerForm.idCard,
       patientName: registerForm.patientName,
     };
-    const enrichedPreview = enrichInsuranceBenefitPreview(result.preview, patientFallback);
-    benefitYbPreview.value = enrichedPreview;
+    benefitYbPreview.value = enrichInsuranceBenefitPreview(preview, patientFallback);
+  };
+  const result = await syncInsuranceBenefit({
+    contractBusNo: getInpatientContractBusNo(contractId, contractMeta.value),
+    contractId,
+    medType: INPATIENT_MED_TYPE,
+    patientId: preserveApiIdForRequest(dialogContext.patientId),
+    onTreatmentReady: (preview) => {
+      applyInpatientPreview(preview);
+    },
+  });
+  if (result?.preview) {
+    applyInpatientPreview(result.preview);
     await maybeApplyRecommendedContract(
       result.contractMatch ?? lastContractMatch.value,
       Boolean(options?.autoApplyRecommend),
@@ -540,10 +546,10 @@ const benefitPanelLoading = computed(() => benefitSyncing.value || cardReadActio
 const benefitLoadingText = computed(() => {
   const action = cardReadAction.value;
   if (action) {
-    return `正在读取${PATIENT_IDENTITY_SOURCE_LABEL[action]}并拉取待遇信息…`;
+    return `正在读取${PATIENT_IDENTITY_SOURCE_LABEL[action]}…`;
   }
   if (benefitSyncing.value) {
-    return '正在拉取待遇信息…';
+    return '正在拉取人员与省市医保信息…';
   }
   return '';
 });
@@ -1081,9 +1087,11 @@ async function applyContextToDialog(context: LoadRegistrationContextResult) {
   registerForm.contractId = '';
   applyDefaultContractIdIfEmpty();
   registerForm.startTime = normalizeStartTimeForForm(encounter?.startTime);
-  registerForm.admitSourceCode = encounter?.admitSourceCode ?? '';
+  registerForm.admitSourceCode =
+    encounter?.admitSourceCode?.trim() || DEFAULT_ADMIT_SOURCE_CODE_ROUTINE;
   registerForm.inWayCode = encounter?.inWayCode ?? '';
-  registerForm.priorityEnum = normalizeAdmCondTermCode(encounter?.priorityEnum);
+  registerForm.priorityEnum =
+    normalizeAdmCondTermCode(encounter?.priorityEnum) || DEFAULT_ADM_COND_CODE_GENERAL;
   resetInpatientInfoExtendedFields();
   registerForm.outpatientDoctor = encounter?.outpatientDoctorName?.trim() ?? '';
   registerForm.attendingDoctorId = preserveApiIdForRequest(encounter?.attendingDoctorId) ?? '';
@@ -1145,9 +1153,9 @@ function resetRegisterFormModel() {
   registerForm.wardId = '';
   registerForm.contractId = '';
   registerForm.startTime = dayjs().format('YYYY-MM-DD HH:mm:ss');
-  registerForm.admitSourceCode = '';
+  registerForm.admitSourceCode = DEFAULT_ADMIT_SOURCE_CODE_ROUTINE;
   registerForm.inWayCode = '';
-  registerForm.priorityEnum = '';
+  registerForm.priorityEnum = DEFAULT_ADM_COND_CODE_GENERAL;
   registerForm.outpatientDoctor = '';
   resetInpatientInfoExtendedFields();
   registerForm.admissionCount = '-';
@@ -1643,7 +1651,7 @@ async function resolveInsuranceFieldsForSubmit(contractId: string) {
     preview = lastYbPreview.value;
   }
   if (!preview?.psnNo) {
-    throw new Error('医保待遇未确认，请重新读卡并等待待遇加载完成');
+    throw new Error('医保人员信息未确认，请重新读卡');
   }
   const insu = preview.insuinfoList?.[0];
   return {
@@ -1926,7 +1934,7 @@ onBeforeUnmount(() => {
       ref="tableAreaRef"
       class="ip-register-list flex h-full min-h-0 flex-1 flex-col overflow-hidden"
     >
-      <TableLayout
+      <RegisterStyleTableLayout
         class="ip-register-list__table h-full min-h-0 flex-1 !p-0"
         :table-data="tableData"
         :loading="loading"
@@ -1936,8 +1944,6 @@ onBeforeUnmount(() => {
         :table-height="tableAreaHeight"
         :show-pagination="true"
         :show-top-query="false"
-        border
-        stripe
         @pagination="handlePagination"
       >
         <template #toolbar-actions>
@@ -1978,7 +1984,7 @@ onBeforeUnmount(() => {
             </ElButton>
           </div>
         </template>
-      </TableLayout>
+      </RegisterStyleTableLayout>
     </div>
 
     <AppDialog
@@ -2069,7 +2075,7 @@ onBeforeUnmount(() => {
             <ElTabPane label="待遇信息" name="benefit">
               <div
                 v-loading="benefitPanelLoading"
-                :element-loading-text="benefitLoadingText || '正在拉取待遇信息…'"
+                :element-loading-text="benefitLoadingText || '正在拉取人员与省市医保信息…'"
                 class="register-tab-panel register-tab-panel--benefit"
               >
                 <div
@@ -2090,6 +2096,7 @@ onBeforeUnmount(() => {
                   :yb-medium-type="lastYbMediumType"
                   :medium-type="lastYbMediumType"
                   :scrollable-tables="false"
+                  :external-treatment-loading="treatmentSyncing"
                 />
               </div>
             </ElTabPane>

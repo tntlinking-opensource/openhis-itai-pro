@@ -45,6 +45,8 @@ export interface PharmacyGainLossListRowDto {
   purposeLocationName?: string;
   itemCount?: number;
   gainLossQuantitySum?: number;
+  /** 盈亏金额合计（可负；侧栏总金额） */
+  gainLossAmountSum?: number;
   actualAmountSum?: number;
   applicantId?: number | string;
   applicantName?: string;
@@ -52,6 +54,8 @@ export interface PharmacyGainLossListRowDto {
   approverId?: number | string;
   approverName?: string;
   approvalTime?: string;
+  /** 驳回态侧栏回显 */
+  rejectReason?: string;
 }
 
 export interface PagePharmacyGainLosssRequest {
@@ -186,6 +190,8 @@ export interface PageProductsForPharmacyGainLossRequest {
   productTableName?: string;
   keyword?: string;
   purposeLocationId?: number | string;
+  /** true=仅返回账面量>0；false/未传=含零库存 */
+  positiveQuantityOnly?: boolean;
   pageNo: number;
   pageSize: number;
 }

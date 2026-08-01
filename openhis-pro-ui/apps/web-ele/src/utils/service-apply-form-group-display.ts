@@ -33,7 +33,7 @@ export function resolveServiceApplyFormSortKey(prescriptionNo?: null | string): 
   return '2_';
 }
 
-/** 同一申请单首行：用于组间分隔线与组头标签 */
+/** 同一申请单首行：用于组头申请单号 Tag */
 export function isServiceApplyFormGroupStart<T extends ServiceApplyFormTableRow>(
   row: T,
   rowIndex: number,
@@ -48,104 +48,4 @@ export function isServiceApplyFormGroupStart<T extends ServiceApplyFormTableRow>
   }
   const previous = rows[rowIndex - 1];
   return previous?.applyFormNo?.trim() !== formNo;
-}
-
-/** 同一申请单末行：用于闭合聚组边框 */
-export function isServiceApplyFormGroupEnd<T extends ServiceApplyFormTableRow>(
-  row: T,
-  rowIndex: number,
-  rows: readonly T[],
-): boolean {
-  const formNo = row.applyFormNo?.trim();
-  if (!formNo || row.isEditor) {
-    return false;
-  }
-  const next = rows[rowIndex + 1];
-  return next?.applyFormNo?.trim() !== formNo;
-}
-
-/** 同一申请单续行（非首行）：用于去掉组内横线 */
-export function isServiceApplyFormGroupContinue<T extends ServiceApplyFormTableRow>(
-  row: T,
-  rowIndex: number,
-  rows: readonly T[],
-): boolean {
-  const formNo = row.applyFormNo?.trim();
-  if (!formNo || row.isEditor || rowIndex <= 0) {
-    return false;
-  }
-  return rows[rowIndex - 1]?.applyFormNo?.trim() === formNo;
-}
-
-export interface BuildServiceApplyFormRowClassNameParams<T extends ServiceApplyFormTableRow> {
-  row: T;
-  rowIndex: number;
-  rows: readonly T[];
-}
-
-/** 申请单聚组：表格行 class-name */
-export function buildServiceApplyFormRowClassName<T extends ServiceApplyFormTableRow>(
-  params: BuildServiceApplyFormRowClassNameParams<T>,
-): string {
-  const { row, rowIndex, rows } = params;
-  if (!row.applyFormNo?.trim() || row.isEditor) {
-    return '';
-  }
-  const parts = ['is-doctor-apply-form-member'];
-  if (isServiceApplyFormGroupStart(row, rowIndex, rows)) {
-    parts.push('is-doctor-apply-form-group-start');
-  }
-  if (isServiceApplyFormGroupEnd(row, rowIndex, rows)) {
-    parts.push('is-doctor-apply-form-group-end');
-  }
-  if (isServiceApplyFormGroupContinue(row, rowIndex, rows)) {
-    parts.push('is-doctor-apply-form-group-continue');
-  }
-  return parts.join(' ');
-}
-
-export interface BuildServiceApplyFormCellClassNameParams<T extends ServiceApplyFormTableRow> {
-  row: T;
-  rowIndex: number;
-  rows: readonly T[];
-  columnIndex: number;
-  edgeLeftIndex?: number;
-  edgeRightIndex: number;
-  columnFixed?: boolean | string;
-}
-
-/** 申请单聚组：全表 cell-class-name（四边框住整组行） */
-export function buildServiceApplyFormCellClassName<T extends ServiceApplyFormTableRow>(
-  params: BuildServiceApplyFormCellClassNameParams<T>,
-): string {
-  const {
-    row,
-    rowIndex,
-    rows,
-    columnIndex,
-    edgeLeftIndex = 0,
-    edgeRightIndex,
-    columnFixed,
-  } = params;
-  if (!row.applyFormNo?.trim() || row.isEditor) {
-    return '';
-  }
-  const parts = ['doctor-apply-form-cell'];
-  if (isServiceApplyFormGroupStart(row, rowIndex, rows)) {
-    parts.push('is-group-start');
-  }
-  if (isServiceApplyFormGroupEnd(row, rowIndex, rows)) {
-    parts.push('is-group-end');
-  }
-  if (isServiceApplyFormGroupContinue(row, rowIndex, rows)) {
-    parts.push('is-group-continue');
-  }
-  if (columnIndex === edgeLeftIndex) {
-    parts.push('is-group-edge-left');
-  }
-  const columnFixedText = String(columnFixed ?? '').trim();
-  if (columnIndex === edgeRightIndex || columnFixedText === 'right') {
-    parts.push('is-group-edge-right');
-  }
-  return parts.join(' ');
 }

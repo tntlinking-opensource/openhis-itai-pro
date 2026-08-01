@@ -1,17 +1,14 @@
 <script setup lang="ts">
-import type {
-  ConfirmDetailSection,
-  PreRegisterSettlementResult,
-  RegisterConfirmDetail,
-} from '../services';
+import type { PreRegisterSettlementResult, RegisterConfirmDetail } from '../services';
 
-import { computed, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 import { ElAlert, ElButton, ElInput, ElMessage, ElRadioButton, ElRadioGroup } from 'element-plus';
 
 import AppDialog from '#/components/app-dialog.vue';
 import { isScanPayChannel } from '#/composables/payment/useUnionPayScanPay';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
+import { FALLBACK_DEFAULT_PAY_CHANNEL } from '#/utils/payment/payment-channel-options';
 import { settleWithScanRecovery } from '#/utils/payment/scan-settle-recovery';
 import { submitScanPayment } from '#/utils/payment/submit-scan-payment';
 import { schedulePrintRegistrationReceipt } from '#/utils/print/print-registration-receipt';
@@ -26,7 +23,7 @@ import {
 } from '../services/register-insurance-credential';
 import { DEFAULT_REGISTER_PAY_CHANNEL_CODE, payRegisterFee } from '../services/register.service';
 
-import WorkInjury2301RegisterAction from '#/chs/work-injury/work-injury-2301-register-action.vue';
+import WorkInjuryFilingDetailAction from '#/chs/work-injury/work-injury-filing-detail-action.vue';
 
 defineOptions({
   name: 'RegisterConfirmDialog',
@@ -48,13 +45,36 @@ const credentialExpiredHint = ref(false);
 const payChannelCode = ref(DEFAULT_REGISTER_PAY_CHANNEL_CODE);
 const scanCode = ref('');
 const scanStatusText = ref('');
+const scanCodeInputRef = ref<{ focus?: () => void } | null>(null);
 
-const { scanPayEnabled, effectivePayChannelOptions, refreshPayChannelsForDialog } =
-  useRegisterPayChannels();
+const {
+  scanPayEnabled,
+  hasScanPayChannel,
+  effectivePayChannelOptions,
+  refreshPayChannelsForDialog,
+  refreshUnionPayCapabilities,
+} = useRegisterPayChannels();
 
-const showScanPaySection = computed(
-  () => scanPayEnabled.value && isScanPayChannel(payChannelCode.value),
-);
+function focusScanCodeInput() {
+  void nextTick(() => {
+    requestAnimationFrame(() => {
+      scanCodeInputRef.value?.focus?.();
+    });
+  });
+}
+
+function onConfirmDialogOpened() {
+  if (showScanPaySection.value) {
+    focusScanCodeInput();
+  }
+}
+
+watch(payChannelCode, (code) => {
+  if (visible.value && isScanPayChannel(code)) {
+    focusScanCodeInput();
+  }
+});
+
 const pendingPreSettlement = ref<null | PreRegisterSettlementResult>(null);
 const detail = ref<null | RegisterConfirmDetail>(null);
 const insuranceMediumType = ref('');
@@ -79,7 +99,7 @@ const insuranceAcctPay = computed(() =>
 const workInjuryEncounterId = computed(
   () => (pendingPreSettlement.value as null | { encounterId?: string | number })?.encounterId,
 );
-const showWorkInjury2301 = computed(
+const showWorkInjuryFiling = computed(
   () =>
     workInjuryRegister.value &&
     workInjuryEncounterId.value != null &&
@@ -101,6 +121,13 @@ const payableCashAmount = computed(() => {
   return Number.isFinite(total) ? Math.max(0, total) : 0;
 });
 const showCashPaySection = computed(() => payableCashAmount.value > 0.001);
+const showScanPaySection = computed(
+  () =>
+    showCashPaySection.value && hasScanPayChannel.value && isScanPayChannel(payChannelCode.value),
+);
+const zeroPayHint = computed(() =>
+  insurancePreSettled.value ? '医保已全额覆盖，无需额外现金支付' : '本单金额为 0，无需支付',
+);
 const ecVoucherStale = computed(
   () =>
     insurancePreSettled.value &&
@@ -111,15 +138,13 @@ const showRescanSection = computed(
   () => insurancePreSettled.value && isEcVoucherMediumType(insuranceMediumType.value),
 );
 
-const registerIntro = '请核对以下信息，确认后将按预结算金额发起收费。';
-
-function formatGenderForConfirm(code: string): string {
+function formatGenderShort(code: string): string {
   const c = String(code ?? '').trim();
   if (c === 'MALE' || c === '1') {
-    return '男性';
+    return '男';
   }
   if (c === 'FEMALE' || c === '2') {
-    return '女性';
+    return '女';
   }
   if (c === 'UNKNOWN') {
     return '未知';
@@ -132,45 +157,37 @@ function displayDash(value: null | string | undefined): string {
   return t || '—';
 }
 
-const confirmSections = computed<ConfirmDetailSection[]>(() => {
+/** 收款员一眼核对：姓名 · 性别 · 年龄 */
+const patientSummary = computed(() => {
   const d = detail.value;
   if (!d) {
-    return [];
+    return '—';
   }
-  return [
-    {
-      title: '患者信息',
-      rows: [
-        { label: '病历号', value: displayDash(d.medicalRecordNo), breakAll: true },
-        { label: '姓名', value: displayDash(d.patientName), breakAll: true },
-        { label: '性别', value: formatGenderForConfirm(d.patientGender) },
-        { label: '出生日期', value: displayDash(d.patientBirthday) },
-        { label: '年龄', value: displayDash(d.patientAge) },
-        { label: '身份证号', value: displayDash(d.patientIdCard), breakAll: true },
-        { label: '联系电话', value: displayDash(d.patientPhone), breakAll: true },
-      ],
-    },
-    {
-      title: '挂号信息',
-      rows: [
-        { label: '挂号科室', value: displayDash(d.departmentLabel), breakAll: true },
-        { label: '接诊医生', value: displayDash(d.doctorLabel), breakAll: true },
-        { label: '费用性质', value: displayDash(d.contractLabel), breakAll: true },
-        { label: '挂号类型', value: displayDash(d.serviceTypeLabel), breakAll: true },
-      ],
-    },
-    {
-      title: '费用明细',
-      rows: [
-        {
-          label: '号源类型',
-          value: displayDash(d.serviceTypeLabel),
-          breakAll: true,
-          medium: true,
-        },
-      ],
-    },
-  ];
+  const parts = [
+    displayDash(d.patientName),
+    formatGenderShort(d.patientGender),
+    displayDash(d.patientAge),
+  ].filter((p) => p && p !== '—');
+  return parts.length > 0 ? parts.join(' · ') : '—';
+});
+
+const deptDoctorSummary = computed(() => {
+  const d = detail.value;
+  if (!d) {
+    return '—';
+  }
+  const dept = displayDash(d.departmentLabel);
+  const doctor = displayDash(d.doctorLabel);
+  if (dept === '—' && doctor === '—') {
+    return '—';
+  }
+  if (doctor === '—') {
+    return dept;
+  }
+  if (dept === '—') {
+    return doctor;
+  }
+  return `${dept} / ${doctor}`;
 });
 
 function applyPreSettlement(pre: PreRegisterSettlementResult) {
@@ -183,6 +200,10 @@ function applyPreSettlement(pre: PreRegisterSettlementResult) {
   if (detail.value) {
     detail.value = { ...detail.value, totalAmount: Number.isFinite(cash) ? cash : 0 };
   }
+  payChannelCode.value =
+    Number.isFinite(cash) && cash > 0.001
+      ? DEFAULT_REGISTER_PAY_CHANNEL_CODE
+      : FALLBACK_DEFAULT_PAY_CHANNEL;
   credentialExpiredHint.value = false;
 }
 
@@ -207,7 +228,7 @@ async function open(
   credentialExpiredHint.value = false;
   scanCode.value = '';
   scanStatusText.value = '';
-  payChannelCode.value = DEFAULT_REGISTER_PAY_CHANNEL_CODE;
+  applyPreSettlement(pre);
   await refreshPayChannelsForDialog();
   visible.value = true;
 }
@@ -293,7 +314,8 @@ async function executeRegisterPayment() {
   if (!ensureCredentialFreshBeforePay()) {
     return;
   }
-  if (isScanPayChannel(payChannelCode.value) && !scanCode.value.trim()) {
+  const needScanPay = showCashPaySection.value && isScanPayChannel(payChannelCode.value);
+  if (needScanPay && !scanCode.value.trim()) {
     ElMessage.warning('请输入付款码');
     return;
   }
@@ -301,7 +323,8 @@ async function executeRegisterPayment() {
   scanStatusText.value = '';
   try {
     let clientScanResult;
-    if (isScanPayChannel(payChannelCode.value)) {
+    if (needScanPay) {
+      await refreshUnionPayCapabilities();
       if (!scanPayEnabled.value) {
         ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
         return;
@@ -382,50 +405,49 @@ defineExpose({
     v-model="visible"
     class="register-confirm-dialog"
     title="确认挂号"
-    width="560px"
-    top="5vh"
+    width="480px"
+    top="8vh"
     append-to-body
     destroy-on-close
+    @opened="onConfirmDialogOpened"
     @closed="onDialogClosed"
   >
-    <div v-if="detail" class="register-confirm-dialog__body text-left text-[14px] leading-relaxed">
-      <p class="mb-3 text-[var(--el-text-color-regular)]">{{ registerIntro }}</p>
-
-      <template v-for="(section, sIdx) in confirmSections" :key="`${section.title}-${sIdx}`">
-        <div
-          class="mb-1 border-0 border-b border-solid border-[var(--el-border-color-lighter)] pb-1 text-[14px] font-semibold text-[var(--el-text-color-primary)]"
-          :class="[sIdx > 0 ? 'mt-4' : '']"
-        >
-          {{ section.title }}
-        </div>
-        <div class="grid grid-cols-[96px_1fr] gap-x-2 gap-y-1 py-0.5">
-          <template v-for="row in section.rows" :key="row.label">
-            <span class="text-[var(--el-text-color-regular)]">{{ row.label }}</span>
-            <span
-              class="text-[var(--el-text-color-primary)]"
-              :class="[row.breakAll ? 'break-all' : '', row.medium ? 'font-medium' : '']"
-            >
-              {{ row.value }}
-            </span>
-          </template>
-        </div>
-      </template>
-
-      <div
-        class="mt-4 rounded bg-[var(--el-fill-color-light)] px-2 py-2 text-[14px] font-semibold text-[var(--el-color-primary)]"
-      >
-        挂号金额（预结算）：¥{{ formatMoneyDisplay(payableCashAmount) }}
+    <div v-if="detail" class="register-confirm-dialog__body">
+      <div class="register-confirm-dialog__amount">
+        <span class="register-confirm-dialog__amount-label">应收金额</span>
+        <span class="register-confirm-dialog__amount-value">
+          ¥{{ formatMoneyDisplay(payableCashAmount) }}
+        </span>
       </div>
 
-      <template v-if="insurancePreSettled">
-        <div class="mt-3 space-y-1 text-[13px] text-[var(--el-text-color-regular)]">
-          <div>基金支付：¥{{ formatMoneyDisplay(insuranceFundPay) }}</div>
-          <div>个账支付：¥{{ formatMoneyDisplay(insuranceAcctPay) }}</div>
-          <div class="font-medium text-[var(--el-color-primary)]">
-            个人现金应付：¥{{ formatMoneyDisplay(payableCashAmount) }}
-          </div>
+      <div class="register-confirm-dialog__meta">
+        <div class="register-confirm-dialog__meta-row">
+          <span>患者</span>
+          <span class="break-all font-medium">{{ patientSummary }}</span>
         </div>
-      </template>
+        <div class="register-confirm-dialog__meta-row">
+          <span>科室 / 医生</span>
+          <span class="break-all">{{ deptDoctorSummary }}</span>
+        </div>
+        <div class="register-confirm-dialog__meta-row">
+          <span>费用性质</span>
+          <span class="break-all">{{ displayDash(detail.contractLabel) }}</span>
+        </div>
+        <div class="register-confirm-dialog__meta-row">
+          <span>挂号类型</span>
+          <span class="break-all">{{ displayDash(detail.serviceTypeLabel) }}</span>
+        </div>
+        <template v-if="insurancePreSettled">
+          <div class="register-confirm-dialog__meta-row">
+            <span>基金支付</span>
+            <span>¥{{ formatMoneyDisplay(insuranceFundPay) }}</span>
+          </div>
+          <div class="register-confirm-dialog__meta-row">
+            <span>个账支付</span>
+            <span>¥{{ formatMoneyDisplay(insuranceAcctPay) }}</span>
+          </div>
+        </template>
+      </div>
 
       <ElAlert
         v-if="showRescanSection && (ecVoucherStale || credentialExpiredHint)"
@@ -448,11 +470,13 @@ defineExpose({
         </ElButton>
       </div>
 
-      <div v-if="showCashPaySection" class="mt-4">
-        <div class="mb-2 text-[14px] font-semibold text-[var(--el-text-color-primary)]">
-          支付方式
-        </div>
-        <ElRadioGroup v-model="payChannelCode" class="flex flex-wrap gap-2">
+      <div class="register-confirm-dialog__pay">
+        <div class="register-confirm-dialog__section-title">支付方式</div>
+        <ElRadioGroup
+          v-if="showCashPaySection"
+          v-model="payChannelCode"
+          class="register-confirm-dialog__channels"
+        >
           <ElRadioButton
             v-for="opt in effectivePayChannelOptions"
             :key="opt.value"
@@ -461,26 +485,28 @@ defineExpose({
             {{ opt.label }}
           </ElRadioButton>
         </ElRadioGroup>
+        <p v-else class="register-confirm-dialog__zero-hint">{{ zeroPayHint }}</p>
       </div>
 
-      <div v-if="showScanPaySection" class="mt-3">
-        <div class="mb-2 text-[14px] font-semibold text-[var(--el-text-color-primary)]">
-          扫码支付
-        </div>
+      <div v-if="showScanPaySection" class="register-confirm-dialog__scan">
         <ElInput
+          ref="scanCodeInputRef"
           v-model="scanCode"
-          placeholder="请扫码或输入付款码"
+          size="large"
           clearable
+          placeholder="请扫码或输入付款码，回车确认缴费"
           @keyup.enter="executeRegisterPayment"
         />
-        <p v-if="scanStatusText" class="mt-2 text-[13px] text-blue-600">{{ scanStatusText }}</p>
+        <p v-if="scanStatusText" class="register-confirm-dialog__scan-status">
+          {{ scanStatusText }}
+        </p>
       </div>
     </div>
 
     <template #footer>
       <div class="flex w-full items-center justify-between gap-2">
-        <WorkInjury2301RegisterAction
-          v-if="showWorkInjury2301"
+        <WorkInjuryFilingDetailAction
+          v-if="showWorkInjuryFiling"
           link
           :encounter-id="workInjuryEncounterId"
           :contract-id="workInjuryContractId"
@@ -505,9 +531,85 @@ defineExpose({
 </template>
 
 <style scoped>
-:deep(.register-confirm-dialog .el-dialog__body) {
-  max-height: none;
-  overflow: visible;
-  padding-bottom: 16px;
+.register-confirm-dialog__body {
+  text-align: left;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.register-confirm-dialog__amount {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: var(--el-color-primary-light-9);
+  border-radius: 8px;
+}
+
+.register-confirm-dialog__amount-label {
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+
+.register-confirm-dialog__amount-value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--el-color-primary);
+}
+
+.register-confirm-dialog__meta {
+  display: grid;
+  gap: 6px;
+}
+
+.register-confirm-dialog__meta-row {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.register-confirm-dialog__meta-row > span:first-child {
+  color: var(--el-text-color-secondary);
+}
+
+.register-confirm-dialog__meta-row > span:last-child {
+  color: var(--el-text-color-primary);
+}
+
+.register-confirm-dialog__pay {
+  margin-top: 14px;
+}
+
+.register-confirm-dialog__section-title {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.register-confirm-dialog__channels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.register-confirm-dialog__zero-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.register-confirm-dialog__scan {
+  margin-top: 10px;
+}
+
+.register-confirm-dialog__scan-status {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--el-color-primary);
 }
 </style>

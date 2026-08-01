@@ -21,6 +21,8 @@ export interface NurseStationSkinTestRowDto {
   criticalityText?: null | string;
   description?: null | string;
   encounterId?: null | string;
+  /** 皮试检查是否已执行（可登记结果） */
+  executedFlag?: boolean | null;
   lotNumber?: null | string;
   lotNumberOptions?: NurseStationSkinTestLotOptionDto[] | null;
   medicationId?: null | string;
@@ -32,10 +34,17 @@ export interface NurseStationSkinTestRowDto {
   performLocationId?: null | string;
   practitionerId?: null | string;
   practitionerName?: null | string;
+  /** @deprecated 后端 v1.4 已改为 executedFlag；保留兼容旧响应 */
   pricedFlag?: boolean | null;
+  /** 已登记只读（allergyRecordId 非空） */
+  readOnlyFlag?: boolean | null;
+  /** 登记/开始时间（cln_allergy_intolerance.recorded_date） */
   recordedDate?: null | string;
+  /** 末次反应时间（cln_allergy_intolerance.last_occurrence） */
+  lastOccurrence?: null | string;
   severityCode?: null | string;
   severityText?: null | string;
+  /** companion 皮试检查 SR id（列表行主键） */
   skinTestServiceRequestId?: null | string;
   verificationStatusCode?: null | string;
   verificationStatusText?: null | string;
@@ -59,26 +68,32 @@ export interface ListNurseStationSkinTestRowsResponse {
 }
 
 export interface SaveNurseStationSkinTestRecordRequest {
-  accountId: string;
+  /** 可选；本 Tab 不计费，后端不再校验 */
+  accountId?: null | string;
   allergyRecordId?: null | string;
   checkPractitionerId: string;
   clinicalStatusCode: string;
   criticalityCode?: null | string;
   description?: null | string;
   encounterId: string;
-  lotNumber?: null | string;
+  /** 必填；须 ∈ MedicationDispense 发放批号候选 */
+  lotNumber: string;
   medicationId: string;
   medicationRequestId: string;
   patientId: string;
   practitionerId: string;
+  /** 登记/开始时间 */
   recordedDate?: null | string;
+  /** 末次反应时间（结束时间） */
+  lastOccurrence?: null | string;
   severityCode?: null | string;
+  /** companion SR；多行时必传 */
+  skinTestServiceRequestId?: null | string;
   verificationStatusCode: string;
 }
 
 export interface SaveNurseStationSkinTestRecordResponse {
   allergyRecordId?: null | string;
-  firstTimePriced?: boolean | null;
   skinTestServiceRequestId?: null | string;
 }
 

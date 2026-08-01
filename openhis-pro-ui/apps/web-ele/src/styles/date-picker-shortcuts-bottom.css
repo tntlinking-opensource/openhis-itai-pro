@@ -1,0 +1,67 @@
+/**
+ * 单日日期选择器快捷项：底部两端布局 + link 主色。
+ * 配合 popper-class="oh-date-picker-shortcuts-bottom oh-date-picker-shortcuts-bottom--single-day"。
+ *
+ * 时间范围选择器不使用本样式，保持 Element Plus 左侧默认侧栏。
+ */
+
+.oh-date-picker-shortcuts-bottom .el-picker-panel__body-wrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+.oh-date-picker-shortcuts-bottom .el-picker-panel__body {
+  order: 1;
+  margin-left: 0 !important;
+}
+
+.oh-date-picker-shortcuts-bottom .el-picker-panel__sidebar {
+  position: static;
+  top: auto;
+  bottom: auto;
+  order: 2;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: auto;
+  padding: 4px 20px 8px;
+  overflow: visible;
+  border-right: none;
+  border-top: 1px solid var(--el-datepicker-inner-border-color, var(--el-border-color-light));
+}
+
+/* 覆盖 EP 默认 display:block + width:100%，否则无法横排两端 */
+.oh-date-picker-shortcuts-bottom .el-picker-panel__shortcut {
+  display: inline-block !important;
+  width: auto !important;
+  margin: 0;
+  padding: 0;
+  line-height: 28px;
+  white-space: nowrap;
+  text-align: center;
+  color: var(--el-color-primary);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.oh-date-picker-shortcuts-bottom .el-picker-panel__shortcut:hover {
+  color: var(--el-color-primary-light-3);
+}
+
+.oh-date-picker-shortcuts-bottom .el-picker-panel__shortcut:active {
+  color: var(--el-color-primary-dark-2);
+}
+
+/* 单日：去掉侧栏加宽，回到默认 322px */
+.oh-date-picker-shortcuts-bottom .el-date-picker.has-sidebar {
+  width: 322px;
+}
+
+.oh-date-picker-shortcuts-bottom .el-date-picker.has-sidebar.has-time {
+  width: 324px;
+}

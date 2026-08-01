@@ -536,7 +536,7 @@ onActivated(() => {
             clearable
           />
         </ElFormItem>
-        <ElFormItem label="常用">
+        <ElFormItem label-width="0">
           <ElSpace wrap>
             <ElButton
               v-for="item in scenarioPresetOptions"

@@ -1,5 +1,5 @@
 <!--
-  药库退库单（退库入库）左侧：历史退库单检索 + 卡片队列 + 新增。
+  药库退货入库单左侧：历史退货入库单检索 + 卡片队列（只读壳单，无新增）。
 -->
 <script setup lang="ts">
 import { ref } from 'vue';
@@ -7,7 +7,6 @@ import { ref } from 'vue';
 import { RotateCw, Search } from '@vben/icons';
 
 import InvAsideShell from '@inventory/components/inv-aside-shell.vue';
-import InvPrimaryBtn from '@inventory/components/inv-primary-btn.vue';
 import InvQueueCards from '@inventory/components/inv-queue-cards.vue';
 import dayjs from 'dayjs';
 import isoWeek from 'dayjs/plugin/isoWeek';
@@ -17,18 +16,13 @@ import SectionTitle from '#/components/layouts/section-title.vue';
 
 defineOptions({ name: 'InventoryWarehouseReturnStockInAsidePane' });
 
-withDefaults(
-  defineProps<{
-    addDisabled?: boolean;
-    cabinetListOptions: Record<string, unknown>[];
-    orders: Record<string, unknown>[];
-    selectedOrder?: null | Record<string, unknown>;
-  }>(),
-  { addDisabled: false },
-);
+defineProps<{
+  cabinetListOptions: Record<string, unknown>[];
+  orders: Record<string, unknown>[];
+  selectedOrder?: null | Record<string, unknown>;
+}>();
 
 const emit = defineEmits<{
-  add: [];
   search: [];
   select: [row: Record<string, unknown>];
 }>();
@@ -73,24 +67,29 @@ const rangeShortcuts = [
 
 const isRefreshing = ref(false);
 
+/** 下拉 option value */
 function cabinetOptionValue(item: Record<string, unknown>): number | string {
   const v = item.id ?? item.value;
   if (typeof v === 'number' || typeof v === 'string') return v;
   return String(v ?? '');
 }
 
+/** 药库筛选变更 → 刷新列表 */
 function handleLocationFiltersChange() {
   emit('search');
 }
 
+/** 关键字回车/清空 → 检索 */
 function handleSearchEmit() {
   emit('search');
 }
 
+/** 日期范围变更 → 检索 */
 function handleDateRangeChange() {
   emit('search');
 }
 
+/** 刷新按钮 */
 function handleRefreshClick() {
   isRefreshing.value = true;
   emit('search');
@@ -99,12 +98,9 @@ function handleRefreshClick() {
   }, 500);
 }
 
+/** 选中队列卡片 */
 function handleQueueSelect(row: Record<string, unknown>) {
   emit('select', row);
-}
-
-function handleAdd() {
-  emit('add');
 }
 </script>
 
@@ -112,7 +108,7 @@ function handleAdd() {
   <InvAsideShell class="return-stock-in-aside-pane">
     <template #header>
       <div class="flex flex-col gap-1.5">
-        <SectionTitle title="历史退库单" />
+        <SectionTitle title="历史退货入库单" />
         <ElInput
           v-model="keyword"
           placeholder="单据号检索"
@@ -144,7 +140,7 @@ function handleAdd() {
           <ElSelect
             v-model="purposeLocationId"
             class="min-w-0 flex-1"
-            placeholder="请选择接收药库"
+            placeholder="全部库房"
             clearable
             filterable
             @change="handleLocationFiltersChange"
@@ -169,13 +165,10 @@ function handleAdd() {
         :location-context-id="purposeLocationId"
         :orders="orders"
         :selected-order="selectedOrder"
-        @add="handleAdd"
+        :show-empty-add="false"
+        :show-supplier="false"
         @select="handleQueueSelect"
       />
-    </template>
-
-    <template #footer>
-      <InvPrimaryBtn label="新增退库单" :disabled="addDisabled" @click="handleAdd" />
     </template>
   </InvAsideShell>
 </template>

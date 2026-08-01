@@ -24,6 +24,8 @@ export interface PatientItem {
   name: string;
   gender: string;
   age: number;
+  /** 年龄原文案（读模型 ageText，大屏优先展示）。 */
+  ageText?: string;
   /** 护理级别展示名（读模型 nursingLevelName；未开立时为空）。 */
   level: string;
   /** 病情 code（读模型 priorityEnum；分床 ASSIGN 写路径用）。 */
@@ -32,6 +34,10 @@ export interface PatientItem {
   feeType: string;
   /** 主要诊断描述。 */
   diagnosis: string;
+  /** 主管医生姓名（读模型 attendingDoctorName）。 */
+  attendingDoctorName?: string;
+  /** 主管护士姓名（读模型 primaryNurseName）。 */
+  primaryNurseName?: string;
   /** 住院账户主键（读模型 accountId）。 */
   accountId?: string;
   /** 账户余额（读模型 accountBalance）。 */
@@ -41,10 +47,16 @@ export interface PatientItem {
   accountBalanceSummaryText?: string;
   availableBalance?: number | string;
   pendingSettlementTotal?: number | string;
+  /** 预缴/已缴金额（读模型 paidAmount）。 */
+  paidAmount?: number | string;
   /** 病区位置 id（读模型 wardId）。 */
   regionId: string;
+  /** 病区名称（读模型 wardName；优先于 id 反查）。 */
+  wardName?: string;
   /** 病房位置 id（读模型 house 解析）。 */
   wardId: string;
+  /** 病房名称（读模型 houseName；优先于 id 反查）。 */
+  houseName?: string;
   /** 床位展示名（读模型 bedName）。 */
   bedNo: string;
   /** 床位位置 id（写操作 bedLocationId）。 */
@@ -55,8 +67,6 @@ export interface PatientItem {
   statusEnumText?: string;
   /** 低余额预警（读模型 lowBalanceWarning）。 */
   lowBalanceWarning?: boolean;
-  /** 是否展示出院召回（读模型 recallEnabled；仅 DISCHARGED）。 */
-  recallEnabled?: boolean;
   pendingAudit: number;
   pendingExecute: number;
   taskTag: string;
@@ -65,8 +75,5 @@ export interface PatientItem {
 }
 
 export type PatientStatusFilter = 'all' | 'pending-audit' | 'pending-execute' | 'processed';
-
-/** 患者列表范围筛选（就诊状态并集，与任务筛选独立） */
-export type PatientQueueScopeFilter = 'in-hospital' | 'settled-discharged';
 
 export type SelectionPolicy = 'multiple' | 'single';

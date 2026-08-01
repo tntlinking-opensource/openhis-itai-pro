@@ -33,7 +33,6 @@ export interface TraceNumberReportFilter {
   queryScope: TraceNumberReportQueryScope;
   locationId?: string;
   inHospitalStatusEnum?: string;
-  locationStockStatusEnum?: string;
   traceNoKeyword?: string;
   medicationKeyword?: string;
   lotNumberKeyword?: string;
@@ -50,13 +49,16 @@ export interface TraceNumberReportRowDto {
   medicationId?: string;
   medicationCode?: string;
   medicationName?: string;
+  /** 规格（药品 totalVolume enrich）。 */
+  specificationText?: string;
   lotNumber?: string;
   inHospitalStatusEnum?: string;
   inHospitalStatusLabel?: string;
   remainingSplitQuantity?: number | string;
+  /** 追溯单位展示名（后端已将 code 转成术语 label）。 */
   traceUnitCode?: string;
-  locationStockStatusEnum?: string;
-  locationStockStatusLabel?: string;
+  /** 当前所在库房名称（多个顿号拼接）。 */
+  currentLocationNames?: string;
   locationNetSplitQuantity?: number | string;
   lastFlowAt?: string;
 }

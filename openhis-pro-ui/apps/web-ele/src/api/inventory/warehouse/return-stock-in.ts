@@ -1,5 +1,5 @@
 /**
- * 退库入库单 — 对接 Whale {@code POST /api/app/inventoryWarehouseReturnStockIn/<method>}
+ * 退货入库单 — 对接 Whale {@code POST /api/app/inventoryWarehouseReturnStockIn/<method>}
  * type_enum=5 (CABINET_RETURN_STOCK_IN)
  */
 import type { ApiResponse } from '#/types/api-response';
@@ -53,6 +53,7 @@ export interface ReturnStockInListRowDto {
   sourceLocationId?: number | string;
   purposeLocationId?: number | string;
   supplierId?: number | string;
+  supplierName?: string;
   itemId?: number | string;
   itemTable?: string;
   itemQuantity?: number;
@@ -61,6 +62,11 @@ export interface ReturnStockInListRowDto {
   traceNo?: string;
   price?: number;
   totalPrice?: number;
+  totalAmount?: number;
+  applicantId?: number | string;
+  creatorName?: string;
+  approverId?: number | string;
+  approverName?: string;
   applyTime?: string;
   approvalTime?: string;
 }
@@ -97,7 +103,11 @@ export interface ReturnStockInDetailLineDto {
   itemId?: number | string;
   itemQuantity?: number;
   unitCode?: string;
+  /** 计量单位展示名；无则勿用 unitCode 冒充 */
+  unitCodeDictText?: string;
   lotNumber?: string;
+  startTime?: string;
+  endTime?: string;
   traceNo?: string;
   price?: number;
   totalPrice?: number;
@@ -105,6 +115,8 @@ export interface ReturnStockInDetailLineDto {
   reason?: string;
   remake?: string;
   productName?: string;
+  /** 产品目录（含 unitBands，详情数量/单位回显用） */
+  productCatalog?: { unitBands?: unknown; unitBandsJson?: unknown };
 }
 
 export interface GetReturnStockInDetailResponse {
@@ -336,7 +348,7 @@ export async function pageProductsForReturnStockInApi(body: PageProductsForRetur
   );
 }
 
-/** typeEnum=5；退库入库单 CABINET_RETURN_STOCK_IN */
+/** typeEnum=5；退货入库单 CABINET_RETURN_STOCK_IN */
 export const WHS_RSI_TYPE_ENUM = 5;
 /** @deprecated 使用 {@link WHS_RSI_TYPE_ENUM} */
 export const WHS_RETURN_STOCK_IN_TYPE_ENUM = WHS_RSI_TYPE_ENUM;

@@ -3,6 +3,8 @@ import type {
   CommonDiagnosesResponse,
   CommonDiagnosisRowDto,
   EncounterDiagnosisRowDto,
+  OpspFilingDiagnosisRowDto,
+  PatientOpspFilingDiagnosisResponse,
 } from '#/api/doctor-station/diagnosis.types';
 
 import { computed } from 'vue';
@@ -13,6 +15,7 @@ interface TreeNode {
   id: string;
   label: string;
   row?: CommonDiagnosisRowDto;
+  opspRow?: OpspFilingDiagnosisRowDto;
   children?: TreeNode[];
 }
 
@@ -22,6 +25,8 @@ const props = defineProps<{
   businessClass: CommonDiagnosesResponse | null;
   /** 当前就诊已保存诊断（中医病证组已合并，与右侧表格一致） */
   displayRows: EncounterDiagnosisRowDto[];
+  /** 慢特病备案；未启用时不渲染「慢病备案」分支 */
+  opspFiling?: null | PatientOpspFilingDiagnosisResponse;
 }>();
 
 const emit = defineEmits<{
@@ -33,7 +38,7 @@ function formatDiagnosisLeafLabel(name?: null | string): string {
   return String(name ?? '').trim();
 }
 
-/** 四类常用诊断快捷树 */
+/** 四类常用 + 可选慢病备案快捷树 */
 const quickTreeData = computed<TreeNode[]>(() => {
   const b = props.businessClass;
   if (!b) return [];
@@ -52,12 +57,28 @@ const quickTreeData = computed<TreeNode[]>(() => {
     })),
   });
 
-  return [
+  const nodes: TreeNode[] = [
     mk('hist', '历史', b.patientHistoryList),
     mk('doc', '常用', b.doctorCommonUseList),
     mk('usr', '个人', b.userPersonalList),
     mk('org', '科室', b.organizationList),
   ];
+
+  // CHS 未启用时整支隐藏（非灰显）
+  if (props.opspFiling?.opspFilingImportEnabled) {
+    const filingList = props.opspFiling.filingList ?? [];
+    nodes.push({
+      id: 'opsp',
+      label: filingList.length > 0 ? `慢病备案(${filingList.length})` : '慢病备案',
+      children: filingList.map((r, i) => ({
+        id: `opsp-${i}-${r.opspDiseCode ?? i}`,
+        label: formatDiagnosisLeafLabel(r.conditionDefinitionName ?? r.opspDiseName),
+        opspRow: r,
+      })),
+    });
+  }
+
+  return nodes;
 });
 
 /** 候选是否已在当前就诊列表 */
@@ -77,6 +98,10 @@ function isCommonRowAlreadySaved(src: CommonDiagnosisRowDto): boolean {
 
 /** 叶子节点：校验后 emit 由父级统一保存 */
 function handleNodeClick(data: TreeNode) {
+  if (data.opspRow) {
+    handleOpspNodeClick(data.opspRow);
+    return;
+  }
   const src = data?.row;
   if (!src) return;
   if (isCommonRowAlreadySaved(src)) {
@@ -93,6 +118,35 @@ function handleNodeClick(data: TreeNode) {
     diagnosisKind: src.diagnosisKind ?? src.medicineType,
     tcmSyndromeGroup: src.tcmSyndromeGroup ?? undefined,
   });
+}
+
+/** 慢病备案行：仅 matched 可导入 */
+function handleOpspNodeClick(src: OpspFilingDiagnosisRowDto) {
+  const status = String(src.matchStatus ?? '').trim();
+  if (status === 'matched') {
+    const defId = String(src.conditionDefinitionId ?? '').trim();
+    if (!defId) {
+      ElMessage.warning(src.matchHint || '该病种无法导入');
+      return;
+    }
+    if (
+      (props.displayRows ?? []).some((r) => String(r.conditionDefinitionId ?? '').trim() === defId)
+    ) {
+      ElMessage.info('该诊断已在当前列表中');
+      return;
+    }
+    emit('append', {
+      conditionDefinitionId: defId,
+      conditionCode: src.conditionCode ?? '',
+      conditionDefinitionName: src.conditionDefinitionName ?? src.opspDiseName ?? '',
+      medicineType: src.diagnosisKind ?? undefined,
+      diagnosisKind: src.diagnosisKind ?? undefined,
+      // 慢病备案导入默认门诊慢病医疗类别，供后续开嘱/结算按慢病组使用
+      medicalTypeCode: '140104',
+    });
+    return;
+  }
+  ElMessage.warning(src.matchHint || '该慢病备案不可导入');
 }
 </script>
 

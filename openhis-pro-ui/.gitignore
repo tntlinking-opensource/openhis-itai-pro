@@ -1,59 +1,27 @@
-node_modules
-.pnpm-store
-.DS_Store
-dist
-dist-ssr
-dist.zip
-openhis-web-deploy.zip
-scripts/deploy/cache/
-dist.tar
-dist.war
-.nitro
-.output
-*-dist.zip
-*-dist.tar
-*-dist.war
-coverage
-*.local
-**/.vitepress/cache
-.cache
-.turbo
-.temp
-dev-dist
-.stylelintcache
-yarn.lock
-package-lock.json
-.VSCodeCounter
-**/backend-mock/data
+# Open-source repo .gitignore (written into export tree)
 
-# local env files
+node_modules/
+dist/
+.turbo/
+*.log
+
+.idea/
+*.iml
+.vscode/
+
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+.env
 .env.local
 .env.*.local
-.eslintcache
 
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-vite.config.mts.*
-vite.config.mjs.*
-vite.config.js.*
-vite.config.ts.*
+apps/web-ele/dist/
+apps/web-ele/dist.zip
 
-# Auto-generated files by unplugin-auto-import
-**/auto-imports.d.ts
-**/.eslintrc-auto-import.json
+# Hospital customization (kept in private repo only)
+projects/
 
-# Editor directories and files
-.idea
-# .vscode
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-.history
-/pnpm-lock.yaml
+# Private agent / editor tooling
+.cursor/

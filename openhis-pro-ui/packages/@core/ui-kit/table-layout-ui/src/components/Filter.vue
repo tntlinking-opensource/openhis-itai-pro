@@ -78,6 +78,17 @@ const handleQuery = () => {
   emit('query', props.queryParams);
 };
 
+/**
+ * 下拉/日期/单选/Input 清空：先执行业务 onChange，再统一触发查询。
+ * 与 frontend-report-query-search 一致：改完即搜，无需再点「搜索」。
+ */
+const handleItemChange = (item: (typeof normalizedFormItems.value)[number], value: unknown) => {
+  if (typeof item.onChange === 'function') {
+    void item.onChange(value as never);
+  }
+  handleQuery();
+};
+
 const resetQuery = () => {
   if (queryFormRef.value) {
     queryFormRef.value.resetFields();
@@ -108,7 +119,8 @@ defineExpose({
           :item="item"
           :model-value="queryParams[item.prop]"
           @update:model-value="(value) => (queryParams[item.prop] = value)"
-          @change="(value) => item.onChange && item.onChange(value)"
+          @change="(value) => handleItemChange(item, value)"
+          @enter="handleQuery"
         >
           <template v-for="(_, slotName) in $slots" :key="slotName" #[slotName]="slotProps">
             <slot :name="slotName" v-bind="slotProps"></slot>

@@ -11,15 +11,19 @@ export interface DispenseQueuePatient {
   id: string;
   patientId?: string;
   patientName: string;
-  /** 无后端文本字段时可为空，卡片走 genderEnum */
+  /** 性别展示文案：直接用后端 genderEnumText，前端不翻译 code */
   genderLabel: string;
-  /** 与 OutpatientInfo 卡片一致时回填（小整数枚举，非 Long） */
-  genderEnum?: null | number;
   ageLabel: string;
+  /** 接诊科室名称（卡片右上角第三段） */
+  organizationName?: string;
   /** 门诊就诊号（卡片左下角等全量展示，可与搜索关键字匹配） */
   visitNo: string;
   /** 门诊卡片「就诊时间」展示 */
   visitTimeLabel: string;
+  /** 患者手机号（队列 patientPhone） */
+  patientPhone?: string;
+  /** 费用性质展示名（队列 contractDisplay；卡片底栏胶囊） */
+  feeNatureLabel?: string;
   rxCount: number;
 }
 
@@ -29,7 +33,18 @@ export interface DispensePrescriptionBlock {
   rxNo: string;
   rxType: 'herbal' | 'western';
   deptName: string;
+  /** 开单医生（orderingPractitionerName） */
   doctorName: string;
+  /** 调配（preparerPractitionerName） */
+  preparerPractitionerName?: string;
+  /** 发药（dispensingPractitionerName） */
+  dispensingPractitionerName?: string;
+  /** 划价（pricingPractitionerName；取收费人，禁止回落开单医生） */
+  pricingPractitionerName?: string;
+  /** 费用性质展示文案（后端 feeNatureText；空时笺面补偿用队列患者 feeNatureLabel） */
+  feeNatureLabel?: string;
+  /** 患者手机号（后端 slip.patientPhone） */
+  patientPhone?: string;
   issuedAt: string;
   status: 'blocking' | 'completed' | 'partial' | 'pending' | 'prepared';
   items: DispensePrescriptionLine[];
@@ -37,6 +52,14 @@ export interface DispensePrescriptionBlock {
   tcmHerbGridRows?: TcmHerbGridDisplayRow[];
   /** 中药处方：付数 + 频次 + 用法 */
   tcmUsageText?: string;
+  /** 方头是否代煎 */
+  sufferingFlag?: boolean;
+  /** 代煎项目名称（默认「代煎中药」） */
+  decoctionActivityName?: string;
+  /** 代煎费金额展示（已格式化） */
+  decoctionChargeAmountLabel?: string;
+  /** 代煎费数量展示（如「7付」） */
+  decoctionChargeQuantityLabel?: string;
 }
 
 /** 发放库房候选（一行一条选项，对应库存明细） */
@@ -53,6 +76,29 @@ export interface DispensePrescriptionLine {
   itemName: string;
   /** 发药数量展示：接口 quantity + unitText（不拼单位 code） */
   quantity: string;
+  /** 发放/计价单位码（与后端 slip.unitCode 对齐） */
+  unitCode?: string;
+  /** 本发放行数量数值（与后端 slip.quantity 对齐） */
+  quantityValue?: number;
+  /** 包装单位码；追溯默认按包装计码 */
+  packageUnitCode?: string;
+  /** 包装相对拆零倍数 */
+  packageUnitRatio?: number;
+  /** 拆零单位码 */
+  splitUnitCode?: string;
+  /**
+   * 追溯码主档贴码单位（cus_trace_number；发药待扫换算用）。
+   * 非药典目录值。
+   */
+  traceUnitCode?: string;
+  /**
+   * 追溯码主档贴码比例快照（1 码对应拆零量；发药待扫换算用）。
+   */
+  traceUnitRatio?: number;
+  /**
+   * 主表该品批是否已有码。false/缺省按无码批：扫码软提示、不挡发药。
+   */
+  lotHasTraceMaster?: boolean;
   spec: string;
   traceCode: string;
   batchNo: string;
@@ -68,6 +114,11 @@ export interface DispensePrescriptionLine {
   freq: string;
   /** 单味特殊煎法展示名（中药饮片） */
   dosageInstructionText?: string;
+  /**
+   * 明细行类型：代煎费为合成展示行，不参与发药提交。
+   * 缺省视为药材/药品发放行。
+   */
+  lineKind?: 'decoctionFee' | 'medication';
 }
 
 /** 单表展示用扁平行：同 rxId 多行 + rowspan 元数据 */

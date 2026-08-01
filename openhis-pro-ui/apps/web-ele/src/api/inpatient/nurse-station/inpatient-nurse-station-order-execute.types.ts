@@ -1,10 +1,18 @@
-/** 执行 Tab：未执行 / 已执行 / 不执行 / 取消执行 / 全部 */
-export type NurseStationOrderExecuteTab = 'all' | 'cancelled' | 'executed' | 'pending' | 'skipped';
+import type {
+  AdvicePackageChildItemDto,
+  ServiceRequestDetailSummaryDto,
+} from '#/api/doctor-station/advice.types';
+
+/** 执行 Tab：未执行 / 已执行 / 不执行 / 取消执行（后端无 all） */
+export type NurseStationOrderExecuteTab = 'cancelled' | 'executed' | 'pending' | 'skipped';
 
 /** 长临筛选：全部 / 长期 / 临时 */
 export type NurseStationOrderExecuteTherapyFilter = 'all' | 'long' | 'temp';
 
-/** 中西药 Tab：west 西药 / tcm 中药 */
+/**
+ * 列表接口中西药 Tab（后端单值）：west 西药+全部诊疗 / tcm 仅中药方。
+ * 前端「项目类型」多选见页面 map 层 NurseStationOrderExecuteProjectType，再映射到本字段拉取后本地过滤。
+ */
 export type NurseStationOrderExecuteMedicineCategoryTab = 'tcm' | 'west';
 
 /** 写操作锚点：药品申请 / 诊疗申请 */
@@ -25,6 +33,13 @@ export interface NurseStationOrderExecuteSlotDto {
   procedureId?: string;
   statusEnum?: string;
   recordedTime?: string;
+  /**
+   * 待执行建议实际执行时分（写路径 actualTime 默认）。
+   * 开嘱日首次 pending 槽 = 开嘱时刻；其余为空则回落 planTime。
+   */
+  defaultActualTime?: string;
+  /** 操作人展示名（已执行/不执行/取消执行；待执行为空） */
+  operatorName?: string;
 }
 
 /** 绑定项（列表回传、写路径原样回传） */
@@ -62,15 +77,30 @@ export interface NurseStationOrderExecuteRowDto {
   /** 长临展示（与后端 therapyEnumText 对齐） */
   therapyEnumText?: string;
   adviceDisplayName?: string;
+  /** 医嘱备注（随医嘱内容展示） */
+  remark?: string;
   specificationText?: string;
   dosageDisplay?: string;
   usageDisplay?: string;
+  /** 给药途径/用法编码（仅药嘱；筛选输液等须用 code，禁止用 usageDisplay） */
+  methodCode?: string;
+  /** 是否输液/注射相关（仅药嘱 infusion_flag） */
+  infusionFlag?: boolean;
   frequencyDisplay?: string;
-  authoredTime?: string;
+  /** 开立时间（后端 req_opened_time） */
+  reqOpenedTime?: string;
   stopTime?: string;
   requesterName?: string;
+  stopperId?: string;
+  stopperName?: string;
+  /** 校对科室展示名（执行科室，与后端 performerCheckOrgDisplay 对齐） */
+  performerCheckOrgDisplay?: string;
   performerLocationDisplay?: string;
   categoryEnum?: string;
+  /** 类型列展示：药品/诊疗/出院/转科/护理/嘱托（与校对同源） */
+  orderKindDisplay?: string;
+  /** 药品成组号（与医生站 group_id 同源；未成组可空） */
+  groupId?: string;
   groupNo?: number;
   sortNumber?: number;
   pendingSlots?: NurseStationOrderExecuteSlotDto[];
@@ -78,6 +108,16 @@ export interface NurseStationOrderExecuteRowDto {
   skippedSlots?: NurseStationOrderExecuteSlotDto[];
   cancelledSlots?: NurseStationOrderExecuteSlotDto[];
   bindItems?: NurseStationOrderExecuteBindItemDto[];
+  /**
+   * 诊疗套餐子项（检查/检验申请单打印「明细」列）。
+   * 执行列表页不展示。
+   */
+  packageChildren?: AdvicePackageChildItemDto[];
+  /**
+   * 服务申请明细摘要（部位/标本；申请单打印用）。
+   * 执行列表页不展示。
+   */
+  serviceRequestDetails?: ServiceRequestDetailSummaryDto[];
   /** 是否中药饮片方（方级折叠行） */
   tcmFlag?: boolean;
   prescriptionNo?: string;
@@ -120,6 +160,8 @@ export interface ExecuteNurseStationOrdersRequest {
 export interface ExecuteNurseStationOrdersResponse {
   success?: boolean;
   processedCount?: number;
+  /** Soft tips (e.g. long-term skin-test cross-lot); empty if none */
+  warnings?: string[];
 }
 
 /** 批量登记不执行 */

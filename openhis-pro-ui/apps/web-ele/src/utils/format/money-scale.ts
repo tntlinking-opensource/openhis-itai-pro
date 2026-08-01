@@ -16,6 +16,9 @@ export const MONEY_SETTLE_DP = 2;
 /** UI 展示刻度（与 MONEY_SETTLE_DP 同为 2；仅 format） */
 export const MONEY_DISPLAY_DP = 2;
 
+/** 中药（饮片/中草药）单价 UI 展示刻度：3 位，禁止压成 2 位 */
+export const MONEY_TCM_UNIT_PRICE_DP = 3;
+
 Decimal.set({
   precision: 28,
   rounding: Decimal.ROUND_HALF_UP,

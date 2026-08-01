@@ -1,6 +1,6 @@
 /**
- * 科室盘点单 — 对接 {@code POST /api/app/inventoryDeptStocktake/<method>}
- * 契约见 AS-INV-DEP-006-SDD。
+ * 科室盘点单 — 对接 {@code POST /api/app/inventoryDepartmentStocktake/<method>}
+ * 方法名与 {@code InventoryDepartmentStocktakeAppService} 一致（无 Dept 前缀）。
  */
 import type { ApiOptionItem, ApiResponse } from '#/types/api-response';
 
@@ -19,7 +19,7 @@ import {
   normalizeStocktakeStatusSort,
 } from '#/utils/inventory/stocktake-doc-actions';
 
-const BASE = '/inventoryDeptStocktake';
+const BASE = '/inventoryDepartmentStocktake';
 
 export const DEP_STOCKTAKE_CATEGORY_ENUM = 'STOCK_SUPPLY';
 
@@ -39,7 +39,8 @@ export interface LoadDeptStocktakeFormInitResponse {
   pharmacyLocationOptions?: StocktakeOptionDto[];
   inboundItemTableTypeOptions?: StocktakeOptionDto[];
   statusOptions?: StocktakeOptionDto[];
-  nurseOptions?: StocktakeOptionDto[];
+  /** 后端药师下拉 */
+  pharmacistOptions?: StocktakeOptionDto[];
   warehouseKeeperOptions?: StocktakeOptionDto[];
 }
 
@@ -184,6 +185,8 @@ export interface PageProductsForDeptStocktakeRequest {
   purposeLocationId: number | string;
   productTableName: string;
   keyword?: string;
+  /** true=仅返回账面量>0；false/未传=含零库存 */
+  positiveQuantityOnly?: boolean;
   pageNo: number;
   pageSize: number;
 }
@@ -271,69 +274,63 @@ function mapDeptStocktakeListRowToQueueCard(r: DeptStocktakeListRowDto): Record<
 
 export async function loadDeptStocktakeFormInitApi(body?: LoadDeptStocktakeFormInitRequest) {
   return requestClient.post<ApiResponse<LoadDeptStocktakeFormInitResponse>>(
-    `${BASE}/loadDeptStocktakeFormInit`,
+    `${BASE}/loadStocktakeFormInit`,
     body ?? {},
   );
 }
 
 export async function pageDeptStocktakesApi(body: PageDeptStocktakesRequest) {
   return requestClient.post<ApiResponse<PageDeptStocktakesResponse>>(
-    `${BASE}/pageDeptStocktakes`,
+    `${BASE}/pageStocktakes`,
     body,
   );
 }
 
 export async function getDeptStocktakeDetailApi(body: GetDeptStocktakeDetailRequest) {
   return requestClient.post<ApiResponse<GetDeptStocktakeDetailResponse>>(
-    `${BASE}/getDeptStocktakeDetail`,
+    `${BASE}/getStocktakeDetail`,
     body,
   );
 }
 
 export async function createDeptStocktakeApi(body: CreateDeptStocktakeRequest) {
   return requestClient.post<ApiResponse<CreateDeptStocktakeResponse>>(
-    `${BASE}/createDeptStocktake`,
+    `${BASE}/createStocktake`,
     body,
   );
 }
 
 export async function updateDeptStocktakeApi(body: UpdateDeptStocktakeRequest) {
   return requestClient.post<ApiResponse<UpdateDeptStocktakeResponse>>(
-    `${BASE}/updateDeptStocktake`,
+    `${BASE}/updateStocktake`,
     body,
   );
 }
 
 export async function submitDeptStocktakeApprovalApi(body: SubmitDeptStocktakeApprovalRequest) {
   return requestClient.post<ApiResponse<{ statusEnum?: string | number }>>(
-    `${BASE}/submitDeptStocktakeApproval`,
+    `${BASE}/submitStocktakeApproval`,
     body,
   );
 }
 
 export async function withdrawDeptStocktakeApprovalApi(body: WithdrawDeptStocktakeApprovalRequest) {
-  return requestClient.post<ApiResponse<{ statusEnum?: string | number }>>(
-    `${BASE}/withdrawDeptStocktakeApproval`,
+  return requestClient.post<ApiResponse<{ success?: boolean; statusEnum?: string | number }>>(
+    `${BASE}/withdrawStocktakeApproval`,
     body,
   );
 }
 
 export async function agreeDeptStocktakeApi(body: AgreeDeptStocktakeRequest) {
-  return requestClient.post<ApiResponse<{ success?: boolean }>>(`${BASE}/agreeDeptStocktake`, body);
+  return requestClient.post<ApiResponse<{ success?: boolean }>>(`${BASE}/agreeStocktake`, body);
 }
 
 export async function rejectDeptStocktakeApi(body: RejectDeptStocktakeRequest) {
-  return requestClient.post<ApiResponse<{ success?: boolean }>>(
-    `${BASE}/rejectDeptStocktake`,
-    body,
-  );
+  return requestClient.post<ApiResponse<{ success?: boolean }>>(`${BASE}/rejectStocktake`, body);
 }
 
 export async function removeDeptStocktakeApi(body: RemoveDeptStocktakeRequest) {
-  return requestClient.post<ApiResponse<{ success?: boolean }>>(
-    `${BASE}/removeDeptStocktake`,
-    body,
-  );
+  return requestClient.post<ApiResponse<{ success?: boolean }>>(`${BASE}/removeStocktake`, body);
 }
 
 export async function pageProductsForDeptStocktakeApi(body: PageProductsForDeptStocktakeRequest) {
@@ -382,6 +379,8 @@ export async function initDeptStocktakeWorkbenchApi(): Promise<{
   cabinetListOptions: Record<string, unknown>[];
   locationRawOptions: DeptStocktakeLocationOption[];
   itemTableTypeOptions: ApiOptionItem[];
+  pharmacistOptions?: StocktakeOptionDto[];
+  warehouseKeeperOptions?: StocktakeOptionDto[];
 }> {
   const res = await loadDeptStocktakeFormInitApi({});
   const d = res.data;
@@ -398,5 +397,7 @@ export async function initDeptStocktakeWorkbenchApi(): Promise<{
     cabinetListOptions: prependAllLocationsCabinetOption(rows, INV_ALL_DEPT_PHARMACIES_LABEL),
     locationRawOptions: mapDeptStocktakeInitToLocationOptions(locationOpts),
     itemTableTypeOptions: mapDeptStocktakeInitItemTableTypes(d?.inboundItemTableTypeOptions),
+    pharmacistOptions: d?.pharmacistOptions,
+    warehouseKeeperOptions: d?.warehouseKeeperOptions,
   };
 }

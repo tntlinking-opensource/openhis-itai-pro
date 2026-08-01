@@ -15,6 +15,11 @@
 }
 
 .simple-editor {
+  /*
+   * 病历书写/打印统一版式（对齐 PrintConfig +《打印预览设计》§4.1）：
+   * A4；页边距上/下 25.4mm、左/右 31.8mm；宋体；正文 12pt；标题 16pt；行距 1.5。
+   * 依据《病历书写基本规范》第三十二条：打印病历应统一纸张、字体、字号及排版格式。
+   */
   --simple-editor-border: #e5e7eb;
   --simple-editor-bg: #ffffff;
   --simple-editor-radius: 10px;
@@ -22,10 +27,14 @@
   --simple-editor-canvas-bg: #d8dee8;
   --simple-editor-a4-w: 210mm;
   --simple-editor-a4-min-h: 297mm;
-  --simple-editor-margin-top: 20px;
-  --simple-editor-margin-right: 24px;
-  --simple-editor-margin-bottom: 20px;
-  --simple-editor-margin-left: 24px;
+  --simple-editor-margin-top: 25.4mm;
+  --simple-editor-margin-right: 31.8mm;
+  --simple-editor-margin-bottom: 25.4mm;
+  --simple-editor-margin-left: 31.8mm;
+  --simple-editor-font-family: SimSun, 'Songti SC', 'Noto Serif CJK SC', 'STSong', serif;
+  --simple-editor-body-size: 12pt;
+  --simple-editor-title-size: 16pt;
+  --simple-editor-line-height: 1.5;
 
   display: flex;
   min-height: 0;
@@ -86,7 +95,7 @@
   box-shadow: none;
 }
 
-/* A4 白纸：纯白、无描边，类似 Word 页面 */
+/* A4 白纸：纯白、无描边；默认字体/字号/行距与 PrintConfig 一致 */
 .simple-editor__content .ProseMirror {
   box-sizing: border-box;
   width: var(--simple-editor-a4-w);
@@ -101,9 +110,11 @@
   background: #fff !important;
   box-shadow: none !important;
   outline: none !important;
+  font-family: var(--simple-editor-font-family);
+  font-size: var(--simple-editor-body-size);
   /* 默认行高交给段落/标题块或下方 p 规则，避免盖住块级 line-height */
   line-height: normal;
-  color: #1f2937;
+  color: #111827;
 }
 
 .simple-editor__content .ProseMirror:focus,
@@ -112,16 +123,16 @@
   box-shadow: none !important;
 }
 
-/* 居中段落内占位符不 float，避免偏离中线 */
-.simple-editor__content .ProseMirror p.is-empty[style*='text-align: center']::before,
-.simple-editor__content .ProseMirror p.is-editor-empty[style*='text-align: center']::before {
+/* 仅整篇为空时显示编辑器级占位（勿用 p.is-empty，否则病历空填写段也会冒出引导文案） */
+.simple-editor__content
+  .ProseMirror
+  p.is-editor-empty:first-child[style*='text-align: center']::before {
   float: none;
   display: block;
   width: 100%;
   text-align: center;
 }
 
-.simple-editor__content .ProseMirror p.is-empty::before,
 .simple-editor__content .ProseMirror p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
@@ -131,30 +142,31 @@
 }
 
 .simple-editor__content .ProseMirror h1 {
-  font-size: 1.75rem;
+  font-size: var(--simple-editor-title-size);
   font-weight: 700;
-  margin: 0.6em 0 0.35em;
-  line-height: 1.25;
+  margin: 0.35em 0 0.25em;
+  line-height: var(--simple-editor-line-height);
 }
 
 .simple-editor__content .ProseMirror h2 {
-  font-size: 2rem;
-  font-weight: 600;
-  margin: 0.25em 0 0.5em;
-  line-height: 1.3;
+  font-size: 14pt;
+  font-weight: 700;
+  margin: 0.3em 0 0.2em;
+  line-height: var(--simple-editor-line-height);
 }
 
 .simple-editor__content .ProseMirror h3 {
-  font-size: 1.15rem;
-  font-weight: 600;
-  margin: 0.6em 0 0.35em;
-  line-height: 1.35;
+  font-size: 12pt;
+  font-weight: 700;
+  margin: 0.3em 0 0.2em;
+  line-height: var(--simple-editor-line-height);
 }
 
 .simple-editor__content .ProseMirror p {
-  margin: 0.75em 0;
-  font-size: 1.05rem;
-  line-height: 1.5;
+  margin: 0.2em 0;
+  font-size: var(--simple-editor-body-size);
+  line-height: var(--simple-editor-line-height);
+  font-family: inherit;
 }
 
 .simple-editor__content .ProseMirror ul,
@@ -211,6 +223,50 @@
   max-width: 100%;
   height: auto;
   border-radius: 4px;
+  vertical-align: middle;
+}
+
+/*
+ * 页眉院徽：与医院名作为整行 flex 居中（贴近打印 PDF 的 Chunk 同行居中）。
+ * 勿依赖纯 text-align：img/NodeView 一旦脱离行内流，会出现「徽贴左、名居中」。
+ */
+.simple-editor__content .ProseMirror > p[data-name='hospitalTitle'] {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.35em;
+  /* 贴近客户 Word 院名约 22pt */
+  font-size: 22pt;
+  font-weight: 700;
+  text-align: center;
+  margin: 0.2em 0 0.1em;
+  line-height: var(--simple-editor-line-height);
+}
+
+.simple-editor__content .ProseMirror > p[data-name='hospitalTitle'] img,
+.simple-editor__content .ProseMirror img[title='hospitalLogo'] {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 2.2em;
+  height: 2.2em;
+  margin: 0;
+  border-radius: 0;
+  float: none !important;
+  position: static !important;
+  max-width: none;
+  object-fit: contain;
+  vertical-align: middle;
+}
+
+.simple-editor__content .ProseMirror > p[data-name='hospitalTitle'] .emr-de,
+.simple-editor__content .ProseMirror > p[data-name='hospitalTitle'] .emr-de--text {
+  display: inline-flex !important;
+  flex: 0 1 auto;
+  align-items: center;
+  max-width: none;
+  vertical-align: middle;
 }
 
 .simple-editor__content .ProseMirror mark {
@@ -365,12 +421,12 @@
   color: #9ca3af;
 }
 
-/* 固定版式字：填写文书时无背景；制作模板时见 .simple-editor--surface-template */
+/* 固定版式字：填写文书时无背景；制作模板时仅细线下划，贴近正文 */
 .simple-editor__content .ProseMirror .emr-fixed-text {
   display: inline;
-  padding: 0 2px;
-  margin: 0 1px;
-  border-radius: 3px;
+  padding: 0 1px;
+  margin: 0;
+  border-radius: 0;
   font: inherit;
   vertical-align: baseline;
   cursor: default;
@@ -380,9 +436,17 @@
   .simple-editor__content
   .ProseMirror
   .emr-fixed-text.emr-fixed-text--template-bg {
-  background: #f3f4f6;
-  color: #4b5563;
-  font-weight: 500;
+  background: transparent;
+  color: inherit;
+  font-weight: inherit;
+  box-shadow: inset 0 -1px 0 0 rgba(156, 163, 175, 0.45);
+}
+
+.simple-editor--surface-template
+  .simple-editor__content
+  .ProseMirror
+  .emr-fixed-text.emr-fixed-text--template-bg:hover {
+  box-shadow: inset 0 -1.5px 0 0 #6b7280;
 }
 
 .simple-editor__content .emr-page-break {
@@ -505,6 +569,20 @@
     font-weight: inherit !important;
   }
 
+  .simple-editor--surface-document .simple-editor__content .emr-de--bound.emr-de--text,
+  .simple-editor--surface-document .simple-editor__content .emr-de--bound.emr-de--multiline,
+  .simple-editor--surface-document .simple-editor__content .emr-metadata-chip {
+    background: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+  }
+
+  .simple-editor__content .ProseMirror > p[data-name='printFooter'] {
+    border-top-color: #9ca3af !important;
+    color: #374151 !important;
+  }
+
   .simple-editor__content .emr-page-break {
     break-after: page;
     page-break-after: always;
@@ -574,6 +652,554 @@
 .simple-editor__content .ProseMirror td > p,
 .simple-editor__content .ProseMirror th > p {
   margin: 0;
+}
+
+/* 文书标题：与 PDF titleSizePt(16) 对齐；出院诊断等若需更小可再加命名覆盖 */
+.simple-editor__content .ProseMirror > p[data-name='formTitle'] {
+  font-size: 16pt;
+  font-weight: 700;
+  text-align: center;
+  margin: 0.1em 0 0.35em;
+  line-height: var(--simple-editor-line-height);
+}
+
+.simple-editor__content .ProseMirror table[data-name='dischargeDiagnosisForm'],
+.simple-editor__content .ProseMirror table[data-name='consultRequestForm'] {
+  width: 100%;
+  margin: 0.25em 0 0.2em;
+  table-layout: fixed;
+  overflow: hidden;
+}
+
+/* 首列统一约 5.2em：容纳「工作单位」「出院诊断」，竖排标签也用同宽（勿再 max-width:2.4em 压窄整列） */
+.simple-editor__content
+  .ProseMirror
+  table[data-name='dischargeDiagnosisForm']
+  > tbody
+  > tr:first-child
+  > td:first-child,
+.simple-editor__content
+  .ProseMirror
+  table[data-name='dischargeDiagnosisForm']
+  > tr:first-child
+  > td:first-child,
+.simple-editor__content
+  .ProseMirror
+  table[data-name='consultRequestForm']
+  > tbody
+  > tr:first-child
+  > td:first-child,
+.simple-editor__content
+  .ProseMirror
+  table[data-name='consultRequestForm']
+  > tr:first-child
+  > td:first-child {
+  width: 5.2em;
+}
+
+.simple-editor__content .ProseMirror table[data-name='dischargeDiagnosisForm'] td,
+.simple-editor__content .ProseMirror table[data-name='consultRequestForm'] td {
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  box-sizing: border-box;
+}
+
+.simple-editor__content .ProseMirror table[data-name='dischargeDiagnosisForm'] .emr-de,
+.simple-editor__content .ProseMirror table[data-name='dischargeDiagnosisForm'] .emr-de--text,
+.simple-editor__content .ProseMirror table[data-name='dischargeDiagnosisForm'] .emr-de-text-bracket,
+.simple-editor__content .ProseMirror table[data-name='consultRequestForm'] .emr-de,
+.simple-editor__content .ProseMirror table[data-name='consultRequestForm'] .emr-de--text,
+.simple-editor__content .ProseMirror table[data-name='consultRequestForm'] .emr-de-text-bracket {
+  max-width: 100%;
+  white-space: normal;
+  box-sizing: border-box;
+}
+
+.simple-editor__content
+  .ProseMirror
+  table[data-name='dischargeDiagnosisForm']
+  .emr-de__control--textarea,
+.simple-editor__content
+  .ProseMirror
+  table[data-name='consultRequestForm']
+  .emr-de__control--textarea {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  resize: none;
+  overflow: hidden;
+  box-sizing: border-box;
+  field-sizing: content;
+}
+
+/* 首行：标签与值均居中（贴近 Word/打印） */
+.simple-editor__content
+  .ProseMirror
+  table[data-name='dischargeDiagnosisForm']
+  > tbody
+  > tr:first-child
+  > td,
+.simple-editor__content
+  .ProseMirror
+  table[data-name='dischargeDiagnosisForm']
+  > tr:first-child
+  > td,
+.simple-editor__content
+  .ProseMirror
+  table[data-name='consultRequestForm']
+  > tbody
+  > tr:first-child
+  > td,
+.simple-editor__content .ProseMirror table[data-name='consultRequestForm'] > tr:first-child > td {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.simple-editor__content
+  .ProseMirror
+  table[data-name='dischargeDiagnosisForm']
+  > tbody
+  > tr:first-child
+  > td
+  > p,
+.simple-editor__content
+  .ProseMirror
+  table[data-name='dischargeDiagnosisForm']
+  > tr:first-child
+  > td
+  > p,
+.simple-editor__content
+  .ProseMirror
+  table[data-name='consultRequestForm']
+  > tbody
+  > tr:first-child
+  > td
+  > p,
+.simple-editor__content
+  .ProseMirror
+  table[data-name='consultRequestForm']
+  > tr:first-child
+  > td
+  > p {
+  text-align: center;
+  margin: 0;
+}
+
+.simple-editor__content .ProseMirror td[data-name='formValue'] {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.simple-editor__content .ProseMirror td[data-name='formValue'] > p {
+  text-align: center;
+  margin: 0;
+}
+
+.simple-editor__content .ProseMirror td[data-name='verticalLabel'] {
+  width: 5.2em;
+  min-width: 5.2em;
+  text-align: center;
+  vertical-align: middle;
+  padding: 4px 2px;
+  font-weight: 600;
+  letter-spacing: 0;
+  height: 42mm;
+}
+
+.simple-editor__content .ProseMirror td[data-name='verticalLabel'] > p {
+  line-height: 1.15;
+  margin: 0;
+  min-height: 0;
+}
+
+.simple-editor__content .ProseMirror td[data-name='formLabel'] {
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
+  font-weight: 600;
+  /* 覆盖「申请会诊目的」等 6 字标签；过窄会在 fixed 表格里被裁切 */
+  width: 6.5em;
+  min-width: 6.5em;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+/* 文书态标题：医院名接近打印（加粗黑字） */
+.simple-editor--surface-document
+  .simple-editor__content
+  .ProseMirror
+  > p[data-name='hospitalTitle'] {
+  color: #111827;
+}
+
+.simple-editor--surface-document
+  .simple-editor__content
+  .ProseMirror
+  > p[data-name='hospitalTitle']
+  .emr-de__readonly-val {
+  font-weight: 700;
+  font-size: inherit;
+  color: inherit;
+}
+
+.simple-editor__content .ProseMirror td[data-name='midBody'] {
+  min-height: 12mm;
+  height: auto;
+  vertical-align: top;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.simple-editor__content .ProseMirror td[data-name='tallBody'] {
+  min-height: 42mm;
+  height: auto;
+  vertical-align: top;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.simple-editor__content .ProseMirror td[data-name='midBody'] > p,
+.simple-editor__content .ProseMirror td[data-name='tallBody'] > p {
+  min-height: 0;
+  line-height: var(--simple-editor-line-height);
+  max-width: 100%;
+}
+
+.simple-editor__content .ProseMirror td[data-name='midBody'] .emr-de--multiline,
+.simple-editor__content .ProseMirror td[data-name='tallBody'] .emr-de--multiline {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+}
+
+.simple-editor__content .ProseMirror td[data-name='signBlock'] {
+  vertical-align: middle;
+  padding: 6px 10px;
+  min-height: 16mm;
+}
+
+/* 患者入院安全告知书等：标题/条款行距统一为 PrintConfig 1.5 */
+.simple-editor__content .ProseMirror > p[data-name='formTitle'] {
+  font-size: 14pt;
+  font-weight: 700;
+  text-align: center;
+  margin: 0.15em 0 0.35em;
+  line-height: var(--simple-editor-line-height);
+}
+
+.simple-editor__content .ProseMirror > p[data-name='noticeIntro'] {
+  text-align: justify;
+  text-indent: 2em;
+  margin: 0.35em 0 0.3em;
+  line-height: var(--simple-editor-line-height);
+}
+
+.simple-editor__content .ProseMirror > p[data-name='noticeItem'] {
+  text-align: justify;
+  text-indent: 0;
+  margin: 0.15em 0;
+  line-height: var(--simple-editor-line-height);
+}
+
+.simple-editor__content .ProseMirror > p[data-name='noticeConfirm'] {
+  text-align: justify;
+  text-indent: 2em;
+  margin: 0.35em 0 0.5em;
+  line-height: var(--simple-editor-line-height);
+}
+
+.simple-editor__content .ProseMirror table[data-name='admissionSafetySign'] {
+  width: 100%;
+  border: none;
+  margin: 0.4em 0 0.2em;
+  table-layout: fixed;
+}
+
+.simple-editor__content .ProseMirror table[data-name='admissionSafetySign'] td {
+  border: none !important;
+  padding: 4px 0;
+  vertical-align: baseline;
+  overflow: visible;
+}
+
+.simple-editor__content
+  .ProseMirror
+  table[data-name='admissionSafetySign']
+  td[data-name='noticeSignLeft'] {
+  width: 62%;
+  text-align: left;
+}
+
+.simple-editor__content
+  .ProseMirror
+  table[data-name='admissionSafetySign']
+  td[data-name='noticeSignRight'] {
+  width: 38%;
+  text-align: right;
+}
+
+.simple-editor__content .ProseMirror table[data-name='admissionSafetySign'] td > p {
+  margin: 0;
+}
+
+.simple-editor__content .ProseMirror hr {
+  margin: 0.55em 0;
+}
+
+/* 自动出院/转院风险告知书：患者信息行、章节标题（行距对齐 PrintConfig 1.5） */
+.simple-editor__content .ProseMirror > p[data-name='riskPatientInfo'] {
+  margin: 0.35em 0;
+  line-height: var(--simple-editor-line-height);
+  text-align: left;
+}
+
+.simple-editor__content .ProseMirror > p[data-name='riskSectionTitle'] {
+  margin: 0.45em 0 0.3em;
+  font-weight: 700;
+  line-height: var(--simple-editor-line-height);
+}
+
+.simple-editor__content .ProseMirror > p[data-name='riskGuardianSign'] {
+  margin: 0.55em 0 0.35em;
+  line-height: var(--simple-editor-line-height);
+}
+
+.simple-editor__content .ProseMirror > p[data-name='consultUrgencyLine'] {
+  margin: 0.15em 0 0.35em;
+  line-height: var(--simple-editor-line-height);
+  text-align: right;
+}
+
+/* —— 门诊病历（OP_RECORD_STD）命名段落 / 表格 —— */
+
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] {
+  width: 100%;
+  margin: 0.15em 0 0.35em;
+  table-layout: fixed;
+  border: none !important;
+}
+
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] td {
+  padding: 2px 4px;
+  vertical-align: middle;
+  /* 覆盖通用 td 实线框，贴近 Word 无框页眉 */
+  border: none !important;
+}
+
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] td > p {
+  margin: 0;
+  line-height: var(--simple-editor-line-height);
+  text-align: left;
+}
+
+.simple-editor__content .ProseMirror table[data-name='signBlock'] {
+  width: 100%;
+  margin: 0.55em 0 0.25em;
+  table-layout: fixed;
+  border: none;
+}
+
+.simple-editor__content .ProseMirror table[data-name='signBlock'] td {
+  border: none !important;
+  padding: 2px 6px;
+  vertical-align: top;
+}
+
+.simple-editor__content .ProseMirror table[data-name='signBlock'] td[data-name='signLeft'],
+.simple-editor__content .ProseMirror table[data-name='signBlock'] td[data-name='signSpacer'] {
+  width: 52%;
+}
+
+.simple-editor__content .ProseMirror table[data-name='signBlock'] td[data-name='signRight'] {
+  width: 48%;
+  text-align: right;
+}
+
+.simple-editor__content .ProseMirror table[data-name='signBlock'] td > p {
+  margin: 0.15em 0;
+  line-height: var(--simple-editor-line-height);
+}
+
+/* 入院记录续页头 / 核实签名：无框 */
+.simple-editor__content .ProseMirror table[data-name='pageHeader'],
+.simple-editor__content .ProseMirror table[data-name='verifyBlock'] {
+  width: 100%;
+  margin: 0.15em 0 0.25em;
+  table-layout: fixed;
+  border: none !important;
+}
+
+.simple-editor__content .ProseMirror table[data-name='pageHeader'] td,
+.simple-editor__content .ProseMirror table[data-name='verifyBlock'] td {
+  border: none !important;
+  padding: 2px 4px;
+  vertical-align: middle;
+}
+
+.simple-editor__content .ProseMirror table[data-name='pageHeader'] td[data-name='pageHeaderRight'] {
+  text-align: right;
+}
+
+.simple-editor__content
+  .ProseMirror
+  table[data-name='pageHeader']
+  td[data-name='pageHeaderRight']
+  > p {
+  text-align: right;
+}
+
+.simple-editor__content .ProseMirror table[data-name='pageHeader'] td > p,
+.simple-editor__content .ProseMirror table[data-name='verifyBlock'] td > p {
+  margin: 0;
+  line-height: var(--simple-editor-line-height);
+}
+
+/* 心浊音界表：保留网格（与截图一致） */
+.simple-editor__content .ProseMirror table[data-name='relativeCardiacBorder'] {
+  width: auto;
+  max-width: 100%;
+  margin: 0.35em auto;
+  table-layout: fixed;
+}
+
+.simple-editor__content .ProseMirror table[data-name='relativeCardiacBorder'] td {
+  border: 1px solid #111827 !important;
+  padding: 4px 10px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.simple-editor__content .ProseMirror > p[data-name='historyTitle'],
+.simple-editor__content .ProseMirror > p[data-name='peTitle'] {
+  margin: 0.55em 0 0.3em;
+  font-weight: 700;
+  text-align: center;
+  font-size: var(--simple-editor-body-size);
+  line-height: var(--simple-editor-line-height);
+}
+
+.simple-editor__content .ProseMirror > p[data-name='diagnosisTitle'] {
+  margin: 0.55em 0 0.3em;
+  font-weight: 700;
+  text-align: left;
+  font-size: var(--simple-editor-body-size);
+  line-height: var(--simple-editor-line-height);
+}
+
+.simple-editor__content .ProseMirror > p[data-name='pageHeaderHint'] {
+  margin: 0.2em 0 0.45em;
+  font-weight: 700;
+  text-align: center;
+  font-size: var(--simple-editor-body-size);
+  line-height: var(--simple-editor-line-height);
+}
+
+.simple-editor__content .ProseMirror > p[data-name='marriageChildHistory'],
+.simple-editor__content .ProseMirror > p[data-name='menstrualHistory'],
+.simple-editor__content .ProseMirror > p[data-name='tcmFourExams'],
+.simple-editor__content .ProseMirror > p[data-name='vitals'],
+.simple-editor__content .ProseMirror > p[data-name='generalCondition'],
+.simple-editor__content .ProseMirror > p[data-name='skinMucosa'],
+.simple-editor__content .ProseMirror > p[data-name='lymphNodes'],
+.simple-editor__content .ProseMirror > p[data-name='headSensory'],
+.simple-editor__content .ProseMirror > p[data-name='neckExam'],
+.simple-editor__content .ProseMirror > p[data-name='chestExam'],
+.simple-editor__content .ProseMirror > p[data-name='heartExam'],
+.simple-editor__content .ProseMirror > p[data-name='heartBorderTitle'],
+.simple-editor__content .ProseMirror > p[data-name='midclavicularNote'],
+.simple-editor__content .ProseMirror > p[data-name='peripheralVessel'],
+.simple-editor__content .ProseMirror > p[data-name='abdomenExam'],
+.simple-editor__content .ProseMirror > p[data-name='genitaliaAnus'],
+.simple-editor__content .ProseMirror > p[data-name='spineExam'],
+.simple-editor__content .ProseMirror > p[data-name='limbsJoints'],
+.simple-editor__content .ProseMirror > p[data-name='nervousSystem'],
+.simple-editor__content .ProseMirror > p[data-name='tcmPreliminaryDiagnosis'],
+.simple-editor__content .ProseMirror > p[data-name='westernPreliminaryDiagnosis'],
+.simple-editor__content .ProseMirror > p[data-name='admissionDiagnosisStructured'] {
+  margin: 0.35em 0;
+  font-size: var(--simple-editor-body-size);
+  line-height: var(--simple-editor-line-height);
+  min-height: calc(var(--simple-editor-body-size) * var(--simple-editor-line-height));
+}
+
+.simple-editor__content .ProseMirror > p[data-name='chiefComplaint'],
+.simple-editor__content .ProseMirror > p[data-name='presentIllness'],
+.simple-editor__content .ProseMirror > p[data-name='pastHistory'],
+.simple-editor__content .ProseMirror > p[data-name='allergyHistory'],
+.simple-editor__content .ProseMirror > p[data-name='familyHistory'],
+.simple-editor__content .ProseMirror > p[data-name='personalHistory'],
+.simple-editor__content .ProseMirror > p[data-name='physicalExam'],
+.simple-editor__content .ProseMirror > p[data-name='auxiliaryExam'],
+.simple-editor__content .ProseMirror > p[data-name='impressionDiagnosis'],
+.simple-editor__content .ProseMirror > p[data-name='westernDiagnosis'],
+.simple-editor__content .ProseMirror > p[data-name='diagnosis'],
+.simple-editor__content .ProseMirror > p[data-name='disposal'] {
+  margin: 0.35em 0;
+  font-size: var(--simple-editor-body-size);
+  line-height: var(--simple-editor-line-height);
+  min-height: calc(var(--simple-editor-body-size) * var(--simple-editor-line-height));
+}
+
+.simple-editor__content .ProseMirror > p[data-name='printFooter'] {
+  margin: 1.1em 0 0.2em;
+  padding-top: 0.55em;
+  border-top: 1px dashed #9ca3af;
+  text-align: center;
+  font-size: 10.5pt;
+  line-height: var(--simple-editor-line-height);
+  color: #4b5563;
+  letter-spacing: 0.02em;
+}
+
+/* 文书态 / 模板态：可填数据元保留轻量视觉锚点（打印/PDF 仍走 OpenPDF，不受此影响） */
+.simple-editor--surface-document
+  .simple-editor__content
+  .emr-de--bound.emr-de--text:not(.emr-de--readonly),
+.simple-editor--surface-template
+  .simple-editor__content
+  .emr-de--bound.emr-de--text:not(.emr-de--readonly) {
+  padding: 0 1px;
+  border-radius: 2px;
+  box-shadow: inset 0 -1.5px 0 0 #93c5fd;
+  background: linear-gradient(180deg, transparent 70%, rgba(219, 234, 254, 0.55) 70%);
+}
+
+.simple-editor--surface-document
+  .simple-editor__content
+  .emr-de--bound.emr-de--readonly.emr-de--text,
+.simple-editor--surface-template
+  .simple-editor__content
+  .emr-de--bound.emr-de--readonly.emr-de--text {
+  padding: 0 1px;
+  border-radius: 2px;
+  box-shadow: inset 0 -1px 0 0 #c7d2fe;
+  background: linear-gradient(180deg, transparent 72%, rgba(224, 231, 255, 0.45) 72%);
+}
+
+.simple-editor--surface-document
+  .simple-editor__content
+  .emr-de--bound.emr-de--multiline:not(.emr-de--readonly),
+.simple-editor--surface-template
+  .simple-editor__content
+  .emr-de--bound.emr-de--multiline:not(.emr-de--readonly) {
+  display: block;
+  width: 100%;
+  margin: 0.15em 0 0;
+  padding: 4px 6px;
+  border: 1px dashed #93c5fd;
+  border-radius: 4px;
+  background: rgba(239, 246, 255, 0.55);
+  box-sizing: border-box;
+}
+
+.simple-editor--surface-document .simple-editor__content .emr-metadata-chip,
+.simple-editor--surface-template .simple-editor__content .emr-metadata-chip {
+  padding: 0 1px;
+  border-radius: 2px;
+  box-shadow: inset 0 -1.5px 0 0 #a5b4fc;
+  background: linear-gradient(180deg, transparent 70%, rgba(224, 231, 255, 0.5) 70%);
 }
 
 /* 选中单元格高亮 */

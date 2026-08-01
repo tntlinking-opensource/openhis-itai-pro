@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
+
+import { ElSwitch } from 'element-plus';
 
 import { pageProductsForDepartmentRequisitionApi } from '#/api/inventory/department/requisition';
 import { pageProductsForDeptIssueApi } from '#/api/inventory/department/dept-issue';
@@ -16,11 +18,17 @@ import { pageProductsForGainLossApi } from '#/api/inventory/warehouse/gain-loss'
 import { pageProductsForTransferOutApi } from '#/api/inventory/warehouse/transfer-out';
 import { pageProductsForInboundReceiptApi } from '#/api/inventory/warehouse/inbound-receipt';
 import { pageProductsForWarehouseStocktakeApi } from '#/api/inventory/warehouse/stocktake';
+import { pageProductsForDeptPurchaseRequestApi } from '#/api/inventory/department/purchase-request';
 import { pageProductsForPurchaseApi } from '#/api/inventory/warehouse/purchase-order';
 import { pageProductsForReturnToSupplierApi } from '#/api/inventory/warehouse/return-to-supplier';
 import { pageProductsForReturnToWarehouseApi } from '#/api/inventory/pharmacy/return-to-warehouse';
 import { pageProductsForReturnStockInApi } from '#/api/inventory/warehouse/return-stock-in';
 import { pageProductsForStockOutApi } from '#/api/inventory/warehouse/stock-out';
+import {
+  mapInventoryOpeningProductToPickRow,
+  pageProductsForInventoryOpeningApi,
+  type InventoryOpeningProductRowDto,
+} from '#/api/basic/inventory-opening';
 import { pageGainLossMedicationApi } from '#/api/warehouse/gain-loss';
 import { pagePurchaseOrderMedicationApi } from '#/api/warehouse/purchase-request';
 import SelectTable from '#/components/select-table.vue';
@@ -44,6 +52,58 @@ type PurchaseOrderMedicationPickRow = Record<string, unknown> & {
   productName?: string;
 };
 
+type ProductPickListSource =
+  | 'dept-gain-loss'
+  | 'dept-issue'
+  | 'dept-return'
+  | 'dept-stocktake'
+  | 'dept-transfer-out'
+  | 'department-purchase-request'
+  | 'department-requisition'
+  | 'gain-loss'
+  | 'inbound-receipt'
+  | 'inventory-opening'
+  | 'inventory-products'
+  | 'pharmacy-gain-loss'
+  | 'pharmacy-requisition'
+  | 'pharmacy-stock-in'
+  | 'pharmacy-stocktake'
+  | 'pharmacy-transfer-out'
+  | 'purchase-order'
+  | 'purchase-request'
+  | 'return-stock-in'
+  | 'return-to-supplier'
+  | 'return-to-warehouse'
+  | 'stock-out'
+  | 'warehouse-gain-loss'
+  | 'warehouse-stocktake'
+  | 'warehouse-transfer-out';
+
+/** 后端 PageProducts 已支持 positiveQuantityOnly 的选品来源 */
+const POSITIVE_QTY_SUPPORTED_SOURCES = new Set<ProductPickListSource>([
+  'stock-out',
+  'warehouse-transfer-out',
+  'pharmacy-transfer-out',
+  'dept-transfer-out',
+  'warehouse-gain-loss',
+  'pharmacy-gain-loss',
+  'dept-gain-loss',
+  'warehouse-stocktake',
+  'pharmacy-stocktake',
+  'dept-stocktake',
+  'pharmacy-requisition',
+  'department-requisition',
+  'dept-issue',
+]);
+
+/** 出库/调出：默认仅查账面量>0 */
+const POSITIVE_QTY_DEFAULT_TRUE_SOURCES = new Set<ProductPickListSource>([
+  'stock-out',
+  'warehouse-transfer-out',
+  'pharmacy-transfer-out',
+  'dept-transfer-out',
+]);
+
 interface Props {
   modelValue?: null | PurchaseOrderMedicationPickRow;
   placeholder?: string;
@@ -52,30 +112,7 @@ interface Props {
   pageSize?: number;
   query?: () => Promise<Record<string, unknown>>;
   inputHeight?: number | string;
-  listSource?:
-    | 'dept-gain-loss'
-    | 'dept-issue'
-    | 'dept-return'
-    | 'dept-stocktake'
-    | 'dept-transfer-out'
-    | 'department-requisition'
-    | 'gain-loss'
-    | 'inbound-receipt'
-    | 'inventory-products'
-    | 'pharmacy-gain-loss'
-    | 'pharmacy-requisition'
-    | 'pharmacy-stock-in'
-    | 'pharmacy-stocktake'
-    | 'pharmacy-transfer-out'
-    | 'purchase-order'
-    | 'purchase-request'
-    | 'return-stock-in'
-    | 'return-to-supplier'
-    | 'return-to-warehouse'
-    | 'stock-out'
-    | 'warehouse-gain-loss'
-    | 'warehouse-stocktake'
-    | 'warehouse-transfer-out';
+  listSource?: ProductPickListSource;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -94,14 +131,77 @@ const emit = defineEmits<{
   'update:modelValue': [value: PurchaseOrderMedicationPickRow | undefined];
 }>();
 
+const selectTableRef = ref<{
+  reload?: (options?: { resetPage?: boolean }) => Promise<void>;
+} | null>(null);
+
+/** 用户可切换：是否仅查账面量>0（默认随单据类型） */
+const positiveQuantityOnly = ref(false);
+
+const showPositiveQuantityFilter = computed(() =>
+  POSITIVE_QTY_SUPPORTED_SOURCES.has(props.listSource ?? 'purchase-request'),
+);
+
+/** 按选品来源重置「仅库存>0」默认值 */
+function resetPositiveQuantityOnlyDefault(listSource: ProductPickListSource) {
+  positiveQuantityOnly.value = POSITIVE_QTY_DEFAULT_TRUE_SOURCES.has(listSource);
+}
+
+watch(
+  () => props.listSource,
+  (listSource) => {
+    resetPositiveQuantityOnlyDefault(listSource ?? 'purchase-request');
+  },
+  { immediate: true },
+);
+
+/** 勾选变更后刷新下拉列表 */
+function handlePositiveQuantityOnlyChange() {
+  void selectTableRef.value?.reload?.({ resetPage: true });
+}
+
+/** 按列宽合计下拉面板宽度，避免右侧留白 */
+function sumPickColumnWidths(cols: ReadonlyArray<{ width?: number | string }>): number {
+  let sum = 0;
+  for (const col of cols) {
+    const w = typeof col.width === 'number' ? col.width : Number(col.width);
+    if (Number.isFinite(w) && w > 0) {
+      sum += w;
+    }
+  }
+  return sum;
+}
+
+/** 解析本次请求应传的 positiveQuantityOnly（query 显式传入优先） */
+function resolvePositiveQuantityOnly(q: Record<string, unknown>): boolean | undefined {
+  if (!showPositiveQuantityFilter.value) {
+    return undefined;
+  }
+  if (typeof q.positiveQuantityOnly === 'boolean') {
+    return q.positiveQuantityOnly;
+  }
+  return positiveQuantityOnly.value;
+}
+
 const tableColumns = computed(() => {
-  if (props.listSource === 'inbound-receipt' || props.listSource === 'purchase-order') {
+  if (
+    props.listSource === 'inbound-receipt' ||
+    props.listSource === 'purchase-order' ||
+    props.listSource === 'department-purchase-request' ||
+    props.listSource === 'inventory-opening'
+  ) {
     return [...INBOUND_RECEIPT_PRODUCT_PICK_TABLE_COLUMNS];
   }
   if (props.listSource === 'stock-out') {
     return [...STOCK_OUT_PRODUCT_PICK_TABLE_COLUMNS];
   }
   return [...INVENTORY_PRODUCT_PICK_TABLE_COLUMNS];
+});
+
+/** 下拉宽度与列宽合计对齐（含 p-2 左右内边距） */
+const panelWidth = computed(() => {
+  const sum = sumPickColumnWidths(tableColumns.value);
+  return Math.max(sum + 32, 640);
 });
 
 function mapInboundReceiptPickListResponse(data: unknown) {
@@ -155,6 +255,23 @@ async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pa
       : mapInventoryPickListResponse(res.data);
   }
 
+  if (props.listSource === 'department-purchase-request') {
+    const purposeLocationId = resolvePurposeLocationId(q);
+    const productTableName = (q.productTableName as string | undefined)?.trim();
+    if (purposeLocationId === undefined || !productTableName) {
+      return { content: [], totalElements: 0 };
+    }
+    const res = await pageProductsForDeptPurchaseRequestApi({
+      purposeLocationId,
+      productTableName,
+      keyword: params.keyword?.trim() || undefined,
+      pageNo: params.pageNo,
+      pageSize: params.pageSize,
+      activeFlag: true,
+    });
+    return mapInboundReceiptPickListResponse(res.data);
+  }
+
   if (props.listSource === 'inbound-receipt') {
     const productTableName = (q.productTableName as string | undefined)?.trim();
     if (!productTableName) {
@@ -177,6 +294,29 @@ async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pa
     return mapInboundReceiptPickListResponse(res.data);
   }
 
+  if (props.listSource === 'inventory-opening') {
+    const productTableName = (q.productTableName as string | undefined)?.trim();
+    const locationId = resolvePurposeLocationId(q);
+    if (locationId === undefined || !productTableName) {
+      return { content: [], totalElements: 0 };
+    }
+    const res = await pageProductsForInventoryOpeningApi({
+      locationId,
+      productTableName,
+      keyword: params.keyword?.trim() || undefined,
+      pageNo: params.pageNo,
+      pageSize: params.pageSize,
+    });
+    const { content: records, totalCount } =
+      parsePagedRowsFromApiData<InventoryOpeningProductRowDto>(res.data);
+    return {
+      content: records.map((r) =>
+        mapInboundReceiptProductPickListRow(mapInventoryOpeningProductToPickRow(r)),
+      ),
+      totalElements: totalCount,
+    };
+  }
+
   if (props.listSource === 'stock-out') {
     const productTableName = (q.productTableName as string | undefined)?.trim();
     const sourceLocationId = resolveSourceLocationId(q);
@@ -190,6 +330,7 @@ async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pa
       pageNo: params.pageNo,
       pageSize: params.pageSize,
       activeFlag: true,
+      positiveQuantityOnly: resolvePositiveQuantityOnly(q),
     });
     return mapInventoryPickListResponse(res.data);
   }
@@ -270,6 +411,7 @@ async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pa
       keyword: params.keyword?.trim() || undefined,
       pageNo: params.pageNo,
       pageSize: params.pageSize,
+      positiveQuantityOnly: resolvePositiveQuantityOnly(q),
     };
     const res =
       props.listSource === 'pharmacy-requisition'
@@ -294,6 +436,7 @@ async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pa
       keyword: params.keyword?.trim() || undefined,
       pageNo: params.pageNo,
       pageSize: params.pageSize,
+      positiveQuantityOnly: resolvePositiveQuantityOnly(q),
     };
     const res =
       props.listSource === 'pharmacy-transfer-out'
@@ -316,6 +459,7 @@ async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pa
       keyword: params.keyword?.trim() || undefined,
       pageNo: params.pageNo,
       pageSize: params.pageSize,
+      positiveQuantityOnly: resolvePositiveQuantityOnly(q),
     });
     return mapInventoryPickListResponse(res.data);
   }
@@ -336,6 +480,7 @@ async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pa
       keyword: params.keyword?.trim() || undefined,
       pageNo: params.pageNo,
       pageSize: params.pageSize,
+      positiveQuantityOnly: resolvePositiveQuantityOnly(q),
     };
     const res =
       props.listSource === 'pharmacy-gain-loss'
@@ -356,6 +501,7 @@ async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pa
     if (purposeLocationId === undefined || !productTableName) {
       return { content: [], totalElements: 0 };
     }
+    const positiveQuantityOnlyFilter = resolvePositiveQuantityOnly(q);
     const res =
       props.listSource === 'pharmacy-stocktake'
         ? await pageProductsForPharmacyStocktakeApi({
@@ -364,6 +510,7 @@ async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pa
             keyword: params.keyword?.trim() || undefined,
             pageNo: params.pageNo,
             pageSize: params.pageSize,
+            positiveQuantityOnly: positiveQuantityOnlyFilter,
           })
         : props.listSource === 'dept-stocktake'
           ? await pageProductsForDeptStocktakeApi({
@@ -372,6 +519,7 @@ async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pa
               keyword: params.keyword?.trim() || undefined,
               pageNo: params.pageNo,
               pageSize: params.pageSize,
+              positiveQuantityOnly: positiveQuantityOnlyFilter,
             })
           : await pageProductsForWarehouseStocktakeApi({
               purposeLocationId,
@@ -379,6 +527,7 @@ async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pa
               keyword: params.keyword?.trim() || undefined,
               pageNo: params.pageNo,
               pageSize: params.pageSize,
+              positiveQuantityOnly: positiveQuantityOnlyFilter,
             });
     return mapInventoryPickListResponse(res.data);
   }
@@ -441,6 +590,7 @@ function selectedProductName(): string {
 
 <template>
   <SelectTable
+    ref="selectTableRef"
     :model-value="
       modelValue?.id === undefined || modelValue?.id === null || modelValue.id === ''
         ? undefined
@@ -457,8 +607,42 @@ function selectedProductName(): string {
     :selected-label="selectedProductName()"
     :before-close="handleBeforeClose"
     :input-height="inputHeight"
-    :panel-width="1200"
+    :panel-width="panelWidth"
     @update:model-value="handleChange"
     @change="handleChange"
-  />
+  >
+    <template v-if="showPositiveQuantityFilter" #toolbar>
+      <div class="product-pick-qty-filter">
+        <span class="product-pick-qty-filter__label">只看库存大于0</span>
+        <ElSwitch
+          v-model="positiveQuantityOnly"
+          size="small"
+          @change="handlePositiveQuantityOnlyChange"
+        />
+      </div>
+    </template>
+  </SelectTable>
 </template>
+
+<style scoped>
+.product-pick-qty-filter {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 4px 8px;
+  border: 1px solid #d7e4f2;
+  border-radius: 4px;
+  background: #f6fbff;
+  cursor: default;
+  user-select: none;
+}
+
+.product-pick-qty-filter__label {
+  font-size: 12px;
+  line-height: 1;
+  color: var(--el-text-color-regular);
+}
+</style>

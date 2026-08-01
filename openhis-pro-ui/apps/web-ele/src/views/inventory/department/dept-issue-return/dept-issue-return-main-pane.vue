@@ -2,7 +2,7 @@
   科室退领单右侧主区：关联原领用单 originalBusNo + 明细。
 -->
 <script setup lang="ts">
-import type { TableColumn } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
 import type { VxeGridPropTypes } from '#/adapter/vxe-table';
 import type { FormInstance } from 'element-plus';
 import type {
@@ -25,6 +25,7 @@ import InvDocGridToolbar from '@inventory/components/inv-doc-grid-toolbar.vue';
 import InvDocTraceScanBridge from '@inventory/components/inv-doc-trace-scan-bridge.vue';
 import InvDocLinkPickerDialog from '@inventory/components/inv-doc-link-picker-dialog.vue';
 import InvMainShell from '@inventory/components/inv-main-shell.vue';
+import InvPrimaryBtn from '@inventory/components/inv-primary-btn.vue';
 import {
   ElAlert,
   ElButton,
@@ -57,11 +58,13 @@ import SectionTitle from '#/components/layouts/section-title.vue';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import {
   INV_DOC_UPSTREAM_HINT,
+  INV_DOC_UPSTREAM_WELCOME,
   hasNonEmptyBusNo,
   warnInventoryDocRestriction,
 } from '#/utils/inventory/inventory-doc-restrictions';
 import { withInvDocLinkPickerEnrichedColumns } from '#/utils/inventory/inv-doc-link-picker-display';
 import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
+import { formatInventoryLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
 import {
   applyHydratedInventoryDetailQtyToRow,
   applyInventoryRowQtyUnitList,
@@ -77,9 +80,13 @@ import {
   type InboundProductUnitBand,
 } from '#/utils/inventory/inbound-product-unit-bands';
 import {
-  requireAnySpecificInventoryLocationId,
-  resolveFirstRealLocationIdFromOptionItems,
+  INV_ALL_DEPT_PHARMACIES_LABEL,
+  INV_ALL_LOCATIONS_FILTER_ID,
+  isSpecificInventoryLocationId,
   resolveSpecificInventoryLocationId,
+  buildInventoryDocPractitionerSelectOptions,
+  coercePractitionerIdForSelect,
+  resolveDefaultPractitionerIdForSelect,
 } from '#/utils/inventory/inventory-workbench-list';
 import {
   buildInventoryLocationHeadFormRules,
@@ -93,6 +100,8 @@ import {
   stockOutStatusLabel,
   normalizeStockOutStatusSort,
 } from '#/utils/inventory/stock-out-doc-actions';
+import { buildInvDocumentTitle, printInvDocument } from '#/utils/print/print-inv-document';
+import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 
 defineOptions({ name: 'InventoryDepartmentDeptIssueReturnMainPane' });
 
@@ -101,6 +110,8 @@ interface ReturnPreviewRow {
   itemTable?: string;
   itemId?: number | string;
   productName: string;
+  spec: string;
+  manufacturer: string;
   itemQuantity?: number;
   unitCode: string;
   unitCodeDictText?: string;
@@ -108,38 +119,64 @@ interface ReturnPreviewRow {
   selectedBandKind?: string;
   unitList?: { label?: string; value: string; value_dictText?: string }[];
   __prevBandKind?: string;
+  price: number;
+  totalPrice: string;
   lotNumber: string;
+  expirationDate: string;
   traceNo: string;
+  remark: string;
 }
 
 interface Props {
   busNo?: string;
   isDraftOrder?: boolean;
   resetKey?: number;
+  showWelcomeEmpty?: boolean;
   deptPharmacyOptions?: ApiOptionItem[];
+  practitionerOptions?: ApiOptionItem[];
 }
 
 const props = withDefaults(defineProps<Props>(), {
   busNo: '',
   isDraftOrder: false,
   resetKey: 0,
+  showWelcomeEmpty: false,
   deptPharmacyOptions: () => [],
+  practitionerOptions: () => [],
 });
 
 const emit = defineEmits<{
+  createFromUpstream: [row: LinkableIssueListRowDto];
   documentRemoved: [];
   documentSaved: [{ busNo?: string }];
 }>();
 
 const userStore = useUserStore();
 
-const productPickGateLocationId = computed(() =>
-  resolveFirstRealLocationIdFromOptionItems(props.deptPharmacyOptions),
+const pinnedPractitionerOptions = ref<ApiOptionItem[]>([]);
+
+const effectivePractitionerOptions = computed(() =>
+  buildInventoryDocPractitionerSelectOptions(props.practitionerOptions, {
+    pinned: pinnedPractitionerOptions.value,
+    userInfo: userStore.userInfo as null | Record<string, unknown>,
+  }),
 );
+
+/** 详情经手人不在下拉时临时 pin，避免 ElSelect 只显示裸 id。 */
+function pinPractitionerOption(id: unknown, label?: string) {
+  const v = String(id ?? '').trim();
+  if (v === '') return;
+  const lbl = String(label ?? '').trim();
+  if (effectivePractitionerOptions.value.some((o) => o.value === v)) return;
+  if (lbl !== '' && lbl !== v) {
+    pinnedPractitionerOptions.value = [{ label: lbl, value: v }];
+  }
+}
 
 const headerBusNo = ref<string | undefined>(undefined);
 const originalBusNo = ref<string | undefined>(undefined);
 const purposeLocationId = ref<number | string | undefined>(undefined);
+const practitionerId = ref<number | string | undefined>(undefined);
 const headFormRef = ref<FormInstance>();
 
 const headFormModel = computed(() => ({
@@ -158,9 +195,75 @@ const saving = ref(false);
 
 const linkIssueVisible = ref(false);
 const linkIssueLoading = ref(false);
-const linkIssueQueryParams = ref({ pageNo: 1, pageSize: 20, keyword: '' });
+const linkIssueQueryParams = ref<{
+  keyword: string;
+  pageNo: number;
+  pageSize: number;
+  purposeLocationId: number | string;
+}>({
+  pageNo: 1,
+  pageSize: 20,
+  keyword: '',
+  purposeLocationId: INV_ALL_LOCATIONS_FILTER_ID,
+});
 const linkIssueTotal = ref(0);
 const linkIssueRecords = ref<LinkableIssueListRowDto[]>([]);
+
+/** 关联领用单弹窗：科室药房下拉（含「全部科室药房」） */
+const linkIssuePharmacyOptions = computed(() => {
+  const rows = (props.deptPharmacyOptions ?? [])
+    .filter((row) => isSpecificInventoryLocationId(row.value))
+    .map((row) => ({
+      label: String(row.label ?? row.value ?? ''),
+      value: row.value as number | string,
+    }));
+  return [{ label: INV_ALL_DEPT_PHARMACIES_LABEL, value: INV_ALL_LOCATIONS_FILTER_ID }, ...rows];
+});
+
+/** 弹窗筛库：具体药房原样传；否则传 '0'（全部）。 */
+function resolveLinkIssueLocationIdForApi(): number | string {
+  const id = resolveSpecificInventoryLocationId(linkIssueQueryParams.value.purposeLocationId);
+  if (id) return id;
+  return INV_ALL_LOCATIONS_FILTER_ID;
+}
+
+/** 归一弹窗药房筛选（空/数组 → 全部）。 */
+function normalizeLinkIssuePharmacyId(raw: unknown): number | string {
+  if (Array.isArray(raw)) {
+    const first = raw[0];
+    if (first === undefined || first === null) return INV_ALL_LOCATIONS_FILTER_ID;
+    return first as number | string;
+  }
+  if (raw === undefined || raw === null || raw === '') return INV_ALL_LOCATIONS_FILTER_ID;
+  return raw as number | string;
+}
+
+/** 弹窗药房下拉变更后立即重查。 */
+function handleLinkIssuePharmacyChange(value: unknown) {
+  linkIssueQueryParams.value.purposeLocationId = normalizeLinkIssuePharmacyId(value);
+  linkIssueQueryParams.value.pageNo = 1;
+  void fetchLinkableIssues();
+}
+
+const linkIssueFormItems = computed<FormItemConfig[]>(() => [
+  {
+    label: '科室药房',
+    prop: 'purposeLocationId',
+    type: 'select',
+    placeholder: INV_ALL_DEPT_PHARMACIES_LABEL,
+    filterable: true,
+    clearable: false,
+    multiple: false,
+    options: linkIssuePharmacyOptions.value,
+    onChange: handleLinkIssuePharmacyChange,
+  },
+  {
+    label: '关键字',
+    prop: 'keyword',
+    type: 'input',
+    placeholder: '领用单号/关键字',
+  },
+]);
 
 const linkIssueTableColumns = computed<TableColumn[]>(() =>
   withInvDocLinkPickerEnrichedColumns(
@@ -195,7 +298,11 @@ const documentEditable = computed(
 );
 const hasLinkedUpstream = computed(() => hasNonEmptyBusNo(originalBusNo.value));
 const linesGridEditable = computed(() => documentEditable.value && hasLinkedUpstream.value);
-const canEditOriginalBusNo = computed(() => documentEditable.value && isNewDraft.value);
+/** 单头「从领用单选择」：非草稿可先选后建；草稿可编辑时可更换关联 */
+const canEditOriginalBusNo = computed(() => !isNewDraft.value || documentEditable.value);
+const linkIssueButtonLabel = computed(() =>
+  hasLinkedUpstream.value && props.isDraftOrder ? '更换领用单' : '从领用单选择',
+);
 
 const headerStatusText = computed(() => {
   if (isNewDraft.value) return '编辑中';
@@ -203,8 +310,9 @@ const headerStatusText = computed(() => {
 });
 
 const docActionFlags = computed(() => {
+  const hasPersistedBusNo = Boolean(headerBusNo.value);
   const base = buildStockOutDocActionFlags({
-    hasPersistedBusNo: Boolean(headerBusNo.value),
+    hasPersistedBusNo,
     isDraft: isNewDraft.value,
     status: normalizeStockOutStatusSort(detailStatusEnum.value),
   });
@@ -213,19 +321,59 @@ const docActionFlags = computed(() => {
     ...base,
     saveDisabled: base.saveDisabled || saving.value || upstreamRequired,
     saveAndSubmitDisabled: base.saveAndSubmitDisabled || saving.value || upstreamRequired,
+    printDisabled: saving.value || !hasPersistedBusNo,
   };
 });
+
+/** 有效期展示：取日期部分。 */
+function formatReturnExpirationDisplay(raw: unknown): string {
+  const s = String(raw ?? '').trim();
+  if (s === '') return '';
+  if (s.includes(' ')) return s.split(' ')[0] ?? s;
+  if (s.includes('T')) return s.split('T')[0] ?? s;
+  return s;
+}
+
+/** 表格有效期 → 请求体 endTime（空格分隔，对齐后端 Flexible 反序列化）。 */
+function normalizeReturnLineDateTimeForApi(dateStr: string): string | undefined {
+  const raw = String(dateStr ?? '').trim();
+  if (!raw) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return `${raw} 00:00:00`;
+  }
+  if (raw.includes('T')) {
+    return raw.replace('T', ' ').slice(0, 19);
+  }
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(raw)) {
+    return raw.slice(0, 19);
+  }
+  return raw;
+}
+
+/** 编辑态：按数量 × 单价刷新金额。 */
+function recalcReturnLineTotal(row: ReturnPreviewRow) {
+  const qty = Number(row.itemQuantity);
+  const unit = Number(row.price);
+  row.totalPrice =
+    Number.isFinite(qty) && Number.isFinite(unit) ? formatInventoryLineTotal(qty, unit) : '';
+}
 
 function createEmptyRow(): ReturnPreviewRow {
   return {
     id: `new-${Date.now()}`,
     productName: '',
+    spec: '',
+    manufacturer: '',
     itemQuantity: undefined,
     unitCode: '',
     selectedBandKind: 'LEGACY',
     unitList: [{ value: 'LEGACY', label: '单位' }],
+    price: 0,
+    totalPrice: '',
     lotNumber: '',
+    expirationDate: '',
     traceNo: '',
+    remark: '',
   };
 }
 
@@ -235,53 +383,79 @@ function handleDeptIssueReturnUnitBandChanged(row: ReturnPreviewRow): void {
     setQty: (qty) => {
       row.itemQuantity = qty;
     },
+    onAfterChanged: () => recalcReturnLineTotal(row),
   });
 }
 
+/** 可退领用行 → 网格（规格/厂家/金额/效期/备注带入）。 */
 function mapLinkableLineToGrid(ln: LinkableIssueReturnLineDto, idx: number): ReturnPreviewRow {
   const name = String(ln.productName ?? '').trim();
   const unitCode = String(ln.unitCode ?? '');
   const unitLabel = String(ln.unitCodeDictText ?? '').trim() || unitCode;
+  const totalRaw = ln.totalPrice;
   const row: ReturnPreviewRow = {
     id: `ln-${idx}`,
     itemTable: ln.itemTable,
     itemId: ln.itemId,
     productName: name,
+    spec: String(ln.specification ?? '').trim(),
+    manufacturer: String(ln.manufacturer ?? '').trim(),
     itemQuantity: ln.returnableQuantity === undefined ? undefined : Number(ln.returnableQuantity),
     unitCode,
     unitCodeDictText: unitLabel,
+    price: ln.price === undefined || ln.price === null ? 0 : Number(ln.price),
+    totalPrice:
+      totalRaw === undefined || totalRaw === null || totalRaw === ''
+        ? ''
+        : formatMoneyDisplay(totalRaw),
     lotNumber: String(ln.lotNumber ?? ''),
+    expirationDate: formatReturnExpirationDisplay(ln.endTime),
     traceNo: String(ln.traceNo ?? ''),
+    remark: String(ln.remake ?? ''),
   };
-  const catalog = (ln as { productCatalog?: { unitBands?: unknown; unitBandsJson?: unknown } })
-    .productCatalog;
+  const catalog = ln.productCatalog;
   const hydrated = hydrateInventoryDetailLineQtyForGrid({
     itemQuantity: row.itemQuantity,
     unitCode,
     unitCodeDictText: unitLabel,
     productCatalog: catalog,
     unitBands: ln.unitBands,
-    unitBandsJson: (ln as { unitBandsJson?: unknown }).unitBandsJson,
+    unitBandsJson: ln.unitBandsJson,
   });
   applyHydratedInventoryDetailQtyToRow(row, hydrated);
   applyInventoryRowQtyUnitList(row);
+  // 带入后按可退数量重算金额，避免仅有单价时空白
+  if (!String(row.totalPrice ?? '').trim()) {
+    recalcReturnLineTotal(row);
+  }
   return row;
 }
 
+/** 详情行 → 网格回显。 */
 function mapDetailLineToGrid(ln: DeptIssueReturnDetailLineDto, idx: number): ReturnPreviewRow {
+  const name = String(ln.productName ?? ln.itemName ?? '').trim();
+  const totalRaw = ln.totalPrice;
   const row: ReturnPreviewRow = {
     id: `ln-${ln.id ?? idx}`,
     itemTable: ln.itemTable,
     itemId: ln.itemId,
-    productName: String(ln.productName ?? ''),
+    productName: name,
+    spec: String(ln.spec ?? ln.specification ?? '').trim(),
+    manufacturer: String(ln.manufacturer ?? '').trim(),
     itemQuantity: ln.itemQuantity === undefined ? undefined : Number(ln.itemQuantity),
     unitCode: String(ln.unitCode ?? ''),
-    unitCodeDictText: String(ln.unitCodeDictText ?? ln.unitCode ?? ''),
+    unitCodeDictText: String(ln.unitCodeDictText ?? ln.unitName ?? ln.unitCode ?? ''),
+    price: ln.price === undefined || ln.price === null ? 0 : Number(ln.price),
+    totalPrice:
+      totalRaw === undefined || totalRaw === null || totalRaw === ''
+        ? ''
+        : formatMoneyDisplay(totalRaw),
     lotNumber: String(ln.lotNumber ?? ''),
+    expirationDate: formatReturnExpirationDisplay(ln.endTime),
     traceNo: String(ln.traceNo ?? ''),
+    remark: String(ln.remake ?? ''),
   };
-  const catalog = (ln as { productCatalog?: { unitBands?: unknown; unitBandsJson?: unknown } })
-    .productCatalog;
+  const catalog = ln.productCatalog;
   const hydrated = hydrateInventoryDetailLineQtyForGrid({
     itemQuantity: row.itemQuantity,
     unitCode: row.unitCode,
@@ -303,16 +477,37 @@ const columns: VxeGridPropTypes.Column[] = [
   { type: 'checkbox', width: 48, fixed: 'left', align: 'center' },
   { type: 'seq', title: '序号', width: 52, fixed: 'left', align: 'center' },
   { field: 'productName', title: '项目名称', minWidth: 200, showOverflow: true },
+  { field: 'spec', title: '规格', width: 120, showOverflow: true },
+  { field: 'manufacturer', title: '厂家', minWidth: 120, showOverflow: true },
   createInventoryQtyUnitColumn({
     title: '退领数量',
     onUnitChange: (row) => handleDeptIssueReturnUnitBandChanged(row as ReturnPreviewRow),
   }),
+  {
+    field: 'totalPrice',
+    title: '金额',
+    width: 112,
+    align: 'right',
+    headerAlign: 'center',
+    cellRender: {
+      name: 'InventoryTotalAmountCell',
+      props: { amountField: 'totalPrice' },
+    },
+  },
   { field: 'lotNumber', title: '批号', width: 120, showOverflow: true },
+  { field: 'expirationDate', title: '有效期', width: 120, showOverflow: true },
   {
     field: 'traceNo',
     title: '追溯码',
     minWidth: 120,
     editRender: { name: 'InventoryTraceNoCell', props: { maxlength: 64, clearable: true } },
+  },
+  {
+    field: 'remark',
+    title: '备注',
+    minWidth: 120,
+    editRender: { name: 'InventoryPersistElInput', props: { maxlength: 200, clearable: true } },
+    showOverflow: true,
   },
   {
     slots: { default: 'action' },
@@ -335,12 +530,13 @@ const {
   columns,
   documentEditable: () => linesGridEditable.value,
   beforeEditMethod: () => linesGridEditable.value,
+  onEditClosed: (row) => recalcReturnLineTotal(row),
   config: {
     rowKey: (row) => row.id,
     productField: 'productName',
-    editFieldOrder: ['_qtyUnit', 'traceNo'],
-    editableFields: new Set(['_qtyUnit', 'traceNo']),
-    verticalNavFields: new Set(['_qtyUnit', 'traceNo']),
+    editFieldOrder: ['_qtyUnit', 'traceNo', 'remark'],
+    editableFields: new Set(['_qtyUnit', 'traceNo', 'remark']),
+    verticalNavFields: new Set(['_qtyUnit', 'traceNo', 'remark']),
     firstFillFieldAfterPick: '_qtyUnit',
     hasProduct: (row) => isPresentItemId(row.itemId),
     isRowComplete: isReturnRowComplete,
@@ -366,8 +562,13 @@ function resetDetailForCreate() {
   headerBusNo.value = undefined;
   originalBusNo.value = undefined;
   detailStatusEnum.value = undefined;
+  pinnedPractitionerOptions.value = [];
   purposeLocationId.value = undefined;
   consumingOrganizationName.value = '';
+  practitionerId.value = resolveDefaultPractitionerIdForSelect(
+    effectivePractitionerOptions.value,
+    userStore.userInfo as null | Record<string, unknown>,
+  );
   clearInventoryHeadFormValidation(headFormRef.value);
   returnGridEdit.resetFormMode();
   void nextTick(() => {
@@ -392,6 +593,14 @@ async function loadDetail(busNo: string, loadGen?: number) {
     detailStatusEnum.value = normalizeStockOutStatusSort(data.statusEnum);
     purposeLocationId.value = data.purposeLocationId ?? undefined;
     consumingOrganizationName.value = String(data.consumingOrganizationName ?? '').trim();
+    pinnedPractitionerOptions.value = [];
+    const detailPractitionerId = data.practitionerId ?? data.applicantId;
+    const detailPractitionerLabel = data.applicantName ? String(data.applicantName) : undefined;
+    pinPractitionerOption(detailPractitionerId, detailPractitionerLabel);
+    practitionerId.value = coercePractitionerIdForSelect(
+      detailPractitionerId,
+      effectivePractitionerOptions.value,
+    );
     const gridRows = (data.lines ?? []).map((ln, i) => mapDetailLineToGrid(ln, i));
     void nextTick(() => {
       if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
@@ -410,6 +619,7 @@ async function loadDetail(busNo: string, loadGen?: number) {
 
 function buildLinesPayload(rows: ReturnPreviewRow[]): DeptIssueReturnLineDto[] {
   return rows.map((r) => {
+    recalcReturnLineTotal(r);
     const persisted = persistDisplayQtyAsSplitForBands({
       bands: r.unitBands ?? [],
       displayQty: r.itemQuantity,
@@ -422,6 +632,7 @@ function buildLinesPayload(rows: ReturnPreviewRow[]): DeptIssueReturnLineDto[] {
         legacyUnitCode: r.unitCode,
         selectedBandKind: r.selectedBandKind,
       }) ?? String(r.unitCode ?? '').trim();
+    const unit = Number(r.price);
     return {
       itemTable: r.itemTable,
       itemId: r.itemId,
@@ -429,6 +640,9 @@ function buildLinesPayload(rows: ReturnPreviewRow[]): DeptIssueReturnLineDto[] {
       unitCode: unitCode || undefined,
       lotNumber: String(r.lotNumber ?? '').trim() || undefined,
       traceNo: String(r.traceNo ?? '').trim() || undefined,
+      price: Number.isFinite(unit) ? unit : undefined,
+      endTime: normalizeReturnLineDateTimeForApi(String(r.expirationDate ?? '')),
+      remake: String(r.remark ?? '').trim() || undefined,
     };
   });
 }
@@ -441,6 +655,11 @@ async function persistReturn(): Promise<string | undefined> {
     return undefined;
   }
   if (!(await validateInventoryHeadFormFields(headFormRef.value, 'purposeLocationId'))) {
+    return undefined;
+  }
+  const handlerId = practitionerId.value;
+  if (!handlerId) {
+    ElMessage.warning('请选择经手人');
     return undefined;
   }
   const rows = collectGridRows();
@@ -466,6 +685,7 @@ async function persistReturn(): Promise<string | undefined> {
       await updateDeptIssueReturnApi({
         busNo: headerBusNo.value,
         purposeLocationId: purposeLocationId.value as number | string,
+        practitionerId: handlerId,
         lines,
       });
       ElMessage.success('保存成功');
@@ -476,6 +696,7 @@ async function persistReturn(): Promise<string | undefined> {
     const res = await createDeptIssueReturnApi({
       originalBusNo: ob,
       purposeLocationId: purposeLocationId.value as number | string,
+      practitionerId: handlerId,
       lines,
     });
     const no = res.data?.busNo;
@@ -490,57 +711,65 @@ async function persistReturn(): Promise<string | undefined> {
   }
 }
 
+/** 关联领用单弹窗：查询。 */
 async function handleLinkIssueQuery(params: Record<string, unknown>) {
   Object.assign(linkIssueQueryParams.value, params);
+  linkIssueQueryParams.value.purposeLocationId = normalizeLinkIssuePharmacyId(
+    linkIssueQueryParams.value.purposeLocationId,
+  );
   linkIssueQueryParams.value.pageNo = 1;
   await fetchLinkableIssues();
 }
 
+/** 关联领用单弹窗：重置为全部科室药房。 */
 function handleLinkIssueReset() {
-  linkIssueQueryParams.value = { pageNo: 1, pageSize: 20, keyword: '' };
+  linkIssueQueryParams.value = {
+    pageNo: 1,
+    pageSize: 20,
+    keyword: '',
+    purposeLocationId: INV_ALL_LOCATIONS_FILTER_ID,
+  };
   void fetchLinkableIssues();
 }
 
+/** 关联领用单弹窗：分页。 */
 function handleLinkIssuePagination(pagination: { limit: number; page: number }) {
   linkIssueQueryParams.value.pageNo = pagination.page;
   linkIssueQueryParams.value.pageSize = pagination.limit;
   void fetchLinkableIssues();
 }
 
-async function openLinkIssueDialog() {
-  if (!canEditOriginalBusNo.value) {
-    ElMessage.warning('仅新建单据时可关联领用单');
-    return;
-  }
-  if (!(await validateInventoryHeadFormFields(headFormRef.value, 'purposeLocationId'))) {
-    return;
-  }
-  const pid = requireAnySpecificInventoryLocationId(
-    'deptPharmacy',
-    purposeLocationId.value,
-    productPickGateLocationId.value,
-  );
-  if (!pid) {
-    return;
-  }
-  linkIssueQueryParams.value = { pageNo: 1, pageSize: 20, keyword: '' };
+/** 打开可关联领用单弹窗（默认全部科室药房；不校验单头库房）。 */
+function openUpstreamPicker() {
+  linkIssueQueryParams.value = {
+    pageNo: 1,
+    pageSize: 20,
+    keyword: '',
+    purposeLocationId: INV_ALL_LOCATIONS_FILTER_ID,
+  };
+  linkIssueRecords.value = [];
+  linkIssueTotal.value = 0;
   linkIssueVisible.value = true;
 }
 
-async function fetchLinkableIssues() {
-  const pid = resolveSpecificInventoryLocationId(
-    purposeLocationId.value,
-    productPickGateLocationId.value,
-  );
-  if (!pid) {
-    linkIssueRecords.value = [];
-    linkIssueTotal.value = 0;
+/** 单头「从领用单选择/更换」：非草稿先选后建；草稿可编辑时可更换关联。 */
+function openLinkIssueDialog() {
+  if (!canEditOriginalBusNo.value) {
+    ElMessage.warning('当前单据不可关联领用单');
     return;
   }
+  openUpstreamPicker();
+}
+
+/** 关联领用单弹窗：分页查询可退领用单。 */
+async function fetchLinkableIssues() {
+  linkIssueQueryParams.value.purposeLocationId = normalizeLinkIssuePharmacyId(
+    linkIssueQueryParams.value.purposeLocationId,
+  );
   linkIssueLoading.value = true;
   try {
     const res = await pageLinkableIssueDocumentsApi({
-      purposeLocationId: pid,
+      purposeLocationId: resolveLinkIssueLocationIdForApi(),
       keyword: String(linkIssueQueryParams.value.keyword ?? '').trim() || undefined,
       pageNo: linkIssueQueryParams.value.pageNo,
       pageSize: linkIssueQueryParams.value.pageSize,
@@ -556,10 +785,22 @@ async function fetchLinkableIssues() {
   }
 }
 
+/** 选用领用单：非草稿时交给父级建草稿，草稿内直接带入。 */
 async function applyLinkableIssue(row: LinkableIssueListRowDto) {
+  if (!props.isDraftOrder) {
+    emit('createFromUpstream', row);
+    return;
+  }
+  await applyLinkableIssueToDraft(row);
+}
+
+/** 将可退领用单明细写入当前草稿（单头药房由源单回填）。 */
+async function applyLinkableIssueToDraft(row: LinkableIssueListRowDto) {
   const issueNo = row.busNo?.trim();
   if (!issueNo) return;
-  const pid = resolveSpecificInventoryLocationId(row.purposeLocationId);
+  const pid =
+    resolveSpecificInventoryLocationId(row.purposeLocationId) ??
+    resolveSpecificInventoryLocationId(linkIssueQueryParams.value.purposeLocationId);
   if (!pid) {
     ElMessage.warning('领用单缺少科室药房，无法带入');
     return;
@@ -578,6 +819,8 @@ async function applyLinkableIssue(row: LinkableIssueListRowDto) {
     consumingOrganizationName.value = String(data.consumingOrganizationName ?? '').trim();
     if (data.purposeLocationId) {
       purposeLocationId.value = data.purposeLocationId;
+    } else {
+      purposeLocationId.value = pid;
     }
     const gridRows = (data.lines ?? []).map((ln, i) => mapLinkableLineToGrid(ln, i));
     returnGridEdit.resetFormMode();
@@ -591,6 +834,11 @@ async function applyLinkableIssue(row: LinkableIssueListRowDto) {
     /* handled */
   }
 }
+
+defineExpose({
+  applyLinkableIssueToDraft,
+  openUpstreamPicker,
+});
 
 async function handleRemoveDoc() {
   if (isNewDraft.value) {
@@ -619,6 +867,7 @@ async function handleRemoveDoc() {
 interface DeptIssueReturnDraftSnap {
   originalBusNo?: string;
   purposeLocationId?: number | string;
+  practitionerId?: number | string;
   consumingOrganizationName: string;
   rows: ReturnPreviewRow[];
 }
@@ -634,6 +883,7 @@ async function syncFromParentContext() {
       captureDraft: () => ({
         originalBusNo: originalBusNo.value,
         purposeLocationId: purposeLocationId.value,
+        practitionerId: practitionerId.value,
         consumingOrganizationName: consumingOrganizationName.value,
         rows: collectGridRows().map((r) => ({ ...r })),
       }),
@@ -642,6 +892,7 @@ async function syncFromParentContext() {
         detailStatusEnum.value = undefined;
         originalBusNo.value = snap.originalBusNo;
         purposeLocationId.value = snap.purposeLocationId;
+        practitionerId.value = snap.practitionerId;
         consumingOrganizationName.value = snap.consumingOrganizationName;
         returnGridEdit.resetFormMode();
         await nextTick();
@@ -672,15 +923,101 @@ watch(
   },
   { immediate: true },
 );
+
+watch(
+  effectivePractitionerOptions,
+  (opts) => {
+    if (opts.length === 0) return;
+    const current = String(practitionerId.value ?? '').trim();
+    if (!current || !opts.some((o) => o.value === current)) {
+      practitionerId.value = resolveDefaultPractitionerIdForSelect(
+        opts,
+        userStore.userInfo as null | Record<string, unknown>,
+      );
+    }
+  },
+  { deep: true },
+);
+
+/** 解析下拉选项展示名 */
+function resolvePrintOptionLabel(options: ApiOptionItem[] | undefined, value: unknown): string {
+  const key = String(value ?? '').trim();
+  if (!key) return '';
+  const hit = options?.find((item) => String(item.value ?? '') === key);
+  return String(hit?.label ?? '').trim();
+}
+
+/** 明细行当前计量单位展示文案 */
+function resolveIssueReturnPrintUnitLabel(row: ReturnPreviewRow): string {
+  const kind = String(row.selectedBandKind ?? '').trim();
+  const byKind = row.unitList?.find((item) => String(item.value ?? '') === kind);
+  if (byKind) {
+    return String(byKind.label ?? byKind.value_dictText ?? '').trim();
+  }
+  return String(row.unitCodeDictText ?? row.unitCode ?? '').trim();
+}
+
+/** 打印发放退回单 */
+async function handlePrint() {
+  const busNo = String(headerBusNo.value ?? '').trim();
+  if (!busNo) {
+    ElMessage.warning('请先保存单据后再打印');
+    return;
+  }
+  const productRows = collectGridRows().filter((row) => isPresentItemId(row.itemId));
+  if (productRows.length === 0) {
+    ElMessage.warning('没有可打印的明细');
+    return;
+  }
+
+  const pharmacyName = resolvePrintOptionLabel(props.deptPharmacyOptions, purposeLocationId.value);
+  const practitionerName = resolvePrintOptionLabel(
+    effectivePractitionerOptions.value,
+    practitionerId.value,
+  );
+  const documentTitle = buildInvDocumentTitle(pharmacyName, '发放退回单');
+
+  // 按当前网格展示值组装退货明细
+  const lineRows = productRows.map((row) => ({
+    productName: String(row.productName ?? '').trim(),
+    qty: row.itemQuantity,
+    unitLabel: resolveIssueReturnPrintUnitLabel(row),
+    lotNumber: String(row.lotNumber ?? '').trim(),
+    reasonText: '',
+  }));
+
+  await printInvDocument({
+    family: 'return',
+    source: {
+      hospitalName: resolvePrintHospitalName(),
+      documentTitle,
+      docNo: busNo,
+      applyTimeText: '',
+      itemTypeText: '',
+      sourceLocationText: String(consumingOrganizationName.value ?? '').trim(),
+      supplierText: '',
+      linkDocText: String(originalBusNo.value ?? '').trim(),
+      destLocationText: pharmacyName,
+      practitionerName,
+      invoiceNoText: '',
+      lineRows,
+      preparedByName: practitionerName,
+      approvedByName: '',
+    },
+    bizRef: { busNo, docKind: 'dept-issue-return' },
+    jobName: documentTitle,
+  });
+}
 </script>
 
 <template>
   <div class="dept-issue-return-main-pane flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     <InvMainShell>
-      <template #actionBar>
+      <template v-if="!showWelcomeEmpty" #actionBar>
         <div class="flex w-full flex-wrap items-center justify-end gap-2">
           <InvDocActions
             v-bind="docActionFlags"
+            @print="handlePrint"
             @approve="
               async () => {
                 const no = headerBusNo;
@@ -760,6 +1097,16 @@ watch(
       </template>
 
       <div
+        v-if="showWelcomeEmpty"
+        class="flex min-h-0 flex-1 flex-col items-center justify-center px-4 py-12"
+      >
+        <el-empty :image-size="96" :description="INV_DOC_UPSTREAM_WELCOME.deptIssueReturn">
+          <InvPrimaryBtn label="从领用单新建" @click="openUpstreamPicker" />
+        </el-empty>
+      </div>
+
+      <div
+        v-else
         class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2"
         @mousedown="returnGridEdit.onSurfaceMouseDown"
       >
@@ -780,13 +1127,7 @@ watch(
                 <ElInput :model-value="headerBusNo ?? ''" disabled placeholder="保存后生成" />
               </ElFormItem>
               <ElFormItem label="科室药房" prop="purposeLocationId">
-                <ElSelect
-                  v-model="purposeLocationId"
-                  class="w-full"
-                  filterable
-                  clearable
-                  :disabled="!documentEditable"
-                >
+                <ElSelect v-model="purposeLocationId" class="w-full" filterable clearable disabled>
                   <ElOption
                     v-for="p in deptPharmacyOptions"
                     :key="String(p.value)"
@@ -796,19 +1137,44 @@ watch(
                 </ElSelect>
               </ElFormItem>
               <ElFormItem label="领用科室">
-                <ElInput :model-value="consumingOrganizationName" disabled />
+                <ElInput
+                  :model-value="consumingOrganizationName"
+                  disabled
+                  placeholder="自原领用单带出"
+                />
               </ElFormItem>
-              <ElFormItem label="关联领用" class="lg:col-span-2">
-                <div class="flex w-full flex-wrap items-center gap-2">
+              <ElFormItem label="经手人">
+                <ElSelect
+                  v-model="practitionerId"
+                  class="w-full"
+                  filterable
+                  clearable
+                  placeholder="请选择经手人"
+                  :disabled="!documentEditable"
+                >
+                  <ElOption
+                    v-for="p in effectivePractitionerOptions"
+                    :key="String(p.value)"
+                    :label="p.label"
+                    :value="p.value"
+                  />
+                </ElSelect>
+              </ElFormItem>
+              <ElFormItem label="关联领用">
+                <div class="flex w-full min-w-0 items-center gap-2">
                   <ElInput
                     :model-value="originalBusNo ?? ''"
-                    class="min-w-[200px] flex-1"
+                    class="min-w-0 flex-1"
                     readonly
                     disabled
                     placeholder="请通过「从领用单选择」关联"
                   />
-                  <ElButton :disabled="!canEditOriginalBusNo" @click="openLinkIssueDialog">
-                    从领用单选择
+                  <ElButton
+                    class="shrink-0"
+                    :disabled="!canEditOriginalBusNo"
+                    @click="openLinkIssueDialog"
+                  >
+                    {{ linkIssueButtonLabel }}
                   </ElButton>
                 </div>
               </ElFormItem>
@@ -862,6 +1228,7 @@ watch(
       :loading="linkIssueLoading"
       :total="linkIssueTotal"
       :query-params="linkIssueQueryParams"
+      :form-items="linkIssueFormItems"
       :table-columns="linkIssueTableColumns"
       :location-options="linkIssueLocationOptions"
       keyword-placeholder="领用单号/关键字"
@@ -889,7 +1256,11 @@ watch(
       </template>
     </InvDocLinkPickerDialog>
   </div>
-  <InvDocTraceScanBridge ref="traceScanBridgeRef" scene="inventoryOut" />
+  <InvDocTraceScanBridge
+    ref="traceScanBridgeRef"
+    scene="inventoryOut"
+    :default-location-id="purposeLocationId"
+  />
 </template>
 
 <style scoped lang="scss">

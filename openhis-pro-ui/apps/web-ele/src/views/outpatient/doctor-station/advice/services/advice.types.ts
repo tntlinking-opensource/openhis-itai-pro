@@ -16,7 +16,10 @@ export interface ProductColumn {
 export interface AdviceEditForm {
   orderType: string;
   selectedId: string;
+  /** 诊断展示名（多选名称顿号拼接，折叠摘要用） */
   diagnosis: string;
+  /** 绑定就诊诊断主键列表（有序；主诊第一；提交拼 ids 串） */
+  encounterDiagnosisIds?: string[];
   feeNature: string;
   /** 费用性质/合同主键（落库 `contract_id`） */
   contractId?: string;
@@ -36,6 +39,10 @@ export interface AdviceDrugItem extends AdviceEditForm {
   selectedDrugName: string;
   selectedDrugSpec: string;
   selectedDrugPrice: number | string;
+  /** 医保等级码（CHRGITM_LV）；展示用 chrgitmLvText */
+  chrgitmLv?: number | string;
+  /** 医保等级展示（甲类/乙类/丙类） */
+  chrgitmLvText?: string;
   doseMainUnit: string;
   doseSubUnit: string;
   doseConvertRatio?: number;
@@ -51,8 +58,22 @@ export interface AdviceDrugItem extends AdviceEditForm {
   /** 目录原始单价（SALES 带，未换算） */
   catalogUnitPrice?: number | string;
   unitBands?: DoctorStationMedicationUnitBandDto[];
+  /** 选品时目录可开库存（包装口径；展示优先 availableQuantityText） */
+  availableQuantity?: number | string;
+  /** 满包+拆零库存展示（如 4盒6片） */
+  availableQuantityText?: string;
+  /** 库存明细（拆零 SPLIT）；缺 Text 时本地拼展示） */
+  inventoryList?: DoctorStationAdviceInventoryRowDto[];
   /** 门诊拆分属性（OrderCalcRule code "1"~"4"） */
   partAttributeEnum?: string;
+  /** 目录默认单次剂量（剂量单位） */
+  catalogDose?: number;
+  /** 目录单次最小剂量（剂量单位） */
+  catalogMinUnit?: number;
+  /** 目录单次最大剂量（剂量单位） */
+  catalogMaxUnit?: number;
+  /** 当前剂量快捷预设：默认 / 最大 / 最小 */
+  dosePresetKind?: 'default' | 'max' | 'min';
   /** 频次模块计算得到的计划执行次数（供前端推算总量） */
   frequencyExecutionCount?: number;
   /** 医生手工改过总量/单位后，自动推算不再覆盖本行 */
@@ -62,6 +83,8 @@ export interface AdviceDrugItem extends AdviceEditForm {
   productTableName?: string;
   sortNumber?: number;
   groupId?: string;
+  /** 注射/输液药品（目录 inject_flag / 列表 injectionFlag） */
+  injectFlag?: boolean;
   tcmSpecialDecoction?: string;
   performOrgId?: string;
   performOrgName?: string;
@@ -85,10 +108,16 @@ export interface AdviceProductOption {
   id: string;
   code: string;
   name: string;
+  /** 商品名称（药品）；空时列表展示「—」 */
+  merchandiseName?: string;
   category: string;
   spec: string;
   price?: number;
   availableQuantity?: number | string;
+  /** 满包整数 + 拆零余量展示（如 4盒6片） */
+  availableQuantityText?: string;
+  /** 厂家/产地 */
+  manufacturer?: string;
   inventoryList?: DoctorStationAdviceInventoryRowDto[];
   unitName?: string;
   rateCode?: string;
@@ -104,13 +133,32 @@ export interface AdviceProductOption {
   catalogUnitPrice?: number;
   /** 门诊拆分属性（OrderCalcRule code "1"~"4"） */
   partAttributeEnum?: string;
+  /** 默认单次剂量（剂量单位） */
+  dose?: number;
+  /** 单次最小剂量（剂量单位） */
+  minUnit?: number;
+  /** 单次最大剂量（剂量单位） */
+  maxUnit?: number;
+  /** 医保等级码（CHRGITM_LV） */
+  chrgitmLv?: number | string;
+  /** 医保等级展示（甲类/乙类/丙类） */
+  chrgitmLvText?: string;
+  /** 注射/输液药品标志（目录 inject_flag） */
+  injectFlag?: boolean;
+  /** 中药特殊煎法术语码（目录 dosage_instruction） */
+  dosageInstruction?: string;
+  /** 中药特殊煎法展示名 */
+  dosageInstructionDictText?: string;
 }
 
 /** 开立页主表行（含嵌入编辑卡用的虚拟行） */
 export interface AdviceRowItem {
   key: string;
   isEditor?: boolean;
+  /** 医嘱签发/请求态展示文案 */
   status: string;
+  /** 费用状态展示文案 */
+  chargeStatus: string;
   type: string;
   content: string;
   startTime: string;
@@ -126,14 +174,23 @@ export interface AdviceRowItem {
   productTableName?: string;
   sortNumber?: number;
   skinTestFlag?: boolean;
+  /** 注射/输液标志（列表 injectionFlag ← 申请 infusion_flag） */
+  injectionFlag?: boolean;
   resourceType?: string;
   requestId?: string;
   groupId?: string;
+  /** 组套标识；成组与 groupId 同源 */
+  packageId?: string;
+  /** 医嘱签发/请求态码（RequestStatus） */
   statusEnum?: string;
+  /** 费用状态码（ChargeItemStatus） */
+  chargeStatusEnum?: string;
   productDefinitionId?: string;
   adviceDisplayName?: string;
   specificationText?: string;
   conditionDefinitionName?: string;
+  /** 行绑定就诊诊断有序 ids 串（列表回填多选） */
+  encounterDiagnosisIds?: string;
   methodCode?: string;
   rateCode?: string;
   listDose?: number;
@@ -159,4 +216,6 @@ export interface AdviceRowItem {
   serviceRequestDetails?: ServiceRequestDetailSummaryDto[];
   /** 目录类别 code：检验 PROOF、检查 TEST */
   catalogCategoryCode?: string;
+  /** 费用性质主键（药品/诊疗合同） */
+  contractId?: string;
 }

@@ -56,6 +56,8 @@ export interface DocumentDetailRowDto {
   typeEnumText?: string;
   sourceLocationName?: string;
   purposeLocationName?: string;
+  /** 领用科室（行政 Organization；领用/退领有值） */
+  consumingOrganizationName?: string;
   supplierName?: string;
   productName?: string;
   productBusNo?: string;

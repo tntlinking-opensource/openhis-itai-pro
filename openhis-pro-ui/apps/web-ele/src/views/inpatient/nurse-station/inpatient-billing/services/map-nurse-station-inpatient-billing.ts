@@ -292,12 +292,20 @@ function buildSupplementParentContent(dto: NurseStationSupplementParentOrderRowD
   return title || '—';
 }
 
-/** 开立/停嘱时间展示 */
+/** 开立/停嘱时间展示（时间后跟人名，BR-IP-ORD-031） */
 function buildSupplementParentStartStopAt(dto: NurseStationSupplementParentOrderRowDto): string {
-  const authoredRaw = String(dto.authoredTime ?? '').trim();
+  const openedRaw = String(dto.reqOpenedTime ?? '').trim();
   const stopRaw = String(dto.stopTime ?? '').trim();
-  const authoredText = authoredRaw ? formatDateTime(authoredRaw) : '';
-  const stopText = stopRaw ? formatDateTime(stopRaw) : '';
+  const requester = String(dto.requesterName ?? '').trim();
+  const stopper = String(dto.stopperName ?? '').trim();
+  let authoredText = openedRaw ? formatDateTime(openedRaw) : '';
+  let stopText = stopRaw ? formatDateTime(stopRaw) : '';
+  if (authoredText && requester) {
+    authoredText = `${authoredText} ${requester}`;
+  }
+  if (stopText && stopper) {
+    stopText = `${stopText} ${stopper}`;
+  }
   if (authoredText && stopText) {
     return `${authoredText} / ${stopText}`;
   }

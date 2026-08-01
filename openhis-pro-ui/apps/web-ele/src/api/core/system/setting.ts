@@ -13,7 +13,8 @@ export interface PageSettingsParams extends PageParams {
 }
 
 export interface Setting {
-  id: number;
+  /** Snowflake 主键，后端 Long 以字符串序列化，前端禁止 Number 转换。 */
+  id: string;
   name: string;
   value: string;
   description: string;
@@ -30,7 +31,7 @@ export interface CreateSettingParams {
 }
 
 export interface UpdateSettingParams {
-  id: number;
+  id: number | string;
   request: {
     description: string;
     value: string;
@@ -75,7 +76,10 @@ export const createSettingApi = async (params: CreateSettingParams) => {
  * 更新设置
  */
 export const updateSettingApi = async (params: UpdateSettingParams) => {
-  return publicRequestClient.post('/setting/update', params);
+  return publicRequestClient.post('/setting/update', {
+    id: preserveApiIdForRequest(params.id),
+    request: params.request,
+  });
 };
 
 /**
@@ -102,7 +106,7 @@ export const getSettingProviderKeysApi = async (providerName: string) => {
 };
 
 /**
- * 按优先级获取最终值（G > U > R > T）
+ * 按优先级获取最终值（U > R > T > G）
  */
 export const getEffectiveSettingValueApi = async (params: GetEffectiveValueParams) => {
   return publicRequestClient.post<string>('/setting/getEffectiveValue', { name: params.name });

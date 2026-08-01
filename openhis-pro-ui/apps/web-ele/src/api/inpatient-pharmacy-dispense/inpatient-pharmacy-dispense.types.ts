@@ -60,6 +60,8 @@ export interface PendingDispenseInpatientEncounterQueueRowDto {
   statusEnum?: null | string;
   statusEnumText?: null | string;
   startTime?: null | string;
+  /** 费用性质展示名（就诊优先合同名；空则前端回落自费） */
+  contractDisplay?: null | string;
 }
 
 export interface PagePendingDispenseInpatientEncounterQueueResponse {
@@ -113,6 +115,18 @@ export interface EncounterMedicationDispenseSlipRowDto {
   doseUnitText?: null | string;
   unitCode: string;
   unitText?: null | string;
+  /** 包装单位码（待扫换算） */
+  packageUnitCode?: null | string;
+  /** 包装相对拆零倍数 */
+  packageUnitRatio?: null | number | string;
+  /** 拆零单位码 */
+  splitUnitCode?: null | string;
+  /** 追溯码主档贴码单位（cus_trace_number） */
+  traceUnitCode?: null | string;
+  /** 追溯码主档贴码比例快照 */
+  traceUnitRatio?: null | number | string;
+  /** 主表该品批是否已有追溯码（有码批） */
+  lotHasTraceMaster?: boolean | null;
   dispensePerQuantity?: null | number;
   dispensePerSupplyDays?: null | number;
   requestQuantity?: null | number | string;
@@ -120,7 +134,7 @@ export interface EncounterMedicationDispenseSlipRowDto {
   unitPrice?: null | number | string;
   totalPrice?: null | number | string;
   prescriptionGroupId?: null | string;
-  requestAuthoredTime?: null | string;
+  requestOpenedTime?: null | string;
   skinTestFlag?: null | boolean;
   skinTestFlagText?: null | string;
   tcmFlag?: null | boolean;
@@ -136,6 +150,8 @@ export interface EncounterMedicationDispenseSlipRowDto {
   therapyEnum?: null | string;
   therapyEnumText?: null | string;
   busNo?: null | string;
+  /** 费用性质展示（就诊合同名优先；与队列 contractDisplay / 门诊 slip 同口径） */
+  feeNatureText?: null | string;
 }
 
 export interface PageEncounterMedicationDispenseSlipsResponse {

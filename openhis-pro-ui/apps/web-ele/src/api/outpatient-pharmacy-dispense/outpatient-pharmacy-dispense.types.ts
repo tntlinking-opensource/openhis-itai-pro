@@ -53,6 +53,8 @@ export interface PendingDispenseEncounterQueueRowDto {
   patientId?: null | string;
   patientName?: null | string;
   genderEnum?: null | string;
+  /** 后端解析的性别展示文案，前端只展示不翻译 */
+  genderEnumText?: null | string;
   ageText?: null | string;
   organizationName?: null | string;
   doctorName?: null | string;
@@ -60,6 +62,10 @@ export interface PendingDispenseEncounterQueueRowDto {
   statusEnumText?: null | string;
   dispensePendingSummaryText?: null | string;
   startTime?: null | string;
+  /** 患者电话（门诊上下文 phone） */
+  patientPhone?: null | string;
+  /** 费用性质展示名（就诊优先合同名；与医生站卡片同口径） */
+  contractDisplay?: null | string;
 }
 
 export interface PagePendingDispenseEncounterQueueResponse {
@@ -123,15 +129,29 @@ export interface EncounterMedicationDispenseSlipRowDto {
   doseUnitText?: null | string;
   unitCode: string;
   unitText?: null | string;
+  /** 包装单位码（产品定义）；发药追溯默认按包装计码 */
+  packageUnitCode?: null | string;
+  /** 包装相对拆零倍数（1 包装 = N 拆零） */
+  packageUnitRatio?: null | number | string;
+  /** 拆零单位码 */
+  splitUnitCode?: null | string;
+  /** 追溯码主档贴码单位（cus_trace_number；非目录） */
+  traceUnitCode?: null | string;
+  /** 追溯码主档贴码比例快照（1 码对应拆零量） */
+  traceUnitRatio?: null | number | string;
+  /** 主表该品批是否已有追溯码（有码批=true；无码批仅软提示） */
+  lotHasTraceMaster?: boolean | null;
   dispensePerQuantity?: null | number;
   dispensePerSupplyDays?: null | number;
   requestQuantity?: null | number | string;
+  /** 中药付数（方头；勿与 requestQuantity/quantity 混淆） */
+  chineseHerbsDoseQuantity?: null | number | string;
   /** 后端可能序列化为 number */
   quantity: number | string;
   unitPrice?: null | number | string;
   totalPrice?: null | number | string;
   prescriptionGroupId?: null | string;
-  requestAuthoredTime?: null | string;
+  requestOpenedTime?: null | string;
   skinTestFlag?: null | number;
   skinTestFlagText?: null | string;
   tcmFlag?: null | boolean;
@@ -165,6 +185,16 @@ export interface EncounterMedicationDispenseSlipRowDto {
   dosageInstructionCode?: null | string;
   /** 单味特殊煎法展示名 */
   dosageInstructionText?: null | string;
+  /** 方头是否代煎（同源药嘱 sufferingFlag；同处方号各行一致） */
+  sufferingFlag?: boolean | null;
+  /** 同处方号代煎费金额 */
+  decoctionChargeAmount?: null | number | string;
+  /** 代煎费数量（付数） */
+  decoctionChargeQuantity?: null | number | string;
+  /** 代煎费数量单位码 */
+  decoctionChargeUnitCode?: null | string;
+  /** 代煎诊疗项目名称 */
+  decoctionActivityName?: null | string;
 }
 
 export interface PageEncounterMedicationDispenseSlipsResponse {
@@ -239,6 +269,8 @@ export interface TraceIdentityResolveItemDto {
   itemId?: string;
   lotNumber?: string;
   traceUnitCode?: string;
+  /** 主档贴码比例快照（1 码对应拆零量） */
+  traceUnitRatio?: number | string;
   remainingSplitQuantity?: number | string;
   inHospitalStatusEnum?: string;
 }

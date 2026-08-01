@@ -59,7 +59,7 @@ const criticalityOptions = ref<NurseStationSkinTestEnumOptionDto[]>([]);
 const severityOptions = ref<NurseStationSkinTestEnumOptionDto[]>([]);
 const practitionerOptions = ref<{ label: string; value: string }[]>([]);
 const pageInitialized = ref(false);
-const savingMedicationRequestId = ref('');
+const savingSkinTestServiceRequestId = ref('');
 const deletingAllergyRecordId = ref('');
 
 const initRequest = useRequest(httpLoadNurseStationSkinTestInit, { manual: true });
@@ -67,7 +67,7 @@ const listRequest = useRequest(httpListNurseStationSkinTestRows, { manual: true 
 
 /** 皮试仅支持左侧单选患者 */
 const canOperateSkinTest = computed(() => props.patients.length === 1);
-/** 就诊已出院/待结算/已结算：禁止皮试划价写操作 */
+/** 就诊已出院/待结算/已结算：禁止皮试结果登记 */
 const isEncounterChargeMutationBlocked = computed(() =>
   canOperateSkinTest.value
     ? isEncounterClinicalOrderMutationBlocked(props.patients[0]?.statusEnum)
@@ -161,25 +161,18 @@ async function handleSaveSkinTestRow(draft: InpatientSkinTestRowDraft) {
     ElMessage.warning(ENCOUNTER_CLINICAL_ORDER_MUTATION_BLOCKED_MESSAGE);
     return;
   }
-  if (!context.accountId) {
-    ElMessage.warning('患者账户无效，请刷新患者列表后重试');
-    return;
-  }
   const body = mapInpatientSkinTestDraftToSaveRequest(
-    { ...draft, accountId: context.accountId },
+    { ...draft, accountId: context.accountId || draft.accountId },
     context.encounterId,
+    verificationStatusOptions.value,
   );
-  savingMedicationRequestId.value = body.medicationRequestId;
+  savingSkinTestServiceRequestId.value = body.skinTestServiceRequestId || body.medicationRequestId;
   try {
-    const res = await httpSaveNurseStationSkinTestRecord(body);
-    if (res.firstTimePriced === true) {
-      ElMessage.success('皮试结果已保存，并已自动生成皮试操作费（待结算）');
-    } else {
-      ElMessage.success('皮试结果已保存');
-    }
+    await httpSaveNurseStationSkinTestRecord(body);
+    ElMessage.success('皮试结果已保存');
     await loadSkinTestRows();
   } finally {
-    savingMedicationRequestId.value = '';
+    savingSkinTestServiceRequestId.value = '';
   }
 }
 
@@ -191,7 +184,7 @@ async function handleDeleteSkinTestRow(allergyRecordId: string) {
     return;
   }
   try {
-    await ElMessageBox.confirm('确认删除该误录的皮试结果？已划价记录不可删除。', '删除皮试记录', {
+    await ElMessageBox.confirm('确认删除该误录的皮试结果？', '删除皮试记录', {
       type: 'warning',
       confirmButtonText: '确认删除',
       cancelButtonText: '取消',
@@ -248,7 +241,7 @@ onMounted(async () => {
       :severity-options="severityOptions"
       :practitioner-options="practitionerOptions"
       :default-practitioner-id="defaultPractitionerId"
-      :saving-medication-request-id="savingMedicationRequestId"
+      :saving-skin-test-service-request-id="savingSkinTestServiceRequestId"
       :deleting-allergy-record-id="deletingAllergyRecordId"
       @refresh="loadSkinTestRows"
       @save-row="handleSaveSkinTestRow"

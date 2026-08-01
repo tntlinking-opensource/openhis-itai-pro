@@ -1,6 +1,6 @@
 import type { RouteRecordRaw } from 'vue-router';
 
-/** 医保模块跳转子路由（Flyway V96 菜单未生效前，亦可从国家目录等页进入） */
+/** 医保模块跳转子路由（Flyway 菜单未生效前亦可兜底进入） */
 const chsRoutes: RouteRecordRaw[] = [
   {
     name: 'ChsPlatformDict',
@@ -12,12 +12,48 @@ const chsRoutes: RouteRecordRaw[] = [
     },
   },
   {
+    name: 'ChsInvokeLog',
+    path: '/chs/invoke-log',
+    component: () => import('#/chs/invoke-log/index.vue'),
+    meta: {
+      hideInMenu: true,
+      title: '医保调用日志',
+    },
+  },
+  {
     name: 'ChsReconciliation',
     path: '/chs/reconciliation',
     component: () => import('#/chs/reconciliation/index.vue'),
     meta: {
       hideInMenu: true,
       title: '对账清算',
+    },
+  },
+  {
+    name: 'ChsCatalogNotice',
+    path: '/chs/catalog-notice',
+    component: () => import('#/chs/catalog-notice/index.vue'),
+    meta: {
+      hideInMenu: true,
+      title: '医保文件管理',
+    },
+  },
+  {
+    name: 'ChsDetailAuditTry',
+    path: '/chs/detail-audit-try',
+    component: () => import('#/chs/detail-audit-try/index.vue'),
+    meta: {
+      hideInMenu: true,
+      title: '事前提醒试调',
+    },
+  },
+  {
+    name: 'ChsDetailAuditStats',
+    path: '/chs/detail-audit-stats',
+    component: () => import('#/chs/detail-audit-stats/index.vue'),
+    meta: {
+      hideInMenu: true,
+      title: '事前提醒统计',
     },
   },
 ];

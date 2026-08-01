@@ -2,31 +2,37 @@
 import type { Component } from 'vue';
 
 import type { InpatientDoctorStationPatient } from './doctorPatientStore';
+
+import type { EnsureClinicalReceptionFn } from '#/components/doctor-station';
 import type {
   ServiceApplyKind,
   ServiceApplyPatientSummary,
 } from '#/views/outpatient/doctor-station/service-apply/service-apply.types';
 
-import type { EnsureClinicalReceptionFn } from '#/components/doctor-station';
-
-import { computed, nextTick, onDeactivated, onMounted, provide, ref } from 'vue';
+import { computed, nextTick, onDeactivated, onMounted, provide, ref, watch } from 'vue';
 
 import { useUserStore } from '@vben/stores';
+
 import { ElButton, ElMessage } from 'element-plus';
 import { storeToRefs } from 'pinia';
 
 import {
   DiagnosisList,
   ENSURE_CLINICAL_RECEPTION_KEY,
+  ReportQuery,
   TcmAdvice,
 } from '#/components/doctor-station';
-import DiagnosisForm from '#/components/outpatient/diagnosis-form.vue';
 import DoctorHeader from '#/components/outpatient/doctor-header.vue';
 import MedicalRecordForm from '#/components/outpatient/medical-record-form.vue';
 import PatientInfoBar from '#/components/outpatient/patient-info-bar.vue';
 import { confirmEmrDiscardUnsaved } from '#/emrEditor';
 import { useAuthStore } from '#/store';
 import { isEncounterClinicalOrderMutationBlocked } from '#/utils/inpatient/encounter-clinical-order-gate';
+import {
+  inferServiceApplyKindFromAdviceRow,
+  type ServiceApplyDocumentGroup,
+} from '#/views/outpatient/doctor-station/service-apply/service-apply-doc-groups';
+import ServiceApplyDialog from '#/views/outpatient/doctor-station/service-apply/service-apply-dialog.vue';
 
 import { InpatientAdviceList } from './advice';
 import InpatientDischargeAdviceDialog from './components/inpatient-discharge-advice-dialog.vue';
@@ -34,19 +40,26 @@ import InpatientNursingAdviceDialog from './components/inpatient-nursing-advice-
 import DoctorPatientList from './doctor-patient-list.vue';
 import { useInpatientDoctorPatientStore } from './doctorPatientStore';
 import { useInpatientDoctorPatientQueue } from './use-inpatient-doctor-patient-queue';
-import ServiceApplyDialog from '#/views/outpatient/doctor-station/service-apply/service-apply-dialog.vue';
+import DetailAuditRemindDialog from '#/chs/components/detail-audit-remind-dialog.vue';
+import InpatientClinicalPreSettlePreviewDialog from '#/chs/components/inpatient-clinical-pre-settle-preview-dialog.vue';
+import type { DetailAuditRemindDialogExpose } from '#/chs/composables/use-detail-audit-gate';
+import {
+  buildClinicalPreSettleInsuranceBreakdown,
+  runInpatientClinicalPreSettle,
+} from '#/chs/composables/use-inpatient-clinical-pre-settle';
+import type { PreSettleInpatientChargesResponse } from '#/api/inpatient-settle';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 defineOptions({
   name: 'InpatientDoctorStation',
 });
 
-// 标签枚举（与门诊医生站同构，住院侧文案区分）
+// 标签枚举（住院侧不含门诊「电子处方」）
 const DOCTOR_TABS = {
   MEDICAL_RECORD: '住院病历',
   DIAGNOSIS: '诊断录入',
   ORDER: '开立医嘱',
   TCM: '中医处方',
-  PRESCRIPTION: '电子处方',
   REPORT_QUERY: '报告查询',
 } as const;
 
@@ -58,6 +71,10 @@ const doctorPatientStore = useInpatientDoctorPatientStore();
 const { selectedPatient, currentPatientInfo } = storeToRefs(doctorPatientStore);
 
 const activeTab = ref<DoctorTab>(DOCTOR_TABS.MEDICAL_RECORD);
+const detailAuditDialogRef = ref<DetailAuditRemindDialogExpose | null>(null);
+const clinicalPreSettleLoading = ref(false);
+const clinicalPreSettleVisible = ref(false);
+const clinicalPreSettleSnapshot = ref<PreSettleInpatientChargesResponse | null>(null);
 
 const { assertOrganizationSelected, inHospitalPatients, listKeyword, listLoading, loadQueue } =
   useInpatientDoctorPatientQueue();
@@ -84,6 +101,7 @@ const emrPatientInfo = computed(() => {
     gender: (p.genderEnumText ?? '').trim(),
     age,
     phone: '',
+    insurance: (p.contractDisplay ?? '').trim(),
     medicalRecordNo: (p.encounterBusNo ?? '').trim(),
     idCard: '',
   };
@@ -96,8 +114,7 @@ const tabComponents = computed<Record<DoctorTab, Component>>(() => ({
   [DOCTOR_TABS.DIAGNOSIS]: DiagnosisList,
   [DOCTOR_TABS.ORDER]: InpatientAdviceList,
   [DOCTOR_TABS.TCM]: TcmAdvice,
-  [DOCTOR_TABS.PRESCRIPTION]: DiagnosisForm,
-  [DOCTOR_TABS.REPORT_QUERY]: DiagnosisForm,
+  [DOCTOR_TABS.REPORT_QUERY]: ReportQuery,
 }));
 
 /** 诊断/医嘱/病历等 Tab 注入就诊上下文 */
@@ -110,7 +127,12 @@ const doctorStationContextBindings = computed(() => {
   if (tab === DOCTOR_TABS.MEDICAL_RECORD) {
     return { ...base, stationKind: 'INPATIENT' as const };
   }
-  if (tab !== DOCTOR_TABS.DIAGNOSIS && tab !== DOCTOR_TABS.ORDER && tab !== DOCTOR_TABS.TCM) {
+  if (
+    tab !== DOCTOR_TABS.DIAGNOSIS &&
+    tab !== DOCTOR_TABS.ORDER &&
+    tab !== DOCTOR_TABS.TCM &&
+    tab !== DOCTOR_TABS.REPORT_QUERY
+  ) {
     return {};
   }
   if (tab === DOCTOR_TABS.DIAGNOSIS) {
@@ -121,6 +143,9 @@ const doctorStationContextBindings = computed(() => {
     };
   }
   if (tab === DOCTOR_TABS.TCM) {
+    return { ...base, stationScope: 'inpatient' as const };
+  }
+  if (tab === DOCTOR_TABS.REPORT_QUERY) {
     return { ...base, stationScope: 'inpatient' as const };
   }
   return base;
@@ -258,13 +283,65 @@ async function handleToolbarRefresh() {
   void loadInpatientDoctorStationList({ skipDefaultSelection: true });
 }
 
+/** 完整预结算：3101→2303 仅展示金额，不确认落账 */
+async function handleClinicalPreSettle() {
+  const p = selectedPatient.value;
+  if (!p) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  const encounterId = preserveApiIdForRequest(p.encounterId);
+  const patientId = preserveApiIdForRequest(p.patientId);
+  if (!encounterId || !patientId) {
+    ElMessage.warning('患者就诊信息不完整');
+    return;
+  }
+  clinicalPreSettleLoading.value = true;
+  try {
+    const result = await runInpatientClinicalPreSettle({
+      params: {
+        encounterId,
+        patientId,
+        encounterBusNo: p.encounterBusNo,
+        statusEnum: p.statusEnum,
+        contractDisplay: p.contractDisplay,
+      },
+      dialogRef: detailAuditDialogRef,
+    });
+    if (!result) {
+      return;
+    }
+    clinicalPreSettleSnapshot.value = result.snapshot;
+    clinicalPreSettleVisible.value = true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '完整预结算失败';
+    ElMessage.error(message);
+  } finally {
+    clinicalPreSettleLoading.value = false;
+  }
+}
+
+const clinicalPreSettleInsuranceBreakdown = computed(() =>
+  buildClinicalPreSettleInsuranceBreakdown(clinicalPreSettleSnapshot.value),
+);
+
 const handleQuickAction = async (
-  action: 'allergy' | 'exam' | 'lab' | 'pathology' | 'report' | 'surgery' | 'transfusion',
+  action:
+    | 'allergy'
+    | 'entrust'
+    | 'exam'
+    | 'lab'
+    | 'pathology'
+    | 'report'
+    | 'surgery'
+    | 'transfusion'
+    | 'treatment',
 ) => {
   if (!ensurePatientSelected()) return;
   const isWriteQuickAction =
     action === 'exam' ||
     action === 'lab' ||
+    action === 'treatment' ||
     action === 'transfusion' ||
     action === 'pathology' ||
     action === 'surgery';
@@ -277,11 +354,18 @@ const handleQuickAction = async (
     activeTab.value = DOCTOR_TABS.REPORT_QUERY;
     return;
   }
-  if (action === 'lab' || action === 'exam') {
+  if (action === 'lab' || action === 'exam' || action === 'treatment') {
     openServiceApplyDialog(action);
     return;
   }
-  const actionTextMap: Record<Exclude<typeof action, 'exam' | 'lab' | 'report'>, string> = {
+  // 嘱托由开立医嘱工作区本地处理，一般不会冒泡到此
+  if (action === 'entrust') {
+    return;
+  }
+  const actionTextMap: Record<
+    Exclude<typeof action, 'entrust' | 'exam' | 'lab' | 'report' | 'treatment'>,
+    string
+  > = {
     transfusion: '输血申请',
     pathology: '病理申请',
     surgery: '手术申请',
@@ -292,6 +376,7 @@ const handleQuickAction = async (
 
 const serviceApplyDialogVisible = ref(false);
 const serviceApplyKind = ref<ServiceApplyKind>('lab');
+const serviceApplyEditGroup = ref<null | ServiceApplyDocumentGroup>(null);
 
 /** 检验/检查申请弹窗顶部患者摘要 */
 const serviceApplyPatientSummary = computed<ServiceApplyPatientSummary>(() => {
@@ -308,14 +393,32 @@ const serviceApplyPatientSummary = computed<ServiceApplyPatientSummary>(() => {
   };
 });
 
-/** 打开检验/检查申请弹窗 */
+/** 打开检验/检查/治疗申请弹窗（新建） */
 function openServiceApplyDialog(kind: ServiceApplyKind) {
+  serviceApplyEditGroup.value = null;
   serviceApplyKind.value = kind;
   serviceApplyDialogVisible.value = true;
 }
 
-/** 申请单签发成功后刷新当前「开立医嘱」列表 */
-async function handleServiceApplySigned() {
+/** 双击草稿申请单：弹窗编辑（已签发须先撤回） */
+function handleEditServiceApply(group: ServiceApplyDocumentGroup) {
+  const head = group.lines[0];
+  const kind = head ? (inferServiceApplyKindFromAdviceRow(head) ?? 'lab') : 'lab';
+  serviceApplyKind.value = kind;
+  // 先写入回显组再打开，避免 watch 打开瞬间无 editDocumentGroup
+  serviceApplyEditGroup.value = group;
+  serviceApplyDialogVisible.value = true;
+}
+
+/** 申请单弹窗关闭后清空编辑回显，避免下次新建串数据 */
+watch(serviceApplyDialogVisible, (open) => {
+  if (!open) {
+    serviceApplyEditGroup.value = null;
+  }
+});
+
+/** 申请单暂存/签发成功后刷新当前「开立医嘱」列表 */
+async function handleServiceApplyPersisted() {
   if (activeTab.value !== DOCTOR_TABS.ORDER) return;
   await nextTick();
   const inst = tabPanelRef.value as undefined | { reload?: () => Promise<void> };
@@ -379,6 +482,14 @@ const handleNursing = () => {
             <ElButton
               type="primary"
               link
+              :loading="clinicalPreSettleLoading"
+              @click="handleClinicalPreSettle"
+            >
+              完整预结算
+            </ElButton>
+            <ElButton
+              type="primary"
+              link
               :disabled="adviceWriteDisabled"
               @click="handleCompleteVisit"
             >
@@ -404,6 +515,7 @@ const handleNursing = () => {
                 :form-data="medicalRecordData"
                 v-bind="doctorStationContextBindings"
                 @quick-action="handleQuickAction"
+                @edit-service-apply="handleEditServiceApply"
                 @update="handleFormUpdate"
               />
             </KeepAlive>
@@ -427,11 +539,23 @@ const handleNursing = () => {
     <ServiceApplyDialog
       v-model="serviceApplyDialogVisible"
       station-scope="inpatient"
+      shell="dialog"
       :apply-kind="serviceApplyKind"
+      :edit-document-group="serviceApplyEditGroup"
       :encounter-id="selectedPatient?.encounterId ?? ''"
       :patient-id="selectedPatient?.patientId ?? ''"
       :patient="serviceApplyPatientSummary"
-      @signed="handleServiceApplySigned"
+      @saved="handleServiceApplyPersisted"
+    />
+
+    <DetailAuditRemindDialog ref="detailAuditDialogRef" warn-type="1" />
+    <InpatientClinicalPreSettlePreviewDialog
+      v-model="clinicalPreSettleVisible"
+      :display-amount="clinicalPreSettleSnapshot?.displayAmount ?? 0"
+      :receivable-total="clinicalPreSettleSnapshot?.receivableTotal ?? 0"
+      :preview-text="clinicalPreSettleSnapshot?.previewText"
+      :insurance-pre-settled="clinicalPreSettleSnapshot?.insurancePreSettled"
+      :insurance-breakdown-items="clinicalPreSettleInsuranceBreakdown"
     />
   </div>
 </template>

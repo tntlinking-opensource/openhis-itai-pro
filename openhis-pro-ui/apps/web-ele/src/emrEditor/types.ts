@@ -8,4 +8,6 @@ export interface EmrMetadataField {
   label: string;
   /** 默认 true：可编辑；false 表示仅展示绑定值（随患者信息更新） */
   editable?: boolean;
+  /** 取值来源（与 MetadataValueSource 对齐），侧栏按此分组 */
+  valueSource?: string;
 }

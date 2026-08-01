@@ -22,6 +22,7 @@ import {
 } from 'element-plus';
 
 import PatientCard from '#/components/outpatient/patient-card.vue';
+import { useSingleDayDatePickerShortcuts } from '#/composables/use-single-day-date-picker-shortcuts';
 import { encounterQueueStatusDisplayText } from '#/utils/outpatient/encounter-queue-status-text';
 
 import PatientAllergySkinTestSection from './components/patient-allergy-skin-test-section.vue';
@@ -71,12 +72,28 @@ const emit = defineEmits<{
   queueChange: [queue: 'away' | 'completed' | 'current' | 'waiting'];
   queueStatusFilterChange: [filter: DoctorWaitingQueueStatusFilter];
   quickAction: [
-    action: 'allergy' | 'exam' | 'lab' | 'pathology' | 'report' | 'surgery' | 'transfusion',
+    action:
+      | 'allergy'
+      | 'exam'
+      | 'lab'
+      | 'pathology'
+      | 'report'
+      | 'surgery'
+      | 'transfusion'
+      | 'treatment',
   ];
   refresh: [];
   search: [keyword: string];
   select: [patient: DoctorStationPatient];
 }>();
+
+const { dateShortcuts, singleDayPopperClass } = useSingleDayDatePickerShortcuts(
+  () => filterDate.value,
+  (ymd) => {
+    filterDate.value = ymd;
+    emit('dateChange', ymd);
+  },
+);
 
 const searchKeyword = ref('');
 const isRefreshing = ref(false);
@@ -150,16 +167,24 @@ const outpatientStatusChipStyle = (patient: DoctorStationPatient) => {
   return getOutpatientStatusTagStyles(text);
 };
 
-/** 与 PatientCard 门诊底部费用标签一致（固定自费） */
-const selfPayChipStyle = getPaymentTypeTagStyles('自费');
+/** 当前接诊卡费用性质胶囊样式（读后端 contractDisplay） */
+const feeNatureChipStyle = (patient: DoctorStationPatient) => {
+  const label = (patient.contractDisplay ?? '').trim() || '自费';
+  return getPaymentTypeTagStyles(label);
+};
+
+const feeNatureChipLabel = (patient: DoctorStationPatient) =>
+  (patient.contractDisplay ?? '').trim() || '自费';
 
 const outpatientStatusChipInlineStyle = (patient: DoctorStationPatient) => {
   const c = outpatientStatusChipStyle(patient);
   return { backgroundColor: c.bgColor, color: c.textColor };
 };
 
+/** 「当前接诊」禁止手点切换，仅接诊成功后由父级程序切入 */
 const handleQueueRadioChange = (val: boolean | number | string | undefined) => {
-  if (val === 'away' || val === 'completed' || val === 'current' || val === 'waiting') {
+  if (val === 'current') return;
+  if (val === 'away' || val === 'completed' || val === 'waiting') {
     emit('queueChange', val);
   }
 };
@@ -188,7 +213,15 @@ const waitingQueueEmptyHint = computed(() => {
 });
 
 const handleQuickAction = (
-  action: 'allergy' | 'exam' | 'lab' | 'pathology' | 'report' | 'surgery' | 'transfusion',
+  action:
+    | 'allergy'
+    | 'exam'
+    | 'lab'
+    | 'pathology'
+    | 'report'
+    | 'surgery'
+    | 'transfusion'
+    | 'treatment',
 ) => {
   emit('quickAction', action);
 };
@@ -230,7 +263,14 @@ const handleRefresh = () => {
             <span class="block h-full w-full" aria-hidden="true"></span>
           </ElBadge>
         </div>
-        <ElRadioButton value="current" class="min-w-0 flex-1">当前接诊</ElRadioButton>
+        <ElRadioButton
+          value="current"
+          class="min-w-0 flex-1"
+          disabled
+          title="请从患者队列双击接诊进入"
+        >
+          当前接诊
+        </ElRadioButton>
       </ElRadioGroup>
       <div class="flex items-center gap-2">
         <ElDatePicker
@@ -240,6 +280,8 @@ const handleRefresh = () => {
           format="YYYY-MM-DD"
           value-format="YYYY-MM-DD"
           placeholder="请选择日期"
+          :shortcuts="dateShortcuts"
+          :popper-class="singleDayPopperClass"
           @change="handleDateChange"
         />
         <ElButton type="default" class="!px-2" @click="handleRefresh">
@@ -311,11 +353,11 @@ const handleRefresh = () => {
                 <span
                   class="rounded-full px-2.5 py-0.5 text-xs font-medium"
                   :style="{
-                    backgroundColor: selfPayChipStyle.bgColor,
-                    color: selfPayChipStyle.textColor,
+                    backgroundColor: feeNatureChipStyle(patient).bgColor,
+                    color: feeNatureChipStyle(patient).textColor,
                   }"
                 >
-                  自费
+                  {{ feeNatureChipLabel(patient) }}
                 </span>
                 <span
                   v-if="patient.workInjuryEncounter"
@@ -341,6 +383,10 @@ const handleRefresh = () => {
             <div class="patient-item__row">
               <span class="patient-item__label">电话号</span>
               <span class="patient-item__value">{{ formatField(patient.phone) }}</span>
+            </div>
+            <div class="patient-item__row">
+              <span class="patient-item__label">身份证号</span>
+              <span class="patient-item__value">{{ formatField(patient.idCard) }}</span>
             </div>
             <PatientAllergySkinTestSection
               :patient-id="patient.patientId ?? ''"
@@ -411,6 +457,15 @@ const handleRefresh = () => {
           @click="handleQuickAction('lab')"
         >
           <span>检验申请</span>
+          <span class="quick-action-arrow">></span>
+        </button>
+        <button
+          type="button"
+          class="quick-action-item"
+          :disabled="!selectedPatientId"
+          @click="handleQuickAction('treatment')"
+        >
+          <span>治疗申请</span>
           <span class="quick-action-arrow">></span>
         </button>
         <button
@@ -491,6 +546,15 @@ const handleRefresh = () => {
 .doctor-queue-radio
   :deep(.doctor-queue-tab-first + .el-radio-button.is-active .el-radio-button__inner) {
   box-shadow: none !important;
+}
+
+/* 程序切入「当前接诊」后：disabled 仍保持选中态主色，避免灰掉看不清 */
+.doctor-queue-radio :deep(.el-radio-button.is-active.is-disabled .el-radio-button__inner) {
+  color: var(--el-radio-button-checked-text-color, var(--el-color-white));
+  background-color: var(--el-radio-button-checked-bg-color, var(--el-color-primary));
+  border-color: var(--el-radio-button-checked-border-color, var(--el-color-primary));
+  cursor: not-allowed;
+  opacity: 1;
 }
 
 .doctor-queue-bottom-bar {

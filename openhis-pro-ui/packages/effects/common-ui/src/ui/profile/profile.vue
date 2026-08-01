@@ -24,10 +24,10 @@ const tabsValue = defineModel<string>('modelValue');
         <div class="mt-4 flex h-40 flex-col items-center justify-center gap-4">
           <VbenAvatar :src="userInfo?.avatar ?? preferences.app.defaultAvatar" class="size-20" />
           <span class="text-lg font-semibold">
-            {{ userInfo?.realName ?? '' }}
+            {{ userInfo?.realName || userInfo?.name || '' }}
           </span>
           <span class="text-foreground/80 text-sm">
-            {{ userInfo?.username ?? '' }}
+            {{ userInfo?.username || userInfo?.userName || '' }}
           </span>
         </div>
         <Separator class="my-4" />

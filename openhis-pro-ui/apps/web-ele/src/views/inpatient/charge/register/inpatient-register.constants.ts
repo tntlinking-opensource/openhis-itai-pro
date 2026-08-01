@@ -74,3 +74,9 @@ export const DEFAULT_DIAGNOSIS_CATEGORY = 'GENERAL';
 
 /** 门诊转住院默认入院方式码（与后端 in_way_code 术语 code=1 对齐） */
 export const DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER = '1';
+
+/** 默认入院类型码（与后端 admit_source_code 术语 code=6「常规」对齐） */
+export const DEFAULT_ADMIT_SOURCE_CODE_ROUTINE = '6';
+
+/** 默认病情优先级码（与后端 adm_cond_code 术语 code=3「一般」对齐） */
+export const DEFAULT_ADM_COND_CODE_GENERAL = '3';

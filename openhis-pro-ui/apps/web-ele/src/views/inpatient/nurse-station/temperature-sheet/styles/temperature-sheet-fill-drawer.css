@@ -27,3 +27,15 @@
 .temp-single-fill-drawer .el-drawer__footer {
   padding: 4px 10px;
 }
+
+/*
+ * 单人录入抽屉默认 z-index=3001，下拉/时间面板默认约 2000，会被盖住。
+ * popper 挂到 body 后仍需高于抽屉。
+ */
+.temperature-sheet-fill-popper {
+  z-index: 4100 !important;
+}
+
+.temperature-sheet-time-field-popper {
+  padding: 8px !important;
+}

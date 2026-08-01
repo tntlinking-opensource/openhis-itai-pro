@@ -22,16 +22,11 @@ import { inferAdviceRowResourceType, mergeMedicationAdviceRowsForListDisplay } f
 /** 历史医嘱默认一次拉取条数（结构-only 行，前端按 encounterId 分组） */
 const HISTORY_ADVICE_PAGE_SIZE = 500;
 
-/** 从收费/展示态推断是否允许复用 */
-function mapReuseMeta(
-  dto: DoctorStationAdviceRowDto,
-): Pick<HistoryAdviceRowItem, 'reusable' | 'reuseWarning'> {
+/** 收费/展示态含退费（已退费、待退费）→ 不可复用，历史列表不展示 */
+function isHistoryAdviceRefundBlocked(dto: DoctorStationAdviceRowDto): boolean {
   const charge = String(dto.chargeStatusEnum ?? '').toUpperCase();
   const display = String(dto.displayStatusEnum ?? '').toUpperCase();
-  if (charge.includes('REFUND') || display.includes('REFUND')) {
-    return { reusable: false, reuseWarning: '该项目已退费或待退费，不可复用' };
-  }
-  return { reusable: true };
+  return charge.includes('REFUND') || display.includes('REFUND');
 }
 
 /** 组装左栏「药 x · 诊 x · 材 x」摘要 */
@@ -72,10 +67,10 @@ function pickPrimaryDiagnosis(rows: readonly DoctorStationAdviceRowDto[]): strin
   return '—';
 }
 
-function pickLatestAuthoredAt(rows: readonly DoctorStationAdviceRowDto[]): string {
+function pickLatestReqOpenedTime(rows: readonly DoctorStationAdviceRowDto[]): string {
   return (
     rows
-      .map((row) => String(row.authoredAt ?? '').trim())
+      .map((row) => String(row.reqOpenedTime ?? '').trim())
       .filter(Boolean)
       .toSorted()
       .at(-1) ?? ''
@@ -102,37 +97,15 @@ function mapEncounterDto(
   };
 }
 
-/** 单就诊医嘱 DTO 列表 → 表格行（含成组合并） */
+/** 单就诊医嘱 DTO 列表 → 表格行（含成组合并）；退费行已剔除 */
 function mapHistoryAdviceRows(
   encounterId: string,
   dtos: readonly DoctorStationAdviceRowDto[],
 ): HistoryAdviceRowItem[] {
-  const reuseByRequestId = new Map<
-    string,
-    Pick<HistoryAdviceRowItem, 'reusable' | 'reuseWarning'>
-  >();
-  for (const dto of dtos) {
-    const requestId = String(dto.requestId ?? '').trim();
-    if (requestId) reuseByRequestId.set(requestId, mapReuseMeta(dto));
-  }
-
-  const merged = mergeMedicationAdviceRowsForListDisplay(dtos);
-  return merged.map((row) => {
-    const requestId = String(row.requestId ?? '').trim();
-    const members = row.mergedAdviceRows ?? [row];
-    const blockedMember = members.find((member) => {
-      const rid = String(member.requestId ?? '').trim();
-      return rid && reuseByRequestId.get(rid)?.reusable === false;
-    });
-    if (blockedMember) {
-      const rid = String(blockedMember.requestId ?? '').trim();
-      const warning =
-        (rid ? reuseByRequestId.get(rid)?.reuseWarning : undefined) || '该医嘱不可复用';
-      return { ...row, encounterId, reusable: false, reuseWarning: warning };
-    }
-    const reuseMeta = requestId ? reuseByRequestId.get(requestId) : undefined;
-    return { ...row, encounterId, ...(reuseMeta ?? { reusable: true }) };
-  });
+  // 已退费/待退费不可复用，直接不进入历史列表
+  const visibleDtos = dtos.filter((dto) => !isHistoryAdviceRefundBlocked(dto));
+  const merged = mergeMedicationAdviceRowsForListDisplay(visibleDtos);
+  return merged.map((row) => ({ ...row, encounterId, reusable: true }));
 }
 
 function mapBundleDto(
@@ -142,12 +115,21 @@ function mapBundleDto(
   const rawRows = bundle.rows ?? [];
   const encounterDto = bundle.encounter;
   if (!encounterDto) return null;
-  const encounter = mapEncounterDto(encounterDto, currentEncounterId, rawRows);
+  // 仅保留可复用行后再组卡片，避免左栏摘要含退费条数
+  const visibleRows = rawRows.filter((dto) => !isHistoryAdviceRefundBlocked(dto));
+  const encounter = mapEncounterDto(
+    {
+      ...encounterDto,
+      adviceCountSummary: buildAdviceCountSummary(visibleRows),
+    },
+    currentEncounterId,
+    visibleRows,
+  );
   if (!encounter.encounterId) return null;
-  return {
-    encounter,
-    rows: mapHistoryAdviceRows(encounter.encounterId, rawRows),
-  };
+  const rows = mapHistoryAdviceRows(encounter.encounterId, visibleRows);
+  // 整次就诊仅剩退费医嘱时不展示该就诊卡片
+  if (rows.length === 0) return null;
+  return { encounter, rows };
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -187,7 +169,11 @@ function buildBundlesFromFlatAdviceRows(
   currentEncounterId: string,
 ): HistoryAdviceEncounterBundle[] {
   const byEncounter = new Map<string, DoctorStationAdviceRowDto[]>();
+  // 入组前剔除退费行，避免空就诊卡片与摘要虚高
   for (const row of rows) {
+    if (isHistoryAdviceRefundBlocked(row)) {
+      continue;
+    }
     const encounterId = String(row.encounterId ?? '').trim();
     if (!encounterId) {
       continue;
@@ -199,7 +185,11 @@ function buildBundlesFromFlatAdviceRows(
 
   const pending: Array<{ bundle: HistoryAdviceEncounterBundle; rawVisitTime: string }> = [];
   for (const [encounterId, encounterRows] of byEncounter) {
-    const visitTimeRaw = pickLatestAuthoredAt(encounterRows);
+    const historyRows = mapHistoryAdviceRows(encounterId, encounterRows);
+    if (historyRows.length === 0) {
+      continue;
+    }
+    const visitTimeRaw = pickLatestReqOpenedTime(encounterRows);
     const encounter = mapEncounterDto(
       {
         encounterId,
@@ -208,16 +198,14 @@ function buildBundlesFromFlatAdviceRows(
         visitTypeText: '门诊',
         primaryDiagnosis: pickPrimaryDiagnosis(encounterRows),
         orderingDoctor: String(encounterRows[0]?.authoredByName ?? '').trim() || '—',
+        adviceCountSummary: buildAdviceCountSummary(encounterRows),
       },
       currentEncounterId,
       encounterRows,
     );
     pending.push({
       rawVisitTime: visitTimeRaw,
-      bundle: {
-        encounter,
-        rows: mapHistoryAdviceRows(encounterId, encounterRows),
-      },
+      bundle: { encounter, rows: historyRows },
     });
   }
 

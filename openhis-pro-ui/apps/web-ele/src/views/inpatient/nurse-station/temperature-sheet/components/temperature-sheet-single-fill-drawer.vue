@@ -25,15 +25,19 @@ import { useFormKeyboardNavigation } from '#/hooks/use-form-keyboard-navigation'
 import { useRequest } from '#/hooks/use-request';
 
 import {
-  applyFillSlotsToDraft,
+  applyFillSlotsToEditableDraft,
   applySavedVitalSignIdsToFillRows,
   collectTemperatureSheetSaveRequests,
+  createDefaultEditableFillRows,
   createEmptyExtraRecord,
-  createEmptyFillRows,
+  createEmptyFillRow,
   formatTemperatureSheetDisplayDate,
+  formatTemperatureSheetTimeSlotHm,
+  hasEditableFillRowVitalContent,
   isBloodPressureInputDisabled,
   resolveMergedTemperatureSheetGridRows,
   shiftTemperatureSheetRecordDateYmd,
+  syncFillRowChartTimeSlot,
 } from '../services/map-nurse-station-temperature-sheet';
 import {
   buildSpecialEventLabelMap,
@@ -47,8 +51,8 @@ import {
   validateFillRowsSpecialEvents,
   validateSpecialEventStore,
 } from '../services/temperature-sheet-special-events';
-import { formatTemperatureSheetTimeSlotRange } from '../services/temperature-sheet-time-format';
 import TemperatureSheetFillSlotSpecial from './temperature-sheet-fill-slot-special.vue';
+import TemperatureSheetBottomTimePicker from './temperature-sheet-bottom-time-picker.vue';
 import '../styles/temperature-sheet-fill-drawer.css';
 
 defineOptions({
@@ -91,7 +95,7 @@ const recordDate = ref('');
 const activeFillSlotIndex = ref(0);
 const savingAll = ref(false);
 const fillFormAreaRef = ref<HTMLElement | null>(null);
-const tempRecordRows = ref<TemperatureSheetFillRowDraft[]>(createEmptyFillRows());
+const tempRecordRows = ref<TemperatureSheetFillRowDraft[]>(createDefaultEditableFillRows());
 const extraRecord = ref<TemperatureSheetExtraRecordDraft>(createEmptyExtraRecord());
 const specialEventStore = ref<TemperatureSheetSpecialEventStore>(createEmptySpecialEventStore());
 const specialEventOptions = ref<TemperatureSheetSpecialEventOption[]>([]);
@@ -100,6 +104,9 @@ const specialEventSelectOptions = computed(() =>
   buildSpecialEventSelectOptions(specialEventOptions.value),
 );
 const specialEventLabelMap = computed(() => buildSpecialEventLabelMap(specialEventOptions.value));
+/** 单人录入最多条数（防误点） */
+const MAX_EDITABLE_FILL_ROWS = 48;
+const canAddFillRow = computed(() => tempRecordRows.value.length < MAX_EDITABLE_FILL_ROWS);
 
 const patientTitleText = computed(() => {
   const patient = currentPatient.value;
@@ -180,7 +187,7 @@ function resolveActiveSlotIndex(
 async function loadFillDrawerSlots(): Promise<void> {
   const patient = currentPatient.value;
   if (!patient || !recordDate.value.trim()) {
-    tempRecordRows.value = createEmptyFillRows();
+    tempRecordRows.value = createDefaultEditableFillRows();
     extraRecord.value = createEmptyExtraRecord();
     specialEventStore.value = createEmptySpecialEventStore();
     return;
@@ -198,7 +205,7 @@ async function loadFillDrawerSlots(): Promise<void> {
   specialEventStore.value = buildSpecialEventStoreFromGridRows(sheetGridRows);
 
   if (response.fillSlots) {
-    const draft = applyFillSlotsToDraft(response.fillSlots);
+    const draft = applyFillSlotsToEditableDraft(response.fillSlots);
     draft.rows.forEach((row) => {
       syncSpecialEventTimesOnSelectionChange(row);
       syncSpecialEventShortcutFields(row);
@@ -208,8 +215,64 @@ async function loadFillDrawerSlots(): Promise<void> {
     return;
   }
 
-  tempRecordRows.value = createEmptyFillRows();
+  tempRecordRows.value = createDefaultEditableFillRows();
   extraRecord.value = createEmptyExtraRecord();
+}
+
+/** 修改行测量时间（自选时分，禁止与其他行重复） */
+function handleRowRecordTimeChange(row: TemperatureSheetFillRowDraft, timeHm: null | string): void {
+  if (!timeHm?.trim()) {
+    return;
+  }
+  const nextTime = timeHm.trim();
+  if (nextTime === row.recordTime) {
+    return;
+  }
+  const duplicated = tempRecordRows.value.some(
+    (item) => item.rowUid !== row.rowUid && item.recordTime === nextTime,
+  );
+  if (duplicated) {
+    ElMessage.warning(`${nextTime} 已有录入行`);
+    return;
+  }
+  row.recordTime = nextTime;
+  syncFillRowChartTimeSlot(row);
+  syncSpecialEventTimesOnSelectionChange(row);
+  syncSpecialEventShortcutFields(row);
+}
+
+/** 手动新增一条待填写行 */
+function handleAddFillRow(): void {
+  if (tempRecordRows.value.length >= MAX_EDITABLE_FILL_ROWS) {
+    ElMessage.warning(`单日最多 ${MAX_EDITABLE_FILL_ROWS} 条`);
+    return;
+  }
+  const row = createEmptyFillRow();
+  // 若与已有行撞同一时分，顺延一分钟
+  while (tempRecordRows.value.some((item) => item.recordTime === row.recordTime)) {
+    const [hourText, minuteText] = row.recordTime.split(':');
+    const hour = Number(hourText);
+    const minute = Number(minuteText);
+    const nextMinuteTotal = hour * 60 + minute + 1;
+    const nextHour = Math.floor(nextMinuteTotal / 60) % 24;
+    const nextMinute = nextMinuteTotal % 60;
+    row.recordTime = `${String(nextHour).padStart(2, '0')}:${String(nextMinute).padStart(2, '0')}`;
+    syncFillRowChartTimeSlot(row);
+  }
+  tempRecordRows.value.push(row);
+  activeFillSlotIndex.value = tempRecordRows.value.length - 1;
+}
+
+/** 删除录入行（至少保留 1 条） */
+function handleRemoveFillRow(index: number): void {
+  if (tempRecordRows.value.length <= 1) {
+    ElMessage.warning('至少保留一条待填写记录');
+    return;
+  }
+  tempRecordRows.value.splice(index, 1);
+  if (activeFillSlotIndex.value >= tempRecordRows.value.length) {
+    activeFillSlotIndex.value = tempRecordRows.value.length - 1;
+  }
 }
 
 /** 打开后聚焦首个体温输入框 */
@@ -231,6 +294,14 @@ async function open(options: {
   recordDate.value = options.recordDate?.trim() || dayjs().format('YYYY-MM-DD');
   await ensureSpecialEventOptionsLoaded();
   await loadFillDrawerSlots();
+  // 从批量入口带入时次：空行时落到该槽整点
+  if (options.activeTimeSlot && tempRecordRows.value.length === 1) {
+    const onlyRow = tempRecordRows.value[0];
+    if (onlyRow && !hasEditableFillRowVitalContent(onlyRow)) {
+      onlyRow.recordTime = formatTemperatureSheetTimeSlotHm(options.activeTimeSlot);
+      syncFillRowChartTimeSlot(onlyRow);
+    }
+  }
   activeFillSlotIndex.value = resolveActiveSlotIndex(options.activeTimeSlot);
   visible.value = true;
   await focusFirstInput();
@@ -248,9 +319,10 @@ function shiftRecordDateByDays(offset: number): void {
   }
 }
 
-/** 复制上一时次录入值 */
+/** 复制上一行生命体征（不含时间；首行不可用） */
 function copyPrevRow(index: number): void {
   if (index <= 0) {
+    ElMessage.warning('已是第一条，无法复制上条');
     return;
   }
   const prev = tempRecordRows.value[index - 1];
@@ -258,10 +330,28 @@ function copyPrevRow(index: number): void {
   if (!prev || !current) {
     return;
   }
-  current.temp = prev.temp;
-  current.pulse = prev.pulse;
-  current.respiratory = prev.respiratory;
-  current.heartRate = prev.heartRate;
+  const hasPrevVital =
+    Boolean(prev.temp.trim()) ||
+    Boolean(prev.pulse.trim()) ||
+    Boolean(prev.respiratory.trim()) ||
+    Boolean(prev.heartRate.trim()) ||
+    Boolean(prev.systolic.trim()) ||
+    Boolean(prev.diastolic.trim());
+  if (!hasPrevVital) {
+    ElMessage.warning('上一条暂无生命体征可复制');
+    return;
+  }
+  // 整行替换，避免个别输入框未及时回显
+  tempRecordRows.value[index] = {
+    ...current,
+    temp: prev.temp,
+    pulse: prev.pulse,
+    respiratory: prev.respiratory,
+    heartRate: prev.heartRate,
+    systolic: prev.systolic,
+    diastolic: prev.diastolic,
+  };
+  ElMessage.success('已复制上条生命体征');
 }
 
 /** 保存前校验特殊事件（合并当日编辑到窗口存储） */
@@ -309,11 +399,29 @@ function fillSameFromFirstRow(): void {
   });
 }
 
+/** 保存前校验测量时间是否重复 */
+function validateFillRowTimesUnique(): string | null {
+  const seen = new Set<string>();
+  for (const row of tempRecordRows.value) {
+    if (seen.has(row.recordTime)) {
+      return `${row.recordTime} 重复，请调整后再保存`;
+    }
+    seen.add(row.recordTime);
+  }
+  return null;
+}
+
 /** 批量保存当日全部已填写时次 */
 async function handleSaveAllSlots(): Promise<void> {
   const patient = currentPatient.value;
   if (!patient || !recordDate.value) {
     ElMessage.warning('请先选择患者与录入日期');
+    return;
+  }
+
+  const timeError = validateFillRowTimesUnique();
+  if (timeError) {
+    ElMessage.warning(timeError);
     return;
   }
 
@@ -387,6 +495,8 @@ defineExpose({
               v-model="recordDate"
               format="YYYY-MM-DD"
               placeholder="录入日期"
+              popper-class="temperature-sheet-fill-popper"
+              teleported
               type="date"
               value-format="YYYY-MM-DD"
             />
@@ -398,9 +508,12 @@ defineExpose({
         </div>
         <div class="fill-toolbar-right">
           <ElButton plain @click="fillSameTemperature(tempRecordRows[0]?.temp)">
-            同步体温到全部时次
+            同步体温到全部
           </ElButton>
           <ElButton plain @click="fillSameFromFirstRow">同步首行生命体征</ElButton>
+          <ElButton :disabled="!canAddFillRow" type="primary" @click="handleAddFillRow">
+            新增
+          </ElButton>
         </div>
       </div>
 
@@ -413,7 +526,7 @@ defineExpose({
             >
           </header>
           <div class="fill-grid-head">
-            <span>时次</span>
+            <span>时间</span>
             <span>体温(℃)</span>
             <span>脉搏</span>
             <span>呼吸</span>
@@ -426,16 +539,22 @@ defineExpose({
           <div class="fill-grid-body">
             <div
               v-for="(row, index) in tempRecordRows"
-              :key="row.timeSlot"
+              :key="row.rowUid"
               class="fill-row"
               :class="{ 'is-active-slot': index === activeFillSlotIndex }"
               @click="activeFillSlotIndex = index"
             >
-              <div class="time-slot-cell">
-                <span class="time-slot">{{ row.timeSlot }}:00</span>
-                <span class="time-slot-range">{{
-                  formatTemperatureSheetTimeSlotRange(row.timeSlot)
-                }}</span>
+              <div
+                class="time-slot-cell nav-cell"
+                :data-nav-col="-1"
+                data-nav-group="vital"
+                :data-nav-row="index"
+                @click.stop
+              >
+                <TemperatureSheetBottomTimePicker
+                  :model-value="row.recordTime"
+                  @update:model-value="(value) => handleRowRecordTimeChange(row, value)"
+                />
               </div>
               <div class="nav-cell" :data-nav-col="0" data-nav-group="vital" :data-nav-row="index">
                 <ElInput v-model="row.temp" placeholder="体温">
@@ -480,7 +599,22 @@ defineExpose({
                 :special-event-select-options="specialEventSelectOptions"
               />
               <div class="fill-row-action">
-                <ElButton link type="primary" @click.stop="copyPrevRow(index)">复制上条</ElButton>
+                <ElButton
+                  :disabled="index === 0"
+                  link
+                  type="primary"
+                  @click.stop="copyPrevRow(index)"
+                >
+                  复制上条
+                </ElButton>
+                <ElButton
+                  :disabled="tempRecordRows.length <= 1"
+                  link
+                  type="danger"
+                  @click.stop="handleRemoveFillRow(index)"
+                >
+                  删除
+                </ElButton>
               </div>
             </div>
           </div>
@@ -497,56 +631,50 @@ defineExpose({
           </header>
           <div class="extra-grid">
             <div class="extra-item">
-              <span class="extra-label">体重(kg)</span>
-              <ElInput v-model="extraRecord.weight" placeholder="请输入体重">
+              <span class="extra-label">体重</span>
+              <ElInput v-model="extraRecord.weight" placeholder="体重">
                 <template #suffix>kg</template>
               </ElInput>
             </div>
             <div class="extra-item">
-              <span class="extra-label">小便次数(次)</span>
-              <ElInput v-model="extraRecord.urineCount" placeholder="请输入小便次数">
+              <span class="extra-label">小便次数</span>
+              <ElInput v-model="extraRecord.urineCount" placeholder="次数">
                 <template #suffix>次</template>
               </ElInput>
             </div>
             <div class="extra-item">
-              <span class="extra-label">腹围(cm)</span>
-              <ElInput v-model="extraRecord.abdominalCircumference" placeholder="请输入腹围">
+              <span class="extra-label">腹围</span>
+              <ElInput v-model="extraRecord.abdominalCircumference" placeholder="腹围">
                 <template #suffix>cm</template>
               </ElInput>
             </div>
             <div class="extra-item">
-              <span class="extra-label">大便次数(次)</span>
-              <ElInput v-model="extraRecord.stoolCount" placeholder="请输入大便次数">
+              <span class="extra-label">大便次数</span>
+              <ElInput v-model="extraRecord.stoolCount" placeholder="次数">
                 <template #suffix>次</template>
               </ElInput>
             </div>
             <div class="extra-item">
-              <span class="extra-label">身高(cm)</span>
-              <ElInput v-model="extraRecord.height" placeholder="请输入身高">
+              <span class="extra-label">身高</span>
+              <ElInput v-model="extraRecord.height" placeholder="身高">
                 <template #suffix>cm</template>
               </ElInput>
             </div>
             <div class="extra-item">
-              <span class="extra-label">入量(ml)</span>
-              <ElInput v-model="extraRecord.intake" placeholder="请输入入量">
+              <span class="extra-label">入量</span>
+              <ElInput v-model="extraRecord.intake" placeholder="入量">
                 <template #suffix>ml</template>
               </ElInput>
             </div>
             <div class="extra-item">
-              <span class="extra-label">皮试阳性</span>
-              <ElInput v-model="extraRecord.skinTestPositive" placeholder="请输入皮试阳性">
-                <template #suffix>次</template>
-              </ElInput>
-            </div>
-            <div class="extra-item">
-              <span class="extra-label">尿量(ml)</span>
-              <ElInput v-model="extraRecord.urine" placeholder="请输入尿量">
+              <span class="extra-label">尿量</span>
+              <ElInput v-model="extraRecord.urine" placeholder="尿量">
                 <template #suffix>ml</template>
               </ElInput>
             </div>
             <div class="extra-item">
-              <span class="extra-label">其他(ml)</span>
-              <ElInput v-model="extraRecord.other" placeholder="请输入其他">
+              <span class="extra-label">其他</span>
+              <ElInput v-model="extraRecord.other" placeholder="其他">
                 <template #suffix>ml</template>
               </ElInput>
             </div>
@@ -605,7 +733,8 @@ defineExpose({
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   background: #fff;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 .fill-card-title {
   display: flex;
@@ -623,7 +752,7 @@ defineExpose({
 .fill-grid-head,
 .fill-row {
   display: grid;
-  grid-template-columns: 88px repeat(6, 160px) minmax(0, 1fr) 72px;
+  grid-template-columns: 120px repeat(6, 160px) minmax(520px, 1fr) 120px;
   gap: 8px;
   align-items: start;
 }
@@ -656,29 +785,19 @@ defineExpose({
 }
 .fill-row-action {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: center;
+  gap: 2px;
   padding-top: 4px;
 }
 .time-slot-cell {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
   align-items: center;
   justify-content: center;
-  text-align: center;
 }
-.time-slot {
-  font-weight: 700;
-  font-size: 13px;
-  color: #1f2937;
-}
-.time-slot-range {
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.2;
-  color: var(--el-text-color-secondary);
-  white-space: nowrap;
+.time-slot-cell :deep(.bottom-time-trigger) {
+  width: 100%;
 }
 .fill-row .nav-cell :deep(.el-input),
 .extra-grid :deep(.el-input) {
@@ -694,20 +813,24 @@ defineExpose({
 }
 .extra-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px 12px;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 8px;
   padding: 8px;
+  align-items: end;
 }
 .extra-item {
-  display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 .extra-label {
-  text-align: left;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
   font-size: 12px;
   color: #4b5563;
+  white-space: nowrap;
 }
 .extra-item :deep(.el-input__wrapper) {
   min-height: 26px;

@@ -24,7 +24,24 @@ function getConfFiles() {
   if (result) {
     mode = result[1] as string;
   }
-  return ['.env', '.env.local', `.env.${mode}`, `.env.${mode}.local`];
+  const files = ['.env', '.env.local', `.env.${mode}`, `.env.${mode}.local`];
+
+  // 院点：直接读 projects/project-*/.env*（UTF-8），不写 apps/web-ele/.env.*.local
+  const rawProject = (process.env.OPENHIS_PROJECT ?? process.env.VITE_OPENHIS_PROJECT ?? '').trim();
+  if (rawProject) {
+    const projectId = rawProject.startsWith('project-')
+      ? rawProject.slice('project-'.length)
+      : rawProject;
+    const projectRel = `../../projects/project-${projectId}`;
+    files.push(
+      `${projectRel}/.env`,
+      `${projectRel}/.env.local`,
+      `${projectRel}/.env.${mode}`,
+      `${projectRel}/.env.${mode}.local`,
+    );
+  }
+
+  return files;
 }
 
 /**
@@ -90,18 +107,19 @@ async function loadAndConvertEnv(
     .split(',')
     .filter((item) => item === 'brotli' || item === 'gzip');
 
+  // 院点脚本写入的 process.env 优先于 apps/web-ele/.env 文件值
   return {
-    appTitle: getString(VITE_APP_TITLE, 'Vben Admin'),
-    archiver: getBoolean(VITE_ARCHIVER),
-    base: getString(VITE_BASE, '/'),
+    appTitle: getString(process.env.VITE_APP_TITLE || VITE_APP_TITLE, 'Vben Admin'),
+    archiver: getBoolean(process.env.VITE_ARCHIVER || VITE_ARCHIVER),
+    base: getString(process.env.VITE_BASE || VITE_BASE, '/'),
     compress: compressTypes.length > 0,
     compressTypes,
-    devtools: getBoolean(VITE_DEVTOOLS),
-    injectAppLoading: getBoolean(VITE_INJECT_APP_LOADING),
-    nitroMock: getBoolean(VITE_NITRO_MOCK),
-    port: getNumber(VITE_PORT, 5173),
-    pwa: getBoolean(VITE_PWA),
-    visualizer: getBoolean(VITE_VISUALIZER),
+    devtools: getBoolean(process.env.VITE_DEVTOOLS || VITE_DEVTOOLS),
+    injectAppLoading: getBoolean(process.env.VITE_INJECT_APP_LOADING || VITE_INJECT_APP_LOADING),
+    nitroMock: getBoolean(process.env.VITE_NITRO_MOCK || VITE_NITRO_MOCK),
+    port: getNumber(process.env.VITE_PORT || VITE_PORT, 5173),
+    pwa: getBoolean(process.env.VITE_PWA || VITE_PWA),
+    visualizer: getBoolean(process.env.VITE_VISUALIZER || VITE_VISUALIZER),
   };
 }
 

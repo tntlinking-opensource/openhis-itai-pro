@@ -6,6 +6,7 @@ import type {
 
 import { httpWorkInjuryPrepareInvoke, httpWorkInjurySubmitInvokeResult } from './work-injury.http';
 import { invokeWorkInjuryPlugin } from './work-injury-plugin';
+import { normalizeWorkInjuryWinOutput } from './probe-work-injury-filing';
 
 export interface RunWorkInjuryPhaseOptions {
   /** 首步 prepare 请求（无 sessionId）。 */
@@ -32,16 +33,14 @@ export async function runWorkInjuryPhase(
       throw new Error('工伤 invoke prepare 缺少 sessionId/stepToken/infno');
     }
     const winRes = await invokeWorkInjuryPlugin(prep, options.pluginUrl);
+    const normalizedOutput = normalizeWorkInjuryWinOutput(winRes.output);
     const sub = await httpWorkInjurySubmitInvokeResult({
       sessionId: prep.sessionId,
       stepToken: prep.stepToken,
       success: winRes.success !== false,
       infcode: winRes.infcode != null ? String(winRes.infcode) : '0',
       errMsg: winRes.errMsg,
-      output:
-        winRes.output && typeof winRes.output === 'object'
-          ? (winRes.output as Record<string, unknown>)
-          : {},
+      output: normalizedOutput,
       winMsgid: winRes.msgid,
       winRawInput: winRes.rawInput,
       context: submitContext,

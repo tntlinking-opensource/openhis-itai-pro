@@ -6,6 +6,11 @@ import type {
 
 import { formatDateTime } from '@vben/utils';
 
+import {
+  mergeConsecutiveRowsByDrugGroup,
+  type DrugGroupDisplayItem,
+  type DrugGroupKey,
+} from '#/utils/doctor-station/drug-group-table';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 /** 表格行：与 AdviceOrderDisplayCell 及校对页列展示对齐 */
@@ -14,6 +19,8 @@ export interface NurseStationOrderAuditTableRow {
   requestId: string;
   orderType: NurseStationOrderAuditOrderType;
   encounterId: string;
+  /** 诊疗类目 code（项目类型过滤：检验/检查/治疗/嘱托） */
+  categoryEnum?: string;
   stopTime: string;
   doctorName: string;
   typeLabel: string;
@@ -26,13 +33,22 @@ export interface NurseStationOrderAuditTableRow {
   content: string;
   dosage: string;
   extension?: string;
-  executor: string;
   executeTime: string;
+  /** 校对人姓名（非未校对 Tab 展示） */
+  performerCheckName: string;
   halted?: boolean;
   statusEnum?: string;
   tcmFlag?: boolean;
   prescriptionNo?: string;
   lineRequestIds?: string[];
+  /** 药品成组号（与医生站 group_id 同源） */
+  groupId?: string;
+  /** 成组括线展示项（同 groupId 合并后） */
+  groupItems?: DrugGroupDisplayItem[];
+  /** 成组合并前的成员行（写路径可展开；后端亦按 groupId 扩行） */
+  mergedMedicationMembers?: NurseStationOrderAuditTableRow[];
+  /** 是否皮试药（true 时医嘱内容旁展示「皮试」标记） */
+  skinTestFlag?: boolean;
 }
 
 /** 解析写操作锚点 orderType（禁止空值默认成药品） */
@@ -51,6 +67,8 @@ function resolveAuditOrderKindLabel(dto: NurseStationOrderAuditRowDto): string {
   if (category === '34') return '出院';
   if (category === '32') return '转科';
   if (category === '26') return '护理';
+  // 嘱托类目 52：禁止回落「诊疗」（BR-IP-ORD-028）
+  if (category === '52') return '嘱托';
   const orderType = resolveAuditOrderType(String(dto.orderType ?? ''));
   if (orderType === 'MED_REQUEST') return '药品';
   if (orderType === 'SERVICE_REQUEST') return '诊疗';
@@ -124,15 +142,24 @@ function mapAuditLineRequestIds(
   return mapped.length > 0 ? mapped : undefined;
 }
 
-/** 用法、频次拼成扩展行 */
+/** 用法、频次、备注拼成扩展行 */
 function buildAuditExtensionLine(dto: NurseStationOrderAuditRowDto): string {
+  const parts: string[] = [];
   const usage = String(dto.usageDisplay ?? '').trim();
   const freq = String(dto.frequencyDisplay ?? '').trim();
-  if (usage && freq) return `${usage}，${freq}`;
-  return usage || freq || '';
+  if (usage && freq) {
+    parts.push(`${usage}，${freq}`);
+  } else if (usage || freq) {
+    parts.push(usage || freq);
+  }
+  const remark = String(dto.remark ?? '').trim();
+  if (remark) {
+    parts.push(`备注：${remark}`);
+  }
+  return parts.join('；');
 }
 
-/** 列表行 DTO → 表格行 */
+/** 列表行 DTO → 表格行（未成组合并） */
 export function mapAuditRowDtoToTableRow(
   dto: NurseStationOrderAuditRowDto,
 ): NurseStationOrderAuditTableRow | null {
@@ -147,20 +174,30 @@ export function mapAuditRowDtoToTableRow(
     (requestId && orderType
       ? `${requestId}\u0001${orderType}`
       : `audit-${requestId || Date.now()}`);
-  const authoredRaw = String(dto.authoredTime ?? '').trim();
+  const openedRaw = String(dto.reqOpenedTime ?? '').trim();
   const stopRaw = String(dto.stopTime ?? '').trim();
+  const doctorName = String(dto.requesterName ?? '').trim() || '—';
+  const stopperName = String(dto.stopperName ?? '').trim();
+  const openedText = openedRaw ? formatDateTime(openedRaw) : '';
+  const stopText = stopRaw ? formatDateTime(stopRaw) : '';
+  // 开立时间后跟开立人；停嘱时间后跟停嘱人（BR-IP-ORD-031）
+  const executeTime =
+    openedText && doctorName !== '—' ? `${openedText} ${doctorName}` : openedText || '—';
+  const stopTimeDisplay = stopText && stopperName ? `${stopText} ${stopperName}` : stopText;
   const statusEnum = String(dto.statusEnum ?? '')
     .trim()
     .toUpperCase();
   const orderKindLabel = resolveAuditOrderKindLabel(dto);
+  const groupId = String(dto.groupId ?? dto.groupNo ?? '').trim() || undefined;
 
   return {
     id,
     requestId,
     orderType,
     encounterId: preserveApiIdForRequest(dto.encounterId) ?? '',
-    stopTime: stopRaw ? formatDateTime(stopRaw) : '',
-    doctorName: String(dto.requesterName ?? '').trim() || '—',
+    categoryEnum: String(dto.categoryEnum ?? '').trim() || undefined,
+    stopTime: stopTimeDisplay,
+    doctorName,
     typeLabel: buildAuditTypeLabel(dto),
     orderKindLabel,
     therapyTypeCode: resolveAuditTherapyTypeCode(dto) || undefined,
@@ -168,33 +205,113 @@ export function mapAuditRowDtoToTableRow(
     content: buildAuditContentTitle(dto),
     dosage: buildAuditDosageDisplay(dto),
     extension: buildAuditExtensionLine(dto) || undefined,
-    executor: String(dto.performerLocationDisplay ?? '').trim() || '—',
-    executeTime: authoredRaw ? formatDateTime(authoredRaw) : '—',
+    performerCheckName: String(dto.performerCheckName ?? '').trim() || '—',
+    executeTime,
     halted: statusEnum === 'STOPPED',
     statusEnum,
     tcmFlag: dto.tcmFlag === true ? true : undefined,
     prescriptionNo: String(dto.prescriptionNo ?? '').trim() || undefined,
     lineRequestIds: mapAuditLineRequestIds(dto.lineRequestIds),
+    groupId,
+    skinTestFlag: dto.skinTestFlag === true ? true : undefined,
   };
 }
 
-/** 选中表格行 → 写请求 items */
+/** 成组括线展示项：对齐门诊护士站 / 医生站 DrugGroupDisplayItem */
+function auditDtoToDrugGroupItem(dto: NurseStationOrderAuditRowDto): DrugGroupDisplayItem {
+  return {
+    selectedDrugName: String(dto.adviceDisplayName ?? '').trim(),
+    selectedDrugSpec: String(dto.specificationText ?? '').trim(),
+    pharmacy: '',
+    singleDose: String(dto.dosageDisplay ?? '').trim(),
+    doseSubUnit: '',
+    totalAmount: '',
+    totalAmountUnit: '',
+    usage: String(dto.usageDisplay ?? '').trim(),
+    frequency: String(dto.frequencyDisplay ?? '').trim(),
+    medicationDays: '',
+  };
+}
+
+/** 西药成组合并键：仅药嘱且非中药方折叠行 */
+function auditMedicationGroupMergeKey(dto: NurseStationOrderAuditRowDto): DrugGroupKey {
+  const orderType = resolveAuditOrderType(String(dto.orderType ?? ''));
+  if (orderType !== 'MED_REQUEST') {
+    return '';
+  }
+  if (dto.tcmFlag === true) {
+    return '';
+  }
+  const gid = String(dto.groupId ?? dto.groupNo ?? '').trim();
+  return gid === '' ? '' : gid;
+}
+
+/**
+ * 相同 groupId 且连续的西药行合并为一行，挂 groupItems 供括线展示（与门诊护士站一致）。
+ * 中药方已由后端按 prescription_no 折叠，此处不再二次合并。
+ */
+function mergeAuditMedicationRowsForDisplay(
+  rows: NurseStationOrderAuditRowDto[],
+): NurseStationOrderAuditTableRow[] {
+  return mergeConsecutiveRowsByDrugGroup(rows, {
+    getGroupKey: auditMedicationGroupMergeKey,
+    toGroupItem: auditDtoToDrugGroupItem,
+    buildMergedRow: ({ slice, groupItems }) => {
+      const members = slice
+        .map((dto) => mapAuditRowDtoToTableRow(dto))
+        .filter((row): row is NurseStationOrderAuditTableRow => row != null);
+      const firstMember = members[0];
+      if (firstMember === undefined) {
+        throw new Error('mergeAuditMedicationRowsForDisplay: empty slice');
+      }
+      if (members.length === 1) {
+        return { ...firstMember };
+      }
+      // 成组写路径：代表行 requestId + 全员 lineRequestIds（后端亦按 groupId 扩行）
+      const lineRequestIds = members.map((m) => m.requestId).filter((id) => id.length > 0);
+      const gid = String(slice[0]?.groupId ?? slice[0]?.groupNo ?? '').trim();
+      const idPart = lineRequestIds.join('&');
+      // 成组任一行需皮试则合并行展示皮试标记
+      const skinTestFlag = members.some((m) => m.skinTestFlag === true) ? true : undefined;
+      return {
+        ...firstMember,
+        id: gid ? `merged-med-${gid}-${idPart}` : `merged-med-${idPart}`,
+        groupItems,
+        mergedMedicationMembers: members,
+        lineRequestIds,
+        skinTestFlag,
+      };
+    },
+  });
+}
+
+/** 选中表格行 → 写请求 items（成组已展开为各成员 requestId；后端仍会再按 groupId 兜底扩行） */
 export function mapTableRowsToWriteItems(
   rows: NurseStationOrderAuditTableRow[],
 ): NurseStationOrderAuditWriteItemDto[] {
   const items: NurseStationOrderAuditWriteItemDto[] = [];
+  const seen = new Set<string>();
   for (const row of rows) {
-    const requestId = preserveApiIdForRequest(row.requestId);
-    if (!requestId) continue;
-    items.push({
-      orderType: row.orderType,
-      requestId,
-    });
+    // 成组合并行：展开全部成员；否则单行 requestId（中药方由后端按处方号扩）
+    const memberIds =
+      row.mergedMedicationMembers?.map((m) => m.requestId).filter((id) => id.length > 0) ??
+      (row.requestId ? [row.requestId] : []);
+    for (const requestIdRaw of memberIds) {
+      const requestId = preserveApiIdForRequest(requestIdRaw);
+      if (!requestId) continue;
+      const dedupeKey = `${row.orderType}:${requestId}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      items.push({
+        orderType: row.orderType,
+        requestId,
+      });
+    }
   }
   return items;
 }
 
-/** 接口分组列表 → encounterId → 表格行 */
+/** 接口分组列表 → encounterId → 表格行（含西药成组合并） */
 export function indexAuditGroupsByEncounterId(
   groups: { encounterId?: string; orders?: NurseStationOrderAuditRowDto[] }[] | undefined,
 ): Map<string, NurseStationOrderAuditTableRow[]> {
@@ -202,14 +319,123 @@ export function indexAuditGroupsByEncounterId(
   for (const group of groups ?? []) {
     const encounterId = preserveApiIdForRequest(group.encounterId);
     if (!encounterId) continue;
-    const rows: NurseStationOrderAuditTableRow[] = [];
-    for (const dto of group.orders ?? []) {
-      const row = mapAuditRowDtoToTableRow(dto);
-      if (row) {
-        rows.push(row);
-      }
-    }
-    map.set(encounterId, rows);
+    const rawRows = (group.orders ?? []).filter((dto) => dto != null);
+    map.set(encounterId, mergeAuditMedicationRowsForDisplay(rawRows));
   }
   return map;
+}
+
+/**
+ * 校对「项目类型」多选（与执行页同 code：west/tcm/lab/exam/treatment/entrust）。
+ * 检验 = categoryEnum 22；检查 = 23；治疗 = 21；嘱托 = 52。
+ */
+export type NurseStationOrderAuditProjectType =
+  | 'entrust'
+  | 'exam'
+  | 'lab'
+  | 'tcm'
+  | 'treatment'
+  | 'west';
+
+/** 项目类型全量（空选时按全选处理） */
+export const NURSE_STATION_ORDER_AUDIT_PROJECT_TYPES: NurseStationOrderAuditProjectType[] = [
+  'west',
+  'tcm',
+  'lab',
+  'exam',
+  'treatment',
+  'entrust',
+];
+
+/** 行归属的项目类型（用 orderType / tcmFlag / categoryEnum，禁止用展示文案） */
+export function resolveAuditRowProjectType(
+  row: Pick<NurseStationOrderAuditTableRow, 'categoryEnum' | 'orderType' | 'tcmFlag'>,
+): NurseStationOrderAuditProjectType | null {
+  if (row.tcmFlag === true) {
+    return 'tcm';
+  }
+  if (row.orderType === 'MED_REQUEST') {
+    return 'west';
+  }
+  const category = String(row.categoryEnum ?? '').trim();
+  if (category === '22') {
+    return 'lab';
+  }
+  if (category === '23') {
+    return 'exam';
+  }
+  if (category === '21') {
+    return 'treatment';
+  }
+  if (category === '52') {
+    return 'entrust';
+  }
+  return null;
+}
+
+/** 按项目类型多选过滤表格行；selected 为空视为全选 */
+export function filterAuditRowsByProjectTypes(
+  rows: NurseStationOrderAuditTableRow[],
+  selected: readonly NurseStationOrderAuditProjectType[],
+): NurseStationOrderAuditTableRow[] {
+  const effective = selected.length > 0 ? selected : NURSE_STATION_ORDER_AUDIT_PROJECT_TYPES;
+  const allowed = new Set(effective);
+  return rows.filter((row) => {
+    const projectType = resolveAuditRowProjectType(row);
+    return projectType !== null && allowed.has(projectType);
+  });
+}
+
+/** 索引后按项目类型过滤各就诊下的行 */
+export function filterAuditIndexByProjectTypes(
+  index: Map<string, NurseStationOrderAuditTableRow[]>,
+  selected: readonly NurseStationOrderAuditProjectType[],
+): Map<string, NurseStationOrderAuditTableRow[]> {
+  const next = new Map<string, NurseStationOrderAuditTableRow[]>();
+  for (const [encounterId, rows] of index) {
+    next.set(encounterId, filterAuditRowsByProjectTypes(rows, selected));
+  }
+  return next;
+}
+
+/** 合并多次 list 的就诊分组（按 encounterId 拼订单，行按 listRowKey/requestId+orderType 去重） */
+export function mergeAuditPatientGroups(
+  groupLists: Array<
+    undefined | { encounterId?: string; orders?: NurseStationOrderAuditRowDto[] }[]
+  >,
+): { encounterId?: string; orders?: NurseStationOrderAuditRowDto[] }[] {
+  const ordersByEncounter = new Map<string, NurseStationOrderAuditRowDto[]>();
+  const seenRowKeyByEncounter = new Map<string, Set<string>>();
+
+  for (const groups of groupLists) {
+    for (const group of groups ?? []) {
+      const encounterId = preserveApiIdForRequest(group.encounterId);
+      if (!encounterId) continue;
+      let orders = ordersByEncounter.get(encounterId);
+      if (!orders) {
+        orders = [];
+        ordersByEncounter.set(encounterId, orders);
+        seenRowKeyByEncounter.set(encounterId, new Set());
+      }
+      const seen = seenRowKeyByEncounter.get(encounterId)!;
+      for (const dto of group.orders ?? []) {
+        if (!dto) continue;
+        const requestId = preserveApiIdForRequest(dto.requestId) ?? '';
+        const orderType = String(dto.orderType ?? '')
+          .trim()
+          .toUpperCase();
+        const listKey = String(dto.listRowKey ?? '').trim();
+        const dedupeKey = listKey || `${requestId}\u0001${orderType}`;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        orders.push(dto);
+      }
+    }
+  }
+
+  const merged: { encounterId?: string; orders?: NurseStationOrderAuditRowDto[] }[] = [];
+  for (const [encounterId, orders] of ordersByEncounter) {
+    merged.push({ encounterId, orders });
+  }
+  return merged;
 }

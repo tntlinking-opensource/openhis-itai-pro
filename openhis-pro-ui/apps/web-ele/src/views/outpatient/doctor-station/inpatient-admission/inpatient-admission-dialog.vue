@@ -47,7 +47,11 @@ import {
   preserveApiIdForRequest,
   resolveLoginPractitionerIdForRequest,
 } from '#/utils/format/preserve-api-id';
-import { DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER } from '#/views/inpatient/charge/register/inpatient-register.constants';
+import {
+  DEFAULT_ADM_COND_CODE_GENERAL,
+  DEFAULT_ADMIT_SOURCE_CODE_ROUTINE,
+  DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER,
+} from '#/views/inpatient/charge/register/inpatient-register.constants';
 import { normalizeTerminologyOptions } from '#/utils/terminology/resolve-terminology-option-label';
 import { normalizeAdmCondTermCode } from '#/utils/terminology/resolve-adm-cond-code-label';
 
@@ -80,7 +84,7 @@ const inWayCodeOptions = ref<OptionDto[]>([]);
 const admitSourceCodeOptions = ref<OptionDto[]>([]);
 const admCondCodeOptions = ref<OptionDto[]>([]);
 const westernDiagnosisOptions = ref<OptionDto[]>([]);
-/** 门诊主诊预填行（提交时可带 conditionId） */
+/** 门诊主诊预填行（提交时可带 encounterDiagnosisId） */
 const prefilledDiagnosisRow = ref<EncounterDiagnosisRowDto | null>(null);
 
 const existingLine = reactive({
@@ -92,9 +96,9 @@ const existingLine = reactive({
 const form = reactive({
   targetDepartmentId: '',
   wardId: '',
-  admitSourceCode: '',
+  admitSourceCode: DEFAULT_ADMIT_SOURCE_CODE_ROUTINE,
   inWayCode: DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER,
-  priorityCode: '',
+  priorityCode: DEFAULT_ADM_COND_CODE_GENERAL,
   admissionDiagnosis: createEmptyAdmissionDiagnosisFormState(),
 });
 
@@ -165,9 +169,9 @@ function onDialogModelValue(value: unknown) {
 function resetFormState() {
   form.targetDepartmentId = '';
   form.wardId = '';
-  form.admitSourceCode = '';
+  form.admitSourceCode = DEFAULT_ADMIT_SOURCE_CODE_ROUTINE;
   form.inWayCode = DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER;
-  form.priorityCode = '';
+  form.priorityCode = DEFAULT_ADM_COND_CODE_GENERAL;
   form.admissionDiagnosis = createEmptyAdmissionDiagnosisFormState();
   prefilledDiagnosisRow.value = null;
   existingLine.exists = false;
@@ -262,9 +266,10 @@ async function applyExistingInpatientEncounterToForm(encounter: RegistrationEnco
     ensureWardOption(wardId, wardName);
     form.wardId = wardId;
   }
-  form.admitSourceCode = encounter.admitSourceCode?.trim() ?? '';
+  form.admitSourceCode = encounter.admitSourceCode?.trim() || DEFAULT_ADMIT_SOURCE_CODE_ROUTINE;
   form.inWayCode = encounter.inWayCode?.trim() || DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER;
-  form.priorityCode = normalizeAdmCondTermCode(encounter.priorityEnum);
+  form.priorityCode =
+    normalizeAdmCondTermCode(encounter.priorityEnum) || DEFAULT_ADM_COND_CODE_GENERAL;
   form.admissionDiagnosis = {
     ...createEmptyAdmissionDiagnosisFormState(),
     readonlyDisplay:
@@ -351,7 +356,7 @@ async function handleDepartmentChange(organizationId: string) {
 function buildAdmissionDiagnoses() {
   const prefilled = prefilledDiagnosisRow.value;
   return buildAdmissionDiagnosesFromFormState(form.admissionDiagnosis, {
-    prefilledConditionId: preserveApiIdForRequest(prefilled?.conditionId),
+    prefilledEncounterDiagnosisId: preserveApiIdForRequest(prefilled?.encounterDiagnosisId),
     prefilledWesternDefinitionId: preserveApiIdForRequest(prefilled?.conditionDefinitionId),
   });
 }

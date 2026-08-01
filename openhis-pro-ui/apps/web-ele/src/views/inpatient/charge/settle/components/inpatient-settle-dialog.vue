@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import type { TableColumn } from '@vben-core/table-layout-ui';
+
 import type { InpatientSettleChargeLineDto } from '#/api/inpatient-settle';
 
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 import {
   ElButton,
@@ -10,12 +12,11 @@ import {
   ElInput,
   ElRadioButton,
   ElRadioGroup,
-  ElTable,
-  ElTableColumn,
   ElTag,
 } from 'element-plus';
 
 import AppDialog from '#/components/app-dialog.vue';
+import RegisterStyleTableLayout from '#/components/layouts/register-style-table-layout.vue';
 import { formatMoneyDisplay, formatMoneyYuan } from '#/utils/format/money-scale';
 
 type PayChannelOption = { label: string; value: string };
@@ -68,6 +69,36 @@ const emit = defineEmits<{
 const visible = defineModel<boolean>({ required: true });
 const payChannelCode = defineModel<string>('payChannelCode', { required: true });
 const scanCode = defineModel<string>('scanCode', { default: '' });
+
+/** 弹窗表格分页占位 */
+const chargeLineQueryParams = ref({ pageNo: 1, pageSize: 100 });
+
+const chargeLineColumns: TableColumn[] = [
+  {
+    prop: 'itemName',
+    label: '项目',
+    minWidth: 160,
+    align: 'left',
+    headerAlign: 'center',
+    showOverflowTooltip: true,
+  },
+  {
+    prop: 'categoryDisplay',
+    label: '类别',
+    minWidth: 100,
+    align: 'left',
+    headerAlign: 'center',
+    showOverflowTooltip: true,
+  },
+  {
+    prop: 'lineAmount',
+    label: '金额',
+    width: 110,
+    align: 'right',
+    headerAlign: 'center',
+    slot: 'lineAmount',
+  },
+];
 
 function formatMoney(value: null | number | string | undefined) {
   const n = Number(value ?? 0);
@@ -156,7 +187,7 @@ function handleCancel() {
         </ElRadioGroup>
       </div>
       <div v-if="showScanPaySection" class="settle-dialog-section">
-        <div class="settle-dialog-section__title">扫码支付</div>
+        <div class="settle-dialog-section__title">银联扫码支付</div>
         <ElInput
           v-model="scanCode"
           placeholder="请扫码或输入付款码"
@@ -167,18 +198,19 @@ function handleCancel() {
       </div>
       <div class="settle-dialog-section">
         <div class="settle-dialog-section__title">结算费用（{{ chargeLines.length }} 项）</div>
-        <ElTable :data="chargeLines" border size="small" max-height="280" row-key="chargeItemId">
-          <ElTableColumn prop="itemName" label="项目" min-width="160" show-overflow-tooltip />
-          <ElTableColumn
-            prop="categoryDisplay"
-            label="类别"
-            min-width="100"
-            show-overflow-tooltip
-          />
-          <ElTableColumn label="金额" width="110" align="right">
-            <template #default="{ row }">¥{{ formatMoney(row.lineAmount) }}</template>
-          </ElTableColumn>
-        </ElTable>
+        <RegisterStyleTableLayout
+          class="!p-0"
+          :table-data="chargeLines"
+          :table-columns="chargeLineColumns"
+          :query-params="chargeLineQueryParams"
+          :total="chargeLines.length"
+          :show-pagination="false"
+          :show-top-query="false"
+          :max-height="280"
+          row-key="chargeItemId"
+        >
+          <template #lineAmount="{ row }">¥{{ formatMoney(row.lineAmount) }}</template>
+        </RegisterStyleTableLayout>
       </div>
     </div>
     <template #footer>
@@ -209,34 +241,38 @@ function handleCancel() {
 
 .settle-dialog-amount {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 12px;
-  border-radius: 6px;
-  background: var(--el-fill-color-light);
-  padding: 10px 12px;
+  gap: 8px 12px;
+  font-size: 14px;
 }
 
 .settle-dialog-amount strong {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
 }
 
+.settle-dialog-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .settle-dialog-section__title {
-  margin-bottom: 8px;
-  color: var(--el-text-color-regular);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
+  color: var(--el-text-color-primary);
 }
 
 .settle-dialog-pay-group {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 
 .settle-dialog-scan-status {
-  margin: 8px 0 0;
-  color: #2563eb;
-  font-size: 13px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 </style>

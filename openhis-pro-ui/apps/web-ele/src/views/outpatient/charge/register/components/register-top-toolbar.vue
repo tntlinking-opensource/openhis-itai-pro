@@ -8,6 +8,7 @@ import { computed, ref } from 'vue';
 import { ElButton, ElDatePicker } from 'element-plus';
 
 import SelectTable from '#/components/select-table.vue';
+import { buildDefaultDateRangeShortcuts } from '#/utils/format/date-picker-shortcuts';
 import { getDateRangeQuick } from '#/utils/format/date-range-quick';
 
 defineOptions({
@@ -50,6 +51,9 @@ const emit = defineEmits<{
 const selectedPatientIdModel = defineModel<string>('selectedPatientId', { required: true });
 
 const activeQuick = ref<'calendar-day' | 'calendar-month' | 'calendar-week'>('calendar-day');
+
+/** 区间查询：展开面板默认快捷时间范围 */
+const dateRangeShortcuts = buildDefaultDateRangeShortcuts();
 
 /** 顶栏日期快捷选择 */
 function applyDateRangeQuick(spec: DateRangeQuickSpec) {
@@ -171,6 +175,7 @@ const identityButtons = computed(() => [
         end-placeholder="结束日期"
         value-format="YYYY-MM-DD"
         class="register-top-bar__date-picker"
+        :shortcuts="dateRangeShortcuts"
         @update:model-value="handleDateRangeChange"
       />
       <div class="register-top-bar__quick">

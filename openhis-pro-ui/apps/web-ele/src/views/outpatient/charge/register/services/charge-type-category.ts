@@ -1,4 +1,4 @@
-/** 费用性质分类码（与后端 {@code ContractCategory.code} 一致） */
+/** 费用性质分类码（与后端 {@code ChargeTypeCategory.code} 一致；兼认 ContractCategory 字符串码） */
 export const CHARGE_TYPE_CATEGORY = {
   SELF_PAY: '1',
   PUBLIC_PAY: '2',
@@ -10,14 +10,30 @@ export const CHARGE_TYPE_CATEGORY = {
 export type ChargeTypeCategoryCode =
   (typeof CHARGE_TYPE_CATEGORY)[keyof typeof CHARGE_TYPE_CATEGORY];
 
-/** 医保类费用性质（省 / 市） */
+/** 医保类费用性质（省 / 市；含历史 ContractCategory 字符串码） */
 export const INSURANCE_CONTRACT_CATEGORIES = new Set<string>([
   CHARGE_TYPE_CATEGORY.MUNICIPAL_INSURANCE,
   CHARGE_TYPE_CATEGORY.PROVINCIAL_INSURANCE,
+  'PROVINCIAL_INSURANCE',
+  'MUNICIPAL_INSURANCE',
 ]);
 
 /** 公费类费用性质 */
-export const PUBLIC_CHARGE_CONTRACT_CATEGORIES = new Set<string>([CHARGE_TYPE_CATEGORY.PUBLIC_PAY]);
+export const PUBLIC_CHARGE_CONTRACT_CATEGORIES = new Set<string>([
+  CHARGE_TYPE_CATEGORY.PUBLIC_PAY,
+  'PUBLIC_CHARGE',
+]);
+
+const SELF_PAY_CONTRACT_CATEGORIES = new Set<string>([
+  CHARGE_TYPE_CATEGORY.SELF_PAY,
+  'SELF_CHARGE',
+  'SELF_PAY',
+]);
+
+const WORK_INJURY_CONTRACT_CATEGORIES = new Set<string>([
+  CHARGE_TYPE_CATEGORY.WORKER_INSURANCE,
+  '5',
+]);
 
 export function isInsuranceContractCategory(category?: string): boolean {
   return category ? INSURANCE_CONTRACT_CATEGORIES.has(category) : false;
@@ -28,12 +44,12 @@ export function isPublicChargeContractCategory(category?: string): boolean {
 }
 
 export function isWorkInjuryContractCategory(category?: string): boolean {
-  return category === CHARGE_TYPE_CATEGORY.WORKER_INSURANCE;
+  return category ? WORK_INJURY_CONTRACT_CATEGORIES.has(category) : false;
 }
 
 /** 自费费用性质（与 {@link CHARGE_TYPE_CATEGORY.SELF_PAY} 一致） */
 export function isSelfPayContractCategory(category?: string): boolean {
-  return category === CHARGE_TYPE_CATEGORY.SELF_PAY;
+  return category ? SELF_PAY_CONTRACT_CATEGORIES.has(category) : false;
 }
 
 /** 是否需走医保读卡/待遇链路（省/市医保、工伤；不含公费） */

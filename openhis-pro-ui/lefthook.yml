@@ -47,8 +47,6 @@ pre-commit:
     lint-staged:
       run: pnpm lint-staged --verbose
       stage_fixed: true
-    code-workspace:
-      run: pnpm vsh code-workspace --auto-commit
     lint-md:
       run: pnpm prettier --cache --ignore-unknown --write {staged_files}
       glob: '*.md'

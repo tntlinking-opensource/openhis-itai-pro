@@ -5,6 +5,8 @@ import type {
   CreateMedicationSummaryResponse,
   GetMedicationSummarySlipDetailRequest,
   GetMedicationSummarySlipDetailResponse,
+  GetMedicationSummarySlipPatientDetailRequest,
+  GetMedicationSummarySlipPatientDetailResponse,
   PageMedicationSummarySlipHeadersRequest,
   PageMedicationSummarySlipHeadersResponse,
   PagePendingDispenseSummaryLinesRequest,
@@ -44,6 +46,16 @@ export async function httpGetMedicationSummarySlipDetail(
 ): Promise<GetMedicationSummarySlipDetailResponse> {
   return publicRequestClient.post<GetMedicationSummarySlipDetailResponse>(
     `${BASE}/getMedicationSummarySlipDetail`,
+    body,
+  );
+}
+
+/** 查询汇总单摆药明细（按患者分组，同 medReqId 合并） */
+export async function httpGetMedicationSummarySlipPatientDetail(
+  body: GetMedicationSummarySlipPatientDetailRequest,
+): Promise<GetMedicationSummarySlipPatientDetailResponse> {
+  return publicRequestClient.post<GetMedicationSummarySlipPatientDetailResponse>(
+    `${BASE}/getMedicationSummarySlipPatientDetail`,
     body,
   );
 }

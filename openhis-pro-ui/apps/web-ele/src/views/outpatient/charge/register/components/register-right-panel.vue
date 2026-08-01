@@ -7,7 +7,9 @@ import { ref, watch } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import { ElButton, ElDatePicker } from 'element-plus';
 
+import SectionTitle from '#/components/layouts/section-title.vue';
 import SelectFuzzyInput from '#/components/select-fuzzy-input.vue';
+import { buildDefaultDateRangeShortcuts } from '#/utils/format/date-picker-shortcuts';
 import { getDateRangeQuick } from '#/utils/format/date-range-quick';
 
 import { loadTodayRegisterSummary } from '../services/register-stats.service';
@@ -35,6 +37,9 @@ const cancelledCount = ref(0);
 const activeCount = ref(0);
 const activeQuick = ref<'calendar-day' | 'calendar-month' | 'calendar-week'>('calendar-day');
 const historyKeyword = ref('');
+
+/** 区间查询：展开面板默认快捷时间范围 */
+const dateRangeShortcuts = buildDefaultDateRangeShortcuts();
 
 const historyRef = ref<null | RegisterHistoryExpose>(null);
 
@@ -85,7 +90,8 @@ defineExpose({
 watch(
   () => props.dateRange,
   () => {
-    void historyRef.value?.refresh();
+    // 列表日期同步与重查由 History 内部 watch 负责；此处只刷新当日统计，避免与分页请求竞态
+    void refreshStats();
   },
 );
 
@@ -95,7 +101,7 @@ void refreshStats();
 <template>
   <section class="register-history-section flex h-full min-h-0 flex-col overflow-hidden">
     <div class="register-history-section__toolbar">
-      <h3 class="register-history-section__title">历史就诊</h3>
+      <SectionTitle class="register-history-section__title" title="历史就诊" />
 
       <SelectFuzzyInput
         v-model="historyKeyword"
@@ -112,6 +118,7 @@ void refreshStats();
           start-placeholder="开始"
           end-placeholder="结束"
           value-format="YYYY-MM-DD"
+          :shortcuts="dateRangeShortcuts"
           @update:model-value="handleDateRangeChange"
         />
       </div>
@@ -188,8 +195,6 @@ void refreshStats();
   flex-shrink: 0;
   margin: 0;
   font-size: 15px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
   white-space: nowrap;
 }
 

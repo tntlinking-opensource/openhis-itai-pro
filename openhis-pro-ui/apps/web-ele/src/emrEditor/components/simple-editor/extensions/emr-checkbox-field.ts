@@ -13,13 +13,15 @@ declare module '@tiptap/core' {
   }
 }
 
+/** 行内可点复选框（纸质勾选：□清醒 □嗜睡）；文书固定模板下也可改 checked */
 export const EmrCheckboxField = Node.create({
   name: 'emrCheckboxField',
 
-  group: 'block',
+  group: 'inline',
+  inline: true,
   atom: true,
   selectable: true,
-  draggable: true,
+  draggable: false,
 
   addAttributes() {
     return {
@@ -27,7 +29,10 @@ export const EmrCheckboxField = Node.create({
       label: { default: '复选框' },
       checked: {
         default: false,
-        parseHTML: (el) => el.dataset.checked === 'true',
+        parseHTML: (el) => {
+          if (typeof el === 'string') return false;
+          return (el as HTMLElement).dataset.checked === 'true';
+        },
         renderHTML: (attrs) => ({
           'data-checked': attrs.checked ? 'true' : 'false',
         }),
@@ -36,12 +41,12 @@ export const EmrCheckboxField = Node.create({
   },
 
   parseHTML() {
-    return [{ tag: 'div[data-emr-checkbox-field]' }];
+    return [{ tag: 'span[data-emr-checkbox-field]' }, { tag: 'div[data-emr-checkbox-field]' }];
   },
 
   renderHTML({ HTMLAttributes }) {
     return [
-      'div',
+      'span',
       mergeAttributes(HTMLAttributes, {
         'data-emr-checkbox-field': '1',
         class: 'emr-checkbox-field-fallback',

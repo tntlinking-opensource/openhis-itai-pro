@@ -7,7 +7,7 @@ import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
 
 import { computed, ref, watch } from 'vue';
 
-import { ElInput, ElInputNumber, ElOption, ElSelect } from 'element-plus';
+import { ElCheckbox, ElInput, ElInputNumber, ElOption, ElSelect } from 'element-plus';
 
 import { httpListInpatientActivityExecutionLocations } from '#/api/inpatient/doctor-station/inpatient-doctor-station-advice.http';
 import {
@@ -23,6 +23,7 @@ import { parseOptionalNumberInput } from '../services/advice-edit';
 import { formatMoneyStrYuan, formatUnitPriceYuan } from '../services/advice-format';
 import type { AdviceLineEditorKind } from '../services/advice-row';
 import {
+  isEntrustAdviceDrugItem,
   isInpatientLongTermMedicationTherapy,
   parseColonDefinitionId,
   parseProductTableNameFromSelectedId,
@@ -46,13 +47,22 @@ const props = defineProps<{
 
 const medicationRateOptions = computed(() => props.medicationRateOptions ?? []);
 
+/** 嘱托医嘱：展示正文录入（BR-IP-ORD-028） */
+const isEntrustLine = computed(
+  () => props.editorKind === 'SERVICE' && isEntrustAdviceDrugItem(props.item),
+);
+
 const hideServiceExecutionCount = computed(
   () =>
     props.editorKind === 'SERVICE' &&
     isInpatientLongTermMedicationTherapy(props.therapyType ?? props.item.therapyEnum),
 );
 
-const productInfoTitle = computed(() => (props.editorKind === 'DEVICE' ? '耗材信息' : '诊疗信息'));
+const productInfoTitle = computed(() => {
+  if (props.editorKind === 'DEVICE') return '耗材信息';
+  if (isEntrustLine.value) return '嘱托信息';
+  return '诊疗信息';
+});
 
 const calcTotalFee = computed(() => {
   const item = props.item;
@@ -92,6 +102,8 @@ async function refreshServiceExecutionOrgOptions() {
   const token = ++serviceFetchToken;
   serviceExecutionOrgOptions.value = [];
   if (props.editorKind !== 'SERVICE') return;
+  // 嘱托不展示执行科室，无需拉取
+  if (isEntrustAdviceDrugItem(props.item)) return;
 
   const encounterId = String(props.encounterId ?? '').trim();
   const patientId = String(props.patientId ?? '').trim();
@@ -195,17 +207,72 @@ function onPerformOrgSelect(value: unknown) {
   props.setField('performOrgId', v as AdviceDrugItem['performOrgId']);
   props.setField('performOrgName', (opt?.label ?? '') as AdviceDrugItem['performOrgName']);
 }
+
+/** 自带药嘱托正文模板前缀（用于识别是否仍为模板） */
+const SELF_BROUGHT_MED_TEMPLATE_PREFIX = '患者自带药：';
+
+/** 自带药勾选态（仅 UI，不落库） */
+const selfBroughtMedication = ref(false);
+
+/** 组装自带药嘱托正文模板，便于医生补全用量/天数等 */
+function buildSelfBroughtMedicationTemplate(): string {
+  const freqCode = String(props.item.frequency ?? '').trim();
+  // 频次优先用术语展示名，方便医生直接改稿
+  const freqOpt = medicationRateOptions.value.find(
+    (o) => String(o.value ?? '').trim() === freqCode,
+  );
+  const freqLabel = String(freqOpt?.label ?? freqCode).trim() || '　　';
+  return (
+    `${SELF_BROUGHT_MED_TEMPLATE_PREFIX}　　，规格：　　，` +
+    `单次用量：　　，频次：${freqLabel}，用药天数：　　天，用法：　　。`
+  );
+}
+
+/** 勾选自带药：写入正文模板；取消勾选不清空已填内容 */
+function onSelfBroughtMedicationChange(checked: boolean | string | number) {
+  const on = Boolean(checked);
+  selfBroughtMedication.value = on;
+  if (!on) return;
+  props.setField('entrustContent', buildSelfBroughtMedicationTemplate());
+}
+
+/** 已有自带药正文时，打开编辑卡默认勾上自带药 */
+watch(
+  isEntrustLine,
+  (entrust) => {
+    if (!entrust) {
+      selfBroughtMedication.value = false;
+      return;
+    }
+    const cur = String(props.item.entrustContent ?? '').trim();
+    selfBroughtMedication.value = cur.startsWith(SELF_BROUGHT_MED_TEMPLATE_PREFIX);
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
   <div class="advice-product-form-root">
-    <div class="product-info-row">
+    <div class="product-info-row" :class="{ 'product-info-row--entrust': isEntrustLine }">
       <span class="meta-label product-info-label">{{ productInfoTitle }}:</span>
-      <span class="product-text">
-        {{ item.selectedDrugName || '-' }}【{{ item.selectedDrugSpec || '-' }}】 单价：
-        {{ formatUnitPriceYuan(item.selectedDrugPrice) }}
-      </span>
-      <span class="product-total-amount">总金额：{{ formatMoneyStrYuan(calcTotalFee) }}</span>
+      <ElCheckbox
+        v-if="isEntrustLine"
+        class="entrust-self-med-checkbox"
+        :model-value="selfBroughtMedication"
+        @update:model-value="onSelfBroughtMedicationChange"
+      >
+        自带药
+      </ElCheckbox>
+      <template v-if="!isEntrustLine">
+        <span class="product-text">
+          {{ item.selectedDrugName || '-' }}【{{ item.selectedDrugSpec || '-' }}】 单价：
+          {{ formatUnitPriceYuan(item.selectedDrugPrice) }}
+          <span v-if="item.chrgitmLvText" class="chrgitm-lv-text"
+            >&nbsp;{{ item.chrgitmLvText }}</span
+          >
+        </span>
+        <span class="product-total-amount">总金额：{{ formatMoneyStrYuan(calcTotalFee) }}</span>
+      </template>
     </div>
 
     <div v-if="editorKind === 'DEVICE'" class="drug-form-row simple-row device-qty-form">
@@ -252,8 +319,12 @@ function onPerformOrgSelect(value: unknown) {
       </div>
     </div>
 
-    <div v-else class="drug-form-row simple-row service-form-row">
-      <div class="field-item service-qty-item">
+    <div
+      v-else
+      class="drug-form-row simple-row service-form-row"
+      :class="{ 'service-form-row--entrust': isEntrustLine }"
+    >
+      <div v-if="!isEntrustLine" class="field-item service-qty-item">
         <span class="meta-label">数量</span>
         <div class="dose-num-with-unit">
           <ElInputNumber
@@ -288,7 +359,7 @@ function onPerformOrgSelect(value: unknown) {
           />
         </ElSelect>
       </div>
-      <div v-if="!hideServiceExecutionCount" class="field-item">
+      <div v-if="!isEntrustLine && !hideServiceExecutionCount" class="field-item">
         <span class="meta-label">执行次数</span>
         <ElInputNumber
           class="dose-qty-input simple-line-qty-primary"
@@ -304,7 +375,7 @@ function onPerformOrgSelect(value: unknown) {
           "
         />
       </div>
-      <div class="field-item perform-org-item">
+      <div v-if="!isEntrustLine" class="field-item perform-org-item">
         <span class="meta-label">执行科室</span>
         <ElSelect
           :model-value="item.performOrgId || undefined"
@@ -321,6 +392,36 @@ function onPerformOrgSelect(value: unknown) {
             :value="opt.value"
           />
         </ElSelect>
+      </div>
+    </div>
+
+    <div v-if="isEntrustLine" class="entrust-content-row">
+      <div class="field-item entrust-content-item">
+        <span class="meta-label">嘱托内容</span>
+        <ElInput
+          type="textarea"
+          :rows="4"
+          maxlength="500"
+          show-word-limit
+          placeholder="请输入嘱托内容（必填）；可勾选「自带药」自动带入模板"
+          :model-value="item.entrustContent ?? ''"
+          @update:model-value="
+            (v: string) => setField('entrustContent', String(v ?? '') || undefined)
+          "
+        />
+      </div>
+    </div>
+    <div v-else class="drug-form-row remark-row">
+      <div class="field-item remark-item">
+        <span class="meta-label">备注</span>
+        <ElInput
+          clearable
+          maxlength="200"
+          show-word-limit
+          placeholder="选填，护士站随医嘱显示"
+          :model-value="item.remark ?? ''"
+          @update:model-value="(v: string) => setField('remark', String(v ?? '') || undefined)"
+        />
       </div>
     </div>
   </div>
@@ -369,6 +470,22 @@ function onPerformOrgSelect(value: unknown) {
   font-weight: 700;
 }
 
+.product-info-row--entrust {
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 8px;
+}
+
+.entrust-self-med-checkbox {
+  margin-left: 4px;
+}
+
+.entrust-self-med-checkbox :deep(.el-checkbox__label) {
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+  font-weight: 400;
+}
+
 .product-text {
   color: #1f2937;
   font-size: 16px;
@@ -377,10 +494,23 @@ function onPerformOrgSelect(value: unknown) {
   min-width: 0;
 }
 
+/* 医保等级：仅展示甲/乙/自费等文案，醒目区分于品名单价 */
+.chrgitm-lv-text {
+  color: var(--el-color-warning);
+  font-weight: 700;
+}
+
 .meta-label {
   color: #4b5563;
   font-size: 12px;
   white-space: nowrap;
+}
+
+/* 须写在 .meta-label 之后，避免被灰色 12px 覆盖；与单价（.product-text）一致 */
+.product-info-row--entrust .meta-label.product-info-label {
+  color: #1f2937;
+  font-size: 16px;
+  font-weight: 700;
 }
 
 .field-item > .meta-label {
@@ -422,6 +552,21 @@ function onPerformOrgSelect(value: unknown) {
       240px,
       1fr
     );
+}
+
+.service-form-row--entrust {
+  grid-template-columns: minmax(240px, 320px);
+}
+
+.remark-row {
+  grid-template-columns: minmax(280px, 1fr);
+  gap: 10px;
+  margin-top: 10px;
+  width: 100%;
+}
+
+.remark-item {
+  grid-template-columns: auto minmax(0, 1fr);
 }
 
 .device-qty-form.simple-row {
@@ -493,6 +638,21 @@ function onPerformOrgSelect(value: unknown) {
 
 .perform-org-item {
   grid-column: 1 / -1;
+}
+
+.entrust-content-row {
+  margin-top: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.entrust-content-item {
+  width: 100%;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.entrust-content-item :deep(.el-textarea) {
+  width: 100%;
 }
 
 @media (min-width: 900px) {

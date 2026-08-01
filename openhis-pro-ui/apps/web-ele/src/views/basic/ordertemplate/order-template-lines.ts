@@ -631,7 +631,11 @@ export function useOrderTemplateLines(options: {
         return { content, totalCount: parsed.totalCount };
       }
       if (line.lineKindEnum === ORDER_TEMPLATE_LINE_KIND_SERVICE) {
-        const res = await pageServiceCatalogApi(requestParams);
+        // 组套选品同医生站：隐藏已被套餐引用的明细子项
+        const res = await pageServiceCatalogApi({
+          ...requestParams,
+          includeReferencedPackageChildren: false,
+        });
         const parsed = parsePagedRowsFromApiData<Record<string, unknown>>(res?.data);
         const content = parsed.content
           .map((item) => mapCatalogItemToSelectRow(item, line.lineKindEnum))

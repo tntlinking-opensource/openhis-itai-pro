@@ -115,6 +115,8 @@ function pickDetailHead(d: GetInboundReceiptDetailResponse): Record<string, unkn
     sourceTypeEnum: d.sourceTypeEnum,
     purposeTypeEnum: d.purposeTypeEnum,
     categoryEnum: d.categoryEnum,
+    // 单头发票号：与 busNo 同机制，详情展开到每行，回显取首行即可
+    invoiceNo: d.invoiceNo,
     rowVersion: d.rowVersion,
     applyTime: d.applyTime,
     applicantId: d.applicantId,

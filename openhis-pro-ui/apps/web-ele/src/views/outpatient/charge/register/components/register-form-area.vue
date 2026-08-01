@@ -27,10 +27,12 @@ import {
 } from '#/hooks/use-form-keyboard-navigation';
 import { calcAgeFromBirthDate, parseChineseIdCard18 } from '#/utils/format/id-card-cn';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
+import { REGISTRATION_PHONE_REQUIRED } from '#/views/outpatient/charge/register/constants/register-phone.config';
 
 import {
   inferInsuranceCategoryFromInsuplc,
   INSURANCE_CONTRACT_CATEGORY_PRIORITY,
+  isSelfPayContractCategory,
   normalizeInsuplcAdmdvs,
 } from '../services/charge-type-category';
 import {
@@ -41,22 +43,34 @@ import { listPractitioners, loadRegisterFormInit } from '../services/register.se
 import { displayBenefitDash } from './register-benefit-display.utils';
 import RegisterBenefitPreviewPanel from './register-benefit-preview-panel.vue';
 import RegisterPatientEncounterHistory from './register-patient-encounter-history.vue';
-import WorkInjury2301RegisterAction from '#/chs/work-injury/work-injury-2301-register-action.vue';
+import WorkInjuryFilingDetailAction from '#/chs/work-injury/work-injury-filing-detail-action.vue';
 
 defineOptions({
   name: 'RegisterFormArea',
 });
 
+const workInjuryFilingActionRef = ref<InstanceType<typeof WorkInjuryFilingDetailAction> | null>(
+  null,
+);
+
+function openWorkInjuryApprovalGuide() {
+  workInjuryFilingActionRef.value?.openApprovalGuide();
+}
+
 const props = withDefaults(
   defineProps<{
     /** 当前选中患者，供历史就诊 Tab 查询 */
     activePatientId?: string;
-    /** 待遇信息后台拉取中（含读卡/扫码） */
+    /** 人员/省市医保同步拉取中（含读卡/扫码） */
     benefitLoading?: boolean;
     benefitLoadingText?: string;
+    /** 待遇明细（2001/5301/5206）异步拉取中 */
+    treatmentLoading?: boolean;
     /** 分栏布局：左患者信息、右挂号信息（对齐新挂号页线框） */
     layout?: 'split' | 'stacked';
-    /** 工伤预结算后的就诊 ID（供 2301 审批上传入口）。 */
+    /** 当前费用性质是否为工伤（按钮可见性，不依赖待遇 kind）。 */
+    workInjurySelected?: boolean;
+    /** 工伤预结算后的就诊 ID（供备案详情 / 2301）。 */
     workInjuryPreEncounterId?: string | number;
     workInjuryPreContractId?: string | number;
   }>(),
@@ -64,7 +78,9 @@ const props = withDefaults(
     activePatientId: undefined,
     benefitLoading: false,
     benefitLoadingText: '',
+    treatmentLoading: false,
     layout: 'split',
+    workInjurySelected: false,
     workInjuryPreEncounterId: undefined,
     workInjuryPreContractId: undefined,
   },
@@ -121,6 +137,9 @@ const genderOptions = ref<OptionDto[]>([]);
 
 /** 预约带入后锁定科室/医生/号源类型 */
 const bookingLocked = ref(false);
+
+/** 全局开关：挂号时医生是否必选（IF-REG-01 registrationDoctorRequired，默认否） */
+const registrationDoctorRequired = ref(false);
 
 /** 表单区展示用金额占位（实际金额以预结算 / 正式结算接口为准） */
 const registerFeeAmount = ref(0);
@@ -188,6 +207,7 @@ const { handleFormKeydown } = useFormKeyboardNavigation(formAreaRef, {
 
 /**
  * 将焦点移到第一个可聚焦项（选完患者后由父组件调用）。
+ * 跳过患者工具栏搜索框，避免焦点回到 SelectTable 再次打开下拉。
  */
 async function focusFirstField() {
   await nextTick();
@@ -202,7 +222,11 @@ async function focusFirstField() {
   if (!root) {
     return;
   }
-  collectFormFocusableElements(root, registerFormKeyboardSelectors)[0]?.focus();
+  const focusables = collectFormFocusableElements(root, registerFormKeyboardSelectors);
+  const target = focusables.find(
+    (el) => !el.closest('.register-workspace-layout__patient-toolbar'),
+  );
+  target?.focus();
 }
 
 /**
@@ -445,6 +469,8 @@ const [PatientForm, patientFormApi] = useVbenForm(
         component: 'Input',
         fieldName: 'patientPhone',
         label: '联系电话',
+        // 跟随院点开关 REGISTRATION_PHONE_REQUIRED；主线默认非必填
+        required: REGISTRATION_PHONE_REQUIRED,
         componentProps: {
           placeholder: '请输入联系电话',
           clearable: true,
@@ -514,9 +540,11 @@ const [RegisterForm, registerFormApi] = useVbenForm(
         component: 'Select',
         fieldName: 'doctorId',
         label: '医生',
-        required: true,
+        // 跟随全局开关 registrationDoctorRequired；非必选时可只挂科室
+        required: registrationDoctorRequired.value,
         componentProps: {
-          placeholder: '请选择医生',
+          placeholder: registrationDoctorRequired.value ? '请选择医生' : '可不选（挂到科室）',
+          clearable: !registrationDoctorRequired.value,
           filterable: true,
           options: doctorOptions.value,
           onChange: handleDoctorChange,
@@ -599,6 +627,11 @@ const hasBenefitDisplay = computed(() => {
   return false;
 });
 
+/** 选工伤费用性质即显示备案入口（不依赖待遇 kind 是否已切到 WORK_INJURY）。 */
+const showWorkInjuryFilingAction = computed(
+  () => props.workInjurySelected || benefitInfo.value.kind === 'WORK_INJURY',
+);
+
 const showContractMismatch = computed(
   () => Boolean(contractMatch.value?.matchStatus) && contractMatch.value?.matchStatus !== 'MATCH',
 );
@@ -620,19 +653,39 @@ const commonDepartments = computed(() => departmentOptions.value.slice(0, 4));
 
 /**
  * 表单清空后：刷新医生下拉（无科室筛选）并将展示用挂号费归零。
- * 不在此预填科室/医生/费用性质/号源首条（避免联调期默认值残留）。
+ * 不在此预填科室/医生/号源首条；费用性质由 applyDefaultSelfPayContract 单独回填自费。
  */
 async function refreshDoctorsAndResetFeeDisplay() {
   await refreshDoctorOptions();
   registerFeeAmount.value = 0;
 }
 
+/** 从费用性质下拉取首个自费合同 id（按类别码，不用展示名）。 */
+function findDefaultSelfPayContractId(): string | undefined {
+  // 只在当前下拉可见项中找自费，避免选到已停用合同
+  const matched = contractOptions.value.find((opt) =>
+    isSelfPayContractCategory(contractCategoryById.value[String(opt.value ?? '')]),
+  );
+  const id = String(matched?.value ?? '').trim();
+  return id || undefined;
+}
+
+/** 挂号窗口默认费用性质：自费（清空/提交成功/首次进入均回填）。 */
+async function applyDefaultSelfPayContract() {
+  const selfPayId = findDefaultSelfPayContractId();
+  if (!selfPayId) {
+    return;
+  }
+  await applyContractId(selfPayId);
+}
+
 /**
  * 校验患者信息表单与挂号信息表单是否均通过。
+ * formApi.validate() 返回 { valid, errors }，不可对整段结果做 Boolean（对象恒为 true）。
  */
 async function validateForSubmit(): Promise<boolean> {
-  const patientValid = await patientFormApi.validate();
-  const registerValid = await registerFormApi.validate();
+  const { valid: patientValid } = await patientFormApi.validate();
+  const { valid: registerValid } = await registerFormApi.validate();
   return Boolean(patientValid && registerValid);
 }
 
@@ -731,8 +784,11 @@ function applyContractMatch(match: null | RegisterContractMatchDto | undefined) 
   contractMatch.value = match ?? null;
 }
 
-async function applyContractId(contractId: string) {
+async function applyContractId(contractId: string, options?: { emitChange?: boolean }) {
   registerFormApi.setFieldValue('contractId', contractId);
+  if (options?.emitChange === false) {
+    return;
+  }
   handleContractChange(contractId);
 }
 
@@ -804,7 +860,7 @@ function getServiceTypeLabel(serviceTypeId: unknown): string | undefined {
 }
 
 /**
- * 提交成功后的局部重置：清空患者与挂号表单，再刷新医生下拉并重置展示用挂号费（不预填挂号区）。
+ * 提交成功后的局部重置：清空患者与挂号表单，再刷新医生下拉并重置展示用挂号费；费用性质回填自费。
  */
 async function resetForSubmitSuccess() {
   bookingLocked.value = false;
@@ -818,11 +874,12 @@ async function resetForSubmitSuccess() {
   contractMatch.value = null;
   historyPatientKeyword.value = '';
   await refreshDoctorsAndResetFeeDisplay();
+  await applyDefaultSelfPayContract();
   syncBookingFieldLockState();
 }
 
 /**
- * 整页清空：表单与待遇确认展示区清空；医生下拉恢复为不按科室过滤的全量列表。
+ * 整页清空：表单与待遇确认展示区清空；医生下拉恢复为不按科室过滤的全量列表；费用性质回填自费。
  */
 function resetForClear() {
   bookingLocked.value = false;
@@ -835,6 +892,7 @@ function resetForClear() {
   contractMatch.value = null;
   historyPatientKeyword.value = '';
   void refreshDoctorsAndResetFeeDisplay();
+  void applyDefaultSelfPayContract();
   syncBookingFieldLockState();
 }
 
@@ -892,10 +950,12 @@ defineExpose<RegisterFormAreaExpose>({
   resetForClear,
   resetForSubmitSuccess,
   validateForSubmit,
+  openWorkInjuryApprovalGuide,
 });
 
 /**
- * 拉取科室/费用性质/医生/号源类型主数据并灌入下拉；绑定键盘导航；挂号区不预填首条主数据。
+ * 拉取科室/费用性质/医生/号源类型主数据并灌入下拉；绑定键盘导航；
+ * 科室/医生/号源不预填，费用性质默认自费。
  */
 onMounted(async () => {
   const init = await loadRegisterFormInit({});
@@ -906,6 +966,8 @@ onMounted(async () => {
   serviceTypeOptions.value = [...init.serviceTypeOptions];
   serviceTypeFeeById.value = { ...init.serviceTypeFeeById };
   genderOptions.value = [...init.genderOptions];
+  // 医生必选开关：未下发或 false 时允许只挂科室（与种子默认 0 一致）
+  registrationDoctorRequired.value = init.registrationDoctorRequired === true;
   await refreshDoctorOptions();
   patientFormApi.updateSchema([
     {
@@ -920,6 +982,17 @@ onMounted(async () => {
       fieldName: 'departmentId',
       componentProps: {
         options: departmentOptions.value,
+      },
+    },
+    {
+      fieldName: 'doctorId',
+      required: registrationDoctorRequired.value,
+      componentProps: {
+        placeholder: registrationDoctorRequired.value ? '请选择医生' : '可不选（挂到科室）',
+        clearable: !registrationDoctorRequired.value,
+        filterable: true,
+        options: doctorOptions.value,
+        onChange: handleDoctorChange,
       },
     },
     {
@@ -945,6 +1018,7 @@ onMounted(async () => {
     },
   ]);
   registerFeeAmount.value = 0;
+  await applyDefaultSelfPayContract();
   await syncServiceTypeFieldState();
 });
 </script>
@@ -966,10 +1040,22 @@ onMounted(async () => {
 
           <div class="register-workspace-layout__section-split" />
 
-          <SectionTitle class="register-workspace-layout__section-title" title="待遇信息" />
+          <div
+            v-if="showWorkInjuryFilingAction"
+            class="register-workspace-layout__section-title flex items-center justify-between gap-2"
+          >
+            <SectionTitle title="待遇信息" />
+            <WorkInjuryFilingDetailAction
+              ref="workInjuryFilingActionRef"
+              link
+              :encounter-id="workInjuryPreEncounterId"
+              :contract-id="workInjuryPreContractId"
+            />
+          </div>
+          <SectionTitle v-else class="register-workspace-layout__section-title" title="待遇信息" />
           <div
             v-loading="benefitLoading"
-            :element-loading-text="benefitLoadingText || '正在拉取待遇信息…'"
+            :element-loading-text="benefitLoadingText || '正在拉取人员与省市医保信息…'"
             class="register-workspace-layout__benefit"
             :class="{ 'register-workspace-layout__benefit--filled': hasBenefitDisplay }"
           >
@@ -1015,17 +1101,19 @@ onMounted(async () => {
                 </div>
               </div>
             </template>
-            <div v-else-if="benefitInfo.kind === 'WORK_INJURY'" class="space-y-2">
+            <div
+              v-else-if="benefitInfo.kind === 'WORK_INJURY' || workInjurySelected"
+              class="space-y-2"
+            >
               <div
                 class="register-workspace-layout__benefit-hint register-workspace-layout__benefit-hint--warning"
               >
-                {{ benefitInfo.eligibilityMessage || '工伤保险：挂号费须自费' }}
+                {{
+                  benefitInfo.kind === 'WORK_INJURY'
+                    ? benefitInfo.eligibilityMessage || '工伤保险：挂号费须自费'
+                    : '工伤保险：挂号费须自费'
+                }}
               </div>
-              <WorkInjury2301RegisterAction
-                v-if="workInjuryPreEncounterId && workInjuryPreContractId"
-                :encounter-id="workInjuryPreEncounterId"
-                :contract-id="workInjuryPreContractId"
-              />
             </div>
             <template v-else-if="hasBenefitDisplay">
               <ElAlert
@@ -1058,6 +1146,8 @@ onMounted(async () => {
                 :yb-certno="benefitRefreshContext.ybCertno"
                 :yb-medium-type="benefitRefreshContext.ybMediumType"
                 :scrollable-tables="false"
+                :suppress-area-alert="showContractMismatch"
+                :external-treatment-loading="treatmentLoading"
                 default-show-all-treatment
               />
             </template>
@@ -1144,7 +1234,7 @@ onMounted(async () => {
         <ElTabPane label="待遇信息" name="benefit">
           <div
             v-loading="benefitLoading"
-            :element-loading-text="benefitLoadingText || '正在拉取待遇信息…'"
+            :element-loading-text="benefitLoadingText || '正在拉取人员与省市医保信息…'"
             class="benefit-tab-panel min-h-[140px] border-t bg-[var(--el-fill-color-lighter)] px-2 pb-2 pt-2"
           >
             <div class="benefit-tab-body space-y-2">
@@ -1182,15 +1272,25 @@ onMounted(async () => {
                   </div>
                 </div>
               </template>
-              <div v-else-if="benefitInfo.kind === 'WORK_INJURY'" class="space-y-2">
-                <div class="text-sm text-[var(--el-color-warning)]">
-                  {{ benefitInfo.eligibilityMessage || '工伤保险：挂号费须自费' }}
+              <div
+                v-else-if="benefitInfo.kind === 'WORK_INJURY' || workInjurySelected"
+                class="space-y-2"
+              >
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <div class="text-sm text-[var(--el-color-warning)]">
+                    {{
+                      benefitInfo.kind === 'WORK_INJURY'
+                        ? benefitInfo.eligibilityMessage || '工伤保险：挂号费须自费'
+                        : '工伤保险：挂号费须自费'
+                    }}
+                  </div>
+                  <WorkInjuryFilingDetailAction
+                    ref="workInjuryFilingActionRef"
+                    link
+                    :encounter-id="workInjuryPreEncounterId"
+                    :contract-id="workInjuryPreContractId"
+                  />
                 </div>
-                <WorkInjury2301RegisterAction
-                  v-if="workInjuryPreEncounterId && workInjuryPreContractId"
-                  :encounter-id="workInjuryPreEncounterId"
-                  :contract-id="workInjuryPreContractId"
-                />
               </div>
               <template v-else>
                 <ElAlert
@@ -1221,6 +1321,8 @@ onMounted(async () => {
                   :yb-certno="benefitRefreshContext.ybCertno"
                   :yb-medium-type="benefitRefreshContext.ybMediumType"
                   :scrollable-tables="false"
+                  :suppress-area-alert="showContractMismatch"
+                  :external-treatment-loading="treatmentLoading"
                   default-show-all-treatment
                 />
               </template>
@@ -1378,8 +1480,8 @@ onMounted(async () => {
 }
 
 .register-workspace-layout__benefit-alert {
-  padding: 4px 8px;
-  margin-bottom: 4px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
 }
 
 .register-benefit-section__field-grid {
@@ -1430,40 +1532,31 @@ onMounted(async () => {
 }
 
 .register-workspace-layout__benefit :deep(.register-benefit-preview-panel--vertical) {
-  gap: 4px;
+  gap: 8px;
 }
 
 .register-workspace-layout__benefit :deep(.register-benefit-preview-panel__field-grid) {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 2px 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 8px;
 }
 
+.register-workspace-layout__benefit :deep(.register-benefit-preview-panel__field--span-3),
 .register-workspace-layout__benefit :deep(.register-benefit-preview-panel__field--span-4) {
-  grid-column: span 3;
+  grid-column: span 2;
 }
 
 .register-workspace-layout__benefit :deep(.register-benefit-preview-panel__field--span-2) {
   grid-column: span 2;
 }
 
-.register-workspace-layout__benefit :deep(.register-benefit-preview-panel__field) {
-  min-height: 22px;
-}
-
 .register-workspace-layout__benefit :deep(.register-benefit-preview-panel__field-label) {
-  width: 64px;
-  min-width: 64px;
-  max-width: 64px;
+  width: 56px;
+  min-width: 56px;
   font-size: 12px;
 }
 
 .register-workspace-layout__benefit :deep(.register-benefit-preview-panel__field-value) {
   font-size: 12px;
-}
-
-.register-workspace-layout__benefit :deep(.register-benefit-preview-panel__field-value--accent) {
-  font-weight: 600;
-  color: var(--el-color-warning);
 }
 
 .register-workspace-layout__slot-actions {

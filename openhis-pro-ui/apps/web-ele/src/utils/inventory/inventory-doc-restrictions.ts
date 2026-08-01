@@ -14,6 +14,10 @@ import {
 /** 须从上游拉取的单据：欢迎空态引导文案 */
 export const INV_DOC_UPSTREAM_WELCOME = {
   purchaseInbound: '进货单须关联已同意的订货单，明细将从订货单带入，不支持自由选品',
+  returnToSupplier: '退货单须关联已同意的进货单，可退明细将从进货单带入，不支持自由选品',
+  returnToWarehouse: '退库单须关联已同意的入库单，可退明细将从入库单带入，不支持自由选品',
+  deptReturn: '科室退库单须关联已同意的入库单，可退明细将从入库单带入，不支持自由选品',
+  deptIssueReturn: '科室退领单须关联已同意的领用单，可退明细将从领用单带入，不支持自由选品',
 } as const;
 
 /** 须从上游单据拉取明细的单据提示文案 */
@@ -29,7 +33,7 @@ export const INV_DOC_UPSTREAM_HINT = {
 export const INV_DOC_READONLY_SHELL_HINT = {
   stockIn: '入库单为系统自动生成的只读台账，禁止新建或修改',
   transferIn: '调入单为对侧调出 agree 自动生成的只读壳单，禁止新建或修改',
-  returnStockIn: '退库入库单为退库 agree 自动生成的只读台账，禁止新建或修改',
+  returnStockIn: '退货入库单为退库 agree 自动生成的只读台账，禁止新建或修改',
 } as const;
 
 export function warnInventoryDocRestriction(message: string): void {
@@ -69,7 +73,8 @@ export function mapReturnableLinkLineToGridRow<
   const name = String(ln.productName ?? '').trim();
   const qtyRaw = ln.returnableQuantity ?? ln.itemQuantity;
   const unitCode = String(ln.unitCode ?? '').trim();
-  const unitLabel = String(ln.unitCodeDictText ?? '').trim() || unitCode;
+  // 仅保留真实字典文案；禁止用裸 unitCode 冒充，否则会压过计量带单位名
+  const unitLabel = String(ln.unitCodeDictText ?? '').trim();
   const row = {
     id: `ln-link-${rowIdx}-${String(itemIdRaw ?? rowIdx)}`,
     medicinePick: name ? { id: itemIdRaw, name } : undefined,
@@ -80,7 +85,7 @@ export function mapReturnableLinkLineToGridRow<
     manufacturer: String(ln.manufacturer ?? ''),
     itemQuantity: qtyRaw === undefined ? undefined : Number(qtyRaw),
     unitCode,
-    unitCodeDictText: unitLabel,
+    unitCodeDictText: unitLabel || undefined,
     lotNumber: String(ln.lotNumber ?? ''),
     traceNo: String(ln.traceNo ?? ''),
     reason: String(ln.reason ?? ''),

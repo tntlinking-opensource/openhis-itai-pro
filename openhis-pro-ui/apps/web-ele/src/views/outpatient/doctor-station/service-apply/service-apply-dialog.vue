@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ServiceApplyDocumentGroup } from './service-apply-doc-groups';
 import type {
   ServiceApplyKind,
   ServiceApplyPatientSummary,
@@ -10,6 +11,7 @@ import type {
   TerminologyOptionDto,
 } from '#/api/doctor-station/advice.types';
 import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
+import type { DiagnosisItem } from '#/components/doctor-station/diagnosis';
 import type { ServiceApplyPrintMeta } from '#/utils/print/print-service-apply';
 
 import { computed, ref, watch } from 'vue';
@@ -27,7 +29,21 @@ import {
   ElTreeSelect,
 } from 'element-plus';
 
-import { DiagnosisPickerDialog } from '#/components/doctor-station/diagnosis';
+import { useEnsureClinicalReception } from '#/components/doctor-station';
+import {
+  AdviceDiagnosisBindPanel,
+  DiagnosisPickerDialog,
+} from '#/components/doctor-station/diagnosis';
+import {
+  joinEncounterDiagnosisIds,
+  mapEncounterRowToDiagnosisItem,
+  parseEncounterDiagnosisIds,
+} from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-select';
+import {
+  clearEncounterDiagnosisSession,
+  readEncounterDiagnosisSession,
+  rememberEncounterDiagnosisSession,
+} from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-session';
 import { useAuthStore } from '#/store';
 import {
   calcMoneyLineTotal,
@@ -35,8 +51,12 @@ import {
   sumMoneyThenSettle,
 } from '#/utils/format/money-scale';
 import { printServiceApplyForms } from '#/utils/print/print-service-apply';
+import { loadAllDepartmentPerformOrgOptions } from '#/views/doctor-station/advice-shared/perform-org-options.service';
 import * as inpatientServiceApplyApi from '#/views/inpatient/doctor-station/service-apply/inpatient-service-apply.service';
 
+import { inferServiceApplyKindFromAdviceRow } from './service-apply-doc-groups';
+import ServiceApplyShellWrap from './service-apply-shell-wrap.vue';
+import { isServiceApplyDetailRequired } from './service-apply.constants';
 import {
   buildDetailItems,
   buildSaveServiceApplyFormRequest,
@@ -48,32 +68,32 @@ import {
   detailTargetIds,
   firstTreeOptionValue,
   mergeCatalogDefaultPerformOrgOptions,
-  pickDefaultServiceApplyEncounterDiagnosisId,
-  resolveServiceApplyDiagnosisIdFromAdviceRow,
+  pickCatalogDefaultPerformOrgId,
+  pickDefaultServiceApplyEncounterDiagnosisIds,
+  resolveServiceApplyDiagnosisIdsFromAdviceRow,
+  resolveServiceApplyFormExecutionCount,
+  resolveServiceApplyKindLabel,
   validateServiceApplySelectedItems,
 } from './service-apply.service';
 import * as outpatientServiceApplyApi from './service-apply.service';
-import type { ServiceApplyDocumentGroup } from './service-apply-doc-groups';
-import { inferServiceApplyKindFromAdviceRow } from './service-apply-doc-groups';
-import ServiceApplyShellWrap from './service-apply-shell-wrap.vue';
 
 defineOptions({ name: 'ServiceApplyDialog' });
 
 const props = withDefaults(
   defineProps<{
     applyKind?: ServiceApplyKind;
+    /** 编辑模式：传入已聚组的申请单行，打开时回显 */
+    editDocumentGroup?: null | ServiceApplyDocumentGroup;
     encounterId?: string;
     modelValue: boolean;
     patient?: ServiceApplyPatientSummary;
     patientId?: string;
     /** 门诊打印抬头：机构名、科室、开单医师 */
     printMeta?: ServiceApplyPrintMeta;
+    /** 外层容器：弹窗 / 抽屉（新建与修改默认弹窗） */
+    shell?: 'dialog' | 'drawer';
     /** 门诊 / 住院：决定申请单保存与签发所调 HTTP */
     stationScope?: 'inpatient' | 'outpatient';
-    /** 外层容器：弹窗 / 抽屉（编辑申请单用抽屉） */
-    shell?: 'dialog' | 'drawer';
-    /** 编辑模式：传入已聚组的申请单行，打开时回显 */
-    editDocumentGroup?: ServiceApplyDocumentGroup | null;
   }>(),
   {
     applyKind: 'lab',
@@ -103,6 +123,7 @@ const emit = defineEmits<{
 type CatalogTab = 'category' | 'frequent';
 
 const authStore = useAuthStore();
+const { ensureReceptionBeforeClinicalWork } = useEnsureClinicalReception();
 
 /** 按 stationScope 选择门诊/住院申请单 API 实现 */
 const serviceApplyApi = computed(() =>
@@ -120,7 +141,9 @@ const selectedItems = ref<ServiceApplySelectedItem[]>([]);
 const actionLoading = ref(false);
 const orgId = ref('');
 const orgOptions = ref<Array<{ label: string; value: string }>>([]);
-const encounterDiagnosisId = ref('');
+/** 整单执行次数（清单全部项目共用） */
+const executionCount = ref(1);
+const encounterDiagnosisIds = ref<string[]>([]);
 const encounterDiagnosisRows = ref<EncounterDiagnosisRowDto[]>([]);
 const diagnosisDialogVisible = ref(false);
 const bodyStructureOptions = ref<TerminologyOptionDto[]>([]);
@@ -129,16 +152,6 @@ const savedPrescriptionNo = ref('');
 
 let catalogSearchTimer: ReturnType<typeof setTimeout> | undefined;
 let catalogFetchToken = 0;
-
-/** 弹窗/抽屉标题 */
-const isEditMode = computed(() => (props.editDocumentGroup?.lines.length ?? 0) > 0);
-const dialogTitle = computed(() => {
-  const kindLabel = effectiveApplyKind.value === 'lab' ? '检验' : '检查';
-  if (isEditMode.value) {
-    return `修改${kindLabel}申请单`;
-  }
-  return `${kindLabel}申请`;
-});
 
 /** 编辑回显时的申请单类型 */
 const effectiveApplyKind = computed((): ServiceApplyKind => {
@@ -152,7 +165,17 @@ const effectiveApplyKind = computed((): ServiceApplyKind => {
   return props.applyKind;
 });
 
-/** 明细下拉：检验样本 / 检查部位 */
+/** 弹窗/抽屉标题 */
+const isEditMode = computed(() => (props.editDocumentGroup?.lines.length ?? 0) > 0);
+const dialogTitle = computed(() => {
+  const kindLabel = resolveServiceApplyKindLabel(effectiveApplyKind.value);
+  if (isEditMode.value) {
+    return `修改${kindLabel}申请单`;
+  }
+  return `${kindLabel}申请`;
+});
+
+/** 明细下拉：检验样本 / 检查·治疗部位 */
 const detailOptions = computed(() =>
   effectiveApplyKind.value === 'lab' ? specimenDefinitionOptions.value : bodyStructureOptions.value,
 );
@@ -160,7 +183,15 @@ const detailOptions = computed(() =>
 /** 明细字段标签 */
 const detailFieldLabel = computed(() => (effectiveApplyKind.value === 'lab' ? '样本' : '部位'));
 
+/** 检查部位必填；检验样本与治疗部位选填（BR-REQ-005） */
+const detailRequired = computed(() => isServiceApplyDetailRequired(effectiveApplyKind.value));
+
 const isLabApply = computed(() => effectiveApplyKind.value === 'lab');
+
+/** 右侧空清单提示 */
+const emptyCartHint = computed(
+  () => `从左侧选择${resolveServiceApplyKindLabel(effectiveApplyKind.value)}项目`,
+);
 
 /** 分类列表（由已加载目录去重） */
 const categoryList = computed(() => {
@@ -200,10 +231,15 @@ const contextReady = computed(() => {
   return Boolean(encounterId && patientId);
 });
 
-/** 整单诊断下拉（当前就诊已保存诊断） */
-const diagnosisOptions = computed(() =>
-  buildServiceApplyDiagnosisOptions(encounterDiagnosisRows.value),
-);
+/** 整单诊断绑定候选项（当前就诊已保存诊断） */
+const diagnosisBindOptions = computed((): DiagnosisItem[] => {
+  const items: DiagnosisItem[] = [];
+  for (const row of encounterDiagnosisRows.value) {
+    const item = mapEncounterRowToDiagnosisItem(row);
+    if (item) items.push(item);
+  }
+  return items;
+});
 
 /** 金额格式化（纯展示） */
 function formatMoney(value: number): string {
@@ -217,10 +253,12 @@ function nextRowKey(catalogKey: string): string {
 
 /** 将目录行转为已选行（字段对齐 ServiceApplyFormLineRequest） */
 function buildSelectedRow(row: DoctorStationAdviceCatalogRowDto): ServiceApplySelectedItem {
-  const defaultTargetId =
-    props.applyKind === 'lab'
-      ? String(specimenDefinitionOptions.value[0]?.value ?? '').trim()
-      : firstTreeOptionValue(bodyStructureOptions.value);
+  const kind = effectiveApplyKind.value;
+  // 检查默认带一条部位明细；检验样本与治疗部位可选，不预填
+  let defaultTargetId = '';
+  if (kind === 'exam') {
+    defaultTargetId = firstTreeOptionValue(bodyStructureOptions.value);
+  }
   const key = catalogRowKey(row);
   return {
     rowKey: nextRowKey(key),
@@ -230,19 +268,23 @@ function buildSelectedRow(row: DoctorStationAdviceCatalogRowDto): ServiceApplySe
     quantity: 1,
     unitCode: String(row.unitCode ?? '').trim(),
     unitPrice: catalogRowUnitPrice(row),
-    detailItems: defaultTargetId
-      ? buildDetailItems(effectiveApplyKind.value, [defaultTargetId])
-      : [],
+    detailItems: defaultTargetId ? buildDetailItems(kind, [defaultTargetId]) : [],
   };
 }
 
-/** 刷新整单诊断下拉并默认主诊断 */
+/** 刷新整单诊断候选项；空白时按「上次选择 / 唯一诊断」默认。 */
 async function refreshEncounterDiagnosisOptions() {
+  // 住院申请单不展示诊断，不拉候选项
+  if (isInpatientScope.value) {
+    encounterDiagnosisRows.value = [];
+    encounterDiagnosisIds.value = [];
+    return;
+  }
   const encounterId = String(props.encounterId ?? '').trim();
   const patientId = String(props.patientId ?? '').trim();
   if (!encounterId || !patientId) {
     encounterDiagnosisRows.value = [];
-    encounterDiagnosisId.value = '';
+    encounterDiagnosisIds.value = [];
     return;
   }
   const rows = await serviceApplyApi.value.loadServiceApplyEncounterDiagnosisRows(
@@ -251,21 +293,56 @@ async function refreshEncounterDiagnosisOptions() {
   );
   encounterDiagnosisRows.value = rows;
   const options = buildServiceApplyDiagnosisOptions(rows);
-  const current = String(encounterDiagnosisId.value ?? '').trim();
-  if (current && options.some((item) => item.value === current)) {
+  const current = encounterDiagnosisIds.value.filter((id) =>
+    options.some((item) => item.value === id),
+  );
+  if (current.length > 0) {
+    encounterDiagnosisIds.value = current;
     return;
   }
-  encounterDiagnosisId.value = pickDefaultServiceApplyEncounterDiagnosisId(rows, options);
+  // 编辑回显未命中 / 新建空白：会话上次 → 唯一诊断
+  const defaults = pickDefaultServiceApplyEncounterDiagnosisIds(
+    rows,
+    options,
+    readEncounterDiagnosisSession(encounterId),
+  );
+  encounterDiagnosisIds.value = defaults;
+  if (defaults.length > 0) {
+    rememberEncounterDiagnosisSession(encounterId, defaults);
+  }
 }
 
 /** 打开诊断录入弹窗 */
-function openDiagnosisDialog() {
+async function openDiagnosisDialog() {
+  const receptionOk = await ensureReceptionBeforeClinicalWork();
+  if (!receptionOk) return;
   diagnosisDialogVisible.value = true;
 }
 
-/** 诊断保存后刷新下拉并选中最新主诊断 */
+/** 诊断绑定变更：主诊优先排序，并写入会话记忆。 */
+function onEncounterDiagnosisIdsChange(value: unknown) {
+  const raw = Array.isArray(value) ? value.map((id) => String(id ?? '').trim()) : [];
+  const idsText = joinEncounterDiagnosisIds(raw, encounterDiagnosisRows.value);
+  const nextIds = parseEncounterDiagnosisIds(idsText);
+  encounterDiagnosisIds.value = nextIds;
+  rememberEncounterDiagnosisSession(props.encounterId, nextIds);
+}
+
+/** 诊断保存后刷新候选项 */
 async function handleDiagnosisPickerSaved() {
   await refreshEncounterDiagnosisOptions();
+}
+
+/** 「选择诊断」打开时面板已拉取最新列表：同步申请单候选项与已选 id */
+function onBindDiagnosisOptionsRefreshed(payload: {
+  displayRows: EncounterDiagnosisRowDto[];
+  items: DiagnosisItem[];
+}) {
+  encounterDiagnosisRows.value = payload.displayRows;
+  const valid = new Set(
+    payload.items.map((item) => String(item.encounterDiagnosisId ?? item.id ?? '').trim()),
+  );
+  encounterDiagnosisIds.value = encounterDiagnosisIds.value.filter((id) => valid.has(id));
 }
 
 /** 刷新整单执行科室下拉（全局字段，选中后作用于清单全部项目） */
@@ -277,18 +354,27 @@ async function refreshOrgOptions() {
     orgOptions.value = [];
     return;
   }
-  const merged = await serviceApplyApi.value.mergeServiceApplyOrgOptions({
+  // 门诊/住院均为整单全局全院科室；空结果再兜底一次
+  let merged = await serviceApplyApi.value.mergeServiceApplyOrgOptions({
     encounterId,
     patientId,
     activityDefinitionIds,
   });
-  orgOptions.value = mergeCatalogDefaultPerformOrgOptions(
-    merged,
-    catalogItems.value,
-    selectedItems.value.map((row) => row.catalogRowKey),
-  );
+  if (merged.length === 0) {
+    merged = await loadAllDepartmentPerformOrgOptions();
+  }
+  const selectedKeys = selectedItems.value.map((row) => row.catalogRowKey);
+  orgOptions.value = mergeCatalogDefaultPerformOrgOptions(merged, catalogItems.value, selectedKeys);
+  const allowedIds = new Set(orgOptions.value.map((item) => item.value));
+  // 已选若是医院根等非科室，清空后回落目录默认科室或首个科室
+  if (orgId.value && !allowedIds.has(orgId.value)) {
+    orgId.value = '';
+  }
   if (!orgId.value && orgOptions.value.length > 0) {
-    orgId.value = orgOptions.value[0]?.value ?? '';
+    orgId.value =
+      pickCatalogDefaultPerformOrgId(orgOptions.value, catalogItems.value, selectedKeys) ||
+      orgOptions.value[0]?.value ||
+      '';
   }
 }
 
@@ -322,7 +408,7 @@ async function loadPanelData() {
     specimenDefinitionOptions.value = [];
     catalogItems.value = [];
     encounterDiagnosisRows.value = [];
-    encounterDiagnosisId.value = '';
+    encounterDiagnosisIds.value = [];
     ElMessage.error('加载申请项目失败');
   } finally {
     if (token === catalogFetchToken) {
@@ -348,10 +434,7 @@ async function handleAddCatalogItem(row: DoctorStationAdviceCatalogRowDto) {
     return;
   }
   selectedItems.value = [...selectedItems.value, buildSelectedRow(row)];
-  const defaultOrgId = String(row.defaultPerformOrgId ?? '').trim();
-  if (defaultOrgId && !orgId.value) {
-    orgId.value = defaultOrgId;
-  }
+  // 执行科室仅允许科室节点；默认值是否可用由 refreshOrgOptions 按候选集裁定
   await refreshOrgOptions();
 }
 
@@ -365,6 +448,7 @@ async function handleRemoveSelected(rowKey: string) {
 async function handleClearSelected() {
   selectedItems.value = [];
   orgId.value = '';
+  executionCount.value = 1;
   savedPrescriptionNo.value = '';
   await refreshOrgOptions();
 }
@@ -381,7 +465,12 @@ function buildPersistApplyFormRequest() {
   const validationMsg = validateServiceApplySelectedItems(
     selectedItems.value,
     orgId.value,
-    encounterDiagnosisId.value,
+    encounterDiagnosisIds.value,
+    effectiveApplyKind.value,
+    {
+      requireDiagnosis: !isInpatientScope.value,
+      executionCount: executionCount.value,
+    },
   );
   if (validationMsg) {
     throw new Error(validationMsg);
@@ -391,7 +480,8 @@ function buildPersistApplyFormRequest() {
     patientId,
     applyKind: effectiveApplyKind.value,
     orgId: orgId.value,
-    encounterDiagnosisId: encounterDiagnosisId.value,
+    executionCount: executionCount.value,
+    encounterDiagnosisIds: encounterDiagnosisIds.value,
     encounterDiagnosisRows: encounterDiagnosisRows.value,
     previousPrescriptionNo: savedPrescriptionNo.value || undefined,
     items: selectedItems.value,
@@ -410,6 +500,7 @@ async function persistApplyForm(): Promise<{
   const { encounterId, patientId, request } = buildPersistApplyFormRequest();
   const result = await serviceApplyApi.value.saveServiceApplyForm(request);
   savedPrescriptionNo.value = result.prescriptionNo;
+  rememberEncounterDiagnosisSession(encounterId, encounterDiagnosisIds.value);
   return { encounterId, patientId, request, ...result };
 }
 
@@ -444,7 +535,7 @@ async function printSignedApplyForm(signResult: {
     items: [...selectedItems.value],
     performOrgId: orgId.value,
     performOrgName,
-    encounterDiagnosisId: encounterDiagnosisId.value,
+    encounterDiagnosisIds: encounterDiagnosisIds.value,
     encounterDiagnosisRows: encounterDiagnosisRows.value,
     bodyStructureOptions: bodyStructureOptions.value,
     specimenDefinitionOptions: specimenDefinitionOptions.value,
@@ -462,6 +553,8 @@ async function handleSaveDraft() {
     ElMessage.warning('缺少就诊或患者信息');
     return;
   }
+  const receptionOk = await ensureReceptionBeforeClinicalWork();
+  if (!receptionOk) return;
   actionLoading.value = true;
   try {
     await persistApplyForm();
@@ -484,6 +577,8 @@ async function handleSign() {
     ElMessage.warning('缺少就诊或患者信息');
     return;
   }
+  const receptionOk = await ensureReceptionBeforeClinicalWork();
+  if (!receptionOk) return;
   actionLoading.value = true;
   try {
     await executeSignRequests();
@@ -508,6 +603,8 @@ async function handleSignAndPrint() {
     ElMessage.warning('缺少就诊或患者信息');
     return;
   }
+  const receptionOk = await ensureReceptionBeforeClinicalWork();
+  if (!receptionOk) return;
   actionLoading.value = true;
   try {
     const signResult = await executeSignRequests();
@@ -537,9 +634,9 @@ function handleCatalogTabChange(tab: CatalogTab) {
   }
 }
 
-/** 更新当前行 detailItems */
-function writeDetailTargetIds(row: ServiceApplySelectedItem, ids: string[]) {
-  row.detailItems = buildDetailItems(effectiveApplyKind.value, ids);
+/** 更新当前行 detailItems（清空时 ids 可能为空） */
+function writeDetailTargetIds(row: ServiceApplySelectedItem, ids: null | string[] | undefined) {
+  row.detailItems = buildDetailItems(effectiveApplyKind.value, Array.isArray(ids) ? ids : []);
 }
 
 /** 编辑模式：将列表行回显到右侧清单 */
@@ -550,28 +647,40 @@ async function hydrateFromEditDocumentGroup(group: ServiceApplyDocumentGroup) {
     effectiveApplyKind.value,
   );
   const head = group.lines[0];
-  orgId.value = String(head?.performOrgId ?? '').trim();
-  const options = buildServiceApplyDiagnosisOptions(encounterDiagnosisRows.value);
-  const matchedDiagnosisId = resolveServiceApplyDiagnosisIdFromAdviceRow(
-    String(head?.diagnosisSummary ?? ''),
-    options,
-  );
-  if (matchedDiagnosisId) {
-    encounterDiagnosisId.value = matchedDiagnosisId;
-  } else {
-    encounterDiagnosisId.value = pickDefaultServiceApplyEncounterDiagnosisId(
-      encounterDiagnosisRows.value,
+  const previousOrgId = String(head?.performOrgId ?? '').trim();
+  orgId.value = previousOrgId;
+  // 整单执行次数：各行应一致，取首个有效值
+  executionCount.value = resolveServiceApplyFormExecutionCount(group.lines);
+  // 住院申请单不回显诊断
+  if (!isInpatientScope.value) {
+    const options = buildServiceApplyDiagnosisOptions(encounterDiagnosisRows.value);
+    const matchedDiagnosisIds = resolveServiceApplyDiagnosisIdsFromAdviceRow(
+      String(head?.diagnosisSummary ?? ''),
+      head?.encounterDiagnosisIds,
       options,
     );
+    if (matchedDiagnosisIds.length > 0) {
+      encounterDiagnosisIds.value = matchedDiagnosisIds;
+      rememberEncounterDiagnosisSession(props.encounterId, matchedDiagnosisIds);
+    } else {
+      const defaults = pickDefaultServiceApplyEncounterDiagnosisIds(
+        encounterDiagnosisRows.value,
+        options,
+        readEncounterDiagnosisSession(props.encounterId),
+      );
+      encounterDiagnosisIds.value = defaults;
+      if (defaults.length > 0) {
+        rememberEncounterDiagnosisSession(props.encounterId, defaults);
+      }
+    }
   }
   await refreshOrgOptions();
+  // 仅当回显执行科室仍是科室候选时修正 label；医院根禁止塞回下拉
   const performOrgName = String(head?.performOrgName ?? '').trim();
-  if (orgId.value && performOrgName) {
+  if (orgId.value && orgId.value === previousOrgId && performOrgName) {
     const existing = orgOptions.value.find((item) => item.value === orgId.value);
     if (existing) {
       existing.label = performOrgName;
-    } else {
-      orgOptions.value.unshift({ value: orgId.value, label: performOrgName });
     }
   }
 }
@@ -587,8 +696,9 @@ function resetPanelState() {
   selectedItems.value = [];
   actionLoading.value = false;
   orgId.value = '';
+  executionCount.value = 1;
   orgOptions.value = [];
-  encounterDiagnosisId.value = '';
+  encounterDiagnosisIds.value = [];
   encounterDiagnosisRows.value = [];
   savedPrescriptionNo.value = '';
   catalogItems.value = [];
@@ -609,6 +719,10 @@ watch(
     const wasOpen = prev?.[0] ?? false;
     const contextChanged =
       !prev || prev[1] !== kind || prev[2] !== encounterId || prev[3] !== patientId;
+    // 换患者/就诊时清空共用诊断会话记忆
+    if (prev && (prev[2] !== encounterId || prev[3] !== patientId)) {
+      clearEncounterDiagnosisSession();
+    }
     const editFormNo = props.editDocumentGroup?.applyFormNo ?? '';
     const editChanged = prev?.[4] !== editFormNo;
     if ((!wasOpen && open) || (wasOpen && (contextChanged || editChanged))) {
@@ -750,32 +864,42 @@ watch(keyword, () => {
           </div>
 
           <div class="cart-panel__form-fields">
-            <span class="cart-field__label">执行科室</span>
-            <ElSelect v-model="orgId" class="cart-panel__field-select" placeholder="请选择">
-              <ElOption
-                v-for="org in orgOptions"
-                :key="org.value"
-                :label="org.label"
-                :value="org.value"
-              />
-            </ElSelect>
-            <span class="cart-field__label">诊断</span>
-            <div class="cart-panel__diagnosis">
-              <ElSelect
-                v-model="encounterDiagnosisId"
-                filterable
-                clearable
-                class="cart-panel__field-select"
-                placeholder="请选择诊断"
-              >
+            <div class="cart-panel__field-row">
+              <span class="cart-field__label">执行科室</span>
+              <ElSelect v-model="orgId" class="cart-panel__field-select" placeholder="请选择">
                 <ElOption
-                  v-for="item in diagnosisOptions"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
+                  v-for="org in orgOptions"
+                  :key="org.value"
+                  :label="org.label"
+                  :value="org.value"
                 />
               </ElSelect>
-              <ElButton link type="primary" @click="openDiagnosisDialog">添加诊断</ElButton>
+            </div>
+            <div class="cart-panel__field-row">
+              <span class="cart-field__label">执行次数</span>
+              <ElInputNumber
+                v-model="executionCount"
+                :min="1"
+                :max="99"
+                :controls="false"
+                class="cart-field__qty"
+              />
+            </div>
+            <div v-if="!isInpatientScope" class="cart-panel__field-row">
+              <span class="cart-field__label">诊断</span>
+              <div class="cart-panel__diagnosis">
+                <AdviceDiagnosisBindPanel
+                  :selected-ids="encounterDiagnosisIds"
+                  :options="diagnosisBindOptions"
+                  :encounter-id="props.encounterId"
+                  :patient-id="props.patientId"
+                  @update:selected-ids="onEncounterDiagnosisIdsChange"
+                  @add-diagnosis="openDiagnosisDialog"
+                  @deleted="() => void refreshEncounterDiagnosisOptions()"
+                  @main-switched="() => void refreshEncounterDiagnosisOptions()"
+                  @options-refreshed="onBindDiagnosisOptionsRefreshed"
+                />
+              </div>
             </div>
           </div>
 
@@ -808,7 +932,10 @@ watch(keyword, () => {
                   :controls="false"
                   class="cart-field__qty"
                 />
-                <span class="cart-field__label">{{ detailFieldLabel }}</span>
+                <span class="cart-field__label">
+                  {{ detailFieldLabel }}
+                  <span v-if="!detailRequired" class="cart-field__optional">选填</span>
+                </span>
                 <ElSelect
                   v-if="isLabApply"
                   :model-value="detailTargetIds(row.detailItems)"
@@ -816,7 +943,9 @@ watch(keyword, () => {
                   collapse-tags
                   collapse-tags-tooltip
                   class="cart-field__detail"
-                  :placeholder="`请选择${detailFieldLabel}`"
+                  :placeholder="
+                    detailRequired ? `请选择${detailFieldLabel}` : `选填${detailFieldLabel}`
+                  "
                   @update:model-value="(v: string[]) => writeDetailTargetIds(row, v)"
                 >
                   <ElOption
@@ -834,11 +963,14 @@ watch(keyword, () => {
                   collapse-tags-tooltip
                   filterable
                   check-strictly
+                  clearable
                   class="cart-field__detail"
                   :data="bodyStructureOptions"
                   :props="{ value: 'value', label: 'label', children: 'children' }"
                   node-key="value"
-                  :placeholder="`请选择${detailFieldLabel}`"
+                  :placeholder="
+                    detailRequired ? `请选择${detailFieldLabel}` : `选填${detailFieldLabel}`
+                  "
                   @update:model-value="(v: string[]) => writeDetailTargetIds(row, v)"
                 />
               </div>
@@ -851,7 +983,7 @@ watch(keyword, () => {
             <ElEmpty
               v-if="selectedItems.length === 0"
               class="cart-panel__empty"
-              description="从左侧选择检验/检查项目"
+              :description="emptyCartHint"
               :image-size="80"
             >
               <template #description>
@@ -899,6 +1031,7 @@ watch(keyword, () => {
   </ServiceApplyShellWrap>
 
   <DiagnosisPickerDialog
+    v-if="!isInpatientScope"
     v-model="diagnosisDialogVisible"
     :station-scope="props.stationScope"
     :encounter-id="encounterId"
@@ -1151,13 +1284,20 @@ watch(keyword, () => {
 }
 
 .cart-panel__form-fields {
-  display: grid;
-  grid-template-columns: 72px 1fr 48px 1fr;
-  align-items: center;
-  gap: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 8px 12px;
   border-bottom: 1px solid #dbeafe;
   background: #f8fbff;
+}
+
+.cart-panel__field-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
 }
 
 .cart-panel__field-select {
@@ -1167,13 +1307,20 @@ watch(keyword, () => {
 .cart-panel__diagnosis {
   display: flex;
   align-items: center;
-  gap: 4px;
   min-width: 0;
 }
 
-.cart-panel__diagnosis .cart-panel__field-select {
+.cart-panel__diagnosis :deep(.dx-bind) {
   flex: 1;
   min-width: 0;
+}
+
+.cart-panel__diagnosis :deep(.dx-bind__panel) {
+  min-width: 0;
+}
+
+.cart-panel__diagnosis :deep(.el-button) {
+  flex-shrink: 0;
 }
 
 .cart-panel__list {
@@ -1269,6 +1416,13 @@ watch(keyword, () => {
   color: var(--el-text-color-regular);
   text-align: right;
   white-space: nowrap;
+}
+
+.cart-field__optional {
+  margin-left: 2px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--el-text-color-secondary);
 }
 
 .cart-field__qty {

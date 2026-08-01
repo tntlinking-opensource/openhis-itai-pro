@@ -7,6 +7,9 @@ export const CATALOG_FILE_DOWNLOAD_INFNO_OPTIONS = [
   { label: '1307 疾病与诊断', value: '1307' },
   { label: '1308 手术操作', value: '1308' },
   { label: '1309 门诊慢特病', value: '1309' },
+  { label: '1310 按病种付费', value: '1310' },
+  { label: '1311 日间手术病种', value: '1311' },
+  { label: '1313 肿瘤形态学', value: '1313' },
   { label: '1314 中医疾病', value: '1314' },
   { label: '1315 中医证候', value: '1315' },
 ] as const;
@@ -33,10 +36,18 @@ export function defaultCatalogStartVer(infno: string, verBranch?: string): strin
   return '0';
 }
 
+/** 1305 local_ver 是否属于指定分支（F002 / F002_…） */
+export function matches1305Branch(localVer: string | undefined | null, verBranch: string): boolean {
+  if (!localVer?.trim()) return false;
+  const branch = (verBranch === 'F003' ? 'F003' : 'F002').toUpperCase();
+  const ver = localVer.trim().toUpperCase();
+  return ver === branch || ver.startsWith(`${branch}_`);
+}
+
 export function catalogDownloadHint(infno: string): string {
   const base = `${infno} 正式下载无轮次上限，停链依赖平台 infcode/无新文件；TXT 下一 ver 对齐 OpenHIS ReadCsv。游标取最新快照。`;
   if (infno === '1305') {
-    return `${base} 1305 须分别从 F002、F003 各拉一条版本链。`;
+    return `${base} 1305 须分别从 F002、F003 各拉一条版本链；切换分支后游标与起点按该分支独立计算。`;
   }
   if (infno === '1308') {
     return `${base} 1308 全量重拉初始 ver 为 -1。`;

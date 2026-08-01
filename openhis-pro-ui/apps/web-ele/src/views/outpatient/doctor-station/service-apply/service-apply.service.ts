@@ -21,17 +21,24 @@ import {
   httpSignDoctorStationAdviceBatch,
 } from '#/api/doctor-station/advice.http';
 import { httpGetEncounterDiagnosis } from '#/api/doctor-station/diagnosis.http';
-import { resolveEncounterDiagnosisDisplayRows } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-select';
+import {
+  joinEncounterDiagnosisIds,
+  parseEncounterDiagnosisIds,
+  pickSoleEncounterDiagnosisIds,
+  resolveEncounterDiagnosisDisplayRows,
+  resolveSessionDefaultEncounterDiagnosisIds,
+} from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-select';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
-
 import { loadAllDepartmentPerformOrgOptions } from '#/views/doctor-station/advice-shared/perform-org-options.service';
 
 import {
+  isServiceApplyDetailRequired,
   SERVICE_APPLY_ACTIVITY_TABLE,
   SERVICE_APPLY_BODY_STRUCTURE_TABLE,
   SERVICE_APPLY_CATALOG_PAGE_SIZE,
   SERVICE_APPLY_CATEGORY_BY_KIND,
+  SERVICE_APPLY_KIND_LABEL,
   SERVICE_APPLY_SIGN_PRODUCT_TABLE,
   SERVICE_APPLY_SPECIMEN_TABLE,
 } from './service-apply.constants';
@@ -66,39 +73,81 @@ export async function loadServiceApplyEncounterDiagnosisRows(
 export function buildServiceApplyDiagnosisOptions(
   rows: EncounterDiagnosisRowDto[],
 ): ServiceApplyDiagnosisOption[] {
-  return rows
-    .map((row) => {
-      const label = String(row.conditionDefinitionName ?? '').trim();
-      const value = String(row.encounterDiagnosisId ?? row.conditionId ?? '').trim();
-      const conditionDefinitionId = String(row.conditionDefinitionId ?? '').trim() || undefined;
-      if (!label || !value) return null;
-      return { label, value, conditionDefinitionId };
-    })
-    .filter((item): item is ServiceApplyDiagnosisOption => item !== null);
+  const options: ServiceApplyDiagnosisOption[] = [];
+  for (const row of rows) {
+    const label = String(row.conditionDefinitionName ?? '').trim();
+    const value = String(row.encounterDiagnosisId ?? '').trim();
+    if (!label || !value) continue;
+    const conditionDefinitionId = String(row.conditionDefinitionId ?? '').trim() || undefined;
+    options.push({
+      label,
+      value,
+      ...(conditionDefinitionId ? { conditionDefinitionId } : {}),
+    });
+  }
+  return options;
 }
 
-/** 默认选中主诊断，无则取首条 */
+/** 默认选中：仅当就诊诊断恰好 1 条时默认该条（多诊断不默认）。 */
 export function pickDefaultServiceApplyEncounterDiagnosisId(
   rows: EncounterDiagnosisRowDto[],
   options: ServiceApplyDiagnosisOption[],
 ): string {
-  if (options.length === 0) return '';
-  const displayRows = resolveEncounterDiagnosisDisplayRows(rows);
-  const named = displayRows.filter((row) => (row.conditionDefinitionName ?? '').trim());
-  if (named.length === 0) return options[0]?.value ?? '';
-  const mains = named.filter((row) => Number(row.mainDiagnosisFlag) === 1);
-  const pool = mains.length > 0 ? mains : named;
-  pool.sort((a, b) => Number(a.diagnosisSortNo ?? 0) - Number(b.diagnosisSortNo ?? 0));
-  const mainRow = pool[0];
-  const mainId = String(mainRow?.encounterDiagnosisId ?? mainRow?.conditionId ?? '').trim();
-  if (mainId) {
-    const hit = options.find((item) => item.value === mainId);
-    if (hit) return hit.value;
-  }
-  return options[0]?.value ?? '';
+  const ids = pickDefaultServiceApplyEncounterDiagnosisIds(rows, options);
+  return ids[0] ?? '';
 }
 
-/** 由所选就诊诊断主键解析保存用双字段 */
+/** 默认勾选：唯一诊断 / 会话上次（由调用方传入 lastSelectedIds）。 */
+export function pickDefaultServiceApplyEncounterDiagnosisIds(
+  rows: EncounterDiagnosisRowDto[],
+  options: ServiceApplyDiagnosisOption[],
+  lastSelectedIds?: string[],
+): string[] {
+  if (options.length === 0) return [];
+  const optionIdSet = new Set(options.map((item) => item.value));
+  const resolved = resolveSessionDefaultEncounterDiagnosisIds([], rows, lastSelectedIds).filter(
+    (id) => optionIdSet.has(id),
+  );
+  if (resolved.length > 0) return resolved;
+  // options 与 rows 偶发不同步时：options 恰好 1 条也可默认
+  if (options.length === 1) {
+    const only = options[0]?.value;
+    return only ? [only] : [];
+  }
+  return [];
+}
+
+/** 与医嘱一致的整单诊断默认（保留已选 → 上次 → 唯一）。 */
+export function resolveServiceApplyDefaultEncounterDiagnosisIds(
+  currentIds: string[],
+  rows: EncounterDiagnosisRowDto[],
+  lastSelectedIds?: string[],
+): string[] {
+  return resolveSessionDefaultEncounterDiagnosisIds(currentIds, rows, lastSelectedIds);
+}
+
+/** @deprecated 保留导出；请用 pickSoleEncounterDiagnosisIds */
+export function pickSoleServiceApplyEncounterDiagnosisIds(
+  rows: EncounterDiagnosisRowDto[],
+): string[] {
+  return pickSoleEncounterDiagnosisIds(rows);
+}
+
+/** 由多选就诊诊断主键拼保存用 ids 串（主诊第一） */
+export function resolveServiceApplyEncounterDiagnosisIds(
+  encounterDiagnosisIds: string[],
+  rows: EncounterDiagnosisRowDto[],
+): string | undefined {
+  const ids = parseEncounterDiagnosisIds(encounterDiagnosisIds);
+  if (ids.length === 0) return undefined;
+  const idsText = joinEncounterDiagnosisIds(ids, rows);
+  if (!idsText) return undefined;
+  return parseEncounterDiagnosisIds(idsText)
+    .map((id) => preserveApiIdForRequest(id) ?? id)
+    .join(',');
+}
+
+/** @deprecated 改用 resolveServiceApplyEncounterDiagnosisIds */
 export function resolveServiceApplyDiagnosisIds(
   encounterDiagnosisId: string,
   rows: EncounterDiagnosisRowDto[],
@@ -107,8 +156,7 @@ export function resolveServiceApplyDiagnosisIds(
   if (!selectedId) return {};
   const hit = rows.find((row) => {
     const eid = String(row.encounterDiagnosisId ?? '').trim();
-    const cid = String(row.conditionId ?? '').trim();
-    return eid === selectedId || cid === selectedId;
+    return eid === selectedId;
   });
   const conditionDefinitionId = String(hit?.conditionDefinitionId ?? '').trim() || undefined;
   const resolvedEncounterDiagnosisId =
@@ -147,9 +195,14 @@ export function isValidServiceApplyCatalogRow(row: DoctorStationAdviceCatalogRow
   return Boolean(activityDefinitionId && name && unitCode);
 }
 
-/** 申请单明细目标表名 */
+/** 申请单明细目标表名（检验→样本；检查/治疗→部位） */
 export function resolveDetailTargetTable(applyKind: ServiceApplyKind): string {
   return applyKind === 'lab' ? SERVICE_APPLY_SPECIMEN_TABLE : SERVICE_APPLY_BODY_STRUCTURE_TABLE;
+}
+
+/** 申请单类型中文短名 */
+export function resolveServiceApplyKindLabel(kind: ServiceApplyKind): string {
+  return SERVICE_APPLY_KIND_LABEL[kind];
 }
 
 /** 由多选 targetId 构造 detailItems */
@@ -232,27 +285,47 @@ export async function loadServiceApplyOrgOptions(_params?: {
   return loadAllDepartmentPerformOrgOptions();
 }
 
-/** 用目录 defaultPerformOrg* 补全/修正执行科室下拉 label */
+/**
+ * 用目录 defaultPerformOrg* 修正执行科室下拉 label。
+ * 仅更新已在科室候选中的项；禁止把医院根等非科室 id 塞进下拉。
+ */
 export function mergeCatalogDefaultPerformOrgOptions(
   options: ServiceApplyOrgOption[],
   catalogRows: DoctorStationAdviceCatalogRowDto[],
   selectedCatalogRowKeys: string[],
 ): ServiceApplyOrgOption[] {
   const merged = [...options];
+  const allowedIds = new Set(merged.map((item) => item.value));
   for (const key of selectedCatalogRowKeys) {
     const hit = catalogRows.find((row) => catalogRowKey(row) === key);
     if (!hit) continue;
     const orgId = String(hit.defaultPerformOrgId ?? '').trim();
     const orgName = String(hit.defaultPerformOrgName ?? '').trim();
-    if (!orgId) continue;
+    if (!orgId || !allowedIds.has(orgId)) continue;
     const existing = merged.find((o) => o.value === orgId);
-    if (existing) {
-      if (orgName) existing.label = orgName;
-    } else {
-      merged.unshift({ value: orgId, label: orgName || orgId });
+    if (existing && orgName) {
+      existing.label = orgName;
     }
   }
   return merged;
+}
+
+/** 从已选目录行中取首个仍落在科室候选内的默认执行科室 */
+export function pickCatalogDefaultPerformOrgId(
+  options: ServiceApplyOrgOption[],
+  catalogRows: DoctorStationAdviceCatalogRowDto[],
+  selectedCatalogRowKeys: string[],
+): string {
+  const allowedIds = new Set(options.map((item) => item.value));
+  for (const key of selectedCatalogRowKeys) {
+    const hit = catalogRows.find((row) => catalogRowKey(row) === key);
+    if (!hit) continue;
+    const orgId = String(hit.defaultPerformOrgId ?? '').trim();
+    if (orgId && allowedIds.has(orgId)) {
+      return orgId;
+    }
+  }
+  return '';
 }
 
 /** 整单执行科室下拉：全局选一个，清单内全部项目共用该科室 */
@@ -264,22 +337,34 @@ export async function mergeServiceApplyOrgOptions(_params?: {
   return loadAllDepartmentPerformOrgOptions();
 }
 
-/** 校验已选行是否满足保存前置条件 */
+/** 校验已选行是否满足保存前置条件（检验样本/治疗部位可选，BR-REQ-005） */
 export function validateServiceApplySelectedItems(
   items: ServiceApplySelectedItem[],
   orgId: string,
-  encounterDiagnosisId: string,
+  encounterDiagnosisIds: string[],
+  applyKind: ServiceApplyKind,
+  options?: { executionCount?: number; requireDiagnosis?: boolean },
 ): null | string {
   if (items.length === 0) return '请先选择申请项目';
   if (!String(orgId ?? '').trim()) return '请选择执行科室';
-  if (!String(encounterDiagnosisId ?? '').trim()) return '请选择诊断';
+  const executionCount = Number(options?.executionCount ?? 0);
+  if (!Number.isFinite(executionCount) || executionCount <= 0) {
+    return '执行次数须大于 0';
+  }
+  // 住院申请单不展示诊断，跳过必填；门诊仍须选诊断
+  const requireDiagnosis = options?.requireDiagnosis !== false;
+  if (requireDiagnosis && parseEncounterDiagnosisIds(encounterDiagnosisIds).length === 0) {
+    return '请选择诊断';
+  }
+  const detailRequired = isServiceApplyDetailRequired(applyKind);
+  const detailLabel = applyKind === 'lab' ? '样本' : '部位';
   for (const item of items) {
     if (!String(item.activityDefinitionId ?? '').trim()) return '存在无效项目，请移除后重选';
     if (!String(item.unitCode ?? '').trim())
       return `「${item.activityName}」缺少单位，请移除后重选`;
     if (Number(item.quantity) <= 0) return `「${item.activityName}」数量须大于 0`;
-    if ((item.detailItems ?? []).length === 0) {
-      return `「${item.activityName}」须选择部位/样本明细`;
+    if (detailRequired && (item.detailItems ?? []).length === 0) {
+      return `「${item.activityName}」须选择${detailLabel}明细`;
     }
   }
   return null;
@@ -288,49 +373,48 @@ export function validateServiceApplySelectedItems(
 /** 组装整张申请单保存请求 */
 export function buildSaveServiceApplyFormRequest(params: {
   applyKind: ServiceApplyKind;
-  encounterDiagnosisId: string;
+  encounterDiagnosisIds: string[];
   encounterDiagnosisRows: EncounterDiagnosisRowDto[];
   encounterId: string;
+  /** 整单执行次数（各明细行共用） */
+  executionCount: number;
   items: ServiceApplySelectedItem[];
   orgId: string;
   patientId: string;
   previousPrescriptionNo?: string;
 }): SaveDoctorStationServiceApplyFormRequest {
-  const diagnosisIds = resolveServiceApplyDiagnosisIds(
-    params.encounterDiagnosisId,
+  const encounterDiagnosisIds = resolveServiceApplyEncounterDiagnosisIds(
+    params.encounterDiagnosisIds,
     params.encounterDiagnosisRows,
   );
-  const lines = params.items.map((item) => ({
-    activityDefinitionId:
-      preserveApiIdForRequest(item.activityDefinitionId) ?? item.activityDefinitionId,
-    quantity: item.quantity,
-    unitCode: item.unitCode,
-    remark: String(item.remark ?? '').trim() || undefined,
-    detailItems: (item.detailItems ?? []).map((detail) => ({
-      targetTable: detail.targetTable,
-      targetId: preserveApiIdForRequest(detail.targetId) ?? detail.targetId,
-      remark: String(detail.remark ?? '').trim() || undefined,
-    })),
-  }));
+  const lines = params.items.map((item) => {
+    // 检验/治疗可无明细：空明细不传 detailItems
+    const detailItems = (item.detailItems ?? [])
+      .map((detail) => ({
+        targetTable: detail.targetTable,
+        targetId: preserveApiIdForRequest(detail.targetId) ?? detail.targetId,
+        remark: String(detail.remark ?? '').trim() || undefined,
+      }))
+      .filter((detail) => String(detail.targetId ?? '').trim());
+    return {
+      activityDefinitionId:
+        preserveApiIdForRequest(item.activityDefinitionId) ?? item.activityDefinitionId,
+      quantity: item.quantity,
+      unitCode: item.unitCode,
+      remark: String(item.remark ?? '').trim() || undefined,
+      ...(detailItems.length > 0 ? { detailItems } : {}),
+    };
+  });
+  const executionCountRaw = Number(params.executionCount);
+  const executionCount =
+    Number.isFinite(executionCountRaw) && executionCountRaw > 0 ? Math.trunc(executionCountRaw) : 1;
   return {
     encounterId: params.encounterId,
     patientId: params.patientId,
     categoryEnum: resolveServiceApplyCategoryEnum(params.applyKind),
     orgId: preserveApiIdForRequest(params.orgId) ?? params.orgId,
-    ...(diagnosisIds.conditionDefinitionId
-      ? {
-          conditionDefinitionId:
-            preserveApiIdForRequest(diagnosisIds.conditionDefinitionId) ??
-            diagnosisIds.conditionDefinitionId,
-        }
-      : {}),
-    ...(diagnosisIds.encounterDiagnosisId
-      ? {
-          encounterDiagnosisId:
-            preserveApiIdForRequest(diagnosisIds.encounterDiagnosisId) ??
-            diagnosisIds.encounterDiagnosisId,
-        }
-      : {}),
+    executionCount,
+    ...(encounterDiagnosisIds ? { encounterDiagnosisIds } : {}),
     previousPrescriptionNo: params.previousPrescriptionNo?.trim() || undefined,
     lines,
   };
@@ -353,7 +437,7 @@ export async function saveServiceApplyForm(
 function parseAdviceLineAmountYuan(text: string): number {
   const normalized = String(text ?? '')
     .trim()
-    .replace(/[^\d.-]/g, '');
+    .replaceAll(/[^\d.-]/g, '');
   const n = Number(normalized);
   return Number.isFinite(n) ? n : 0;
 }
@@ -382,7 +466,8 @@ export function buildServiceApplySelectedItemsFromAdviceRows(
     .map((line) => {
       const activityDefinitionId = String(line.productDefinitionId ?? '').trim();
       const activityName = String(line.content ?? '').trim();
-      const quantityRaw = line.listExecutionCount ?? line.listQuantity ?? 1;
+      // 数量取计价 quantity；执行次数为整单字段，不在此回填行级 quantity
+      const quantityRaw = line.listQuantity ?? 1;
       const quantity = quantityRaw > 0 ? quantityRaw : 1;
       const lineAmount = parseAdviceLineAmountYuan(line.lineTotalAmount);
       const unitPrice = quantity > 0 ? lineAmount / quantity : 0;
@@ -402,17 +487,57 @@ export function buildServiceApplySelectedItemsFromAdviceRows(
     .filter((item) => item.activityDefinitionId && item.activityName);
 }
 
+/** 从申请单行解析整单执行次数（各行应一致，取首个有效值） */
+export function resolveServiceApplyFormExecutionCount(lines: readonly AdviceRowItem[]): number {
+  for (const line of lines) {
+    const count = line.listExecutionCount;
+    if (typeof count === 'number' && Number.isFinite(count) && count > 0) {
+      return Math.trunc(count);
+    }
+  }
+  return 1;
+}
+
 /** 由列表诊断摘要匹配就诊诊断下拉主键 */
+/** 由列表行诊断摘要/ids 串 回填多选就诊诊断 id */
+export function resolveServiceApplyDiagnosisIdsFromAdviceRow(
+  diagnosisSummary: string,
+  encounterDiagnosisIdsText: string | undefined,
+  options: ServiceApplyDiagnosisOption[],
+): string[] {
+  const fromIds = parseEncounterDiagnosisIds(encounterDiagnosisIdsText).filter((id) =>
+    options.some((item) => item.value === id),
+  );
+  if (fromIds.length > 0) return fromIds;
+  const label = String(diagnosisSummary ?? '').trim();
+  if (!label || label === '—') {
+    return [];
+  }
+  // 多选展示名可能为顿号拼接，逐段匹配
+  const parts = label
+    .split(/[、,，]/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const matched: string[] = [];
+  for (const part of parts) {
+    const hit = options.find((item) => item.label === part);
+    if (hit && !matched.includes(hit.value)) {
+      matched.push(hit.value);
+    }
+  }
+  if (matched.length > 0) return matched;
+  const hit = options.find((item) => item.label === label);
+  return hit?.value ? [hit.value] : [];
+}
+
+/** @deprecated 改用 resolveServiceApplyDiagnosisIdsFromAdviceRow */
 export function resolveServiceApplyDiagnosisIdFromAdviceRow(
   diagnosisSummary: string,
   options: ServiceApplyDiagnosisOption[],
 ): string {
-  const label = String(diagnosisSummary ?? '').trim();
-  if (!label || label === '—') {
-    return '';
-  }
-  const hit = options.find((item) => item.label === label);
-  return hit?.value ?? '';
+  return (
+    resolveServiceApplyDiagnosisIdsFromAdviceRow(diagnosisSummary, undefined, options)[0] ?? ''
+  );
 }
 
 /** 签发申请单下全部 ServiceRequest 草稿 */

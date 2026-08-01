@@ -35,8 +35,8 @@ import {
 } from '#/api/outpatient-registration';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
-/** 窗口默认现金渠道编码（与收费域字典对齐后替换） */
-export const DEFAULT_REGISTER_PAY_CHANNEL_CODE = 'CASH';
+/** 挂号收银默认支付渠道：银联扫码（可改选现金/微信等） */
+export const DEFAULT_REGISTER_PAY_CHANNEL_CODE = 'SCAN_PAY';
 
 /**
  * 患者分页查询（SelectTable 使用 pageNo 从 1 开始）。
@@ -187,13 +187,13 @@ export async function cancelRegisterEncounter(params: {
   });
 }
 
-/** 待挂号（PLANNED）撤销：含医保平台退号（2202） */
+/** 待挂号（PLANNED）撤销：含医保平台退号（2202）；前端文案「取消挂号」 */
 export async function cancelPlannedRegisterEncounter(params: {
   cancelReason?: string;
   encounterId: string;
 }) {
   return httpCancelPlannedRegistration({
     encounterId: params.encounterId,
-    cancelReason: params.cancelReason ?? '窗口撤销待挂号',
+    cancelReason: params.cancelReason ?? '窗口取消挂号',
   });
 }

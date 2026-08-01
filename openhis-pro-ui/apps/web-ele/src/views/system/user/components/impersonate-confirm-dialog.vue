@@ -56,8 +56,17 @@ async function handleConfirm() {
     ElMessage.success(`已代理登录为 ${props.user.userName}`);
     visible.value = false;
     emit('success');
-    await router.replace('/');
-    await resetAndRefreshAccessRoutes(router);
+    // 先按被代理用户重载菜单，再进首页；选科未就绪时回登录页完成范围选择
+    try {
+      await resetAndRefreshAccessRoutes(router);
+      await router.replace('/');
+    } catch (scopeError: any) {
+      if (scopeError?.name === 'LoginScopeNotReadyError') {
+        await router.replace('/auth/login');
+        return;
+      }
+      throw scopeError;
+    }
   } catch (error: any) {
     const message =
       error?.response?.data?.msg ||

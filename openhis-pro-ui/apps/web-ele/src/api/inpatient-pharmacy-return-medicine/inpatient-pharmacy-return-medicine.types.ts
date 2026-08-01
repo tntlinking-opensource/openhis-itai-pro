@@ -32,6 +32,8 @@ export interface InpatientReturnPatientRowDto {
   encounterNo?: string;
   refundEnum?: string;
   refundEnumText?: string;
+  /** 费用性质展示名（就诊优先合同名；空则前端回落自费） */
+  contractDisplay?: string;
 }
 
 export interface PageInpatientReturnPatientResponse {

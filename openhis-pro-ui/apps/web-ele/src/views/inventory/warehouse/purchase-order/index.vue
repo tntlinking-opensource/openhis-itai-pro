@@ -2,6 +2,7 @@
 <script lang="ts" setup>
 import type {
   GetPurchaseOrderDetailResponse,
+  LinkableDeptPurchaseRequestListRowDto,
   PurchaseOrderListRowDto,
 } from '#/api/inventory/warehouse/purchase-order';
 import type { ApiOptionItem } from '#/types/api-response';
@@ -24,8 +25,6 @@ import {
   WHS_PO_ALL_WAREHOUSES_PURPOSE_LOCATION_ID,
 } from '#/api/inventory/warehouse/purchase-order';
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
-import { useCompactViewport } from '#/composables/use-compact-viewport';
-import { INVENTORY_DOC_ASIDE_WIDTH_PX } from '#/constants/layout/viewport-breakpoints';
 import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
 import { isInboundReceiptDocumentEditableRaw } from '#/utils/inventory/inbound-receipt-status';
 import { inboundReceiptStatusLabel } from '#/utils/inventory/inbound-receipt-status';
@@ -40,10 +39,6 @@ defineOptions({
 
 const route = useRoute();
 const userStore = useUserStore();
-const { pickPreset } = useCompactViewport();
-/** 左侧历史订货单队列宽度：≥1680 保持 280，窄屏收至 248 */
-const asideWidthPx = pickPreset(INVENTORY_DOC_ASIDE_WIDTH_PX);
-const asideWidth = computed(() => `${asideWidthPx.value}px`);
 
 const queryParams = ref<{ keyword?: string }>({ keyword: '' });
 
@@ -74,6 +69,7 @@ const tableForm = ref<{
 
 const cabinetListOptions = ref<Record<string, unknown>[]>([]);
 const warehouseHeadOptions = ref<Record<string, unknown>[]>([]);
+const departmentPharmacyOptions = ref<Record<string, unknown>[]>([]);
 const practitionerOption = ref<ApiOptionItem[]>([]);
 const supplierOption = ref<ApiOptionItem[]>([]);
 const itemTableTypeOptions = ref<ApiOptionItem[]>([]);
@@ -82,6 +78,7 @@ const orderList = ref<Record<string, unknown>[]>([]);
 const selectedOrder = ref<null | Record<string, unknown>>(null);
 const orderDetail = ref<GetPurchaseOrderDetailResponse | null>(null);
 const mainPaneResetKey = ref(0);
+const mainPaneRef = ref<InstanceType<typeof PurchaseOrderMainPane> | null>(null);
 const isAddDisabled = ref(false);
 
 const selectedBusNo = computed(() => {
@@ -155,6 +152,9 @@ async function init() {
     warehouseHeadOptions.value = mapPurchaseOrderInitToCabinetRows(
       filterPurchaseOrderWarehouseOptions(warehouseOpts),
     );
+    departmentPharmacyOptions.value = mapPurchaseOrderInitToCabinetRows(
+      data?.departmentPharmacyLocationOptions ?? [],
+    );
     supplierOption.value = mapPurchaseOrderInitToApiOptions(data?.supplierOptions);
     practitionerOption.value = mapPurchaseOrderInitToApiOptions(data?.warehouseKeeperOptions);
     itemTableTypeOptions.value = mapPurchaseOrderInitToApiOptions(
@@ -176,6 +176,7 @@ async function init() {
   } catch {
     cabinetListOptions.value = [];
     warehouseHeadOptions.value = [];
+    departmentPharmacyOptions.value = [];
     supplierOption.value = [];
     practitionerOption.value = [];
     itemTableTypeOptions.value = [];
@@ -214,6 +215,19 @@ function handleAdd() {
   void nextTick(() => {
     isAddDisabled.value = true;
   });
+}
+
+/** 选用申请单且当前非草稿：插入草稿并带入明细。 */
+async function handleCreateFromUpstream(row: LinkableDeptPurchaseRequestListRowDto) {
+  resetDetailState();
+  const draft = createDraftOrderRow();
+  orderList.value = [draft, ...orderList.value.filter((r) => !r._draft)];
+  selectedOrder.value = draft;
+  mainPaneResetKey.value += 1;
+  tableForm.value.applyTime = formatDateTime(new Date());
+  await nextTick();
+  isAddDisabled.value = true;
+  await mainPaneRef.value?.applyLinkableDeptPurchaseRequestToDraft(row);
 }
 
 async function handleEdit(order?: null | Record<string, unknown>) {
@@ -312,7 +326,6 @@ onMounted(async () => {
 
 <template>
   <WarehouseDocWorkstation
-    :aside-width="asideWidth"
     queue-title=""
     aside-dense
     :show-aside-filter="false"
@@ -337,6 +350,7 @@ onMounted(async () => {
     </template>
 
     <PurchaseOrderMainPane
+      ref="mainPaneRef"
       class="min-h-0 flex-1"
       :apply-time="tableForm.applyTime"
       :bus-no="selectedBusNo"
@@ -348,6 +362,8 @@ onMounted(async () => {
       :reset-key="mainPaneResetKey"
       :supplier-options="supplierOption"
       :warehouse-options="warehouseHeadOptions"
+      :department-pharmacy-options="departmentPharmacyOptions"
+      @create-from-upstream="handleCreateFromUpstream"
       @document-changed="handleDocumentChanged"
       @document-removed="handleDocumentRemoved"
       @document-saved="handleDocumentSaved"

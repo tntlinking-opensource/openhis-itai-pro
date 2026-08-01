@@ -86,6 +86,18 @@ function formatMoney(value: null | number | string | undefined): string {
   return formatMoneyDisplay(value);
 }
 
+/** 数量 + 单位展示（中药克/西药盒等；无数量时占位） */
+function formatQuantityDisplay(
+  row: Pick<RefundableChargeLineItemDto, 'quantity' | 'quantityUnit'>,
+): string {
+  const qty = row.quantity;
+  if (qty === null || qty === undefined || String(qty).trim() === '') {
+    return '—';
+  }
+  const unit = String(row.quantityUnit ?? '').trim();
+  return unit ? `${qty}${unit}` : String(qty);
+}
+
 /** 关闭弹窗 */
 function closeDialog() {
   emit('update:modelValue', false);
@@ -242,16 +254,16 @@ function handleRefundTableSpanMethod({
   return [0, 0];
 }
 
-/** 构建提交体：须包含列表全部行，勾选支付单下行为本单拟退 */
+/** 构建提交体：仅提交已勾选支付单下的行，且全部为本单拟退（产品不支持半退保留） */
 function buildSubmitLines() {
-  const selectedIds = new Set(
-    selectedRows.value.map((row) => preserveApiIdForRequest(row.chargeItemId)).filter(Boolean),
-  );
-  return tableRows.value.map((row) => ({
-    paymentId: row.paymentId,
-    chargeItemId: row.chargeItemId,
-    refundForCurrentBill: selectedIds.has(row.chargeItemId),
-  }));
+  const selectedPaymentIds = new Set(refundingRows.value.map((row) => row.paymentId));
+  return tableRows.value
+    .filter((row) => selectedPaymentIds.has(row.paymentId))
+    .map((row) => ({
+      paymentId: row.paymentId,
+      chargeItemId: row.chargeItemId,
+      refundForCurrentBill: true,
+    }));
 }
 
 /** 拟退行收费项 id 集合 */
@@ -387,8 +399,8 @@ async function handleSubmit() {
           min-width="200"
           show-overflow-tooltip
         />
-        <ElTableColumn label="数量" width="88" align="right">
-          <template #default="{ row }">{{ row.quantity ?? '—' }}</template>
+        <ElTableColumn label="数量" width="100" align="right">
+          <template #default="{ row }">{{ formatQuantityDisplay(row) }}</template>
         </ElTableColumn>
         <ElTableColumn label="金额" width="100" align="right">
           <template #default="{ row }">¥{{ formatMoney(row.lineTotalAmount) }}</template>

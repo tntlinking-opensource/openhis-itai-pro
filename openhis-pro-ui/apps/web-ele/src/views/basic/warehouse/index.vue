@@ -20,6 +20,7 @@ import {
   WAREHOUSE_STATUS_ENUM,
 } from '#/api/basic/warehouse';
 
+import { BASIC_TABLE_MAX_HEIGHT } from '../basic-table-max-height';
 import EditDialog from './edit-dialog.vue';
 
 defineOptions({
@@ -48,8 +49,10 @@ const formItems = ref([
 
 const tableColumns = ref<TableColumn[]>([
   {
-    type: 'index',
-    label: '序号',
+    label: '编号',
+    prop: 'busNo',
+    minWidth: 140,
+    showOverflowTooltip: true,
     align: 'center',
     headerAlign: 'center',
   },
@@ -223,6 +226,7 @@ onMounted(() => {
       :query-params="queryParams"
       :form-items="formItems"
       :table-columns="tableColumns"
+      :max-height="BASIC_TABLE_MAX_HEIGHT"
       :show-top-query="true"
       :show-pagination="false"
       row-key="id"

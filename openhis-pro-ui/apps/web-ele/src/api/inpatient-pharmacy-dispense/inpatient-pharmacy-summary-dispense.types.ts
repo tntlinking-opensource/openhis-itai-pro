@@ -63,6 +63,20 @@ export interface InpatientPharmacySummarySlipLineDto {
   totalPrice?: number | string;
   /** 追溯码（汇总核发落 SupplyDelivery；待发由前端暂存） */
   traceNo?: string;
+  /** 包装单位码（待扫换算） */
+  packageUnitCode?: string;
+  /** 包装相对拆零倍数 */
+  packageUnitRatio?: number | string;
+  /** 拆零单位码 */
+  splitUnitCode?: string;
+  /** 追溯码主档贴码单位 */
+  traceUnitCode?: string;
+  /** 追溯码主档贴码比例快照 */
+  traceUnitRatio?: number | string;
+  /** 主表该品批是否已有追溯码（有码批） */
+  lotHasTraceMaster?: boolean;
+  /** 代表批号（待扫换算/匹配） */
+  representativeLotNumber?: string;
 }
 
 /** 底层发放行（含患者/批号） */

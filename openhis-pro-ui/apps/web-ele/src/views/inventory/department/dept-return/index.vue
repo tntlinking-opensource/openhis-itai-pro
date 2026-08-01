@@ -1,10 +1,12 @@
 <!-- 科室退库单：工作站 + 侧栏卡片队列 + 右侧明细。 -->
 <script lang="ts" setup>
 import type { LocationOptionDto } from '#/api/inventory/department/dept-return';
+import type { ApiOptionItem } from '#/types/api-response';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
+import { useUserStore } from '@vben/stores';
 import { formatDateTime } from '@vben/utils';
 
 import {
@@ -16,6 +18,7 @@ import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workst
 import {
   INV_ALL_LOCATIONS_FILTER_ID,
   enrichStockOutQueueCardRow,
+  mapInventoryPractitionerInitOptions,
   normalizeSidebarLocationFilterValue,
   pickWorkbenchOrderAfterSave,
   resolveDefaultAllLocationsFilterValue,
@@ -27,6 +30,7 @@ import DeptReturnMainPane from './dept-return-main-pane.vue';
 defineOptions({ name: 'InventoryDepartmentDeptReturnPage' });
 
 const route = useRoute();
+const userStore = useUserStore();
 
 function createDefaultMonthRange(): [string, string] {
   const d = new Date();
@@ -51,11 +55,13 @@ const tableForm = ref<{ applyTime?: string; sourceLocationId?: number | string }
 
 const deptRawOptions = ref<LocationOptionDto[]>([]);
 const warehouseRawOptions = ref<LocationOptionDto[]>([]);
+const practitionerOptions = ref<ApiOptionItem[]>([]);
 const cabinetListOptions = ref<Record<string, unknown>[]>([]);
 const orderList = ref<Record<string, unknown>[]>([]);
 const selectedOrder = ref<null | Record<string, unknown>>(null);
 const mainPaneResetKey = ref(0);
-const isAddDisabled = ref(false);
+const mainPaneRef = ref<InstanceType<typeof DeptReturnMainPane> | null>(null);
+const showWelcomeEmpty = computed(() => selectedOrder.value === null);
 
 function isDraftOrderRow(row?: null | Record<string, unknown>): boolean {
   return Boolean(row?._draft);
@@ -95,8 +101,15 @@ async function init() {
   try {
     const res = await loadDeptReturnFormInitApi();
     const data = res.data;
-    deptRawOptions.value = data?.sourceDeptLocationOptions ?? [];
-    warehouseRawOptions.value = data?.purposeWarehouseOptions ?? [];
+    // 与后端 LoadReturnToWarehouseFormInitResponse 字段对齐
+    deptRawOptions.value =
+      data?.departmentPharmacyLocationOptions ?? data?.sourceDeptLocationOptions ?? [];
+    warehouseRawOptions.value =
+      data?.warehouseLocationOptions ?? data?.purposeWarehouseOptions ?? [];
+    practitionerOptions.value = mapInventoryPractitionerInitOptions(
+      [data?.pharmacistOptions, data?.warehouseKeeperOptions],
+      userStore.userInfo,
+    );
     cabinetListOptions.value = mapDeptReturnInitToCabinetRows(deptRawOptions.value);
     if (
       tableForm.value.sourceLocationId === undefined ||
@@ -110,6 +123,7 @@ async function init() {
   } catch {
     deptRawOptions.value = [];
     warehouseRawOptions.value = [];
+    practitionerOptions.value = [];
     cabinetListOptions.value = [];
   }
 }
@@ -130,15 +144,14 @@ async function getList() {
   }
 }
 
-function handleAdd() {
+async function handleCreateFromUpstream(row: Record<string, unknown>) {
   const draft = createDraftOrderRow();
   orderList.value = [draft, ...orderList.value.filter((r) => !r._draft)];
   selectedOrder.value = draft;
   tableForm.value.applyTime = formatDateTime(new Date());
   mainPaneResetKey.value += 1;
-  nextTick(() => {
-    isAddDisabled.value = true;
-  });
+  await nextTick();
+  await mainPaneRef.value?.applyLinkableSourceToDraft(row);
 }
 
 function handleOrderClick(order: Record<string, unknown>) {
@@ -147,7 +160,6 @@ function handleOrderClick(order: Record<string, unknown>) {
     // 切回草稿由主区 sync 恢复缓存；勿 bump resetKey，否则会冲掉恢复内容
     return;
   }
-  isAddDisabled.value = false;
 }
 
 async function handleDocumentSaved(payload: { busNo?: string }) {
@@ -156,7 +168,6 @@ async function handleDocumentSaved(payload: { busNo?: string }) {
   const busNo = payload.busNo?.trim();
   if (!busNo) return;
   selectedOrder.value = pickWorkbenchOrderAfterSave(orderList.value, busNo, resolveBusNo);
-  isAddDisabled.value = false;
 }
 
 async function handleDocumentRemoved() {
@@ -164,13 +175,11 @@ async function handleDocumentRemoved() {
     orderList.value = orderList.value.filter((r) => r !== selectedOrder.value);
     selectedOrder.value = null;
     mainPaneResetKey.value += 1;
-    isAddDisabled.value = false;
     return;
   }
   orderList.value = orderList.value.filter((r) => !r._draft);
   selectedOrder.value = null;
   mainPaneResetKey.value += 1;
-  isAddDisabled.value = false;
   await getList();
 }
 
@@ -187,7 +196,6 @@ watch(
     const row = orderList.value.find((item) => resolveBusNo(item) === String(busNo));
     if (!row) return;
     selectedOrder.value = row;
-    isAddDisabled.value = false;
   },
   { immediate: true },
 );
@@ -200,7 +208,6 @@ onMounted(async () => {
 
 <template>
   <WarehouseDocWorkstation
-    aside-width="280px"
     queue-title=""
     aside-dense
     :show-aside-filter="false"
@@ -211,24 +218,26 @@ onMounted(async () => {
         v-model:date-range="listDateRange"
         v-model:keyword="listKeywordModel"
         v-model:source-location-id="tableForm.sourceLocationId"
-        :add-disabled="isAddDisabled"
         :cabinet-list-options="cabinetListOptions"
         :orders="orderList"
         :selected-order="selectedOrder"
-        @add="handleAdd"
         @search="getList"
         @select="handleOrderClick"
       />
     </template>
 
     <DeptReturnMainPane
+      ref="mainPaneRef"
       class="min-h-0 flex-1"
       :apply-time="tableForm.applyTime"
       :bus-no="selectedBusNo"
       :is-draft-order="isDraftOrder"
       :reset-key="mainPaneResetKey"
+      :show-welcome-empty="showWelcomeEmpty"
       :dept-options="deptRawOptions"
       :warehouse-options="warehouseRawOptions"
+      :practitioner-options="practitionerOptions"
+      @create-from-upstream="handleCreateFromUpstream"
       @document-removed="handleDocumentRemoved"
       @document-saved="handleDocumentSaved"
     />

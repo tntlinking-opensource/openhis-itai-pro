@@ -13,20 +13,15 @@ import type { AdviceProductOption } from '#/views/outpatient/doctor-station/advi
 
 import { formatTcmDiagnosisDisplayName } from '#/components/doctor-station/diagnosis/services/tcm-diagnosis-display';
 import {
-  DEFAULT_TCM_METHOD_CODE,
-  DEFAULT_TCM_RATE_CODE,
-  resolveDefaultTcmMethodCode,
-  resolveTcmMethodLabel,
-} from '#/components/doctor-station/tcm-advice/services/tcm-method-code';
-import { decimalMul } from '#/utils/format/decimal-util';
-import { calcMoneyLineTotal, sumMoneyThenCalc } from '#/utils/format/money-scale';
-import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
-import {
   convertProductUnitPriceBetweenBandKinds,
   normalizeProductUnitBandsForPrice,
   parseProductUnitBandPrice,
   PRODUCT_CATALOG_PRICE_SOURCE_BAND_KIND,
 } from '#/utils/doctor-station/product-unit-band-price';
+import { decimalMul } from '#/utils/format/decimal-util';
+import { calcMoneyLineTotal, sumMoneyThenCalc } from '#/utils/format/money-scale';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { convertInboundQtyBetweenBandKinds } from '#/utils/inventory/inbound-product-unit-bands';
 import {
   unitCodeByBandKind,
   unitNameByBandKind,
@@ -37,6 +32,12 @@ export const TCM_RX_STATUS_DRAFT = 'DRAFT';
 
 /** 方状态：已停嘱 */
 export const TCM_RX_STATUS_STOPPED = 'STOPPED';
+
+/**
+ * 代煎 companion 诊疗项目名称（与后端 DoctorStationTcmConstants.DECOCTION_ACTIVITY_NAME 一致）。
+ * 签发后代煎费挂在开立医嘱列表；应在中药处方页展示并自西药医嘱列表排除。
+ */
+export const TCM_DECOCTION_ACTIVITY_NAME = '代煎中药';
 
 /** 住院长临：长期 */
 export const TCM_THERAPY_LONG_TERM = 'LONG_TERM';
@@ -83,6 +84,19 @@ export interface TcmPrescriptionLineUi {
   dosageInstructionCode?: string;
   /** 特殊煎法展示名 */
   dosageInstructionText?: string;
+  /** 医保等级码（CHRGITM_LV，目录带出仅展示） */
+  chrgitmLv?: number | string;
+  /** 医保等级展示名（甲类/乙类/自费等） */
+  chrgitmLvText?: string;
+  /**
+   * 选品时当前 FIFO 批剩余（包装单位数值）；改剂量时软校验请求量是否超批。
+   * 仅前端缓存，不落库。
+   */
+  catalogCurrentLotPackageQty?: number;
+  /** 选品时单位槽快照，供剂量→包装换算软校验；不落库 */
+  catalogUnitBands?: AdviceProductOption['unitBands'];
+  /** 选品时包装单位编码快照；不落库 */
+  catalogPackageUnitCode?: string;
 }
 
 /** 处方方头 UI 态 */
@@ -116,6 +130,10 @@ export interface TcmHistoryTreeItem {
   prescriptionNo: string;
   summaryText: string;
   herbSummary: string;
+  /** 树节点展示：味数 · 开立人 · 日期 */
+  treeLabel: string;
+  authoredByName: string;
+  openedDateText: string;
   row: TcmRxHistoryRowDto;
 }
 
@@ -151,7 +169,7 @@ function tcmLineSortSeq(sortNumber: number | undefined): number {
 function sortTcmPrescriptionLines<T extends { medicationRequestId?: string; sortNumber: number }>(
   lines: readonly T[],
 ): T[] {
-  return [...lines].sort((left, right) => {
+  return [...lines].toSorted((left, right) => {
     const sortCompare = tcmLineSortSeq(left.sortNumber) - tcmLineSortSeq(right.sortNumber);
     if (sortCompare !== 0) {
       return sortCompare;
@@ -310,6 +328,37 @@ export function mapApiLineToUi(dto: TcmRxLineDto, index: number): TcmPrescriptio
   };
 }
 
+/** 历史开立时间格式化为天（YYYY-MM-DD） */
+function formatHistoryOpenedDateText(reqOpenedTime: unknown): string {
+  const raw = toStr(reqOpenedTime);
+  if (!raw) {
+    return '';
+  }
+  // LocalDateTime / ISO 字符串取日期段
+  if (raw.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(raw)) {
+    return raw.slice(0, 10);
+  }
+  return raw;
+}
+
+/** 历史处方树节点展示文案：味数 · 开立人 · 日期 */
+export function formatTcmHistoryTreeLabel(params: {
+  authoredByName?: string;
+  openedDateText?: string;
+  summaryText: string;
+}): string {
+  const parts = [params.summaryText];
+  const author = toStr(params.authoredByName);
+  if (author) {
+    parts.push(author);
+  }
+  const dateText = toStr(params.openedDateText);
+  if (dateText) {
+    parts.push(dateText);
+  }
+  return parts.join(' · ');
+}
+
 /** 历史处方 → 侧栏节点 */
 export function mapHistoryRowToTreeItem(
   row: TcmRxHistoryRowDto,
@@ -317,11 +366,21 @@ export function mapHistoryRowToTreeItem(
 ): TcmHistoryTreeItem {
   const prescriptionNo = toStr(row.prescriptionNo) || `history-${index}`;
   const names = (row.medicationNames ?? []).filter((n) => toStr(n));
+  const summaryText = toStr(row.summaryText) || prescriptionNo;
+  const authoredByName = toStr(row.authoredByName);
+  const openedDateText = formatHistoryOpenedDateText(row.reqOpenedTime);
   return {
     id: `history-${prescriptionNo}-${index}`,
     prescriptionNo,
-    summaryText: toStr(row.summaryText) || prescriptionNo,
+    summaryText,
     herbSummary: names.join('，'),
+    authoredByName,
+    openedDateText,
+    treeLabel: formatTcmHistoryTreeLabel({
+      summaryText,
+      authoredByName,
+      openedDateText,
+    }),
     row,
   };
 }
@@ -416,6 +475,118 @@ export function calcLineTotalQuantity(
   return decimalMul(toNum(line.dose, 0), doseQty > 0 ? doseQty : 1);
 }
 
+/**
+ * 将剂量单位下的请求总量换算为包装单位数量，供与目录 availableQuantity 对比。
+ * 无法换算时返回 undefined（跳过软校验）。
+ */
+export function convertTcmRequestDoseQtyToPackage(
+  requestDoseQty: number,
+  product: Pick<AdviceProductOption, 'defaultUnitCode' | 'unitBands'>,
+  doseUnitCode: string,
+): number | undefined {
+  const qty = Number(requestDoseQty);
+  if (!Number.isFinite(qty) || qty < 0) {
+    return undefined;
+  }
+  const bands = product.unitBands ?? [];
+  if (bands.length > 0) {
+    const converted = convertInboundQtyBetweenBandKinds(qty, 'DOSE', 'PACKAGE', bands);
+    if (converted !== undefined && Number.isFinite(converted)) {
+      return converted;
+    }
+  }
+  const packageCode = unitCodeByBandKind(bands, 'PACKAGE') || toStr(product.defaultUnitCode);
+  const doseCode = toStr(doseUnitCode);
+  // 剂量单位与包装单位编码一致时直接比
+  if (packageCode && doseCode && packageCode === doseCode) {
+    return qty;
+  }
+  return undefined;
+}
+
+/**
+ * 已写入行后，按选品时缓存的目录可开量判断请求量是否超限。
+ */
+export function isTcmLineRequestExceedCurrentLot(
+  line: Pick<
+    TcmPrescriptionLineUi,
+    | 'catalogCurrentLotPackageQty'
+    | 'catalogPackageUnitCode'
+    | 'catalogUnitBands'
+    | 'dose'
+    | 'doseUnitCode'
+  >,
+  chineseHerbsDoseQuantity: number,
+): boolean {
+  const cap = line.catalogCurrentLotPackageQty;
+  if (cap === undefined || !Number.isFinite(cap)) {
+    return false;
+  }
+  const requestDoseQty = calcLineTotalQuantity(line, chineseHerbsDoseQuantity);
+  const requestPackage = convertTcmRequestDoseQtyToPackage(
+    requestDoseQty,
+    {
+      unitBands: line.catalogUnitBands,
+      defaultUnitCode: line.catalogPackageUnitCode,
+    },
+    line.doseUnitCode,
+  );
+  if (requestPackage === undefined) {
+    return false;
+  }
+  return requestPackage > cap;
+}
+
+/**
+ * 列出请求量超过目录可用库存的药材行（依赖选品缓存的 catalogCurrentLotPackageQty）。
+ */
+export function listTcmLinesExceedingCurrentLot(
+  lines: TcmPrescriptionLineUi[],
+  chineseHerbsDoseQuantity: number,
+): TcmPrescriptionLineUi[] {
+  return lines.filter((row) => {
+    if (row.pendingDelete) {
+      return false;
+    }
+    if (!String(row.medicationDefinitionId ?? '').trim()) {
+      return false;
+    }
+    return isTcmLineRequestExceedCurrentLot(row, chineseHerbsDoseQuantity);
+  });
+}
+
+/**
+ * 暂存/签发前：校验是否有药材用量超过可用库存；无超限返回 null。
+ */
+export function validatePrescriptionStockExceed(
+  lines: TcmPrescriptionLineUi[],
+  chineseHerbsDoseQuantity: number,
+): null | string {
+  const over = listTcmLinesExceedingCurrentLot(lines, chineseHerbsDoseQuantity);
+  if (over.length === 0) {
+    return null;
+  }
+  const names = over
+    .map((row) => {
+      const name = String(row.medicationName ?? '').trim();
+      return name || '未命名药材';
+    })
+    .join('、');
+  return `以下药材用量超过可用库存：${names}。请减少剂量/付数`;
+}
+
+/** 解析选品时目录可开量（各批合计，包装单位）。 */
+export function parseCatalogCurrentLotPackageQty(
+  product: Pick<AdviceProductOption, 'availableQuantity'>,
+): number | undefined {
+  const raw = product.availableQuantity;
+  if (raw === null || raw === undefined || String(raw).trim() === '') {
+    return undefined;
+  }
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 /** 目录选品写回明细行 */
 export function applyCatalogProductToLine(
   line: TcmPrescriptionLineUi,
@@ -432,8 +603,26 @@ export function applyCatalogProductToLine(
   line.doseUnitName = doseUnit.doseUnitName;
   line.unitCode = doseUnit.doseUnitCode;
   line.retailPrice = doseUnit.retailPrice;
-  if (line.dose <= 0) {
-    line.dose = 10;
+  // 选药不预填默认剂量，由医生在剂量框输入；空行仍保持 dose=0
+  // 缓存选品时目录可开量与单位槽，供改剂量时软校验（不落库）
+  line.catalogCurrentLotPackageQty = parseCatalogCurrentLotPackageQty(product);
+  line.catalogUnitBands = product.unitBands;
+  line.catalogPackageUnitCode = toStr(product.defaultUnitCode) || undefined;
+  // 医保等级：目录带出仅展示；无值时清空避免沿用上一药材
+  const lvRaw = product.chrgitmLv;
+  line.chrgitmLv =
+    lvRaw !== null && lvRaw !== undefined && String(lvRaw).trim() !== '' ? lvRaw : undefined;
+  const lvText = String(product.chrgitmLvText ?? '').trim();
+  line.chrgitmLvText = lvText || undefined;
+  // 特殊煎法：目录维护默认带出；无值时清空避免沿用上一药材
+  const dosageCode = String(product.dosageInstruction ?? '').trim();
+  if (dosageCode) {
+    line.dosageInstructionCode = dosageCode;
+    line.dosageInstructionText =
+      String(product.dosageInstructionDictText ?? '').trim() || undefined;
+  } else {
+    line.dosageInstructionCode = '';
+    line.dosageInstructionText = undefined;
   }
   line.dirty = true;
 }
@@ -447,16 +636,11 @@ export function calcSingleDoseAmount(lines: TcmPrescriptionLineUi[]): number {
   );
 }
 
-/** 校验方头必填项（暂存/签发前共用） */
+/** 校验方头必填项（暂存/签发前共用；天数非必填） */
 export function validatePrescriptionHeaderFields(
   rx: Pick<
     TcmPrescriptionUi,
-    | 'chineseHerbsDoseQuantity'
-    | 'days'
-    | 'methodCode'
-    | 'rateCode'
-    | 'tcmSyndromeGroup'
-    | 'therapyEnum'
+    'chineseHerbsDoseQuantity' | 'methodCode' | 'rateCode' | 'tcmSyndromeGroup' | 'therapyEnum'
   >,
   options?: { requireTherapy?: boolean },
 ): null | string {
@@ -472,13 +656,57 @@ export function validatePrescriptionHeaderFields(
   if (!String(rx.rateCode ?? '').trim()) {
     return '请选择用药频次';
   }
-  const days = rx.days;
-  if (days == null || days <= 0) {
-    return '请填写天数';
-  }
   const doseQty = rx.chineseHerbsDoseQuantity;
-  if (doseQty == null || doseQty <= 0) {
+  if (doseQty === null || doseQty === undefined || doseQty <= 0) {
     return '请填写付数';
+  }
+  return null;
+}
+
+/**
+ * 同方是否已有相同药品定义（排除待删行；可选排除当前编辑行，便于换药校验）。
+ */
+export function findDuplicateHerbInPrescription(
+  lines: TcmPrescriptionLineUi[],
+  medicationDefinitionId: string,
+  excludeClientLineKey?: string,
+): TcmPrescriptionLineUi | undefined {
+  const defId = String(medicationDefinitionId ?? '').trim();
+  if (!defId) {
+    return undefined;
+  }
+  // 只在有效药材行中按定义主键比对
+  return lines.find((line) => {
+    if (line.pendingDelete) {
+      return false;
+    }
+    if (excludeClientLineKey && line.clientLineKey === excludeClientLineKey) {
+      return false;
+    }
+    return String(line.medicationDefinitionId ?? '').trim() === defId;
+  });
+}
+
+/** 校验同方无重复药品；有重复则返回提示文案 */
+export function validatePrescriptionNoDuplicateHerbs(
+  lines: TcmPrescriptionLineUi[],
+): null | string {
+  // defId → 首次出现的药名，用于拼提示
+  const seen = new Map<string, string>();
+  for (const line of lines) {
+    if (line.pendingDelete) {
+      continue;
+    }
+    const defId = String(line.medicationDefinitionId ?? '').trim();
+    if (!defId) {
+      continue;
+    }
+    const prevName = seen.get(defId);
+    if (prevName !== undefined) {
+      const name = String(line.medicationName ?? '').trim() || prevName || '该药品';
+      return `同一处方中不允许重复药品：${name}`;
+    }
+    seen.set(defId, String(line.medicationName ?? '').trim());
   }
   return null;
 }
@@ -524,12 +752,14 @@ export function buildDraftSaveRequest(
         }
         draftLines.push(base);
       });
-      // 标记删除的已落库行
+      // 标记删除的已落库行（带上 dose，兼容未升级后端对 DELETE 仍算付数的路径）
       rx.lines.forEach((line) => {
         if (!line.pendingDelete || !line.medicationRequestId) return;
         draftLines.push({
           lineOp: 'DELETE',
           medicationRequestId: line.medicationRequestId,
+          dose: line.dose ?? 0,
+          doseUnitCode: line.doseUnitCode || 'g',
         });
       });
       return {
@@ -644,7 +874,6 @@ export function syncHeaderFormToPrescription(
     days?: number;
     methodCode: string;
     rateCode: string;
-    remark: string;
     sufferingFlag: boolean;
     tcmSyndromeGroup: string;
     therapyEnum?: string;
@@ -659,7 +888,6 @@ export function syncHeaderFormToPrescription(
   rx.methodCode = form.methodCode;
   rx.rateCode = form.rateCode;
   rx.days = form.days;
-  rx.remark = form.remark;
   rx.headerDirty = true;
 }
 
@@ -674,7 +902,6 @@ export function loadHeaderFormFromPrescription(rx: null | TcmPrescriptionUi) {
       methodCode: '',
       rateCode: '',
       days: undefined,
-      remark: '',
     };
   }
   return {
@@ -685,11 +912,14 @@ export function loadHeaderFormFromPrescription(rx: null | TcmPrescriptionUi) {
     methodCode: rx.methodCode,
     rateCode: rx.rateCode,
     days: rx.days,
-    remark: rx.remark,
   };
 }
 
-export { resolveDefaultTcmMethodCode, resolveTcmMethodLabel };
+export {
+  resolveDefaultTcmMethodCode,
+  resolveTcmMethodLabel,
+} from '#/components/doctor-station/tcm-advice/services/tcm-method-code';
+
 export {
   DEFAULT_TCM_RATE_CODE,
   resolveDefaultTcmRateCode,

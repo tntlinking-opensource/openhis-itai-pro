@@ -62,6 +62,8 @@ export interface OutpatientInfoItemDto {
   workInjuryContractId?: null | number | string;
   workInjuryQualificationValid?: boolean | null;
   workInjuryNeeds2301Upload?: boolean | null;
+  /** 费用性质展示（有医保账户优先医保合同名） */
+  contractDisplay?: null | string;
 }
 
 /** IF-DOR-01 分页响应 */

@@ -22,6 +22,7 @@ export function isPriceAdjustmentDocumentEditable(status: unknown, isDraft?: boo
 
 /** 与 InvDocActions v-bind 同构的禁用态 */
 export interface PriceAdjustmentDocActionFlags {
+  printDisabled: boolean;
   removeDisabled: boolean;
   saveAndSubmitDisabled: boolean;
   saveDisabled: boolean;
@@ -34,8 +35,11 @@ export function buildPriceAdjustmentDocActionFlags(input: {
   isDraft: boolean;
   statusRaw: unknown;
 }): PriceAdjustmentDocActionFlags {
+  const printDisabled = !input.hasPersistedBusNo;
+
   if (input.isDraft) {
     return {
+      printDisabled,
       saveDisabled: false,
       saveAndSubmitDisabled: false,
       removeDisabled: false,
@@ -47,6 +51,7 @@ export function buildPriceAdjustmentDocActionFlags(input: {
 
   if (code === 'pending') {
     return {
+      printDisabled,
       saveDisabled: true,
       saveAndSubmitDisabled: true,
       removeDisabled: true,
@@ -55,6 +60,7 @@ export function buildPriceAdjustmentDocActionFlags(input: {
 
   if (code === 'draft') {
     return {
+      printDisabled,
       saveDisabled: false,
       saveAndSubmitDisabled: false,
       removeDisabled: false,
@@ -63,6 +69,7 @@ export function buildPriceAdjustmentDocActionFlags(input: {
 
   if (code === 'rejected') {
     return {
+      printDisabled,
       saveDisabled: ro,
       saveAndSubmitDisabled: ro,
       removeDisabled: true,
@@ -71,6 +78,7 @@ export function buildPriceAdjustmentDocActionFlags(input: {
 
   if (code === 'approved' || code === 'deprecated') {
     return {
+      printDisabled,
       saveDisabled: true,
       saveAndSubmitDisabled: true,
       removeDisabled: true,
@@ -78,6 +86,7 @@ export function buildPriceAdjustmentDocActionFlags(input: {
   }
 
   return {
+    printDisabled,
     saveDisabled: ro,
     saveAndSubmitDisabled: ro,
     removeDisabled: ro,

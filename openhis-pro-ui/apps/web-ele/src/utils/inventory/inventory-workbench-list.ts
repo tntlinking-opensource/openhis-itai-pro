@@ -263,11 +263,19 @@ export function enrichStockOutQueueCardRow(
   },
 ): Record<string, unknown> {
   const statusSort = normalizeStockOutStatusSort(row.statusEnum);
+  /** 侧栏制单人/审批人/金额：兼容后端 enrich 的 creatorName/approverName/totalAmount */
+  const creator = row.applicantId_dictText || row.creatorName || row.applicantName || '';
+  const approver = row.approverId_dictText || row.approverName || '';
+  const amount = row.totalAmount ?? row.totalPrice ?? row.actualAmountSum;
   return {
     ...row,
     supplyBusNo: row.supplyBusNo ?? row.busNo,
     statusEnum_enumText: stockOutStatusLabel(statusSort ?? row.statusEnum),
     supplierId_dictText: row.supplierId_dictText ?? row.supplierName ?? '',
+    applicantId_dictText: creator,
+    approverId_dictText: approver,
+    totalAmount: amount,
+    totalPrice: amount ?? row.totalPrice,
     rejectReason: row.rejectReason ?? row.reason ?? '',
     sourceLocationId_dictText:
       row.sourceLocationId_dictText ??
@@ -385,6 +393,7 @@ export function filterWorkbenchListRowsByKeyword<T extends Record<string, unknow
       row.approverId_dictText,
       row.purposeLocationName,
       row.sourceLocationName,
+      row.consumingOrganizationName,
       row.purposeLocationId_dictText,
       row.sourceLocationId_dictText,
     ];
@@ -596,8 +605,9 @@ export function mergePractitionerSelectOptions(
   for (const o of baseOptions) {
     pushOrUpgrade(o.value, o.label, true);
   }
+  // extras（登录人/详情 pin）允许弱 label，避免下拉整表为空
   for (const e of extras ?? []) {
-    pushOrUpgrade(e.id, e.label, false);
+    pushOrUpgrade(e.id, e.label, true);
   }
   return out;
 }

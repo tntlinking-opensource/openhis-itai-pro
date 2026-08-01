@@ -39,6 +39,8 @@ export interface EncounterDiagnosisRowDto {
   iptDiseaseTypeCode?: null | string;
   /** 住院患者疾病诊断类型展示文案 */
   iptDiseaseTypeText?: null | string;
+  /** 医保诊断编码；未对码时为空 */
+  ybNo?: null | string;
 }
 
 export interface EncounterDiagnosisResponse {
@@ -82,6 +84,35 @@ export interface CommonDiagnosesResponse {
   iptDiseaseTypeOptions?: DiagnosisOptionDto[] | null;
 }
 
+/** getPatientOpspFilingDiagnosis */
+export interface GetPatientOpspFilingDiagnosisRequest {
+  encounterId: string;
+  patientId: string;
+}
+
+/** 慢特病备案可导入行 */
+export interface OpspFilingDiagnosisRowDto {
+  opspDiseCode?: null | string;
+  opspDiseName?: null | string;
+  beginDate?: null | string;
+  endDate?: null | string;
+  valid?: boolean | null;
+  /** matched / unmatched / expired / alreadyOnEncounter / ambiguous */
+  matchStatus?: null | string;
+  matchHint?: null | string;
+  conditionDefinitionId?: null | string;
+  conditionCode?: null | string;
+  conditionDefinitionName?: null | string;
+  matchField?: null | string;
+  diagnosisKind?: null | string;
+}
+
+export interface PatientOpspFilingDiagnosisResponse {
+  /** false 时前端隐藏「慢病备案」入口（无 CHS） */
+  opspFilingImportEnabled?: boolean | null;
+  filingList?: OpspFilingDiagnosisRowDto[] | null;
+}
+
 /** getConditionDefinitionMetadata */
 export interface GetConditionDefinitionMetadataRequest {
   /**
@@ -109,6 +140,8 @@ export interface ConditionDefinitionRowResponse {
   sourceEnumText?: null | string;
   ybFlag?: null | number;
   ybFlagText?: null | string;
+  /** 医保诊断编码；未对码时为空，列表展示「-」 */
+  ybNo?: null | string;
   statusEnum?: null | number;
 }
 
@@ -129,7 +162,6 @@ export interface ConditionDefinitionPageResponse {
 
 /** saveDoctorDiagnosis */
 export interface SaveEncounterDiagnosisChildRequest {
-  conditionId?: null | string;
   encounterDiagnosisId?: null | string;
   conditionDefinitionId: string;
   conditionCode: string;
@@ -153,16 +185,47 @@ export interface SaveEncounterDiagnosisRequest {
 
 export interface SaveEncounterDiagnosisResponse {
   savedCount?: null | number;
+  savedEncounterDiagnosisIds?: null | string[];
+  /** @deprecated 请用 savedEncounterDiagnosisIds */
   savedConditionIds?: null | string[];
 }
 
 /** delEncounterDiagnosis */
 export interface DeleteEncounterDiagnosisRequest {
-  conditionId: string;
+  encounterDiagnosisId: string;
   encounterId: string;
+  patientId?: string;
 }
 
 export interface DeleteEncounterDiagnosisResponse {
   success?: boolean | null;
   message?: null | string;
+}
+
+/** switchMainEncounterDiagnosis */
+export interface SwitchMainEncounterDiagnosisRequest {
+  encounterDiagnosisId: string;
+  encounterId: string;
+  patientId?: string;
+}
+
+export interface SwitchMainEncounterDiagnosisResponse {
+  success?: boolean | null;
+  message?: null | string;
+}
+
+/** bindCommonDiagnosis（IF-DOR-08A） */
+export interface BindCommonDiagnosisRequest {
+  conditionDefinitionId: string;
+  /** 中医证候定义主键（可空） */
+  syndromeDefinitionId?: null | string;
+  saveAsPersonal?: boolean;
+  saveAsDepartment?: boolean;
+}
+
+export interface BindCommonDiagnosisResponse {
+  success?: boolean | null;
+  message?: null | string;
+  personalBoundCount?: null | number;
+  departmentBoundCount?: null | number;
 }

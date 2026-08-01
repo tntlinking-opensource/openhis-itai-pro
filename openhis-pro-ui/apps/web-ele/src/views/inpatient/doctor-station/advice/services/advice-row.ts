@@ -1,7 +1,11 @@
 import type { DoctorStationAdviceResourceKeyDto } from '#/api/doctor-station/advice.types';
 
 import type { AdviceDrugItem, AdviceRowItem, InpatientAdviceTherapyType } from './advice.types';
-import { ADVICE_ROW_PRODUCT_TABLE_FALLBACK } from './advice-tab.constants';
+import {
+  ADVICE_ROW_PRODUCT_TABLE_FALLBACK,
+  INPATIENT_ENTRUST_ACTIVITY_NAME,
+  INPATIENT_ENTRUST_CATEGORY_CODE,
+} from './advice-tab.constants';
 
 /** 住院西药长期医嘱：页面上不录总量，保存时 quantity/unitCode 取单次用量左侧（SPLIT）。 */
 export function isInpatientLongTermMedicationTherapy(
@@ -12,6 +16,27 @@ export function isInpatientLongTermMedicationTherapy(
       .trim()
       .toUpperCase() === 'LONG_TERM'
   );
+}
+
+/** 出院带药 therapy（仅药品；禁止诊疗/嘱托，BR-IP-ORD-029）。 */
+export function isInpatientDischargeMedicationTherapy(
+  therapy?: InpatientAdviceTherapyType | string | null,
+): boolean {
+  return (
+    String(therapy ?? '')
+      .trim()
+      .toUpperCase() === 'DISCHARGE_MEDICATION'
+  );
+}
+
+/** 编辑卡行是否嘱托（类目 52 或项目名「嘱托」）。 */
+export function isEntrustAdviceDrugItem(
+  item: Pick<AdviceDrugItem, 'catalogCategoryCode' | 'selectedDrugName'>,
+): boolean {
+  if (String(item.catalogCategoryCode ?? '').trim() === INPATIENT_ENTRUST_CATEGORY_CODE) {
+    return true;
+  }
+  return String(item.selectedDrugName ?? '').trim() === INPATIENT_ENTRUST_ACTIVITY_NAME;
 }
 
 /** 复合 selectedId：`{productTableName}:{definitionId}` */
@@ -64,7 +89,6 @@ function validateWesternMedicationLineItem(
   const longTerm = isInpatientLongTermMedicationTherapy(therapyCode);
   return Boolean(
     item.selectedId &&
-      item.diagnosis &&
       item.contractId &&
       item.usage &&
       item.frequency &&
@@ -88,11 +112,23 @@ export function validateWesternEditLineItem(
       therapy !== undefined && therapy !== null && String(therapy).trim() !== ''
         ? therapy
         : item.therapyEnum;
+    // 出院带药不得开诊疗/嘱托（后端也会拒，前端先挡）
+    if (isInpatientDischargeMedicationTherapy(therapyCode)) {
+      return false;
+    }
+    // 嘱托行：界面不录数量/执行科室，仅校验频次与正文
+    if (isEntrustAdviceDrugItem(item)) {
+      return (
+        String(item.frequency ?? '').trim() !== '' &&
+        String(item.entrustContent ?? '').trim() !== ''
+      );
+    }
+    // 临时诊疗：后端清空 rate_code，频次非必填；长期须填频次
     const longTerm = isInpatientLongTermMedicationTherapy(therapyCode);
     return (
       Number(item.serviceQuantity) > 0 &&
       String(item.performOrgId ?? '').trim() !== '' &&
-      String(item.frequency ?? '').trim() !== '' &&
+      (!longTerm || String(item.frequency ?? '').trim() !== '') &&
       (longTerm || Number(item.totalAmount) > 0)
     );
   }
@@ -191,4 +227,22 @@ export function rowLooksCancelStopLongTermEligible(row: AdviceRowItem): boolean 
   if (statusCode === 'STOPPED') return true;
   const blob = `${row.status ?? ''} ${row.statusEnum ?? ''}`.toUpperCase();
   return /\bSTOPPED\b|已停嘱/.test(blob);
+}
+
+/** 住院长期皮试药追加皮试检查：已勾皮试、长期、未停嘱（IF-IP-DOR-27） */
+export function rowLooksAppendSkinTestEligible(row: AdviceRowItem): boolean {
+  if (row.isEditor) return false;
+  if (!resourceKeyFromRow(row)) return false;
+  if (row.skinTestFlag !== true) return false;
+  const therapy = String(row.therapyTypeCode ?? '')
+    .trim()
+    .toUpperCase();
+  if (therapy && therapy !== 'LONG_TERM') return false;
+  const statusCode = String(row.statusEnum ?? '')
+    .trim()
+    .toUpperCase();
+  if (statusCode === 'STOPPED') return false;
+  const blob = `${row.status ?? ''} ${row.statusEnum ?? ''}`.toUpperCase();
+  if (/\bSTOPPED\b|已停嘱/.test(blob)) return false;
+  return true;
 }

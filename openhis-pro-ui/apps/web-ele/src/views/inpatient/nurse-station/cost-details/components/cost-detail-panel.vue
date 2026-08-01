@@ -7,6 +7,7 @@ import type {
   NurseStationCostDetailPresentationOptionDto,
   NurseStationCostDetailStatusFilter,
   NurseStationCostDetailTotalsDto,
+  NurseStationCostSummaryActivityLineDto,
   NurseStationCostSummaryLineDto,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-cost-detail.types';
 
@@ -17,7 +18,9 @@ import {
   formatCostDetailMoney,
   formatCostDetailQuantity,
   formatCostDetailUnitPrice,
+  formatCostSummaryActivityQuantity,
   formatCostSummaryQuantity,
+  resolveCostDetailDisplayDateTime,
 } from '../services/map-nurse-station-cost-detail';
 
 type CostDetailQuickDay = 'today' | 'yesterday';
@@ -25,7 +28,10 @@ type CostDetailQuickDay = 'today' | 'yesterday';
 interface Props {
   dateRange?: string[];
   detailLines?: NurseStationCostDetailLineDto[];
+  keyword?: string;
   loading?: boolean;
+  /** 费用清单打印中 */
+  printing?: boolean;
   presentationMode?: NurseStationCostDetailPresentationMode;
   presentationOptions?: NurseStationCostDetailPresentationOptionDto[];
   quickDay?: CostDetailQuickDay;
@@ -42,7 +48,9 @@ defineOptions({
 const props = withDefaults(defineProps<Props>(), {
   dateRange: () => [],
   detailLines: () => [],
+  keyword: '',
   loading: false,
+  printing: false,
   presentationMode: 'DETAIL',
   presentationOptions: () => [],
   quickDay: 'today',
@@ -53,17 +61,24 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const emit = defineEmits<{
+  onPrint: [];
   onQuery: [];
   onQuickDayChange: [day: CostDetailQuickDay];
   onPresentationModeChange: [mode: NurseStationCostDetailPresentationMode];
   onReset: [];
   'update:dateRange': [value: string[]];
+  'update:keyword': [value: string];
   'update:statusEnum': [value: NurseStationCostDetailStatusFilter];
 }>();
 
 const dateRangeModel = computed({
   get: () => props.dateRange,
   set: (value: string[]) => emit('update:dateRange', value),
+});
+
+const keywordModel = computed({
+  get: () => props.keyword,
+  set: (value: string) => emit('update:keyword', value),
 });
 
 const statusEnumModel = computed({
@@ -116,7 +131,12 @@ function resolveStatusTagType(statusEnum: string | undefined): TagProps['type'] 
   return 'info';
 }
 
-/** 将业务时间拆分为日期与时间两行展示。 */
+/** 汇总展开明细是否应用取消类标红样式。 */
+function isSummaryActivityCancelRow(row: NurseStationCostSummaryActivityLineDto) {
+  return row.cancelHighlight === true;
+}
+
+/** 将展示用业务时间拆分为日期与时间两行。 */
 function splitBusinessDateTime(value: string | undefined) {
   const text = String(value ?? '').trim();
   if (!text || text === '—') {
@@ -124,6 +144,15 @@ function splitBusinessDateTime(value: string | undefined) {
   }
   const [date, time] = text.split(' ');
   return { date: date || text, time: time ?? '' };
+}
+
+/** 明细/汇总展开行：拆分展示时刻（优先 displayDateTime） */
+function splitRowDisplayDateTime(row: {
+  displayDateTime?: string;
+  businessDateTime?: string;
+  activityDateTime?: string;
+}) {
+  return splitBusinessDateTime(resolveCostDetailDisplayDateTime(row));
 }
 </script>
 
@@ -145,6 +174,14 @@ function splitBusinessDateTime(value: string | undefined) {
           range-separator="至"
           class="cost-detail-filter__date"
         />
+        <span class="cost-detail-filter__label">项目查询</span>
+        <ElInput
+          v-model="keywordModel"
+          clearable
+          placeholder="项目名称/编码"
+          class="cost-detail-filter__keyword"
+          @keyup.enter="emit('onQuery')"
+        />
         <span class="cost-detail-filter__label">费用状态</span>
         <ElSelect v-model="statusEnumModel" class="cost-detail-filter__status">
           <ElOption
@@ -158,6 +195,7 @@ function splitBusinessDateTime(value: string | undefined) {
       <div class="cost-detail-filter__actions">
         <ElButton @click="emit('onReset')">重置</ElButton>
         <ElButton type="primary" :loading="loading" @click="emit('onQuery')">查询</ElButton>
+        <ElButton plain :loading="printing" @click="emit('onPrint')">打印费用清单</ElButton>
       </div>
     </section>
 
@@ -259,12 +297,9 @@ function splitBusinessDateTime(value: string | undefined) {
           <ElTableColumn label="业务时间" min-width="132">
             <template #default="{ row }">
               <div class="cost-detail-datetime">
-                <span>{{ splitBusinessDateTime(row.businessDateTime).date }}</span>
-                <span
-                  v-if="splitBusinessDateTime(row.businessDateTime).time"
-                  class="cost-detail-datetime__time"
-                >
-                  {{ splitBusinessDateTime(row.businessDateTime).time }}
+                <span>{{ splitRowDisplayDateTime(row).date }}</span>
+                <span v-if="splitRowDisplayDateTime(row).time" class="cost-detail-datetime__time">
+                  {{ splitRowDisplayDateTime(row).time }}
                 </span>
               </div>
             </template>
@@ -300,6 +335,59 @@ function splitBusinessDateTime(value: string | undefined) {
           class="cost-detail-table"
           :row-key="buildCostSummaryLineRowKey"
         >
+          <ElTableColumn type="expand" width="48" align="center">
+            <template #default="{ row }">
+              <div class="cost-detail-summary-expand">
+                <ElTable
+                  :data="row.activityLines ?? []"
+                  border
+                  size="small"
+                  class="cost-detail-summary-expand__table"
+                  :row-class-name="
+                    ({ row: activityRow }) =>
+                      isSummaryActivityCancelRow(activityRow) ? 'cost-detail-row--cancel' : ''
+                  "
+                >
+                  <ElTableColumn label="业务时间" min-width="132">
+                    <template #default="{ row: activityRow }">
+                      <div class="cost-detail-datetime">
+                        <span>{{ splitRowDisplayDateTime(activityRow).date }}</span>
+                        <span
+                          v-if="splitRowDisplayDateTime(activityRow).time"
+                          class="cost-detail-datetime__time"
+                        >
+                          {{ splitRowDisplayDateTime(activityRow).time }}
+                        </span>
+                      </div>
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn label="操作" min-width="96" align="center">
+                    <template #default="{ row: activityRow }">
+                      {{ activityRow.activityTypeDisplay || '—' }}
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn
+                    prop="operatorName"
+                    label="操作人"
+                    min-width="96"
+                    show-overflow-tooltip
+                  >
+                    <template #default="{ row: activityRow }">
+                      {{ activityRow.operatorName || '—' }}
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn label="数量" min-width="96" align="center">
+                    <template #default="{ row: activityRow }">
+                      {{ formatCostSummaryActivityQuantity(activityRow) }}
+                    </template>
+                  </ElTableColumn>
+                </ElTable>
+                <div v-if="!row.activityLines?.length" class="cost-detail-summary-expand__empty">
+                  暂无执行/划价明细
+                </div>
+              </div>
+            </template>
+          </ElTableColumn>
           <ElTableColumn prop="itemName" label="项目名称" min-width="168" show-overflow-tooltip />
           <ElTableColumn prop="itemSpec" label="规格" min-width="96" show-overflow-tooltip>
             <template #default="{ row }">
@@ -383,6 +471,10 @@ function splitBusinessDateTime(value: string | undefined) {
 
 .cost-detail-filter__status {
   width: 120px;
+}
+
+.cost-detail-filter__keyword {
+  width: 180px;
 }
 
 .cost-detail-card {
@@ -547,5 +639,24 @@ function splitBusinessDateTime(value: string | undefined) {
 
 .cost-detail-page :deep(.cost-detail-row--refund) {
   --el-table-tr-bg-color: var(--el-color-warning-light-9);
+}
+
+.cost-detail-page :deep(.cost-detail-row--cancel) {
+  color: var(--el-color-danger);
+}
+
+.cost-detail-summary-expand {
+  padding: 4px 12px 8px 40px;
+}
+
+.cost-detail-summary-expand__table {
+  width: 100%;
+}
+
+.cost-detail-summary-expand__empty {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  padding: 8px 0;
+  text-align: center;
 }
 </style>

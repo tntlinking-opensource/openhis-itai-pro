@@ -156,9 +156,15 @@ export function useInpatientRegisterPatientIdentity(
       ElMessage.warning(formatYbPluginOfflineMessage());
       return null;
     }
-    const operatorId = String(userStore.userInfo?.userName ?? userStore.userInfo?.id ?? '').trim();
+    const operatorId = String(
+      userStore.userInfo?.userName ?? userStore.userInfo?.username ?? userStore.userInfo?.id ?? '',
+    ).trim();
     const operatorName = String(
-      userStore.userInfo?.name ?? userStore.userInfo?.userName ?? '',
+      userStore.userInfo?.realName ??
+        userStore.userInfo?.name ??
+        userStore.userInfo?.userName ??
+        userStore.userInfo?.username ??
+        '',
     ).trim();
     if (!operatorId || !operatorName) {
       ElMessage.warning('请先登录，并确保操作员账号与姓名可用');

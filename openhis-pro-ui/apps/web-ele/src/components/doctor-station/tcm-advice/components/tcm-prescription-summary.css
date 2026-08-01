@@ -1,0 +1,134 @@
+/**
+ * 朝阳中药处方底部合计（对齐 mock footer）。
+ * 不走 SFC scoped：院点生产包丢 scoped 后左右会竖排叠放。
+ */
+.tcm-prescription-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  flex-shrink: 0;
+  padding: 0;
+  background: #fff;
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+}
+
+.tcm-prescription-summary__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+  color: var(--el-text-color-regular);
+}
+
+.tcm-prescription-summary__count {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--el-fill-color-light);
+  font-weight: 500;
+  line-height: 26px;
+}
+
+.tcm-prescription-summary__count-num {
+  color: var(--el-color-primary);
+  font-weight: 700;
+}
+
+.tcm-prescription-summary__sep {
+  color: var(--el-text-color-placeholder);
+}
+
+.tcm-prescription-summary__decoction {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--el-color-warning-dark-2);
+  font-weight: 500;
+}
+
+.tcm-prescription-summary__decoction-amt {
+  color: var(--el-color-warning-dark-2);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.tcm-prescription-summary__decoction-hint {
+  color: var(--el-text-color-placeholder);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/** 汇总区轻量「取消代煎」：贴金额旁，避免顶栏大按钮抢戏 */
+.tcm-prescription-summary__void-decoction {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  margin-left: 4px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--el-color-warning) 42%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--el-color-warning-light-9) 88%, #fff);
+  color: var(--el-color-warning-dark-2);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.tcm-prescription-summary__void-decoction:hover:not(:disabled) {
+  border-color: var(--el-color-warning);
+  background: color-mix(in srgb, var(--el-color-warning-light-7) 70%, #fff);
+  color: var(--el-color-warning);
+}
+
+.tcm-prescription-summary__void-decoction:active:not(:disabled) {
+  background: color-mix(in srgb, var(--el-color-warning-light-5) 55%, #fff);
+}
+
+.tcm-prescription-summary__void-decoction:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.tcm-prescription-summary__amount {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: baseline;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.tcm-prescription-summary__currency {
+  color: var(--el-text-color-secondary);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.tcm-prescription-summary__total {
+  color: var(--el-text-color-primary);
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.tcm-prescription-summary__amount-label {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.tcm-prescription-summary__hint {
+  color: var(--el-text-color-placeholder);
+  font-size: 13px;
+  white-space: nowrap;
+}

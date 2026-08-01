@@ -26,13 +26,15 @@ import {
   loadDocumentDetailFormInitApi,
   pageDocumentDetailsApi,
   summarizeDocumentDetailsApi,
+  type LoadDocumentDetailFormInitResponse,
 } from '#/api/report/document-detail';
 import { useRequest } from '#/hooks/use-request';
 import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
+import { decimalAdd } from '#/utils/format/decimal-util';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
   REPORT_QUERY_CONTROL,
-  REPORT_QUERY_CONTROL_DATERANGE,
+  REPORT_QUERY_CONTROL_DATETIMERANGE,
   REPORT_TABLE_AMOUNT_CELL,
   REPORT_TABLE_BUSNO,
   REPORT_TABLE_COL_GROUP_START,
@@ -47,9 +49,9 @@ import {
 } from '#/views/report/shared';
 import { fmtReportNumber, optionDtosToSelectItems } from '#/views/report/shared/report-format';
 import {
-  buildReportDateRangeShortcuts,
-  normalizeReportDateRangeYmd,
-  toReportApiDateTimeRange,
+  buildReportDateTimeRangeShortcuts,
+  normalizeReportDateTime,
+  toReportApiDateTimeRangePrecise,
 } from '#/views/report/shared/report-date-range-shortcuts';
 
 defineOptions({ name: 'DocumentDetailReportPage' });
@@ -72,9 +74,21 @@ interface QueryState {
   busNo?: string;
 }
 
+/** 列表行：明细或单据小计。 */
+interface DocumentDetailTableRow extends DocumentDetailRowDto {
+  __rowKind?: 'detail' | 'subtotal';
+}
+
 const props = defineProps<Props>();
 
-const tableData = ref<DocumentDetailRowDto[]>([]);
+/** 列表列总数；仅单据号列（下标 0）按同 busNo 纵向合并。 */
+const TABLE_COLUMN_COUNT = 18;
+/** 仅合并「单据号」列。 */
+const DOC_LEVEL_COLUMN_INDEXES = new Set([0]);
+
+const tableData = ref<DocumentDetailTableRow[]>([]);
+/** 当前页 rowspan：matrix[row][col]，0 表示被上方单元格合并。 */
+const busNoSpanMatrix = ref<number[][]>([]);
 const total = ref(0);
 const sumTotalPrice = ref('');
 const sumItemQuantity = ref('');
@@ -84,6 +98,8 @@ const tableScrollRef = ref<InstanceType<typeof ReportTableScroll> | null>(null);
 const typeEnumOptions = ref<ApiOptionItem[]>([]);
 const sourceLocationOptions = ref<ApiOptionItem[]>([]);
 const purposeLocationOptions = ref<ApiOptionItem[]>([]);
+/** init 回包：重置/清空审批时间时回填默认当月。 */
+const pageInit = ref<LoadDocumentDetailFormInitResponse | null>(null);
 
 const queryParams = reactive<QueryState>({
   pageNo: 1,
@@ -102,21 +118,28 @@ const footerSummaryItems = computed(() => [
   { label: '金额合计', value: sumTotalPrice.value, primary: true, prefix: '¥' },
 ]);
 
-const dateRangeShortcuts = buildReportDateRangeShortcuts();
+const dateTimeRangeShortcuts = buildReportDateTimeRangeShortcuts();
+/** 日历点选日期时默认起 00:00:00、止 23:59:59（快捷项已自带时分秒）。 */
+const approvalDateTimeDefaultTime: [Date, Date] = [
+  new Date(2000, 0, 1, 0, 0, 0),
+  new Date(2000, 0, 1, 23, 59, 59),
+];
 
-/** 审批时间与 daterange 双向绑定（界面精确到天，请求时补全日起止）。 */
+/** 审批时间与 datetimerange 双向绑定（界面精确到秒，请求原样传 LocalDateTime）。 */
 const approvalDateRange = computed({
   get() {
-    const start = normalizeReportDateRangeYmd(queryParams.approvalTimeStart);
-    const end = normalizeReportDateRangeYmd(queryParams.approvalTimeEnd);
+    const start = normalizeReportDateTime(queryParams.approvalTimeStart, 'start');
+    const end = normalizeReportDateTime(queryParams.approvalTimeEnd, 'end');
     if (start && end) {
       return [start, end] as [string, string];
     }
     return null;
   },
   set(value: [string, string] | null) {
-    queryParams.approvalTimeStart = value?.[0];
-    queryParams.approvalTimeEnd = value?.[1];
+    queryParams.approvalTimeStart = value?.[0]
+      ? normalizeReportDateTime(value[0], 'start')
+      : undefined;
+    queryParams.approvalTimeEnd = value?.[1] ? normalizeReportDateTime(value[1], 'end') : undefined;
   },
 });
 
@@ -128,15 +151,144 @@ function toSelectOptions(items: ApiOptionItem[]) {
   }));
 }
 
+/** 回填 init 默认审批时间窗（当前自然月 00:00:00～23:59:59）。 */
+function applyDefaultApprovalDates() {
+  const start = normalizeReportDateTime(pageInit.value?.defaultApprovalTimeStart, 'start');
+  const end = normalizeReportDateTime(pageInit.value?.defaultApprovalTimeEnd, 'end');
+  if (start && end) {
+    queryParams.approvalTimeStart = start;
+    queryParams.approvalTimeEnd = end;
+  }
+}
+
+/** 审批时间必填展示：清空时立刻回填默认当月，避免 UI 空而后端仍按当月筛。 */
+function ensureApprovalDatesVisible(): boolean {
+  const start = normalizeReportDateTime(queryParams.approvalTimeStart, 'start');
+  const end = normalizeReportDateTime(queryParams.approvalTimeEnd, 'end');
+  if (start && end) {
+    queryParams.approvalTimeStart = start;
+    queryParams.approvalTimeEnd = end;
+    return true;
+  }
+  applyDefaultApprovalDates();
+  if (
+    !normalizeReportDateTime(queryParams.approvalTimeStart, 'start') ||
+    !normalizeReportDateTime(queryParams.approvalTimeEnd, 'end')
+  ) {
+    ElMessage.warning('请选择审批时间');
+    return false;
+  }
+  return true;
+}
+
+/** 是否单据小计行。 */
+function isSubtotalRow(row: DocumentDetailTableRow) {
+  return row.__rowKind === 'subtotal';
+}
+
+/** 同单据连续明细后插入小计行（合计金额）。 */
+function buildRowsWithSubtotals(rows: DocumentDetailRowDto[]): DocumentDetailTableRow[] {
+  const result: DocumentDetailTableRow[] = [];
+  let rowIndex = 0;
+  while (rowIndex < rows.length) {
+    const busNo = String(rows[rowIndex]?.busNo ?? '').trim();
+    let span = 1;
+    // 按连续相同单据号成组（空单据号只占 1 行）
+    if (busNo) {
+      while (
+        rowIndex + span < rows.length &&
+        String(rows[rowIndex + span]?.busNo ?? '').trim() === busNo
+      ) {
+        span += 1;
+      }
+    }
+    let amountSum = 0;
+    for (let offset = 0; offset < span; offset += 1) {
+      const detail = rows[rowIndex + offset]!;
+      result.push({ ...detail, __rowKind: 'detail' });
+      amountSum = decimalAdd(amountSum, detail.totalPrice, 2);
+    }
+    // 有单据号才插小计；空单号不造假合计行
+    if (busNo) {
+      result.push({
+        lineId: `subtotal-${busNo}-${rowIndex}`,
+        busNo: '',
+        __rowKind: 'subtotal',
+        productName: '小计',
+        totalPrice: amountSum,
+      });
+    }
+    rowIndex += span;
+  }
+  return result;
+}
+
+/** 写入列表并重算单据号合并（小计行不参与合并）。 */
+function applyTableRecords(records: DocumentDetailRowDto[]) {
+  const rows = buildRowsWithSubtotals(records);
+  tableData.value = rows;
+  rebuildBusNoSpanMatrix(rows);
+}
+
+/** 按当前页连续相同 busNo（仅明细行）重建「单据号」列 rowspan 矩阵。 */
+function rebuildBusNoSpanMatrix(rows: DocumentDetailTableRow[]) {
+  // 每行每列默认占 1；仅单据号列对连续同单明细合并
+  const matrix: number[][] = rows.map(() => Array.from({ length: TABLE_COLUMN_COUNT }, () => 1));
+  let rowIndex = 0;
+  while (rowIndex < rows.length) {
+    const row = rows[rowIndex]!;
+    if (isSubtotalRow(row)) {
+      rowIndex += 1;
+      continue;
+    }
+    const busNo = String(row.busNo ?? '').trim();
+    let span = 1;
+    if (busNo) {
+      while (
+        rowIndex + span < rows.length &&
+        !isSubtotalRow(rows[rowIndex + span]!) &&
+        String(rows[rowIndex + span]?.busNo ?? '').trim() === busNo
+      ) {
+        span += 1;
+      }
+    }
+    for (const columnIndex of DOC_LEVEL_COLUMN_INDEXES) {
+      matrix[rowIndex]![columnIndex] = span;
+      for (let offset = 1; offset < span; offset += 1) {
+        matrix[rowIndex + offset]![columnIndex] = 0;
+      }
+    }
+    rowIndex += span;
+  }
+  busNoSpanMatrix.value = matrix;
+}
+
+/** ElTable 单元格合并：同单据号仅纵向合并「单据号」列。 */
+function tableSpanMethod(args: { columnIndex: number; rowIndex: number }) {
+  const rowspan = busNoSpanMatrix.value[args.rowIndex]?.[args.columnIndex] ?? 1;
+  if (rowspan === 0) {
+    return { rowspan: 0, colspan: 0 };
+  }
+  return { rowspan, colspan: 1 };
+}
+
 /** 组装筛选请求体（不含分页）。 */
 function buildFilterRequest() {
-  const approvalRange = toReportApiDateTimeRange(
+  if (!ensureApprovalDatesVisible()) {
+    return null;
+  }
+  const approvalRange = toReportApiDateTimeRangePrecise(
     queryParams.approvalTimeStart,
     queryParams.approvalTimeEnd,
   );
+  if (!approvalRange.start || !approvalRange.end) {
+    ElMessage.warning('请选择审批时间');
+    return null;
+  }
   return {
     domainScope: props.domainScope,
-    typeEnum: queryParams.typeEnum || undefined,
+    // 空串/清空 = 本域全部类型（BR-INV-DDC-002）
+    typeEnum: queryParams.typeEnum?.trim() || undefined,
     sourceLocationId: queryParams.sourceLocationId
       ? preserveApiIdForRequest(queryParams.sourceLocationId)
       : undefined,
@@ -152,7 +304,7 @@ function buildFilterRequest() {
 }
 
 /** 取行操作单位展示名。 */
-function rowUnitText(row: DocumentDetailRowDto): string {
+function rowUnitText(row: DocumentDetailTableRow): string {
   return String(row.unitCodeDictText ?? '').trim();
 }
 
@@ -168,7 +320,10 @@ function formatQtyNatural(value: unknown) {
 }
 
 /** 数量 + 单位合并，如「10盒」。 */
-function formatQtyWithUnit(row: DocumentDetailRowDto) {
+function formatQtyWithUnit(row: DocumentDetailTableRow) {
+  if (isSubtotalRow(row)) {
+    return '';
+  }
   const qty = formatQtyNatural(row.itemQuantity);
   const unit = rowUnitText(row);
   if (!qty && !unit) return '';
@@ -178,7 +333,10 @@ function formatQtyWithUnit(row: DocumentDetailRowDto) {
 }
 
 /** 单价展示：2 位小数 + 元，有操作单位时追加「/单位」。 */
-function formatPriceWithUnit(row: DocumentDetailRowDto) {
+function formatPriceWithUnit(row: DocumentDetailTableRow) {
+  if (isSubtotalRow(row)) {
+    return '';
+  }
   const price = fmtReportNumber(row.price, 2);
   const unit = rowUnitText(row);
   if (!price) return '';
@@ -186,14 +344,17 @@ function formatPriceWithUnit(row: DocumentDetailRowDto) {
 }
 
 /** 金额展示：2 位小数 + 元。 */
-function formatAmountWithUnit(row: DocumentDetailRowDto) {
+function formatAmountWithUnit(row: DocumentDetailTableRow) {
   const amount = fmtReportNumber(row.totalPrice, 2);
   if (!amount) return '';
   return `${amount}元`;
 }
 
 /** 盘点相关列：空值显示占位符。 */
-function formatQtyOrDash(value: unknown) {
+function formatQtyOrDash(value: unknown, row?: DocumentDetailTableRow) {
+  if (row && isSubtotalRow(row)) {
+    return '';
+  }
   if (value === null || value === undefined || value === '') {
     return '—';
   }
@@ -201,12 +362,18 @@ function formatQtyOrDash(value: unknown) {
 }
 
 /** 判断盘点列是否为空。 */
-function isQtyEmpty(value: unknown) {
+function isQtyEmpty(value: unknown, row?: DocumentDetailTableRow) {
+  if (row && isSubtotalRow(row)) {
+    return false;
+  }
   return value === null || value === undefined || value === '';
 }
 
 /** 审批时间压缩为 MM-DD HH:mm。 */
-function formatApprovalTime(value?: string) {
+function formatApprovalTime(value?: string, row?: DocumentDetailTableRow) {
+  if (row && isSubtotalRow(row)) {
+    return '';
+  }
   const text = String(value ?? '').trim();
   if (!text) {
     return '—';
@@ -217,24 +384,27 @@ function formatApprovalTime(value?: string) {
   return text;
 }
 
+/** 小计行底色 class。 */
+function tableRowClassName({ row }: { row: DocumentDetailTableRow }) {
+  return isSubtotalRow(row) ? 'document-detail-subtotal-row' : '';
+}
+
 const { run: runInit, loading: initLoading } = useRequest(loadDocumentDetailFormInitApi, {
   manual: true,
   onSuccess: (data) => {
+    pageInit.value = data ?? null;
     typeEnumOptions.value = optionDtosToSelectItems(data?.typeEnumOptions);
     sourceLocationOptions.value = optionDtosToSelectItems(data?.sourceLocationOptions);
     purposeLocationOptions.value = optionDtosToSelectItems(data?.purposeLocationOptions);
-    queryParams.typeEnum = data?.defaultTypeEnum ?? queryParams.typeEnum;
-    queryParams.approvalTimeStart =
-      normalizeReportDateRangeYmd(data?.defaultApprovalTimeStart) ?? queryParams.approvalTimeStart;
-    queryParams.approvalTimeEnd =
-      normalizeReportDateRangeYmd(data?.defaultApprovalTimeEnd) ?? queryParams.approvalTimeEnd;
+    // 单据类型默认空=本域全部；忽略后端 defaultTypeEnum（仅前端口径）
+    applyDefaultApprovalDates();
   },
 });
 
 const { run: runPage, loading: pageLoading } = useRequest(pageDocumentDetailsApi, {
   manual: true,
   onSuccess: (data) => {
-    tableData.value = data?.records ?? [];
+    applyTableRecords(data?.records ?? []);
     total.value = Number(data?.total ?? 0);
   },
 });
@@ -255,6 +425,9 @@ const { run: runExport, loading: exportLoading } = useRequest(exportDocumentDeta
 /** 同步拉分页与合计。 */
 async function getList() {
   const filter = buildFilterRequest();
+  if (!filter) {
+    return;
+  }
   await Promise.all([
     runPage({ ...filter, pageNo: queryParams.pageNo, pageSize: queryParams.pageSize }),
     runSum(filter),
@@ -269,8 +442,15 @@ function handleQuery() {
   void getList();
 }
 
-/** 重置筛选并回到第一页。 */
+/** 审批时间变更：清空则回填默认当月后再查。 */
+function handleApprovalDateChange() {
+  ensureApprovalDatesVisible();
+  handleQuery();
+}
+
+/** 重置筛选：类型空（全部）+ 当月审批时间窗。 */
 function handleReset() {
+  queryParams.typeEnum = undefined;
   queryParams.productKeyword = undefined;
   queryParams.lotNumberKeyword = undefined;
   queryParams.busNo = undefined;
@@ -282,7 +462,11 @@ function handleReset() {
 
 /** 导出 Excel。 */
 async function handleExportExcel() {
-  const data = await runExport(buildFilterRequest());
+  const filter = buildFilterRequest();
+  if (!filter) {
+    return;
+  }
+  const data = await runExport(filter);
   if (!data?.fileBytes?.trim()) {
     ElMessage.warning('导出内容为空');
     return;
@@ -323,7 +507,9 @@ onMounted(async () => {
                 filterable
                 placeholder="全部"
                 :class="REPORT_QUERY_CONTROL"
+                @change="handleQuery"
               >
+                <ElOption label="全部" value="" />
                 <ElOption
                   v-for="item in toSelectOptions(typeEnumOptions)"
                   :key="item.value"
@@ -339,6 +525,7 @@ onMounted(async () => {
                 filterable
                 placeholder="全部"
                 :class="REPORT_QUERY_CONTROL"
+                @change="handleQuery"
               >
                 <ElOption
                   v-for="item in toSelectOptions(sourceLocationOptions)"
@@ -355,6 +542,7 @@ onMounted(async () => {
                 filterable
                 placeholder="全部"
                 :class="REPORT_QUERY_CONTROL"
+                @change="handleQuery"
               >
                 <ElOption
                   v-for="item in toSelectOptions(purposeLocationOptions)"
@@ -367,13 +555,17 @@ onMounted(async () => {
             <ElFormItem label="审批时间">
               <ElDatePicker
                 v-model="approvalDateRange"
-                type="daterange"
-                value-format="YYYY-MM-DD"
+                type="datetimerange"
+                value-format="YYYY-MM-DD HH:mm:ss"
+                format="YYYY-MM-DD HH:mm:ss"
                 range-separator="至"
-                start-placeholder="开始"
-                end-placeholder="结束"
-                :shortcuts="dateRangeShortcuts"
-                :class="[REPORT_QUERY_CONTROL, REPORT_QUERY_CONTROL_DATERANGE]"
+                start-placeholder="开始时间"
+                end-placeholder="结束时间"
+                :clearable="false"
+                :default-time="approvalDateTimeDefaultTime"
+                :shortcuts="dateTimeRangeShortcuts"
+                :class="[REPORT_QUERY_CONTROL, REPORT_QUERY_CONTROL_DATETIMERANGE]"
+                @change="handleApprovalDateChange"
               />
             </ElFormItem>
             <ElFormItem label="品名/编码">
@@ -383,24 +575,27 @@ onMounted(async () => {
                 placeholder="品名或编码"
                 :class="REPORT_QUERY_CONTROL"
                 @keyup.enter="handleQuery"
+                @clear="handleQuery"
               />
             </ElFormItem>
             <ElFormItem label="批号">
               <ElInput
                 v-model="queryParams.lotNumberKeyword"
                 clearable
-                placeholder="批号"
+                placeholder="批号模糊"
                 :class="REPORT_QUERY_CONTROL"
                 @keyup.enter="handleQuery"
+                @clear="handleQuery"
               />
             </ElFormItem>
             <ElFormItem label="单据号">
               <ElInput
                 v-model="queryParams.busNo"
                 clearable
-                placeholder="单据号"
+                placeholder="单据号模糊"
                 :class="REPORT_QUERY_CONTROL"
                 @keyup.enter="handleQuery"
+                @clear="handleQuery"
               />
             </ElFormItem>
           </template>
@@ -436,58 +631,71 @@ onMounted(async () => {
               :loading="tableLoading"
               :data="tableData"
               :height="tableHeight"
+              :stripe="false"
               row-key="lineId"
+              :span-method="tableSpanMethod"
+              :row-class-name="tableRowClassName"
             >
               <ElTableColumn label="单据号" min-width="136" fixed="left" show-overflow-tooltip>
                 <template #default="{ row }">
-                  <span :class="REPORT_TABLE_BUSNO">{{ row.busNo }}</span>
+                  <span v-if="!isSubtotalRow(row)" :class="REPORT_TABLE_BUSNO">{{
+                    row.busNo
+                  }}</span>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="单据类型" min-width="100" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ isSubtotalRow(row) ? '' : row.typeEnumText }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="源库位" min-width="100" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ isSubtotalRow(row) ? '' : row.sourceLocationName }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="目的库位" min-width="100" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ isSubtotalRow(row) ? '' : row.purposeLocationName }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="领用科室" min-width="100" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ isSubtotalRow(row) ? '' : row.consumingOrganizationName }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="供应商" min-width="108" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ isSubtotalRow(row) ? '' : row.supplierName }}
                 </template>
               </ElTableColumn>
               <ElTableColumn
-                prop="typeEnumText"
-                label="单据类型"
-                min-width="100"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="sourceLocationName"
-                label="源库位"
-                min-width="100"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="purposeLocationName"
-                label="目的库位"
-                min-width="100"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="supplierName"
-                label="供应商"
-                min-width="108"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="productName"
                 label="品名"
                 min-width="132"
                 show-overflow-tooltip
                 :class-name="REPORT_TABLE_COL_GROUP_START"
                 :label-class-name="REPORT_TABLE_COL_GROUP_START"
-              />
-              <ElTableColumn
-                prop="productBusNo"
-                label="编码"
-                min-width="92"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="specification"
-                label="规格"
-                min-width="92"
-                show-overflow-tooltip
-              />
-              <ElTableColumn prop="lotNumber" label="批号" min-width="88" show-overflow-tooltip />
+              >
+                <template #default="{ row }">
+                  <span :class="{ 'document-detail-subtotal-label': isSubtotalRow(row) }">
+                    {{ row.productName }}
+                  </span>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="编码" min-width="92" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ isSubtotalRow(row) ? '' : row.productBusNo }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="规格" min-width="92" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ isSubtotalRow(row) ? '' : row.specification }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="批号" min-width="88" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ isSubtotalRow(row) ? '' : row.lotNumber }}
+                </template>
+              </ElTableColumn>
               <ElTableColumn
                 label="数量"
                 min-width="96"
@@ -511,7 +719,11 @@ onMounted(async () => {
                 align="right"
                 :class-name="`${REPORT_TABLE_NUM_CELL} ${REPORT_TABLE_AMOUNT_CELL}`"
               >
-                <template #default="{ row }">{{ formatAmountWithUnit(row) }}</template>
+                <template #default="{ row }">
+                  <span :class="{ 'document-detail-subtotal-amount': isSubtotalRow(row) }">
+                    {{ formatAmountWithUnit(row) }}
+                  </span>
+                </template>
               </ElTableColumn>
               <ElTableColumn
                 label="账面"
@@ -521,8 +733,8 @@ onMounted(async () => {
                 :label-class-name="REPORT_TABLE_COL_GROUP_START"
               >
                 <template #default="{ row }">
-                  <span :class="{ [REPORT_TABLE_EMPTY_VALUE]: isQtyEmpty(row.bookQuantity) }">
-                    {{ formatQtyOrDash(row.bookQuantity) }}
+                  <span :class="{ [REPORT_TABLE_EMPTY_VALUE]: isQtyEmpty(row.bookQuantity, row) }">
+                    {{ formatQtyOrDash(row.bookQuantity, row) }}
                   </span>
                 </template>
               </ElTableColumn>
@@ -533,8 +745,10 @@ onMounted(async () => {
                 :class-name="REPORT_TABLE_NUM_CELL"
               >
                 <template #default="{ row }">
-                  <span :class="{ [REPORT_TABLE_EMPTY_VALUE]: isQtyEmpty(row.actualQuantity) }">
-                    {{ formatQtyOrDash(row.actualQuantity) }}
+                  <span
+                    :class="{ [REPORT_TABLE_EMPTY_VALUE]: isQtyEmpty(row.actualQuantity, row) }"
+                  >
+                    {{ formatQtyOrDash(row.actualQuantity, row) }}
                   </span>
                 </template>
               </ElTableColumn>
@@ -545,27 +759,33 @@ onMounted(async () => {
                 :class-name="REPORT_TABLE_NUM_CELL"
               >
                 <template #default="{ row }">
-                  <span :class="{ [REPORT_TABLE_EMPTY_VALUE]: isQtyEmpty(row.gainLossQuantity) }">
-                    {{ formatQtyOrDash(row.gainLossQuantity) }}
+                  <span
+                    :class="{ [REPORT_TABLE_EMPTY_VALUE]: isQtyEmpty(row.gainLossQuantity, row) }"
+                  >
+                    {{ formatQtyOrDash(row.gainLossQuantity, row) }}
                   </span>
                 </template>
               </ElTableColumn>
               <ElTableColumn
-                prop="applicantName"
                 label="制单人"
                 min-width="88"
                 show-overflow-tooltip
                 :class-name="REPORT_TABLE_COL_GROUP_START"
                 :label-class-name="REPORT_TABLE_COL_GROUP_START"
-              />
-              <ElTableColumn
-                prop="approverName"
-                label="审批人"
-                min-width="88"
-                show-overflow-tooltip
-              />
+              >
+                <template #default="{ row }">
+                  {{ isSubtotalRow(row) ? '' : row.applicantName }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="审批人" min-width="88" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ isSubtotalRow(row) ? '' : row.approverName }}
+                </template>
+              </ElTableColumn>
               <ElTableColumn label="审批时间" min-width="118" show-overflow-tooltip>
-                <template #default="{ row }">{{ formatApprovalTime(row.approvalTime) }}</template>
+                <template #default="{ row }">
+                  {{ formatApprovalTime(row.approvalTime, row) }}
+                </template>
               </ElTableColumn>
             </ReportElTable>
           </template>
@@ -585,3 +805,29 @@ onMounted(async () => {
     </ReportListPageLayout>
   </Page>
 </template>
+
+<style scoped>
+/* 小计行与明细同行高（ReportElTable td 35px） */
+:deep(.document-detail-subtotal-row > td.el-table__cell) {
+  height: 35px;
+  padding: 0;
+  font-weight: 600;
+  background: var(--el-fill-color) !important;
+}
+
+:deep(.document-detail-subtotal-row > td.el-table__cell .cell) {
+  line-height: 1.35;
+}
+
+:deep(.el-table__body tr.document-detail-subtotal-row:hover > td.el-table__cell),
+:deep(.el-table__body tr.document-detail-subtotal-row:hover > td.el-table-fixed-column--left),
+:deep(.el-table__body tr.document-detail-subtotal-row:hover > td.el-table-fixed-column--right) {
+  background: var(--el-fill-color) !important;
+}
+
+:deep(.document-detail-subtotal-label),
+:deep(.document-detail-subtotal-amount) {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+</style>

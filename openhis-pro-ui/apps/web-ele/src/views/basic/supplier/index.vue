@@ -26,6 +26,7 @@ import {
   supplierStatusLabel,
 } from '#/constants/domain/supplier-status';
 
+import { BASIC_TABLE_MAX_HEIGHT } from '../basic-table-max-height';
 import EditDialog from './edit-dialog.vue';
 
 defineOptions({ name: 'BasicSupplier' });
@@ -355,6 +356,7 @@ initPage();
       :query-params="queryParams"
       :form-items="formItems"
       :table-columns="tableColumns"
+      :max-height="BASIC_TABLE_MAX_HEIGHT"
       :show-side-query="false"
       :show-pagination="true"
       @query="handleQuery"

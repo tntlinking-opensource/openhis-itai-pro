@@ -28,6 +28,7 @@ import {
 } from '#/api';
 import { PublicationStatusCode } from '#/constants/domain/publication-status';
 
+import { BASIC_TABLE_MAX_HEIGHT } from '../basic-table-max-height';
 import EditDialog from './edit-dialog.vue';
 
 defineOptions({ name: 'BasicDepartment' });
@@ -72,7 +73,7 @@ const departmentTypeOptions = ref<DepartmentTypeOption[]>([]);
 const departmentOptions = ref<DepartmentOption[]>([]);
 const practitionerOptions = ref<PractitionerOption[]>([]);
 
-// 列表仅展示名称、类型、类别、状态与操作。
+// 列表：名称列保留树层级；编号紧随其后。
 const tableColumns: TableColumn[] = [
   { type: 'selection', fixed: 'left', width: 48, align: 'center', headerAlign: 'center' },
   {
@@ -80,6 +81,14 @@ const tableColumns: TableColumn[] = [
     label: '科室名称',
     treeNode: true,
     showOverflowTooltip: true,
+  },
+  {
+    prop: 'busNo',
+    label: '编号',
+    minWidth: 140,
+    showOverflowTooltip: true,
+    align: 'center',
+    headerAlign: 'center',
   },
   {
     prop: 'typeEnum_dictText',
@@ -120,13 +129,6 @@ const formItems = computed<FormItemConfig[]>(() => [
     label: '关键词',
     placeholder: '请输入名称、医保信息、拼音、五笔等',
     clearable: true,
-    extraprops: {
-      onKeyup: (event: KeyboardEvent) => {
-        if (event.key === 'Enter') {
-          handleQuery();
-        }
-      },
-    },
   },
   {
     type: 'select',
@@ -136,9 +138,6 @@ const formItems = computed<FormItemConfig[]>(() => [
     clearable: true,
     multiple: false,
     options: departmentTypeOptions.value.map((item) => ({ label: item.label, value: item.value })),
-    onChange: () => {
-      handleQuery();
-    },
   },
   {
     type: 'select',
@@ -148,9 +147,6 @@ const formItems = computed<FormItemConfig[]>(() => [
     clearable: true,
     multiple: false,
     options: departmentClassOptions.value.map((item) => ({ label: item.label, value: item.value })),
-    onChange: () => {
-      handleQuery();
-    },
   },
   {
     type: 'select',
@@ -163,9 +159,6 @@ const formItems = computed<FormItemConfig[]>(() => [
       { label: '启用', value: PublicationStatusCode.ACTIVE },
       { label: '停用', value: PublicationStatusCode.INACTIVE },
     ],
-    onChange: () => {
-      handleQuery();
-    },
   },
 ]);
 
@@ -521,6 +514,7 @@ onActivated(() => {
       :query-params="queryParams"
       :form-items="formItems"
       :table-columns="tableColumns"
+      :max-height="BASIC_TABLE_MAX_HEIGHT"
       :show-side-query="false"
       :show-top-query="true"
       :show-pagination="false"

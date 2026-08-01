@@ -95,11 +95,6 @@ const isDirty = computed(() => serializeRows(draftRows.value) !== savedSnapshot.
 
 const hasCopiedRules = computed(() => copiedRuleTemplates.value.length > 0);
 
-/** 当前科室已配置的具体物品 ID，供弹窗去重 */
-const boundItemDefinitionIds = computed(() =>
-  draftRows.value.filter((row) => row.itemDefinitionId).map((row) => String(row.itemDefinitionId)),
-);
-
 const tableColumns: TableColumn[] = [
   { type: 'selection', width: 48, align: 'center', fixed: 'left', headerAlign: 'center' },
   {
@@ -211,8 +206,11 @@ function serializeRows(rows: ServiceLocationItem[]) {
   );
 }
 
-/** 生成规则条件唯一键，用于去重（含具体物品） */
-function buildRuleConditionKey(row: ServiceLocationItem) {
+/**
+ * 规则配置唯一键（BR-SLT-004）：匹配条件 + 取药药房。
+ * 同条件可指向多个药房（靠 priority 排候选序）；仅「条件+药房」全同才算重复。
+ */
+function buildRuleConfigKey(row: ServiceLocationItem) {
   return [
     row.itemTable ?? '',
     row.distributionCategoryCode ?? '',
@@ -220,10 +218,11 @@ function buildRuleConditionKey(row: ServiceLocationItem) {
     row.methodCode ?? '',
     row.startTime ?? '',
     row.endTime ?? '',
+    row.defLocationId ?? '',
   ].join('|');
 }
 
-/** 优先级竞争组：物品表 + 发放类别 + 具体项（用法/时段在组内用 priority 区分） */
+/** 优先级竞争组：物品表 + 发放类别 + 具体项（同组内按行序/priority 排候选库） */
 function buildPriorityGroupKey(row: ServiceLocationItem) {
   return [row.itemTable ?? '', row.distributionCategoryCode ?? '', row.itemDefinitionId ?? ''].join(
     '|',
@@ -324,17 +323,61 @@ function optionLabel(options: ApiOptionItem[], value: string | undefined) {
   return options.find((item) => String(item.value) === String(value))?.label ?? value;
 }
 
-/** 将接口行转为草稿行（含类别默认与指定物品） */
+/** 将接口行转为草稿行（含类别默认与指定物品）；主键字段统一 string，避免 ElSelect 对不上 option */
 function toDraftRows(rows: ServiceLocationItem[]): DraftRow[] {
   return rows.map((row) => {
     const timeRange = resolveEffectiveTimeRange(row.startTime, row.endTime);
     return {
       ...row,
       ...timeRange,
-      _clientKey: row.id ? `persisted:${row.id}` : nextClientKey(),
+      id: row.id != null && String(row.id).trim() !== '' ? String(row.id) : undefined,
+      organizationId:
+        row.organizationId != null && String(row.organizationId).trim() !== ''
+          ? String(row.organizationId)
+          : undefined,
+      itemDefinitionId:
+        row.itemDefinitionId != null && String(row.itemDefinitionId).trim() !== ''
+          ? String(row.itemDefinitionId)
+          : undefined,
+      defLocationId:
+        row.defLocationId != null && String(row.defLocationId).trim() !== ''
+          ? String(row.defLocationId)
+          : undefined,
+      _clientKey: row.id ? `persisted:${String(row.id)}` : nextClientKey(),
     };
   });
 }
+
+/**
+ * 取药药房下拉：init 选项 + 当前草稿行已选库位（用列表 enrich 的名称兜底回显）。
+ * 避免选项未含该库位或 value 类型不一致时 ElSelect 直接显示数字 ID。
+ */
+const defLocationSelectOptions = computed(() => {
+  const seen = new Set<string>();
+  const result: ApiOptionItem[] = [];
+  for (const item of defLocationOptions.value) {
+    const value = String(item.value ?? '').trim();
+    if (!value || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    result.push({
+      value,
+      label: String(item.label ?? '').trim() || value,
+      sort: item.sort,
+    });
+  }
+  for (const row of draftRows.value) {
+    const value = String(row.defLocationId ?? '').trim();
+    if (!value || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    const label = String(row.defLocationName ?? '').trim();
+    result.unshift({ value, label: label || value });
+  }
+  return result;
+});
 
 /** 按竞争组聚拢行：组顺序保留首次出现位置，组内按已存 priority 升序 */
 function sortRowsByPriorityGroup(rows: DraftRow[]) {
@@ -558,13 +601,13 @@ function validateRow(row: ServiceLocationItem): boolean {
   return true;
 }
 
-/** 校验条件组合不重复 */
+/** 校验「匹配条件 + 取药药房」不重复（同条件不同药房允许） */
 function validateNoDuplicateRules(rows: ServiceLocationItem[]): boolean {
   const seen = new Set<string>();
   for (const row of rows) {
-    const key = buildRuleConditionKey(row);
+    const key = buildRuleConfigKey(row);
     if (seen.has(key)) {
-      ElMessage.error('存在重复条件的规则，请检查');
+      ElMessage.error('存在完全相同的规则（条件与取药药房均重复），请检查');
       return false;
     }
     seen.add(key);
@@ -636,9 +679,8 @@ function handleOpenAddItemDialog() {
 
 /** 弹窗确认后追加指定物品规则行到主表 */
 function handleAddItemRuleConfirm(payload: AddItemRuleConfirmPayload) {
-  const existingKeys = new Set(draftRows.value.map((row) => buildRuleConditionKey(row)));
   let addedCount = 0;
-  // 每个选中物品各生成一条草稿行，药房等字段在主表补全
+  // 每个选中物品各生成一条草稿行；同物品可再配不同药房，故不按条件键跳过
   for (const item of payload.items) {
     const draft: DraftRow = {
       _clientKey: nextClientKey(),
@@ -651,16 +693,11 @@ function handleAddItemRuleConfirm(payload: AddItemRuleConfirmPayload) {
       startTime: DEFAULT_START_TIME,
       endTime: DEFAULT_END_TIME,
     };
-    const key = buildRuleConditionKey(draft);
-    if (existingKeys.has(key)) {
-      continue;
-    }
     draftRows.value.push(draft);
-    existingKeys.add(key);
     addedCount += 1;
   }
   if (!addedCount) {
-    ElMessage.warning('所选物品均已在当前科室配置，未新增任何行');
+    ElMessage.warning('未选中任何物品');
     return;
   }
   normalizePriorities(draftRows.value);
@@ -694,12 +731,12 @@ function handlePaste() {
     ElMessage.warning('请先在其他科室勾选规则并点击「复制选中配置」');
     return;
   }
-  const existingKeys = new Set(draftRows.value.map((row) => buildRuleConditionKey(row)));
+  const existingKeys = new Set(draftRows.value.map((row) => buildRuleConfigKey(row)));
   let addedCount = 0;
   let skippedCount = 0;
-  // 逐条按新增方式写入当前科室草稿
+  // 逐条按新增方式写入当前科室草稿；同条件不同药房可并存，仅跳过条件+药房全同
   for (const template of copiedRuleTemplates.value) {
-    const key = buildRuleConditionKey(template);
+    const key = buildRuleConfigKey(template);
     if (existingKeys.has(key)) {
       skippedCount += 1;
       continue;
@@ -721,7 +758,7 @@ function handlePaste() {
     addedCount += 1;
   }
   if (!addedCount) {
-    ElMessage.warning('粘贴完成：目标科室已存在相同条件规则，未新增任何行');
+    ElMessage.warning('粘贴完成：目标科室已存在相同条件且同取药药房的规则，未新增任何行');
     return;
   }
   normalizePriorities(draftRows.value);
@@ -863,7 +900,9 @@ onActivated(() => {
         </div>
 
         <p class="slt-panel__desc m-0 text-sm text-[var(--el-text-color-regular)]">
-          按发放类别配置取药药房；可通过「添加指定物品」为单个药品/耗材单独配置。可勾选规则后从其他科室复制，再切换到目标科室粘贴新增。优先级按「物品类型+发放类别+具体物品」分组，组内用法/时段不同的规则才竞争，数字越小越优先；指定物品规则优先于类别默认。
+          按发放类别配置取药药房；可通过「添加指定物品」为单个药品/耗材单独配置。可勾选规则后从其他科室复制，再切换到目标科室粘贴新增。匹配顺序固定为：指定物品+用法
+          → 指定物品 → 类别+用法 →
+          仅类别；全部一样时再按优先级（数字越小越优先）排候选药房。同条件可配多个药房。
         </p>
 
         <TableLayout
@@ -1020,7 +1059,7 @@ onActivated(() => {
               class="cell-control"
             >
               <ElOption
-                v-for="item in defLocationOptions"
+                v-for="item in defLocationSelectOptions"
                 :key="item.value"
                 :label="item.label"
                 :value="item.value"
@@ -1081,7 +1120,6 @@ onActivated(() => {
       :item-table-options="itemTableOptions"
       :medication-category-options="medicationCategoryOptions"
       :device-category-options="deviceCategoryOptions"
-      :bound-item-definition-ids="boundItemDefinitionIds"
       @confirm="handleAddItemRuleConfirm"
     />
   </Page>

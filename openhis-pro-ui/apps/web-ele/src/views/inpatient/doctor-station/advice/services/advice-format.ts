@@ -44,6 +44,39 @@ export function firstTerminologyCode(options: TerminologyOptionDto[] | undefined
   return '';
 }
 
+/** 按展示文案匹配术语 value；未命中返回空串 */
+export function terminologyCodeByLabel(
+  options: TerminologyOptionDto[] | undefined,
+  label: string,
+): string {
+  const want = String(label ?? '').trim();
+  if (!want) return '';
+  const hit = (options ?? []).find((o) => String(o.label ?? '').trim() === want);
+  const raw = hit?.value;
+  if (typeof raw === 'string' || typeof raw === 'number') {
+    const s = String(raw).trim();
+    if (s !== '') return s;
+  }
+  return '';
+}
+
+/**
+ * 医嘱频次默认值：临时 →「立即」；其余 → 术语首项。
+ * 「立即」未配置时回落首项，避免空频次。
+ */
+export function defaultMedicationRateCode(
+  options: TerminologyOptionDto[] | undefined,
+  therapy?: null | string,
+): string {
+  const therapyCode = String(therapy ?? '')
+    .trim()
+    .toUpperCase();
+  if (therapyCode === 'TEMPORARY') {
+    return terminologyCodeByLabel(options, '立即') || firstTerminologyCode(options);
+  }
+  return firstTerminologyCode(options);
+}
+
 export function terminologyLabel(
   options: TerminologyOptionDto[] | undefined,
   code: string,
@@ -55,6 +88,7 @@ export function terminologyLabel(
   return lb || c;
 }
 
+/** init 返回的费用性质下拉：取首项作为新开医嘱默认（后端已将就诊优先合同排首位）。 */
 export function defaultContractSelection(options: TerminologyOptionDto[] | undefined): {
   contractId: string;
   feeNature: string;

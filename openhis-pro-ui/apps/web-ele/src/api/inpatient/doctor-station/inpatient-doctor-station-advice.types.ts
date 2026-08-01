@@ -53,18 +53,55 @@ export interface InpatientDoctorStationAdviceRowDto extends DoctorStationAdviceR
   therapyTypeCode?: string;
   generateSourceEnum?: string;
   stopTime?: string;
+  stopperId?: string;
+  stopperName?: string;
   conditionDefinitionId?: string;
+  /** 长嘱皮试药换批提示：建议追加皮试检查（IF-IP-DOR-27） */
+  needAppendSkinTestFlag?: boolean;
+}
+
+/** 改开立/停嘱时间（IF-IP-DOR-26；禁止改签发） */
+export interface ChangeInpatientDoctorStationAdviceBusinessTimeRequest {
+  encounterId: string;
+  patientId: string;
+  requestId: string;
+  productTableName: string;
+  /** OPENED：改开立时间；STOP：改停嘱时间 */
+  timeKind: 'OPENED' | 'STOP';
+  /** ISO-8601 本地时间 */
+  newTime: string;
+}
+
+export interface ChangeInpatientDoctorStationAdviceBusinessTimeResponse {
+  success?: boolean;
+  message?: string;
+}
+
+/** 长期皮试药追加皮试检查（IF-IP-DOR-27） */
+export interface AppendSkinTestCompanionForLongTermMedicationRequest {
+  encounterId: string;
+  patientId: string;
+  medicationRequestIds: string[];
+}
+
+export interface AppendSkinTestCompanionForLongTermMedicationResponse {
+  success?: boolean;
+  message?: string;
+  serviceRequestIds?: string[];
 }
 
 /** 加载当前住院就诊医嘱统一列表 */
 export interface ListInpatientDoctorStationAdviceRequest {
   encounterId: string;
   patientId: string;
-  /** LONG_TERM / TEMPORARY；空表示不过滤 */
+  /** LONG_TERM / TEMPORARY / DISCHARGE_MEDICATION；空表示不过滤 */
   therapyTypeCode?: string;
 }
 
 export interface ListInpatientDoctorStationAdviceResponse {
+  /** 标准分页列表（后端 PagedResult） */
+  content?: InpatientDoctorStationAdviceRowDto[];
+  /** @deprecated 兼容旧字段；实际 list 在 content */
   rows?: InpatientDoctorStationAdviceRowDto[];
   totalCount?: number;
 }

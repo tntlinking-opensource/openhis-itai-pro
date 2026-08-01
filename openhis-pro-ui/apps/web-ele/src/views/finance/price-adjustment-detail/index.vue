@@ -20,6 +20,7 @@ import {
   ElDatePicker,
   ElFormItem,
   ElInput,
+  ElMessage,
   ElOption,
   ElSelect,
   ElTableColumn,
@@ -158,6 +159,7 @@ function buildPageRequest(): PagePriceAdjustmentApprovedLineParams | null {
 async function getList() {
   const body = buildPageRequest();
   if (!body) {
+    ElMessage.warning('请选择生效时间');
     return;
   }
   await runPage(body);
@@ -219,7 +221,9 @@ onMounted(async () => {
                 range-separator="至"
                 start-placeholder="开始"
                 end-placeholder="结束"
+                :clearable="false"
                 :class="[REPORT_QUERY_CONTROL, REPORT_QUERY_CONTROL_DATERANGE]"
+                @change="handleQuery"
               />
             </ElFormItem>
             <ElFormItem label="项目类型">
@@ -228,6 +232,7 @@ onMounted(async () => {
                 clearable
                 placeholder="全部"
                 :class="REPORT_QUERY_CONTROL"
+                @change="handleQuery"
               >
                 <ElOption
                   v-for="item in toSelectOptions(itemTableTabOptions)"
@@ -244,6 +249,7 @@ onMounted(async () => {
                 placeholder="模糊匹配"
                 :class="REPORT_QUERY_CONTROL"
                 @keyup.enter="handleQuery"
+                @clear="handleQuery"
               />
             </ElFormItem>
             <ElFormItem label="院内编码">
@@ -253,6 +259,7 @@ onMounted(async () => {
                 placeholder="模糊匹配"
                 :class="REPORT_QUERY_CONTROL"
                 @keyup.enter="handleQuery"
+                @clear="handleQuery"
               />
             </ElFormItem>
             <ElFormItem label="调价单号">
@@ -262,6 +269,7 @@ onMounted(async () => {
                 placeholder="模糊匹配"
                 :class="REPORT_QUERY_CONTROL"
                 @keyup.enter="handleQuery"
+                @clear="handleQuery"
               />
             </ElFormItem>
           </template>

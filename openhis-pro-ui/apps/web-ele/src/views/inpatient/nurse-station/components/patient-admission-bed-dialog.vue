@@ -5,6 +5,7 @@ import type {
   PatientDetailDto,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station.types';
 
+import type { NurseStationModulePatient } from './nurse-station-module-patient.types';
 import type { PatientItem } from '../types';
 
 import { computed, reactive, ref, watch } from 'vue';
@@ -32,6 +33,7 @@ import { useRequest } from '#/hooks/use-request';
 import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
 import { normalizeTerminologyOptions } from '#/utils/terminology/resolve-terminology-option-label';
 import { normalizeAdmCondTermCode } from '#/utils/terminology/resolve-adm-cond-code-label';
+import { DEFAULT_ADM_COND_CODE_GENERAL } from '#/views/inpatient/charge/register/inpatient-register.constants';
 
 import type { AdmissionBedOperationIntent } from '../services/admission-bed-operation';
 import {
@@ -48,6 +50,8 @@ import {
   mapParticipantsToFormIds,
   mergeParticipantsIntoOptionLists,
 } from '../services/map-patient-detail-participants';
+import { loadPrintPendingRows } from '../print-center/load-print-pending';
+import { printInpatientPrintCenter } from '../print-center/print-center-print';
 
 defineOptions({
   name: 'InpatientNurseStationPatientAdmissionBedDialog',
@@ -95,7 +99,7 @@ const admissionForm = reactive({
   attendingDoctorId: '',
   chiefDoctorId: '',
   primaryNurseId: '',
-  priorityEnum: '',
+  priorityEnum: DEFAULT_ADM_COND_CODE_GENERAL,
   admissionTimeDisplay: '',
 });
 
@@ -115,6 +119,9 @@ const dialogLoading = computed(
   () =>
     detailRequest.loading.value || saveRequest.loading.value || bedOperationRequest.loading.value,
 );
+
+/** 腕带打印中 */
+const printingWristband = ref(false);
 
 const encounterId = computed(() => props.patient?.id ?? '');
 
@@ -164,7 +171,7 @@ const diagnosisDisplay = computed(() => {
 
 /** 费用性质 */
 const feeTypeLabel = computed(
-  () => (detail.value?.organizationName ?? props.patient?.feeType ?? '—').trim() || '—',
+  () => (detail.value?.contractDisplay ?? props.patient?.feeType ?? '—').trim() || '—',
 );
 
 /** 护理级别（读模型 nursingLevelName） */
@@ -285,7 +292,7 @@ function resetForms() {
   admissionForm.attendingDoctorId = '';
   admissionForm.chiefDoctorId = '';
   admissionForm.primaryNurseId = '';
-  admissionForm.priorityEnum = '';
+  admissionForm.priorityEnum = DEFAULT_ADM_COND_CODE_GENERAL;
   admissionForm.admissionTimeDisplay = '';
 }
 
@@ -318,6 +325,81 @@ function applyAdmissionVitalSignsToForm(vitals?: AdmissionVitalSignSubmitDto) {
 /** 关闭弹窗 */
 function closeDialog() {
   visible.value = false;
+}
+
+/** 弹窗患者 → 打印模块入参（腕带字段来自列表摘要 + 详情兜底） */
+function mapDialogPatientToModulePatient(item: PatientItem): NurseStationModulePatient {
+  const d = detail.value;
+  return {
+    id: item.id,
+    patientId: item.patientId ?? d?.patientId,
+    encounterBusNo: item.encounterBusNo ?? d?.encounterBusNo,
+    admissionAt: item.admissionTime ?? item.startTime ?? d?.admissionTime,
+    inWardAt: item.startTime ?? d?.startTime,
+    dischargeAt: item.endTime,
+    bedNo: (d?.bedName ?? item.bedNo ?? '').trim(),
+    name: (d?.patientName ?? item.name ?? '').trim(),
+    gender: (d?.genderEnumText ?? item.gender ?? '').trim(),
+    age: item.age,
+    nurseLevel: item.level,
+    feeType: item.feeType,
+    diagnosis: item.diagnosis || d?.diagnosisSummary,
+    regionName: props.regionNameById[item.regionId] || d?.wardName || '-',
+    wardName: props.wardNameById[item.wardId] || d?.houseName || '-',
+    pendingAudit: item.pendingAudit,
+    pendingExecute: item.pendingExecute,
+    accountId: item.accountId,
+    accountBalance: item.accountBalance,
+    accountBalanceDisplayMode: item.accountBalanceDisplayMode,
+    accountBalanceSummaryText: item.accountBalanceSummaryText,
+    accountBalanceSubText: item.accountBalanceSubText,
+    availableBalance: item.availableBalance,
+    pendingSettlementTotal: item.pendingSettlementTotal,
+    lowBalanceWarning: item.lowBalanceWarning,
+    riskTags: item.riskText ? [item.riskText] : [],
+    statusEnum: item.statusEnum,
+  };
+}
+
+/** 打印当前弹窗患者腕带 */
+async function handlePrintWristband() {
+  const row = props.patient;
+  if (!row) {
+    ElMessage.warning('患者信息未加载');
+    return;
+  }
+  if (printingWristband.value) {
+    return;
+  }
+  printingWristband.value = true;
+  try {
+    const patients = [mapDialogPatientToModulePatient(row)];
+    const today = dayjs().format('YYYY-MM-DD');
+    const selectedRows = await loadPrintPendingRows({
+      docType: 'wristband',
+      patients,
+      dateFrom: today,
+      dateTo: today,
+      executionDeadline: `${today} 23:59:59`,
+    });
+    if (selectedRows.length <= 0) {
+      ElMessage.warning('暂无「腕带」可打印数据');
+      return;
+    }
+    const result = await printInpatientPrintCenter({
+      docType: 'wristband',
+      patients,
+      selectedRows,
+      dateFrom: today,
+      dateTo: today,
+      executionDeadline: `${today} 23:59:59`,
+    });
+    if (result.ok) {
+      ElMessage.success(`已发送打印：腕带，共 ${result.count} 份`);
+    }
+  } finally {
+    printingWristband.value = false;
+  }
 }
 
 /** 解析当前表单适用的入院病区位置 id */
@@ -366,12 +448,18 @@ async function loadDetailAndForm() {
     return;
   }
   detail.value = row;
-  const participantIds = mapParticipantsToFormIds(row.participants);
+  // 待入科首次分床：办理入院 / 门诊转住院带来的医生默认回显到住院医生（必填）
+  const bringDoctorToInpatientDoctor =
+    (row.statusEnum ?? '').trim() === ENCOUNTER_STATUS_REGISTERED;
+  const participantIds = mapParticipantsToFormIds(row.participants, {
+    bringDoctorToInpatientDoctor,
+  });
   admissionForm.inpatientDoctorId = participantIds.inpatientDoctorId;
   admissionForm.attendingDoctorId = participantIds.attendingDoctorId;
   admissionForm.chiefDoctorId = participantIds.chiefDoctorId;
   admissionForm.primaryNurseId = participantIds.primaryNurseId;
-  admissionForm.priorityEnum = normalizeAdmCondTermCode(row.priorityEnum);
+  admissionForm.priorityEnum =
+    normalizeAdmCondTermCode(row.priorityEnum) || DEFAULT_ADM_COND_CODE_GENERAL;
   applyAdmissionVitalSignsToForm(row.admissionVitalSigns);
   admissionForm.admissionTimeDisplay = resolveAdmissionTimeDisplay(row);
   await loadParticipantOptions();
@@ -649,6 +737,14 @@ watch(visible, (open) => {
 
     <template #footer>
       <div class="admission-dialog__footer">
+        <ElButton
+          plain
+          :loading="printingWristband"
+          :disabled="!patient"
+          @click="handlePrintWristband"
+        >
+          打腕带
+        </ElButton>
         <div class="admission-dialog__footer-actions">
           <ElButton @click="closeDialog">取消</ElButton>
           <ElButton type="primary" :loading="dialogLoading" @click="handleAdmit">

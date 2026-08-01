@@ -41,7 +41,9 @@ defineProps<Props>();
         class="special-event-time-picker"
         format="HH:mm"
         placeholder="时间"
+        popper-class="temperature-sheet-fill-popper"
         style="width: 110px; --el-date-editor-width: 110px"
+        teleported
         value-format="HH:mm"
         :clearable="false"
       />
@@ -85,7 +87,10 @@ defineProps<Props>();
           class="special-event-select"
           clearable
           :model-value="resolveSpecialEventPickerValue(row, slotIndex)"
+          :popper-options="{ strategy: 'fixed' }"
+          :teleported="true"
           placeholder="特殊事件"
+          popper-class="temperature-sheet-fill-popper"
           @update:model-value="
             (value: string | undefined) => handleSpecialEventPickerChange(row, slotIndex, value)
           "
@@ -102,12 +107,16 @@ defineProps<Props>();
           />
         </ElSelect>
         <ElTimePicker
-          v-if="isSpecialEventTimeRequired(resolveSpecialEventPickerValue(row, slotIndex))"
-          v-model="row.specialEventTimesByCode[resolveSpecialEventPickerValue(row, slotIndex)]"
+          v-if="isSpecialEventTimeRequired(resolveSpecialEventPickerValue(row, slotIndex) ?? '')"
+          v-model="
+            row.specialEventTimesByCode[resolveSpecialEventPickerValue(row, slotIndex) ?? '']
+          "
           class="special-event-time-picker"
           format="HH:mm"
           placeholder="时间"
+          popper-class="temperature-sheet-fill-popper"
           style="width: 110px; --el-date-editor-width: 110px"
+          teleported
           value-format="HH:mm"
           :clearable="false"
         />
@@ -147,6 +156,9 @@ defineProps<Props>();
 .special-event-select {
   width: 110px;
   flex-shrink: 0;
+}
+.special-event-select :deep(.el-select__wrapper) {
+  min-width: 110px;
 }
 .special-event-time-picker {
   flex-shrink: 0;

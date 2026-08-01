@@ -4,6 +4,7 @@ import type {
   PrepareWorkInjuryInvokeRequest,
   PrepareWorkInjuryInvokeResult,
   SubmitWorkInjuryInvokeResultRequest,
+  WorkInjuryEncounterContextResult,
   WorkInjuryReverseCommand,
   WorkInjurySettlementRecordResult,
 } from './work-injury.types';
@@ -60,6 +61,14 @@ export async function httpWorkInjuryBindQualification(body: {
   qualificationId: string;
 }) {
   return publicRequestClient.post<void>(`${REGISTER_BASE}/bindQualification`, body);
+}
+
+/** 就诊工伤备案/审批上下文（anchor 快照）。 */
+export async function httpWorkInjuryLoadEncounterContext(encounterId: string | number) {
+  return publicRequestClient.post<WorkInjuryEncounterContextResult>(
+    `${REGISTER_BASE}/loadEncounterContext`,
+    { encounterId },
+  );
 }
 
 export async function httpWorkInjuryModuleCapability() {

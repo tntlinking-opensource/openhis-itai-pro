@@ -4,10 +4,13 @@ import type { ElTagVisualType } from '#/utils/format/status-tag';
  * 门诊就诊/挂号流水状态编码（与域枚举一致，接口多为字符串）。
  */
 export const ENCOUNTER_STATUS_CODE = {
+  /** 已取消（枚举默认文案）；挂号窗口对 CANCELLED 行展示为「退号」 */
   CANCELLED: 'CANCELLED',
   COMPLETED: 'COMPLETED',
   /** 完诊（医生已结束接诊） */
   DISCHARGED: 'DISCHARGED',
+  /** 未收费取消（错误录入终态，与退号 CANCELLED 区分） */
+  ENTERED_IN_ERROR: 'ENTERED_IN_ERROR',
   IN_PROGRESS: 'IN_PROGRESS',
   ON_HOLD: 'ON_HOLD',
   /** 待挂号（预结算后、正式收费前） */
@@ -34,4 +37,5 @@ export const ENCOUNTER_STATUS_EL_TAG_MAP: Readonly<Record<string, ElTagVisualTyp
   [ENCOUNTER_STATUS_CODE.ON_HOLD]: 'warning',
   [ENCOUNTER_STATUS_CODE.COMPLETED]: 'success',
   [ENCOUNTER_STATUS_CODE.CANCELLED]: 'info',
+  [ENCOUNTER_STATUS_CODE.ENTERED_IN_ERROR]: 'info',
 };

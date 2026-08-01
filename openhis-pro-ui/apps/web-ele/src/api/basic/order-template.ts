@@ -156,6 +156,7 @@ export const ORDER_TEMPLATE_BINDING_AGREEMENT = 'AGREEMENT';
 
 /** 套用上下文 */
 export const ORDER_TEMPLATE_APPLY_CONTEXT_DOCTOR = 'DOCTOR';
+export const ORDER_TEMPLATE_APPLY_CONTEXT_NURSE_PRICING = 'NURSE_PRICING';
 
 /** 医生站工作站类型 */
 export const ORDER_TEMPLATE_WORKSTATION_OUTPATIENT = 'OUTPATIENT';
@@ -275,6 +276,24 @@ export async function previewOrderTemplateApplyApi(params: PreviewOrderTemplateA
 export async function saveOrderTemplateFromAdviceApi(params: SaveOrderTemplateFromAdviceParams) {
   return publicRequestClient.post<SaveOrderTemplateFromAdviceResponse>(
     '/orderTemplate/saveOrderTemplateFromAdvice',
+    params,
+  );
+}
+
+/** IF-BAS-OTL-11：护士站划价组套列表（固定 PRICING + MAINTAINED） */
+export interface ListNurseStationPricingOrderTemplateParams {
+  searchKey?: string;
+}
+
+export interface ListNurseStationPricingOrderTemplateResponse {
+  groups?: OrderTemplateBindingGroup;
+}
+
+export async function listNurseStationPricingOrderTemplatesApi(
+  params: ListNurseStationPricingOrderTemplateParams = {},
+) {
+  return publicRequestClient.post<ListNurseStationPricingOrderTemplateResponse>(
+    '/orderTemplate/listNurseStationPricingOrderTemplates',
     params,
   );
 }

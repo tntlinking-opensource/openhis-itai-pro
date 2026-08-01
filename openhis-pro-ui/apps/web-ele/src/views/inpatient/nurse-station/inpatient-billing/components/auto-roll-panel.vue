@@ -3,6 +3,7 @@ import type { NurseStationModulePatient } from '../../components/nurse-station-m
 import type {
   AutoRollConfigFormModel,
   AutoRollConfigTableRow,
+  AutoRollPostedChargeTableRow,
   AutoRollSelectedCatalogItem,
 } from '../services/map-nurse-station-auto-roll';
 
@@ -18,9 +19,11 @@ import {
   httpCreateAutoGenRule,
   httpDeleteAutoGenRule,
   httpListAutoRollConfigs,
+  httpListAutoRollPostedCharges,
   httpSuspendAutoGenRule,
   httpUpdateAutoGenRule,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-inpatient-billing.http';
+import { httpCancelNurseStationOrderExecutions } from '#/api/inpatient/nurse-station/inpatient-nurse-station-order-cancel-execute.http';
 import { useRequest } from '#/hooks/use-request';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
@@ -29,6 +32,7 @@ import AutoRollConfigDialog from './auto-roll-config-dialog.vue';
 import AutoRollNursingReadonly from './auto-roll-nursing-readonly.vue';
 import {
   mapAutoRollConfigRows,
+  mapAutoRollPostedChargeRows,
   buildDefaultAutoRollRuleName,
 } from '../services/map-nurse-station-auto-roll';
 
@@ -55,14 +59,25 @@ interface ConfigSavedPayload {
   ruleId?: string;
 }
 
+/** 默认取消原因（复用取消执行写路径，不弹窗收集） */
+const AUTO_ROLL_CANCEL_EXECUTE_REASON = '取消自动计费';
+
 const billDate = ref(dayjs().format('YYYY-MM-DD'));
 const configRows = ref<AutoRollConfigTableRow[]>([]);
 const nursingReadonly = ref<NurseStationAutoRollNursingReadonlyDto | null>(null);
 const configDialogVisible = ref(false);
 const editingRow = ref<AutoRollConfigTableRow | null>(null);
 const mutationLoading = ref(false);
+/** ruleId → 已滚费用子表行 */
+const postedChargesByRuleId = ref<Record<string, AutoRollPostedChargeTableRow[]>>({});
+/** 正在加载展开记录的 ruleId 集合 */
+const postedLoadingRuleIds = ref<Record<string, boolean>>({});
+/** 正在取消的 chargeItemId */
+const cancellingChargeItemId = ref<string | null>(null);
 
 const listConfigsRequest = useRequest(httpListAutoRollConfigs, { manual: true });
+const listPostedChargesRequest = useRequest(httpListAutoRollPostedCharges, { manual: true });
+const cancelExecuteRequest = useRequest(httpCancelNurseStationOrderExecutions, { manual: true });
 const createRuleRequest = useRequest(httpCreateAutoGenRule, { manual: true });
 const updateRuleRequest = useRequest(httpUpdateAutoGenRule, { manual: true });
 const deleteRuleRequest = useRequest(httpDeleteAutoGenRule, { manual: true });
@@ -84,17 +99,25 @@ function resolvePatientIds() {
   return { encounterId, patientId };
 }
 
+/** 清空展开缓存（患者/配置刷新后重新拉取）。 */
+function clearPostedChargeCache() {
+  postedChargesByRuleId.value = {};
+  postedLoadingRuleIds.value = {};
+}
+
 /** 加载自动计费配置与护理只读区。 */
 async function loadAutoRollConfigs() {
   if (!props.canViewBilling || !props.patient) {
     configRows.value = [];
     nursingReadonly.value = null;
+    clearPostedChargeCache();
     return;
   }
   const { encounterId, patientId } = resolvePatientIds();
   if (!encounterId || !patientId) {
     configRows.value = [];
     nursingReadonly.value = null;
+    clearPostedChargeCache();
     return;
   }
   const res = await listConfigsRequest.run({
@@ -104,6 +127,51 @@ async function loadAutoRollConfigs() {
   });
   configRows.value = mapAutoRollConfigRows(res.configs);
   nursingReadonly.value = res.nursingLevelReadonly ?? null;
+  clearPostedChargeCache();
+}
+
+/** 加载指定配置的已滚费用记录。 */
+async function loadPostedChargesForRule(ruleId: string) {
+  const { encounterId, patientId } = resolvePatientIds();
+  if (!encounterId || !patientId || !ruleId) {
+    return;
+  }
+  postedLoadingRuleIds.value = {
+    ...postedLoadingRuleIds.value,
+    [ruleId]: true,
+  };
+  try {
+    const res = await listPostedChargesRequest.run({
+      encounterId,
+      patientId,
+      ruleId,
+    });
+    postedChargesByRuleId.value = {
+      ...postedChargesByRuleId.value,
+      [ruleId]: mapAutoRollPostedChargeRows(res.charges),
+    };
+  } finally {
+    postedLoadingRuleIds.value = {
+      ...postedLoadingRuleIds.value,
+      [ruleId]: false,
+    };
+  }
+}
+
+/** 展开行变化时懒加载已滚费用。 */
+function handleConfigExpandChange(
+  row: AutoRollConfigTableRow,
+  expandedRows: AutoRollConfigTableRow[],
+) {
+  const expanded = expandedRows.some((item) => item.ruleId === row.ruleId);
+  if (!expanded) {
+    return;
+  }
+  // 已缓存则不重复请求
+  if (postedChargesByRuleId.value[row.ruleId] !== undefined) {
+    return;
+  }
+  void loadPostedChargesForRule(row.ruleId);
 }
 
 /** 对外暴露刷新入口，供父页切换 Tab / 患者时调用。 */
@@ -259,6 +327,41 @@ async function handleDelete(row: AutoRollConfigTableRow) {
   }
 }
 
+/** 取消单笔已滚费用（复用取消执行 IF-IP-CXL-01）。 */
+async function handleCancelPostedCharge(
+  configRow: AutoRollConfigTableRow,
+  chargeRow: AutoRollPostedChargeTableRow,
+) {
+  if (!props.canOperateBilling || !chargeRow.cancelable || !chargeRow.procedureId) {
+    return;
+  }
+  const { encounterId } = resolvePatientIds();
+  if (!encounterId) {
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认取消「${configRow.activityName}」于 ${chargeRow.occurrenceTime} 的自动计费？取消后该日费用将删除，不影响配置与次日滚费。`,
+      '取消自动计费',
+      { type: 'warning', confirmButtonText: '确定', cancelButtonText: '取消' },
+    );
+  } catch {
+    return;
+  }
+  cancellingChargeItemId.value = chargeRow.chargeItemId;
+  try {
+    await cancelExecuteRequest.run({
+      encounterIds: [encounterId],
+      procedureIds: [chargeRow.procedureId],
+      statusReasonText: AUTO_ROLL_CANCEL_EXECUTE_REASON,
+    });
+    ElMessage.success('已取消自动计费');
+    await loadPostedChargesForRule(configRow.ruleId);
+  } finally {
+    cancellingChargeItemId.value = null;
+  }
+}
+
 /** 查询按钮：刷新配置与护理只读区。 */
 async function handleQuery() {
   if (!props.canOperateBilling) {
@@ -273,7 +376,7 @@ function resolveRowClassName({ row }: { row: AutoRollConfigTableRow }) {
   return row.isActive ? '' : 'auto-roll-row--inactive';
 }
 
-/** 格式化自动计费单价展示。 */
+/** 格式化自动计费单价/金额展示。 */
 function formatAutoRollUnitPrice(value: number | string | undefined): string {
   if (value === undefined || value === null || value === '') {
     return '—';
@@ -283,6 +386,16 @@ function formatAutoRollUnitPrice(value: number | string | undefined): string {
     return '—';
   }
   return `￥${formatMoneyDisplay(num)}`;
+}
+
+/** 解析配置行对应的已滚费用列表。 */
+function resolvePostedCharges(ruleId: string): AutoRollPostedChargeTableRow[] {
+  return postedChargesByRuleId.value[ruleId] ?? [];
+}
+
+/** 解析配置行展开 loading。 */
+function isPostedChargesLoading(ruleId: string): boolean {
+  return postedLoadingRuleIds.value[ruleId] === true;
 }
 
 watch(
@@ -299,7 +412,7 @@ defineExpose({ reload });
 <template>
   <div class="auto-roll-panel flex min-h-0 flex-1 flex-col">
     <ElAlert
-      title="床位费由下方配置参与每日 00:01 自动滚费；护理费取自医嘱校对。已滚费用可在「非医嘱计费」取消。"
+      title="床位费由下方配置参与每日自动滚费；护理费取自医嘱校对。展开配置行可查看已滚费用，待结算记录可在此取消（不影响配置与次日滚费）。"
       type="info"
       :closable="false"
       show-icon
@@ -344,7 +457,60 @@ defineExpose({ reload });
         height="100%"
         row-key="id"
         :row-class-name="resolveRowClassName"
+        @expand-change="handleConfigExpandChange"
       >
+        <ElTableColumn type="expand" width="48" align="center">
+          <template #default="{ row }">
+            <div class="auto-roll-panel__posted">
+              <ElTable
+                v-loading="isPostedChargesLoading(row.ruleId)"
+                :data="resolvePostedCharges(row.ruleId)"
+                border
+                size="small"
+                empty-text="暂无已滚费用记录"
+              >
+                <ElTableColumn
+                  prop="occurrenceTime"
+                  label="业务时间"
+                  min-width="160"
+                  align="center"
+                  show-overflow-tooltip
+                />
+                <ElTableColumn prop="quantityText" label="数量" width="88" align="center" />
+                <ElTableColumn label="单价" width="100" align="right">
+                  <template #default="{ row: chargeRow }">
+                    {{ formatAutoRollUnitPrice(chargeRow.unitPrice) }}
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn label="金额" width="100" align="right">
+                  <template #default="{ row: chargeRow }">
+                    {{ formatAutoRollUnitPrice(chargeRow.totalPrice) }}
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn
+                  prop="statusText"
+                  label="状态"
+                  width="96"
+                  align="center"
+                  show-overflow-tooltip
+                />
+                <ElTableColumn label="操作" width="100" align="center" fixed="right">
+                  <template #default="{ row: chargeRow }">
+                    <ElButton
+                      link
+                      type="danger"
+                      :disabled="!canOperateBilling || !chargeRow.cancelable"
+                      :loading="cancellingChargeItemId === chargeRow.chargeItemId"
+                      @click="handleCancelPostedCharge(row, chargeRow)"
+                    >
+                      取消
+                    </ElButton>
+                  </template>
+                </ElTableColumn>
+              </ElTable>
+            </div>
+          </template>
+        </ElTableColumn>
         <ElTableColumn label="状态" width="96" align="center">
           <template #default="{ row }">
             <ElTag :type="row.isActive ? 'success' : 'info'" effect="light">
@@ -423,6 +589,10 @@ defineExpose({ reload });
   color: var(--el-text-color-primary);
   font-size: 14px;
   font-weight: 600;
+}
+
+.auto-roll-panel__posted {
+  padding: 8px 12px 12px 36px;
 }
 
 .billing-list-card {

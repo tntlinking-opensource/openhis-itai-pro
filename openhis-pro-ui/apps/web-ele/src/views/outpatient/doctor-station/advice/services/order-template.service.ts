@@ -48,8 +48,11 @@ export const ORDER_TEMPLATE_BINDING_GROUP_META: Array<{
   { bindingScope: 'HOSPITAL', label: '全院组套', listKey: 'hospitalList' },
 ];
 
-/** 医生站开立医嘱侧栏不展示的绑定范围（协定处方仅在组套维护页维护） */
-export const DOCTOR_STATION_EXCLUDED_BINDING_SCOPES: OrderTemplateBindingScope[] = ['AGREEMENT'];
+/**
+ * 医生站开立医嘱侧栏不展示的绑定范围。
+ * 协定处方需在侧栏可见并可套用，故默认不排除任何范围。
+ */
+export const DOCTOR_STATION_EXCLUDED_BINDING_SCOPES: OrderTemplateBindingScope[] = [];
 
 /** 明细行摘要（预览条/Tooltip） */
 export function buildOrderTemplateLineSummary(lines: OrderTemplateLineRowItem[]): string {
@@ -61,6 +64,17 @@ export function buildOrderTemplateLineSummary(lines: OrderTemplateLineRowItem[])
     return names.join('、');
   }
   return `${names.slice(0, 4).join('、')} 等${names.length}项`;
+}
+
+/** 组套明细药品名全文（侧栏 hover Tooltip，不截断） */
+export function buildOrderTemplateProductNamesTooltip(
+  lines: OrderTemplateLineRowItem[] | undefined,
+): string {
+  const names = (lines ?? []).map((line) => String(line.productName ?? '').trim()).filter(Boolean);
+  if (names.length === 0) {
+    return '暂无药品';
+  }
+  return names.join('、');
 }
 
 /** 组套头 Tooltip 文案 */

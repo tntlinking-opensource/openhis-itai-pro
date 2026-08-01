@@ -18,6 +18,8 @@ import {
 
 export interface SpecimenBarcodePrintTarget {
   serviceRequestId: string;
+  /** 检验项目名称（content / name） */
+  itemName: string;
 }
 
 export interface TreatmentExecutePrintTarget {
@@ -73,20 +75,24 @@ function filterServiceExecuteRows(
   return serviceRows.filter(isExecuteRowPending);
 }
 
-/** 采血条码：每个检验医嘱一张 roll 标签 */
+/** 采血条码：每个检验医嘱一张标签（主键作条码，附带项目名） */
 export function groupSpecimenBarcodePrintTargets(
   rows: NurseAdviceExecuteRow[],
   selectedKeys?: string[],
 ): SpecimenBarcodePrintTarget[] {
   const keyed = filterServiceExecuteRows(rows, selectedKeys).filter(isLabSpecimenExecuteRow);
-  const ids: string[] = [];
+  const targets: SpecimenBarcodePrintTarget[] = [];
+  const seen = new Set<string>();
   for (const row of keyed) {
-    const requestId = String(row.requestId).trim();
-    if (requestId && !ids.includes(requestId)) {
-      ids.push(requestId);
+    const requestId = String(row.requestId ?? '').trim();
+    if (!requestId || seen.has(requestId)) {
+      continue;
     }
+    seen.add(requestId);
+    const itemName = String(row.content ?? row.name ?? '').trim();
+    targets.push({ serviceRequestId: requestId, itemName });
   }
-  return ids.map((serviceRequestId) => ({ serviceRequestId }));
+  return targets;
 }
 
 /** 处置执行单：一张 A4 汇总所选（或全部待执行）非检验处置行 */

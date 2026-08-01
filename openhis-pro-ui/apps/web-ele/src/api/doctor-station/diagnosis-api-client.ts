@@ -1,4 +1,6 @@
 import type {
+  BindCommonDiagnosisRequest,
+  BindCommonDiagnosisResponse,
   CommonDiagnosisRowDto,
   CommonDiagnosesResponse,
   ConditionDefinitionPageResponse,
@@ -11,8 +13,13 @@ import type {
   GetConditionDefinitionBusinessClassRequest,
   GetConditionDefinitionMetadataRequest,
   GetEncounterDiagnosisRequest,
+  GetPatientOpspFilingDiagnosisRequest,
+  PatientOpspFilingDiagnosisResponse,
+  OpspFilingDiagnosisRowDto,
   SaveEncounterDiagnosisRequest,
   SaveEncounterDiagnosisResponse,
+  SwitchMainEncounterDiagnosisRequest,
+  SwitchMainEncounterDiagnosisResponse,
 } from './diagnosis.types';
 
 import { publicRequestClient } from '#/api/request';
@@ -53,6 +60,7 @@ function mapConditionDefinitionMetadataApiRow(
     sourceEnumText: optStr(raw.sourceEnumText),
     ybFlag: optNum(raw.ybFlag),
     ybFlagText: optStr(raw.ybFlagText),
+    ybNo: optStr(raw.ybNo),
     statusEnum: optNum(raw.statusEnum),
   };
 }
@@ -93,6 +101,7 @@ function mapEncounterDiagnosisApiRow(raw: Record<string, unknown>): EncounterDia
     iptDiseaseTypeText: optStr(raw.iptDiseaseTypeText),
     tcmSyndromeGroup: optStr(raw.tcmSyndromeGroup),
     sourceEnum: optStr(raw.sourceEnum),
+    ybNo: optStr(raw.ybNo),
   };
 }
 
@@ -174,17 +183,60 @@ function unwrapDiagnosisPayload<T>(raw: unknown): T {
     'patientHistoryList' in c ||
     'doctorCommonUseList' in c ||
     'userPersonalList' in c ||
-    'organizationList' in c
+    'organizationList' in c ||
+    'opspFilingImportEnabled' in c ||
+    'filingList' in c
   ) {
     return c as T;
   }
   return raw as T;
 }
 
+function mapOpspFilingDiagnosisApiRow(raw: Record<string, unknown>): OpspFilingDiagnosisRowDto {
+  const optStr = (v: unknown): string | undefined => {
+    if (v === null || v === undefined) return undefined;
+    const s = String(v).trim();
+    return s === '' ? undefined : s;
+  };
+  return {
+    opspDiseCode: optStr(raw.opspDiseCode),
+    opspDiseName: optStr(raw.opspDiseName),
+    beginDate: optStr(raw.beginDate),
+    endDate: optStr(raw.endDate),
+    valid: typeof raw.valid === 'boolean' ? raw.valid : undefined,
+    matchStatus: optStr(raw.matchStatus),
+    matchHint: optStr(raw.matchHint),
+    conditionDefinitionId: optStr(raw.conditionDefinitionId),
+    conditionCode: optStr(raw.conditionCode),
+    conditionDefinitionName: optStr(raw.conditionDefinitionName),
+    matchField: optStr(raw.matchField),
+    diagnosisKind: optStr(raw.diagnosisKind),
+  };
+}
+
+function mapPatientOpspFilingDiagnosisResponse(
+  payload: unknown,
+): PatientOpspFilingDiagnosisResponse {
+  if (!isRecord(payload)) return payload as PatientOpspFilingDiagnosisResponse;
+  const list = payload.filingList;
+  return {
+    opspFilingImportEnabled:
+      typeof payload.opspFilingImportEnabled === 'boolean'
+        ? payload.opspFilingImportEnabled
+        : Boolean(payload.opspFilingImportEnabled),
+    filingList: Array.isArray(list)
+      ? list.filter(isRecord).map((row) => mapOpspFilingDiagnosisApiRow(row))
+      : [],
+  };
+}
+
 export interface DoctorStationDiagnosisHttpClient {
   httpDelEncounterDiagnosis: (
     body: DeleteEncounterDiagnosisRequest,
   ) => Promise<DeleteEncounterDiagnosisResponse>;
+  httpSwitchMainEncounterDiagnosis: (
+    body: SwitchMainEncounterDiagnosisRequest,
+  ) => Promise<SwitchMainEncounterDiagnosisResponse>;
   httpGetConditionDefinitionBusinessClass: (
     body: GetConditionDefinitionBusinessClassRequest,
   ) => Promise<CommonDiagnosesResponse>;
@@ -194,9 +246,15 @@ export interface DoctorStationDiagnosisHttpClient {
   httpGetEncounterDiagnosis: (
     body: GetEncounterDiagnosisRequest,
   ) => Promise<EncounterDiagnosisResponse>;
+  httpGetPatientOpspFilingDiagnosis: (
+    body: GetPatientOpspFilingDiagnosisRequest,
+  ) => Promise<PatientOpspFilingDiagnosisResponse>;
   httpSaveDoctorDiagnosis: (
     body: SaveEncounterDiagnosisRequest,
   ) => Promise<SaveEncounterDiagnosisResponse>;
+  httpBindCommonDiagnosis: (
+    body: BindCommonDiagnosisRequest,
+  ) => Promise<BindCommonDiagnosisResponse>;
 }
 
 /** 按应用服务前缀生成诊断五接口客户端（门诊/住院方法名一致，仅路径前缀不同） */
@@ -219,6 +277,15 @@ export function createDoctorStationDiagnosisHttpClient(
       );
       const unwrapped = unwrapDiagnosisPayload<CommonDiagnosesResponse>(raw);
       return mapCommonDiagnosesResponsePayload(unwrapped);
+    },
+
+    async httpGetPatientOpspFilingDiagnosis(body) {
+      const raw = await publicRequestClient.post<unknown>(
+        `${prefix}/getPatientOpspFilingDiagnosis`,
+        body,
+      );
+      const unwrapped = unwrapDiagnosisPayload<PatientOpspFilingDiagnosisResponse>(raw);
+      return mapPatientOpspFilingDiagnosisResponse(unwrapped);
     },
 
     async httpGetConditionDefinitionMetadata(body) {
@@ -246,9 +313,23 @@ export function createDoctorStationDiagnosisHttpClient(
       );
     },
 
+    async httpBindCommonDiagnosis(body) {
+      return publicRequestClient.post<BindCommonDiagnosisResponse>(
+        `${prefix}/bindCommonDiagnosis`,
+        body,
+      );
+    },
+
     async httpDelEncounterDiagnosis(body) {
       return publicRequestClient.post<DeleteEncounterDiagnosisResponse>(
         `${prefix}/delEncounterDiagnosis`,
+        body,
+      );
+    },
+
+    async httpSwitchMainEncounterDiagnosis(body) {
+      return publicRequestClient.post<SwitchMainEncounterDiagnosisResponse>(
+        `${prefix}/switchMainEncounterDiagnosis`,
         body,
       );
     },

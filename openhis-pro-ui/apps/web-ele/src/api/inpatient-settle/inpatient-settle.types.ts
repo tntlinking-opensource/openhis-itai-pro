@@ -208,8 +208,10 @@ export interface SettledPaymentBriefDto {
   relationId?: string;
   /** reverseEnabled=false 时的 Tooltip 文案 */
   reverseDisabledReason?: string;
-  /** 是否可在收银台点击反结 */
+  /** 是否可在收银台点击反结（未离院） */
   reverseEnabled?: boolean;
+  /** 是否可在收银台点击召回（已离院 DISCHARGED） */
+  recallEnabled?: boolean;
   /** 带符号展示金额：正向为正、逆向为负 */
   signedAmount?: number | string;
   settleTime: string;
@@ -251,4 +253,21 @@ export interface ReverseInpatientSettleRequest {
 export interface ReverseInpatientSettleResponse {
   refundPaymentId?: string;
   succeeded?: boolean;
+}
+
+/** 住院出院召回请求（IF-IP-RCL-01；已离院） */
+export interface RecallInpatientDischargeRequest {
+  encounterId: string;
+  patientId: string;
+  /** 可选；空则后端取末次正向 SUCCESS 出院全结单 */
+  paymentId?: string;
+}
+
+/** 住院出院召回响应 */
+export interface RecallInpatientDischargeResponse {
+  encounterId?: string;
+  refundPaymentId?: string;
+  requiresBedAssignment?: boolean;
+  succeeded?: boolean;
+  targetStatusEnum?: string;
 }

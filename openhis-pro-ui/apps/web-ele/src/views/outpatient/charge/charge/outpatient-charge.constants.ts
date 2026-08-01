@@ -1,5 +1,7 @@
 import type { TagProps } from 'element-plus';
 
+import type { ChargeSettlementSetlinfoDto } from '#/api/outpatient-charge/outpatient-charge.types';
+
 import { FALLBACK_PAY_CHANNEL_OPTIONS } from '#/utils/payment/payment-channel-options';
 
 /** 收费项状态（与域枚举 `ChargeItemStatus` code 一致）→ 文案 + 标签类型 */
@@ -36,8 +38,8 @@ export function resolveOutpatientChargeSwitchAccountMessage(messageCode?: null |
   return OUTPATIENT_CHARGE_SWITCH_ACCOUNT_MESSAGE['EX-OPC-202'] ?? '账户切换失败';
 }
 
-/** 默认支付渠道（门诊收费结算弹窗） */
-export const DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE = 'WECHAT';
+/** 默认支付渠道（门诊收费结算弹窗）：银联扫码（可改选现金/微信等） */
+export const DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE = 'SCAN_PAY';
 
 /** 结算弹窗可选渠道（API 不可用时的 fallback，不含 SCAN_PAY） */
 export const OUTPATIENT_CHARGE_PAY_CHANNEL_OPTIONS = [...FALLBACK_PAY_CHANNEL_OPTIONS];
@@ -55,4 +57,43 @@ export const OUTPATIENT_CHARGE_FEE_DETAIL_FIELD_DEFS: readonly { key: string; la
   { key: 'otherPay', label: '其他支付' },
   { key: 'cashPay', label: '现金补缴' },
   { key: 'finalReceivable', label: '最终应收' },
+];
+
+/**
+ * 支付记录「医保分摊」字段（国家局 2206/2207 setlinfo 常见项）。
+ * `kind: money` 按金额展示；`ratio` 按比例；`text` 原文。
+ */
+export const OUTPATIENT_CHARGE_SETLINFO_FIELD_DEFS: readonly {
+  key: keyof ChargeSettlementSetlinfoDto;
+  kind: 'money' | 'ratio' | 'text';
+  label: string;
+}[] = [
+  { key: 'medfeeSumamt', label: '医疗费总额', kind: 'money' },
+  { key: 'fundPaySumamt', label: '基金支付总额', kind: 'money' },
+  { key: 'psnPartAmt', label: '个人负担总金额', kind: 'money' },
+  { key: 'hospPartAmt', label: '医院负担金额', kind: 'money' },
+  { key: 'hifpPay', label: '基本医保统筹基金支出', kind: 'money' },
+  { key: 'poolPropSelfpay', label: '统筹基金支付比例', kind: 'ratio' },
+  { key: 'cvlservPay', label: '公务员医疗补助支出', kind: 'money' },
+  { key: 'hifesPay', label: '企业补充医保基金支出', kind: 'money' },
+  { key: 'hifmiPay', label: '居民大病保险支出', kind: 'money' },
+  { key: 'hifobPay', label: '职工大额医疗补助支出', kind: 'money' },
+  { key: 'mafPay', label: '医疗救助基金支出', kind: 'money' },
+  { key: 'hifdmPay', label: '伤残人员医疗保障支出', kind: 'money' },
+  { key: 'othPay', label: '其他支出', kind: 'money' },
+  { key: 'inscpScpAmt', label: '符合政策范围金额', kind: 'money' },
+  { key: 'actPayDedc', label: '实际支付起付线', kind: 'money' },
+  { key: 'fulamtOwnpayAmt', label: '全自费金额', kind: 'money' },
+  { key: 'overlmtSelfpay', label: '超限价自费费用', kind: 'money' },
+  { key: 'preselfpayAmt', label: '先行自付金额', kind: 'money' },
+  { key: 'acctPay', label: '个人账户支出', kind: 'money' },
+  { key: 'acctMulaidPay', label: '个人账户共济支付', kind: 'money' },
+  { key: 'psnCashPay', label: '个人现金支出', kind: 'money' },
+  { key: 'balc', label: '个人账户余额', kind: 'money' },
+  { key: 'setlId', label: '结算ID', kind: 'text' },
+  { key: 'mdtrtId', label: '就诊ID', kind: 'text' },
+  { key: 'chrgBchno', label: '收费批次号', kind: 'text' },
+  { key: 'clrOptins', label: '清算经办机构', kind: 'text' },
+  { key: 'clrWay', label: '清算方式', kind: 'text' },
+  { key: 'clrType', label: '清算类别', kind: 'text' },
 ];

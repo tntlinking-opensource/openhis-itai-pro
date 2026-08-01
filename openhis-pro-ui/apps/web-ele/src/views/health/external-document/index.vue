@@ -54,7 +54,7 @@ function handleResolve() {
 <template>
   <Page auto-content-height>
     <ElCard shadow="never" v-loading="listLoading">
-      <template #header>外系统报告查看（D 类）</template>
+      <template #header>外系统报告查看</template>
       <div class="flex flex-wrap items-center gap-3">
         <ElSelect v-model="selectedCode" placeholder="选择报告类型" style="width: 240px">
           <ElOption

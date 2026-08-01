@@ -1,98 +1,139 @@
 /**
  * 库房单据工作站窄屏（<1680）紧凑样式；1920 不受影响。
- * 先订货单试点；批量铺开时把选择器扩到 .inv-doc-detail-grid-shell / 其它单据根 class。
+ * 选择器落在公共壳（inv-main-shell / inv-aside-shell / inv-doc-detail-grid-shell / inv-queue-cards），
+ * 药库/药房/科室单据工作站共用。
  * 根因：库房明细 createDefaultInvDocGridOptions 使用 size: medium，
  * 全局仅压了 --vxe-ui-table-row-height-small，medium 表不生效。
  */
 
-/* ========== 药库订货单：Vxe medium 表头 / 行高 ========== */
-html.layout-viewport-compact .purchase-order-main-pane {
+/* ========== 主区：工具条 / 底栏 / 明细壳间距 ========== */
+html.layout-viewport-compact .inv-main-shell__action-bar {
+  gap: 6px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+html.layout-viewport-compact .inv-main-shell .vxe-toolbar {
+  min-height: 32px !important;
+  padding-top: 4px !important;
+  padding-bottom: 4px !important;
+}
+
+html.layout-viewport-compact .inv-doc-detail-grid-shell {
+  margin-top: 4px;
+}
+
+/* 单头区常见 gap-2 / pt-2：窄屏略收 */
+html.layout-viewport-compact .inv-main-shell__body > .flex.flex-col.gap-2 {
+  gap: 0.375rem;
+}
+
+html.layout-viewport-compact .inv-main-shell__body > .flex.flex-col.gap-2.pt-2,
+html.layout-viewport-compact .inv-main-shell__body .gap-2.pt-2 {
+  padding-top: 0.375rem;
+}
+
+/* ========== 侧栏：检索区 / 底栏 ========== */
+html.layout-viewport-compact .inv-aside-shell__header {
+  margin-bottom: 4px;
+  padding-top: 2px;
+}
+
+html.layout-viewport-compact .inv-aside-shell__footer {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+/* 检索栈 gap-1.5 → 接近 gap-1，腾出队列高度 */
+html.layout-viewport-compact .inv-aside-shell__header .gap-1\.5 {
+  gap: 0.25rem;
+}
+
+/* ========== Vxe medium 表头 / 行高（公共明细壳） ========== */
+html.layout-viewport-compact .inv-main-shell {
   --vxe-ui-font-size-medium: 13px;
   --vxe-ui-table-row-height-medium: 34px;
 }
 
-html.layout-viewport-compact
-  .purchase-order-main-pane
-  .vxe-table--header-wrapper
-  .vxe-header--column {
+html.layout-viewport-compact .inv-main-shell .vxe-table--header-wrapper .vxe-header--column {
   height: var(--table-header-height) !important;
   font-size: var(--table-font-size);
 }
 
-html.layout-viewport-compact .purchase-order-main-pane .vxe-header--column .vxe-cell {
+html.layout-viewport-compact .inv-main-shell .vxe-header--column .vxe-cell {
   height: var(--table-header-height) !important;
   padding: var(--table-cell-padding-y) var(--table-cell-padding-x);
   font-size: var(--table-font-size);
   line-height: 1.35;
 }
 
-html.layout-viewport-compact .purchase-order-main-pane .vxe-body--column {
+html.layout-viewport-compact .inv-main-shell .vxe-body--column {
   height: var(--table-row-min-height) !important;
   font-size: var(--table-font-size);
 }
 
-html.layout-viewport-compact .purchase-order-main-pane .vxe-body--column .vxe-cell {
+html.layout-viewport-compact .inv-main-shell .vxe-body--column .vxe-cell {
   height: var(--table-row-min-height) !important;
   padding: var(--table-cell-padding-y) var(--table-cell-padding-x);
   font-size: var(--table-font-size);
   line-height: 1.35;
 }
 
-/* ========== 药库订货单：左侧队列卡片略压高度 + 字号减一号 ========== */
-html.layout-viewport-compact .purchase-order-aside-pane .inv-queue-cards {
+/* ========== 左侧队列卡片略压高度 + 字号减一号 ========== */
+html.layout-viewport-compact .inv-queue-cards {
   gap: 2px;
 }
 
-html.layout-viewport-compact .purchase-order-aside-pane .queue-card .el-card__body {
+html.layout-viewport-compact .inv-queue-cards .queue-card .el-card__body {
   padding: 4px 8px;
 }
 
-html.layout-viewport-compact .purchase-order-aside-pane .queue-head-wrap {
+html.layout-viewport-compact .inv-queue-cards .queue-head-wrap {
   margin-bottom: 3px;
 }
 
-html.layout-viewport-compact .purchase-order-aside-pane .queue-bus-no__icon {
+html.layout-viewport-compact .inv-queue-cards .queue-bus-no__icon {
   font-size: 12px;
 }
 
-html.layout-viewport-compact .purchase-order-aside-pane .queue-bus-no__text {
+html.layout-viewport-compact .inv-queue-cards .queue-bus-no__text {
   font-size: 12px;
 }
 
-html.layout-viewport-compact .purchase-order-aside-pane .queue-status {
+html.layout-viewport-compact .inv-queue-cards .queue-status {
   font-size: 10px;
   line-height: 16px;
   padding: 0 4px;
 }
 
-html.layout-viewport-compact .purchase-order-aside-pane .queue-body {
+html.layout-viewport-compact .inv-queue-cards .queue-body {
   gap: 2px;
 }
 
-html.layout-viewport-compact .purchase-order-aside-pane .queue-line {
+html.layout-viewport-compact .inv-queue-cards .queue-line {
   line-height: 1.25;
 }
 
-html.layout-viewport-compact .purchase-order-aside-pane .queue-line--plain,
-html.layout-viewport-compact .purchase-order-aside-pane .queue-line--people-times,
-html.layout-viewport-compact .purchase-order-aside-pane .queue-person-value,
-html.layout-viewport-compact .purchase-order-aside-pane .queue-time-row,
-html.layout-viewport-compact .purchase-order-aside-pane .queue-line--footer,
-html.layout-viewport-compact .purchase-order-aside-pane .queue-label,
-html.layout-viewport-compact .purchase-order-aside-pane .queue-amount-num,
-html.layout-viewport-compact .purchase-order-aside-pane .queue-warehouse-value {
+html.layout-viewport-compact .inv-queue-cards .queue-line--plain,
+html.layout-viewport-compact .inv-queue-cards .queue-line--people-times,
+html.layout-viewport-compact .inv-queue-cards .queue-person-value,
+html.layout-viewport-compact .inv-queue-cards .queue-time-row,
+html.layout-viewport-compact .inv-queue-cards .queue-line--footer,
+html.layout-viewport-compact .inv-queue-cards .queue-label,
+html.layout-viewport-compact .inv-queue-cards .queue-amount-num,
+html.layout-viewport-compact .inv-queue-cards .queue-warehouse-value {
   font-size: 11px;
 }
 
-html.layout-viewport-compact .purchase-order-aside-pane .queue-line--supplier {
+html.layout-viewport-compact .inv-queue-cards .queue-line--supplier {
   margin-bottom: 2px;
 }
 
-html.layout-viewport-compact .purchase-order-aside-pane .queue-people-col,
-html.layout-viewport-compact .purchase-order-aside-pane .queue-times-col {
+html.layout-viewport-compact .inv-queue-cards .queue-people-col,
+html.layout-viewport-compact .inv-queue-cards .queue-times-col {
   gap: 1px;
 }
 
-html.layout-viewport-compact .purchase-order-aside-pane .queue-line--footer {
+html.layout-viewport-compact .inv-queue-cards .queue-line--footer {
   padding-top: 2px;
 }

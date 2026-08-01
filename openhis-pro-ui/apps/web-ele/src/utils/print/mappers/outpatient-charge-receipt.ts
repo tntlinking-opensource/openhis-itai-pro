@@ -1,8 +1,11 @@
+import { formatMoneyDisplay, sumMoneyThenSettle } from '#/utils/format/money-scale';
+
 /** 收费小票收费项目行（与模板 chargeItemLines 列 field 一致） */
 export interface OutpatientChargeReceiptChargeLine {
   itemName: string;
   quantityText: string;
   amountText: string;
+  /** 医保类别展示（甲类/乙类/自费等） */
   chargeCategoryText: string;
 }
 
@@ -70,18 +73,37 @@ function mapChargeLines(
   }));
 }
 
+/**
+ * 合计金额 = 收费项目行金额之和（医疗费总额）。
+ * 后端 totalAmountText 可能误用 displayAmount（现金自付），有明细时以前端行合计为准。
+ */
+function resolveTotalAmountText(
+  lines: OutpatientChargeReceiptChargeLine[],
+  fallback: string,
+): string {
+  if (lines.length === 0) {
+    return fallback;
+  }
+  const amounts = lines.map((line) => line.amountText).filter((text) => text.length > 0);
+  if (amounts.length === 0) {
+    return fallback;
+  }
+  return formatMoneyDisplay(sumMoneyThenSettle(amounts));
+}
+
 /** 后端收费小票 slip → PrintData */
 export function buildOutpatientChargeReceiptPrintData(
   source: ChargeReceiptSlipPrintSource,
 ): OutpatientChargeReceiptPrintData {
+  const chargeItemLines = mapChargeLines(source.chargeItemLines);
   return {
     hospitalName: str(source.hospitalName),
     patientName: str(source.patientName),
     genderEnumText: str(source.genderEnumText),
     ageText: str(source.ageText),
     feeNatureText: str(source.feeNatureText),
-    chargeItemLines: mapChargeLines(source.chargeItemLines),
-    totalAmountText: str(source.totalAmountText),
+    chargeItemLines,
+    totalAmountText: resolveTotalAmountText(chargeItemLines, str(source.totalAmountText)),
     poolingPayText: str(source.poolingPayText),
     fundPayText: str(source.fundPayText),
     accountPayText: str(source.accountPayText),

@@ -4,12 +4,18 @@ import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import { publicRequestClient } from '../request';
 
+/** 执行科室规则行（开立科室维度配置） */
 export interface ExecuteLocationItem {
   id?: string;
+  /** 开立科室 */
+  organizationId?: string;
+  organizationName?: string;
   activityDefinitionId?: string;
   activityDefinitionName?: string;
   activityCategoryCode?: string;
+  /** 执行科室（行内选择） */
   executionOrgId?: string;
+  executionOrgName?: string;
   executionLocationId?: string;
   startTime?: string;
   endTime?: string;
@@ -18,14 +24,17 @@ export interface ExecuteLocationItem {
   remark?: string;
 }
 
+/** 配置页 init：开立科室树 + 执行科室树 + 诊疗大类 */
 export interface ExecuteLocationInitResponse {
+  organizationOptions?: ApiOptionItem[];
   executionOrgOptions?: ApiOptionItem[];
   executionLocationOptions?: ApiOptionItem[];
   activityCategoryOptions?: ApiOptionItem[];
 }
 
+/** 按开立科室分页查规则 */
 export interface PageExecuteLocationParams {
-  executionOrgId: string;
+  organizationId: string;
   pageNo: number;
   pageSize: number;
   activityCategoryCode?: string;
@@ -41,8 +50,9 @@ export interface ActivityDefinitionOption {
   label: string;
 }
 
+/** 挑选诊疗项目分页（按开立科室上下文） */
 export interface PageActivityDefinitionParams {
-  executionOrgId: string;
+  organizationId: string;
   activityCategoryCode: string;
   pageNo?: number;
   pageSize?: number;
@@ -55,6 +65,7 @@ export interface PageActivityDefinitionResponse {
 }
 
 export interface CreateExecuteLocationParams {
+  organizationId: string;
   activityDefinitionId?: string;
   activityCategoryCode: string;
   executionOrgId: string;
@@ -71,6 +82,7 @@ export interface UpdateExecuteLocationParams extends CreateExecuteLocationParams
 }
 
 export interface BatchCreateExecuteLocationParams {
+  organizationId: string;
   executionOrgId: string;
   activityCategoryCode: string;
   executionLocationId?: string;
@@ -82,25 +94,30 @@ export interface BatchCreateExecuteLocationParams {
   remark?: string;
 }
 
+/** 配置页初始化 */
 export async function initExecuteLocationApi() {
   return publicRequestClient.post<ExecuteLocationInitResponse>('/executeLocation/init');
 }
 
+/** 按开立科室列出规则 */
 export async function pageExecuteLocationApi(params: PageExecuteLocationParams) {
   return publicRequestClient.post<PageExecuteLocationResponse>(
-    '/executeLocation/listByExecutionOrgId',
+    '/executeLocation/listByOrganizationId',
     params,
   );
 }
 
+/** 创建单条规则 */
 export async function createExecuteLocationApi(params: CreateExecuteLocationParams) {
   return publicRequestClient.post<string>('/executeLocation/create', params);
 }
 
+/** 更新单条规则 */
 export async function updateExecuteLocationApi(params: UpdateExecuteLocationParams) {
   return publicRequestClient.post<unknown>('/executeLocation/update', params);
 }
 
+/** 按主键删除规则 */
 export async function deleteExecuteLocationApi(id: number | string) {
   return publicRequestClient.post<unknown>(
     '/executeLocation/deleteById',
@@ -108,10 +125,12 @@ export async function deleteExecuteLocationApi(id: number | string) {
   );
 }
 
+/** 批量创建规则 */
 export async function batchCreateExecuteLocationApi(params: BatchCreateExecuteLocationParams) {
   return publicRequestClient.post<unknown>('/executeLocation/batchCreate', params);
 }
 
+/** 分页挑选待绑定诊疗项目 */
 export async function pageActivityDefinitionForExecuteLocationApi(
   params: PageActivityDefinitionParams,
 ) {

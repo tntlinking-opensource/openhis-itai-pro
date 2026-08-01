@@ -1,6 +1,8 @@
 import type {
   ReverseInpatientSettleRequest,
   ReverseInpatientSettleResponse,
+  RecallInpatientDischargeRequest,
+  RecallInpatientDischargeResponse,
   ConfirmInpatientSettleRequest,
   ConfirmInpatientSettleResponse,
   LoadInpatientSettlePageInitResponse,
@@ -88,12 +90,22 @@ export async function httpLoadSettledInpatientPaymentView(
   );
 }
 
-/** 住院反结（IF-IP-RVS-01） */
+/** 住院反结（IF-IP-RVS-01；未离院） */
 export async function httpReverseInpatientSettle(
   body: ReverseInpatientSettleRequest,
 ): Promise<ReverseInpatientSettleResponse> {
   return publicRequestClient.post<ReverseInpatientSettleResponse>(
     `${BASE}/reverseInpatientSettle`,
+    body,
+  );
+}
+
+/** 住院出院召回（IF-IP-RCL-01；已离院，内嵌反结） */
+export async function httpRecallInpatientDischarge(
+  body: RecallInpatientDischargeRequest,
+): Promise<RecallInpatientDischargeResponse> {
+  return publicRequestClient.post<RecallInpatientDischargeResponse>(
+    `${BASE}/recallInpatientDischarge`,
     body,
   );
 }

@@ -4,13 +4,25 @@ import type { NursingRecordViewRow } from './nursing-record.types';
 import NursingRecordBodySection from './nursing-record-body-section.vue';
 import NursingRecordRowActions from './nursing-record-row-actions.vue';
 
+defineOptions({
+  name: 'NursingRecordTimelineItem',
+});
+
+interface NurseSignatureOption {
+  label: string;
+  value: string;
+}
+
 interface Props {
   index: number;
+  nurseOptions?: NurseSignatureOption[];
   row: NursingRecordViewRow;
   total: number;
 }
 
-const props = defineProps<Props>();
+const props = withDefaults(defineProps<Props>(), {
+  nurseOptions: () => [],
+});
 
 const emit = defineEmits<{
   add: [row: NursingRecordViewRow];
@@ -30,6 +42,7 @@ const consciousnessOptions = ['清醒', '嗜睡', '模糊', '谵妄', '昏睡', 
 function toDisplayValue(value?: string) {
   return value && value.length > 0 ? value : '-';
 }
+
 /** 组合完整时间文案（年月日 时分），用于时间轴头部主显示。 */
 function formatRecordDateTime(row: NursingRecordViewRow) {
   const dateText = toDisplayValue(row.recordDate);
@@ -78,7 +91,22 @@ function formatRecordDateTime(row: NursingRecordViewRow) {
               :options="consciousnessOptions"
               class="!w-[120px]"
             />
-            <ElInput v-model="props.row.nurseSignature" placeholder="护士签名" class="!w-[140px]" />
+            <ElSelect
+              v-model="props.row.nurseSignature"
+              filterable
+              clearable
+              allow-create
+              default-first-option
+              placeholder="护士签名"
+              class="!w-[140px]"
+            >
+              <ElOption
+                v-for="opt in props.nurseOptions"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </ElSelect>
             <NursingRecordRowActions
               editing
               @add="emit('add', props.row)"

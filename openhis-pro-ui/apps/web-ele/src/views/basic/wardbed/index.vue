@@ -21,6 +21,7 @@ import {
 import { unwrapApiList } from '#/utils/api/unwrap-api-list';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
+import { BASIC_TABLE_MAX_HEIGHT } from '../basic-table-max-height';
 import EditDialog from './edit-dialog.vue';
 
 defineOptions({
@@ -431,10 +432,18 @@ onActivated(async () => {
         border
         stripe
         default-expand-all
+        :max-height="BASIC_TABLE_MAX_HEIGHT"
         :tree-props="{ children: 'children' }"
         empty-text="暂无数据"
       >
         <el-table-column label="名称" min-width="220" prop="name" show-overflow-tooltip />
+        <el-table-column
+          label="编号"
+          prop="busNo"
+          min-width="140"
+          align="center"
+          show-overflow-tooltip
+        />
         <el-table-column label="类型" width="88" align="center">
           <template #default="{ row }">
             {{ getLevelLabel(row.formEnum) }}

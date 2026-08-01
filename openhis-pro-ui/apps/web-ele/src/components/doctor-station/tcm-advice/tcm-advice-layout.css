@@ -1,0 +1,183 @@
+/**
+ * 朝阳中药处方页布局（院点 override）。
+ * 顶栏页签+操作 / 信息栏 / 药表 / 底栏；配色走 Element Plus 变量。
+ * 不走 SFC scoped：院点生产包会丢 scoped。
+ */
+.tcm-advice-root {
+  --tcm-sidebar-width: 240px;
+  grid-template-columns: var(--tcm-sidebar-width) minmax(0, 1fr);
+  background: var(--el-bg-color-page, #f5f7fa);
+}
+
+.tcm-template-tree .el-tree-node__content {
+  height: 32px;
+  border-radius: 4px;
+}
+
+.tcm-tree-node-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.tcm-template-tree .el-tree-node__content:hover {
+  background-color: var(--el-fill-color-light);
+}
+
+.tcm-template-tree .el-tree-node.is-current > .el-tree-node__content {
+  background-color: var(--el-color-primary-light-9);
+}
+
+.tcm-advice-root__main {
+  padding: 0;
+  background: transparent;
+}
+
+/* 页签 + 按钮同一行，贴紧下方面板，无圆角、无底间距 */
+.tcm-advice-root__chrome {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 40px;
+  margin: 0;
+  padding: 4px 12px 0;
+  border: 1px solid var(--el-border-color-lighter);
+  border-bottom: 0;
+  border-radius: 0;
+  background: #fff;
+}
+
+.tcm-rx-tabs {
+  min-width: 0;
+}
+
+.tcm-rx-tabs .el-tabs__header {
+  margin-bottom: 0;
+}
+
+.tcm-rx-tabs .el-tabs__nav-wrap::after {
+  height: 0;
+}
+
+.tcm-rx-tabs .el-tabs__item {
+  border-radius: 0;
+}
+
+.tcm-rx-tabs .el-tabs__item.is-active {
+  border-radius: 0;
+}
+
+.tcm-rx-panel__toolbar {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* 待签发/草稿状态：warning light，比默认 info plain 更清晰 */
+.tcm-rx-panel__status.el-tag--warning {
+  border-color: var(--el-color-warning-light-5);
+  background: var(--el-color-warning-light-8);
+  color: var(--el-color-warning-dark-2);
+  font-weight: 600;
+}
+
+/* 处方面板：贴顶栏，无圆角，无内边距外壳 */
+.tcm-rx-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 0;
+  background: #fff;
+}
+
+/* 表单 / 检索 / 列表：同一浅底，容器自身无内边距 */
+.tcm-rx-panel__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  background: #f7fafc;
+  border-top: 1px solid var(--el-border-color-extra-light);
+  border-bottom: 1px solid var(--el-border-color-extra-light);
+}
+
+.tcm-rx-panel__info {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  border-radius: 0;
+  background: transparent;
+}
+
+.tcm-rx-panel__info .tcm-rx-header {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tcm-rx-panel__search {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  margin: 0;
+  padding: 12px 12px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.tcm-rx-panel__search-host {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  width: 320px;
+  max-width: 100%;
+}
+
+.tcm-rx-panel__search-host:empty {
+  display: none;
+}
+
+.tcm-rx-panel__search:has(.tcm-rx-panel__search-host:empty) {
+  display: none;
+}
+
+.tcm-rx-panel__table {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.tcm-rx-panel__footer {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 8px 12px;
+  background: #fff;
+  border-top: 0;
+}

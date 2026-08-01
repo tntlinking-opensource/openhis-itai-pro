@@ -5,7 +5,7 @@ export const MOCK_QUEUE_PATIENTS: DispenseQueuePatient[] = [
   {
     id: 'q-1',
     patientName: '张三',
-    genderLabel: '男',
+    genderLabel: '男性',
     ageLabel: '42岁',
     visitNo: 'MZ20260419007821',
     visitTimeLabel: '2026-04-19 09:12',
@@ -14,7 +14,7 @@ export const MOCK_QUEUE_PATIENTS: DispenseQueuePatient[] = [
   {
     id: 'q-2',
     patientName: '李四',
-    genderLabel: '女',
+    genderLabel: '女性',
     ageLabel: '35岁',
     visitNo: 'MZ20260419009103',
     visitTimeLabel: '2026-04-19 09:40',

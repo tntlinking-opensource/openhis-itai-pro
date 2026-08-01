@@ -15,6 +15,7 @@ import {
   inferServiceApplyKindFromAdviceRow,
   sumServiceApplyDocumentTotalAmount,
 } from './service-apply-doc-groups';
+import { SERVICE_APPLY_KIND_LABEL } from './service-apply.constants';
 
 defineOptions({ name: 'ServiceApplyFormDocument' });
 
@@ -22,6 +23,9 @@ interface Props {
   group: ServiceApplyDocumentGroup;
   selected?: boolean;
   getStatusTagType: (row: AdviceRowItem) => 'danger' | 'info' | 'primary' | 'success' | 'warning';
+  getChargeStatusTagType: (
+    row: AdviceRowItem,
+  ) => 'danger' | 'info' | 'primary' | 'success' | 'warning';
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -49,22 +53,16 @@ const applyKind = computed((): ServiceApplyKind | null => {
 
 /** 类型短标签 */
 const kindShortLabel = computed(() => {
-  if (applyKind.value === 'lab') {
-    return '检验';
-  }
-  if (applyKind.value === 'exam') {
-    return '检查';
+  if (applyKind.value) {
+    return SERVICE_APPLY_KIND_LABEL[applyKind.value];
   }
   return trimText(headLine.value?.type) || '申请';
 });
 
 /** 单据标题 */
 const documentTitle = computed(() => {
-  if (applyKind.value === 'lab') {
-    return '检验申请单';
-  }
-  if (applyKind.value === 'exam') {
-    return '检查申请单';
+  if (applyKind.value) {
+    return `${SERVICE_APPLY_KIND_LABEL[applyKind.value]}申请单`;
   }
   return trimText(headLine.value?.type) || '申请单';
 });
@@ -95,6 +93,15 @@ function resolveLineDetailText(line: AdviceRowItem): string {
     return hint.slice(splitIndex + 1);
   }
   return hint;
+}
+
+/** 开立数量展示 */
+function resolveQuantityText(line: AdviceRowItem): string {
+  const quantity = line.listQuantity;
+  if (typeof quantity === 'number' && Number.isFinite(quantity) && quantity > 0) {
+    return String(quantity);
+  }
+  return '1';
 }
 
 /** 执行次数展示 */
@@ -142,6 +149,7 @@ function handleCardClick() {
       selected ? 'is-selected' : '',
       applyKind === 'lab' ? 'is-lab' : '',
       applyKind === 'exam' ? 'is-exam' : '',
+      applyKind === 'treatment' ? 'is-treatment' : '',
     ]"
     @click="handleCardClick"
   >
@@ -205,14 +213,22 @@ function handleCardClick() {
           <span class="col-index">序号</span>
           <span class="col-name">项目名称</span>
           <span class="col-detail">{{ detailColumnLabel }}</span>
+          <span class="col-qty">数量</span>
           <span class="col-count">次数</span>
+          <span class="col-charge">费用状态</span>
           <span class="col-amount">金额</span>
         </div>
         <div v-for="(line, index) in group.lines" :key="line.key" class="items-row">
           <span class="col-index">{{ index + 1 }}</span>
           <span class="col-name">{{ line.content }}</span>
           <span class="col-detail">{{ resolveLineDetailText(line) || '—' }}</span>
+          <span class="col-qty">{{ resolveQuantityText(line) }}</span>
           <span class="col-count">{{ resolveExecutionCountText(line) }}</span>
+          <span class="col-charge">
+            <ElTag :type="getChargeStatusTagType(line)" size="small" effect="light">
+              {{ line.chargeStatus || '—' }}
+            </ElTag>
+          </span>
           <span class="col-amount">{{ line.lineTotalAmount }}</span>
         </div>
       </div>
@@ -295,6 +311,11 @@ function handleCardClick() {
 .is-exam .apply-sheet__kind {
   color: var(--el-color-success);
   background: var(--el-color-success-light-9);
+}
+
+.is-treatment .apply-sheet__kind {
+  color: var(--el-color-warning);
+  background: var(--el-color-warning-light-9);
 }
 
 .apply-sheet__no {
@@ -395,7 +416,7 @@ function handleCardClick() {
 .items-header,
 .items-row {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) minmax(72px, 0.7fr) 56px 88px;
+  grid-template-columns: 44px minmax(0, 1fr) minmax(64px, 0.6fr) 48px 48px 88px 80px;
   gap: 8px;
   align-items: center;
   padding: 8px 12px;
@@ -419,7 +440,9 @@ function handleCardClick() {
 }
 
 .col-index,
-.col-count {
+.col-qty,
+.col-count,
+.col-charge {
   text-align: center;
 }
 

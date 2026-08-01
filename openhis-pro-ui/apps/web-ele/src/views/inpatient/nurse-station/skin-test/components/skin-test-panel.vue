@@ -24,10 +24,14 @@ import {
 import SectionTitle from '#/components/layouts/section-title.vue';
 
 import {
+  calcInpatientSkinTestLastOccurrence,
   canDeleteInpatientSkinTestRow,
+  canSaveInpatientSkinTestRow,
+  isInpatientSkinTestNegativeClinicalCode,
   isInpatientSkinTestPositiveClinicalCode,
   mapInpatientSkinTestEnumOptions,
   mapInpatientSkinTestRowToDraft,
+  resolveInpatientSkinTestRowKey,
   type InpatientSkinTestRowDraft,
 } from '../services/map-nurse-station-skin-test';
 
@@ -38,7 +42,7 @@ defineOptions({
 const props = withDefaults(defineProps<Props>(), {
   loading: false,
   rows: () => [],
-  savingMedicationRequestId: '',
+  savingSkinTestServiceRequestId: '',
   deletingAllergyRecordId: '',
 });
 
@@ -58,23 +62,16 @@ interface Props {
   rows: NurseStationSkinTestRowDto[];
   loading: boolean;
   defaultPractitionerId?: string;
-  savingMedicationRequestId?: string;
+  /** 正在保存的 companion SR id */
+  savingSkinTestServiceRequestId?: string;
   deletingAllergyRecordId?: string;
 }
 
-const draftByMedicationRequestId = ref<Record<string, InpatientSkinTestRowDraft>>({});
+/** 草稿按 companion SR id 索引（同一皮试药可多行） */
+const draftBySkinTestServiceRequestId = ref<Record<string, InpatientSkinTestRowDraft>>({});
 
 const clinicalSelectOptions = computed(() =>
   mapInpatientSkinTestEnumOptions(props.clinicalStatusOptions),
-);
-const verificationSelectOptions = computed(() =>
-  mapInpatientSkinTestEnumOptions(props.verificationStatusOptions),
-);
-const criticalitySelectOptions = computed(() =>
-  mapInpatientSkinTestEnumOptions(props.criticalityOptions),
-);
-const severitySelectOptions = computed(() =>
-  mapInpatientSkinTestEnumOptions(props.severityOptions),
 );
 
 const showEmptyState = computed(() => !props.loading && props.rows.length === 0);
@@ -82,14 +79,20 @@ const showEmptyState = computed(() => !props.loading && props.rows.length === 0)
 /** 同步接口行到本地草稿 */
 function syncDraftsFromRows(rows: NurseStationSkinTestRowDto[]) {
   const next: Record<string, InpatientSkinTestRowDraft> = {};
+  // 按 companion SR 主键挂草稿，避免同药多行互相覆盖
   for (const row of rows) {
-    const key = String(row.medicationRequestId ?? '').trim();
+    const key = resolveInpatientSkinTestRowKey(row);
     if (!key) {
       continue;
     }
-    next[key] = mapInpatientSkinTestRowToDraft(row, props.accountId, props.defaultPractitionerId);
+    next[key] = mapInpatientSkinTestRowToDraft(
+      row,
+      props.accountId,
+      props.defaultPractitionerId,
+      props.verificationStatusOptions,
+    );
   }
-  draftByMedicationRequestId.value = next;
+  draftBySkinTestServiceRequestId.value = next;
 }
 
 watch(
@@ -102,12 +105,17 @@ watch(
 
 /** 取行草稿 */
 function getDraft(row: NurseStationSkinTestRowDto): InpatientSkinTestRowDraft {
-  const key = String(row.medicationRequestId ?? '').trim();
-  const existing = draftByMedicationRequestId.value[key];
+  const key = resolveInpatientSkinTestRowKey(row);
+  const existing = draftBySkinTestServiceRequestId.value[key];
   if (existing) {
     return existing;
   }
-  return mapInpatientSkinTestRowToDraft(row, props.accountId, props.defaultPractitionerId);
+  return mapInpatientSkinTestRowToDraft(
+    row,
+    props.accountId,
+    props.defaultPractitionerId,
+    props.verificationStatusOptions,
+  );
 }
 
 /** 行是否已登记 */
@@ -115,9 +123,20 @@ function isRowRegistered(row: NurseStationSkinTestRowDto): boolean {
   return Boolean(String(row.allergyRecordId ?? '').trim());
 }
 
-/** 费用态 Tag */
-function pricedTagType(row: NurseStationSkinTestRowDto): 'success' | 'warning' {
-  return row.pricedFlag === true ? 'success' : 'warning';
+/** 表单是否禁用（未执行或已登记只读） */
+function isRowFormDisabled(row: NurseStationSkinTestRowDto): boolean {
+  if (row.executedFlag !== true) {
+    return true;
+  }
+  if (row.readOnlyFlag === true) {
+    return true;
+  }
+  return isRowRegistered(row);
+}
+
+/** 执行态 Tag */
+function executedTagType(row: NurseStationSkinTestRowDto): 'success' | 'warning' {
+  return row.executedFlag === true ? 'success' : 'warning';
 }
 
 /** 合并行内已保存护士，避免下拉只显示 ID */
@@ -142,11 +161,11 @@ function practitionerOptionsForRow(
 
 /** 校验单行草稿 */
 function validateDraft(draft: InpatientSkinTestRowDraft): string | null {
+  if (!(draft.lotNumber ?? '').trim()) {
+    return '请选择本次取药批号（须先执行皮试药）';
+  }
   if (!draft.clinicalStatusCode.trim()) {
     return '请选择临床结果';
-  }
-  if (!draft.verificationStatusCode.trim()) {
-    return '请选择验证状态';
   }
   if (!draft.practitionerId.trim()) {
     return '请选择执行护士';
@@ -154,15 +173,50 @@ function validateDraft(draft: InpatientSkinTestRowDraft): string | null {
   if (!draft.checkPractitionerId.trim()) {
     return '请选择核对护士';
   }
-  if (!draft.accountId.trim()) {
-    return '患者账户无效，请刷新患者列表';
+  if (!(draft.recordedDate ?? '').trim()) {
+    return '请选择开始时间';
   }
   return null;
 }
 
+/** 开始时间变更：末次反应时间联动为 +20 分钟 */
+function handleStartTimeChange(draft: InpatientSkinTestRowDraft, value: string | null) {
+  const start = (value ?? '').trim() || undefined;
+  draft.recordedDate = start;
+  draft.lastOccurrence = calcInpatientSkinTestLastOccurrence(start);
+}
+
+/** 行是否可点保存（含批号） */
+function canSaveRow(row: NurseStationSkinTestRowDto): boolean {
+  return canSaveInpatientSkinTestRow(row, getDraft(row).lotNumber);
+}
+
+/** 保存按钮禁用时的提示文案 */
+function saveDisabledTooltip(row: NurseStationSkinTestRowDto): string {
+  if (row.executedFlag !== true) {
+    return '请先在「医嘱执行」完成皮试检查';
+  }
+  if (isRowRegistered(row) || row.readOnlyFlag === true) {
+    return '已登记结果只读，误录请删除后重登';
+  }
+  return '请选择本次取药批号';
+}
+
 /** 提交当前行保存 */
 function handleSaveRow(row: NurseStationSkinTestRowDto) {
+  if (isRowFormDisabled(row)) {
+    if (row.executedFlag !== true) {
+      ElMessage.warning('请先在「医嘱执行」完成皮试检查后再登记结果');
+      return;
+    }
+    ElMessage.warning('该皮试行已登记，如需修正请先删除误录结果');
+    return;
+  }
   const draft = getDraft(row);
+  if (!canSaveInpatientSkinTestRow(row, draft.lotNumber)) {
+    ElMessage.warning('请选择本次取药批号（须先执行皮试药）');
+    return;
+  }
   const err = validateDraft(draft);
   if (err) {
     ElMessage.warning(err);
@@ -187,7 +241,7 @@ function lotOptionsForRow(row: NurseStationSkinTestRowDto) {
 
 /** 当前行是否保存中 */
 function isRowSaving(row: NurseStationSkinTestRowDto): boolean {
-  return props.savingMedicationRequestId === String(row.medicationRequestId ?? '').trim();
+  return props.savingSkinTestServiceRequestId === resolveInpatientSkinTestRowKey(row);
 }
 
 /** 当前行是否删除中 */
@@ -195,9 +249,14 @@ function isRowDeleting(row: NurseStationSkinTestRowDto): boolean {
   return props.deletingAllergyRecordId === String(row.allergyRecordId ?? '').trim();
 }
 
-/** 临床结果是否为阳性（卡片高亮） */
+/** 临床结果是否为阳性（左侧条红色） */
 function isPositiveClinicalRow(row: NurseStationSkinTestRowDto): boolean {
   return isInpatientSkinTestPositiveClinicalCode(getDraft(row).clinicalStatusCode);
+}
+
+/** 临床结果是否为阴性（左侧条绿色） */
+function isNegativeClinicalRow(row: NurseStationSkinTestRowDto): boolean {
+  return isInpatientSkinTestNegativeClinicalCode(getDraft(row).clinicalStatusCode);
 }
 </script>
 
@@ -217,15 +276,16 @@ function isPositiveClinicalRow(row: NurseStationSkinTestRowDto): boolean {
       <div v-if="!showEmptyState" class="skin-test-center__list">
         <p class="skin-test-center__summary">
           共 <strong>{{ rows.length }}</strong>
-          项皮试，请逐项登记结果并双签保存；首次保存将自动生成皮试操作费（待结算）。
+          项皮试；请先在「医嘱执行」完成皮试检查后，再逐项登记结果并双签保存。
         </p>
 
         <article
           v-for="row in rows"
-          :key="row.medicationRequestId"
+          :key="resolveInpatientSkinTestRowKey(row)"
           class="skin-test-card"
           :class="{
             'skin-test-card--registered': isRowRegistered(row),
+            'skin-test-card--negative': isNegativeClinicalRow(row),
             'skin-test-card--positive': isPositiveClinicalRow(row),
           }"
         >
@@ -249,8 +309,8 @@ function isPositiveClinicalRow(row: NurseStationSkinTestRowDto): boolean {
                   {{ String(row.openDoctorName ?? '').trim() || '—' }}
                 </span>
               </span>
-              <ElTag size="small" effect="light" :type="pricedTagType(row)">
-                {{ row.pricedFlag === true ? '已划价' : '待划价' }}
+              <ElTag size="small" effect="light" :type="executedTagType(row)">
+                {{ row.executedFlag === true ? '已执行' : '待执行' }}
               </ElTag>
             </div>
           </header>
@@ -259,15 +319,19 @@ function isPositiveClinicalRow(row: NurseStationSkinTestRowDto): boolean {
             <p class="skin-test-card__section-title">皮试结果</p>
             <ElRow :gutter="12" class="skin-test-card__row">
               <ElCol :xs="24" :sm="12" :md="6">
-                <ElFormItem label="批号" label-position="top" class="skin-test-card__field">
+                <ElFormItem
+                  label="批号"
+                  label-position="top"
+                  required
+                  class="skin-test-card__field"
+                >
                   <ElSelect
                     v-model="getDraft(row).lotNumber"
                     class="w-full"
                     clearable
                     filterable
-                    allow-create
-                    default-first-option
-                    placeholder="选批号"
+                    placeholder="选批号（须先执行皮试药）"
+                    :disabled="isRowFormDisabled(row)"
                   >
                     <ElOption
                       v-for="opt in lotOptionsForRow(row)"
@@ -289,67 +353,10 @@ function isPositiveClinicalRow(row: NurseStationSkinTestRowDto): boolean {
                     v-model="getDraft(row).clinicalStatusCode"
                     class="w-full"
                     placeholder="必选"
+                    :disabled="isRowFormDisabled(row)"
                   >
                     <ElOption
                       v-for="opt in clinicalSelectOptions"
-                      :key="opt.value"
-                      :label="opt.label"
-                      :value="opt.value"
-                    />
-                  </ElSelect>
-                </ElFormItem>
-              </ElCol>
-              <ElCol :xs="24" :sm="12" :md="6">
-                <ElFormItem
-                  label="验证状态"
-                  label-position="top"
-                  required
-                  class="skin-test-card__field"
-                >
-                  <ElSelect
-                    v-model="getDraft(row).verificationStatusCode"
-                    class="w-full"
-                    placeholder="必选"
-                  >
-                    <ElOption
-                      v-for="opt in verificationSelectOptions"
-                      :key="opt.value"
-                      :label="opt.label"
-                      :value="opt.value"
-                    />
-                  </ElSelect>
-                </ElFormItem>
-              </ElCol>
-              <ElCol :xs="24" :sm="12" :md="6">
-                <ElFormItem label="危险程度" label-position="top" class="skin-test-card__field">
-                  <ElSelect
-                    v-model="getDraft(row).criticalityCode"
-                    class="w-full"
-                    placeholder="可选"
-                    clearable
-                  >
-                    <ElOption
-                      v-for="opt in criticalitySelectOptions"
-                      :key="opt.value"
-                      :label="opt.label"
-                      :value="opt.value"
-                    />
-                  </ElSelect>
-                </ElFormItem>
-              </ElCol>
-            </ElRow>
-
-            <ElRow :gutter="12" class="skin-test-card__row skin-test-card__row--spaced">
-              <ElCol :xs="24" :sm="12" :md="6">
-                <ElFormItem label="严重程度" label-position="top" class="skin-test-card__field">
-                  <ElSelect
-                    v-model="getDraft(row).severityCode"
-                    class="w-full"
-                    placeholder="可选"
-                    clearable
-                  >
-                    <ElOption
-                      v-for="opt in severitySelectOptions"
                       :key="opt.value"
                       :label="opt.label"
                       :value="opt.value"
@@ -369,6 +376,7 @@ function isPositiveClinicalRow(row: NurseStationSkinTestRowDto): boolean {
                     class="w-full"
                     placeholder="必选"
                     filterable
+                    :disabled="isRowFormDisabled(row)"
                   >
                     <ElOption
                       v-for="opt in practitionerOptionsForRow(row)"
@@ -391,6 +399,7 @@ function isPositiveClinicalRow(row: NurseStationSkinTestRowDto): boolean {
                     class="w-full"
                     placeholder="必选"
                     filterable
+                    :disabled="isRowFormDisabled(row)"
                   >
                     <ElOption
                       v-for="opt in practitionerOptionsForRow(row)"
@@ -401,16 +410,39 @@ function isPositiveClinicalRow(row: NurseStationSkinTestRowDto): boolean {
                   </ElSelect>
                 </ElFormItem>
               </ElCol>
+            </ElRow>
+
+            <ElRow :gutter="12" class="skin-test-card__row skin-test-card__row--spaced">
               <ElCol :xs="24" :sm="12" :md="6">
-                <ElFormItem label="记录时间" label-position="top" class="skin-test-card__field">
+                <ElFormItem
+                  label="开始时间"
+                  label-position="top"
+                  required
+                  class="skin-test-card__field"
+                >
                   <ElDatePicker
-                    v-model="getDraft(row).recordedDate"
+                    :model-value="getDraft(row).recordedDate"
                     class="!w-full"
                     type="datetime"
                     format="YYYY-MM-DD HH:mm:ss"
                     value-format="YYYY-MM-DD HH:mm:ss"
                     placeholder="默认当前"
                     clearable
+                    :disabled="isRowFormDisabled(row)"
+                    @update:model-value="(value) => handleStartTimeChange(getDraft(row), value)"
+                  />
+                </ElFormItem>
+              </ElCol>
+              <ElCol :xs="24" :sm="12" :md="6">
+                <ElFormItem label="结束时间" label-position="top" class="skin-test-card__field">
+                  <ElDatePicker
+                    :model-value="getDraft(row).lastOccurrence"
+                    class="!w-full"
+                    type="datetime"
+                    format="YYYY-MM-DD HH:mm:ss"
+                    value-format="YYYY-MM-DD HH:mm:ss"
+                    placeholder="开始时间 + 20 分钟"
+                    disabled
                   />
                 </ElFormItem>
               </ElCol>
@@ -423,6 +455,7 @@ function isPositiveClinicalRow(row: NurseStationSkinTestRowDto): boolean {
                     v-model="getDraft(row).description"
                     placeholder="可选，记录局部反应或备注"
                     clearable
+                    :disabled="isRowFormDisabled(row)"
                   />
                 </ElFormItem>
               </ElCol>
@@ -430,18 +463,14 @@ function isPositiveClinicalRow(row: NurseStationSkinTestRowDto): boolean {
           </div>
 
           <footer class="skin-test-card__footer">
-            <ElButton type="primary" :loading="isRowSaving(row)" @click="handleSaveRow(row)">
+            <ElTooltip v-if="!canSaveRow(row)" :content="saveDisabledTooltip(row)" placement="top">
+              <ElButton type="primary" disabled>保存</ElButton>
+            </ElTooltip>
+            <ElButton v-else type="primary" :loading="isRowSaving(row)" @click="handleSaveRow(row)">
               保存
             </ElButton>
-            <ElTooltip
-              v-if="isRowRegistered(row) && !canDeleteInpatientSkinTestRow(row)"
-              content="已划价记录不可删除"
-              placement="top"
-            >
-              <ElButton type="danger" plain disabled>删除</ElButton>
-            </ElTooltip>
             <ElButton
-              v-else-if="canDeleteInpatientSkinTestRow(row)"
+              v-if="canDeleteInpatientSkinTestRow(row)"
               type="danger"
               plain
               :loading="isRowDeleting(row)"
@@ -455,7 +484,9 @@ function isPositiveClinicalRow(row: NurseStationSkinTestRowDto): boolean {
 
       <div v-else class="skin-test-center__empty">
         <ElEmpty description="暂无已校对的皮试医嘱">
-          <p class="skin-test-center__empty-hint">请先在「医嘱校对」完成皮试药品核对后再登记。</p>
+          <p class="skin-test-center__empty-hint">
+            请先校对皮试药与皮试检查，并在「医嘱执行」完成皮试检查后再登记结果。
+          </p>
         </ElEmpty>
       </div>
     </div>
@@ -513,6 +544,10 @@ function isPositiveClinicalRow(row: NurseStationSkinTestRowDto): boolean {
 }
 
 .skin-test-card--registered {
+  border-left-color: var(--el-color-success);
+}
+
+.skin-test-card--negative {
   border-left-color: var(--el-color-success);
 }
 

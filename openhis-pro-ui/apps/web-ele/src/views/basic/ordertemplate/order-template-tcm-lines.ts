@@ -19,14 +19,15 @@ export interface TcmTemplateDraftLine extends DraftLine {
   _retailPrice?: number;
 }
 
-/** 中药组套药材卡片列（对齐门诊中医 Tab） */
+/** 中药组套药材卡片列（对齐门诊中医 Tab：厂家 + 库存数量） */
 export const tcmTemplateProductColumns = [
-  { prop: 'code', label: '项目编码', width: 120 },
-  { prop: 'name', label: '项目名称', width: 200 },
-  { prop: 'category', label: '类别', width: 72 },
-  { prop: 'spec', label: '单位', width: 80 },
-  { prop: 'availableQuantity', label: '库存数量', width: 88 },
-  { prop: 'price', label: '单价', width: 72 },
+  { prop: 'code', label: '项目编码', width: 108 },
+  { prop: 'name', label: '项目名称', width: 120 },
+  { prop: 'manufacturer', label: '厂家', width: 200 },
+  { prop: 'category', label: '类别', width: 64 },
+  { prop: 'spec', label: '规格', width: 64 },
+  { prop: 'availableQuantity', label: '库存数量', width: 110 },
+  { prop: 'price', label: '单价', width: 64 },
 ];
 
 /** 目录检索行 → AdviceOrderSelect 选项 */

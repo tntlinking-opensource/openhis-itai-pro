@@ -68,6 +68,8 @@ function applyConfiguration(
   if (configuration?.auth?.grantedPolicies) {
     const permissions = configuration.auth.grantedPolicies;
     accessStore.setAccessCodes(Object.keys(permissions).filter((key) => permissions[key]));
+  } else {
+    accessStore.setAccessCodes([]);
   }
 
   if (user) {
@@ -81,6 +83,15 @@ function applyConfiguration(
     }),
   );
   authStore.syncCanFinanceApproveFromConfiguration(configuration);
+}
+
+/** 切换身份前丢弃上一身份的菜单/路由，避免界面短暂或持续显示 admin 菜单 */
+function clearAccessMenusForIdentitySwitch() {
+  const accessStore = useAccessStore();
+  accessStore.setAccessMenus([]);
+  accessStore.setAccessRoutes([]);
+  accessStore.setIsAccessChecked(false);
+  void import('#/router/access-init').then(({ resetAccessInit }) => resetAccessInit());
 }
 
 function backupAdminSession() {
@@ -156,7 +167,7 @@ export function useImpersonation() {
 
       accessStore.setAccessToken(data.accessToken);
       accessStore.setRefreshToken(data.refreshToken);
-      accessStore.setIsAccessChecked(false);
+      clearAccessMenusForIdentitySwitch();
 
       const effectiveTenantId =
         data.configuration?.currentTenant?.id ??
@@ -206,6 +217,7 @@ export function useImpersonation() {
 
     const backup = restoreAdminSession();
     saveImpersonationMeta(null);
+    clearAccessMenusForIdentitySwitch();
 
     if (backup) {
       try {
@@ -241,6 +253,8 @@ function syncImpersonationMetaFromConfiguration(configuration?: AuthApi.LoginCon
     saveImpersonationMeta(null);
   }
 }
+
+export { syncImpersonationMetaFromConfiguration };
 
 /**
  * 应用启动时同步代理态横幅：sessionStorage 元数据丢失但备份 Token 仍在时使用。

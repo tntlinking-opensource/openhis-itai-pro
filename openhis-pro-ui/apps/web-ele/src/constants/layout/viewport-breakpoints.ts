@@ -82,7 +82,7 @@ export const DOCTOR_STATION_SIDEBAR_WIDTH_PX = {
 
 /**
  * 库房单据工作站左侧队列宽度（px）。
- * 订货单已试点；进货/出库等批量铺开时统一绑此常量。
+ * WarehouseDocWorkstation 未传 asideWidth 时按视口取用。
  */
 export const INVENTORY_DOC_ASIDE_WIDTH_PX = {
   default: 280,

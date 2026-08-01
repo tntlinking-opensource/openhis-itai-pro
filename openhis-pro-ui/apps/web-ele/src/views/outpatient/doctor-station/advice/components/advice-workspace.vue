@@ -15,29 +15,32 @@ import {
   ORDER_TEMPLATE_WORKSTATION_OUTPATIENT,
   previewOrderTemplateApplyApi,
 } from '#/api/basic/order-template';
+import { useEnsureClinicalReception } from '#/components/doctor-station';
 import AdviceOrderDisplayCell from '#/components/outpatient/advice-order-display-cell.vue';
 import { useCompactViewport } from '#/composables/use-compact-viewport';
 import { ADVICE_TABLE_COL_WIDTH } from '#/constants/layout/doctor-station-compact-presets';
 import { useAuthStore } from '#/store';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
-import {
-  buildServiceApplyFormCellClassName,
-  buildServiceApplyFormRowClassName,
-  isServiceApplyFormGroupStart,
-} from '#/utils/service-apply-form-group-display';
+import { isServiceApplyFormGroupStart } from '#/utils/service-apply-form-group-display';
 
 import { useAdviceTab } from '../composables/use-advice-tab';
-import { getSkinTestDisplayTagType, sumAdviceListTotalAmount } from '../services/advice-list';
+import DetailAuditRemindDialog from '#/chs/components/detail-audit-remind-dialog.vue';
+import type { DetailAuditRemindDialogExpose } from '#/chs/composables/use-detail-audit-gate';
+import {
+  getAdviceChargeStatusTagType,
+  getSkinTestDisplayTagType,
+  sumAdviceListTotalAmount,
+} from '../services/advice-list';
 import {
   applyHistoryAdviceToAdviceDraft,
   HistoryAdviceApplyError,
 } from '../services/history-advice-apply.service';
+import { openOrderTemplateApplyConfirmDialog } from '../services/order-template-apply-confirm-dialog.controller';
 import {
   applyOrderTemplateToAdviceDraft,
   OrderTemplateApplyError,
   prepareOrderTemplateApplyConfirm,
 } from '../services/order-template-apply.service';
-import { openOrderTemplateApplyConfirmDialog } from '../services/order-template-apply-confirm-dialog.controller';
 import AdviceDraftBindDialog from './advice-draft-bind-dialog.vue';
 import AdviceEditCard from './advice-edit-card.vue';
 import HistoryAdviceDrawer from './history-advice-drawer.vue';
@@ -53,6 +56,8 @@ const props = withDefaults(defineProps<UseAdviceTabProps>(), {
   encounterId: '',
   patientId: '',
 });
+
+const detailAuditDialogRef = ref<DetailAuditRemindDialogExpose | null>(null);
 
 const {
   adviceMutationLoading,
@@ -81,6 +86,7 @@ const {
   handleSign,
   handleSpanMethod,
   handleWithdraw,
+  lastSelectedEncounterDiagnosisIds,
   loadAdviceInit,
   medicationRateOptions,
   medicationRouteOptions,
@@ -92,47 +98,15 @@ const {
   queryProductOptions,
   reload,
   validateWesternRow,
-} = useAdviceTab(props);
+} = useAdviceTab(props, { detailAuditDialogRef });
 
 const { pickPreset } = useCompactViewport();
 
 /** 表格列宽：<1680 使用 compact，≥1680（含 1920）与现网 default 一致 */
 const adviceTableColWidth = pickPreset(ADVICE_TABLE_COL_WIDTH);
 
-/** 医嘱表最右列索引（申请单聚组右边框） */
-const ADVICE_APPLY_FORM_TABLE_EDGE_RIGHT_INDEX = 9;
-
-/** 申请单聚组：表格行 class-name */
-const resolveAdviceRowClassName = ({ row, rowIndex }: { row: AdviceRowItem; rowIndex: number }) => {
-  const tableRows = getTableRows();
-  return buildServiceApplyFormRowClassName({ row, rowIndex, rows: tableRows });
-};
-
-/** 合并编辑行与申请单聚组的 cell-class-name */
-const resolveCellClassName = ({
-  columnIndex,
-  row,
-  rowIndex,
-  column,
-}: {
-  columnIndex: number;
-  row: AdviceRowItem;
-  rowIndex: number;
-  column?: { fixed?: boolean | string };
-}) => {
-  const base = getCellClassName({ columnIndex, row });
-  const applyForm = buildServiceApplyFormCellClassName({
-    row,
-    rowIndex,
-    rows: getTableRows(),
-    columnIndex,
-    edgeRightIndex: ADVICE_APPLY_FORM_TABLE_EDGE_RIGHT_INDEX,
-    columnFixed: column?.fixed,
-  });
-  return [base, applyForm].filter((part) => part.length > 0).join(' ');
-};
-
 const authStore = useAuthStore();
+const { ensureReceptionBeforeClinicalWork } = useEnsureClinicalReception();
 
 const historyAdviceDrawerVisible = ref(false);
 const historyAdviceApplyLoading = ref(false);
@@ -155,6 +129,11 @@ async function handleOrderTemplateSelect(header: null | OrderTemplateHeaderItem)
   const encounter = preserveApiIdForRequest(encounterId.value);
   const patient = preserveApiIdForRequest(patientId.value);
   if (!orderTemplateId || !encounter || !patient) {
+    return;
+  }
+  const receptionOk = await ensureReceptionBeforeClinicalWork();
+  if (!receptionOk) {
+    orderTemplateSidePanelRef.value?.clearSelection();
     return;
   }
   const templateKind = String(header.templateKindEnum ?? '')
@@ -225,7 +204,7 @@ async function handleOrderTemplateSelect(header: null | OrderTemplateHeaderItem)
   }
 }
 
-/** 打开历史医嘱抽屉 */
+/** 打开历史医嘱抽屉（纯查看；复用时再接诊） */
 function handleOpenHistoryAdviceDrawer() {
   if (!(patientId.value ?? '').trim()) {
     ElMessage.warning('请先选择患者');
@@ -244,7 +223,7 @@ function handleSaveAsOrderTemplateSaved() {
 }
 
 /** 打开另存为组套弹窗 */
-function handleOpenSaveAsOrderTemplateDialog() {
+async function handleOpenSaveAsOrderTemplateDialog() {
   if (!(patientId.value ?? '').trim()) {
     ElMessage.warning('请先选择患者');
     return;
@@ -253,6 +232,8 @@ function handleOpenSaveAsOrderTemplateDialog() {
     ElMessage.warning('请先选择就诊');
     return;
   }
+  const receptionOk = await ensureReceptionBeforeClinicalWork();
+  if (!receptionOk) return;
   saveAsOrderTemplateDialogVisible.value = true;
 }
 
@@ -265,6 +246,10 @@ async function handleHistoryAdviceReuse(rows: HistoryAdviceRowItem[]) {
   const patient = preserveApiIdForRequest(patientId.value);
   if (!encounter || !patient) {
     ElMessage.warning('请先选择患者与就诊');
+    return;
+  }
+  const receptionOk = await ensureReceptionBeforeClinicalWork();
+  if (!receptionOk) {
     return;
   }
   const orgRaw = authStore.getSelectedOrganization();
@@ -292,7 +277,7 @@ async function handleHistoryAdviceReuse(rows: HistoryAdviceRowItem[]) {
       ElMessage.error(error.message);
       return;
     }
-    ElMessage.error('历史医嘱复用失败，请稍后重试');
+    // 后端业务异常通常已由请求拦截器提示，此处不再弹泛化失败避免重复
   } finally {
     historyAdviceApplyLoading.value = false;
   }
@@ -349,8 +334,7 @@ defineExpose({
           ref="adviceTableRef"
           :data="getTableRows()"
           :span-method="handleSpanMethod"
-          :row-class-name="resolveAdviceRowClassName"
-          :cell-class-name="resolveCellClassName"
+          :cell-class-name="getCellClassName"
           border
           stripe
           class="advice-table"
@@ -377,6 +361,7 @@ defineExpose({
                 v-loading="editorOpening"
                 v-model="editorForm"
                 v-model:patient-diagnoses="editorPatientDiagnoses"
+                v-model:last-selected-encounter-diagnosis-ids="lastSelectedEncounterDiagnosisIds"
                 :fee-nature-options="feeNatureOptions"
                 :encounter-id="encounterId"
                 :medication-rate-options="medicationRateOptions"
@@ -402,6 +387,8 @@ defineExpose({
                     :medication-rate-options="medicationRateOptions"
                     :medication-route-options="medicationRouteOptions"
                     :patient-diagnoses="scope.patientDiagnoses"
+                    :encounter-id="encounterId"
+                    :patient-id="patientId"
                     :calc-total-fee="calcDrugLineTotalFee"
                     @patch="scope.patch"
                     @update:patient-diagnoses="scope.updatePatientDiagnoses"
@@ -420,7 +407,7 @@ defineExpose({
           </ElTableColumn>
           <ElTableColumn
             prop="status"
-            label="状态"
+            label="签发状态"
             :width="adviceTableColWidth.status"
             align="center"
           >
@@ -442,26 +429,18 @@ defineExpose({
             :min-width="adviceTableColWidth.contentMin"
           >
             <template #default="{ row, $index }">
-              <div
-                class="advice-order-content-wrap"
-                :class="{ 'is-apply-form-block': Boolean(row.applyFormNo?.trim()) }"
-              >
-                <div
-                  v-if="isServiceApplyFormGroupStart(row, $index, getTableRows())"
-                  class="doctor-apply-form-group-label"
-                >
-                  <ElTag size="small" effect="plain" type="primary">
-                    申请单 {{ row.applyFormNo }}
-                  </ElTag>
-                </div>
-                <AdviceOrderDisplayCell
-                  :row-key="row.key"
-                  :group-items="row.groupItems"
-                  :content="row.content"
-                  :dosage-text="row.dosageText"
-                  :extension="row.extension"
-                />
-              </div>
+              <AdviceOrderDisplayCell
+                :row-key="row.key"
+                :group-items="row.groupItems"
+                :content="row.content"
+                :dosage-text="row.dosageText"
+                :extension="row.extension"
+                :apply-form-no="
+                  isServiceApplyFormGroupStart(row, $index, getTableRows())
+                    ? row.applyFormNo
+                    : undefined
+                "
+              />
             </template>
           </ElTableColumn>
           <ElTableColumn
@@ -476,6 +455,18 @@ defineExpose({
             :width="adviceTableColWidth.amount"
             align="center"
           />
+          <ElTableColumn
+            prop="chargeStatus"
+            label="费用状态"
+            :width="adviceTableColWidth.chargeStatus"
+            align="center"
+          >
+            <template #default="{ row }">
+              <ElTag :type="getAdviceChargeStatusTagType(row)" size="small" effect="light">
+                {{ row.chargeStatus }}
+              </ElTag>
+            </template>
+          </ElTableColumn>
           <ElTableColumn
             prop="diagnosisSummary"
             label="诊断"
@@ -531,15 +522,16 @@ defineExpose({
     <AdviceDraftBindDialog />
 
     <OrderTemplateApplyConfirmDialog />
+
+    <DetailAuditRemindDialog ref="detailAuditDialogRef" warn-type="1" />
   </div>
 </template>
 
 <style scoped>
 .advice-workspace-root {
-  /* default：DOCTOR_STATION_SIDEBAR_WIDTH_PX.orderTemplate */
-  --advice-template-panel-width: 240px;
   display: grid;
-  grid-template-columns: var(--advice-template-panel-width) minmax(0, 1fr);
+  /* 组套侧栏自带宽度并可收起，列宽随内容 */
+  grid-template-columns: auto minmax(0, 1fr);
   min-height: 0;
 }
 
@@ -595,57 +587,5 @@ defineExpose({
 .advice-table :deep(.el-table__body-wrapper) {
   overflow-x: auto;
   overflow-y: auto;
-}
-
-.advice-table :deep(td.doctor-apply-form-cell) {
-  background-color: var(--el-color-primary-light-9) !important;
-}
-
-.advice-table :deep(td.doctor-apply-form-cell.is-group-edge-left) {
-  border-left: 2px solid var(--el-color-primary-light-5) !important;
-}
-
-.advice-table :deep(td.doctor-apply-form-cell.is-group-edge-right) {
-  border-right: 2px solid var(--el-color-primary-light-5) !important;
-}
-
-.advice-table :deep(td.doctor-apply-form-cell.is-group-start) {
-  border-top: 2px solid var(--el-color-primary-light-5) !important;
-}
-
-.advice-table :deep(td.doctor-apply-form-cell.is-group-end) {
-  border-bottom: 2px solid var(--el-color-primary-light-5) !important;
-}
-
-.advice-table :deep(td.doctor-apply-form-cell.is-group-continue) {
-  border-top: none !important;
-}
-
-.advice-table :deep(td.doctor-apply-form-cell:not(.is-group-end)) {
-  border-bottom: none !important;
-}
-
-.advice-table :deep(td.doctor-apply-form-cell.is-group-start.is-group-edge-left) {
-  border-top-left-radius: 4px;
-}
-
-.advice-table :deep(td.doctor-apply-form-cell.is-group-start.is-group-edge-right) {
-  border-top-right-radius: 4px;
-}
-
-.advice-table :deep(td.doctor-apply-form-cell.is-group-end.is-group-edge-left) {
-  border-bottom-left-radius: 4px;
-}
-
-.advice-table :deep(td.doctor-apply-form-cell.is-group-end.is-group-edge-right) {
-  border-bottom-right-radius: 4px;
-}
-
-.advice-order-content-wrap.is-apply-form-block {
-  padding-left: 8px;
-}
-
-.doctor-apply-form-group-label {
-  margin-bottom: 4px;
 }
 </style>

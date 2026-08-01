@@ -28,10 +28,14 @@ import InvDocGridToolbar from '@inventory/components/inv-doc-grid-toolbar.vue';
 import InvDocTraceScanBridge from '@inventory/components/inv-doc-trace-scan-bridge.vue';
 import InvDocLinkPickerDialog from '@inventory/components/inv-doc-link-picker-dialog.vue';
 import InvMainShell from '@inventory/components/inv-main-shell.vue';
+import InvPrimaryBtn from '@inventory/components/inv-primary-btn.vue';
+import { useFromFinanceApproval } from '#/composables/use-from-finance-approval';
+import { bindInvDocCompactColumns } from '#/composables/use-inv-doc-compact-columns';
 import {
   ElAlert,
   ElButton,
   ElDatePicker,
+  ElEmpty,
   ElForm,
   ElFormItem,
   ElInput,
@@ -64,6 +68,7 @@ import {
   INV_ALL_LOCATIONS_FILTER_ID,
   INV_ALL_WAREHOUSES_LABEL,
   isSpecificInventoryLocationId,
+  resolveLoginPractitionerLabelFromUserInfo,
   resolveSpecificInventoryLocationId,
   warnInventoryLocationRequired,
 } from '#/utils/inventory/inventory-workbench-list';
@@ -73,6 +78,8 @@ import {
   validateInventoryHeadFormFields,
 } from '#/utils/inventory/inventory-doc-head-form-validation';
 import { withInvDocLinkPickerEnrichedColumns } from '#/utils/inventory/inv-doc-link-picker-display';
+import { buildInvDocumentTitle, printInvDocument } from '#/utils/print/print-inv-document';
+import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 import {
   canConvertDisplayQtyToSplitForBands,
   persistDisplayQtyAsSplitForBands,
@@ -86,6 +93,7 @@ import {
 } from '#/utils/inventory/inventory-doc-grid-common';
 import {
   INV_DOC_UPSTREAM_HINT,
+  INV_DOC_UPSTREAM_WELCOME,
   hasNonEmptyBusNo,
   mapReturnableLinkLineToGridRow,
   warnInventoryDocRestriction,
@@ -134,6 +142,8 @@ interface Props {
   warehouseOptions: WarehouseOptionDto[];
   supplierOptions?: ApiOptionItem[];
   applyTime?: string;
+  /** 未选中任何单据时展示欢迎空态（引导从进货单新建） */
+  showWelcomeEmpty?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -143,9 +153,11 @@ const props = withDefaults(defineProps<Props>(), {
   warehouseOptions: () => [],
   supplierOptions: () => [],
   applyTime: undefined,
+  showWelcomeEmpty: false,
 });
 
 const emit = defineEmits<{
+  createFromUpstream: [row: LinkableGoodsReceiptListRowDto];
   documentRemoved: [];
   documentSaved: [{ busNo?: string }];
 }>();
@@ -278,8 +290,11 @@ const linkInboundTableColumns = computed<TableColumn[]>(() =>
 );
 
 const isNewDraft = computed(() => !headerBusNo.value);
+const { fromFinanceApproval } = useFromFinanceApproval();
 const documentEditable = computed(
-  () => isNewDraft.value || isStockOutDocumentEditableStatus(detailStatusEnum.value),
+  () =>
+    !fromFinanceApproval.value &&
+    (isNewDraft.value || isStockOutDocumentEditableStatus(detailStatusEnum.value)),
 );
 const hasLinkedUpstream = computed(() => hasNonEmptyBusNo(originalBusNo.value));
 const linesGridEditable = computed(() => documentEditable.value && hasLinkedUpstream.value);
@@ -290,8 +305,9 @@ const headerStatusText = computed(() => {
 });
 
 const docActionFlags = computed(() => {
+  const hasPersistedBusNo = Boolean(headerBusNo.value);
   const base = buildStockOutDocActionFlags({
-    hasPersistedBusNo: Boolean(headerBusNo.value),
+    hasPersistedBusNo,
     isDraft: isNewDraft.value,
     status: detailStatusEnum.value,
   });
@@ -301,10 +317,13 @@ const docActionFlags = computed(() => {
     ...base,
     saveDisabled: base.saveDisabled || busy || upstreamRequired,
     saveAndSubmitDisabled: base.saveAndSubmitDisabled || busy || upstreamRequired,
+    // 已落库单据才可打印
+    printDisabled: busy || !hasPersistedBusNo,
   };
 });
 
-const canEditOriginalBusNo = computed(() => documentEditable.value && isNewDraft.value);
+/** 单头「从进货单选择」：非草稿可先选后建；草稿可编辑时可更换关联 */
+const canEditOriginalBusNo = computed(() => !isNewDraft.value || documentEditable.value);
 
 function initHeadApplyTimeFromContext() {
   const p = String(props.applyTime ?? '').trim();
@@ -391,7 +410,8 @@ function mapDetailLineToGrid(ln: ReturnToSupplierDetailLineDto, rowIdx: number):
   const hydrated = hydrateInventoryDetailLineQtyForGrid({
     itemQuantity: row.itemQuantity,
     unitCode: row.unitCode,
-    unitCodeDictText: String(ln.unitCodeDictText ?? ln.unitCode ?? ''),
+    // 仅回填真实字典文案；裸 unitCode 交给 hydrate/计量带解析
+    unitCodeDictText: String(ln.unitCodeDictText ?? '').trim() || undefined,
     productCatalog: ln.productCatalog,
   });
   applyHydratedInventoryDetailQtyToRow(row, hydrated);
@@ -532,6 +552,12 @@ const [Grid, gridApi] = useVbenVxeGrid<ReturnPreviewRow>({
   },
   class: 'min-h-0 flex-1 !rounded-none !bg-transparent shadow-none',
   gridClass: '!p-0',
+});
+bindInvDocCompactColumns({
+  baseColumns: columns,
+  gridOptions,
+  getGrid: () =>
+    gridApi?.grid as { loadColumn?: (cols: VxeGridPropTypes.Column[]) => void } | null | undefined,
 });
 
 returnToSupplierGridEdit = useInventoryDocGridEdit<ReturnPreviewRow>({
@@ -923,6 +949,87 @@ async function handleReject() {
   }
 }
 
+/** 解析下拉选项展示名 */
+function resolvePrintOptionLabel(options: ApiOptionItem[] | undefined, value: unknown): string {
+  const key = String(value ?? '').trim();
+  if (!key) return '';
+  const hit = options?.find((item) => String(item.value ?? '') === key);
+  return String(hit?.label ?? '').trim();
+}
+
+/** 解析药库位置展示名 */
+function resolvePrintWarehouseName(value: unknown): string {
+  const key = String(value ?? '').trim();
+  if (!key) return '';
+  const hit = (props.warehouseOptions ?? []).find((row) => String(row.locationId ?? '') === key);
+  return String(hit?.displayName ?? hit?.locationId ?? '').trim();
+}
+
+/** 明细行当前计量单位展示文案 */
+function resolveReturnPrintUnitLabel(row: ReturnPreviewRow): string {
+  const kind = String(row.selectedBandKind ?? '').trim();
+  const byKind = row.unitList?.find((item) => String(item.value ?? '') === kind);
+  if (byKind) {
+    return String(byKind.label ?? '').trim();
+  }
+  return String(row.unitCodeDictText ?? row.unitCode ?? '').trim();
+}
+
+/** 打印退供应商单 */
+async function handlePrint() {
+  const busNo = String(headerBusNo.value ?? '').trim();
+  if (!busNo) {
+    ElMessage.warning('请先保存单据后再打印');
+    return;
+  }
+  const productRows = collectGridRows().filter((row) => isPresentItemId(row.itemId));
+  if (productRows.length === 0) {
+    ElMessage.warning('没有可打印的明细');
+    return;
+  }
+
+  const warehouseName = resolvePrintWarehouseName(sourceLocationId.value);
+  const supplierText = resolvePrintOptionLabel(props.supplierOptions, supplierId.value);
+  const practitionerName = resolveLoginPractitionerLabelFromUserInfo(
+    userStore.userInfo as null | Record<string, unknown>,
+  );
+  const documentTitle = buildInvDocumentTitle(warehouseName, '退供应商单');
+  const applyTimeText = String(headApplyTime.value ?? props.applyTime ?? '')
+    .trim()
+    .replace('T', ' ');
+
+  // 按当前网格展示值组装退货明细
+  const lineRows = productRows.map((row) => ({
+    productName: String(row.productName ?? '').trim(),
+    qty: row.itemQuantity,
+    unitLabel: resolveReturnPrintUnitLabel(row),
+    lotNumber: String(row.lotNumber ?? '').trim(),
+    reasonText: String(row.reason ?? '').trim(),
+  }));
+
+  await printInvDocument({
+    family: 'return',
+    source: {
+      hospitalName: resolvePrintHospitalName(),
+      documentTitle,
+      docNo: busNo,
+      applyTimeText,
+      itemTypeText: '',
+      sourceLocationText: warehouseName,
+      supplierText,
+      linkDocText: String(originalBusNo.value ?? '').trim(),
+      destLocationText: '',
+      practitionerName,
+      invoiceNoText: '',
+      lineRows,
+      preparedByName: practitionerName,
+      approvedByName: '',
+    },
+    bizRef: { busNo, docKind: 'return-to-supplier' },
+    jobName: documentTitle,
+  });
+}
+
 async function addItem() {
   if (!documentEditable.value) return;
   if (!(await validateInventoryHeadFormFields(headFormRef.value, 'sourceLocationId'))) {
@@ -944,11 +1051,7 @@ async function deleteItem(row: 'select' | ReturnPreviewRow) {
   await $grid.remove(row === 'select' ? checked : row);
 }
 
-async function openLinkInboundDialog() {
-  if (!canEditOriginalBusNo.value) {
-    ElMessage.warning('仅新建单据时可关联进货单，或请先点「新增」');
-    return;
-  }
+async function openUpstreamPicker() {
   // 弹窗内筛选药库，不在单头强制先选（对齐进货单「从订货单选择」）
   linkInboundQueryParams.value = {
     pageNo: 1,
@@ -956,7 +1059,17 @@ async function openLinkInboundDialog() {
     keyword: '',
     warehouseId: INV_ALL_LOCATIONS_FILTER_ID,
   };
+  linkInboundRecords.value = [];
+  linkInboundTotal.value = 0;
   linkInboundVisible.value = true;
+}
+
+async function openLinkInboundDialog() {
+  if (!canEditOriginalBusNo.value) {
+    ElMessage.warning('当前单据不可关联进货单');
+    return;
+  }
+  await openUpstreamPicker();
 }
 
 /** 关联进货单弹窗：查询 */
@@ -1013,6 +1126,14 @@ async function fetchLinkableGoodsReceipts() {
 }
 
 async function applyLinkableInbound(row: LinkableGoodsReceiptListRowDto) {
+  if (!props.isDraftOrder) {
+    emit('createFromUpstream', row);
+    return;
+  }
+  await applyLinkableInboundToDraft(row);
+}
+
+async function applyLinkableInboundToDraft(row: LinkableGoodsReceiptListRowDto) {
   const busNo = String(row.busNo ?? '').trim();
   if (!busNo) return;
   try {
@@ -1045,6 +1166,15 @@ async function applyLinkableInbound(row: LinkableGoodsReceiptListRowDto) {
     /* handled */
   }
 }
+
+const linkInboundButtonLabel = computed(() =>
+  hasLinkedUpstream.value && props.isDraftOrder ? '更换进货单' : '从进货单选择',
+);
+
+defineExpose({
+  applyLinkableInboundToDraft,
+  openUpstreamPicker,
+});
 
 interface ReturnToSupplierDraftSnap {
   originalBusNo?: string;
@@ -1123,11 +1253,13 @@ watch(
 <template>
   <div class="return-to-supplier-main-pane flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     <InvMainShell>
-      <template #actionBar>
+      <template v-if="!showWelcomeEmpty" #actionBar>
         <div class="flex w-full flex-wrap items-center justify-end gap-2">
           <InvDocActions
+            require-finance-approval-role
             v-bind="docActionFlags"
             @approve="handleApprove"
+            @print="handlePrint"
             @reject="handleReject"
             @remove-doc="handleRemoveDoc"
             @save="handleSaveDoc"
@@ -1139,6 +1271,16 @@ watch(
       </template>
 
       <div
+        v-if="showWelcomeEmpty"
+        class="flex min-h-0 flex-1 flex-col items-center justify-center px-4 py-12"
+      >
+        <ElEmpty :image-size="96" :description="INV_DOC_UPSTREAM_WELCOME.returnToSupplier">
+          <InvPrimaryBtn label="从进货单新建" @click="openUpstreamPicker" />
+        </ElEmpty>
+      </div>
+
+      <div
+        v-else
         class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2"
         @mousedown="returnToSupplierGridEdit.onSurfaceMouseDown"
       >
@@ -1226,7 +1368,7 @@ watch(
                     :disabled="!canEditOriginalBusNo"
                     @click="openLinkInboundDialog"
                   >
-                    从进货单选择
+                    {{ linkInboundButtonLabel }}
                   </ElButton>
                 </div>
               </ElFormItem>
@@ -1251,8 +1393,8 @@ watch(
           <Grid class="min-h-0 flex-1">
             <template #toolbar-actions>
               <InvDocGridToolbar
+                v-if="linesGridEditable"
                 :show-add="false"
-                :disabled="!linesGridEditable"
                 show-trace-scan
                 @delete-selected="deleteItem('select')"
                 @trace-scan="handleOpenTraceScan"
@@ -1260,9 +1402,9 @@ watch(
             </template>
             <template #action="{ row }">
               <ElButton
+                v-if="linesGridEditable"
                 type="danger"
                 text
-                :disabled="!linesGridEditable"
                 @click="deleteItem(row as ReturnPreviewRow)"
               >
                 <Trash2 class="size-4" />
@@ -1311,7 +1453,11 @@ watch(
       </template>
     </InvDocLinkPickerDialog>
   </div>
-  <InvDocTraceScanBridge ref="traceScanBridgeRef" scene="inventoryOut" />
+  <InvDocTraceScanBridge
+    ref="traceScanBridgeRef"
+    scene="inventoryOut"
+    :default-location-id="sourceLocationId"
+  />
 </template>
 
 <style scoped lang="scss">

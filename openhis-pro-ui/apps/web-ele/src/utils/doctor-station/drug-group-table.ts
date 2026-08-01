@@ -17,6 +17,12 @@ export interface DrugGroupDisplayItem {
   usage: string;
   frequency: string;
   medicationDays: number | string;
+  /** 后端/汇总好的单次剂量展示串（优先于 singleDose+单位拼接） */
+  dosageDisplay?: string;
+  splitDose?: number | string;
+  splitDoseUnitCode?: string;
+  splitDoseUnitName?: string;
+  doseUnitCode?: string;
 }
 
 export type DrugGroupKey = null | number | string | undefined;

@@ -101,3 +101,17 @@ export interface BuildWorkInjury2301PayloadRequest {
 export interface BuildWorkInjury2301PayloadResponse {
   input?: Record<string, unknown>;
 }
+
+/** 就诊工伤备案/审批上下文（loadEncounterContext）。 */
+export interface WorkInjuryEncounterContextResult {
+  workInjuryEncounter?: boolean;
+  qualificationValid?: boolean;
+  approvalStatusLabel?: string;
+  contractId?: string | number;
+  needs2301Upload?: boolean;
+  psnNo?: string;
+  injureAffirmId?: string;
+  qualificationId?: string;
+  qualificationStatus?: string;
+  medType?: string;
+}

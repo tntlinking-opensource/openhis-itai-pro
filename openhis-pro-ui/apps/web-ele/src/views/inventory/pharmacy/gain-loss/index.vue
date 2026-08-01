@@ -20,10 +20,13 @@ import {
   pagePharmacyGainLossWorkbenchListApi,
 } from '#/api/inventory/pharmacy/gain-loss';
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
+import { useFromFinanceApproval } from '#/composables/use-from-finance-approval';
 import GainLossAsidePane from './gain-loss-aside-pane.vue';
 import GainLossMainPane from './gain-loss-main-pane.vue';
 
 defineOptions({ name: 'InventoryPharmacyGainLossPage' });
+
+const { fromFinanceApproval } = useFromFinanceApproval();
 
 const route = useRoute();
 
@@ -199,9 +202,9 @@ onMounted(async () => {
 
 <template>
   <WarehouseDocWorkstation
-    aside-width="280px"
     queue-title=""
     aside-dense
+    :show-aside="!fromFinanceApproval"
     :show-aside-filter="false"
     :show-toolbar="false"
   >

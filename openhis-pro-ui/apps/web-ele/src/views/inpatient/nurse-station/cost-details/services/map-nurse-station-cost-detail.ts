@@ -2,6 +2,7 @@ import type {
   NurseStationCostDetailLineDto,
   NurseStationCostDetailPresentationMode,
   NurseStationCostDetailStatusFilter,
+  NurseStationCostSummaryActivityLineDto,
   NurseStationCostSummaryLineDto,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-cost-detail.types';
 
@@ -17,6 +18,21 @@ export function buildCostDetailLineRowKey(row: NurseStationCostDetailLineDto): s
   return `${row.productTableName ?? ''}-${row.productId ?? ''}-${row.businessDateTime ?? ''}`;
 }
 
+/**
+ * 费用明细「业务时间」列展示值：优先执行/划价事实时刻 displayDateTime，回落逻辑 occurrence。
+ */
+export function resolveCostDetailDisplayDateTime(row: {
+  displayDateTime?: string;
+  businessDateTime?: string;
+  activityDateTime?: string;
+}): string {
+  const display = String(row.displayDateTime ?? '').trim();
+  if (display) return display;
+  const business = String(row.businessDateTime ?? '').trim();
+  if (business) return business;
+  return String(row.activityDateTime ?? '').trim();
+}
+
 /** 汇总行表格 row-key */
 export function buildCostSummaryLineRowKey(row: NurseStationCostSummaryLineDto): string {
   return `${row.productTableName ?? ''}-${row.productId ?? ''}-${row.expenseBlockCode ?? ''}`;
@@ -28,7 +44,7 @@ export function formatCostDetailQuantity(row: NurseStationCostDetailLineDto): st
   if (value == null || value === '') {
     return '—';
   }
-  const unit = row.quantityUnitDisplay ?? row.quantityUnit ?? '';
+  const unit = String(row.quantityUnitDisplay || row.quantityUnit || '').trim();
   return unit ? `${value} ${unit}` : String(value);
 }
 
@@ -46,6 +62,30 @@ export function formatCostSummaryQuantity(row: NurseStationCostSummaryLineDto): 
     parts.push(`${splitQuantity}${unit}`);
   }
   return parts.length > 0 ? parts.join(' + ') : '—';
+}
+
+/** 汇总展开明细数量展示 */
+export function formatCostSummaryActivityQuantity(
+  row: NurseStationCostSummaryActivityLineDto,
+): string {
+  const value = row.quantityValue;
+  if (value == null || value === '') {
+    return '—';
+  }
+  const unit = String(row.quantityUnitDisplay || row.quantityUnit || '').trim();
+  return unit ? `${value} ${unit}` : String(value);
+}
+
+/** 汇总展开明细行 row-key */
+export function buildCostSummaryActivityLineRowKey(
+  row: NurseStationCostSummaryActivityLineDto,
+  index: number,
+): string {
+  const chargeItemId = row.chargeItemId;
+  if (chargeItemId != null && `${chargeItemId}`.trim()) {
+    return String(chargeItemId);
+  }
+  return `${row.activityDateTime ?? ''}-${row.activityTypeEnum ?? ''}-${index}`;
 }
 
 /** 金额格式化为两位小数文案 */

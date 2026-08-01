@@ -1,7 +1,8 @@
 /** 入院诊断提交行（与后端 AdmissionDiagnosisSubmitDto 对齐） */
 export interface AdmissionDiagnosisSubmitDto {
   conditionDefinitionId?: string;
-  conditionId?: string;
+  /** 已有就诊诊断行主键；更新/引用时携带 */
+  encounterDiagnosisId?: string;
   description?: string;
   primaryFlag: boolean;
   /** 是否中医诊断；中医一病一症须两条均为 true */

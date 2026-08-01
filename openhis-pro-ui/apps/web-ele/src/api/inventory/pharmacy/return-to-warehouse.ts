@@ -16,12 +16,14 @@ import {
 const BASE = '/inventoryPharmacyReturnToWarehouse';
 
 export interface PharmacyLocationOptionDto {
-  locationId?: number;
+  /** Snowflake 库位主键：须 string，禁止 Number() */
+  locationId?: number | string;
   displayName?: string;
 }
 
 export interface WarehouseLocationOptionDto {
-  locationId?: number;
+  /** Snowflake 库位主键：须 string，禁止 Number() */
+  locationId?: number | string;
   displayName?: string;
 }
 
@@ -44,10 +46,17 @@ export interface ReturnToWarehouseListRowDto {
   sourceLocationId?: number;
   purposeLocationId?: number;
   supplierId?: number;
+  supplierName?: string;
   itemId?: number;
   itemTable?: string;
   itemQuantity?: number;
   unitCode?: string;
+  totalPrice?: number;
+  totalAmount?: number;
+  applicantId?: number;
+  creatorName?: string;
+  approverId?: number;
+  approverName?: string;
   applyTime?: string;
   approvalTime?: string;
 }
@@ -79,11 +88,15 @@ export interface ReturnToWarehouseDetailLineDto {
   itemId?: number;
   itemQuantity?: number;
   unitCode?: string;
+  /** 计量单位展示名；无则勿用 unitCode 冒充 */
+  unitCodeDictText?: string;
   lotNumber?: string;
   traceNo?: string;
   price?: number;
   totalPrice?: number;
   productName?: string;
+  /** 产品目录（含 unitBands，详情单位回显用） */
+  productCatalog?: { unitBands?: unknown; unitBandsJson?: unknown };
 }
 
 export interface GetReturnToWarehouseDetailResponse {
@@ -102,13 +115,15 @@ export interface GetReturnToWarehouseDetailResponse {
 
 export interface ReturnToWarehouseLineDto {
   itemTable?: string;
-  itemId?: number;
+  /** Snowflake：请求体须 string，禁止 Number() */
+  itemId?: number | string;
   itemQuantity?: number;
   unitCode?: string;
   lotNumber?: string;
   traceNo?: string;
   occurrenceTime?: string;
   reason?: string;
+  remake?: string;
   price?: number;
   totalPrice?: number;
 }
@@ -116,7 +131,7 @@ export interface ReturnToWarehouseLineDto {
 export interface CreateReturnToWarehouseRequest {
   originalBusNo: string;
   sourceLocationId: number | string;
-  purposeLocationId: number;
+  purposeLocationId: number | string;
   sourceTypeEnum?: number;
   purposeTypeEnum?: number;
   categoryEnum?: number;
@@ -332,6 +347,8 @@ export interface ReturnablePharmacyStockInLineDto {
   returnableQuantity?: number;
   unitCode?: string;
   unitCodeDictText?: string;
+  /** 产品目录（含 unitBands，可退行单位回显用） */
+  productCatalog?: { unitBands?: unknown; unitBandsJson?: unknown };
   lotNumber?: string;
   traceNo?: string;
   remake?: string;

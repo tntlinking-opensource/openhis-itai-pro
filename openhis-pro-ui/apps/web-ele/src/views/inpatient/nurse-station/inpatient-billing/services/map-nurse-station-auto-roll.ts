@@ -1,6 +1,7 @@
 import type {
   NurseStationAutoRollConfigRowDto,
   NurseStationAutoRollNursingReadonlyDto,
+  NurseStationAutoRollPostedChargeRowDto,
   NurseStationPricingCatalogRowDto,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-inpatient-billing.types';
 
@@ -28,6 +29,20 @@ export interface AutoRollConfigTableRow {
   activityId: string;
   chargeDefinitionId: string;
   isActive: boolean;
+}
+
+/** 配置展开：已滚费用展示行 */
+export interface AutoRollPostedChargeTableRow {
+  id: string;
+  chargeItemId: string;
+  procedureId: string;
+  occurrenceTime: string;
+  quantityText: string;
+  unitPrice?: number | string;
+  totalPrice?: number | string;
+  statusEnum: string;
+  statusText: string;
+  cancelable: boolean;
 }
 
 /** 新增/编辑弹窗表单模型 */
@@ -76,6 +91,49 @@ export function mapAutoRollConfigRows(
   configs: NurseStationAutoRollConfigRowDto[] | undefined,
 ): AutoRollConfigTableRow[] {
   return (configs ?? []).map(mapAutoRollConfigRowToTableRow).filter((row) => row.ruleId.length > 0);
+}
+
+/** 将已滚费用 DTO 转为展开子表行。 */
+export function mapAutoRollPostedChargeRow(
+  row: NurseStationAutoRollPostedChargeRowDto,
+): AutoRollPostedChargeTableRow | null {
+  const chargeItemId = preserveApiIdForRequest(row.chargeItemId);
+  if (!chargeItemId) {
+    return null;
+  }
+  const quantity = row.quantityValue;
+  const unit = row.quantityUnit?.trim() || '';
+  let quantityText = '—';
+  // 数量+单位拼展示；缺数量时占位
+  if (quantity !== undefined && quantity !== null && String(quantity) !== '') {
+    quantityText = unit ? `${quantity}${unit}` : String(quantity);
+  }
+  return {
+    id: chargeItemId,
+    chargeItemId,
+    procedureId: preserveApiIdForRequest(row.procedureId) ?? '',
+    occurrenceTime: row.occurrenceTime?.trim() || '—',
+    quantityText,
+    unitPrice: row.unitPrice,
+    totalPrice: row.totalPrice,
+    statusEnum: row.statusEnum?.trim() || '',
+    statusText: row.statusDisplay?.trim() || row.statusEnum?.trim() || '—',
+    cancelable: row.cancelable === true,
+  };
+}
+
+/** 批量映射已滚费用行。 */
+export function mapAutoRollPostedChargeRows(
+  charges: NurseStationAutoRollPostedChargeRowDto[] | undefined,
+): AutoRollPostedChargeTableRow[] {
+  const rows: AutoRollPostedChargeTableRow[] = [];
+  for (const charge of charges ?? []) {
+    const mapped = mapAutoRollPostedChargeRow(charge);
+    if (mapped) {
+      rows.push(mapped);
+    }
+  }
+  return rows;
 }
 
 /** 构建床位服务选品目录行 key。 */

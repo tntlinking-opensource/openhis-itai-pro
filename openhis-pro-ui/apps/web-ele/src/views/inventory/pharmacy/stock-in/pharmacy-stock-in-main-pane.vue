@@ -35,6 +35,7 @@ import {
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import { useInventoryDocGridEdit } from '#/composables/use-inventory-doc-grid-edit';
+import { bindInvDocCompactColumns } from '#/composables/use-inv-doc-compact-columns';
 import { useInvDocParentSyncSession } from '#/composables/use-inv-doc-parent-sync-session';
 import {
   getLinkablePharmacyRequisitionDetailApi,
@@ -67,6 +68,7 @@ import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-ap
 import {
   requireAnySpecificInventoryLocationId,
   resolveFirstRealLocationIdFromOptionItems,
+  resolveLoginPractitionerLabelFromUserInfo,
   resolveSpecificInventoryLocationId,
 } from '#/utils/inventory/inventory-workbench-list';
 import {
@@ -78,6 +80,7 @@ import { withInvDocLinkPickerEnrichedColumns } from '#/utils/inventory/inv-doc-l
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { INV_DOC_READONLY_SHELL_HINT } from '#/utils/inventory/inventory-doc-restrictions';
 import {
+  applyInventoryRowCategoryCode,
   applyWarehouseNonInboundProductPickUnitsToRow,
   handleWarehouseNonInboundUnitBandChanged,
 } from '#/utils/inventory/inventory-doc-grid-common';
@@ -101,6 +104,8 @@ import {
   pharmacyStockInStatusLabel,
 } from '#/utils/inventory/pharmacy-stock-in-doc-actions';
 import { isStockOutDocumentRemovableStatus } from '#/utils/inventory/stock-out-doc-actions';
+import { buildInvDocumentTitle, printInvDocument } from '#/utils/print/print-inv-document';
+import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 
 defineOptions({ name: 'InventoryPharmacyStockInMainPane' });
 
@@ -117,6 +122,8 @@ interface PharmacyStockInPreviewRow {
   itemId?: number | string;
   /** 选品库存行 id（下拉行唯一键），不落库 */
   inventoryItemId?: number | string;
+  /** 药品分类码；中药=4 时单价三位展示 */
+  categoryCode?: string;
   spec: string;
   manufacturer: string;
   /** 与后端 {@code PharmacyStockInLineDto.itemQuantity} 一致 */
@@ -264,16 +271,24 @@ const headerStatusText = computed(() => {
 });
 
 const docActionFlags = computed(() => {
+  const hasPersistedBusNo = Boolean(headerBusNo.value);
   const base = buildPharmacyStockInDocActionFlags({
-    hasPersistedBusNo: Boolean(headerBusNo.value),
+    hasPersistedBusNo,
     isDraft: isNewDraft.value,
     status: detailStatusEnum.value,
   });
   const busy = saving.value;
+  // 只读壳（药库出库自动生成）：仅开放打印
   return {
     ...base,
-    saveDisabled: base.saveDisabled || busy,
-    saveAndSubmitDisabled: base.saveAndSubmitDisabled || busy,
+    saveDisabled: true,
+    saveAndSubmitDisabled: true,
+    removeDisabled: true,
+    submitApprovalDisabled: true,
+    withdrawDisabled: true,
+    approveDisabled: true,
+    rejectDisabled: true,
+    printDisabled: busy || !hasPersistedBusNo,
   };
 });
 
@@ -294,7 +309,9 @@ function triggerPaneFlash() {
 /** 详情回显：持久化 total_price 原样格式化。 */
 function formatPharmacyStockInDetailTotalPrice(total: unknown): string {
   if (total === undefined || total === null || total === '') return '';
-  return formatMoneyDisplay(total);
+  const n = Number(total);
+  if (!Number.isFinite(n)) return String(total).trim();
+  return formatMoneyDisplay(n);
 }
 
 /** 编辑态：按数量 × 单价刷新合计（详情 load 不调用）。 */
@@ -461,6 +478,10 @@ function mapPharmacyStockInDetailLineToGrid(
     ];
   }
 
+  applyInventoryRowCategoryCode(base as unknown as Record<string, unknown>, {
+    productCatalog: catalog ?? undefined,
+    categoryCode: catalog?.categoryCode,
+  });
   return base;
 }
 
@@ -674,6 +695,12 @@ const [Grid, gridApi] = useVbenVxeGrid<PharmacyStockInPreviewRow>({
   },
   class: 'min-h-0 flex-1 !rounded-none !bg-transparent shadow-none',
   gridClass: '!p-0',
+});
+bindInvDocCompactColumns({
+  baseColumns: columns,
+  gridOptions,
+  getGrid: () =>
+    gridApi?.grid as { loadColumn?: (cols: VxeGridPropTypes.Column[]) => void } | null | undefined,
 });
 
 pharmacyStockInGridEdit = useInventoryDocGridEdit<PharmacyStockInPreviewRow>({
@@ -1263,6 +1290,104 @@ watch(
   },
   { immediate: true },
 );
+
+/** 解析库位展示名（locationId + displayName） */
+function resolvePrintLocationName(
+  options: WarehouseOptionDto[] | undefined,
+  value: unknown,
+): string {
+  const key = String(value ?? '').trim();
+  if (!key) return '';
+  const hit = (options ?? []).find((row) => String(row.locationId ?? '') === key);
+  return String(hit?.displayName ?? hit?.locationId ?? '').trim();
+}
+
+/** 解析下拉选项展示名 */
+function resolvePrintOptionLabel(options: ApiOptionItem[] | undefined, value: unknown): string {
+  const key = String(value ?? '').trim();
+  if (!key) return '';
+  const hit = options?.find((item) => String(item.value ?? '') === key);
+  return String(hit?.label ?? '').trim();
+}
+
+/** 明细行项目名称（选品单元格） */
+function resolvePharmacyStockInPrintProductName(row: PharmacyStockInPreviewRow): string {
+  const pick = row.medicinePick;
+  if (pick && typeof pick === 'object' && 'name' in pick) {
+    return String((pick as { name?: string }).name ?? '').trim();
+  }
+  return '';
+}
+
+/** 明细行当前计量单位展示文案 */
+function resolvePharmacyStockInPrintUnitLabel(row: PharmacyStockInPreviewRow): string {
+  const kind = String(row.selectedBandKind ?? '').trim();
+  const byKind = row.unitList?.find((item) => String(item.value ?? '') === kind);
+  if (byKind) {
+    return String(byKind.label ?? byKind.value_dictText ?? '').trim();
+  }
+  return String(row.unitCode ?? '').trim();
+}
+
+/** 打印药房入库单（计价流转模版） */
+async function handlePrint() {
+  const busNo = String(headerBusNo.value ?? '').trim();
+  if (!busNo) {
+    ElMessage.warning('请先保存单据后再打印');
+    return;
+  }
+  const productRows = collectGridRows().filter((row) => isPresentItemId(row.itemId));
+  if (productRows.length === 0) {
+    ElMessage.warning('没有可打印的明细');
+    return;
+  }
+
+  const sourceName = resolvePrintLocationName(props.warehouseOptions, detailSourceLocationId.value);
+  const destName = resolvePrintLocationName(props.pharmacyOptions, purposeLocationId.value);
+  const itemTypeText = resolvePrintOptionLabel(props.itemTableTypeOptions, headItemTableType.value);
+  const practitionerName = resolveLoginPractitionerLabelFromUserInfo(
+    userStore.userInfo as null | Record<string, unknown>,
+  );
+  const documentTitle = buildInvDocumentTitle(destName || sourceName, '入库单');
+  const applyTimeText = String(productRows[0]?._occurrenceTime ?? '')
+    .trim()
+    .replace('T', ' ');
+
+  // 按当前网格展示值组装 PrintData
+  const lineRows = productRows.map((row) => ({
+    productName: resolvePharmacyStockInPrintProductName(row),
+    specText: String(row.spec ?? '').trim(),
+    manufacturerText: String(row.manufacturer ?? '').trim(),
+    qty: row.itemQuantity,
+    unitLabel: resolvePharmacyStockInPrintUnitLabel(row),
+    unitPrice: row.price,
+    amount: row.totalPrice,
+    lotNumber: String(row.lotNumber ?? '').trim(),
+    expiryText: '',
+  }));
+
+  await printInvDocument({
+    family: 'movement',
+    source: {
+      hospitalName: resolvePrintHospitalName(),
+      documentTitle,
+      docNo: busNo,
+      applyTimeText,
+      itemTypeText,
+      sourceLocationText: sourceName,
+      supplierText: '',
+      linkDocText: String(originalBusNo.value ?? '').trim(),
+      destLocationText: destName,
+      invoiceNoText: '',
+      practitionerName,
+      lineRows,
+      preparedByName: practitionerName,
+      approvedByName: '',
+    },
+    bizRef: { busNo, docKind: 'pharmacy-stock-in' },
+    jobName: documentTitle,
+  });
+}
 </script>
 
 <template>
@@ -1272,10 +1397,11 @@ watch(
   >
     <InvMainShell>
       <template #actionBar>
-        <div v-if="!isReadOnlyShell" class="flex w-full flex-wrap items-center justify-end gap-2">
+        <div class="flex w-full flex-wrap items-center justify-end gap-2">
           <InvDocActions
             v-bind="docActionFlags"
             @approve="handleApprove"
+            @print="handlePrint"
             @reject="handleReject"
             @remove-doc="handleRemoveDoc"
             @save="handleSaveDoc"
@@ -1367,20 +1493,8 @@ watch(
                   />
                 </ElSelect>
               </ElFormItem>
-              <ElFormItem label="关联请领" class="lg:col-span-2">
-                <div class="flex w-full flex-wrap items-center gap-2">
-                  <ElInput
-                    v-model="originalBusNo"
-                    class="min-w-[200px] flex-1"
-                    clearable
-                    maxlength="64"
-                    placeholder="可选；须为已同意的药房请领单号"
-                    :disabled="!canEditOriginalBusNo"
-                  />
-                  <ElButton :disabled="!canEditOriginalBusNo" @click="openLinkQlDialog">
-                    从请领单选择
-                  </ElButton>
-                </div>
+              <ElFormItem v-if="originalBusNo" label="关联请领" class="lg:col-span-2">
+                <ElInput :model-value="originalBusNo" disabled placeholder="—" />
               </ElFormItem>
             </div>
           </ElForm>
@@ -1416,49 +1530,12 @@ watch(
         </div>
       </div>
     </InvMainShell>
-
-    <InvDocLinkPickerDialog
-      v-model="linkQlVisible"
-      title="选择已同意的药房请领单"
-      :table-data="linkQlRecords"
-      :loading="linkQlLoading"
-      :total="linkQlTotal"
-      :query-params="linkQlQueryParams"
-      :table-columns="linkQlTableColumns"
-      :location-options="linkQlLocationOptions"
-      keyword-placeholder="请领单号/关键字"
-      @opened="fetchLinkablePharmacyRequisitions"
-      @query="handleLinkQlQuery"
-      @reset="handleLinkQlReset"
-      @pagination="handleLinkQlPagination"
-      @select="(row) => applyLinkablePharmacyRequisition(row as StockOutListRowDto)"
-    >
-      <template #statusEnum="{ row }">
-        {{
-          pharmacyStockInStatusLabel(
-            normalizePharmacyStockInStatusSort((row as StockOutListRowDto).statusEnum),
-          )
-        }}
-      </template>
-      <template #applyTime="{ row }">
-        {{
-          (row as StockOutListRowDto).applyTime
-            ? formatDateTime((row as StockOutListRowDto).applyTime as string)
-            : ''
-        }}
-      </template>
-      <template #rowActions="{ row }">
-        <ElButton
-          link
-          type="primary"
-          @click.stop="applyLinkablePharmacyRequisition(row as StockOutListRowDto)"
-        >
-          选用
-        </ElButton>
-      </template>
-    </InvDocLinkPickerDialog>
   </div>
-  <InvDocTraceScanBridge ref="traceScanBridgeRef" scene="inventoryOut" />
+  <InvDocTraceScanBridge
+    ref="traceScanBridgeRef"
+    scene="inventoryOut"
+    :default-location-id="detailSourceLocationId"
+  />
 </template>
 
 <style scoped lang="scss">

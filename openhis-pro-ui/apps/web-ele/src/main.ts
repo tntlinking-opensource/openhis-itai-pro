@@ -1,7 +1,7 @@
 import { initPreferences, updatePreferences } from '@vben/preferences/es/preferences-manager';
 import { unmountGlobalLoading } from '@vben/utils/es/helpers/unmount-global-loading';
 
-import { overridesPreferences } from './preferences';
+import { overridesPreferences } from '#/preferences';
 
 /**
  * 应用初始化完成之后再进行页面加载渲染
@@ -18,10 +18,13 @@ async function initApplication() {
     namespace,
     overrides: overridesPreferences,
   });
+  // app.name / logo 以代码配置为准，避免 localStorage 旧缓存盖住院点标题
   updatePreferences({
     app: {
       defaultHomePath: overridesPreferences.app?.defaultHomePath ?? '/analytics',
+      name: overridesPreferences.app?.name,
     },
+    logo: overridesPreferences.logo,
     theme: overridesPreferences.theme,
   });
 

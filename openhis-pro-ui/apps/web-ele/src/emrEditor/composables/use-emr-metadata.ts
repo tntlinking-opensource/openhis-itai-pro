@@ -7,7 +7,10 @@ import { computed, ref, toValue, watch } from 'vue';
 
 import { getEnabledMetadataFieldListApi, mapMetadataFieldDtoToEmr } from '#/api/emr/metadata-field';
 import { resolveEncounterMetadataApi } from '#/api/emr/encounter-metadata';
-import { buildMetadataValuesFromPatientInfo } from '#/emrEditor/emr-patient-metadata';
+import {
+  buildMetadataValuesFromPatientInfo,
+  mergeEmrMetadataValues,
+} from '#/emrEditor/emr-patient-metadata';
 
 export interface UseEmrMetadataOptions {
   patientId?: MaybeRefOrGetter<string | undefined>;
@@ -93,7 +96,8 @@ export function useEmrMetadata(options: UseEmrMetadataOptions = {}) {
       });
       const fromApi = dto?.values;
       if (fromApi && Object.keys(fromApi).length > 0) {
-        metadataValues.value = { ...fromApi };
+        // 服务端空串不覆盖患者条本地已有电话/医保等
+        metadataValues.value = mergeEmrMetadataValues(localFallbackValues(patientInfo), fromApi);
       } else {
         metadataValues.value = localFallbackValues(patientInfo);
       }

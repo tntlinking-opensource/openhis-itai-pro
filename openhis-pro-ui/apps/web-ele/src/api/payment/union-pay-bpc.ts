@@ -80,6 +80,8 @@ export interface PageBpcOrdersRequest {
   dateTo?: string;
   /** 仅 BPC 已成功、HIS payment 仍为 DRAFT 的半成功单 */
   pendingSettleOnly?: boolean;
+  /** 仅 HIS 已退、银联未退的孤儿单 */
+  orphanRefundOnly?: boolean;
   paymentId?: number | string;
   merTradeNo?: string;
   tradeNo?: string;
@@ -105,6 +107,8 @@ export interface BpcOrderListItemDto {
   paymentStatus?: string;
   /** BPC SUCCESS + C 且 payment 仍为 DRAFT */
   pendingSettle?: boolean;
+  /** HIS 已逆向退费，BPC 消费单仍 SUCCESS */
+  orphanRefund?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -132,4 +136,31 @@ export async function httpQueryBpcOrder(body: {
     payType?: string;
     txnAmtFen?: number;
   }>(`${BASE}/queryOrder`, body);
+}
+
+export interface ConfirmOrphanClientRefundRequest {
+  paymentId: number | string;
+  merTradeNo: string;
+  tradeNo: string;
+  refundAmount: number | string;
+  respCode: string;
+  respMsg?: string;
+  refundMerTradeNo?: string;
+  operatorId?: number | string;
+}
+
+export interface ConfirmOrphanClientRefundResponse {
+  success?: boolean;
+  orderId?: number | string;
+  merTradeNo?: string;
+  refundMerTradeNo?: string;
+  respMsg?: string;
+}
+
+/** 孤儿补退确认：仅落 BPC 退货，不重做 HIS 本地退费 */
+export async function httpConfirmOrphanClientRefund(body: ConfirmOrphanClientRefundRequest) {
+  return publicRequestClient.post<ConfirmOrphanClientRefundResponse>(
+    `${BASE}/confirmOrphanClientRefund`,
+    body,
+  );
 }

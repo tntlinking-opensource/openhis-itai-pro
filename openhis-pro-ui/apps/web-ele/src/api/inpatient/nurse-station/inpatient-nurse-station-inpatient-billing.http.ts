@@ -11,6 +11,8 @@ import type {
   CreateAutoGenRuleResponse,
   ListAutoRollConfigsRequest,
   ListAutoRollConfigsResponse,
+  ListAutoRollPostedChargesRequest,
+  ListAutoRollPostedChargesResponse,
   ListNurseStationPricedOrdersRequest,
   ListNurseStationPricedOrdersResponse,
   ListNurseStationSupplementParentOrdersRequest,
@@ -91,6 +93,16 @@ export async function httpListAutoRollConfigs(
   body: ListAutoRollConfigsRequest,
 ): Promise<ListAutoRollConfigsResponse> {
   return publicRequestClient.post<ListAutoRollConfigsResponse>(`${BASE}/listAutoRollConfigs`, body);
+}
+
+/** 自动计费配置已滚费用记录（配置行展开） */
+export async function httpListAutoRollPostedCharges(
+  body: ListAutoRollPostedChargesRequest,
+): Promise<ListAutoRollPostedChargesResponse> {
+  return publicRequestClient.post<ListAutoRollPostedChargesResponse>(
+    `${BASE}/listAutoRollPostedCharges`,
+    body,
+  );
 }
 
 /** 新增自动计费配置 */

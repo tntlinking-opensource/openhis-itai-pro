@@ -20,6 +20,7 @@ import {
   getEnumDictListApi,
 } from '#/api/basic/code';
 
+import { BASIC_TABLE_MAX_HEIGHT } from '../basic-table-max-height';
 import ConceptEditDialog from './concept-edit-dialog.vue';
 import EditDialog from './edit-dialog.vue';
 
@@ -419,6 +420,7 @@ onMounted(() => {
       :query-params="queryParams"
       :form-items="formItems"
       :table-columns="tableColumns"
+      :max-height="BASIC_TABLE_MAX_HEIGHT"
       :show-top-query="true"
       :show-side-query="true"
       :show-pagination="true"

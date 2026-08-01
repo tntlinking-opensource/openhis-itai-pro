@@ -212,7 +212,6 @@ onMounted(async () => {
 
 <template>
   <WarehouseDocWorkstation
-    aside-width="280px"
     queue-title=""
     aside-dense
     :show-aside-filter="false"

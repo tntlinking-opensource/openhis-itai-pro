@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
 
+import type { RoleInfo } from '#/api/user/role';
 import type { UserInfo, UserListParams } from '#/api/user/user';
 
 import { computed, onMounted, reactive, ref } from 'vue';
@@ -11,6 +12,9 @@ import { TableLayout } from '@vben-core/table-layout-ui';
 
 import { ElButton, ElMessage, ElMessageBox, ElTag } from 'element-plus';
 
+import { useAccess } from '@vben/access';
+
+import { getRoleListApi } from '#/api/user/role';
 import {
   deleteUserApi,
   disableUserApi,
@@ -20,8 +24,6 @@ import {
   unlockUserApi,
 } from '#/api/user/user';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
-
-import { useAccess } from '@vben/access';
 
 import ChangePasswordDialog from './components/change-password-dialog.vue';
 import ImpersonateConfirmDialog from './components/impersonate-confirm-dialog.vue';
@@ -39,19 +41,26 @@ interface UserTableRow extends UserInfo {
   roleNames?: string;
 }
 
+interface RoleSelectOption {
+  label: string;
+  value: string;
+}
+
 const initQueryParams: UserListParams = {
   pageNo: 1,
   pageSize: 20,
   keyword: '',
   isActive: undefined,
   isLockedOut: undefined,
+  roleIds: [],
 };
 
-const queryParams = reactive<UserListParams>({ ...initQueryParams });
+const queryParams = reactive<UserListParams>({ ...initQueryParams, roleIds: [] });
 
 const tableData = ref<UserTableRow[]>([]);
 const loading = ref(false);
 const total = ref(0);
+const roleOptions = ref<RoleSelectOption[]>([]);
 
 const tableColumns: TableColumn[] = [
   {
@@ -164,6 +173,52 @@ async function enrichUsersWithRoles(users: UserInfo[]): Promise<UserTableRow[]> 
   );
 }
 
+/** 从角色实体安全取出字符串主键，避免雪花 Long 精度丢失 */
+function roleIdFromRole(role: Pick<RoleInfo, 'id'> | { id?: unknown }): string | undefined {
+  return preserveApiIdForRequest(role.id);
+}
+
+/** 加载角色下拉选项（筛选用） */
+async function loadRoleOptions() {
+  try {
+    const response = await getRoleListApi({
+      pageNo: 1,
+      pageSize: 1000,
+    });
+    const roles = response.content ?? [];
+    // 仅保留能解析出主键的角色
+    roleOptions.value = roles
+      .map((role) => {
+        const value = roleIdFromRole(role);
+        if (!value) {
+          return null;
+        }
+        return {
+          label: role.displayName || role.name,
+          value,
+        };
+      })
+      .filter((item): item is RoleSelectOption => !!item);
+  } catch {
+    roleOptions.value = [];
+  }
+}
+
+/** 规范化查询用的角色 id 列表 */
+function normalizeQueryRoleIds(roleIds: unknown): string[] {
+  if (!Array.isArray(roleIds)) {
+    return [];
+  }
+  const normalized: string[] = [];
+  for (const id of roleIds) {
+    const preserved = preserveApiIdForRequest(id);
+    if (preserved) {
+      normalized.push(preserved);
+    }
+  }
+  return normalized;
+}
+
 const formItems = computed<FormItemConfig[]>(() => [
   {
     type: 'input',
@@ -171,6 +226,17 @@ const formItems = computed<FormItemConfig[]>(() => [
     label: '关键词',
     placeholder: '请输入用户名或姓名',
     clearable: true,
+  },
+  {
+    type: 'select',
+    prop: 'roleIds',
+    label: '角色',
+    placeholder: '请选择角色',
+    clearable: true,
+    multiple: true,
+    collapseTags: true,
+    filterable: true,
+    options: roleOptions.value,
   },
   {
     type: 'select',
@@ -201,12 +267,14 @@ const formItems = computed<FormItemConfig[]>(() => [
 const loadData = async () => {
   loading.value = true;
   try {
+    const roleIds = normalizeQueryRoleIds(queryParams.roleIds);
     const response = await getUserListApi({
       pageNo: queryParams.pageNo,
       pageSize: queryParams.pageSize,
       keyword: queryParams.keyword,
       isActive: queryParams.isActive,
       isLockedOut: queryParams.isLockedOut,
+      roleIds: roleIds.length > 0 ? roleIds : undefined,
     });
     tableData.value = await enrichUsersWithRoles(response.content ?? []);
     total.value = response.totalCount ?? 0;
@@ -219,7 +287,12 @@ const loadData = async () => {
   }
 };
 
-const handleQuery = (params: { isActive?: string; isLockedOut?: string; keyword?: string }) => {
+const handleQuery = (params: {
+  isActive?: string;
+  isLockedOut?: string;
+  keyword?: string;
+  roleIds?: string[];
+}) => {
   queryParams.pageNo = 1;
   if (params.keyword !== undefined) {
     queryParams.keyword = params.keyword || '';
@@ -229,6 +302,9 @@ const handleQuery = (params: { isActive?: string; isLockedOut?: string; keyword?
   }
   if (params.isLockedOut !== undefined) {
     queryParams.isLockedOut = params.isLockedOut;
+  }
+  if (params.roleIds !== undefined) {
+    queryParams.roleIds = normalizeQueryRoleIds(params.roleIds);
   }
   void loadData();
 };
@@ -240,7 +316,7 @@ const handlePagination = (pagination: { limit: number; page: number }) => {
 };
 
 const handleReset = () => {
-  Object.assign(queryParams, initQueryParams);
+  Object.assign(queryParams, { ...initQueryParams, roleIds: [] });
   void loadData();
 };
 
@@ -392,7 +468,8 @@ const handleDelete = async (row: UserInfo) => {
 };
 
 onMounted(() => {
-  loadData();
+  void loadRoleOptions();
+  void loadData();
 });
 </script>
 

@@ -55,7 +55,7 @@ export function terminologyLabel(
   return lb || c;
 }
 
-/** init 返回的费用性质下拉：取首项作为新开医嘱默认 contractId + 展示名。 */
+/** init 返回的费用性质下拉：取首项作为新开医嘱默认（后端已将就诊优先合同排首位）。 */
 export function defaultContractSelection(options: TerminologyOptionDto[] | undefined): {
   contractId: string;
   feeNature: string;

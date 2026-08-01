@@ -2,7 +2,8 @@
 <script lang="ts" setup>
 import type { ApiOptionItem } from '#/types/api-response';
 
-import { computed, nextTick, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 
 import { formatDateTime } from '@vben/utils';
 
@@ -14,6 +15,7 @@ import {
   pagePriceAdjustmentListApi,
 } from '#/api/finance/price-adjustment-page';
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
+import { useFromFinanceApproval } from '#/composables/use-from-finance-approval';
 
 import PriceAdjustmentAsidePane from './price-adjustment-aside-pane.vue';
 import PriceAdjustmentMainPane from './price-adjustment-main-pane.vue';
@@ -23,6 +25,9 @@ import { isPriceAdjustmentDocumentEditable } from './utils/price-adjustment-stat
 defineOptions({
   name: 'PriceAdjustment',
 });
+
+const route = useRoute();
+const { fromFinanceApproval } = useFromFinanceApproval();
 
 const queryParams = ref<{ keyword?: string }>({
   keyword: '',
@@ -90,6 +95,7 @@ const activeStatusEnum = computed(() => {
 });
 
 const documentEditable = computed(() => {
+  if (fromFinanceApproval.value) return false;
   if (selectedOrder.value?._draft) return true;
   return isPriceAdjustmentDocumentEditable(activeStatusEnum.value);
 });
@@ -214,6 +220,25 @@ async function handleDocumentRemoved() {
   await getList();
 }
 
+/** 支持财务审批等入口以 ?busNo= 深链定位单据 */
+watch(
+  () => route.query,
+  async (newQuery) => {
+    const busNo = newQuery.busNo;
+    if (!busNo || Array.isArray(busNo)) return;
+    if (adjustmentReasonOptions.value.length === 0) {
+      await initPage();
+    }
+    queryParams.value.keyword = String(busNo);
+    await getList();
+    const row = orderList.value.find((item) => resolveBusNo(item) === String(busNo));
+    if (!row) return;
+    selectedOrder.value = row;
+    await handleEdit(row);
+  },
+  { immediate: true },
+);
+
 onMounted(async () => {
   await initPage();
   await getList();
@@ -225,6 +250,7 @@ onMounted(async () => {
     aside-width="280px"
     queue-title=""
     aside-dense
+    :show-aside="!fromFinanceApproval"
     :show-aside-filter="false"
     :show-toolbar="false"
   >

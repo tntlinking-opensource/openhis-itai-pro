@@ -31,6 +31,8 @@ import {
 } from 'element-plus';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
+import { useFromFinanceApproval } from '#/composables/use-from-finance-approval';
+import { bindInvDocCompactColumns } from '#/composables/use-inv-doc-compact-columns';
 import {
   applyInventoryRowQtyUnitList,
   applyWarehouseNonInboundProductPickUnitsToRow,
@@ -124,6 +126,8 @@ import {
   resolveDocHeadProductPickLocationId,
   warnInventoryLocationRequiredByLabel,
 } from '#/utils/inventory/inventory-workbench-list';
+import { buildInvDocumentTitle, printInvDocument } from '#/utils/print/print-inv-document';
+import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 import { useUserStore } from '@vben/stores';
 
 defineOptions({ name: 'InventoryGainLossMainPane' });
@@ -154,6 +158,8 @@ interface GainLossPreviewRow {
   lotNumber: string;
   traceNo: string;
   reason: string;
+  /** 药品分类码；中药=4 时单价三位展示 */
+  categoryCode?: string;
   price?: number;
   /** 损益金额 = 损益数量 × 单价（编辑态计算，详情回显以后端为准） */
   gainLossAmount: string;
@@ -268,9 +274,12 @@ const headApplyTime = ref(formatDateTime(new Date()));
 const saving = ref(false);
 
 const isNewDraft = computed(() => !headerBusNo.value);
-/** 新建草稿或待审核/驳回/已撤回可改明细后重提 */
+const { fromFinanceApproval } = useFromFinanceApproval();
+/** 新建草稿或待审核/驳回/已撤回可改；财务审批深链强制只读 */
 const documentEditable = computed(
-  () => isNewDraft.value || isStockOutDocumentEditableStatus(detailStatusEnum.value),
+  () =>
+    !fromFinanceApproval.value &&
+    (isNewDraft.value || isStockOutDocumentEditableStatus(detailStatusEnum.value)),
 );
 
 const headerStatusText = computed(() => {
@@ -279,8 +288,9 @@ const headerStatusText = computed(() => {
 });
 
 const docActionFlags = computed(() => {
+  const hasPersistedBusNo = Boolean(headerBusNo.value);
   const base = buildStocktakeDocActionFlags({
-    hasPersistedBusNo: Boolean(headerBusNo.value),
+    hasPersistedBusNo,
     isDraft: isNewDraft.value,
     status: detailStatusEnum.value,
   });
@@ -289,6 +299,7 @@ const docActionFlags = computed(() => {
     ...base,
     saveDisabled: base.saveDisabled || busy || !documentEditable.value,
     saveAndSubmitDisabled: base.saveAndSubmitDisabled || busy || !documentEditable.value,
+    printDisabled: busy || !hasPersistedBusNo,
   };
 });
 
@@ -379,7 +390,9 @@ function createEmptyRow(): GainLossPreviewRow {
 
 function formatGainLossDetailAmount(value: unknown): string {
   if (value === undefined || value === null || value === '') return '';
-  return formatMoneyDisplay(value);
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value).trim();
+  return formatMoneyDisplay(n);
 }
 
 function mapDetailLineToGrid(
@@ -447,6 +460,9 @@ function mapDetailLineToGrid(
     row.__prevBandKind = hydrated.bandKind;
   } else {
     applyInventoryRowQtyUnitList(row);
+  }
+  if (hydrated.categoryCode) {
+    row.categoryCode = hydrated.categoryCode;
   }
   return row;
 }
@@ -602,6 +618,12 @@ const [Grid, gridApi] = useVbenVxeGrid<GainLossPreviewRow>({
   class: 'min-h-0 flex-1 !rounded-none !bg-transparent shadow-none',
   gridClass: '!p-0',
 });
+bindInvDocCompactColumns({
+  baseColumns: columns,
+  gridOptions,
+  getGrid: () =>
+    gridApi?.grid as { loadColumn?: (cols: VxeGridPropTypes.Column[]) => void } | null | undefined,
+});
 
 gainLossGridEdit = useInventoryDocGridEdit<GainLossPreviewRow>({
   getGridApi: () => gridApi ?? null,
@@ -626,6 +648,7 @@ function patchGainLossGridEditConfig() {
     editConfig: {
       ...(gridOptions.editConfig as Record<string, unknown>),
       enabled: documentEditable.value,
+      showIcon: documentEditable.value,
     },
   });
   Object.assign(gridOptions, patched);
@@ -1005,6 +1028,7 @@ async function handleReject() {
       inputPattern: /\S+/,
       inputErrorMessage: '原因不能为空',
     });
+    // 前后端统一字段名 rejectReason（对齐订货单等库存单据）
     const body = { busNo: no, rejectReason: value };
     if (props.variant === 'pharmacy') {
       await rejectPharmacyGainLossApi(body);
@@ -1135,6 +1159,89 @@ watch(
   },
   { deep: true },
 );
+
+/** 解析下拉选项展示名 */
+function resolvePrintOptionLabel(options: ApiOptionItem[] | undefined, value: unknown): string {
+  const key = String(value ?? '').trim();
+  if (!key) return '';
+  const hit = options?.find((item) => String(item.value ?? '') === key);
+  return String(hit?.label ?? '').trim();
+}
+
+/** 解析损益库房展示名 */
+function resolvePrintLocationName(value: unknown): string {
+  return resolvePrintOptionLabel(props.locationOptions, value);
+}
+
+/** 明细行当前计量单位展示文案 */
+function resolveGainLossPrintUnitLabel(row: GainLossPreviewRow): string {
+  const kind = String(row.selectedBandKind ?? '').trim();
+  const byKind = row.unitList?.find((item) => String(item.value ?? '') === kind);
+  if (byKind) {
+    return String(byKind.label ?? byKind.value_dictText ?? '').trim();
+  }
+  return String(row.unitCodeDictText ?? row.unitCode ?? '').trim();
+}
+
+/** 打印损益单（盘点盈亏模版；损益量写入 actualQtyText） */
+async function handlePrint() {
+  const busNo = String(headerBusNo.value ?? '').trim();
+  if (!busNo) {
+    ElMessage.warning('请先保存单据后再打印');
+    return;
+  }
+  const productRows = collectGridRows().filter((row) => isPresentItemId(row.itemId));
+  if (productRows.length === 0) {
+    ElMessage.warning('没有可打印的明细');
+    return;
+  }
+
+  const locationName = resolvePrintLocationName(purposeLocationId.value);
+  const itemTypeText = resolvePrintOptionLabel(
+    normalizedItemTableTypeOptions.value,
+    headItemTableType.value,
+  );
+  const practitionerName = resolvePrintOptionLabel(
+    effectivePractitionerOptions.value,
+    practitionerId.value,
+  );
+  const documentTitle = buildInvDocumentTitle(locationName, '损益单');
+  const applyTimeText = String(headApplyTime.value ?? '')
+    .trim()
+    .replace('T', ' ');
+
+  // 按当前网格展示值组装盈亏明细：损益量 → diffQty，原因 → reasonText
+  const lineRows = productRows.map((row) => ({
+    productName: String(row.productName ?? '').trim(),
+    specText: String(row.spec ?? '').trim(),
+    manufacturerText: String(row.manufacturer ?? '').trim(),
+    lotNumber: String(row.lotNumber ?? '').trim(),
+    diffQty: row.gainLossQuantity,
+    unitLabel: resolveGainLossPrintUnitLabel(row),
+    unitPrice: row.price,
+    diffAmount: row.gainLossAmount,
+    reasonText: String(row.reason ?? '').trim(),
+  }));
+
+  await printInvDocument({
+    family: 'stocktake',
+    source: {
+      hospitalName: resolvePrintHospitalName(),
+      documentTitle,
+      docNo: busNo,
+      applyTimeText,
+      itemTypeText,
+      sourceLocationText: locationName,
+      destLocationText: '',
+      practitionerName,
+      lineRows,
+      preparedByName: practitionerName,
+      approvedByName: '',
+    },
+    bizRef: { busNo, docKind: 'gain-loss', variant: props.variant },
+    jobName: documentTitle,
+  });
+}
 </script>
 
 <template>
@@ -1143,8 +1250,10 @@ watch(
       <template #actionBar>
         <div class="flex w-full flex-wrap items-center justify-end gap-2">
           <InvDocActions
+            require-finance-approval-role
             v-bind="docActionFlags"
             @approve="handleApprove"
+            @print="handlePrint"
             @reject="handleReject"
             @remove-doc="handleRemoveDoc"
             @save="handleSaveDoc"
@@ -1251,7 +1360,7 @@ watch(
           <Grid class="min-h-0 flex-1">
             <template #toolbar-actions>
               <InvDocGridToolbar
-                :disabled="!documentEditable"
+                v-if="documentEditable"
                 show-trace-scan
                 @add="addItem"
                 @delete-selected="deleteItem('select')"
@@ -1270,9 +1379,9 @@ watch(
             </template>
             <template #action="{ row }">
               <ElButton
+                v-if="documentEditable"
                 type="danger"
                 text
-                :disabled="!documentEditable"
                 @click="deleteItem(row as GainLossPreviewRow)"
               >
                 <Trash2 class="size-4" />
@@ -1284,7 +1393,11 @@ watch(
       </div>
     </InvMainShell>
   </div>
-  <InvDocTraceScanBridge ref="traceScanBridgeRef" scene="stocktake" />
+  <InvDocTraceScanBridge
+    ref="traceScanBridgeRef"
+    scene="gainLoss"
+    :default-location-id="purposeLocationId"
+  />
 </template>
 
 <style scoped lang="scss">

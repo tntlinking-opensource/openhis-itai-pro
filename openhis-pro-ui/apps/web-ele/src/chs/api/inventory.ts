@@ -25,13 +25,24 @@ export interface LocalInvUploadRecord {
   uploadStatus?: string;
   platformRetRslt?: string;
   platformMsg?: string;
+  requestJson?: string;
+  responseJson?: string;
+  retryCount?: number;
   createdAt?: string;
 }
 
 export interface ListLocalInvUploadRecordsParams {
+  /** 医保契约 busNo；与后端 AND 筛选对齐 */
+  contractBusNo?: string;
   infno?: string;
   sourceType?: string;
   sourceId?: number | string;
+  fixmedinsBchno?: string;
+  uploadStatus?: string;
+  /** 创建时间起，yyyy-MM-dd HH:mm:ss */
+  createdFrom?: string;
+  /** 创建时间止，yyyy-MM-dd HH:mm:ss */
+  createdTo?: string;
 }
 
 export interface QueryPlatformInvParams extends InventoryContractRequest {
@@ -65,12 +76,47 @@ export async function listLocalInvUploadRecordsApi(
   return res.data ?? [];
 }
 
+/** 按流水 id 拉详情（含完整 request/response，补传弹窗回显用） */
+export async function getLocalInvUploadRecordApi(
+  uploadId: number | string,
+): Promise<LocalInvUploadRecord | null> {
+  const res = await requestClient.post<ApiResponse<LocalInvUploadRecord | null>>(
+    `${BASE}/getLocalUploadRecord`,
+    { uploadId },
+  );
+  return res.data ?? null;
+}
+
 export async function retryPendingInvUploadsApi(params?: {
   batchSize?: number;
 }): Promise<Record<string, number>> {
   const res = await requestClient.post<ApiResponse<Record<string, number>>>(
     `${BASE}/retryPendingUploads`,
     params ?? {},
+    chsLongRequestConfig(),
+  );
+  return res.data ?? {};
+}
+
+export interface RetryUploadWithRequestParams {
+  uploadId: number | string;
+  requestJson?: string;
+}
+
+export interface RetryUploadWithRequestResult {
+  succeeded?: boolean;
+  uploadId?: number | string;
+  uploadStatus?: string;
+  platformMsg?: string;
+  responseJson?: string;
+}
+
+export async function retryUploadWithRequestApi(
+  params: RetryUploadWithRequestParams,
+): Promise<RetryUploadWithRequestResult> {
+  const res = await requestClient.post<ApiResponse<RetryUploadWithRequestResult>>(
+    `${BASE}/retryUploadWithRequest`,
+    params,
     chsLongRequestConfig(),
   );
   return res.data ?? {};

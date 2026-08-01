@@ -40,7 +40,8 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const emit = defineEmits<{
-  success: [];
+  /** 新建成功时带出 Patient；编辑成功时无参 */
+  success: [patient?: Patient];
   'update:visible': [value: boolean];
 }>();
 
@@ -231,11 +232,12 @@ async function handleSubmit() {
       };
       await editPatientApi(params);
       ElMessage.success('编辑患者成功');
+      emit('success');
     } else {
-      await createPatientApi(baseParams);
+      const created = await createPatientApi(baseParams);
       ElMessage.success('创建患者成功');
+      emit('success', created);
     }
-    emit('success');
     modalApi.close();
   } catch (error: unknown) {
     console.error('保存患者失败:', error);

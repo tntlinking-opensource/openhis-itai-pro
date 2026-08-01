@@ -21,3 +21,7 @@ export const httpSaveInpatientDoctorDiagnosis = inpatientDiagnosisHttp.httpSaveD
 
 /** 删除一条就诊诊断事实 */
 export const httpDelInpatientEncounterDiagnosis = inpatientDiagnosisHttp.httpDelEncounterDiagnosis;
+
+/** 切换就诊主诊断（同就诊仅一条/一组主诊） */
+export const httpSwitchMainInpatientEncounterDiagnosis =
+  inpatientDiagnosisHttp.httpSwitchMainEncounterDiagnosis;

@@ -3,7 +3,7 @@ import type { FormItemConfig, TableColumn, TreeNodeData } from '@vben-core/table
 
 import type { DiagnosisCatalogInitResponse, DiagnosisCatalogItem } from '#/api';
 
-import { nextTick, ref } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
@@ -11,17 +11,92 @@ import { TableLayout } from '@vben-core/table-layout-ui';
 
 import { ElButton, ElMessage } from 'element-plus';
 
+import type { ClinicalV2ImportProgressResult } from '#/api';
+
 import {
   batchDisableDiagnosisCatalogApi,
   batchEnableDiagnosisCatalogApi,
   deleteDiagnosisCatalogApi,
+  getImportClinicalV2CatalogProgressApi,
+  getImportYbConditionCatalogProgressApi,
   initDiagnosisCatalogApi,
   pageDiagnosisCatalogApi,
+  startImportClinicalV2CatalogApi,
+  startImportYbConditionCatalogApi,
 } from '#/api';
 import StatusEnumTag from '#/components/status-enum-tag.vue';
+import { PublicationStatusCode } from '#/constants/domain/publication-status';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
+import { BASIC_TABLE_MAX_HEIGHT } from '../basic-table-max-height';
 import EditDialog from './edit-dialog.vue';
+
+/** 国家临床版 2.0 目录来源编码 */
+const SOURCE_CLINICAL_V2 = 'clinical_v2';
+
+/** 支持从医保导入的目录来源（有对应 13xx 下载） */
+const YB_IMPORTABLE_SOURCES = new Set([
+  'general_dx',
+  'chronic_spec',
+  'disease_pkg',
+  'paid_dx',
+  'day_surgery_dx',
+  'tumor_morph',
+  'tcm_dx',
+  'tcm_syndrome',
+]);
+
+/** File → 纯 base64（去掉 data URL 前缀） */
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener('load', () => {
+      const result = String(reader.result ?? '');
+      const comma = result.indexOf(',');
+      if (comma >= 0) {
+        resolve(result.slice(comma + 1));
+        return;
+      }
+      resolve(result);
+    });
+    reader.addEventListener('error', () => reject(reader.error ?? new Error('读取文件失败')));
+    reader.readAsDataURL(file);
+  });
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function pollClinicalV2ImportUntilSettled(
+  jobId: string,
+): Promise<ClinicalV2ImportProgressResult> {
+  const maxAttempts = 600;
+  for (let i = 0; i < maxAttempts; i += 1) {
+    const progress = await getImportClinicalV2CatalogProgressApi(jobId);
+    if (progress.status === 'SUCCEEDED' || progress.status === 'FAILED') {
+      return progress;
+    }
+    await sleep(1000);
+  }
+  throw new Error('导入超时：后台任务仍在执行，请稍后刷新列表确认');
+}
+
+async function pollYbConditionImportUntilSettled(
+  jobId: string,
+): Promise<ClinicalV2ImportProgressResult> {
+  const maxAttempts = 600;
+  for (let i = 0; i < maxAttempts; i += 1) {
+    const progress = await getImportYbConditionCatalogProgressApi(jobId);
+    if (progress.status === 'SUCCEEDED' || progress.status === 'FAILED') {
+      return progress;
+    }
+    await sleep(1000);
+  }
+  throw new Error('导入超时：后台任务仍在执行，请稍后刷新列表确认');
+}
 
 const queryParams = ref({
   pageNo: 1,
@@ -37,6 +112,9 @@ const selectedRows = ref<DiagnosisCatalogItem[]>([]);
 const tableLayoutRef = ref<InstanceType<typeof TableLayout> | null>(null);
 const editDialogVisible = ref(false);
 const editFormData = ref<Partial<DiagnosisCatalogItem>>({});
+const importLoading = ref(false);
+const importFileInputRef = ref<HTMLInputElement | null>(null);
+const importProgressText = ref('');
 
 // 初始化数据（分类、状态等）
 const diagnosisCategoryList = ref<Array<{ label: string; value: number | string }>>([]);
@@ -57,18 +135,24 @@ const tableColumns: TableColumn[] = [
   },
   {
     prop: 'conditionCode',
-    label: '编码',
+    label: '医保编码',
     width: 150,
     showOverflowTooltip: true,
   },
   {
     prop: 'name',
-    label: '诊断名称',
+    label: '医保诊断名称',
+    showOverflowTooltip: true,
+  },
+  {
+    prop: 'clinicCode',
+    label: '国临码',
+    width: 140,
     showOverflowTooltip: true,
   },
   {
     prop: 'ybNo',
-    label: '医保编码',
+    label: '国临诊断名称',
     width: 140,
     showOverflowTooltip: true,
   },
@@ -169,7 +253,8 @@ const handleSelectionChange = (selection: DiagnosisCatalogItem[]) => {
 };
 
 const handleAdd = () => {
-  editFormData.value = {};
+  const source = queryParams.value.sourceEnum;
+  editFormData.value = source ? { sourceEnum: source } : {};
   editDialogVisible.value = true;
 };
 
@@ -289,6 +374,93 @@ const handleEditSuccess = () => {
   handleQuery(queryParams.value);
 };
 
+const showClinicalV2Import = computed(() => queryParams.value.sourceEnum === SOURCE_CLINICAL_V2);
+
+const showYbImport = computed(() => {
+  const source = queryParams.value.sourceEnum;
+  return !!source && YB_IMPORTABLE_SOURCES.has(source);
+});
+
+const handleImportClinicalV2Click = () => {
+  importFileInputRef.value?.click();
+};
+
+const handleImportYbClick = async () => {
+  const sourceEnum = queryParams.value.sourceEnum;
+  if (!sourceEnum || !YB_IMPORTABLE_SOURCES.has(sourceEnum)) {
+    ElMessage.warning('当前目录来源不支持从医保导入');
+    return;
+  }
+  importLoading.value = true;
+  importProgressText.value = '正在启动…';
+  try {
+    const started = await startImportYbConditionCatalogApi({ sourceEnum });
+    const jobId = started?.jobId;
+    if (!jobId) {
+      throw new Error('启动导入失败：未返回任务号');
+    }
+    importProgressText.value = '后台导入中…';
+    const progress = await pollYbConditionImportUntilSettled(String(jobId));
+    importProgressText.value = progress.message || '';
+    if (progress.status === 'SUCCEEDED') {
+      ElMessage.success(progress.message || `导入成功：共写入 ${progress.successCount ?? 0} 条`);
+      await handleQuery(queryParams.value);
+      return;
+    }
+    ElMessage.error(progress.message || '导入失败');
+  } catch (error: unknown) {
+    console.error('从医保导入诊断目录失败:', error);
+    const err = error as { message?: string };
+    ElMessage.error(err.message || '导入失败，请稍后重试');
+  } finally {
+    importLoading.value = false;
+    importProgressText.value = '';
+  }
+};
+
+const handleImportClinicalV2File = async (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) {
+    return;
+  }
+  const lowerName = file.name.toLowerCase();
+  if (!lowerName.endsWith('.xls') && !lowerName.endsWith('.xlsx')) {
+    ElMessage.warning('请上传 .xls 或 .xlsx 格式的国家临床版2.0文件');
+    return;
+  }
+  importLoading.value = true;
+  importProgressText.value = '正在上传…';
+  try {
+    const fileBytes = await readFileAsBase64(file);
+    const started = await startImportClinicalV2CatalogApi({
+      fileBytes,
+      fileName: file.name,
+    });
+    const jobId = started?.jobId;
+    if (!jobId) {
+      throw new Error('启动导入失败：未返回任务号');
+    }
+    importProgressText.value = '后台导入中…';
+    const progress = await pollClinicalV2ImportUntilSettled(String(jobId));
+    importProgressText.value = progress.message || '';
+    if (progress.status === 'SUCCEEDED') {
+      ElMessage.success(progress.message || `导入成功：共写入 ${progress.successCount ?? 0} 条`);
+      await handleQuery(queryParams.value);
+      return;
+    }
+    ElMessage.error(progress.message || '导入失败');
+  } catch (error: unknown) {
+    console.error('导入国家临床版2.0失败:', error);
+    const err = error as { message?: string };
+    ElMessage.error(err.message || '导入失败，请稍后重试');
+  } finally {
+    importLoading.value = false;
+    importProgressText.value = '';
+  }
+};
+
 // 初始化：加载分类等信息 + 首次查询
 const initPage = async () => {
   try {
@@ -324,6 +496,7 @@ initPage();
       :query-params="queryParams"
       :form-items="formItems"
       :table-columns="tableColumns"
+      :max-height="BASIC_TABLE_MAX_HEIGHT"
       :show-top-query="true"
       :show-side-query="true"
       :show-pagination="true"
@@ -342,6 +515,31 @@ initPage();
         <ElButton type="primary" @click="handleAdd">新增</ElButton>
         <ElButton type="success" @click="handleEnable">批量启用</ElButton>
         <ElButton type="warning" @click="handleDisable">批量停用</ElButton>
+        <ElButton
+          v-if="showClinicalV2Import"
+          type="primary"
+          plain
+          :loading="importLoading"
+          @click="handleImportClinicalV2Click"
+        >
+          {{ importLoading ? importProgressText || '导入中…' : '导入国临2.0' }}
+        </ElButton>
+        <ElButton
+          v-if="showYbImport"
+          type="primary"
+          plain
+          :loading="importLoading"
+          @click="handleImportYbClick"
+        >
+          {{ importLoading ? importProgressText || '导入中…' : '从医保导入' }}
+        </ElButton>
+        <input
+          ref="importFileInputRef"
+          type="file"
+          accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          style="display: none"
+          @change="handleImportClinicalV2File"
+        />
       </template>
 
       <template #name="{ row }">
@@ -360,7 +558,12 @@ initPage();
 
       <template #action="{ row }">
         <ElButton type="primary" link @click="handleEdit(row)"> 编辑 </ElButton>
-        <ElButton v-if="row.statusEnum !== 2" type="success" link @click="handleStart(row)">
+        <ElButton
+          v-if="row.statusEnum !== PublicationStatusCode.ACTIVE"
+          type="success"
+          link
+          @click="handleStart(row)"
+        >
           启用
         </ElButton>
         <ElButton v-else type="warning" link @click="handleStop(row)"> 停用 </ElButton>

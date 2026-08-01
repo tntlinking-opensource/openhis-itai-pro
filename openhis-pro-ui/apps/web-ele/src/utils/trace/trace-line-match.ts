@@ -1,7 +1,7 @@
 import type { TraceBatchScanLine, TraceScanBindMode } from './trace-types';
 
 import { isTraceSlotEmpty } from './trace-code-parse';
-import { canAcceptMoreTraceOnLine } from './trace-line-scan-count';
+import { canAcceptMoreTraceOnLine, sumBoundRemainingSplit } from './trace-line-scan-count';
 import { traceNoCommaContains } from './trace-no-string';
 
 /** 归一化品项主键用于行匹配 */
@@ -28,21 +28,29 @@ export function findTraceMatchCandidateLines(
   });
 }
 
-/** 在候选行中挑选绑定目标：优先未配满的行 */
+/** 在候选行中挑选绑定目标：优先未盖住/未配满的行 */
 export function pickTraceBindTargetLine(
   candidates: TraceBatchScanLine[],
   traceNo: string,
   bindMode: TraceScanBindMode,
   effectiveTraceByLineId: Record<string, string>,
+  remainingByTraceNo?: Record<string, number>,
 ): TraceBatchScanLine | undefined {
   if (candidates.length === 0) return undefined;
 
   const resolveTrace = (line: TraceBatchScanLine): string =>
     String(effectiveTraceByLineId[line.id] ?? line.traceNo ?? '').trim();
 
+  const coverageOpts = (line: TraceBatchScanLine) => {
+    if (!remainingByTraceNo || line.operationSplitQty == null) return undefined;
+    const boundRemainingSum = sumBoundRemainingSplit(resolveTrace(line), remainingByTraceNo);
+    if (boundRemainingSum === undefined) return undefined;
+    return { boundRemainingSum };
+  };
+
   const scoreLine = (line: TraceBatchScanLine): number => {
     const cur = resolveTrace(line);
-    if (!canAcceptMoreTraceOnLine(line, cur, bindMode)) return 99;
+    if (!canAcceptMoreTraceOnLine(line, cur, bindMode, coverageOpts(line))) return 99;
     if (bindMode === 'single') {
       return isTraceSlotEmpty(cur) ? 0 : 1;
     }
@@ -54,7 +62,7 @@ export function pickTraceBindTargetLine(
   if (!best) return undefined;
 
   const cur = resolveTrace(best);
-  if (!canAcceptMoreTraceOnLine(best, cur, bindMode)) return undefined;
+  if (!canAcceptMoreTraceOnLine(best, cur, bindMode, coverageOpts(best))) return undefined;
   if (bindMode === 'comma' && traceNoCommaContains(cur, traceNo)) {
     return undefined;
   }
@@ -73,10 +81,18 @@ export function pickTraceFallbackLineForNotFound(
   lines: TraceBatchScanLine[],
   effectiveTraceByLineId: Record<string, string>,
   bindMode: TraceScanBindMode,
+  remainingByTraceNo?: Record<string, number>,
 ): TraceBatchScanLine | undefined {
   for (const line of lines) {
     const cur = String(effectiveTraceByLineId[line.id] ?? line.traceNo ?? '').trim();
-    if (!canAcceptMoreTraceOnLine(line, cur, bindMode)) continue;
+    let opts: { boundRemainingSum?: number } | undefined;
+    if (remainingByTraceNo && line.operationSplitQty != null) {
+      const boundRemainingSum = sumBoundRemainingSplit(cur, remainingByTraceNo);
+      if (boundRemainingSum !== undefined) {
+        opts = { boundRemainingSum };
+      }
+    }
+    if (!canAcceptMoreTraceOnLine(line, cur, bindMode, opts)) continue;
     if (bindMode === 'single' && isTraceSlotEmpty(cur)) return line;
     if (bindMode === 'comma') return line;
   }

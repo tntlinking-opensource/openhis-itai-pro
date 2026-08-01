@@ -191,6 +191,11 @@ const options = computed(() => {
   if (mergedOptions.formConfig) {
     mergedOptions.formConfig.enabled = false;
   }
+  // 业务页普遍用 loadData/insertAt 管行数据。若把初始 data:[] 随 editConfig/columns
+  // 等每次 options 重算一起 cloneDeep 灌回，会冲掉已插入/已加载的行（表现为「添加行没反应」）。
+  if (Array.isArray(mergedOptions.data) && mergedOptions.data.length === 0) {
+    delete mergedOptions.data;
+  }
   return mergedOptions;
 });
 

@@ -19,6 +19,13 @@ import { resolveNursePrescriptionPrintTargets } from './nurse-prescription-print
 import { print, PRINT_SCENARIO } from './runtime';
 import { resolveOutpatientPrescriptionPrintScenario } from './resolve-outpatient-prescription-scenario';
 
+function strId(value: null | number | string | undefined): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  return String(value).trim();
+}
+
 export interface PrintTreatmentSheetOptions {
   encounterId?: null | number | string;
   source: OutpatientTreatmentSheetPrintSource;
@@ -53,9 +60,11 @@ export interface PrintInfusionLabelOptions {
   encounterId?: null | number | string;
   source: OutpatientInfusionLabelPrintSource;
   jobName?: string;
+  /** 默认门诊瓶签；住院护士站请传 PRINT_SCENARIO.ipInfusionLabelPrint */
+  scenarioCode?: string;
 }
 
-/** 门诊护士站输液瓶签打印（按输液组逐张打印，同组药品在同一张瓶贴；按用药天数逐日打印） */
+/** 护士站输液瓶签打印（按输液组逐张打印，同组药品在同一张瓶贴；按用药天数逐日打印） */
 export async function printInfusionLabel(options: PrintInfusionLabelOptions) {
   const encounterId = String(options.encounterId ?? '').trim();
   if (!encounterId) {
@@ -68,6 +77,8 @@ export async function printInfusionLabel(options: PrintInfusionLabelOptions) {
     return { ok: false as const, count: 0 };
   }
 
+  const scenarioCode =
+    String(options.scenarioCode ?? '').trim() || PRINT_SCENARIO.opInfusionLabelPrint;
   const baseExecuteTimeText = String(options.source.executeTimeText ?? '').trim();
   let printedCount = 0;
   for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
@@ -86,7 +97,7 @@ export async function printInfusionLabel(options: PrintInfusionLabelOptions) {
       }
       const suffix = suffixParts.length > 0 ? ` (${suffixParts.join('·')})` : '';
       const result = await print({
-        scenarioCode: PRINT_SCENARIO.opInfusionLabelPrint,
+        scenarioCode,
         source: {
           ...options.source,
           medicationLines: group.medicationLines,
@@ -112,6 +123,84 @@ export async function printInfusionLabel(options: PrintInfusionLabelOptions) {
   }
   if (printedCount > 1) {
     ElMessage.success(`已发送 ${printedCount} 张输液瓶贴`);
+  }
+  return { ok: true as const, count: printedCount };
+}
+
+export interface PrintSpecimenBarcodeItem {
+  /** 检验申请主键（条码内容，string） */
+  serviceRequestId: string;
+  /** 检验项目名称 */
+  itemName?: string;
+}
+
+export interface PrintSpecimenBarcodeOptions {
+  encounterId?: null | number | string;
+  patientName?: string;
+  genderEnumText?: string;
+  ageText?: string;
+  /** 检验项目列表，每张贴一个条码 */
+  items: PrintSpecimenBarcodeItem[];
+  jobName?: string;
+}
+
+/** 门诊护士站采血贴：按检验项目主键逐张打印（含患者信息与项目名） */
+export async function printSpecimenBarcode(options: PrintSpecimenBarcodeOptions) {
+  const encounterId = strId(options.encounterId);
+  if (!encounterId) {
+    ElMessage.warning('请先选择患者');
+    return { ok: false as const, count: 0 };
+  }
+
+  // 去重并保持顺序；主键一律 string，避免雪花 Long 精度丢失
+  const items: PrintSpecimenBarcodeItem[] = [];
+  const seen = new Set<string>();
+  for (const raw of options.items ?? []) {
+    const serviceRequestId = strId(raw.serviceRequestId);
+    if (!serviceRequestId || seen.has(serviceRequestId)) {
+      continue;
+    }
+    seen.add(serviceRequestId);
+    items.push({
+      serviceRequestId,
+      itemName: strId(raw.itemName),
+    });
+  }
+  if (!items.length) {
+    ElMessage.warning('没有可打印的采血/检验医嘱');
+    return { ok: false as const, count: 0 };
+  }
+
+  const patientName = strId(options.patientName);
+  const genderEnumText = strId(options.genderEnumText);
+  const ageText = strId(options.ageText);
+
+  let printedCount = 0;
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index]!;
+    const suffix = items.length > 1 ? ` (${index + 1}/${items.length})` : '';
+    const result = await print({
+      scenarioCode: PRINT_SCENARIO.opSpecimenBarcodePrint,
+      source: {
+        patientName,
+        genderEnumText,
+        ageText,
+        itemName: item.itemName,
+        serviceRequestId: item.serviceRequestId,
+      },
+      bizRef: { encounterId, serviceRequestId: item.serviceRequestId },
+      jobName: `${options.jobName ?? '采血贴'}${suffix}`,
+    });
+    if (result.ok) {
+      printedCount += 1;
+    }
+  }
+
+  if (printedCount <= 0) {
+    return { ok: false as const, count: 0 };
+  }
+  if (printedCount > 1) {
+    ElMessage.success(`已发送 ${printedCount} 张采血贴`);
   }
   return { ok: true as const, count: printedCount };
 }

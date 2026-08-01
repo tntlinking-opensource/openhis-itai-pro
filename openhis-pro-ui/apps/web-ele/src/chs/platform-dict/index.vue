@@ -358,8 +358,10 @@ onMounted(async () => {
 </script>
 
 <template>
-  <Page auto-content-height>
+  <Page auto-content-height content-class="!overflow-hidden flex h-full min-h-0 flex-col">
     <TableLayout
+      class="h-full min-h-0 flex-1"
+      table-height="100%"
       :table-data="tableData"
       :loading="pageLoading"
       :total="total"

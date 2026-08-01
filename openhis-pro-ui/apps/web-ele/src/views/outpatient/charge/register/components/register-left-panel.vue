@@ -11,8 +11,9 @@ import type {
 import type { BookingEntityId } from '#/api/booking/booking-id';
 import type { RegisterContractMatchDto } from '#/api/outpatient-registration';
 
-import { computed, ref } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 
+import { useLocalStorage } from '@vueuse/core';
 import { Refresh } from '@element-plus/icons-vue';
 import { todayLocalDateIso } from '#/api/booking/booking-constants';
 import { toBookingId } from '#/api/booking/booking-id';
@@ -29,6 +30,7 @@ import {
 } from '../services/register-benefit.service';
 import { mergeRefreshIntoPreSettlement } from '../services/register-insurance-refresh.utils';
 import { runWorkInjuryRegister9102 } from '#/chs/work-injury/use-work-injury-register';
+import { httpWorkInjuryLoadEncounterContext } from '#/chs/work-injury/work-injury.http';
 import { PATIENT_IDENTITY_SOURCE_LABEL } from '../services/register-patient-identity.service';
 import {
   pageRegisterPatientsForSelect,
@@ -74,6 +76,7 @@ const slotPanelRef = ref<null | { refresh: () => Promise<void> }>(null);
 
 const {
   benefitSyncing,
+  treatmentSyncing,
   lastContractMatch,
   lastYbPreview,
   lastYbCardInfo,
@@ -134,10 +137,14 @@ function buildBenefitRefreshContext(contractId?: string) {
   };
 }
 
+/** 已选患者档案 ID（提交/待遇/历史用，与搜索框解耦） */
 const selectedPatientId = ref('');
+/** 患者搜索下拉的 v-model；选中回填后立即清空，避免还要手动清 */
+const patientSearchId = ref('');
 const selectedPatientLabel = ref('');
 const selectedSlotId = ref('');
-const useYbAcctPay = ref(true);
+/** 省/市医保下是否用医保支付挂号费；浏览器 localStorage 记住上次选择。勾上后预结算固定允许个账（能统筹则统筹，否则扣个账）。 */
+const useYbRegisterFee = useLocalStorage('outpatient-register:use-yb-register-fee', false);
 const currentContractCategory = ref('');
 const patientSelectColumns = [
   { prop: 'patientBusNo', label: '病历号', width: 120 },
@@ -190,13 +197,18 @@ async function syncBenefitPreview(options?: { autoApplyRecommend?: boolean }) {
   const values = await area.getSubmitValues();
   let contractId = String(values.contractId ?? '').trim();
   let requirement = resolveBenefitRequirement(currentContractCategory.value);
-  if (requirement !== 'INSURANCE' && lastYbCardInfo.value) {
+  // 仅空费用性质时用读卡结果引导省/市医保 1101；勿覆盖已选的工伤/公费
+  if (!requirement && lastYbCardInfo.value) {
     const bootstrapId = lastYbIssuingAreaCode.value
       ? area.findBootstrapInsuranceContractIdByInsuplc(lastYbIssuingAreaCode.value)
       : area.findBootstrapInsuranceContractId();
     if (bootstrapId) {
       contractId = bootstrapId;
       requirement = 'INSURANCE';
+      if (!String(values.contractId ?? '').trim()) {
+        await area.applyContractId(bootstrapId, { emitChange: false });
+        currentContractCategory.value = area.getContractCategory(bootstrapId) ?? '';
+      }
     }
   }
   if (!contractId) {
@@ -206,20 +218,31 @@ async function syncBenefitPreview(options?: { autoApplyRecommend?: boolean }) {
     return;
   }
   if (requirement === 'INSURANCE') {
-    const result = await syncInsuranceBenefit({
-      contractBusNo: area.getContractBusNo(contractId),
-      contractId,
-      patientId: selectedPatientId.value || undefined,
-    });
-    if (result?.preview) {
+    const applyInsurancePreview = async (
+      preview: import('#/api/outpatient-registration').YbRegisterBenefitPreviewDto,
+      contractMatch?: import('#/api/outpatient-registration').RegisterContractMatchDto | null,
+    ) => {
       const patientFallback = await buildPatientBenefitFallback();
-      const enrichedPreview = enrichInsuranceBenefitPreview(result.preview, patientFallback);
+      const enrichedPreview = enrichInsuranceBenefitPreview(preview, patientFallback);
       area.applyBenefitPreview(
         buildInsuranceBenefitDisplay(enrichedPreview, patientFallback),
         enrichedPreview,
         buildBenefitRefreshContext(contractId),
       );
-      area.applyContractMatch(result.contractMatch ?? lastContractMatch.value);
+      if (contractMatch !== undefined) {
+        area.applyContractMatch(contractMatch ?? lastContractMatch.value);
+      }
+    };
+    const result = await syncInsuranceBenefit({
+      contractBusNo: area.getContractBusNo(contractId),
+      contractId,
+      patientId: selectedPatientId.value || undefined,
+      onTreatmentReady: async (preview) => {
+        await applyInsurancePreview(preview);
+      },
+    });
+    if (result?.preview) {
+      await applyInsurancePreview(result.preview, result.contractMatch ?? lastContractMatch.value);
       if (options?.autoApplyRecommend) {
         await maybeApplyRecommendedContract(result.contractMatch, true);
       }
@@ -239,9 +262,30 @@ async function syncBenefitPreview(options?: { autoApplyRecommend?: boolean }) {
   if (requirement === 'WORK_INJURY') {
     area.applyBenefitPreview({
       kind: 'WORK_INJURY',
-      eligibilityMessage:
-        '挂号费须自费；确认挂号前将 invoke 9102 审批查询，预结算后可上传 2301 审批',
+      eligibilityMessage: '工伤保险：挂号费须自费',
     });
+    // 选工伤后后台预查（不阻塞 UI）；失败静默，详情弹窗可再查
+    void (async () => {
+      try {
+        const { probeWorkInjuryFilingViaWin } = await import(
+          '#/chs/work-injury/probe-work-injury-filing'
+        );
+        const { isWorkInjuryPluginOnline } = await import('#/chs/work-injury/work-injury-plugin');
+        if (!(await isWorkInjuryPluginOnline())) {
+          return;
+        }
+        const result = await probeWorkInjuryFilingViaWin();
+        const summary = result.hasValidFiling
+          ? `工伤保险：已查到 ${result.rows.length} 条审批，挂号费须自费`
+          : `工伤保险：已识别人员 ${result.psnNo}，暂无审批，挂号费须自费`;
+        area.applyBenefitPreview({
+          kind: 'WORK_INJURY',
+          eligibilityMessage: summary,
+        });
+      } catch {
+        // 预查失败不打断选费用性质
+      }
+    })();
   }
 }
 
@@ -310,7 +354,7 @@ const queryPatientOptions = async ({
   };
 };
 
-/** 处理患者下拉变更：清空选择时同步表单；选中时回填患者信息 */
+/** 处理患者下拉变更：清空选择时同步表单；选中时回填患者信息并清空搜索框 */
 const handlePatientSelect = async (
   value: string | string[],
   options?: { preserveInsuranceRead?: boolean },
@@ -325,6 +369,7 @@ const handlePatientSelect = async (
   const area = registerFormAreaRef.value;
   if (!patientId) {
     selectedPatientId.value = '';
+    patientSearchId.value = '';
     selectedPatientLabel.value = '';
     area?.clearPatientFields();
     return;
@@ -332,7 +377,6 @@ const handlePatientSelect = async (
   selectedPatientId.value = patientId;
   const selectedPatient = patientRowById.value[patientId];
   if (!selectedPatient) return;
-  selectedPatientLabel.value = `${selectedPatient.name}（${selectedPatient.patientBusNo}）`;
   const p = selectedPatient;
   const patientAge =
     p.age === undefined || p.age === null || String(p.age).trim() === '' ? '' : String(p.age);
@@ -344,6 +388,10 @@ const handlePatientSelect = async (
     patientName: p.name,
     patientPhone: String(p.phoneMasked ?? ''),
   });
+  // 等下拉先关闭，再清空搜索框，避免同 tick 清空触发点击穿透重开
+  await nextTick();
+  patientSearchId.value = '';
+  selectedPatientLabel.value = '';
   await area?.focusFirstField();
   if (!options?.preserveInsuranceRead) {
     void syncBenefitPreview();
@@ -363,6 +411,13 @@ const { cardReadAction, isCardReadDisabled, isCardReadLoading, readPatientIdenti
     onBootstrapBenefit: bootstrapBenefitAfterCardRead,
   });
 
+/** 读卡前清空搜索框，避免残留上次检索文案 */
+async function handleReadIdentity(source: 'id' | 'yb-card' | 'yb-ec') {
+  patientSearchId.value = '';
+  selectedPatientLabel.value = '';
+  await readPatientIdentity(source);
+}
+
 const benefitPanelLoading = computed(() => benefitSyncing.value || cardReadAction.value !== null);
 
 const cardReadDisabledMap = computed(() => ({
@@ -380,10 +435,10 @@ const cardReadLoadingMap = computed(() => ({
 const benefitLoadingText = computed(() => {
   const action = cardReadAction.value;
   if (action) {
-    return `正在读取${PATIENT_IDENTITY_SOURCE_LABEL[action]}并拉取待遇信息…`;
+    return `正在读取${PATIENT_IDENTITY_SOURCE_LABEL[action]}…`;
   }
   if (benefitSyncing.value) {
-    return '正在拉取待遇信息…';
+    return '正在拉取人员与省市医保信息…';
   }
   return '';
 });
@@ -395,6 +450,7 @@ const handleClear = () => {
   registerFormAreaRef.value?.resetForClear();
   selectedSlotId.value = '';
   selectedPatientId.value = '';
+  patientSearchId.value = '';
   selectedPatientLabel.value = '';
   patientRowById.value = {};
   currentContractCategory.value = '';
@@ -437,6 +493,7 @@ async function onRegisterPaidSuccess() {
   await registerFormAreaRef.value?.resetForSubmitSuccess();
   selectedSlotId.value = '';
   selectedPatientId.value = '';
+  patientSearchId.value = '';
   selectedPatientLabel.value = '';
   currentContractCategory.value = '';
   await slotPanelRef.value?.refresh();
@@ -460,7 +517,7 @@ async function rescanEcAndRefreshPreSettlement(
   }
   const refresh = await refreshRegisterFeeInsurancePreSettle({
     paymentDraftId: pre.paymentDraftId,
-    ybUseAcctPay: useYbAcctPay.value,
+    ybUseAcctPay: true,
     ybMediumType: lastYbMediumType.value || undefined,
     ybCardInfo: lastYbCardInfo.value || undefined,
     psnNo: lastYbPreview.value.psnNo || undefined,
@@ -469,6 +526,7 @@ async function rescanEcAndRefreshPreSettlement(
       lastContractMatch.value?.patientInsuplcAdmdvs ||
       undefined,
     insutype: lastYbPreview.value.insutype || undefined,
+    // 挂号费刷新预结算同样固定 med_type=11（普通门诊）
     medType: '11',
   });
   return mergeRefreshIntoPreSettlement(pre, refresh);
@@ -502,7 +560,15 @@ const handleSubmit = async () => {
   const contractId = String(values.contractId ?? '');
   const organizationId = String(values.departmentId ?? '');
   const serviceTypeId = String(values.serviceTypeId ?? '');
-  const practitionerId = String(values.doctorId ?? '');
+  // 未选医生时不传 practitionerId（挂到科室）；禁止传空串导致后端 Long 反序列化失败
+  const doctorRaw = String(values.doctorId ?? '').trim();
+  const practitionerId = doctorRaw !== '' ? doctorRaw : undefined;
+
+  // 医保合同预结算会走平台 2201，与是否勾选「医保支付挂号费」无关，须先读卡拿到 psnNo
+  if (isInsuranceRegister.value && !lastYbPreview.value?.psnNo) {
+    ElMessage.warning('医保挂号须先读卡获取人员编号');
+    return;
+  }
 
   loading.value = true;
   try {
@@ -520,8 +586,7 @@ const handleSubmit = async () => {
       slotId: selectedSlotId.value || undefined,
       ...(isInsuranceRegister.value
         ? {
-            ybRegisterFee: true,
-            ybUseAcctPay: useYbAcctPay.value,
+            // 医保建档（2201）始终需要读卡字段；挂号费是否走医保由 ybRegisterFee 控制
             psnNo: lastYbPreview.value?.psnNo || undefined,
             insuplcAdmdvs:
               lastYbPreview.value?.insuplcAdmdvs ||
@@ -530,7 +595,14 @@ const handleSubmit = async () => {
             insutype: lastYbPreview.value?.insutype || undefined,
             ybMediumType: lastYbMediumType.value || undefined,
             ybCardInfo: lastYbCardInfo.value || undefined,
-            medType: '11',
+            ybRegisterFee: useYbRegisterFee.value,
+            ...(useYbRegisterFee.value
+              ? {
+                  ybUseAcctPay: true,
+                  // 挂号费医保：med_type=11（普通门诊）；2201 仅在预结算 map miss 时触发
+                  medType: '11',
+                }
+              : {}),
           }
         : {}),
     };
@@ -561,18 +633,6 @@ const handleSubmit = async () => {
     const totalNumRaw = Array.isArray(preRaw) ? amountFromItems : Number(pre.totalAmount);
     const totalNum = Number.isFinite(totalNumRaw) ? totalNumRaw : amountFromItems;
 
-    if (isInsuranceRegister.value && useYbAcctPay.value && pre.insurancePreSettled) {
-      const acctPay = Number(pre.ybAcctPay ?? 0);
-      const balc =
-        lastYbPreview.value?.balc === null || lastYbPreview.value?.balc === undefined
-          ? null
-          : Number(lastYbPreview.value.balc);
-      if (acctPay > 0 && balc !== null && Number.isFinite(balc) && acctPay > balc) {
-        ElMessage.warning('医保个人账户余额不足，请取消使用个账后重新确认挂号');
-        return;
-      }
-    }
-
     const medicalRecordNo =
       submitPatientId && patientRowById.value[submitPatientId]
         ? patientRowById.value[submitPatientId].patientBusNo
@@ -599,6 +659,20 @@ const handleSubmit = async () => {
       workInjuryRegister: isWorkInjuryRegister.value,
       workInjuryContractId: isWorkInjuryRegister.value ? contractId : undefined,
     });
+
+    // 确认框打开后：无有效 qualification 则弹出审批引导（绑定或 2301）
+    if (isWorkInjuryRegister.value && pre.encounterId) {
+      try {
+        const wiCtx = await httpWorkInjuryLoadEncounterContext(pre.encounterId);
+        if (!wiCtx?.qualificationValid) {
+          await nextTick();
+          area.openWorkInjuryApprovalGuide();
+        }
+      } catch {
+        await nextTick();
+        area.openWorkInjuryApprovalGuide();
+      }
+    }
   } finally {
     loading.value = false;
   }
@@ -613,6 +687,8 @@ const handleSubmit = async () => {
     :active-patient-id="selectedPatientId"
     :benefit-loading="benefitPanelLoading"
     :benefit-loading-text="benefitLoadingText"
+    :treatment-loading="treatmentSyncing"
+    :work-injury-selected="isWorkInjuryRegister"
     :work-injury-pre-encounter-id="workInjuryPreEncounterId"
     :work-injury-pre-contract-id="workInjuryPreContractId"
     @contract-change="handleContractCategoryChange"
@@ -622,7 +698,7 @@ const handleSubmit = async () => {
   >
     <template #patient-toolbar>
       <RegisterTopToolbar
-        v-model:selected-patient-id="selectedPatientId"
+        v-model:selected-patient-id="patientSearchId"
         :selected-patient-label="selectedPatientLabel"
         :patient-select-columns="patientSelectColumns"
         :query-patient-options="queryPatientOptions"
@@ -631,7 +707,7 @@ const handleSubmit = async () => {
         variant="patient"
         @patient-change="(value) => handlePatientSelect(value)"
         @clear="handleClear"
-        @read-identity="readPatientIdentity"
+        @read-identity="handleReadIdentity"
       />
     </template>
     <template #slots-toolbar>
@@ -669,10 +745,10 @@ const handleSubmit = async () => {
     <template #actions>
       <ElCheckbox
         v-if="isInsuranceRegister"
-        v-model="useYbAcctPay"
+        v-model="useYbRegisterFee"
         class="shrink-0 whitespace-nowrap"
       >
-        使用个账
+        医保支付挂号费
       </ElCheckbox>
       <ElButton
         type="primary"

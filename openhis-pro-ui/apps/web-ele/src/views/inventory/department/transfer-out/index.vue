@@ -80,7 +80,7 @@ const isDraftOrder = computed(() => Boolean(selectedOrder.value?._draft));
 function toQueueRow(r: Record<string, unknown>): Record<string, unknown> {
   return enrichStockOutQueueCardRow(r, {
     sourceOptions: pharmacyOptions.value,
-    purposeOptions: warehouseOptions.value,
+    purposeOptions: pharmacyOptions.value,
   });
 }
 
@@ -91,7 +91,7 @@ async function init() {
     pharmacyOptions.value = mapInitOptionDtoToApiItems(data?.pharmacyLocationOptions);
     warehouseOptions.value = mapInitOptionDtoToApiItems(data?.warehouseLocationOptions);
     practitionerOptions.value = mapInventoryPractitionerInitOptions(
-      [data?.pharmacistOptions, data?.warehouseKeeperOptions, data?.nurseOptions],
+      [data?.pharmacistOptions, data?.warehouseKeeperOptions],
       userStore.userInfo as null | Record<string, unknown>,
     );
     itemTableTypeOptions.value = normalizeInventoryItemTableTypeOptions(
@@ -204,7 +204,6 @@ onMounted(async () => {
 
 <template>
   <WarehouseDocWorkstation
-    aside-width="280px"
     queue-title=""
     aside-dense
     :show-aside-filter="false"

@@ -1,5 +1,7 @@
 import type { EncounterMedicationDispenseSlipRowDto } from '#/api/outpatient-pharmacy-dispense/outpatient-pharmacy-dispense.types';
 
+import { unionDiagnosisDisplayNames } from '#/utils/diagnosis/union-diagnosis-display-names';
+
 /** 处方打印表格行（字段与模板 medicationLines 列一致） */
 export interface OutpatientPrescriptionMedicationLine {
   medicationDisplayLeft: string;
@@ -100,11 +102,14 @@ export function buildOutpatientPrescriptionPrintData(
     ageText: str(head.ageText),
     genderEnumText: str(head.genderEnumText),
     orderingDepartmentName: str(head.orderingDepartmentName),
-    feeNatureText: str(head.feeNatureText),
+    feeNatureText: str(head.feeNatureText) || '自费',
     prescriptionDateText: str(head.prescriptionDateText),
     encounterBusNo: str(head.encounterBusNo),
     patientPhone: str(head.patientPhone),
-    conditionSummaryText: str(head.conditionSummaryText),
+    // 方头诊断：同方各行摘要并集去重（后端已写并集时结果不变）
+    conditionSummaryText: unionDiagnosisDisplayNames(
+      ...rows.map((row) => row.conditionSummaryText),
+    ),
     rpHeading: 'Rp',
     medicationLines: buildMedicationLines(rows),
     orderingPractitionerName: str(head.orderingPractitionerName),

@@ -8,7 +8,11 @@ import AutoImport from 'unplugin-auto-import/vite';
 import ElementPlus from 'unplugin-element-plus/vite';
 
 import { openHisWinDownloadsDevPlugin } from './vite.openhis-win-downloads';
-import { createOpenHisProjectOverridePlugin } from './vite.project-override-plugin';
+import {
+  createOpenHisProjectOverridePlugin,
+  hydrateOpenHisProjectEnv,
+  purgeStaleOpenHisProjectLocalEnv,
+} from './vite.project-override-plugin';
 import { createWebEleResolveAliases } from './vite.resolve-aliases';
 
 const require = createRequire(import.meta.url);
@@ -45,6 +49,9 @@ const extraPlugins = [
 ] as PluginOption[];
 
 export default defineConfig(async () => {
+  // 院点：UTF-8 注入品牌 env；主线：清掉历史残留的 .env.*.local
+  hydrateOpenHisProjectEnv(import.meta.dirname);
+  purgeStaleOpenHisProjectLocalEnv(import.meta.dirname);
   const projectOverridePlugin = createOpenHisProjectOverridePlugin(import.meta.dirname);
 
   return {
@@ -89,6 +96,11 @@ export default defineConfig(async () => {
           ],
         },
         proxy: {
+          // 公开健康检查（须在通用 /api 之前；后端在 /api/health，非 /api/app）
+          '/api/health': {
+            changeOrigin: true,
+            target: 'http://127.0.0.1:8081',
+          },
           // iMEC 监护仪 API 代理（必须放在 /api 之前，优先匹配）
           // 前端 requestClient baseURL=/api，实际请求路径为 /api/imec/xxx
           '/api/imec': {

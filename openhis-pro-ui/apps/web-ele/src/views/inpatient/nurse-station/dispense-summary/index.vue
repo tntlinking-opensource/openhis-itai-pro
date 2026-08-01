@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import type { NurseStationModulePatient } from '../components/nurse-station-module-patient.types';
+import type { PrintPendingRow } from '../print-center/print-center.types';
 import type {
   NurseStationDispenseSummaryMedicineCategoryTab,
   NurseStationDispenseSummaryOrderRowDto,
+  NurseStationDispenseSummaryPatientPickupGroupDto,
   NurseStationDispenseSummarySlipHeaderDto,
   NurseStationDispenseSummarySlipLineDto,
   NurseStationDispenseSummaryTherapyFilter,
@@ -18,6 +20,7 @@ import {
   httpCancelMedicationSummary,
   httpCreateMedicationSummary,
   httpGetMedicationSummarySlipDetail,
+  httpGetMedicationSummarySlipPatientDetail,
   httpPageMedicationSummarySlipHeaders,
   httpPagePendingDispenseSummaryLines,
   httpSubmitMedicationSummary,
@@ -26,11 +29,13 @@ import AdviceOrderDisplayCell from '#/components/outpatient/advice-order-display
 import { useRequest } from '#/hooks/use-request';
 
 import NurseStationPatientOrderCollapseTitle from '../components/nurse-station-patient-order-collapse-title.vue';
+import { printInpatientPrintCenter } from '../print-center/print-center-print';
 import DispenseSummaryDetailDialog from './components/dispense-summary-detail-dialog.vue';
+import DispenseSummaryPatientPickupDialog from './components/dispense-summary-patient-pickup-dialog.vue';
 import {
   buildDispenseSummaryVisibleCards,
   collectSelectableSlotsFromOrderRows,
-  formatPlannedDispenseTimeLabel,
+  formatDispenseTimeLabel,
   formatQuantityWithUnit,
   formatSummarySlipDateTime,
   groupTimePointsForDisplay,
@@ -42,6 +47,10 @@ import {
 } from './services/map-nurse-station-dispense-summary';
 
 type DispenseDisplayMode = 'detail' | 'summary';
+type DispensePrintDocType = 'dispense_sheet' | 'dispense_summary';
+
+/** 发送后自动打印领药单偏好（本机记住） */
+const AUTO_PRINT_PICKUP_STORAGE_KEY = 'nurse-station.dispense-summary.auto-print-pickup';
 
 interface Props {
   patients?: NurseStationModulePatient[];
@@ -69,7 +78,7 @@ const drugCategoryTabs: Array<{
 ];
 
 const displayModeTabs: Array<{ label: string; value: DispenseDisplayMode }> = [
-  { label: '医嘱', value: 'detail' },
+  { label: '待汇总', value: 'detail' },
   { label: '汇总单', value: 'summary' },
 ];
 
@@ -86,11 +95,20 @@ const queryDeadline = ref(dayjs().endOf('day').format('YYYY-MM-DD HH:mm:ss'));
 const ordersByEncounterId = ref(new Map<string, NurseStationDispenseSummaryOrderRowDto[]>());
 const summarySlipRows = ref<NurseStationDispenseSummarySlipHeaderDto[]>([]);
 const summaryTotalCount = ref(0);
+/** 发送后自动打印汇总领药单（本机偏好） */
+const autoPrintPickupAfterSubmit = ref(readAutoPrintPickupPreference());
+/** 正在打印的单据键 docType:summaryNo */
+const printingSummaryKey = ref<null | string>(null);
 
 const detailDialogVisible = ref(false);
 const detailDialogLoading = ref(false);
 const detailDialogHeader = ref<NurseStationDispenseSummarySlipHeaderDto | null>(null);
 const detailDialogLines = ref<NurseStationDispenseSummarySlipLineDto[]>([]);
+
+const pickupDialogVisible = ref(false);
+const pickupDialogLoading = ref(false);
+const pickupDialogHeader = ref<NurseStationDispenseSummarySlipHeaderDto | null>(null);
+const pickupDialogGroups = ref<NurseStationDispenseSummaryPatientPickupGroupDto[]>([]);
 
 const pendingLinesRequest = useRequest(httpPagePendingDispenseSummaryLines, { manual: true });
 const summaryHeadersRequest = useRequest(httpPageMedicationSummarySlipHeaders, { manual: true });
@@ -369,6 +387,132 @@ async function handleViewSummarySheet(row: NurseStationDispenseSummarySlipHeader
   }
 }
 
+/** 打开摆药单查询弹窗（按患者 + medReqId 合并） */
+async function handleViewPatientPickup(row: NurseStationDispenseSummarySlipHeaderDto) {
+  const summaryNo = String(row.busNo ?? '').trim();
+  if (!summaryNo) return;
+  pickupDialogVisible.value = true;
+  pickupDialogHeader.value = row;
+  pickupDialogGroups.value = [];
+  pickupDialogLoading.value = true;
+  try {
+    const res = await httpGetMedicationSummarySlipPatientDetail({ summaryNo });
+    pickupDialogGroups.value = res.patientGroups ?? [];
+    if (res.header) {
+      pickupDialogHeader.value = res.header;
+    }
+  } finally {
+    pickupDialogLoading.value = false;
+  }
+}
+
+/** 读取发送后自动打印偏好（未设置时默认开启） */
+function readAutoPrintPickupPreference(): boolean {
+  try {
+    return localStorage.getItem(AUTO_PRINT_PICKUP_STORAGE_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+/** 切换并持久化「发送后自动打印领药单」 */
+function handleAutoPrintPickupChange(value: boolean | string | number) {
+  const enabled = value === true || value === 'true' || value === 1;
+  autoPrintPickupAfterSubmit.value = enabled;
+  try {
+    localStorage.setItem(AUTO_PRINT_PICKUP_STORAGE_KEY, enabled ? '1' : '0');
+  } catch {
+    // 隐私模式等写失败时仅本会话生效
+  }
+}
+
+/** 按单据号构造打印中心待打行 */
+function buildDispensePrintPendingRow(summaryNo: string, title: string): PrintPendingRow {
+  const no = String(summaryNo ?? '').trim();
+  return {
+    id: `dispense-${no}`,
+    bedNo: '—',
+    patientName: '—',
+    title,
+    statusCode: 'pending',
+    statusText: '待打',
+    pageHint: title,
+    summaryNo: no,
+  };
+}
+
+/**
+ * 打印汇总领药单或摆药单。
+ * @param showSuccess 批量自动打印时由调用方统一提示，可关单次成功 toast
+ */
+async function printDispenseBySummaryNos(
+  summaryNos: string[],
+  docType: DispensePrintDocType,
+  options?: { showSuccess?: boolean },
+): Promise<boolean> {
+  // 去空、保序去重
+  const nos: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of summaryNos) {
+    const no = String(raw ?? '').trim();
+    if (!no || seen.has(no)) {
+      continue;
+    }
+    seen.add(no);
+    nos.push(no);
+  }
+  if (nos.length === 0) {
+    ElMessage.warning('单据号为空，无法打印');
+    return false;
+  }
+  const label = docType === 'dispense_summary' ? '汇总领药单' : '摆药单';
+  const today = dayjs().format('YYYY-MM-DD');
+  const selectedRows = nos.map((no) => buildDispensePrintPendingRow(no, label));
+  const result = await printInpatientPrintCenter({
+    docType,
+    patients: props.patients,
+    selectedRows,
+    dateFrom: today,
+    dateTo: today,
+    executionDeadline: `${today} 23:59:59`,
+  });
+  if (result.ok && options?.showSuccess !== false) {
+    ElMessage.success(`已发送打印：${label}，共 ${result.count} 份`);
+  }
+  return result.ok;
+}
+
+/** 行上手动打印汇总单 / 摆药单 */
+async function handlePrintDispenseDoc(
+  row: NurseStationDispenseSummarySlipHeaderDto,
+  docType: DispensePrintDocType,
+) {
+  const summaryNo = String(row.busNo ?? '').trim();
+  if (!summaryNo) {
+    ElMessage.warning('单据号为空，无法打印');
+    return;
+  }
+  const printKey = `${docType}:${summaryNo}`;
+  if (printingSummaryKey.value) {
+    return;
+  }
+  printingSummaryKey.value = printKey;
+  try {
+    await printDispenseBySummaryNos([summaryNo], docType);
+  } finally {
+    printingSummaryKey.value = null;
+  }
+}
+
+/** 行是否正在打印指定单据 */
+function isPrintingDispenseDoc(
+  row: NurseStationDispenseSummarySlipHeaderDto,
+  docType: DispensePrintDocType,
+): boolean {
+  const summaryNo = String(row.busNo ?? '').trim();
+  return printingSummaryKey.value === `${docType}:${summaryNo}`;
+}
+
 /** 发送汇总单至药房 */
 async function submitSummaryNos(busNos: string[], confirmMessage: string) {
   if (busNos.length === 0) {
@@ -392,6 +536,16 @@ async function submitSummaryNos(busNos: string[], confirmMessage: string) {
   const res = await submitSummaryRequest.run({ summaryNos: busNos });
   ElMessage.success(res.message?.trim() || `已成功发送 ${busNos.length} 张汇总单`);
   await loadSummaryHeaders();
+
+  // 开关开启：发送成功后自动打汇总领药单
+  if (autoPrintPickupAfterSubmit.value) {
+    const ok = await printDispenseBySummaryNos(busNos, 'dispense_summary', {
+      showSuccess: false,
+    });
+    if (ok) {
+      ElMessage.success(`已自动打印领药单 ${busNos.length} 张`);
+    }
+  }
 }
 
 /** 发送已选待发送汇总单 */
@@ -451,9 +605,9 @@ async function handleCancelSummarySheets() {
   }
 }
 
-/** 领药时点勾选标签：时刻 + 数量（与医嘱执行槽位标签同构） */
+/** 领药时点勾选标签：执行时刻优先 + 数量（双轨：展示 recorded，逻辑仍锚 planned） */
 function formatDispenseSlotLabel(slot: DispenseSummarySelectableSlot): string {
-  const time = formatPlannedDispenseTimeLabel(slot.point.plannedDispenseTime);
+  const time = formatDispenseTimeLabel(slot.point);
   const qty = formatQuantityWithUnit(slot.point.quantity, slot.point.unitCodeText);
   if (time !== '—' && qty !== '—') return `${time} ${qty}`;
   return time !== '—' ? time : qty;
@@ -531,6 +685,19 @@ function formatDispenseSlotLabel(slot: DispenseSummarySelectableSlot): string {
           <ElButton type="primary" @click="handleCreateSummaryPickup">汇总领药</ElButton>
         </template>
         <template v-else>
+          <label
+            class="mr-1 flex shrink-0 items-center gap-1 text-xs text-[var(--el-text-color-regular)]"
+            title="开启后，发送汇总单成功会自动打印汇总领药单"
+          >
+            发送后自动打印领药单
+            <ElSwitch
+              :model-value="autoPrintPickupAfterSubmit"
+              inline-prompt
+              active-text="开"
+              inactive-text="关"
+              @update:model-value="handleAutoPrintPickupChange"
+            />
+          </label>
           <ElButton
             type="primary"
             :disabled="selectedSubmittableBusNos.length === 0"
@@ -679,9 +846,28 @@ function formatDispenseSlotLabel(slot: DispenseSummarySelectableSlot): string {
                 {{ row.receiverName || '—' }}
               </template>
             </ElTableColumn>
-            <ElTableColumn label="操作" width="160" align="center">
+            <ElTableColumn label="操作" width="320" align="center" fixed="right">
               <template #default="{ row }">
                 <ElButton link type="primary" @click="handleViewSummarySheet(row)">详情</ElButton>
+                <ElButton link type="primary" @click="handleViewPatientPickup(row)">
+                  摆药单查询
+                </ElButton>
+                <ElButton
+                  link
+                  type="primary"
+                  :loading="isPrintingDispenseDoc(row, 'dispense_summary')"
+                  @click="handlePrintDispenseDoc(row, 'dispense_summary')"
+                >
+                  打领药单
+                </ElButton>
+                <ElButton
+                  link
+                  type="primary"
+                  :loading="isPrintingDispenseDoc(row, 'dispense_sheet')"
+                  @click="handlePrintDispenseDoc(row, 'dispense_sheet')"
+                >
+                  打摆药单
+                </ElButton>
                 <ElButton
                   link
                   type="primary"
@@ -708,6 +894,12 @@ function formatDispenseSlotLabel(slot: DispenseSummarySelectableSlot): string {
       :header="detailDialogHeader"
       :lines="detailDialogLines"
       :loading="detailDialogLoading"
+    />
+    <DispenseSummaryPatientPickupDialog
+      v-model:visible="pickupDialogVisible"
+      :header="pickupDialogHeader"
+      :patient-groups="pickupDialogGroups"
+      :loading="pickupDialogLoading"
     />
   </div>
 </template>

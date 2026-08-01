@@ -12,12 +12,19 @@ import { TableLayout } from '@vben-core/table-layout-ui';
 import { ElButton, ElMessage, ElMessageBox, ElTag } from 'element-plus';
 
 import {
+  activateRegistrationTypeApi,
+  deactivateRegistrationTypeApi,
   deleteRegistrationTypeApi,
   getRegistrationTypeListApi,
-  REGISTRATION_TYPE_ACTIVE_FLAG,
+  isRegistrationTypeActive,
 } from '#/api/core/system/registration';
 
+import { BASIC_TABLE_MAX_HEIGHT } from '../basic-table-max-height';
 import EditDialog from './edit-dialog.vue';
+
+defineOptions({
+  name: 'RegistrationTypeList',
+});
 
 const allData = ref<RegistrationType[]>([]);
 const tableData = ref<RegistrationType[]>([]);
@@ -83,16 +90,18 @@ const tableColumns: TableColumn[] = [
     label: '操作',
     fixed: 'right',
     slot: 'action',
-    width: 150,
+    width: 220,
     align: 'center',
   },
 ];
 
+/** 按关键词过滤本地列表 */
 const applyFilters = () => {
   let filtered = [...allData.value];
 
   const keyword = queryParams.keyword?.toLowerCase().trim() || '';
   if (keyword) {
+    // 名称 / 医保编码 / 业务编码模糊匹配
     filtered = filtered.filter((item) => {
       return (
         item.name?.toLowerCase().includes(keyword) ||
@@ -106,6 +115,7 @@ const applyFilters = () => {
   total.value = filtered.length;
 };
 
+/** 拉取挂号类型全量列表并应用筛选 */
 const loadAllData = async () => {
   loading.value = true;
   try {
@@ -122,6 +132,7 @@ const loadAllData = async () => {
   }
 };
 
+/** 查询区触发筛选 */
 const handleQuery = (params: { activeFlag?: number; keyword?: string }) => {
   if (params.keyword !== undefined) {
     queryParams.keyword = params.keyword || '';
@@ -132,26 +143,69 @@ const handleQuery = (params: { activeFlag?: number; keyword?: string }) => {
   applyFilters();
 };
 
+/** 重置查询条件 */
 const handleReset = () => {
   queryParams.keyword = '';
   queryParams.activeFlag = undefined;
   applyFilters();
 };
 
+/** 打开新增弹窗 */
 const handleAdd = () => {
   editFormData.value = null;
   editDialogVisible.value = true;
 };
 
+/** 打开编辑弹窗 */
 const handleEdit = (row: RegistrationType) => {
   editFormData.value = { ...row };
   editDialogVisible.value = true;
 };
 
+/** 新增/编辑成功后刷新 */
 const handleEditSuccess = () => {
   loadAllData();
 };
 
+/** 启用或停用挂号类型 */
+const handleToggleStatus = async (row: RegistrationType) => {
+  if (!row.id) {
+    ElMessage.error('缺少挂号类型ID');
+    return;
+  }
+
+  const willEnable = !isRegistrationTypeActive(row);
+  const actionText = willEnable ? '启用' : '停用';
+
+  try {
+    await ElMessageBox.confirm(`确定要${actionText}「${row.name || ''}」吗？`, '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    });
+  } catch {
+    return;
+  }
+
+  loading.value = true;
+  try {
+    if (willEnable) {
+      await activateRegistrationTypeApi(row.id);
+    } else {
+      await deactivateRegistrationTypeApi(row.id);
+    }
+    ElMessage.success(`${actionText}成功`);
+    await loadAllData();
+  } catch (error: unknown) {
+    console.error(`${actionText}失败:`, error);
+    const err = error as { message?: string; msg?: string };
+    ElMessage.error(err.msg || err.message || `${actionText}失败，请稍后重试`);
+  } finally {
+    loading.value = false;
+  }
+};
+
+/** 删除挂号类型（后端启用态会先停用再作废） */
 const handleDelete = async (row: RegistrationType) => {
   if (!row.id) {
     ElMessage.error('缺少挂号类型ID');
@@ -166,11 +220,11 @@ const handleDelete = async (row: RegistrationType) => {
     await deleteRegistrationTypeApi(row.id);
     ElMessage.success('删除成功');
     loadAllData();
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error !== 'cancel') {
       console.error('删除失败:', error);
-      const errorMessage = error.msg || error.message || '删除失败，请稍后重试';
-      ElMessage.error(errorMessage);
+      const err = error as { message?: string; msg?: string };
+      ElMessage.error(err.msg || err.message || '删除失败，请稍后重试');
     }
   }
 };
@@ -189,6 +243,7 @@ onMounted(() => {
       :query-params="queryParams"
       :form-items="formItems"
       :table-columns="tableColumns"
+      :max-height="BASIC_TABLE_MAX_HEIGHT"
       :show-side-query="false"
       :show-top-query="true"
       :show-pagination="false"
@@ -200,12 +255,19 @@ onMounted(() => {
         <ElButton type="primary" @click="handleAdd">新增</ElButton>
       </template>
       <template #activeFlag="{ row }">
-        <ElTag :type="row.activeFlag === REGISTRATION_TYPE_ACTIVE_FLAG.ACTIVE ? 'success' : 'info'">
-          {{ row.activeFlag === REGISTRATION_TYPE_ACTIVE_FLAG.ACTIVE ? '启用' : '停用' }}
+        <ElTag :type="isRegistrationTypeActive(row) ? 'success' : 'info'">
+          {{ isRegistrationTypeActive(row) ? '启用' : '停用' }}
         </ElTag>
       </template>
       <template #action="{ row }">
         <ElButton type="primary" link @click="handleEdit(row)">编辑</ElButton>
+        <ElButton
+          :type="isRegistrationTypeActive(row) ? 'warning' : 'success'"
+          link
+          @click="handleToggleStatus(row)"
+        >
+          {{ isRegistrationTypeActive(row) ? '停用' : '启用' }}
+        </ElButton>
         <ElButton type="danger" link @click="handleDelete(row)">删除</ElButton>
       </template>
     </TableLayout>

@@ -22,6 +22,11 @@ export interface AddRegistrationTypeParams {
   activeFlag?: number;
 }
 
+/** 判断挂号类型是否启用 */
+export function isRegistrationTypeActive(row: Pick<RegistrationType, 'activeFlag'>) {
+  return row.activeFlag === REGISTRATION_TYPE_ACTIVE_FLAG.ACTIVE;
+}
+
 export async function getRegistrationTypeListApi() {
   return publicRequestClient.post<RegistrationType[]>('/registrationType/getRegistrationTypeList');
 }
@@ -37,6 +42,22 @@ export async function updateRegistrationTypeApi(data: RegistrationType & { id: s
 export async function deleteRegistrationTypeApi(id: number | string) {
   return publicRequestClient.post(
     '/registrationType/deleteRegistrationType',
+    preserveApiIdForRequest(id),
+  );
+}
+
+/** 启用已停用的挂号类型 */
+export async function activateRegistrationTypeApi(id: number | string) {
+  return publicRequestClient.post(
+    '/registrationType/activateRegistrationType',
+    preserveApiIdForRequest(id),
+  );
+}
+
+/** 停用挂号类型 */
+export async function deactivateRegistrationTypeApi(id: number | string) {
+  return publicRequestClient.post(
+    '/registrationType/deactivateRegistrationType',
     preserveApiIdForRequest(id),
   );
 }

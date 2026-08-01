@@ -86,6 +86,10 @@ export interface PriceAdjustmentLineDto {
   itemCode?: string;
   specification?: string;
   manufacturer?: string;
+  /** 项目种类展示名（详情 enrich） */
+  categoryCodeDictText?: string;
+  /** 单位展示名（详情 enrich） */
+  unitName?: string;
   newPurchaseAmount?: number;
   newSellingAmount?: number;
   adjustmentReason?: string;

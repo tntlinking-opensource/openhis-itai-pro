@@ -9,7 +9,6 @@ import type { OrderTemplateTreeNode } from '#/views/outpatient/doctor-station/ad
 import {
   buildOrderTemplateTreeFromGroups,
   DOCTOR_STATION_EXCLUDED_BINDING_SCOPES,
-  resolveOrderTemplateHeaderTooltip,
 } from '#/views/outpatient/doctor-station/advice/services/order-template.service';
 
 export type TcmSidebarTreeNodeType = 'group' | 'history' | 'template';
@@ -63,7 +62,7 @@ function filterTemplateGroupsByKeyword(
   };
 }
 
-/** 组装中医 Tab 左侧树：个人/科室/全院组套 + 历史处方 */
+/** 组装中医 Tab 左侧树：协定/个人/科室/全院组套 + 历史处方 */
 export function buildTcmSidebarTree(params: {
   historyItems: TcmHistoryTreeItem[];
   searchKeyword?: string;
@@ -87,16 +86,21 @@ export function buildTcmSidebarTree(params: {
       return (
         item.prescriptionNo.toLowerCase().includes(keyword) ||
         item.summaryText.toLowerCase().includes(keyword) ||
-        item.herbSummary.toLowerCase().includes(keyword)
+        item.herbSummary.toLowerCase().includes(keyword) ||
+        item.authoredByName.toLowerCase().includes(keyword) ||
+        item.openedDateText.toLowerCase().includes(keyword) ||
+        item.treeLabel.toLowerCase().includes(keyword)
       );
     })
     .map<TcmSidebarTreeNode>((item) => ({
       id: item.id,
-      label: item.summaryText || item.prescriptionNo,
+      // 味数 · 开立人 · 日期（到天）
+      label: item.treeLabel || item.summaryText || item.prescriptionNo,
       nodeType: 'history',
       historyId: item.id,
       herbSummary: item.herbSummary,
-      tooltip: item.herbSummary || item.summaryText || '暂无药品',
+      // hover 展示药品名（非树节点摘要）
+      tooltip: item.herbSummary || '暂无药品',
     }));
 
   const historySection: TcmSidebarTreeNode = {
@@ -109,19 +113,28 @@ export function buildTcmSidebarTree(params: {
   return [...templateSection, historySection];
 }
 
-/** 历史节点展示文案 */
+/** 历史节点 Tooltip：药品名 */
 export function formatTcmHistoryNodeTooltip(item: TcmHistoryTreeItem | undefined): string {
   if (!item) {
-    return '暂无说明';
+    return '暂无药品';
   }
-  const parts = [item.summaryText, item.herbSummary].filter((text) => String(text ?? '').trim());
-  return parts.join(' · ') || '暂无药品';
+  return String(item.herbSummary ?? '').trim() || '暂无药品';
 }
 
-/** 组套节点 Tooltip */
-export function resolveTcmTemplateNodeTooltip(header: OrderTemplateHeaderItem | undefined): string {
-  if (!header) {
-    return '暂无说明';
+/** 侧栏叶子节点 Tooltip：历史/组套均展示药品名 */
+export function resolveTcmSidebarLeafTooltip(
+  data: TcmSidebarTreeNode,
+  options?: { templateProductSummary?: string },
+): string {
+  if (data.nodeType === 'history') {
+    return String(data.herbSummary ?? data.tooltip ?? '').trim() || '暂无药品';
   }
-  return resolveOrderTemplateHeaderTooltip(header);
+  if (data.nodeType === 'template') {
+    const cached = String(options?.templateProductSummary ?? '').trim();
+    if (cached) {
+      return cached;
+    }
+    return '加载中…';
+  }
+  return '';
 }

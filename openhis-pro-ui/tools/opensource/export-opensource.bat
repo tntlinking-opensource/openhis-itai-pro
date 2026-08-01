@@ -3,7 +3,7 @@ setlocal EnableExtensions
 cd /d "%~dp0..\.."
 
 echo.
-echo [export-opensource] output: dist\openhis-pro-ui-opensource (without projects/)
+echo [export-opensource] default -^> ..\openhis-itai-pro\openhis-pro-ui (without projects/)
 echo.
 
 if "%~1"=="" (
@@ -19,5 +19,5 @@ if not "%EXITCODE%"=="0" (
     pause
     exit /b %EXITCODE%
 )
-echo done. output: dist\openhis-pro-ui-opensource
+echo done.
 exit /b 0

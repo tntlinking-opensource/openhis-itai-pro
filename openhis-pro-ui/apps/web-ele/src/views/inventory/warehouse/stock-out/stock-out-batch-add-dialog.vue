@@ -7,7 +7,7 @@ import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
 import { computed, ref, watch } from 'vue';
 
 import { TableLayout } from '@vben-core/table-layout-ui';
-import { ElButton, ElMessage } from 'element-plus';
+import { ElButton, ElMessage, ElSwitch } from 'element-plus';
 
 import { pageProductsForStockOutApi } from '#/api/inventory/warehouse/stock-out';
 import AppDialog from '#/components/app-dialog.vue';
@@ -53,6 +53,9 @@ const queryParams = ref({
   pageSize: 20,
   keyword: '',
 });
+
+/** 出库批量选品默认仅查账面量>0，用户可取消勾选 */
+const positiveQuantityOnly = ref(true);
 
 const tableData = ref<ProductPickRow[]>([]);
 const selectedRows = ref<ProductPickRow[]>([]);
@@ -153,6 +156,7 @@ async function getList() {
       pageNo: queryParams.value.pageNo,
       pageSize: queryParams.value.pageSize,
       activeFlag: true,
+      positiveQuantityOnly: positiveQuantityOnly.value,
     });
     const parsed = parsePagedRowsFromApiData<Record<string, unknown>>(res.data);
     tableData.value = parsed.content.map(
@@ -177,6 +181,13 @@ function handleQuery(params: Record<string, unknown>) {
 /** 重置查询 */
 function handleReset() {
   queryParams.value = { pageNo: 1, pageSize: 20, keyword: '' };
+  positiveQuantityOnly.value = true;
+  void getList();
+}
+
+/** 「库存大于0」筛选变更后重新拉列表 */
+function handlePositiveQuantityOnlyChange() {
+  queryParams.value.pageNo = 1;
   void getList();
 }
 
@@ -238,6 +249,7 @@ async function selectAllPickRows() {
       pageNo: 1,
       pageSize,
       activeFlag: true,
+      positiveQuantityOnly: positiveQuantityOnly.value,
     });
     const parsed = parsePagedRowsFromApiData<Record<string, unknown>>(res.data);
     const allRows = parsed.content.map((r) => mapInventoryProductPickListRow(r) as ProductPickRow);
@@ -262,6 +274,7 @@ function removeSelected(row: ProductPickRow) {
 function handleClose() {
   dialogVisible.value = false;
   queryParams.value = { pageNo: 1, pageSize: 20, keyword: '' };
+  positiveQuantityOnly.value = true;
   tableData.value = [];
   selectedRows.value = [];
   total.value = 0;
@@ -282,6 +295,7 @@ watch(
   (open) => {
     if (open) {
       queryParams.value = { pageNo: 1, pageSize: 20, keyword: '' };
+      positiveQuantityOnly.value = true;
       selectedRows.value = [];
       void getList();
     }
@@ -323,6 +337,14 @@ watch(
             @row-click="handlePickRowClick"
           >
             <template #toolbar-actions>
+              <div class="stock-out-batch-dialog__qty-filter mr-3">
+                <span class="stock-out-batch-dialog__qty-filter-label">只看库存大于0</span>
+                <ElSwitch
+                  v-model="positiveQuantityOnly"
+                  size="small"
+                  @change="handlePositiveQuantityOnlyChange"
+                />
+              </div>
               <ElButton
                 type="primary"
                 plain
@@ -395,5 +417,24 @@ watch(
 .stock-out-batch-dialog__pane--selected {
   flex: 1;
   min-width: 360px;
+}
+
+.stock-out-batch-dialog__qty-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 4px 8px;
+  border: 1px solid #d7e4f2;
+  border-radius: 4px;
+  background: #f6fbff;
+  cursor: default;
+  user-select: none;
+}
+
+.stock-out-batch-dialog__qty-filter-label {
+  font-size: 12px;
+  line-height: 1;
+  color: var(--el-text-color-regular);
 }
 </style>

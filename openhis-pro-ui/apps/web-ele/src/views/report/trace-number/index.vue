@@ -1,5 +1,5 @@
 <!--
-  追溯码查询报表：只读列表 + 详情 Drawer + Excel 导出；支持 deep link（traceNo + openDetail）。
+  追溯码查询报表：只读列表 + 流水 Drawer + Excel 导出；支持 deep link（traceNo + openDetail）。
 -->
 <script setup lang="ts">
 import type {
@@ -66,7 +66,6 @@ interface QueryState {
   queryScope: TraceNumberReportQueryScope;
   locationId?: string;
   inHospitalStatusEnum?: string;
-  locationStockStatusEnum?: string;
   traceNoKeyword?: string;
   medicationKeyword?: string;
   lotNumberKeyword?: string;
@@ -88,7 +87,6 @@ const detailDrawerRef = ref<InstanceType<typeof TraceNumberDetailDrawer> | null>
 
 const queryScopeOptions = ref<ApiOptionItem[]>([]);
 const inHospitalStatusOptions = ref<ApiOptionItem[]>([]);
-const locationStockStatusOptions = ref<ApiOptionItem[]>([]);
 const locationOptions = ref<ApiOptionItem[]>([]);
 
 const queryParams = reactive<QueryState>({
@@ -163,9 +161,6 @@ function buildPageRequest(): PageTraceNumberReportRequest {
     queryScope: queryParams.queryScope,
     locationId: locationId || undefined,
     inHospitalStatusEnum: queryParams.inHospitalStatusEnum || undefined,
-    locationStockStatusEnum: isLocationScope.value
-      ? queryParams.locationStockStatusEnum || undefined
-      : undefined,
     traceNoKeyword: queryParams.traceNoKeyword?.trim() || undefined,
     medicationKeyword: queryParams.medicationKeyword?.trim() || undefined,
     lotNumberKeyword: queryParams.lotNumberKeyword?.trim() || undefined,
@@ -196,12 +191,23 @@ function formatDateTime(value?: string) {
   return text.length >= 19 ? text.slice(0, 19) : text;
 }
 
+/** 数量展示：整数、无小数；空为 —。 */
+function formatQuantity(value?: number | string) {
+  const text = fmtReportNumber(value, 0);
+  return text || '—';
+}
+
+/** 文本空则 —。 */
+function formatText(value?: null | string) {
+  const text = String(value ?? '').trim();
+  return text || '—';
+}
+
 const { run: runInit, loading: initLoading } = useRequest(loadTraceNumberReportFormInitApi, {
   manual: true,
   onSuccess: (data) => {
     queryScopeOptions.value = optionDtosToSelectItems(data?.queryScopeOptions);
     inHospitalStatusOptions.value = optionDtosToSelectItems(data?.inHospitalStatusOptions);
-    locationStockStatusOptions.value = optionDtosToSelectItems(data?.locationStockStatusOptions);
     locationOptions.value = optionDtosToSelectItems(data?.locationOptions);
     if (!queryParams.queryScope && queryScopeOptions.value[0]?.value) {
       queryParams.queryScope = queryScopeOptions.value[0].value as TraceNumberReportQueryScope;
@@ -225,6 +231,9 @@ const { run: runExport, loading: exportLoading } = useRequest(exportTraceNumberR
 /** 拉取追溯码分页列表。 */
 async function getList() {
   if (isLocationScope.value && !queryParams.locationId) {
+    // 指定库房未选库时清空列表，避免残留全院数据导致「当前所在库房」全是 —
+    tableData.value = [];
+    total.value = 0;
     ElMessage.warning('请选择库房');
     return;
   }
@@ -239,11 +248,21 @@ function handleQuery() {
   void getList();
 }
 
+/** 切换查询范围：切到指定库房且未选库时只清空，不弹窗打扰。 */
+function handleQueryScopeChange() {
+  queryParams.pageNo = 1;
+  if (isLocationScope.value && !queryParams.locationId) {
+    tableData.value = [];
+    total.value = 0;
+    return;
+  }
+  void getList();
+}
+
 /** 重置筛选并回到第一页。 */
 function handleReset() {
   queryParams.locationId = undefined;
   queryParams.inHospitalStatusEnum = undefined;
-  queryParams.locationStockStatusEnum = undefined;
   queryParams.traceNoKeyword = undefined;
   queryParams.medicationKeyword = undefined;
   queryParams.lotNumberKeyword = undefined;
@@ -291,7 +310,7 @@ function handleCurrentPageChange(page: number) {
   void getList();
 }
 
-/** 点击行打开详情 Drawer。 */
+/** 点击行打开流水 Drawer。 */
 function handleOpenDetail(row: TraceNumberReportRowDto) {
   const traceNo = String(row.traceNo ?? '').trim();
   if (!traceNo) {
@@ -300,13 +319,12 @@ function handleOpenDetail(row: TraceNumberReportRowDto) {
   void detailDrawerRef.value?.open(traceNo);
 }
 
-/** 全院范围时清空库房与本库态筛选。 */
+/** 全院范围时清空库房筛选。 */
 watch(
   () => queryParams.queryScope,
   (scope) => {
     if (scope !== TRACE_QUERY_SCOPE_LOCATION) {
       queryParams.locationId = undefined;
-      queryParams.locationStockStatusEnum = undefined;
     }
   },
 );
@@ -325,7 +343,12 @@ onMounted(async () => {
         <ReportQueryBar :model="queryParams as Record<string, unknown>">
           <template #fields>
             <ElFormItem label="查询范围">
-              <ElSelect v-model="queryParams.queryScope" filterable :class="REPORT_QUERY_CONTROL">
+              <ElSelect
+                v-model="queryParams.queryScope"
+                filterable
+                :class="REPORT_QUERY_CONTROL"
+                @change="handleQueryScopeChange"
+              >
                 <ElOption
                   v-for="item in toSelectOptions(queryScopeOptions)"
                   :key="item.value"
@@ -341,6 +364,7 @@ onMounted(async () => {
                 filterable
                 placeholder="请选择库房"
                 :class="REPORT_QUERY_CONTROL"
+                @change="handleQuery"
               >
                 <ElOption
                   v-for="item in toSelectOptions(locationOptions)"
@@ -357,25 +381,10 @@ onMounted(async () => {
                 filterable
                 placeholder="全部"
                 :class="REPORT_QUERY_CONTROL"
+                @change="handleQuery"
               >
                 <ElOption
                   v-for="item in toSelectOptions(inHospitalStatusOptions)"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </ElSelect>
-            </ElFormItem>
-            <ElFormItem v-if="isLocationScope" label="本库状态">
-              <ElSelect
-                v-model="queryParams.locationStockStatusEnum"
-                clearable
-                filterable
-                placeholder="全部"
-                :class="REPORT_QUERY_CONTROL"
-              >
-                <ElOption
-                  v-for="item in toSelectOptions(locationStockStatusOptions)"
                   :key="item.value"
                   :label="item.label"
                   :value="item.value"
@@ -389,6 +398,7 @@ onMounted(async () => {
                 placeholder="追溯码关键字"
                 :class="REPORT_QUERY_CONTROL"
                 @keyup.enter="handleQuery"
+                @clear="handleQuery"
               />
             </ElFormItem>
             <ElFormItem label="药品">
@@ -398,6 +408,7 @@ onMounted(async () => {
                 placeholder="名称/编码/拼音/五笔"
                 :class="REPORT_QUERY_CONTROL"
                 @keyup.enter="handleQuery"
+                @clear="handleQuery"
               />
             </ElFormItem>
             <ElFormItem label="批号">
@@ -407,6 +418,7 @@ onMounted(async () => {
                 placeholder="批号关键字"
                 :class="REPORT_QUERY_CONTROL"
                 @keyup.enter="handleQuery"
+                @clear="handleQuery"
               />
             </ElFormItem>
             <ElFormItem label="流水时间">
@@ -419,6 +431,7 @@ onMounted(async () => {
                 end-placeholder="结束"
                 :shortcuts="dateRangeShortcuts"
                 :class="[REPORT_QUERY_CONTROL, REPORT_QUERY_CONTROL_DATERANGE]"
+                @change="handleQuery"
               />
             </ElFormItem>
           </template>
@@ -458,25 +471,80 @@ onMounted(async () => {
               highlight-current-row
               @row-click="handleOpenDetail"
             >
-              <ElTableColumn type="index" label="序号" width="56" align="center" />
-              <ElTableColumn prop="traceNo" label="追溯码" min-width="180" show-overflow-tooltip>
+              <ElTableColumn
+                type="index"
+                label="序号"
+                width="56"
+                align="center"
+                header-align="center"
+              />
+              <ElTableColumn
+                prop="traceNo"
+                label="追溯码"
+                min-width="180"
+                align="center"
+                header-align="center"
+                show-overflow-tooltip
+              >
                 <template #default="{ row }">
                   <TraceCodeTooltip :value="row.traceNo" />
                 </template>
               </ElTableColumn>
-              <ElTableColumn prop="medicationCode" label="编码" width="100" show-overflow-tooltip />
+              <ElTableColumn
+                v-if="isLocationScope"
+                prop="currentLocationNames"
+                label="当前所在库房"
+                min-width="140"
+                align="center"
+                header-align="center"
+                show-overflow-tooltip
+              >
+                <template #default="{ row }">
+                  {{ formatText(row.currentLocationNames) }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="medicationCode"
+                label="编码"
+                width="100"
+                align="center"
+                header-align="center"
+                show-overflow-tooltip
+              />
               <ElTableColumn
                 prop="medicationName"
                 label="药品名称"
                 min-width="140"
+                align="center"
+                header-align="center"
                 show-overflow-tooltip
               />
-              <ElTableColumn prop="lotNumber" label="批号" width="100" show-overflow-tooltip />
+              <ElTableColumn
+                prop="specificationText"
+                label="规格"
+                min-width="120"
+                align="center"
+                header-align="center"
+                show-overflow-tooltip
+              >
+                <template #default="{ row }">
+                  {{ formatText(row.specificationText) }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="lotNumber"
+                label="批号"
+                width="100"
+                align="center"
+                header-align="center"
+                show-overflow-tooltip
+              />
               <ElTableColumn
                 prop="inHospitalStatusLabel"
                 label="在院状态"
                 width="96"
                 align="center"
+                header-align="center"
               >
                 <template #default="{ row }">
                   <ElTag v-if="row.inHospitalStatusLabel" type="info" effect="light">
@@ -490,52 +558,46 @@ onMounted(async () => {
                 label="拆零剩余"
                 width="96"
                 align="right"
+                header-align="right"
                 :class-name="REPORT_TABLE_NUM_CELL"
               >
                 <template #default="{ row }">
-                  {{ fmtReportNumber(row.remainingSplitQuantity, 2) }}
+                  {{ formatQuantity(row.remainingSplitQuantity) }}
                 </template>
               </ElTableColumn>
               <ElTableColumn
                 prop="traceUnitCode"
                 label="追溯单位"
                 width="88"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                v-if="isLocationScope"
-                prop="locationStockStatusLabel"
-                label="本库状态"
-                width="96"
                 align="center"
+                header-align="center"
+                show-overflow-tooltip
               >
                 <template #default="{ row }">
-                  <ElTag v-if="row.locationStockStatusLabel" effect="light">
-                    {{ row.locationStockStatusLabel }}
-                  </ElTag>
-                  <span v-else>—</span>
+                  {{ formatText(row.traceUnitCode) }}
                 </template>
               </ElTableColumn>
               <ElTableColumn
-                v-if="isLocationScope"
-                prop="locationNetSplitQuantity"
-                label="本库净量"
-                width="96"
-                align="right"
-                :class-name="REPORT_TABLE_NUM_CELL"
+                prop="lastFlowAt"
+                label="最近流水"
+                width="160"
+                align="center"
+                header-align="center"
+                show-overflow-tooltip
               >
-                <template #default="{ row }">
-                  {{ fmtReportNumber(row.locationNetSplitQuantity, 2) }}
-                </template>
-              </ElTableColumn>
-              <ElTableColumn prop="lastFlowAt" label="最近流水" width="160" show-overflow-tooltip>
                 <template #default="{ row }">
                   {{ formatDateTime(row.lastFlowAt) }}
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="操作" width="72" fixed="right" align="center">
+              <ElTableColumn
+                label="操作"
+                width="72"
+                fixed="right"
+                align="center"
+                header-align="center"
+              >
                 <template #default="{ row }">
-                  <ElButton link type="primary" @click.stop="handleOpenDetail(row)">详情</ElButton>
+                  <ElButton link type="primary" @click.stop="handleOpenDetail(row)">流水</ElButton>
                 </template>
               </ElTableColumn>
             </ReportElTable>

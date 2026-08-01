@@ -20,10 +20,11 @@ export const EMR_CONTENT_LOCK_BYPASS_META = 'emrContentLockBypass';
 
 const pluginKey = new PluginKey('emrContentLock');
 
-/** 固定模板时仍允许医生改写的行内节点（可编辑元数据 + 自由文本） */
+/** 固定模板时仍允许医生改写的行内节点（可编辑元数据 + 自由文本 + 勾选） */
 function isAllowedFillableIsland(node: null | PMNode | undefined): boolean {
   if (!node) return false;
   if (node.type.name === 'emrFreeText') return true;
+  if (node.type.name === 'emrCheckboxField') return true;
   if (node.type.name === 'emrDataElement' && node.attrs.editable !== false) return true;
   if (node.type.name === 'emrMetadataChip' && node.attrs.editable !== false) return true;
   return false;
@@ -60,7 +61,6 @@ function fragmentHasStructuralViolation(fragment: Fragment): boolean {
         name === 'emrToc' ||
         name === 'emrTextField' ||
         name === 'emrSelectField' ||
-        name === 'emrCheckboxField' ||
         name === 'table' ||
         name === 'tableRow' ||
         name === 'tableCell' ||

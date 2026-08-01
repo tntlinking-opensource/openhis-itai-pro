@@ -1,4 +1,4 @@
-<script lang="ts" setup>
+﻿<script lang="ts" setup>
 import type {
   CreateDeviceCatalogParams,
   DeviceCatalogInitResponse,
@@ -39,6 +39,11 @@ import {
   CATALOG_EDITABILITY_OK,
   isCatalogStructureLocked,
 } from '#/views/basic/catalog/catalog-editability';
+import CatalogLotPriceDialog from '#/views/basic/catalog/catalog-lot-price-dialog.vue';
+import {
+  resolveCatalogRecordNavState,
+  type CatalogRecordNavDirection,
+} from '#/views/basic/catalog/catalog-record-nav';
 
 interface Props {
   modelValue: boolean;
@@ -46,15 +51,32 @@ interface Props {
   catalogId: string;
   /** 列表页已拉取的字典选项，减少重复请求 */
   initOptionsSource: DeviceCatalogInitResponse;
+  /** 当前列表页记录 id */
+  recordIds?: string[];
+  /** 列表当前页码（从 1 起），供跨页上下翻 */
+  pageNo?: number;
+  /** 列表每页条数 */
+  pageSize?: number;
+  /** 当前筛选条件下的总条数 */
+  listTotal?: number;
+  /** 列表正在为上下翻换页 */
+  navigating?: boolean;
 }
 
 defineOptions({
   name: 'DeviceCatalogEditDialog',
 });
 
-const props = defineProps<Props>();
+const props = withDefaults(defineProps<Props>(), {
+  recordIds: () => [],
+  pageNo: 1,
+  pageSize: 10,
+  listTotal: 0,
+  navigating: false,
+});
 
 const emit = defineEmits<{
+  navigate: [direction: CatalogRecordNavDirection];
   success: [];
   'update:modelValue': [value: boolean];
 }>();
@@ -72,6 +94,7 @@ const loading = ref(false);
 const upload3301Loading = ref(false);
 const revoke3302Loading = ref(false);
 const pickerVisible = ref(false);
+const lotPriceOpen = ref(false);
 const defaultContractBusNo = ref<string>();
 const formAreaRef = ref<HTMLElement | null>(null);
 const formData = ref<Partial<DeviceCatalogItem>>({});
@@ -343,6 +366,53 @@ const dialogTitle = computed(() => {
   return name ? `编辑耗材 — ${name}` : '编辑耗材';
 });
 
+/** 打开价格弹窗（仅编辑态） */
+function handleViewLotPrices() {
+  if (!isEditMode.value || !props.catalogId) {
+    ElMessage.warning('请先保存耗材后再查看价格');
+    return;
+  }
+  lotPriceOpen.value = true;
+}
+
+/** 编辑态且列表有多条时展示上下翻（可跨页） */
+const recordNavState = computed(() =>
+  resolveCatalogRecordNavState(props.recordIds, props.catalogId, {
+    pageNo: props.pageNo,
+    pageSize: props.pageSize,
+    listTotal: props.listTotal,
+  }),
+);
+
+const showRecordNav = computed(() => {
+  if (!isEditMode.value) {
+    return false;
+  }
+  return recordNavState.value.listTotal > 1;
+});
+
+const canNavigatePrev = computed(() => recordNavState.value.canPrev);
+
+const canNavigateNext = computed(() => recordNavState.value.canNext);
+
+const recordNavBusy = computed(() => loading.value || props.navigating);
+
+/** 切换到上一条耗材（必要时由列表翻页） */
+function handleNavigatePrev() {
+  if (!canNavigatePrev.value || recordNavBusy.value) {
+    return;
+  }
+  emit('navigate', -1);
+}
+
+/** 切换到下一条耗材（必要时由列表翻页） */
+function handleNavigateNext() {
+  if (!canNavigateNext.value || recordNavBusy.value) {
+    return;
+  }
+  emit('navigate', 1);
+}
+
 /** 关闭弹窗（取消 / 点 X） */
 function closeDialog() {
   emit('update:modelValue', false);
@@ -447,6 +517,7 @@ function normalizeFormSelectValues(data: Record<string, unknown>) {
     'ybType',
     'chrgitmLv',
     'mrSettlementTypeCode',
+    'traceUnitCode',
   ];
   const next = normalizeUnitFieldNames({ ...data });
   selectFieldNames.forEach((field) => {
@@ -468,6 +539,9 @@ async function loadInitOptions() {
   }
 }
 
+/** 避免快速上下翻时旧请求回写覆盖新详情 */
+let deviceDetailLoadSeq = 0;
+
 async function loadDetailData() {
   const id = String(props.catalogId || '');
   if (!id) {
@@ -481,9 +555,18 @@ async function loadDetailData() {
     return;
   }
 
+  const loadSeq = ++deviceDetailLoadSeq;
   loading.value = true;
   try {
+    // 切换记录前先清空，避免上一张残留字段混入回显（setValues 不会删旧键）
+    await resetFormState();
+    if (loadSeq !== deviceDetailLoadSeq) {
+      return;
+    }
     const response = await getDeviceCatalogApi(id);
+    if (loadSeq !== deviceDetailLoadSeq) {
+      return;
+    }
     const detail = response.data;
     if (!detail) {
       ElMessage.warning('未找到耗材信息');
@@ -498,20 +581,38 @@ async function loadDetailData() {
     const normalizedData = normalizeFormSelectValues(detail as Record<string, unknown>);
     normalizeBooleanFields(normalizedData);
     formData.value = { ...normalizedData };
-    formApi.setValues(normalizedData);
+    await formApi.setValues(normalizedData);
 
     const inlineGroupValue: Record<string, boolean> = {};
     CHECKBOX_INLINE_GROUP_FIELDS.forEach((key) => {
       inlineGroupValue[key] = coerceLegacyBool(normalizedData[key]);
     });
-    formApi.setFieldValue('__checkbox_inline_group', inlineGroupValue);
+    await formApi.setFieldValue('__checkbox_inline_group', inlineGroupValue);
+    // 单位 options 就绪后再写一次，避免 Select 只回显 code
+    for (const field of [
+      'doseUnitCode',
+      'purchaseUnitCode',
+      'splitUnitCode',
+      'packageUnitCode',
+      'stockUnitCode',
+    ] as const) {
+      const v = normalizedData[field];
+      if (v !== undefined && v !== null && v !== '') {
+        await formApi.setFieldValue(field, String(v));
+      }
+    }
     syncDeviceEditabilitySchema();
   } catch (error) {
+    if (loadSeq !== deviceDetailLoadSeq) {
+      return;
+    }
     console.error('获取耗材详情失败:', error);
     ElMessage.error('获取耗材详情失败，请稍后重试');
     closeDialog();
   } finally {
-    loading.value = false;
+    if (loadSeq === deviceDetailLoadSeq) {
+      loading.value = false;
+    }
   }
 }
 
@@ -600,6 +701,31 @@ async function handleSubmit() {
     const formValues = (await formApi.getValues()) as Record<string, unknown>;
     const submitData = buildSubmitData(formValues);
 
+    // 耗材追溯：单位与倍数均可空，但任一侧有值则须成对且倍数 > 0（对齐后端 DeviceCatalogAppService）
+    const traceUnitCode = String(submitData.traceUnitCode ?? '').trim();
+    const traceRatioRaw = submitData.traceUnitRatio;
+    const hasTraceUnit = traceUnitCode.length > 0;
+    const hasTraceRatio =
+      traceRatioRaw !== undefined && traceRatioRaw !== null && String(traceRatioRaw).trim() !== '';
+    if (hasTraceUnit !== hasTraceRatio) {
+      ElMessage.error('追溯码单位与倍数须同时填写或同时留空');
+      loading.value = false;
+      return;
+    }
+    if (hasTraceRatio) {
+      const ratio = Number(traceRatioRaw);
+      if (!Number.isFinite(ratio) || ratio <= 0) {
+        ElMessage.error('追溯码/拆零倍数须大于 0');
+        loading.value = false;
+        return;
+      }
+      submitData.traceUnitCode = traceUnitCode;
+      submitData.traceUnitRatio = ratio;
+    } else {
+      submitData.traceUnitCode = undefined;
+      submitData.traceUnitRatio = undefined;
+    }
+
     if (isEditMode.value) {
       const updateData = buildUpdatePayload(submitData);
       await updateDeviceCatalogApi(updateData);
@@ -636,7 +762,7 @@ const [Form, formApi] = useVbenForm(
         class: 'w-full',
       },
     },
-    // lg 起固定四列，避免「库存与单位」4×4 在 lg:3 列时第四格换行导致前三行只有三列（与药品目录一致）
+    // lg 起固定四列，避免「库存与单位」栅格在 lg:3 列时第四格换行导致前三行只有三列（与药品目录一致）
     wrapperClass: 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4',
     schema: computed(() => [
       {
@@ -737,11 +863,6 @@ const [Form, formApi] = useVbenForm(
         },
       },
       {
-        component: 'Input',
-        fieldName: 'ybOrgNo',
-        label: '医药机构目录编码',
-      },
-      {
         component: 'Select',
         fieldName: 'ybType',
         label: '医保类别',
@@ -809,7 +930,9 @@ const [Form, formApi] = useVbenForm(
           title: '库存与单位信息',
         },
       },
-      // 库存与单位：四列四行 — 列1 单位、列2 倍数、列3 价格/警戒线高；列4 原门诊/住院/库房已删，用占位；第4 行第3–4 列：警戒线高/低
+      // 库存与单位：对齐药品目录四列栅格 —
+      // 列1 单位、列2 倍数聚拢；列3 价格；列4 耗材无门诊/住院拆分，用占位；
+      // 第4 行第3–4 列：警戒线；第5 行：追溯码单位+倍数（游离单位，仍靠左与其它单位对齐）
       {
         component: 'Select',
         fieldName: 'purchaseUnitCode',
@@ -832,12 +955,12 @@ const [Form, formApi] = useVbenForm(
       {
         component: 'InputNumber',
         fieldName: 'purchasePrice',
-        label: '购入价（包装单位）',
+        label: '采购参考价（包装单位）',
         rules: isEditMode.value ? undefined : 'required',
         componentProps: {
           min: 0,
           precision: 2,
-          placeholder: '请输入购入价',
+          placeholder: '请输入采购参考价',
           disabled: isEditMode.value,
         },
       },
@@ -864,12 +987,12 @@ const [Form, formApi] = useVbenForm(
       {
         component: 'InputNumber',
         fieldName: 'retailPrice',
-        label: '零售价（包装单位）',
+        label: '销售参考价（包装单位）',
         rules: isEditMode.value ? undefined : 'required',
         componentProps: {
           min: 0,
           precision: 2,
-          placeholder: '请输入零售价',
+          placeholder: '请输入销售参考价',
           disabled: isEditMode.value,
         },
       },
@@ -934,6 +1057,28 @@ const [Form, formApi] = useVbenForm(
           min: 0,
         },
       },
+      {
+        component: 'Select',
+        fieldName: 'traceUnitCode',
+        label: '追溯码单位',
+        componentProps: {
+          options: unitCodeOptions.value,
+          filterable: true,
+          placeholder: '可选，追溯码贴码单位',
+          clearable: true,
+        },
+      },
+      {
+        component: 'InputNumber',
+        fieldName: 'traceUnitRatio',
+        label: '追溯码/拆零倍数',
+        componentProps: {
+          ...UNIT_RATIO_INPUT_PROPS,
+          placeholder: '1 追溯码单位 = 多少拆零',
+        },
+      },
+      buildInvGridPadField('__inv_grid_pad_r5c3'),
+      buildInvGridPadField('__inv_grid_pad_r5c4'),
 
       {
         component: 'SectionTitle',
@@ -1016,6 +1161,9 @@ watch(
     }
 
     await loadDetailData();
+    if (props.catalogId !== catalogId) {
+      return;
+    }
     lastLoadedCatalogId.value = catalogId;
   },
   { flush: 'post' },
@@ -1041,7 +1189,9 @@ watch(
         type="warning"
         :closable="false"
         show-icon
-        :title="editabilityMessage || '该耗材已产生业务引用，分类/单位/拆零倍数/价格等字段不可修改'"
+        :title="
+          editabilityMessage || '该耗材已产生业务引用，名称/分类/单位/拆零倍数/价格等字段不可修改'
+        "
       />
       <div
         ref="formAreaRef"
@@ -1055,6 +1205,7 @@ watch(
       <div class="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-5">
         <div v-if="isEditMode" class="flex flex-wrap gap-2">
           <ElButton type="success" plain @click="openCatalogPicker">从国家目录选择</ElButton>
+          <ElButton type="primary" plain @click="handleViewLotPrices">价格</ElButton>
           <ElButton
             v-if="canUpload3301"
             type="warning"
@@ -1074,7 +1225,15 @@ watch(
             撤销医保对照(3302)
           </ElButton>
         </div>
-        <div class="flex gap-2">
+        <div class="flex flex-wrap gap-2">
+          <template v-if="showRecordNav">
+            <ElButton :disabled="!canNavigatePrev || recordNavBusy" @click="handleNavigatePrev">
+              上一个
+            </ElButton>
+            <ElButton :disabled="!canNavigateNext || recordNavBusy" @click="handleNavigateNext">
+              下一个
+            </ElButton>
+          </template>
           <ElButton type="primary" :loading="loading" @click="handleSubmit">保存</ElButton>
           <ElButton @click="closeDialog">取消</ElButton>
         </div>
@@ -1084,6 +1243,12 @@ watch(
       v-model="pickerVisible"
       :context="pickerContext"
       @confirm="applyCatalogSelection"
+    />
+    <CatalogLotPriceDialog
+      v-model="lotPriceOpen"
+      catalog-type="device"
+      :item-id="catalogId"
+      :item-name="String(formData?.name ?? '')"
     />
   </ElDialog>
 </template>

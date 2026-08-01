@@ -3,7 +3,7 @@ import { createApp, watchEffect } from 'vue';
 import { unmountGlobalLoading } from '@vben/utils/es/helpers/unmount-global-loading';
 
 import { useTitle } from '@vueuse/core';
-import ElementPlus, { ElLoading } from 'element-plus';
+import ElementPlus from 'element-plus';
 
 import App from './app.vue';
 
@@ -15,6 +15,7 @@ import './styles/layout-viewport-compact.css';
 import './styles/doctor-station-viewport-compact.css';
 import './styles/inventory-viewport-compact.css';
 import './styles/persistent-error-messagebox.css';
+import './styles/date-picker-shortcuts-bottom.css';
 
 async function bootstrap(namespace: string) {
   // 添加全局错误处理，捕获 Element Plus useKeydown.ts 中的 querySelectorAll 错误
@@ -72,10 +73,8 @@ async function bootstrap(namespace: string) {
     console.error('Vue error:', err, instance, info);
   };
 
+  // ElementPlus 已内置注册 v-loading，勿再 app.directive('loading', ...)
   app.use(ElementPlus);
-
-  // 注册Element Plus提供的v-loading指令
-  app.directive('loading', ElLoading.directive);
 
   // 配置 pinia-tore
   const [{ initStores }, { router }] = await Promise.all([

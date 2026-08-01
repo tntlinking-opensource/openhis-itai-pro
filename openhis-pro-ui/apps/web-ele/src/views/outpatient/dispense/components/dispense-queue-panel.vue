@@ -14,6 +14,7 @@ import { ElButton, ElDatePicker, ElInput, ElRadio, ElRadioGroup } from 'element-
 
 import SectionTitle from '#/components/layouts/section-title.vue';
 import PatientCard from '#/components/outpatient/patient-card.vue';
+import { buildDefaultDateRangeShortcuts } from '#/utils/format/date-picker-shortcuts';
 
 import { toDispensePatientCardModel } from './dispense-patient-card-map';
 
@@ -38,6 +39,9 @@ interface Props {
 const keyword = defineModel<string>('keyword', { required: true });
 const queueDateRange = defineModel<[string, string] | null>('queueDateRange', { required: true });
 const queueScope = defineModel<'completed' | 'pending'>('queueScope', { required: true });
+
+/** 区间查询：展开面板默认快捷时间范围 */
+const dateRangeShortcuts = buildDefaultDateRangeShortcuts();
 
 const isQueueListRefreshing = ref(false);
 
@@ -81,6 +85,7 @@ function onPatientCardSelect(card: PatientCardPatient) {
           end-placeholder="结束日期"
           format="YYYY-MM-DD"
           value-format="YYYY-MM-DD"
+          :shortcuts="dateRangeShortcuts"
           @change="emit('queueDateRangeChange', $event as [string, string] | null)"
         />
       </div>

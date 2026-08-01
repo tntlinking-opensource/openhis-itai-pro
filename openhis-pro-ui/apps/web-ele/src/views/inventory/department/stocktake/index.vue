@@ -6,11 +6,13 @@ import type { DeptStocktakeLocationOption } from '#/api/inventory/department/sto
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
+import { useUserStore } from '@vben/stores';
 import { formatDateTime } from '@vben/utils';
 
 import {
   INV_ALL_LOCATIONS_FILTER_ID,
   INV_ITEM_TABLE_TYPE_DEVICE,
+  mapInventoryPractitionerInitOptions,
   normalizeInventoryItemTableTypeOptions,
   normalizeSidebarLocationFilterValue,
   pickWorkbenchOrderAfterSave,
@@ -21,12 +23,16 @@ import {
   pageDeptStocktakeWorkbenchListApi,
 } from '#/api/inventory/department/stocktake';
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
+import { useFromFinanceApproval } from '#/composables/use-from-finance-approval';
 import StocktakeAsidePane from '@inventory/components/stocktake/stocktake-aside-pane.vue';
 import StocktakeMainPane from '@inventory/components/stocktake/stocktake-main-pane.vue';
 
 defineOptions({
   name: 'InventoryDeptStocktakePage',
 });
+
+const { fromFinanceApproval } = useFromFinanceApproval();
+const userStore = useUserStore();
 
 const route = useRoute();
 
@@ -58,6 +64,7 @@ const tableForm = ref<{ purposeLocationId?: number | string }>({
 const cabinetListOptions = ref<Record<string, unknown>[]>([]);
 const locationRawOptions = ref<DeptStocktakeLocationOption[]>([]);
 const itemTableTypeOptions = ref<ApiOptionItem[]>([]);
+const practitionerOptions = ref<ApiOptionItem[]>([]);
 
 const orderList = ref<Record<string, unknown>[]>([]);
 const selectedOrder = ref<null | Record<string, unknown>>(null);
@@ -105,6 +112,10 @@ async function init() {
       data.itemTableTypeOptions,
       INV_ITEM_TABLE_TYPE_DEVICE,
     );
+    practitionerOptions.value = mapInventoryPractitionerInitOptions(
+      [data.pharmacistOptions, data.warehouseKeeperOptions],
+      userStore.userInfo,
+    );
     if (
       tableForm.value.purposeLocationId === undefined ||
       tableForm.value.purposeLocationId === null ||
@@ -119,6 +130,7 @@ async function init() {
     cabinetListOptions.value = [];
     locationRawOptions.value = [];
     itemTableTypeOptions.value = [];
+    practitionerOptions.value = [];
   }
 }
 
@@ -212,9 +224,9 @@ onMounted(async () => {
 
 <template>
   <WarehouseDocWorkstation
-    aside-width="280px"
     queue-title=""
     aside-dense
+    :show-aside="!fromFinanceApproval"
     :show-aside-filter="false"
     :show-toolbar="false"
   >
@@ -242,6 +254,7 @@ onMounted(async () => {
       :is-draft-order="isDraftOrder"
       :item-table-type-options="itemTableTypeOptions"
       :location-options="locationRawOptions"
+      :practitioner-options="practitionerOptions"
       location-field-label="盘点科室"
       head-section-title="科室盘点单"
       :reset-key="mainPaneResetKey"

@@ -1,7 +1,7 @@
-/** 工作台角色分组标识 */
-export type WorkbenchGroupId = 'admin' | 'cashier' | 'custom' | 'doctor' | 'nurse' | 'pharmacy';
+/** 工作台分组标识（管理员固定组 + 按菜单父级动态组） */
+export type WorkbenchGroupId = string;
 
-/** 工作台分组配置（menuCodes 对应后端菜单 code / 路由 name） */
+/** 工作台分组配置（menuCodes 对应后端菜单 code / 路由 name；动态组可为空） */
 export interface WorkbenchGroupConfig {
   accentColor: string;
   accentGradient: string;

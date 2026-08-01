@@ -4,8 +4,10 @@ import type { JSONContent } from '@tiptap/core';
 import type { FormItemOption } from '@vben-core/table-layout-ui';
 
 import type { TemplateContentDto, TemplateDto } from '#/api/emr/template';
+import type { EmrPrintConfigPayload, GenerateDocumentPdfParams } from '#/api/emr/document';
 
 import { getOrganizationApiByLoginUser } from '#/api/core/auth';
+import { generateDocumentPdfApi } from '#/api/emr/document';
 import {
   createTemplateApi,
   getTemplateContentApi,
@@ -34,8 +36,10 @@ import {
   ElSwitch,
 } from 'element-plus';
 
+import EmrPdfPreviewDialog from '#/components/outpatient/emr-pdf-preview-dialog.vue';
 import { SimpleEditor, useEmrMetadata } from '#/emrEditor';
 import { defaultEmrEditorDoc } from '#/emrEditor/components/simple-editor/editor-defaults';
+import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 
 import {
   EMR_TEMPLATE_ENCOUNTER_CLASS,
@@ -111,30 +115,210 @@ watch(
 /** 模板正文：Tiptap JSON，与 SimpleEditor 双向绑定 */
 const docJson = ref<JSONContent | null>(null);
 
+/** 页边距（与编辑器「打印标准」一致，供 PDF 预览） */
+const pageMargins = ref({
+  top: '25.4mm',
+  right: '31.8mm',
+  bottom: '25.4mm',
+  left: '31.8mm',
+});
+
+const pdfPreviewVisible = ref(false);
+const pdfPreviewBase64 = ref('');
+const pdfPreviewPageCount = ref<number | undefined>();
+const pdfPreviewTitle = ref('打印预览');
+const pdfLoading = ref(false);
+
 /** 文书类型下拉选项，由列表页传入并可在字典加载后更新 */
 const documentTypeOptions = ref<FormItemOption[]>([]);
 
+const documentTypeName = computed(() => {
+  const code = form.documentTypeCode.trim();
+  if (!code) return '';
+  const hit = documentTypeOptions.value.find((o) => String(o.value) === code);
+  return String(hit?.label ?? '').trim();
+});
+
+/** 门诊病历纸质底边戒烟提示（与医生站一致） */
+const OUTPATIENT_EMR_SMOKE_FREE_FOOTER =
+  '为了您和家人的健康，请勿吸烟！如需戒烟帮助，请咨询戒烟医生。';
+
+function buildPrintConfigFromPageMargins(
+  margins: typeof pageMargins.value,
+): EmrPrintConfigPayload | undefined {
+  const parseMm = (raw: string): number | undefined => {
+    const m = String(raw ?? '')
+      .trim()
+      .match(/^([\d.]+)\s*mm$/i);
+    if (!m) return undefined;
+    const n = Number(m[1]);
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  };
+  const topMm = parseMm(margins.top);
+  const rightMm = parseMm(margins.right);
+  const bottomMm = parseMm(margins.bottom);
+  const leftMm = parseMm(margins.left);
+
+  const isOutpatientRecord = form.documentTypeCode.trim() === 'OUTPATIENT_RECORD';
+  const footer = isOutpatientRecord
+    ? {
+        enabled: true,
+        heightMm: 20,
+        template: `${OUTPATIENT_EMR_SMOKE_FREE_FOOTER}　第 {page} 页`,
+        showPageNumber: true,
+      }
+    : undefined;
+
+  if (topMm == null && rightMm == null && bottomMm == null && leftMm == null && !footer) {
+    return undefined;
+  }
+
+  let resolvedBottom = bottomMm;
+  if (isOutpatientRecord && (resolvedBottom == null || resolvedBottom < 28)) {
+    resolvedBottom = 28;
+  }
+
+  return {
+    ...(topMm != null || rightMm != null || resolvedBottom != null || leftMm != null
+      ? {
+          margins: {
+            ...(topMm != null ? { topMm } : {}),
+            ...(rightMm != null ? { rightMm } : {}),
+            ...(resolvedBottom != null ? { bottomMm: resolvedBottom } : {}),
+            ...(leftMm != null ? { leftMm } : {}),
+          },
+        }
+      : {}),
+    ...(footer ? { footer } : {}),
+  };
+}
+
+async function handlePrintPreview() {
+  if (pdfLoading.value) return;
+  const content = docJson.value;
+  if (!content) {
+    ElMessage.warning('没有可预览的内容');
+    return;
+  }
+  pdfLoading.value = true;
+  try {
+    const orgName = resolvePrintHospitalName();
+    const metadata: Record<string, string> = {};
+    if (orgName) {
+      // 院名字段在模板里多为 orgName；兼容 hospitalName
+      metadata.orgName = orgName;
+      metadata.hospitalName = orgName;
+    }
+    const params: GenerateDocumentPdfParams = {
+      content: applyPreviewMetadataToContent(content, metadata),
+      previewMode: true,
+      documentTitle: (form.name.trim() || '模板').trim(),
+      documentTypeName: documentTypeName.value || undefined,
+      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+      printConfig: buildPrintConfigFromPageMargins(pageMargins.value),
+    };
+    const result = await generateDocumentPdfApi(params);
+    if (!result?.pdfBase64?.trim()) {
+      ElMessage.warning('未生成 PDF 内容');
+      return;
+    }
+    pdfPreviewTitle.value = `${form.name.trim() || '模板'} · 预览`;
+    pdfPreviewBase64.value = result.pdfBase64;
+    pdfPreviewPageCount.value = result.pageCount;
+    pdfPreviewVisible.value = true;
+  } catch {
+    // 拦截器已提示
+  } finally {
+    pdfLoading.value = false;
+  }
+}
+
+/**
+ * 模板预览：将 metadata 写入正文空数据元（不改编辑器原稿）。
+ * 后端 PDF 也会按 metadata 回退取值；双端都填，避免院名空白。
+ */
+function applyPreviewMetadataToContent(
+  content: JSONContent,
+  metadata: Record<string, string>,
+): JSONContent {
+  if (!metadata || Object.keys(metadata).length === 0) {
+    return content;
+  }
+  const clone = structuredClone(content) as JSONContent;
+  const walk = (node: JSONContent) => {
+    const type = String(node.type ?? '');
+    if (type === 'emrDataElement' || type === 'emrMetadataChip') {
+      const attrs = (node.attrs ?? {}) as Record<string, unknown>;
+      const id = String(attrs.elementId ?? attrs.fieldKey ?? '').trim();
+      const cur = String(attrs.value ?? '').trim();
+      if (id && !cur && metadata[id]) {
+        node.attrs = { ...attrs, value: metadata[id] };
+      }
+    }
+    const children = node.content;
+    if (Array.isArray(children)) {
+      for (const child of children) {
+        walk(child);
+      }
+    }
+  };
+  walk(clone);
+  return clone;
+}
 /** 新建模板时的默认空文档结构 */
 function cloneDefaultDoc(): JSONContent {
   return structuredClone(defaultEmrEditorDoc);
 }
 
+function resetPageMargins() {
+  pageMargins.value = {
+    top: '25.4mm',
+    right: '31.8mm',
+    bottom: '25.4mm',
+    left: '31.8mm',
+  };
+}
+
 /**
  * 将接口返回的 content 转成编辑器可用的 doc。
  * 支持 JSON 字符串或对象；解析失败或非 doc 结构时回退默认文档，避免编辑器报错。
+ * ProseMirror 拒收空 text 节点，入库脏数据会导致 setContent 失败、正文空白。
  */
+function scrubEmptyTextNodes(node: unknown): unknown {
+  if (Array.isArray(node)) {
+    return node
+      .filter(
+        (item) =>
+          !(
+            item &&
+            typeof item === 'object' &&
+            (item as JSONContent).type === 'text' &&
+            (item as { text?: string }).text === ''
+          ),
+      )
+      .map((item) => scrubEmptyTextNodes(item));
+  }
+  if (node && typeof node === 'object') {
+    const n = node as JSONContent & { content?: unknown };
+    if (Array.isArray(n.content)) {
+      return { ...n, content: scrubEmptyTextNodes(n.content) };
+    }
+  }
+  return node;
+}
+
 function normalizeContent(raw: unknown): JSONContent {
   if (raw === null || raw === undefined) return cloneDefaultDoc();
+  let parsed: unknown = raw;
   if (typeof raw === 'string') {
     try {
-      const parsed = JSON.parse(raw) as JSONContent;
-      return parsed?.type === 'doc' ? parsed : cloneDefaultDoc();
+      parsed = JSON.parse(raw.trim()) as JSONContent;
     } catch {
       return cloneDefaultDoc();
     }
   }
-  if (typeof raw === 'object' && raw !== null && (raw as JSONContent).type === 'doc') {
-    return raw as JSONContent;
+  if (typeof parsed === 'object' && parsed !== null && (parsed as JSONContent).type === 'doc') {
+    return scrubEmptyTextNodes(parsed) as JSONContent;
   }
   return cloneDefaultDoc();
 }
@@ -216,6 +400,7 @@ function applyContentDto(dto: TemplateContentDto) {
   form.ownerPractitionerId =
     preserveApiIdForRequest(dto.ownerPractitionerId) ?? loginPractitionerId.value ?? '';
   docJson.value = normalizeContent(dto.content);
+  resetPageMargins();
 }
 
 /** 打开纯新建弹窗时重置表单与文档 */
@@ -231,6 +416,7 @@ function resetCreate() {
   form.organizationId = '';
   form.ownerPractitionerId = loginPractitionerId.value ?? '';
   docJson.value = cloneDefaultDoc();
+  resetPageMargins();
 }
 
 async function loadOrganizationOptions() {
@@ -329,7 +515,7 @@ async function open(options: {
     form.code = options.row?.code ?? '';
     form.documentTypeCode = options.row?.documentTypeCode ?? '';
     form.enabled = options.row?.isEnabled !== false;
-    docJson.value = cloneDefaultDoc();
+    docJson.value = null;
     await loadContentById(strId);
     return;
   }
@@ -346,7 +532,8 @@ async function open(options: {
   form.code = options.row?.code ?? '';
   form.documentTypeCode = options.row?.documentTypeCode ?? '';
   form.enabled = options.row?.isEnabled !== false;
-  docJson.value = cloneDefaultDoc();
+  // 等 getContent 返回再挂载编辑器，避免先空文档再 setContent 失败时一直空白
+  docJson.value = null;
   await loadContentById(strId);
 }
 
@@ -539,9 +726,12 @@ defineExpose({
       </aside>
 
       <div class="emr-template-editor-dialog__editor">
+        <div v-if="loadLoading" class="emr-template-editor-dialog__loading">加载模板正文…</div>
         <SimpleEditor
-          v-if="docJson"
+          v-else-if="docJson"
+          :key="(templateId ?? form.code) || 'new'"
           v-model="docJson"
+          v-model:page-margins="pageMargins"
           placeholder="编辑模板正文（Tiptap JSON）"
           surface="template"
           :read-only="readOnly()"
@@ -552,6 +742,9 @@ defineExpose({
 
     <template #footer>
       <div class="emr-template-editor-dialog__footer">
+        <ElButton :loading="pdfLoading" :disabled="!docJson" @click="handlePrintPreview">
+          打印预览
+        </ElButton>
         <ElButton v-if="showCopyInDialog()" @click="handleCopyAsNew">复制为新模板</ElButton>
         <ElButton @click="closeDialog">取消</ElButton>
         <ElButton v-if="!readOnly()" type="primary" :loading="saveLoading()" @click="handleSave">
@@ -560,6 +753,13 @@ defineExpose({
       </div>
     </template>
   </ElDialog>
+
+  <EmrPdfPreviewDialog
+    v-model="pdfPreviewVisible"
+    :pdf-base64="pdfPreviewBase64"
+    :page-count="pdfPreviewPageCount"
+    :title="pdfPreviewTitle"
+  />
 </template>
 
 <style scoped>
@@ -601,6 +801,15 @@ defineExpose({
   flex: 1;
   flex-direction: column;
   overflow: hidden;
+}
+
+.emr-template-editor-dialog__loading {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  color: var(--el-text-color-secondary);
+  font-size: 14px;
 }
 
 .emr-template-editor-dialog__editor :deep(.simple-editor) {

@@ -1,5 +1,5 @@
 <!--
-  药库退库单（退库入库）右侧主区。
+  药库退货入库单右侧主区。
 -->
 <script setup lang="ts">
 import type { VxeGridProps, VxeGridPropTypes } from '#/adapter/vxe-table';
@@ -12,7 +12,6 @@ import type {
 
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 
-import { Trash2 } from '@vben/icons';
 import { useUserStore } from '@vben/stores';
 import { formatDateTime } from '@vben/utils';
 
@@ -40,6 +39,7 @@ import {
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import { useInventoryDocGridEdit } from '#/composables/use-inventory-doc-grid-edit';
+import { bindInvDocCompactColumns } from '#/composables/use-inv-doc-compact-columns';
 import { useInvDocParentSyncSession } from '#/composables/use-inv-doc-parent-sync-session';
 import {
   agreeReturnStockInApi,
@@ -75,18 +75,21 @@ import {
   type InboundProductUnitBand,
 } from '#/utils/inventory/inbound-product-unit-bands';
 import {
-  isStockOutDocumentEditableStatus,
   isStockOutDocumentRemovableStatus,
   buildStockOutDocActionFlags,
   stockOutStatusLabel,
   normalizeStockOutStatusSort,
 } from '#/utils/inventory/stock-out-doc-actions';
 import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
+import { resolveLoginPractitionerLabelFromUserInfo } from '#/utils/inventory/inventory-workbench-list';
 import {
   buildInventoryLocationHeadFormRules,
   clearInventoryHeadFormValidation,
   validateInventoryHeadFormFields,
 } from '#/utils/inventory/inventory-doc-head-form-validation';
+import { INV_DOC_READONLY_SHELL_HINT } from '#/utils/inventory/inventory-doc-restrictions';
+import { buildInvDocumentTitle, printInvDocument } from '#/utils/print/print-inv-document';
+import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 
 defineOptions({ name: 'InventoryWarehouseReturnStockInMainPane' });
 
@@ -164,7 +167,7 @@ const headFormModel = computed(() => ({
 
 const headFormRules = computed(() =>
   buildInventoryLocationHeadFormRules({
-    sourceLocationId: '退库来源',
+    sourceLocationId: '退货来源',
     purposeLocationId: '接收药库',
   }),
 );
@@ -181,27 +184,35 @@ const linkDeliveryTotal = ref(0);
 const linkDeliveryRecords = ref<WarehouseDocumentDetailRowDto[]>([]);
 
 const isNewDraft = computed(() => !headerBusNo.value);
-const documentEditable = computed(
-  () => isNewDraft.value || isStockOutDocumentEditableStatus(detailStatusEnum.value),
-);
+/** 壳单只读：由药房/科室退库 agree 自动生成，禁止改单 */
+const isReadOnlyShell = computed(() => true);
+const documentEditable = computed(() => false);
 const headerStatusText = computed(() => {
-  if (isNewDraft.value) return '编辑中';
+  if (isNewDraft.value) return '—';
   return stockOutStatusLabel(detailStatusEnum.value);
 });
 const docActionFlags = computed(() => {
+  const hasPersistedBusNo = Boolean(headerBusNo.value);
   const base = buildStockOutDocActionFlags({
-    hasPersistedBusNo: Boolean(headerBusNo.value),
+    hasPersistedBusNo,
     isDraft: isNewDraft.value,
     status: detailStatusEnum.value,
   });
   const busy = saving.value;
+  // 只读壳：仅开放打印
   return {
     ...base,
-    saveDisabled: base.saveDisabled || busy,
-    saveAndSubmitDisabled: base.saveAndSubmitDisabled || busy,
+    saveDisabled: true,
+    saveAndSubmitDisabled: true,
+    removeDisabled: true,
+    submitApprovalDisabled: true,
+    withdrawDisabled: true,
+    approveDisabled: true,
+    rejectDisabled: true,
+    printDisabled: busy || !hasPersistedBusNo,
   };
 });
-const canEditOriginalBusNo = computed(() => documentEditable.value && isNewDraft.value);
+const canEditOriginalBusNo = computed(() => false);
 
 function resolveSourceTypeEnum(): number {
   const sid = sourceLocationId.value;
@@ -295,16 +306,17 @@ function mapDetailLineToGrid(ln: ReturnStockInDetailLineDto, rowIdx: number): Re
     productName: name,
     itemQuantity: ln.itemQuantity === undefined ? undefined : Number(ln.itemQuantity),
     unitCode: String(ln.unitCode ?? ''),
+    unitCodeDictText: String(ln.unitCodeDictText ?? '').trim() || undefined,
     lotNumber: String(ln.lotNumber ?? ''),
     traceNo: String(ln.traceNo ?? ''),
     reason: String(ln.reason ?? ''),
     remake: String(ln.remake ?? ''),
   };
-  const catalog = (ln as { productCatalog?: { unitBands?: unknown; unitBandsJson?: unknown } })
-    .productCatalog;
+  const catalog = ln.productCatalog;
   const hydrated = hydrateInventoryDetailLineQtyForGrid({
     itemQuantity: row.itemQuantity,
     unitCode: row.unitCode,
+    unitCodeDictText: row.unitCodeDictText,
     productCatalog: catalog,
   });
   applyHydratedInventoryDetailQtyToRow(row, hydrated);
@@ -328,7 +340,6 @@ function handleReturnStockInProductPick(row: ReturnPreviewRow) {
 }
 
 const columns: VxeGridPropTypes.Column[] = [
-  { type: 'checkbox', width: 48, fixed: 'left', align: 'center' },
   { type: 'seq', title: '序号', width: 52, fixed: 'left', align: 'center' },
   {
     field: 'medicinePick',
@@ -369,7 +380,7 @@ const columns: VxeGridPropTypes.Column[] = [
   },
   {
     field: 'reason',
-    title: '退库原因',
+    title: '退货原因',
     minWidth: 120,
     editRender: { name: 'InventoryPersistElInput', props: { maxlength: 200, clearable: true } },
     showOverflow: true,
@@ -380,14 +391,6 @@ const columns: VxeGridPropTypes.Column[] = [
     minWidth: 120,
     editRender: { name: 'InventoryPersistElInput', props: { maxlength: 200, clearable: true } },
     showOverflow: true,
-  },
-  {
-    slots: { default: 'action' },
-    title: '操作',
-    align: 'center',
-    fixed: 'right',
-    field: 'action',
-    width: 88,
   },
 ];
 
@@ -402,7 +405,7 @@ const gridOptions: VxeGridProps<ReturnPreviewRow> = reactive({
   columnConfig: { resizable: true },
   data: [],
   editConfig: {
-    enabled: true,
+    enabled: false,
     trigger: 'click',
     mode: 'row',
     autoClear: false,
@@ -453,6 +456,12 @@ const [Grid, gridApi] = useVbenVxeGrid<ReturnPreviewRow>({
   },
   class: 'min-h-0 flex-1 !rounded-none !bg-transparent shadow-none',
   gridClass: '!p-0',
+});
+bindInvDocCompactColumns({
+  baseColumns: columns,
+  gridOptions,
+  getGrid: () =>
+    gridApi?.grid as { loadColumn?: (cols: VxeGridPropTypes.Column[]) => void } | null | undefined,
 });
 
 returnStockInGridEdit = useInventoryDocGridEdit<ReturnPreviewRow>({
@@ -532,7 +541,7 @@ async function loadDetail(busNo: string, loadGen?: number) {
     if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
     const data = res.data;
     if (!data?.busNo) {
-      ElMessage.warning('未获取到退库单详情');
+      ElMessage.warning('未获取到退货入库单详情');
       return;
     }
     headerBusNo.value = data.busNo;
@@ -602,7 +611,7 @@ function buildLinesPayload(rows: ReturnPreviewRow[]): ReturnStockInLineDto[] {
 function validateBeforeSave(rows: ReturnPreviewRow[]): boolean {
   const src = sourceLocationId.value;
   if (src === undefined || src === null || String(src).trim() === '') {
-    ElMessage.warning('请选择退库来源（科室/药房）');
+    ElMessage.warning('请选择退货来源（科室/药房）');
     return false;
   }
   const purpose = purposeLocationId.value;
@@ -611,7 +620,7 @@ function validateBeforeSave(rows: ReturnPreviewRow[]): boolean {
     return false;
   }
   if (rows.length === 0) {
-    ElMessage.warning('请至少添加一行退库明细');
+    ElMessage.warning('请至少添加一行退货明细');
     return false;
   }
   for (const [i, r] of rows.entries()) {
@@ -713,7 +722,7 @@ async function handleRemoveDoc() {
     return;
   }
   try {
-    await ElMessageBox.confirm('确认删除整张退库单？', '提示', { type: 'warning' });
+    await ElMessageBox.confirm('确认删除整张退货入库单？', '提示', { type: 'warning' });
   } catch {
     return;
   }
@@ -840,12 +849,12 @@ async function deleteItem(row: 'select' | ReturnPreviewRow) {
 
 async function openLinkDeliveryDialog() {
   if (!canEditOriginalBusNo.value) {
-    ElMessage.warning('仅新建单据时可关联发放单');
+    ElMessage.warning('仅新建单据时可关联退库单');
     return;
   }
   const src = sourceLocationId.value;
   if (src === undefined || src === null) {
-    ElMessage.warning('请先选择退库来源');
+    ElMessage.warning('请先选择退货来源');
     return;
   }
   linkDeliveryVisible.value = true;
@@ -887,7 +896,7 @@ function handleSelectLinkableDelivery(row: WarehouseDocumentDetailRowDto) {
   if (!no) return;
   originalBusNo.value = no;
   linkDeliveryVisible.value = false;
-  ElMessage.success(`已关联发放单 ${no}`);
+  ElMessage.success(`已关联退库单 ${no}`);
 }
 
 interface ReturnStockInDraftSnap {
@@ -959,6 +968,85 @@ watch(
     headApplyTime.value = s.includes('T') ? s.replace('T', ' ') : s;
   },
 );
+
+/** 解析库位展示名 */
+function resolvePrintLocationName(
+  options: { locationId?: number | string; displayName?: string }[] | undefined,
+  value: unknown,
+): string {
+  const key = String(value ?? '').trim();
+  if (!key) return '';
+  const hit = (options ?? []).find((row) => String(row.locationId ?? '') === key);
+  return String(hit?.displayName ?? hit?.locationId ?? '').trim();
+}
+
+/** 明细行当前计量单位展示文案 */
+function resolveReturnStockInPrintUnitLabel(row: ReturnPreviewRow): string {
+  const kind = String(row.selectedBandKind ?? '').trim();
+  const byKind = row.unitList?.find((item) => String(item.value ?? '') === kind);
+  if (byKind) {
+    return String(byKind.label ?? '').trim();
+  }
+  return String(row.unitCodeDictText ?? row.unitCode ?? '').trim();
+}
+
+/** 打印退库入库单 */
+async function handlePrint() {
+  const busNo = String(headerBusNo.value ?? '').trim();
+  if (!busNo) {
+    ElMessage.warning('请先保存单据后再打印');
+    return;
+  }
+  const productRows = collectGridRows().filter((row) => isPresentItemId(row.itemId));
+  if (productRows.length === 0) {
+    ElMessage.warning('没有可打印的明细');
+    return;
+  }
+
+  const sourceName = resolvePrintLocationName(
+    [...(props.pharmacyOptions ?? []), ...(props.warehouseOptions ?? [])],
+    sourceLocationId.value,
+  );
+  const warehouseName = resolvePrintLocationName(props.warehouseOptions, purposeLocationId.value);
+  const practitionerName = resolveLoginPractitionerLabelFromUserInfo(
+    userStore.userInfo as null | Record<string, unknown>,
+  );
+  const documentTitle = buildInvDocumentTitle(warehouseName || sourceName, '退库入库单');
+  const applyTimeText = String(headApplyTime.value ?? props.applyTime ?? '')
+    .trim()
+    .replace('T', ' ');
+
+  // 按当前网格展示值组装退货明细
+  const lineRows = productRows.map((row) => ({
+    productName: String(row.productName ?? '').trim(),
+    qty: row.itemQuantity,
+    unitLabel: resolveReturnStockInPrintUnitLabel(row),
+    lotNumber: String(row.lotNumber ?? '').trim(),
+    reasonText: String(row.reason ?? '').trim(),
+  }));
+
+  await printInvDocument({
+    family: 'return',
+    source: {
+      hospitalName: resolvePrintHospitalName(),
+      documentTitle,
+      docNo: busNo,
+      applyTimeText,
+      itemTypeText: '',
+      sourceLocationText: sourceName,
+      supplierText: '',
+      linkDocText: String(originalBusNo.value ?? '').trim(),
+      destLocationText: warehouseName,
+      practitionerName,
+      invoiceNoText: '',
+      lineRows,
+      preparedByName: practitionerName,
+      approvedByName: '',
+    },
+    bizRef: { busNo, docKind: 'return-stock-in' },
+    jobName: documentTitle,
+  });
+}
 </script>
 
 <template>
@@ -967,9 +1055,9 @@ watch(
       <template #actionBar>
         <div class="flex w-full flex-wrap items-center justify-end gap-2">
           <InvDocActions
-            require-finance-approval-role
             v-bind="docActionFlags"
             @approve="handleApprove"
+            @print="handlePrint"
             @reject="handleReject"
             @remove-doc="handleRemoveDoc"
             @save="handleSaveDoc"
@@ -988,10 +1076,26 @@ watch(
           <div
             class="return-stock-in-head-panel__bar flex flex-wrap items-center justify-between gap-x-4 gap-y-2"
           >
-            <SectionTitle title="退库单信息" />
+            <div>
+              <SectionTitle title="退货入库单信息" />
+              <p
+                v-if="isReadOnlyShell"
+                class="mt-1 text-xs"
+                style="color: var(--el-text-color-secondary)"
+              >
+                {{ INV_DOC_READONLY_SHELL_HINT.returnStockIn }}
+              </p>
+            </div>
             <div class="flex flex-wrap items-center gap-2">
               <span class="text-xs text-[var(--el-text-color-secondary)]">状态</span>
               <ElTag size="small" type="info" effect="plain">{{ headerStatusText || '—' }}</ElTag>
+              <span
+                v-if="headerBusNo"
+                class="text-xs"
+                style="color: var(--el-text-color-secondary)"
+              >
+                单号 {{ headerBusNo }}
+              </span>
             </div>
           </div>
           <ElForm
@@ -1007,7 +1111,7 @@ watch(
               <ElFormItem label="单据号">
                 <ElInput :model-value="headerBusNo ?? ''" disabled placeholder="保存后生成" />
               </ElFormItem>
-              <ElFormItem label="退库来源" prop="sourceLocationId">
+              <ElFormItem label="退货来源" prop="sourceLocationId">
                 <ElSelect
                   v-model="sourceLocationId"
                   placeholder="科室或药房"
@@ -1037,7 +1141,7 @@ watch(
               <ElFormItem label="接收药库" prop="purposeLocationId">
                 <ElSelect
                   v-model="purposeLocationId"
-                  placeholder="退库目的药库"
+                  placeholder="退货目的药库"
                   class="w-full"
                   filterable
                   clearable
@@ -1062,22 +1166,23 @@ watch(
                   :disabled="!documentEditable"
                 />
               </ElFormItem>
-              <ElFormItem label="关联发放单" class="sm:col-span-2 lg:col-span-2">
+              <ElFormItem label="关联退库单" class="sm:col-span-2 lg:col-span-2">
                 <div class="flex min-w-0 items-center gap-2">
                   <ElInput
                     v-model="originalBusNo"
                     class="min-w-0 flex-1"
                     clearable
                     maxlength="64"
-                    placeholder="可选，关联下游发放单号"
+                    placeholder="上游退库单号"
                     :disabled="!canEditOriginalBusNo"
                   />
                   <ElButton
+                    v-if="!isReadOnlyShell"
                     class="shrink-0"
                     :disabled="!canEditOriginalBusNo"
                     @click="openLinkDeliveryDialog"
                   >
-                    从发放单选择
+                    从退库单选择
                   </ElButton>
                 </div>
               </ElFormItem>
@@ -1091,7 +1196,7 @@ watch(
           @keydown.capture="returnStockInGridEdit.onGridKeydown"
         >
           <Grid class="min-h-0 flex-1">
-            <template #toolbar-actions>
+            <template v-if="!isReadOnlyShell" #toolbar-actions>
               <InvDocGridToolbar
                 :disabled="!documentEditable"
                 show-trace-scan
@@ -1100,26 +1205,16 @@ watch(
                 @trace-scan="handleOpenTraceScan"
               />
             </template>
-            <template #action="{ row }">
-              <ElButton
-                type="danger"
-                text
-                :disabled="!documentEditable"
-                @click="deleteItem(row as ReturnPreviewRow)"
-              >
-                <Trash2 class="size-4" />
-                删除
-              </ElButton>
-            </template>
           </Grid>
         </div>
       </div>
     </InvMainShell>
 
     <ElDialog
+      v-if="!isReadOnlyShell"
       v-model="linkDeliveryVisible"
       destroy-on-close
-      title="选择可关联的发放单"
+      title="选择可关联的退库单"
       width="720px"
       @opened="fetchLinkableDeliveries"
     >
@@ -1127,7 +1222,7 @@ watch(
         <ElInput
           v-model="linkDeliveryKeyword"
           clearable
-          placeholder="发放单号/关键字"
+          placeholder="退库单号/关键字"
           size="small"
           style="max-width: 260px"
           @keyup.enter="fetchLinkableDeliveries"
@@ -1141,7 +1236,7 @@ watch(
         highlight-current-row
         @row-dblclick="handleSelectLinkableDelivery"
       >
-        <ElTableColumn prop="busNo" label="发放单号" min-width="140" show-overflow-tooltip />
+        <ElTableColumn prop="busNo" label="退库单号" min-width="140" show-overflow-tooltip />
         <ElTableColumn prop="applyTime" label="制单时间" min-width="140" show-overflow-tooltip />
         <ElTableColumn label="操作" width="88" align="center">
           <template #default="{ row }">
@@ -1164,7 +1259,12 @@ watch(
       </div>
     </ElDialog>
   </div>
-  <InvDocTraceScanBridge ref="traceScanBridgeRef" scene="inventoryOut" />
+  <InvDocTraceScanBridge
+    v-if="!isReadOnlyShell"
+    ref="traceScanBridgeRef"
+    scene="inventoryOut"
+    :default-location-id="sourceLocationId"
+  />
 </template>
 
 <style scoped lang="scss">

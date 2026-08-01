@@ -15,6 +15,7 @@ export const INVENTORY_PRODUCT_PICK_TABLE_COLUMNS = [
   { prop: 'productName', label: '项目名称', width: 180 },
   { prop: 'specification', label: '规格', width: 120 },
   { prop: 'lotNumber', label: '批号', width: 120 },
+  { prop: 'expirationDate', label: '有效期', width: 120 },
   { prop: 'stockAvailableDisplay', label: '库存数量', width: 112 },
   { prop: 'manufacturer', label: '厂家/产地', width: 180 },
   { prop: 'purchaseUnitPrice', label: '进货价', width: 96 },
@@ -69,9 +70,30 @@ export function mapInventoryProductPickListRow(
   const productBusNo =
     inventoryPickStringField(r, 'productBusNo') || inventoryPickStringField(r, 'busNo');
 
+  // 有效期展示：截取日期部分，便于选品表与回填一致
+  const expirationRaw = r.expirationDate ?? r.endTime;
+  let expirationDate = r.expirationDate;
+  if (
+    expirationRaw !== undefined &&
+    expirationRaw !== null &&
+    String(expirationRaw).trim() !== ''
+  ) {
+    const s = String(expirationRaw).trim();
+    if (s.includes('T')) {
+      expirationDate = s.split('T')[0] ?? s;
+    } else if (s.includes(' ')) {
+      expirationDate = s.split(' ')[0] ?? s;
+    } else {
+      expirationDate = s;
+    }
+  }
+
   return {
     ...r,
     ...(productBusNo ? { productBusNo } : {}),
+    ...(expirationDate !== undefined && expirationDate !== null && expirationDate !== ''
+      ? { expirationDate }
+      : {}),
     id,
     packageUnitName: unitBandNameByKind(r.unitBands, 'PACKAGE'),
     splitUnitName: unitBandNameByKind(r.unitBands, 'SPLIT'),

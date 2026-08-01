@@ -360,10 +360,19 @@ onMounted(() => {
                 {{ drawerDetail.writeOffStatusLabel || '待确认' }}
               </ElTag>
             </ElDescriptionsItem>
-            <ElDescriptionsItem v-if="drawerDetail.writeOffBillNo" label="红票号">
-              {{ drawerDetail.writeOffBillNo }}
+            <ElDescriptionsItem
+              v-if="drawerDetail.writeOffBillNo || drawerDetail.invoiceStatus === 'CANCELLED'"
+              label="红票号"
+            >
+              {{ drawerDetail.writeOffBillNo || '-' }}
             </ElDescriptionsItem>
-            <ElDescriptionsItem v-if="drawerDetail.writeOffAt" label="冲红时间">
+            <ElDescriptionsItem v-if="drawerDetail.writeOffBatchCode" label="红票批次">
+              {{ drawerDetail.writeOffBatchCode }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem
+              v-if="drawerDetail.writeOffAt || drawerDetail.invoiceStatus === 'CANCELLED'"
+              label="冲红时间"
+            >
               {{ formatDateTime(drawerDetail.writeOffAt) }}
             </ElDescriptionsItem>
           </ElDescriptions>
@@ -376,15 +385,14 @@ onMounted(() => {
           </div>
 
           <div v-if="drawerDetail.pictureUrl || drawerDetail.pictureNetUrl" class="mb-4 text-sm">
+            <div class="mb-2 font-medium">票面链接</div>
             <div v-if="drawerDetail.pictureUrl">
-              内网：<a :href="drawerDetail.pictureUrl" target="_blank" rel="noopener">{{
-                drawerDetail.pictureUrl
-              }}</a>
+              内网：<a :href="drawerDetail.pictureUrl" target="_blank" rel="noopener">打开票面</a>
             </div>
             <div v-if="drawerDetail.pictureNetUrl">
-              外网：<a :href="drawerDetail.pictureNetUrl" target="_blank" rel="noopener">{{
-                drawerDetail.pictureNetUrl
-              }}</a>
+              外网：<a :href="drawerDetail.pictureNetUrl" target="_blank" rel="noopener"
+                >打开票面</a
+              >
             </div>
           </div>
 
@@ -396,6 +404,12 @@ onMounted(() => {
               fit="contain"
               class="h-40 w-40"
             />
+            <div
+              v-else-if="drawerDetail.invoiceStatus === 'CANCELLED'"
+              class="text-sm text-[var(--el-text-color-secondary)]"
+            >
+              已冲红/作废，请查看上方红票号与票面链接
+            </div>
             <div v-else class="text-sm text-[var(--el-text-color-placeholder)]">开票中</div>
           </div>
 

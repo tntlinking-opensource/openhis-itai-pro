@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { InpatientAdviceQuickAction } from './components/inpatient-advice-quick-action-bar.vue';
 
+import type { ServiceApplyDocumentGroup } from '#/views/outpatient/doctor-station/service-apply/service-apply-doc-groups';
+
 import { ref } from 'vue';
 
 import InpatientAdviceWorkspace from './components/inpatient-advice-workspace.vue';
@@ -16,6 +18,7 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
+  editServiceApply: [group: ServiceApplyDocumentGroup];
   quickAction: [action: InpatientAdviceQuickAction];
 }>();
 
@@ -34,6 +37,7 @@ defineExpose({
       class="h-full"
       v-bind="props"
       @quick-action="emit('quickAction', $event)"
+      @edit-service-apply="emit('editServiceApply', $event)"
     />
   </div>
 </template>

@@ -340,6 +340,76 @@ function toAdviceDraftBindDialogRows(
 }
 
 /**
+ * 弹窗展示：USAGE 同目标同用法跨组合并为一行；确认后按 fanOutBindItems 按组展开落库。
+ */
+function mergeUsageDialogRowsAcrossGroups(
+  rows: AdviceDraftBindDialogRow[],
+  lines: DoctorStationAdviceDraftLineRequest[],
+): AdviceDraftBindDialogRow[] {
+  const merged: AdviceDraftBindDialogRow[] = [];
+  const usageMergeIndexByKey = new Map<string, number>();
+
+  for (const row of rows) {
+    const bindType = String(row.bindItem.bindType ?? '').trim();
+    if (bindType !== USAGE_BIND_TYPE) {
+      merged.push(row);
+      continue;
+    }
+
+    const targetTable = String(row.bindItem.targetProductTableName ?? '').trim();
+    const targetId = String(row.bindItem.targetItemId ?? '').trim();
+    const methodCode =
+      resolveMedicationLineMethodCode(row.bindItem.triggerLineIndex, lines) ||
+      String(row.bindItem.sourceItemId ?? '').trim();
+    if (!targetTable || !targetId || !methodCode) {
+      merged.push(row);
+      continue;
+    }
+
+    // 跨组展示键：不含 groupId
+    const mergeKey = `${targetTable}|${targetId}|usage:${methodCode}`;
+    const existingIndex = usageMergeIndexByKey.get(mergeKey);
+    if (existingIndex === undefined) {
+      usageMergeIndexByKey.set(mergeKey, merged.length);
+      merged.push({
+        ...row,
+        key: mergeKey,
+        fanOutBindItems: [row.bindItem],
+      });
+      continue;
+    }
+
+    const existing = merged[existingIndex];
+    if (!existing) {
+      merged.push(row);
+      continue;
+    }
+    const fanOut = [...(existing.fanOutBindItems ?? [existing.bindItem]), row.bindItem];
+    const groupCount = fanOut.length;
+    merged[existingIndex] = {
+      ...existing,
+      fanOutBindItems: fanOut,
+      sourceItemName:
+        groupCount > 1 ? `${existing.sourceItemName}（${groupCount} 组）` : existing.sourceItemName,
+    };
+  }
+
+  return merged;
+}
+
+/**
+ * 弹窗行展开为待落库绑定项：有 fanOut 则按组展开，否则仅 bindItem。
+ */
+function resolveDialogRowBindItemsForPersist(
+  dialogRow: AdviceDraftBindDialogRow,
+): DoctorStationAdviceDraftBindItemDto[] {
+  if (dialogRow.fanOutBindItems && dialogRow.fanOutBindItems.length > 0) {
+    return dialogRow.fanOutBindItems;
+  }
+  return [dialogRow.bindItem];
+}
+
+/**
  * 待签发列表中是否已有同规则派生行（手动开立同名项不算重复；已签发不参与）。
  * USAGE 同组同用法按组级语义；ACTIVITY 按 SR 锚点。
  */
@@ -637,12 +707,45 @@ function bindItemNeedsDeferredSave(
   );
 }
 
+/** 解析成组绑定耗材 packageId：与主药 groupId/packageId 同源；非成组返回 undefined */
+function resolveBindPackageId(
+  item: DoctorStationAdviceDraftBindItemDto,
+  lines: DoctorStationAdviceDraftLineRequest[],
+  existingRows: AdviceRowLike[],
+): string | undefined {
+  const usageGroup = resolveUsageGroupBindContext(item, lines);
+  if (usageGroup?.groupId) {
+    return usageGroup.groupId;
+  }
+  const basedOnId =
+    preserveApiIdForRequest(item.basedOnRequestId) ??
+    preserveApiIdForRequest(item.triggerRequestId);
+  if (basedOnId) {
+    for (const row of existingRows) {
+      if (String(row.requestId ?? '').trim() !== basedOnId) {
+        continue;
+      }
+      const fromPackage = String(row.packageId ?? '').trim();
+      if (fromPackage) {
+        return fromPackage;
+      }
+      const fromGroup = String(row.groupId ?? '').trim();
+      if (fromGroup) {
+        return fromGroup;
+      }
+    }
+  }
+  const lineGroupId = resolveMedicationLineGroupId(item.triggerLineIndex, lines);
+  return lineGroupId || undefined;
+}
+
 /** 组装单条派生暂存行（诊疗 / 耗材）；sortNumber 继承锚定药品，与主医嘱聚邻展示 */
 function buildBindDerivedDraftLine(
   item: DoctorStationAdviceDraftBindItemDto,
   basedOnRequestId: string,
   quantity: number,
   sortNumber?: number,
+  packageId?: string,
 ): DoctorStationAdviceDraftLineRequest | undefined {
   const targetTable = String(item.targetProductTableName ?? '').trim();
   const targetId = String(item.targetItemId ?? '').trim();
@@ -650,12 +753,13 @@ function buildBindDerivedDraftLine(
   const unitCode = String(item.unitCode ?? '').trim() || 'U';
   const safeQty = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
   const sortNumberField = sortNumber !== undefined ? { sortNumber } : {};
+  const packageIdField = packageId ? { packageId } : {};
 
   if (targetTable === ACTIVITY_DEFINITION_TABLE) {
     return {
       lineOp: 'CREATE',
       productTableName: ACTIVITY_DEFINITION_TABLE,
-      basedOnTable: basedOnTable || undefined,
+      basedOnTable: basedOnTable || MEDICATION_REQUEST_TABLE,
       basedOnId: basedOnRequestId,
       ...sortNumberField,
       servicePayload: {
@@ -671,9 +775,10 @@ function buildBindDerivedDraftLine(
     return {
       lineOp: 'CREATE',
       productTableName: DEVICE_DEFINITION_TABLE,
-      basedOnTable: basedOnTable || undefined,
+      basedOnTable: basedOnTable || MEDICATION_REQUEST_TABLE,
       basedOnId: basedOnRequestId,
       ...sortNumberField,
+      ...packageIdField,
       devicePayload: {
         deviceDefinitionId: targetId,
         quantity: safeQty,
@@ -716,18 +821,30 @@ function buildBindDerivedDraftLinesFromDialogRows(
   const derived: DoctorStationAdviceDraftLineRequest[] = [];
 
   for (const dialogRow of dialogRows) {
-    const item = dialogRow.bindItem;
-    const basedOnRequestId = resolveTriggerRequestIdForBindItem(item, triggerRequestIdByLineIndex);
-    if (!basedOnRequestId) {
-      continue;
-    }
-    if (bindItemAlreadyExists(item, basedOnRequestId, existingRows, lines)) {
-      continue;
-    }
-    const sortNumber = resolveBindTriggerLineSortNumber(item, lines);
-    const line = buildBindDerivedDraftLine(item, basedOnRequestId, dialogRow.quantity, sortNumber);
-    if (line) {
-      derived.push(line);
+    // 合并行按组展开；未合并则仅一条
+    for (const item of resolveDialogRowBindItemsForPersist(dialogRow)) {
+      const basedOnRequestId = resolveTriggerRequestIdForBindItem(
+        item,
+        triggerRequestIdByLineIndex,
+      );
+      if (!basedOnRequestId) {
+        continue;
+      }
+      if (bindItemAlreadyExists(item, basedOnRequestId, existingRows, lines)) {
+        continue;
+      }
+      const sortNumber = resolveBindTriggerLineSortNumber(item, lines);
+      const packageId = resolveBindPackageId(item, lines, existingRows);
+      const line = buildBindDerivedDraftLine(
+        item,
+        basedOnRequestId,
+        dialogRow.quantity,
+        sortNumber,
+        packageId,
+      );
+      if (line) {
+        derived.push(line);
+      }
     }
   }
 
@@ -741,17 +858,18 @@ function buildImmediateTriggerRequestIdMap(
 ): Map<number, string> {
   const map = new Map<number, string>();
   for (const dialogRow of dialogRows) {
-    const item = dialogRow.bindItem;
-    const lineIndex = item.triggerLineIndex;
-    if (lineIndex === undefined || lineIndex === null) {
-      continue;
-    }
-    const fromTrigger = preserveApiIdForRequest(item.triggerRequestId);
-    const fromBasedOn = preserveApiIdForRequest(item.basedOnRequestId);
-    const fromLine = preserveApiIdForRequest(lines[lineIndex]?.requestId);
-    const requestId = fromTrigger ?? fromBasedOn ?? fromLine;
-    if (requestId) {
-      map.set(lineIndex, requestId);
+    for (const item of resolveDialogRowBindItemsForPersist(dialogRow)) {
+      const lineIndex = item.triggerLineIndex;
+      if (lineIndex === undefined || lineIndex === null) {
+        continue;
+      }
+      const fromTrigger = preserveApiIdForRequest(item.triggerRequestId);
+      const fromBasedOn = preserveApiIdForRequest(item.basedOnRequestId);
+      const fromLine = preserveApiIdForRequest(lines[lineIndex]?.requestId);
+      const requestId = fromTrigger ?? fromBasedOn ?? fromLine;
+      if (requestId) {
+        map.set(lineIndex, requestId);
+      }
     }
   }
   return map;
@@ -841,7 +959,9 @@ async function saveAdviceDraftBatchWithConfirmedBindRows(
   const immediateMap = buildImmediateTriggerRequestIdMap(confirmedDialogRows, lines);
 
   const needsDeferred = confirmedDialogRows.some((dialogRow) =>
-    bindItemNeedsDeferredSave(dialogRow.bindItem, lines),
+    resolveDialogRowBindItemsForPersist(dialogRow).some((item) =>
+      bindItemNeedsDeferredSave(item, lines),
+    ),
   );
 
   if (!needsDeferred) {
@@ -942,9 +1062,12 @@ export async function saveAdviceDraftBatchWithBindResolution(
     return httpSaveDoctorStationAdviceDraftBatch(batchBody);
   }
 
+  // 同用法跨组合并为弹窗一行，确认后仍按组落派生行
+  const displayRows = mergeUsageDialogRowsAcrossGroups(resolvableRows, lines);
+
   const cacheUserId = resolveAdviceBindSkipCacheUserId();
   const { autoRows, promptRows, promptSourceGroups } = splitDialogRowsBySourceSkipCache(
-    resolvableRows,
+    displayRows,
     cacheUserId,
   );
 

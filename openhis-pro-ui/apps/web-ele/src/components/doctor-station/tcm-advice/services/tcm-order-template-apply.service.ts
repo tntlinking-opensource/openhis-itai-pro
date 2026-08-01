@@ -6,15 +6,15 @@ import type {
   PrepickedProductKeyDto,
   TerminologyOptionDto,
 } from '#/api/doctor-station/advice.types';
+import type {
+  PageTcmMedCatalogRequest,
+  PageTcmMedCatalogResponse,
+} from '#/api/doctor-station/tcm.types';
 import type { AdviceProductOption } from '#/views/outpatient/doctor-station/advice';
 
 import { pageFrequencyApi } from '#/api/basic/frequency';
 import { ORDER_TEMPLATE_LINE_KIND_MEDICATION } from '#/api/basic/order-template';
 import { httpPageTcmHerbalMedicationCatalog } from '#/api/doctor-station/tcm.http';
-import type {
-  PageTcmMedCatalogRequest,
-  PageTcmMedCatalogResponse,
-} from '#/api/doctor-station/tcm.types';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { parseDosageTextParts } from '#/views/basic/ordertemplate/order-template-medication-units';
@@ -160,18 +160,20 @@ function resolveTemplateLineRateCode(
   return '';
 }
 
-/** 套用中药组套至当前处方草稿（仅追加药材行，方头默认值写入 rx） */
+/** 套用中药组套至当前处方草稿（追加药材行；默认同步方头，可关） */
 export async function applyTcmOrderTemplateToPrescription(params: {
+  /** 是否写入方头默认值；增量追加到已存处方时应为 false */
+  applyHeader?: boolean;
   catalogDispenseLocationMap: Record<string, string>;
   encounterId: string;
   header: OrderTemplateHeaderItem;
   lines: OrderTemplateLineRowItem[];
   medicationRateOptions?: TerminologyOptionDto[];
-  patientId: string;
-  prescription: TcmPrescriptionUi;
   pageTcmHerbalMedicationCatalog?: (
     body: PageTcmMedCatalogRequest,
   ) => Promise<PageTcmMedCatalogResponse>;
+  patientId: string;
+  prescription: TcmPrescriptionUi;
 }): Promise<{ appliedLineCount: number }> {
   const encounterId = params.encounterId.trim();
   const patientId = params.patientId.trim();
@@ -208,6 +210,7 @@ export async function applyTcmOrderTemplateToPrescription(params: {
 
   const rx = params.prescription;
   const header = params.header;
+  const applyHeader = params.applyHeader !== false;
   const medicationRateOptions = params.medicationRateOptions ?? [];
   const leaderLine = medicationLines[0];
   const rateCodeMap = await buildRateCodeMapByFrequencyIds(
@@ -216,31 +219,45 @@ export async function applyTcmOrderTemplateToPrescription(params: {
       .filter(Boolean) as string[],
   );
 
-  const defaultDoseQty = Number(header.defaultChineseHerbsDoseQuantity);
-  if (Number.isFinite(defaultDoseQty) && defaultDoseQty > 0) {
-    rx.chineseHerbsDoseQuantity = defaultDoseQty;
+  // 新开/未存方：同步组套方头；已存方增量追加时跳过
+  if (applyHeader) {
+    const defaultDoseQty = Number(header.defaultChineseHerbsDoseQuantity);
+    if (Number.isFinite(defaultDoseQty) && defaultDoseQty > 0) {
+      rx.chineseHerbsDoseQuantity = defaultDoseQty;
+    }
+    if (header.defaultSufferingFlag !== undefined && header.defaultSufferingFlag !== null) {
+      rx.sufferingFlag = Boolean(header.defaultSufferingFlag);
+    }
+    const methodCode = String(leaderLine?.routeCode ?? '').trim();
+    if (methodCode) {
+      rx.methodCode = methodCode;
+    }
+    const rateCode = leaderLine
+      ? resolveTemplateLineRateCode(leaderLine, rateCodeMap, medicationRateOptions)
+      : '';
+    if (rateCode) {
+      rx.rateCode = rateCode;
+    }
+    const days = Number(leaderLine?.defaultDays);
+    if (Number.isFinite(days) && days > 0) {
+      rx.days = days;
+    }
+    const remark = String(header.remark ?? '').trim();
+    if (remark) {
+      rx.remark = remark;
+    }
+    rx.headerDirty = true;
   }
-  if (header.defaultSufferingFlag !== undefined && header.defaultSufferingFlag !== null) {
-    rx.sufferingFlag = Boolean(header.defaultSufferingFlag);
-  }
-  const methodCode = String(leaderLine?.routeCode ?? '').trim();
-  if (methodCode) {
-    rx.methodCode = methodCode;
-  }
-  const rateCode = leaderLine
-    ? resolveTemplateLineRateCode(leaderLine, rateCodeMap, medicationRateOptions)
-    : '';
-  if (rateCode) {
-    rx.rateCode = rateCode;
-  }
-  const days = Number(leaderLine?.defaultDays);
-  if (Number.isFinite(days) && days > 0) {
-    rx.days = days;
-  }
-  rx.headerDirty = true;
 
   let sortBase = rx.lines.filter((line) => !line.pendingDelete).length;
   let appliedLineCount = 0;
+  let skippedDuplicateCount = 0;
+  // 当前方已有 + 本批已写入的定义主键，避免同方/同批重复
+  const occupiedDefIds = new Set(
+    rx.lines
+      .filter((line) => !line.pendingDelete && String(line.medicationDefinitionId ?? '').trim())
+      .map((line) => String(line.medicationDefinitionId).trim()),
+  );
 
   for (const templateLine of medicationLines) {
     const key = prepickedKeyFromTemplateLine(templateLine);
@@ -255,6 +272,11 @@ export async function applyTcmOrderTemplateToPrescription(params: {
     if (!catalog) {
       const name = String(templateLine.productName ?? '').trim() || '未命名药材';
       throw new TcmOrderTemplateApplyError(`目录中未找到「${name}」，无法套用组套`);
+    }
+
+    if (occupiedDefIds.has(key.productDefinitionId)) {
+      skippedDuplicateCount += 1;
+      continue;
     }
 
     sortBase += 1;
@@ -272,10 +294,14 @@ export async function applyTcmOrderTemplateToPrescription(params: {
     }
 
     rx.lines.push(line);
+    occupiedDefIds.add(key.productDefinitionId);
     appliedLineCount += 1;
   }
 
   if (appliedLineCount === 0) {
+    if (skippedDuplicateCount > 0) {
+      throw new TcmOrderTemplateApplyError('组套药材均已在当前处方中，不允许重复药品');
+    }
     throw new TcmOrderTemplateApplyError('没有可套用的药材行');
   }
 

@@ -13,6 +13,7 @@ import type { NurseSkinTestRowDraft } from './services/map-nurse-skin-test';
 import { mapSkinTestDraftToSaveRequest } from './services/map-nurse-skin-test';
 
 import type {
+  BatchPerformDispositionRequest,
   NetRemainingProcedureRecordItemDto,
   NurseStationPatientQueueItemDto,
   NurseStationTreatmentLineDto,
@@ -48,6 +49,7 @@ import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.v
 import { useAuthStore } from '#/store';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { getLocalDayRangeDateTimeStrings } from '#/utils/format/date-range-quick';
+import { NURSE_SUPPLY_ROOM_REQUIRED } from '#/views/outpatient/nurse-station/constants/nurse-supply-room.config';
 import {
   preserveApiIdForRequest,
   resolveLoginPractitionerIdForRequest,
@@ -55,6 +57,7 @@ import {
 import {
   printInfusionLabel,
   printNursePrescription,
+  printSpecimenBarcode,
   printTreatmentSheet,
 } from '#/utils/print/print-nurse-station';
 import {
@@ -572,7 +575,11 @@ async function handleSaveSkinTestRow(draft: NurseSkinTestRowDraft) {
     ElMessage.warning('患者信息无效，请刷新列表');
     return;
   }
-  const body = mapSkinTestDraftToSaveRequest({ ...draft, patientId }, encounterId);
+  const body = mapSkinTestDraftToSaveRequest(
+    { ...draft, patientId },
+    encounterId,
+    verificationStatusOptions.value,
+  );
   savingSkinTestServiceRequestId.value = body.serviceRequestId;
   try {
     await httpSaveOutpatientSkinTestRecord(body);
@@ -685,16 +692,25 @@ async function executeSelectedItems() {
 
   const roomRaw = (selectedSupplyRoomId.value ?? '').trim();
   const inventoryLocationId = /^\d+$/.test(roomRaw) ? roomRaw : undefined;
+  // 有待发耗材且配置为必选：未选耗材房则拦截（未选时后端回落医生签发库位）
+  if (NURSE_SUPPLY_ROOM_REQUIRED && deviceDispenseIds.length > 0 && !inventoryLocationId) {
+    ElMessage.warning('请先选择耗材房再执行');
+    return;
+  }
 
   batchPerforming.value = true;
   try {
-    await httpBatchPerformDisposition({
+    // 组批量执行载荷；耗材房仅在选中时下发，后端未传则回落医生签发库位
+    const performBody: BatchPerformDispositionRequest = {
       encounterId,
       serviceRequestIds: serviceRequestIds.length > 0 ? serviceRequestIds : undefined,
       medicationRequestIds: medicationRequestIds.length > 0 ? medicationRequestIds : undefined,
       deviceDispenseIds: deviceDispenseIds.length > 0 ? deviceDispenseIds : undefined,
-      ...(inventoryLocationId ? { inventoryLocationId } : {}),
-    });
+    };
+    if (inventoryLocationId) {
+      performBody.inventoryLocationId = inventoryLocationId;
+    }
+    await httpBatchPerformDisposition(performBody);
     ElMessage.success('执行成功');
     selectedExecuteKeys.value = [];
     selectedSupplyIds.value = [];
@@ -838,6 +854,94 @@ const PRINT_ACTION_TO_RECORD_CODE: Record<NursePrintActionCode, NurseActionRecor
   [NURSE_PRINT_ACTION.PROCEDURE_APPLY]: 'PRINT_PROCEDURE_APPLY',
 };
 
+/** 从处置单药品行中解析当前执行行对应的输液组（同 groupId 打一张瓶贴） */
+function resolveInfusionMedicationLinesForExecuteRow(
+  row: NurseAdviceExecuteRow,
+  allLines: NurseStationTreatmentLineDto[],
+): NurseStationTreatmentLineDto[] {
+  const groupId = String(row.groupId ?? '').trim();
+  if (groupId) {
+    // 同组全部输液行（成组瓶贴）
+    return allLines.filter(
+      (line) => String(line.groupId ?? '').trim() === groupId && line.infusionFlag === true,
+    );
+  }
+  // 无组号：展开成组成员或单行 requestId
+  const requestIds = new Set<string>();
+  const members = row.mergedMedicationMembers;
+  if (members && members.length > 0) {
+    for (const member of members) {
+      const id = String(member.requestId ?? '').trim();
+      if (id) {
+        requestIds.add(id);
+      }
+    }
+  } else {
+    const id = String(row.requestId ?? '').trim();
+    if (id) {
+      requestIds.add(id);
+    }
+  }
+  if (requestIds.size === 0) {
+    return [];
+  }
+  return allLines.filter(
+    (line) => requestIds.has(String(line.requestId ?? '').trim()) && line.infusionFlag === true,
+  );
+}
+
+/** 行内「打印」：仅当前输液组瓶贴（侧栏「打印瓶贴」仍打全部） */
+async function handlePrintInfusionLabelRow(row: NurseAdviceExecuteRow) {
+  if (row.infusionFlag !== true) {
+    ElMessage.warning('仅输液药品可打印瓶贴');
+    return;
+  }
+  if (!currentPatient.value) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  const encounterId = resolveEncounterIdForApi(selectedPatientId.value);
+  if (!encounterId) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  const medicationLines = resolveInfusionMedicationLinesForExecuteRow(
+    row,
+    treatmentSheetRaw.value.medicationLines,
+  );
+  if (medicationLines.length === 0) {
+    ElMessage.warning('当前医嘱暂无输液药品可打印瓶签');
+    return;
+  }
+  printSubmitting.value = true;
+  try {
+    const ctx = buildNursePrintContext();
+    const patientName = currentPatient.value.name || '—';
+    const result = await printInfusionLabel({
+      encounterId,
+      source: {
+        patientName: ctx.patientName,
+        genderEnumText: ctx.genderEnumText,
+        ageText: ctx.ageText,
+        registerTimeText: ctx.registerTimeText,
+        medicationLines,
+        executorName: ctx.executorName,
+        executeTimeText: ctx.executeTimeText,
+      },
+    });
+    if (result.ok) {
+      appendRecord({
+        type: 'PRINT',
+        actionCode: 'PRINT_INFUSION_LABEL',
+        action: NURSE_PRINT_ACTION_LABEL[NURSE_PRINT_ACTION.INFUSION_LABEL],
+        target: `${patientName}（单组） · ${result.count} 张`,
+      });
+    }
+  } finally {
+    printSubmitting.value = false;
+  }
+}
+
 /** 侧栏打印按钮统一入口 */
 async function handlePrint(actionCode: NursePrintActionCode) {
   const actionLabel = NURSE_PRINT_ACTION_LABEL[actionCode];
@@ -944,12 +1048,33 @@ async function handlePrint(actionCode: NursePrintActionCode) {
   }
 
   if (actionCode === NURSE_PRINT_ACTION.SPECIMEN_BARCODE) {
+    // 所选（或全部待执行）检验医嘱主键，每张采血贴一个条码
     const targets = groupSpecimenBarcodePrintTargets(executeItems.value, selectedKeys);
     if (!targets.length) {
       ElMessage.warning('没有可打印的采血/检验医嘱');
       return;
     }
-    ElMessage.warning('采血码打印模板暂未接入，请联系管理员配置');
+    printSubmitting.value = true;
+    try {
+      const ctx = buildNursePrintContext();
+      const result = await printSpecimenBarcode({
+        encounterId,
+        patientName: ctx.patientName,
+        genderEnumText: ctx.genderEnumText,
+        ageText: ctx.ageText,
+        items: targets,
+      });
+      if (result.ok) {
+        appendRecord({
+          type: 'PRINT',
+          actionCode: recordActionCode,
+          action: actionLabel,
+          target: `${targetText} · ${result.count} 张`,
+        });
+      }
+    } finally {
+      printSubmitting.value = false;
+    }
     return;
   }
 
@@ -1072,6 +1197,7 @@ async function handleCancelProcedureDialogConfirm(procedureIds: string[]) {
         @selection-change="handleExecuteSelectionChange"
         @execute="executeSelectedItems"
         @cancel-execute="handleCancelExecute"
+        @print-infusion-label="handlePrintInfusionLabelRow"
         @refresh-skin-test="loadSkinTestRows(selectedPatientId)"
         @save-skin-test-row="handleSaveSkinTestRow"
         @delete-skin-test-row="handleDeleteSkinTestRow"
@@ -1086,6 +1212,7 @@ async function handleCancelProcedureDialogConfirm(procedureIds: string[]) {
         :supply-items="supplyItems"
         :selected-supply-ids="selectedSupplyIds"
         :supply-room-options="supplyRoomOptions"
+        :supply-room-required="NURSE_SUPPLY_ROOM_REQUIRED"
         :recent-action-records="recentActionRecords"
         @supply-change="toggleSupplySelection"
         @cancel-supply="handleCancelSupplyExecute"

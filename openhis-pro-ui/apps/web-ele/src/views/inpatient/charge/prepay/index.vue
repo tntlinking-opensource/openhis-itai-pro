@@ -8,8 +8,6 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 
 import { useUserStore } from '@vben/stores';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
-
 import {
   ElButton,
   ElCard,
@@ -25,6 +23,7 @@ import {
 } from 'element-plus';
 
 import AppDialog from '#/components/app-dialog.vue';
+import RegisterStyleTableLayout from '#/components/layouts/register-style-table-layout.vue';
 import {
   httpCollectPrepayAdvanceDeposit,
   httpListPrepayPaymentRecords,
@@ -35,7 +34,10 @@ import {
 import { isScanPayChannel, useUnionPayScanPay } from '#/composables/payment/useUnionPayScanPay';
 import { submitPrepayScanPayment } from '#/utils/payment/submit-scan-payment';
 import { settleWithScanRecovery } from '#/utils/payment/scan-settle-recovery';
-import { submitScanRefund } from '#/utils/payment/submit-scan-refund';
+import {
+  clearCachedClientRefundResult,
+  submitScanRefund,
+} from '#/utils/payment/submit-scan-refund';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
 import { formatMoneyDisplay, formatMoneyYuanWithSymbol } from '#/utils/format/money-scale';
@@ -59,6 +61,7 @@ import {
   PAY_CHANNEL_OPTIONS,
   PREPAY_ALLOWED_ENCOUNTER_STATUSES,
 } from './inpatient-prepay.constants';
+import './inpatient-prepay-panel.css';
 
 defineOptions({
   name: 'ChargeIpPrepay',
@@ -93,8 +96,12 @@ const refundForm = reactive({
 const scanStatusText = ref('');
 const payChannelOptions = ref<PayChannelOption[]>([...PAY_CHANNEL_OPTIONS]);
 
-const { scanPayEnabled, effectivePayChannelOptions, refreshUnionPayCapabilities } =
-  useUnionPayScanPay(() => payChannelOptions.value);
+const {
+  scanPayEnabled,
+  hasScanPayChannel,
+  effectivePayChannelOptions,
+  refreshUnionPayCapabilities,
+} = useUnionPayScanPay(() => payChannelOptions.value);
 
 const recordTableQueryParams = reactive({
   pageNo: 1,
@@ -355,6 +362,7 @@ async function handleCollectPrepay() {
     let paymentDraftId: string | undefined;
     let clientScanResult;
     if (isScanPayChannel(prepayForm.payChannelCode)) {
+      await refreshUnionPayCapabilities();
       if (!scanPayEnabled.value) {
         ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
         return;
@@ -456,6 +464,9 @@ async function handleConfirmRefund() {
       operatorId: resolveLoginPractitionerIdForRequest(userStore.userInfo),
       remark: refundForm.remark.trim() || undefined,
     });
+    if (originalPaymentId) {
+      clearCachedClientRefundResult(originalPaymentId);
+    }
     await refreshQueueAfterBalanceChange();
     refundDialogVisible.value = false;
     await queryPrepayRecords();
@@ -643,7 +654,7 @@ onMounted(async () => {
                 </ElRadioGroup>
               </ElFormItem>
               <ElFormItem
-                v-if="scanPayEnabled && prepayForm.payChannelCode === 'SCAN_PAY'"
+                v-if="hasScanPayChannel && prepayForm.payChannelCode === 'SCAN_PAY'"
                 label="付款码"
                 required
               >
@@ -671,7 +682,8 @@ onMounted(async () => {
 
             <div class="min-h-0 flex-1 overflow-hidden">
               <SectionTitle class="mb-2" title="预交金流水" />
-              <TableLayout
+              <RegisterStyleTableLayout
+                class="!p-0"
                 :table-data="prepayRecordData"
                 :loading="tableLoading"
                 :total="prepayRecordData.length"
@@ -679,8 +691,6 @@ onMounted(async () => {
                 :table-columns="recordTableColumns"
                 :show-top-query="false"
                 :show-pagination="false"
-                border
-                stripe
               >
                 <template #amount="{ row }">
                   <span :class="row.paymentEnum === 'UN_PAY' ? 'text-orange-600' : ''">
@@ -692,7 +702,7 @@ onMounted(async () => {
                     {{ row.statusEnumText }}
                   </ElTag>
                 </template>
-              </TableLayout>
+              </RegisterStyleTableLayout>
             </div>
           </div>
         </ElCard>
@@ -747,56 +757,3 @@ onMounted(async () => {
     </AppDialog>
   </div>
 </template>
-
-<style scoped>
-.patient-info-bar {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  background: var(--el-fill-color-light);
-  padding: 10px 12px;
-}
-
-.patient-info-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px 16px;
-}
-
-.patient-info-item {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-}
-
-.patient-info-label {
-  color: var(--el-text-color-regular);
-  font-size: 14px;
-  white-space: nowrap;
-}
-
-.patient-info-value {
-  color: var(--el-text-color-primary);
-  font-size: 14px;
-  font-weight: 500;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.prepay-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.prepay-form {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  padding: 10px 12px;
-  margin-bottom: 0;
-}
-</style>

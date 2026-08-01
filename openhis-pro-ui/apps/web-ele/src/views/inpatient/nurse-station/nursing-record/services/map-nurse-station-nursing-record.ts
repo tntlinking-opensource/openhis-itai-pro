@@ -2,6 +2,7 @@ import type {
   NurseStationNursingRecordPaperHeaderDto,
   NurseStationNursingRecordRowDto,
   SaveNurseStationNursingRecordBatchItemRequest,
+  SaveNurseStationNursingRecordRequest,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-nursing-record.types';
 
 import type {
@@ -9,6 +10,8 @@ import type {
   NursingRecordRow,
   NursingRecordViewRow,
 } from '../components/nursing-record.types';
+
+import { resolveAdministrativeGenderLabel } from '#/utils/gender/resolve-administrative-gender-label';
 
 import { isNursingRecordRowEmpty } from '../components/nursing-record-row-state';
 
@@ -66,6 +69,98 @@ export function applyNowTimeIfEmpty(row: NursingRecordRow): boolean {
   return true;
 }
 
+/** 组合为日期时间选择器绑定值（YYYY-MM-DD HH:mm） */
+export function composeNursingRecordDatetime(recordDate?: string, recordTime?: string): string {
+  const date = (recordDate ?? '').trim();
+  if (!date) {
+    return '';
+  }
+  const time = (recordTime ?? '').trim().slice(0, 5);
+  if (!time) {
+    return '';
+  }
+  return `${date} ${time}`;
+}
+
+/** 拆分日期时间选择器值为 recordDate / recordTime */
+export function splitNursingRecordDatetime(value?: null | string): {
+  recordDate: string;
+  recordTime: string;
+} {
+  const raw = (value ?? '').trim();
+  if (!raw) {
+    return { recordDate: '', recordTime: '' };
+  }
+  const [datePart = '', timePart = ''] = raw.split(/\s+/);
+  return {
+    recordDate: datePart,
+    recordTime: timePart.slice(0, 5),
+  };
+}
+
+/** 拆分血压展示串为收缩压/舒张压（如 128/76）。 */
+export function splitNursingRecordBloodPressure(bloodPressure?: null | string): {
+  diastolic: string;
+  systolic: string;
+} {
+  const raw = (bloodPressure ?? '').trim();
+  if (!raw) {
+    return { diastolic: '', systolic: '' };
+  }
+  const slashIndex = raw.indexOf('/');
+  if (slashIndex < 0) {
+    return { diastolic: '', systolic: raw };
+  }
+  return {
+    systolic: raw.slice(0, slashIndex).trim(),
+    diastolic: raw.slice(slashIndex + 1).trim(),
+  };
+}
+
+/** 组合收缩压/舒张压为血压展示串（对齐后端 BloodPressureParser）。 */
+export function composeNursingRecordBloodPressure(
+  systolic?: null | string,
+  diastolic?: null | string,
+): string {
+  const sbp = (systolic ?? '').trim();
+  const dbp = (diastolic ?? '').trim();
+  if (sbp && dbp) {
+    return `${sbp}/${dbp}`;
+  }
+  if (sbp) {
+    return sbp;
+  }
+  if (dbp) {
+    return `/${dbp}`;
+  }
+  return '';
+}
+
+/** 展示用 MM-DD（纸质单日期列，不强调年份）。 */
+export function formatNursingRecordDateMd(recordDate?: string): string {
+  const date = (recordDate ?? '').trim();
+  if (!date) {
+    return '';
+  }
+  const parts = date.split('-');
+  if (parts.length !== 3) {
+    return date;
+  }
+  return `${parts[1]}-${parts[2]}`;
+}
+
+/** MM-DD 输入回写完整日期，保留原年份或当前年。 */
+export function syncNursingRecordDateMd(recordDate: string | undefined, mdValue: string): string {
+  const year = recordDate?.slice(0, 4) || `${new Date().getFullYear()}`;
+  const match = mdValue.trim().match(/^(\d{1,2})-(\d{1,2})$/);
+  if (!match) {
+    return mdValue.trim();
+  }
+  const month = match[1]?.padStart(2, '0');
+  const day = match[2]?.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 /** 计算当周日期闭区间 */
 export function resolveCurrentWeekRange(): { from: string; to: string } {
   const weekStart = getWeekStartDate();
@@ -75,6 +170,17 @@ export function resolveCurrentWeekRange(): { from: string; to: string } {
     from: formatDateYmd(weekStart),
     to: formatDateYmd(weekEnd),
   };
+}
+
+/** 闭区间天数（至少 1 天） */
+export function countInclusiveDays(from: string, to: string): number {
+  const start = new Date(`${from.trim()}T00:00:00`);
+  const end = new Date(`${to.trim()}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+    return 7;
+  }
+  const dayMs = 24 * 60 * 60 * 1000;
+  return Math.floor((end.getTime() - start.getTime()) / dayMs) + 1;
 }
 
 /** 生成一条空白护理记录行 */
@@ -113,10 +219,11 @@ export function createEmptyNursingRecordRow(
   };
 }
 
-/** 生成当周纸质单骨架行（仅预置空行，不填默认日期/时间） */
-export function buildWeekSkeletonRows(): NursingRecordViewRow[] {
+/** 生成纸质单骨架行（按查询天数 × 预置时点；不填默认日期/时间） */
+export function buildWeekSkeletonRows(dayCount = 7): NursingRecordViewRow[] {
   const rows: NursingRecordViewRow[] = [];
-  const skeletonCount = 7 * PAPER_RECORD_TIMES.length;
+  const safeDayCount = Math.max(1, Math.floor(dayCount) || 7);
+  const skeletonCount = safeDayCount * PAPER_RECORD_TIMES.length;
 
   for (let index = 0; index < skeletonCount; index += 1) {
     rows.push({
@@ -251,27 +358,25 @@ export function mapApiPaperHeaderToView(
   if (!dto) {
     return null;
   }
+  const ageRaw = `${dto.age ?? ''}`.trim();
+  // ageText 可能已带「岁」，避免模板再拼一次变成「26岁岁」
+  const age = ageRaw ? (/岁\s*$/.test(ageRaw) ? ageRaw : `${ageRaw}岁`) : undefined;
   return {
     admitAt: (dto.admitAt ?? '').trim() || undefined,
-    age: (dto.age ?? '').trim() || undefined,
+    age,
     bedNo: (dto.bedNo ?? '').trim() || undefined,
     dischargeAt: (dto.dischargeAt ?? '').trim() || undefined,
-    gender: (dto.gender ?? '').trim() || undefined,
+    // 后端纸质抬头暂回传 genderEnum code，统一解析为展示文案
+    gender: resolveAdministrativeGenderLabel(undefined, dto.gender, '') || undefined,
     inpatientNo: (dto.inpatientNo ?? '').trim() || undefined,
     name: (dto.name ?? '').trim() || undefined,
     wardName: (dto.wardName ?? '').trim() || undefined,
   };
 }
 
-/** 展示行转批量保存请求项 */
-export function mapViewRowToBatchSaveItem(
-  row: NursingRecordViewRow,
-): SaveNurseStationNursingRecordBatchItemRequest | null {
-  if (!row.isDirty || isNursingRecordRowEmpty(row)) {
-    return null;
-  }
-
-  const item: SaveNurseStationNursingRecordBatchItemRequest = {
+/** 展示行字段映射为保存载荷（单条/批量共用） */
+function mapViewRowFieldsToSavePayload(row: NursingRecordViewRow) {
+  return {
     vitalSignId: row.vitalSignId,
     recordDate: row.recordDate,
     recordTime: row.recordTime || undefined,
@@ -296,6 +401,42 @@ export function mapViewRowToBatchSaveItem(
     skinStatus: row.skinStatus || undefined,
     tubeCare: row.tubeCare || undefined,
     conditionMeasure: row.conditionMeasure || undefined,
+    // 护士签名下拉 value 存医务人员 id，提交 recorderId 供后端落库
+    recorderId: row.nurseSignature || undefined,
+    nurseSignature: undefined,
+  };
+}
+
+/** 展示行转时间轴单条保存请求 */
+export function mapViewRowToSingleSaveRequest(
+  row: NursingRecordViewRow,
+  context: { encounterId: string; patientId: string },
+): SaveNurseStationNursingRecordRequest | null {
+  if (!row.recordDate?.trim() || !row.recordTime?.trim()) {
+    return null;
+  }
+  if (isNursingRecordRowEmpty(row)) {
+    return null;
+  }
+  return {
+    encounterId: context.encounterId,
+    patientId: context.patientId,
+    ...mapViewRowFieldsToSavePayload(row),
+    recordDate: row.recordDate,
+  };
+}
+
+/** 展示行转批量保存请求项 */
+export function mapViewRowToBatchSaveItem(
+  row: NursingRecordViewRow,
+): SaveNurseStationNursingRecordBatchItemRequest | null {
+  if (!row.isDirty || isNursingRecordRowEmpty(row)) {
+    return null;
+  }
+
+  const item: SaveNurseStationNursingRecordBatchItemRequest = {
+    ...mapViewRowFieldsToSavePayload(row),
+    recordDate: row.recordDate,
   };
 
   // 含内容的骨架槽位去掉 skeleton 标记，避免后端批量过滤
@@ -304,6 +445,35 @@ export function mapViewRowToBatchSaveItem(
   }
 
   return item;
+}
+
+/** 将回显姓名对齐为护士下拉 value（医务人员 id）。 */
+export function resolveNurseSignatureOptionValue(
+  signature: string | undefined,
+  options: { label: string; value: string }[],
+): string {
+  const raw = (signature ?? '').trim();
+  if (!raw) {
+    return '';
+  }
+  if (options.some((opt) => opt.value === raw)) {
+    return raw;
+  }
+  const byLabel = options.find((opt) => opt.label === raw);
+  return byLabel?.value ?? raw;
+}
+
+/** 批量把行内护士签名从姓名对齐为下拉 value。 */
+export function normalizeNursingRecordNurseSignatures(
+  rows: NursingRecordViewRow[],
+  options: { label: string; value: string }[],
+): void {
+  if (options.length === 0) {
+    return;
+  }
+  for (const row of rows) {
+    row.nurseSignature = resolveNurseSignatureOptionValue(row.nurseSignature, options);
+  }
 }
 
 /** 批量保存响应行回写前端列表 */

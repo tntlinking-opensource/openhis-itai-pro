@@ -43,7 +43,7 @@ function buildTargetFromSlipGroup(
   groupRows: EncounterMedicationDispenseSlipRowDto[],
 ): NursePrescriptionPrintTarget | null {
   groupRows.sort((a, b) =>
-    String(a.requestAuthoredTime ?? '').localeCompare(String(b.requestAuthoredTime ?? '')),
+    String(a.requestOpenedTime ?? '').localeCompare(String(b.requestOpenedTime ?? '')),
   );
   const head = groupRows[0];
   if (!head) {

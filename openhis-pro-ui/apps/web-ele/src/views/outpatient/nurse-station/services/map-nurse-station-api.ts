@@ -18,6 +18,7 @@ import {
   type DrugGroupDisplayItem,
   type DrugGroupKey,
 } from '#/utils/doctor-station/drug-group-table';
+import { formatMedicationDoseSummaryLine } from '#/utils/doctor-station/medication-dose-display';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { formatMoneyYuan } from '#/utils/format/money-scale';
 import {
@@ -275,34 +276,20 @@ function trimDisplayText(value: unknown): string {
   return String(value).trim();
 }
 
-/** 药品单次剂量与总量行（对齐医生站 BR-ORD-022 展示口径） */
+/** 药品单次剂量与总量行（对齐医生站：计量+最小单位括号，单位相同时无括号） */
 function buildMedicationDosageText(row: NurseStationTreatmentLineDto): string {
-  const qtyRaw = row.quantity;
-  const unit = trimDisplayText(row.unitName ?? row.unitCode);
-  const right =
-    qtyRaw !== null && qtyRaw !== undefined && trimDisplayText(qtyRaw) !== '' && unit
-      ? `共${qtyRaw}${unit}`
-      : qtyRaw !== null && qtyRaw !== undefined && trimDisplayText(qtyRaw) !== ''
-        ? `共${qtyRaw}`
-        : '';
-  const doseRaw = row.dose;
-  const doseU = trimDisplayText(row.doseUnitName ?? row.doseUnitCode);
-  const left =
-    doseRaw !== null && doseRaw !== undefined && trimDisplayText(doseRaw) !== '' && doseU
-      ? `${doseRaw}${doseU}/次`
-      : doseRaw !== null && doseRaw !== undefined && trimDisplayText(doseRaw) !== ''
-        ? `${doseRaw}/次`
-        : '';
-  if (left && right) {
-    return `${left}，${right}。`;
-  }
-  if (left) {
-    return `${left}。`;
-  }
-  if (right) {
-    return `${right}。`;
-  }
-  return '';
+  return formatMedicationDoseSummaryLine({
+    dosageDisplay: row.dosageDisplay,
+    dose: row.dose,
+    doseUnitCode: row.doseUnitCode,
+    doseUnitName: row.doseUnitName,
+    splitDose: row.splitDose,
+    splitDoseUnitCode: row.splitDoseUnitCode,
+    splitDoseUnitName: row.splitDoseUnitName,
+    quantity: row.quantity,
+    unitCode: row.unitCode,
+    unitName: row.unitName,
+  });
 }
 
 /** 药品用法、频次与天数行（对齐医生站 extension 口径） */
@@ -471,6 +458,11 @@ function nurseStationTreatmentLineToDrugGroupItem(
     usage: trimDisplayText(row.methodName ?? row.methodCode),
     frequency: trimDisplayText(row.rateName ?? row.rateCode),
     medicationDays: row.dispensePerDuration ?? '',
+    dosageDisplay: trimDisplayText(row.dosageDisplay) || undefined,
+    splitDose: row.splitDose ?? undefined,
+    splitDoseUnitCode: trimDisplayText(row.splitDoseUnitCode) || undefined,
+    splitDoseUnitName: trimDisplayText(row.splitDoseUnitName) || undefined,
+    doseUnitCode: trimDisplayText(row.doseUnitCode) || undefined,
   };
 }
 
@@ -674,7 +666,7 @@ export function mapQueueItemToNursePatient(
     patientType: 'outpatient',
     pendingExecuteCount: 0,
     registrationTime: encounterTime || undefined,
-    paymentType: undefined,
+    paymentType: (dto.contractDisplay ?? '').trim() || undefined,
     phone: undefined,
     medicalRecordNo: undefined,
     doctor: undefined,

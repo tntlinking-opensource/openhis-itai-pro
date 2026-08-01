@@ -1,5 +1,9 @@
-# Export openhis-pro-ui for public Git (private repo unchanged).
-# Excludes projects/ (hospital customization).
+# Export openhis-pro-ui for public / open-source tree (private repo unchanged).
+# Excludes projects/ (hospital customization) and local-only junk.
+#
+# Default output: ..\openhis-itai-pro\openhis-pro-ui
+# Override:  .\export-opensource.ps1 -OutputDir D:\path\to\out
+#            .\export-opensource.ps1 -OutputDir dist\openhis-pro-ui-opensource
 
 param(
     [string]$OutputDir,
@@ -13,10 +17,15 @@ $UiRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 
 Set-Location $UiRoot
 
+. (Join-Path $ScriptDir 'opensource-export.lib.ps1')
+
+$Manifest = Import-UiOpenSourceExportManifest -UiRoot $UiRoot
+
 if (-not $OutputDir) {
-    $OutputDir = Join-Path $UiRoot 'dist\openhis-pro-ui-opensource'
+    $rel = if ($Manifest.DefaultOutputDir) { $Manifest.DefaultOutputDir } else { '../openhis-itai-pro/openhis-pro-ui' }
+    $OutputDir = [System.IO.Path]::GetFullPath((Join-Path $UiRoot ($rel -replace '/', '\')))
 } elseif (-not [System.IO.Path]::IsPathRooted($OutputDir)) {
-    $OutputDir = Join-Path $UiRoot $OutputDir
+    $OutputDir = [System.IO.Path]::GetFullPath((Join-Path $UiRoot $OutputDir))
 }
 
 function Write-Step([string]$Message) {
@@ -36,10 +45,24 @@ function Remove-DirIfExists([string]$Path) {
     }
 }
 
-$script:RemoveDirIfExists = ${function:Remove-DirIfExists}
-. (Join-Path $ScriptDir 'opensource-export.lib.ps1')
+function Clear-OutputDirectory([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) {
+        New-Item -ItemType Directory -Force -Path $Path | Out-Null
+        return
+    }
+    Get-ChildItem -LiteralPath $Path -Force | ForEach-Object {
+        if ($_.Name -eq '.git') {
+            Write-Host '  keep: .git' -ForegroundColor DarkGray
+            return
+        }
+        if ($_.PSIsContainer) {
+            Remove-DirIfExists $_.FullName
+        } else {
+            Remove-Item -LiteralPath $_.FullName -Force
+        }
+    }
+}
 
-$Manifest = Import-UiOpenSourceExportManifest -UiRoot $UiRoot
 $excludeDirs = Get-UiOpenSourceRobocopyExcludeDirs -Manifest $Manifest
 $excludeArgs = @()
 foreach ($dir in $excludeDirs) {
@@ -51,13 +74,12 @@ if ((Test-Path $OutputDir) -and -not $Force) {
     throw "Output directory already exists: $OutputDir. Use -Force to overwrite."
 }
 
-Write-Step 'Prepare output directory'
-Remove-DirIfExists $OutputDir
-New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+Write-Step "Prepare output directory: $OutputDir"
+Clear-OutputDirectory $OutputDir
 
 Write-Step 'Copy openhis-pro-ui (exclude projects/ and build artifacts)'
-Write-Host ("  exclude: " + ($excludeDirs -join ', ')) -ForegroundColor DarkGray
-& robocopy $UiRoot $OutputDir /MIR @excludeArgs /NFL /NDL /NJH /NJS /NC /NS | Out-Null
+Write-Host ("  exclude dirs: " + ($excludeDirs -join ', ')) -ForegroundColor DarkGray
+& robocopy $UiRoot $OutputDir /E @excludeArgs /NFL /NDL /NJH /NJS /NC /NS | Out-Null
 if ($LASTEXITCODE -ge 8) {
     throw "robocopy failed ($LASTEXITCODE): $UiRoot -> $OutputDir"
 }
@@ -67,7 +89,7 @@ if ($Manifest.PSObject.Properties.Name -contains 'ExcludedPaths') {
     Remove-UiOpenSourceExcludedPaths -OutputDir $OutputDir -RelativePaths @($Manifest.ExcludedPaths) -RemoveDir ${function:Remove-DirIfExists}
 }
 
-Write-Step 'Assert projects/ is absent'
+Write-Step 'Assert open-source tree is clean (no projects/)'
 Assert-UiOpenSourceTreeClean -OutputDir $OutputDir
 
 Write-Step 'Write opensource .gitignore'

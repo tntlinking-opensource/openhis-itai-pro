@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import type { DiagnosisItem } from '#/components/doctor-station/diagnosis';
 import type { AdviceDrugItem } from '../services/advice.types';
 
 import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
 
 import { computed } from 'vue';
 
-import { ElButton, ElCheckbox, ElInputNumber, ElOption, ElSelect, ElSwitch } from 'element-plus';
+import { ElCheckbox, ElInput, ElInputNumber, ElOption, ElSelect, ElSwitch } from 'element-plus';
 
+import { formatAdviceDrugInfoStockText } from '#/utils/doctor-station/advice-catalog-stock-display';
+import { formatPackagePerMinUnitText } from '#/utils/doctor-station/medication-package-min-unit-display';
 import { calcMoneyLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
 
 import { parseOptionalNumberInput } from '../services/advice-edit';
@@ -31,8 +32,6 @@ export interface WesternDrugFormHandlers {
   handleTotalAmountManualInput: (value: unknown) => void;
   /** 医生手工修改总量单位（仅换算数量，不触发自动重算） */
   handleTotalAmountUnitManualSelect: (value: unknown) => void;
-  handleDiagnosisFocus: () => void;
-  openDiagnosisDialog: () => void;
 }
 
 const props = defineProps<{
@@ -43,7 +42,6 @@ const props = defineProps<{
   feeNatureOptions: TerminologyOptionDto[];
   medicationRateOptions: TerminologyOptionDto[];
   medicationRouteOptions: TerminologyOptionDto[];
-  patientDiagnoses: DiagnosisItem[];
 }>();
 
 function patchContract(contractId: string) {
@@ -63,6 +61,12 @@ const calcTotalFee = computed(() => {
   }
   return formatMoneyDisplay(calcMoneyLineTotal(price, amount));
 });
+
+/** 包装与最小单位不同时：「每盒30片」类文案 */
+const packagePerMinUnitText = computed(() => formatPackagePerMinUnitText(props.item));
+
+/** 选品库存：「库存：4盒6片」；无库存字段时为空 */
+const stockDisplayText = computed(() => formatAdviceDrugInfoStockText(props.item));
 </script>
 
 <template>
@@ -70,8 +74,19 @@ const calcTotalFee = computed(() => {
     <div class="product-info-row">
       <span class="meta-label product-info-label">药品信息:</span>
       <span class="product-text">
-        {{ item.selectedDrugName || '-' }}【{{ item.selectedDrugSpec || '-' }}】 单价：
-        {{ formatUnitPriceYuan(item.selectedDrugPrice) }}
+        {{ item.selectedDrugName || '-' }}【{{ item.selectedDrugSpec || '-' }}】
+        <template v-if="packagePerMinUnitText">
+          <span class="product-info-gap">{{ packagePerMinUnitText }}</span>
+        </template>
+        <template v-if="stockDisplayText">
+          <span class="product-info-gap">{{ stockDisplayText }}</span>
+        </template>
+        <span class="product-info-gap"
+          >单价：{{ formatUnitPriceYuan(item.selectedDrugPrice) }}</span
+        >
+        <span v-if="item.chrgitmLvText" class="chrgitm-lv-text product-info-gap">{{
+          item.chrgitmLvText
+        }}</span>
       </span>
       <div class="product-info-trailing">
         <div
@@ -85,31 +100,6 @@ const calcTotalFee = computed(() => {
       </div>
     </div>
     <div class="drug-form-row top-row">
-      <div class="field-item diagnosis-field-item">
-        <span class="meta-label">诊断</span>
-        <div class="diagnosis-field-wrap">
-          <ElSelect
-            :model-value="item.diagnosis"
-            filterable
-            clearable
-            placeholder="请选择诊断"
-            @focus="formHandlers.handleDiagnosisFocus()"
-            @update:model-value="
-              (value: unknown) => formHandlers.setField('diagnosis', String(value || ''))
-            "
-          >
-            <ElOption
-              v-for="diagnosis in patientDiagnoses"
-              :key="diagnosis.id"
-              :label="diagnosis.name"
-              :value="diagnosis.name"
-            />
-          </ElSelect>
-          <ElButton link type="primary" @click="formHandlers.openDiagnosisDialog()">
-            添加诊断
-          </ElButton>
-        </div>
-      </div>
       <div class="field-item">
         <span class="meta-label">费用性质</span>
         <ElSelect
@@ -186,6 +176,36 @@ const calcTotalFee = computed(() => {
               item.doseSubUnit || '—'
             }}</span>
           </div>
+        </div>
+      </div>
+      <!-- 长期：首日/首次用量可选；空=首次槽仍用常规单次量（BR-IP-ORD-030） -->
+      <div v-if="hideTotalAmount" class="field-item">
+        <span class="meta-label">首日用量</span>
+        <div class="dose-num-with-unit">
+          <ElInputNumber
+            class="dose-qty-input"
+            :model-value="item.firstDose ?? undefined"
+            :min="0"
+            :controls="false"
+            placeholder="可选"
+            @update:model-value="
+              (value: unknown) => {
+                const v = parseOptionalNumberInput(value);
+                formHandlers.setField('firstDose', v as AdviceDrugItem['firstDose']);
+                if (v !== undefined && Number.isFinite(v) && v > 0) {
+                  formHandlers.setField(
+                    'firstDoseUnitCode',
+                    String(item.totalAmountUnit || item.doseSubUnit || '').trim() || undefined,
+                  );
+                } else {
+                  formHandlers.setField('firstDoseUnitCode', undefined);
+                }
+              }
+            "
+          />
+          <span class="dose-unit-tail" :title="item.doseSubUnit || item.totalAmountUnit || ''">{{
+            item.doseSubUnit || item.totalAmountUnit || '—'
+          }}</span>
         </div>
       </div>
       <div class="field-item">
@@ -276,6 +296,21 @@ const calcTotalFee = computed(() => {
         </div>
       </div>
     </div>
+    <div class="drug-form-row remark-row">
+      <div class="field-item remark-item">
+        <span class="meta-label">备注</span>
+        <ElInput
+          clearable
+          maxlength="200"
+          show-word-limit
+          placeholder="选填，护士站随医嘱显示"
+          :model-value="item.remark ?? ''"
+          @update:model-value="
+            (v: string) => formHandlers.setField('remark', String(v ?? '') || undefined)
+          "
+        />
+      </div>
+    </div>
   </div>
 </template>
 
@@ -309,6 +344,16 @@ const calcTotalFee = computed(() => {
   font-weight: 700;
   flex: 1;
   min-width: 0;
+}
+
+.product-info-gap {
+  margin-left: 12px;
+}
+
+/* 医保等级：仅展示甲/乙/自费等文案，醒目区分于品名单价 */
+.chrgitm-lv-text {
+  color: var(--el-color-warning);
+  font-weight: 700;
 }
 
 .product-info-trailing {
@@ -353,7 +398,7 @@ const calcTotalFee = computed(() => {
 }
 
 .top-row {
-  grid-template-columns: minmax(260px, 1fr) minmax(220px, 0.9fr) minmax(100px, auto);
+  grid-template-columns: minmax(220px, 0.9fr) minmax(100px, auto);
   gap: 10px 14px;
   margin-bottom: 10px;
 }
@@ -361,6 +406,19 @@ const calcTotalFee = computed(() => {
 .bottom-row {
   grid-template-columns: auto 220px 200px 170px auto;
   gap: 10px 10px;
+}
+
+.remark-row {
+  grid-template-columns: minmax(280px, 1fr);
+  gap: 10px;
+  margin-top: 10px;
+  /* 覆盖 .drug-form-row 的 fit-content，固定备注行宽 */
+  width: 500px;
+  max-width: 100%;
+}
+
+.remark-item {
+  grid-template-columns: auto minmax(0, 1fr);
 }
 
 .field-item {
@@ -374,23 +432,6 @@ const calcTotalFee = computed(() => {
 .field-item :deep(.el-select),
 .field-item :deep(.el-input-number) {
   width: 100%;
-}
-
-.diagnosis-field-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  flex: 1;
-}
-
-.diagnosis-field-item {
-  min-width: 0;
-}
-
-.diagnosis-field-wrap :deep(.el-select) {
-  flex: 1;
-  min-width: 120px;
 }
 
 .skin-test-item :deep(.el-checkbox) {

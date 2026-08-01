@@ -9,10 +9,15 @@ import { Page } from '@vben/common-ui';
 
 import { ElCard } from 'element-plus';
 
+import { useCompactViewport } from '#/composables/use-compact-viewport';
+import { INVENTORY_DOC_ASIDE_WIDTH_PX } from '#/constants/layout/viewport-breakpoints';
+
 const props = withDefaults(
   defineProps<{
-    /** 左侧栏宽度 */
+    /** 左侧栏宽度；不传则随视口 280/248 */
     asideWidth?: string;
+    /** 是否展示左侧栏（队列）；财务审批只读入口可关 */
+    showAside?: boolean;
     /** 是否展示顶栏工具区（toolbar 插槽） */
     showToolbar?: boolean;
     /** 是否展示左侧检索区（aside-filter 插槽） */
@@ -27,7 +32,7 @@ const props = withDefaults(
     pageContentClass?: string;
   }>(),
   {
-    asideWidth: '280px',
+    showAside: true,
     showToolbar: true,
     showAsideFilter: true,
     queueTitle: '单据队列',
@@ -36,8 +41,12 @@ const props = withDefaults(
   },
 );
 
+const { pickPreset } = useCompactViewport();
+/** 未显式传 asideWidth 时：≥1680 用 280，窄屏 248 */
+const compactAsideWidthPx = pickPreset(INVENTORY_DOC_ASIDE_WIDTH_PX);
+
 const asideStyle = computed(() => ({
-  width: props.asideWidth,
+  width: props.asideWidth ?? `${compactAsideWidthPx.value}px`,
 }));
 
 const workstationRootClass = computed(() =>
@@ -88,7 +97,7 @@ const mainPaneClass = computed(() =>
       </div>
 
       <div :class="mainRowClass">
-        <aside :class="asideShellClass" :style="asideStyle">
+        <aside v-if="showAside" :class="asideShellClass" :style="asideStyle">
           <ElCard
             shadow="never"
             class="flex h-full min-h-0 flex-1 flex-col overflow-hidden !border-0 bg-transparent shadow-none"

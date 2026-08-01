@@ -2,6 +2,8 @@
   科室入库单左侧：历史入库单检索 + 卡片队列（只读台账，无新增）。
 -->
 <script setup lang="ts">
+import type { ApiOptionItem } from '#/types/api-response';
+
 import { ref } from 'vue';
 
 import { RotateCw, Search } from '@vben/icons';
@@ -20,10 +22,13 @@ withDefaults(
   defineProps<{
     cabinetListOptions: Record<string, unknown>[];
     orders: Record<string, unknown>[];
+    /** 制单人/审批人 id→姓名（init 药师+库管） */
+    practitionerOption?: ApiOptionItem[];
     selectedOrder?: null | Record<string, unknown>;
     warehouseListOptions?: Record<string, unknown>[];
   }>(),
   {
+    practitionerOption: () => [],
     warehouseListOptions: () => [],
   },
 );
@@ -168,6 +173,7 @@ function handleRefreshClick() {
         :cabinet-list-options="cabinetListOptions"
         :location-context-id="purposeLocationId"
         :orders="orders"
+        :practitioner-option="practitionerOption"
         :selected-order="selectedOrder"
         :show-empty-add="false"
         :show-supplier="false"

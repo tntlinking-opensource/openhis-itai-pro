@@ -47,7 +47,7 @@ const pricingTimeRangeModel = computed({
   set: (value: string[]) => emit('update:pricingTimeRange', value),
 });
 
-/** 当前列表可取消划价的行 */
+/** 当前列表可冲销的行 */
 const cancellableRows = computed(() => props.pricingRows.filter((row) => row.canCancel));
 
 /** 是否已勾选至少一条可取消行 */
@@ -65,7 +65,7 @@ function formatCurrency(value: number) {
   return `￥${formatMoneyDisplay(value)}`;
 }
 
-/** 仅待结算行允许勾选（用于取消划价） */
+/** 仅待结算行允许勾选（用于冲销） */
 function pricingRowSelectable(row: PricingConfirmationTableRow) {
   return row.canCancel;
 }
@@ -104,7 +104,7 @@ function handleSelectionChange(selection: PricingConfirmationTableRow[]) {
           :loading="cancelLoading"
           @click="emit('onCancelPricingClick')"
         >
-          取消划价
+          冲销
         </ElButton>
         <ElButton
           type="primary"
@@ -131,7 +131,7 @@ function handleSelectionChange(selection: PricingConfirmationTableRow[]) {
       v-else-if="cancellableRows.length === 0 && pricingRows.length > 0"
       class="billing-list-card__hint"
     >
-      当前列表无待结算划价记录，已结算或退费中的项目不可取消划价
+      当前列表无待结算划价记录，已结算或退费中的项目不可冲销
     </div>
     <ElTable
       :key="tableKey"

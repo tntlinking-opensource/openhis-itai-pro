@@ -65,6 +65,7 @@ export interface BossDocumentDetailDto {
   writeOffBillNo?: string;
   writeOffAt?: string;
   writeOffMessage?: string;
+  writeOffBatchCode?: string;
   task?: BossTaskSummaryDto;
   lines?: BossLineDto[];
   adjustLogs?: BossAdjustLogDto[];

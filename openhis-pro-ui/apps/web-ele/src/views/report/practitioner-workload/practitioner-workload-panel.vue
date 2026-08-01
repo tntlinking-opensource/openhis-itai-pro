@@ -95,6 +95,9 @@ const ALL_ORG_VALUE = '__ALL__';
 /** 是否已应用过后端返回的默认就诊范围（仅首次初始化）。 */
 const hasAppliedInitialScope = ref(false);
 
+/** 挂载初始化中：跳过科室/范围 watch，避免与 onMounted 竞态双发。 */
+const isInitializing = ref(true);
+
 const { run: runInit, loading: initLoading } = useRequest(loadPractitionerWorkloadPageInitApi, {
   manual: true,
   onSuccess: (data) => {
@@ -298,13 +301,24 @@ function openDoctorDetail(card: DoctorWorkloadCardView) {
 watch(
   () => queryParams.encounterScope,
   () => {
+    if (isInitializing.value) {
+      return;
+    }
     void reloadInitOptions(true).then(() => handleQuery());
   },
 );
 
 watch(
   () => queryParams.organizationId,
-  () => {
+  (next) => {
+    if (isInitializing.value) {
+      return;
+    }
+    // clearable 清空时回落到「全部」，避免 null 请求
+    if (!next) {
+      queryParams.organizationId = ALL_ORG_VALUE;
+      return;
+    }
     void reloadInitOptions(false).then(() => handleQuery());
   },
 );
@@ -312,6 +326,7 @@ watch(
 onMounted(async () => {
   queryParams.organizationId = ALL_ORG_VALUE;
   await reloadInitOptions(false);
+  isInitializing.value = false;
   if (queryParams.dateFrom && queryParams.dateTo) {
     await handleQuery();
   }
@@ -351,6 +366,7 @@ onMounted(async () => {
             v-model="queryParams.organizationId"
             clearable
             filterable
+            placeholder="全部"
             :class="REPORT_QUERY_CONTROL"
           >
             <ElOption label="全部" :value="ALL_ORG_VALUE" />
@@ -370,8 +386,10 @@ onMounted(async () => {
             range-separator="至"
             start-placeholder="开始日期"
             end-placeholder="结束日期"
+            :clearable="false"
             :shortcuts="dateRangeShortcuts"
             :class="[REPORT_QUERY_CONTROL, REPORT_QUERY_CONTROL_DATERANGE]"
+            @change="handleQuery"
           />
         </ElFormItem>
       </template>

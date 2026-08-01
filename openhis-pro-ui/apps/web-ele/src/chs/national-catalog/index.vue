@@ -260,6 +260,21 @@ const tableColumns: TableColumn[] = [
     headerAlign: 'center',
     slot: 'chrgitmLv',
   },
+  {
+    prop: 'isSelectable',
+    label: '局文可选',
+    width: 100,
+    align: 'center',
+    headerAlign: 'center',
+    slot: 'isSelectable',
+  },
+  {
+    prop: 'priceUplmtAmt',
+    label: '限价上限',
+    width: 90,
+    align: 'center',
+    headerAlign: 'center',
+  },
   { prop: 'dosform', label: '剂型', width: 88, showOverflowTooltip: true },
   { prop: 'aprvno', label: '批准文号', width: 140, showOverflowTooltip: true },
   { prop: 'prodentpName', label: '生产企业', minWidth: 140, showOverflowTooltip: true },
@@ -464,6 +479,11 @@ function handleGoCatalogDownload() {
   });
 }
 
+/** 跳转医保文件管理（标准落地包扫描入库） */
+function handleGoCatalogNotice() {
+  void router.push({ path: '/chs/catalog-notice' });
+}
+
 /** 跳转 1901 平台字典维护 */
 function handleGoPlatformDict() {
   const busNo = queryParams.value.contractBusNo;
@@ -514,8 +534,10 @@ onMounted(async () => {
 </script>
 
 <template>
-  <Page auto-content-height>
+  <Page auto-content-height content-class="!overflow-hidden flex h-full min-h-0 flex-col">
     <TableLayout
+      class="h-full min-h-0 flex-1"
+      table-height="100%"
       :table-data="tableData"
       :loading="pageLoading"
       :total="total"
@@ -543,6 +565,7 @@ onMounted(async () => {
               下载游标
             </ElButton>
             <ElButton plain @click="handleGoCatalogDownload"> 目录文件下载 </ElButton>
+            <ElButton plain @click="handleGoCatalogNotice"> 医保文件 </ElButton>
             <ElButton plain @click="handleGoPlatformDict"> 平台字典(1901) </ElButton>
             <ElButton plain @click="handleGoMappingWorkbench"> 对码工作台 </ElButton>
           </div>
@@ -555,6 +578,13 @@ onMounted(async () => {
 
       <template #chrgitmLv="{ row }">
         {{ formatChrgitmLv(row.chrgitmLv) }}
+      </template>
+
+      <template #isSelectable="{ row }">
+        <ElTag v-if="row.isSelectable !== false" type="success" effect="light">可选</ElTag>
+        <ElTag v-else type="danger" effect="light" :title="row.unselectableReason">
+          {{ row.unselectableReason || '不可选' }}
+        </ElTag>
       </template>
 
       <template #lmtUsedFlag="{ row }">

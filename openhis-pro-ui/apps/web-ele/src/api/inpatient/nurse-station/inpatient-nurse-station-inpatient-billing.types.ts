@@ -1,5 +1,11 @@
 import type { PageParams } from '#/types/api-response';
 
+/** 组套/快捷套用预选产品键（与 IF-IP-PRC-01 prepicked 对齐） */
+export interface PrepickedProductKeyDto {
+  productDefinitionId: string;
+  productTableName: string;
+}
+
 /** 划价选品目录分页查询 */
 export interface PageNurseStationPricingCatalogRequest extends PageParams {
   encounterId?: string;
@@ -11,6 +17,8 @@ export interface PageNurseStationPricingCatalogRequest extends PageParams {
   organizationUnitId?: string;
   pharmacyLocationId?: string;
   sortMode?: string;
+  /** 组套套用：按行 id 收窄目录（含价/库位） */
+  prepickedProductKeys?: PrepickedProductKeyDto[];
 }
 
 /** 目录行单位 band（与产品读模型对齐） */
@@ -119,9 +127,12 @@ export interface NurseStationSupplementParentOrderRowDto {
   dosageDisplay?: string;
   usageDisplay?: string;
   frequencyDisplay?: string;
-  authoredTime?: string;
+  /** 开立时间（后端 req_opened_time） */
+  reqOpenedTime?: string;
   stopTime?: string;
   requesterName?: string;
+  stopperId?: string;
+  stopperName?: string;
   performerLocationDisplay?: string;
   categoryEnum?: string;
   groupNo?: number;
@@ -269,6 +280,35 @@ export interface NurseStationAutoRollNursingReadonlyDto {
 export interface ListAutoRollConfigsResponse {
   configs?: NurseStationAutoRollConfigRowDto[];
   nursingLevelReadonly?: NurseStationAutoRollNursingReadonlyDto | null;
+}
+
+/** 自动计费配置已滚费用记录查询（IF-IP-ARG-09） */
+export interface ListAutoRollPostedChargesRequest {
+  encounterId: string;
+  patientId: string;
+  ruleId: string;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+/** 已滚费用行（取消执行锚点 = procedureId） */
+export interface NurseStationAutoRollPostedChargeRowDto {
+  chargeItemId?: string;
+  procedureId?: string;
+  occurrenceTime?: string;
+  quantityValue?: number | string;
+  quantityUnit?: string;
+  unitPrice?: number | string;
+  totalPrice?: number | string;
+  statusEnum?: string;
+  statusDisplay?: string;
+  cancelable?: boolean;
+}
+
+export interface ListAutoRollPostedChargesResponse {
+  ruleId?: string;
+  serviceRequestId?: string;
+  charges?: NurseStationAutoRollPostedChargeRowDto[];
 }
 
 /** 新增自动计费配置 */

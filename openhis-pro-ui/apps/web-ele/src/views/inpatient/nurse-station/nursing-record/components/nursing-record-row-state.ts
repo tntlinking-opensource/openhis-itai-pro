@@ -1,9 +1,13 @@
 import type { NursingRecordRow, NursingRecordViewRow } from './nursing-record.types';
 
-/** 判断护理记录是否尚未填写业务字段（不含日期时点）。 */
+/**
+ * 判断护理记录是否尚未填写业务字段。
+ * 不含日期/时点；也不含护士签名（选中行会自动带入登录人，不能据此当成已填）。
+ */
 const CONTENT_FIELD_KEYS: (keyof NursingRecordRow)[] = [
   'consciousness',
   'temperature',
+  'heartRate',
   'pulse',
   'respiratory',
   'bloodPressure',
@@ -12,13 +16,13 @@ const CONTENT_FIELD_KEYS: (keyof NursingRecordRow)[] = [
   'oxygenSaturation',
   'intakeName',
   'intakeAmount',
+  'intakeRoute',
   'outputName',
   'outputAmount',
   'outputColorCharacter',
   'skinStatus',
   'tubeCare',
   'conditionMeasure',
-  'nurseSignature',
   'reservedCol1',
   'reservedCol2',
 ];

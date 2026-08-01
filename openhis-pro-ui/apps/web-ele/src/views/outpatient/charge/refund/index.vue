@@ -13,8 +13,6 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
 import { RotateCw } from '@vben/icons';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
-
 import { useDebounceFn } from '@vueuse/core';
 import dayjs from 'dayjs';
 import {
@@ -38,24 +36,27 @@ import {
 } from '#/api/outpatient-refund/outpatient-refund.http';
 import { runWorkInjuryRefundReverse } from '#/chs/work-injury/use-work-injury-settle';
 import BillingPatientCard from '#/components/charge/billing-patient-card.vue';
+import RegisterStyleTableLayout from '#/components/layouts/register-style-table-layout.vue';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
 import SelectFuzzyInput from '#/components/select-fuzzy-input.vue';
 import { useUnionPayScanPay } from '#/composables/payment/useUnionPayScanPay';
 import { useRequest } from '#/hooks/use-request';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import { buildDefaultDateRangeShortcuts } from '#/utils/format/date-picker-shortcuts';
 import { sumMoneyThenSettle } from '#/utils/format/money-scale';
 import { optionDtosToPayChannelOptions } from '#/utils/payment/payment-channel-options';
-import { submitScanRefund } from '#/utils/payment/submit-scan-refund';
-
 import {
-  DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE,
-  OUTPATIENT_CHARGE_PAY_CHANNEL_OPTIONS,
-} from '../charge/outpatient-charge.constants';
+  clearCachedClientRefundResult,
+  submitScanRefund,
+} from '#/utils/payment/submit-scan-refund';
+
+import { OUTPATIENT_CHARGE_PAY_CHANNEL_OPTIONS } from '../charge/outpatient-charge.constants';
 import {
   formatPatientFeeMoney,
   summarizeOutpatientRefundFeeAmounts,
 } from '../services/patient-fee-summary.service';
+import '../charge-workbench-panel.css';
 import ChargeSettlementDialog from '../charge/settlement-dialog.vue';
 import {
   REFUND_LINE_STATUS_LABEL_TAG,
@@ -92,6 +93,8 @@ const QUEUE_TAB = {
 const queueTabCode = ref<string>(QUEUE_TAB.PENDING);
 const keyword = ref('');
 const dateRange = ref<[string, string] | null>(null);
+/** 区间查询：展开面板默认快捷时间范围 */
+const dateRangeShortcuts = buildDefaultDateRangeShortcuts();
 const queuePager = reactive({
   pageNo: 1,
   pageSize: 20,
@@ -117,36 +120,77 @@ const settlementSnapshot = ref<null | {
   preservedNewChargeItemIds: string[];
   previews: PreSettleChargeLinePreviewDto[];
   refundingChargeItemIds: string[];
+  selfPayAmount: number;
+  ybAcctPay: number;
+  ybFundPaySumamt: number;
 }>(null);
-
-const paymentForm = reactive({
-  payChannelCode: DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE,
-});
 
 const payChannelOptions = ref<PayChannelOption[]>([...OUTPATIENT_CHARGE_PAY_CHANNEL_OPTIONS]);
 
 const { refreshUnionPayCapabilities } = useUnionPayScanPay(() => payChannelOptions.value);
+
+const settlementInsuranceBreakdown = computed(() => {
+  const snap = settlementSnapshot.value;
+  if (!snap) {
+    return [];
+  }
+  const fundPay = snap.ybFundPaySumamt + snap.ybAcctPay;
+  return [
+    { key: 'fundPay', label: '基金支出', value: fundPay },
+    { key: 'poolingPay', label: '统筹基金支付', value: snap.ybFundPaySumamt },
+    { key: 'accountPay', label: '个人账户支付', value: snap.ybAcctPay },
+    { key: 'cashPay', label: '现金补缴', value: snap.selfPayAmount },
+    { key: 'finalReceivable', label: '最终应收', value: Number(snap.displayAmount ?? 0) },
+  ];
+});
+
+const settlementSummaryInsurance = computed(
+  () =>
+    Number(settlementSnapshot.value?.ybFundPaySumamt ?? 0) +
+    Number(settlementSnapshot.value?.ybAcctPay ?? 0),
+);
+
+const settlementSummarySelfPay = computed(() =>
+  Number(settlementSnapshot.value?.selfPayAmount ?? 0),
+);
 
 const detailTableQueryParams = reactive({
   pageNo: 1,
   pageSize: 20,
 });
 
-const detailTableLayoutRef = ref<InstanceType<typeof TableLayout> | null>(null);
+const detailTableLayoutRef = ref<InstanceType<typeof RegisterStyleTableLayout> | null>(null);
 /** 程序同步勾选时跳过 selection-change 的整组展开，避免递归 */
 const syncingDetailSelection = ref(false);
 
-/** 明细表底层 VxeGrid（TableLayout → Table 暴露的 gridApi，可能多层 ref） */
+/** 明细表底层 VxeGrid（RegisterStyleTableLayout → gridApi，可能多层 ref） */
 function getDetailVxeGrid(): null | Record<string, unknown> {
   let cur: unknown = (detailTableLayoutRef.value as null | { gridApi?: unknown })?.gridApi;
   for (let i = 0; i < 4 && cur && typeof cur === 'object' && 'value' in cur; i++) {
-    cur = (cur as { value: unknown }).value;
+    const obj = cur as Record<string, unknown>;
+    // 已是 Vxe 实例时勿再拆 .value（实例上也可能有 value 字段）
+    if (
+      typeof obj.setCheckboxRow === 'function' ||
+      typeof obj.setAllCheckboxRow === 'function' ||
+      typeof obj.clearCheckboxRow === 'function'
+    ) {
+      break;
+    }
+    cur = obj.value;
   }
   if (!cur || typeof cur !== 'object') {
     return null;
   }
   const g = cur as { grid?: Record<string, unknown> };
-  return (g.grid ?? cur) as Record<string, unknown>;
+  const resolved = (g.grid ?? cur) as Record<string, unknown>;
+  if (
+    typeof resolved.setCheckboxRow === 'function' ||
+    typeof resolved.setAllCheckboxRow === 'function' ||
+    typeof resolved.clearCheckboxRow === 'function'
+  ) {
+    return resolved;
+  }
+  return (g.grid as Record<string, unknown> | undefined) ?? (cur as Record<string, unknown>);
 }
 
 /** 拟退行（REFUNDING）才可勾选执行退费 */
@@ -198,7 +242,16 @@ function applyDetailGridCheckboxSelection(
       return;
     }
     const selectedIds = new Set(rows.map((row) => row.chargeItemId));
-    for (const row of detailTableRows.value) {
+    const tableDataResult =
+      typeof targetGrid.getTableData === 'function'
+        ? (targetGrid.getTableData() as {
+            fullData?: RefundDetailTableRow[];
+            tableData?: RefundDetailTableRow[];
+          })
+        : null;
+    const tableRows =
+      tableDataResult?.fullData ?? tableDataResult?.tableData ?? detailTableRows.value;
+    for (const row of tableRows) {
       if (!isRefundingLineSelectable(row)) {
         continue;
       }
@@ -266,25 +319,38 @@ function handleRefundDetailSpanMethod(params: {
   return { rowspan: 0, colspan: 0 };
 }
 
-/** 加载明细后默认勾选全部可退原支付整单 */
-function selectAllRefundingRowsInGrid(items: RefundDetailTableRow[]) {
+/** 加载明细后默认勾选全部可退原支付整单。
+ * Table.vue 在 tableData 变更后会 post-flush → clearSelection，须等清空后再勾。
+ */
+async function selectAllRefundingRowsInGrid(items: RefundDetailTableRow[]) {
   const selectable = items.filter((r) => isRefundingLineSelectable(r));
-  selectedDetailRows.value = selectable.length > 0 ? [...selectable] : [];
   syncingDetailSelection.value = true;
-  void nextTick(() => {
-    const grid = getDetailVxeGrid();
-    if (!grid) {
-      syncingDetailSelection.value = false;
-      return;
-    }
+  selectedDetailRows.value = selectable.length > 0 ? [...selectable] : [];
+
+  await nextTick();
+  await nextTick();
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
+
+  let grid = getDetailVxeGrid();
+  if (!grid) {
+    await nextTick();
+    grid = getDetailVxeGrid();
+  }
+
+  if (grid) {
     if (typeof grid.clearCheckboxRow === 'function') {
       grid.clearCheckboxRow();
     }
     if (selectable.length > 0) {
       applyDetailGridCheckboxSelection(selectable, grid);
     }
-    syncingDetailSelection.value = false;
-  });
+  }
+
+  await nextTick();
+  selectedDetailRows.value = selectable.length > 0 ? [...selectable] : [];
+  syncingDetailSelection.value = false;
 }
 
 /** 按原支付 id 查找分组 */
@@ -650,15 +716,17 @@ const handleOpenSettlement = async () => {
       preservedNewChargeItemIds: (group.preservedLines ?? []).map((l) => l.chargeItemId),
       previews,
       refundingChargeItemIds,
+      selfPayAmount: Number(group.selfPayAmount ?? 0),
+      ybAcctPay: Number(group.ybAcctPay ?? 0),
+      ybFundPaySumamt: Number(group.ybFundPaySumamt ?? 0),
     };
-    paymentForm.payChannelCode = DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE;
     settlementVisible.value = true;
   } finally {
     openSettlementLoading.value = false;
   }
 };
 
-/** 按原支付执行退费（含半退保留行再结算由后端编排） */
+/** 按原支付执行退费（渠道原路返回由后端装配；含半退保留行再结算由后端编排） */
 const buildRefundRequest = (snap: NonNullable<typeof settlementSnapshot.value>, eid: string) => ({
   billDate: dayjs().format('YYYY-MM-DD HH:mm:ss'),
   encounterId: eid,
@@ -666,20 +734,18 @@ const buildRefundRequest = (snap: NonNullable<typeof settlementSnapshot.value>, 
   refundingChargeItemIds: snap.refundingChargeItemIds,
   preservedNewChargeItemIds:
     snap.preservedNewChargeItemIds.length > 0 ? snap.preservedNewChargeItemIds : undefined,
-  refundPaymentDetails: [
-    {
-      amount: snap.displayAmount,
-      payChannelCode: paymentForm.payChannelCode,
-    },
-  ],
 });
 
 /** 退费成功后的列表刷新 */
 const finalizeRefundSuccess = async (
   res: Awaited<ReturnType<typeof httpExecuteOutpatientBillRefundByPayment>>,
+  originalPaymentId?: string,
 ) => {
   if (res.success) {
     ElMessage.success(res.halfRefundExecuted ? '退费已完成（含保留项再结算）' : '退费已完成');
+  }
+  if (originalPaymentId) {
+    clearCachedClientRefundResult(originalPaymentId);
   }
   settlementVisible.value = false;
   settlementSnapshot.value = null;
@@ -697,19 +763,20 @@ const handleConfirmRefund = async () => {
     return;
   }
   confirmRefundLoading.value = true;
+  let clientRefundResult: Awaited<ReturnType<typeof submitScanRefund>> | undefined;
   try {
     await runWorkInjuryRefundReverse({
       encounterId: eid,
       originalPaymentId: snap.originalPaymentId,
     });
 
-    let clientRefundResult;
     try {
+      // 银联只退扫码实付段：金额以 BPC txnAmtFen 为准；此处 selfPayAmount 仅作无 BPC 金额时的兜底提示
       clientRefundResult =
         (await submitScanRefund({
           originalPaymentId: snap.originalPaymentId,
           originalPayChannelCodes: snap.originalPayChannelCodes,
-          refundAmountYuan: snap.displayAmount,
+          refundAmountYuan: snap.selfPayAmount,
         })) ?? undefined;
     } catch (error) {
       const message = error instanceof Error ? error.message : '退费前银联校验失败，请稍后重试';
@@ -722,10 +789,16 @@ const handleConfirmRefund = async () => {
       ...(clientRefundResult ? { clientRefundResult } : {}),
     };
     const res = await httpExecuteOutpatientBillRefundByPayment(refundBody);
-    await finalizeRefundSuccess(res);
+    await finalizeRefundSuccess(res, snap.originalPaymentId);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : '退费失败';
-    ElMessage.error(message);
+    if (clientRefundResult) {
+      ElMessage.error(
+        `${message}。银联扫码段可能已退成功，请勿重复人工退货；请直接再次点「确认退费」完成本院收口。`,
+      );
+    } else {
+      ElMessage.error(message);
+    }
   } finally {
     confirmRefundLoading.value = false;
   }
@@ -777,6 +850,7 @@ onMounted(() => {
                   unlink-panels
                   clearable
                   class="charge-filter-toolbar__date min-w-0 flex-1"
+                  :shortcuts="dateRangeShortcuts"
                 />
                 <ElButton
                   type="default"
@@ -893,9 +967,10 @@ onMounted(() => {
                 </ElButton>
               </div>
               <div class="charge-detail-wrapper">
-                <TableLayout
+                <RegisterStyleTableLayout
                   ref="detailTableLayoutRef"
                   :key="selectedEncounterId || 'no-encounter'"
+                  class="!p-0"
                   :table-data="detailTableRows"
                   :loading="tableLoading"
                   :total="detailTableRows.length"
@@ -906,8 +981,6 @@ onMounted(() => {
                   :max-height="600"
                   row-key="chargeItemId"
                   :span-method="handleRefundDetailSpanMethod"
-                  border
-                  stripe
                   @selection-change="handleDetailSelectionChange"
                 >
                   <template #statusCell="{ row }">
@@ -932,7 +1005,7 @@ onMounted(() => {
                     </ElTag>
                     <span v-else class="text-[var(--el-text-color-placeholder)]">—</span>
                   </template>
-                </TableLayout>
+                </RegisterStyleTableLayout>
                 <div class="ml-4 mt-2 text-sm text-[var(--el-text-color-regular)]">
                   已选 {{ selectedPaymentGroupCount }} 笔原支付、{{
                     selectedDetailRows.length
@@ -954,98 +1027,19 @@ onMounted(() => {
 
     <ChargeSettlementDialog
       v-model="settlementVisible"
-      v-model:pay-channel-code="paymentForm.payChannelCode"
       dialog-title="确认退费"
       primary-button-text="确认退费"
       project-table-title="退费项目"
       receivable-amount-label="应退金额"
+      :show-pay-channel="false"
       :loading="confirmRefundLoading"
       :display-amount="settlementSnapshot?.displayAmount ?? 0"
+      :insurance-breakdown-items="settlementInsuranceBreakdown"
+      :summary-insurance-amount="settlementSummaryInsurance"
+      :summary-self-pay-amount="settlementSummarySelfPay"
       :previews="settlementSnapshot?.previews ?? []"
       :selected-charge-count="settlementSnapshot?.refundingChargeItemIds.length ?? 0"
-      :pay-channel-options="payChannelOptions"
       @confirm-charge="handleConfirmRefund"
     />
   </div>
 </template>
-
-<style scoped>
-.charge-filter-toolbar {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.charge-filter-toolbar__status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 12px;
-  line-height: 1.25;
-}
-
-.charge-filter-toolbar__status :deep(.el-radio) {
-  margin-right: 0;
-  height: auto;
-  line-height: 1.25;
-}
-
-.charge-filter-toolbar__date :deep(.el-input__wrapper) {
-  width: 100%;
-}
-
-.charge-patient-scroll {
-  min-height: 200px;
-}
-
-.patient-info-bar {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  background: var(--el-fill-color-light);
-  padding: 10px 12px;
-}
-
-.patient-info-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px 16px;
-}
-
-.patient-info-item {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-}
-
-.patient-info-label {
-  color: var(--el-text-color-secondary);
-  font-size: 14px;
-  white-space: nowrap;
-}
-
-.patient-info-value {
-  color: var(--el-text-color-primary);
-  font-size: 14px;
-  font-weight: 500;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.charge-detail-wrapper :deep(button[title='全屏']),
-.charge-detail-wrapper :deep(button[aria-label='全屏']),
-.charge-detail-wrapper :deep(.iconify[data-icon*='fullscreen']) {
-  display: none !important;
-}
-
-.charge-detail-wrapper :deep(.vxe-grid) {
-  height: auto !important;
-  max-height: none !important;
-}
-
-.charge-detail-wrapper :deep(.vxe-table--body-wrapper) {
-  max-height: none !important;
-}
-</style>

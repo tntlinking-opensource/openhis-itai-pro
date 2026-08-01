@@ -106,7 +106,7 @@ export async function resolvePrinterForPrint(
   try {
     printers = await fetchHiprintPrinterList();
   } catch (error) {
-    if (selectPrinter === 'auto' && pref?.skipPrompt !== false && pref.printerName) {
+    if (selectPrinter === 'auto' && pref?.skipPrompt !== false && pref?.printerName) {
       return { printer: pref.printerName, cancelled: false };
     }
     const message =

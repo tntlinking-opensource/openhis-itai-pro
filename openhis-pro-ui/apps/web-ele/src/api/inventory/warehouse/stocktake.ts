@@ -1,6 +1,6 @@
 /**
- * 药库盘库单 — 对接 {@code POST /api/app/inventoryWarehouseStocktake/<method>}
- * 契约见 AS-INV-WHS-007-SDD。
+ * 药�?�??�?�? �?? 对�?� {@code POST /api/app/inventoryWarehouseStocktake/<method>}
+ * �?约见 AS-INV-WHS-007-SDD�??
  */
 import type { ApiOptionItem, ApiResponse } from '#/types/api-response';
 
@@ -33,7 +33,7 @@ export interface LoadStocktakeFormInitRequest {
 }
 
 export interface LoadStocktakeFormInitResponse {
-  /** 药库位置；后端 IF-WHS-ST-01 实际字段名为 pharmacyLocationOptions。 */
+  /** 药�?位置�?�?端 IF-WHS-ST-01 �?�??�?段名为 pharmacyLocationOptions�?? */
   warehouseLocationOptions?: StocktakeOptionDto[];
   pharmacyLocationOptions?: StocktakeOptionDto[];
   inboundItemTableTypeOptions?: StocktakeOptionDto[];
@@ -164,7 +164,7 @@ export interface WithdrawStocktakeApprovalRequest {
 
 export interface AgreeStocktakeRequest {
   busNo: string;
-  /** @deprecated CHS 启用即上传，请使用 contractBusNo */
+  /** @deprecated CHS 启�?�即�?传�?请使�?� contractBusNo */
   medicareUploadEnabled?: boolean;
   contractBusNo?: string;
 }
@@ -183,6 +183,8 @@ export interface PageProductsForStocktakeRequest {
   purposeLocationId: number | string;
   productTableName: string;
   keyword?: string;
+  /** true=仅返回账面量>0；false/未传=含零库存 */
+  positiveQuantityOnly?: boolean;
   pageNo: number;
   pageSize: number;
 }
@@ -198,7 +200,7 @@ export interface StocktakeProductUnitBandDto {
 export interface StocktakeProductItemDto {
   productTableName?: string;
   productDefinitionId?: number | string;
-  /** 项目业务编码（选品下拉「项目编码」列） */
+  /** 项�?��?�?��?码�?�??�?��?�??�??项�?��?码�?��??�? */
   productBusNo?: string;
   productName?: string;
   specification?: string;
@@ -329,7 +331,7 @@ export async function pageProductsForWarehouseStocktakeApi(body: PageProductsFor
   );
 }
 
-/** 工作站左侧列表。 */
+/** 工�?�?左侧�??表�?? */
 export async function pageWarehouseStocktakeWorkbenchListApi(params?: {
   purposeLocationId?: number | string;
   keyword?: string;
@@ -363,7 +365,7 @@ export async function pageWarehouseStocktakeWorkbenchListApi(params?: {
   return { records, total: kw || filtered ? records.length : totalCount };
 }
 
-/** 进入页面：药库盘库 init。 */
+/** �?�?�页面�?药�?�??�? init�?? */
 export async function initWarehouseStocktakeWorkbenchApi(): Promise<{
   cabinetListOptions: Record<string, unknown>[];
   locationRawOptions: WarehouseStocktakeLocationOption[];

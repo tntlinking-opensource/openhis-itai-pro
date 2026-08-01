@@ -22,18 +22,30 @@ defineOptions({ name: 'InventoryGainLossAsidePane' });
 withDefaults(
   defineProps<{
     addDisabled?: boolean;
+    addLabel?: string;
     cabinetListOptions: Record<string, unknown>[];
+    emptyAddLabel?: string;
+    emptyDescription?: string;
     locationLabel?: string;
     orders: Record<string, unknown>[];
     practitionerOption?: ApiOptionItem[];
     queueTitle?: string;
     selectedOrder?: null | Record<string, unknown>;
+    /** 是否展示底栏新增按钮；纯上游拉取页可关，入口放右侧 */
+    showFooterAdd?: boolean;
+    /** 空态是否展示新增按钮 */
+    showEmptyAdd?: boolean;
   }>(),
   {
     addDisabled: false,
+    addLabel: '新增损益单',
+    emptyAddLabel: '新增单据',
+    emptyDescription: '暂无单据',
     locationLabel: '损益库房',
     practitionerOption: () => [],
     queueTitle: '历史损益单',
+    showEmptyAdd: true,
+    showFooterAdd: true,
   },
 );
 
@@ -181,13 +193,16 @@ function handleAdd() {
         :practitioner-option="practitionerOption"
         :selected-order="selectedOrder"
         :show-supplier="false"
+        :empty-add-label="emptyAddLabel"
+        :empty-description="emptyDescription"
+        :show-empty-add="showEmptyAdd"
         @add="handleAdd"
         @select="handleQueueSelect"
       />
     </template>
 
-    <template #footer>
-      <InvPrimaryBtn label="新增损益单" :disabled="addDisabled" @click="handleAdd" />
+    <template v-if="showFooterAdd" #footer>
+      <InvPrimaryBtn :label="addLabel" :disabled="addDisabled" @click="handleAdd" />
     </template>
   </InvAsideShell>
 </template>

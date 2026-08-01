@@ -3,7 +3,6 @@ import type { ApiResponse } from '#/types/api-response';
 import { requestClient } from '#/api/request';
 
 import { dedupeTraceCodes } from './trace-code-parse';
-import { TRACE_MOCK_BOX_EXPAND_BY_CODE } from './trace-mock-data';
 
 /** 箱码展开结果（对齐码上放心 query.relation 语义：大/中码 → 小码列表） */
 export interface TraceBoxExpandItem {
@@ -26,7 +25,7 @@ interface ExpandTraceBoxCodesApiResponse {
 
 const EXPAND_API = '/inventoryWarehouseInboundReceipt/expandTraceBoxCodes';
 
-/** 调用后端箱码展开（query.relation 封装）；未实现时抛错由上层降级 */
+/** 调用后端箱码展开（query.relation 封装） */
 async function expandTraceBoxCodesByApi(codes: string[]): Promise<TraceBoxExpandItem[]> {
   const res = await requestClient.post<ApiResponse<ExpandTraceBoxCodesApiResponse>>(EXPAND_API, {
     traceNos: codes,
@@ -61,26 +60,13 @@ async function expandTraceBoxCodesByApi(codes: string[]): Promise<TraceBoxExpand
   });
 }
 
-function expandTraceBoxCodesByMock(codes: string[]): TraceBoxExpandItem[] {
-  return codes.map((sourceCode) => {
-    const children = TRACE_MOCK_BOX_EXPAND_BY_CODE[sourceCode];
-    if (children?.length) {
-      return { sourceCode, childCodes: children, ok: true };
-    }
-    return { sourceCode, childCodes: [sourceCode], ok: true, message: '小码直扫' };
-  });
-}
-
-/** 箱码模式下将扫码结果展开为小码列表 */
+/** 将扫码结果展开为小码列表 */
 export async function expandTraceBoxCodes(
   codes: string[],
-  options: { useMock?: boolean },
 ): Promise<{ expanded: string[]; items: TraceBoxExpandItem[] }> {
   if (codes.length === 0) return { expanded: [], items: [] };
 
-  const items = options.useMock
-    ? expandTraceBoxCodesByMock(codes)
-    : await expandTraceBoxCodesByApi(codes);
+  const items = await expandTraceBoxCodesByApi(codes);
 
   const expanded: string[] = [];
   for (const item of items) {

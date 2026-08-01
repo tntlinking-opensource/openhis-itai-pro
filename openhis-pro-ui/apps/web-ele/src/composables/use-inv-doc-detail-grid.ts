@@ -4,7 +4,9 @@ import type { VxeGridPropTypes } from '#/adapter/vxe-table';
 import { nextTick, reactive, ref, watch } from 'vue';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
+import { useCompactViewport } from '#/composables/use-compact-viewport';
 import { useInventoryDocGridEdit } from '#/composables/use-inventory-doc-grid-edit';
+import { withInvDocDetailColWidths } from '#/constants/layout/inventory-doc-compact-presets';
 import type { InventoryDocGridEditConfig } from '#/utils/inventory/inventory-doc-grid-edit';
 import {
   collectInventoryGridFullData,
@@ -20,6 +22,11 @@ export interface UseInvDocDetailGridOptions<TRow extends object> {
   /** vxe beforeEditMethod */
   beforeEditMethod?: () => boolean;
   enableKeyboard?: boolean;
+  /**
+   * 是否随视口自动缩放明细列宽（默认 true）。
+   * 订货单等已自行 pickPreset 列宽的页面传 false，避免双重压缩。
+   */
+  compactColumns?: boolean;
 }
 
 /**
@@ -30,10 +37,20 @@ export function useInvDocDetailGrid<TRow extends object>(
   options: UseInvDocDetailGridOptions<TRow>,
 ) {
   const gridWrapRef = ref<HTMLElement | null>(null);
+  const { isCompactViewport } = useCompactViewport();
+  const enableCompactColumns = options.compactColumns !== false;
+
+  /** 按视口产出列定义（关闭 compactColumns 时原样使用入参） */
+  function resolveColumns(): VxeGridPropTypes.Column[] {
+    if (!enableCompactColumns) {
+      return options.columns;
+    }
+    return withInvDocDetailColWidths(options.columns, isCompactViewport.value);
+  }
 
   const gridOptions = reactive(
     createDefaultInvDocGridOptions<TRow>({
-      columns: options.columns,
+      columns: resolveColumns(),
       beforeEditMethod: options.beforeEditMethod,
     }),
   );
@@ -82,13 +99,16 @@ export function useInvDocDetailGrid<TRow extends object>(
     enableKeyboard: options.enableKeyboard,
   });
 
-  /** 同步 documentEditable → editConfig.enabled */
+  /** 同步 documentEditable → editConfig.enabled / showIcon */
   function patchGridEditConfig(): void {
+    const editable = isEditable();
     const patched = gridEdit.patchGridOptions({
       ...(gridOptions as Record<string, unknown>),
       editConfig: {
         ...(gridOptions.editConfig as Record<string, unknown>),
-        enabled: isEditable(),
+        enabled: editable,
+        // 只读时隐藏列头编辑图标，避免「看起来还能改」
+        showIcon: editable,
       },
     });
     Object.assign(gridOptions, patched);
@@ -107,6 +127,19 @@ export function useInvDocDetailGrid<TRow extends object>(
     },
     { immediate: true },
   );
+
+  // 窄屏切换时同步明细列宽（不改列结构）
+  if (enableCompactColumns) {
+    watch(isCompactViewport, () => {
+      const next = resolveColumns();
+      gridOptions.columns = next;
+      const grid = gridApi?.grid as
+        | { loadColumn?: (cols: VxeGridPropTypes.Column[]) => void }
+        | null
+        | undefined;
+      grid?.loadColumn?.(next);
+    });
+  }
 
   return {
     Grid,

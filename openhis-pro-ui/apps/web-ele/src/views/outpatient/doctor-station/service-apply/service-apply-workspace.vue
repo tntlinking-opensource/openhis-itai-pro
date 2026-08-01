@@ -9,11 +9,15 @@ import { ref, watch } from 'vue';
 
 import { ElButton, ElEmpty } from 'element-plus';
 
+import { useEnsureClinicalReception } from '#/components/doctor-station';
+
 import ServiceApplyDialog from './service-apply-dialog.vue';
 import ServiceApplyFormDocument from './service-apply-form-document.vue';
 import { useServiceApplyTab } from './composables/use-service-apply-tab';
 import type { ServiceApplyDocumentGroup } from './service-apply-doc-groups';
 import { inferServiceApplyKindFromAdviceRow } from './service-apply-doc-groups';
+import DetailAuditRemindDialog from '#/chs/components/detail-audit-remind-dialog.vue';
+import type { DetailAuditRemindDialogExpose } from '#/chs/composables/use-detail-audit-gate';
 
 defineOptions({ name: 'ServiceApplyWorkspace' });
 
@@ -31,8 +35,13 @@ const emit = defineEmits<{
   'open-apply': [kind: ServiceApplyKind];
 }>();
 
+const { ensureReceptionBeforeClinicalWork } = useEnsureClinicalReception();
+
+const detailAuditDialogRef = ref<DetailAuditRemindDialogExpose | null>(null);
+
 const {
   documentGroups,
+  getAdviceChargeStatusTagType,
   getAdviceStatusTagType,
   handleDelete,
   handlePrint,
@@ -44,28 +53,31 @@ const {
   reload,
   tableLoading,
   toggleDocumentGroupSelection,
-} = useServiceApplyTab(props);
+} = useServiceApplyTab(props, { detailAuditDialogRef });
 
-const editDrawerVisible = ref(false);
+const editDialogVisible = ref(false);
 const editTargetGroup = ref<ServiceApplyDocumentGroup | null>(null);
 const editApplyKind = ref<ServiceApplyKind>('lab');
 
-/** 打开检验/检查申请弹窗 */
+/** 打开检验/检查/治疗申请弹窗 */
 function handleOpenApply(kind: ServiceApplyKind) {
   emit('open-apply', kind);
 }
 
-/** 打开修改申请单抽屉 */
-function handleEditDocument(group: ServiceApplyDocumentGroup) {
+/** 打开修改申请单弹窗（仅草稿；已签发须先撤回。打开前自动接诊） */
+async function handleEditDocument(group: ServiceApplyDocumentGroup) {
+  const receptionOk = await ensureReceptionBeforeClinicalWork();
+  if (!receptionOk) return;
   const head = group.lines[0];
   const kind = head ? (inferServiceApplyKindFromAdviceRow(head) ?? 'lab') : 'lab';
   editApplyKind.value = kind;
+  // 先写入回显组，再打开，避免 watch 打开瞬间拿不到 editDocumentGroup
   editTargetGroup.value = group;
-  editDrawerVisible.value = true;
+  editDialogVisible.value = true;
 }
 
-/** 编辑抽屉关闭后清空目标 */
-watch(editDrawerVisible, (open) => {
+/** 编辑弹窗关闭后清空目标，避免下次打开残留回显 */
+watch(editDialogVisible, (open) => {
   if (!open) {
     editTargetGroup.value = null;
   }
@@ -76,9 +88,9 @@ async function handleEditSaved() {
   await reload();
 }
 
-/** 编辑签发成功后刷新列表 */
+/** 编辑签发成功后关闭弹窗并刷新列表 */
 async function handleEditSigned() {
-  editDrawerVisible.value = false;
+  editDialogVisible.value = false;
   await reload();
 }
 
@@ -91,6 +103,7 @@ defineExpose({ reload });
       <div class="toolbar-actions">
         <ElButton type="primary" @click="handleOpenApply('lab')">检验申请</ElButton>
         <ElButton type="primary" @click="handleOpenApply('exam')">检查申请</ElButton>
+        <ElButton type="primary" @click="handleOpenApply('treatment')">治疗申请</ElButton>
         <span class="toolbar-divider" />
         <ElButton type="primary" :loading="mutationLoading" @click="handleSign">签发</ElButton>
         <ElButton type="warning" plain :loading="mutationLoading" @click="handleWithdraw">
@@ -106,7 +119,7 @@ defineExpose({ reload });
     <div v-loading="tableLoading" class="workspace-body min-h-0 flex-1 overflow-y-auto">
       <ElEmpty
         v-if="!tableLoading && documentGroups.length === 0"
-        description="暂无检验/检查申请单"
+        description="暂无检验/检查/治疗申请单"
         class="workspace-empty"
       />
       <div v-else class="doc-grid">
@@ -116,6 +129,7 @@ defineExpose({ reload });
           :group="group"
           :selected="isDocumentGroupSelected(group)"
           :get-status-tag-type="getAdviceStatusTagType"
+          :get-charge-status-tag-type="getAdviceChargeStatusTagType"
           @toggle-select="toggleDocumentGroupSelection(group)"
           @edit="handleEditDocument(group)"
         />
@@ -123,8 +137,8 @@ defineExpose({ reload });
     </div>
 
     <ServiceApplyDialog
-      v-model="editDrawerVisible"
-      shell="drawer"
+      v-model="editDialogVisible"
+      shell="dialog"
       :apply-kind="editApplyKind"
       :edit-document-group="editTargetGroup"
       :encounter-id="encounterId"
@@ -134,6 +148,8 @@ defineExpose({ reload });
       @saved="handleEditSaved"
       @signed="handleEditSigned"
     />
+
+    <DetailAuditRemindDialog ref="detailAuditDialogRef" warn-type="1" />
   </div>
 </template>
 

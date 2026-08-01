@@ -36,7 +36,10 @@ export async function settleWithScanRecovery<T>(
       );
       return await settle();
     } catch {
-      throw new ScanSettleIncompleteError(message, clientScanResult);
+      throw new ScanSettleIncompleteError(
+        `${message}。银联已扣款但院内未落账：请立即再次确认收费完成补结算，勿重复扫码；若无法补结算请联系信息科处理退货。`,
+        clientScanResult,
+      );
     }
   }
 }

@@ -26,10 +26,13 @@ import {
   resolveDeptGainLossLocationOptionsFromInit,
 } from '#/api/inventory/department/gain-loss';
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
+import { useFromFinanceApproval } from '#/composables/use-from-finance-approval';
 import GainLossAsidePane from './gain-loss-aside-pane.vue';
 import GainLossMainPane from './gain-loss-main-pane.vue';
 
 defineOptions({ name: 'InventoryDepartmentGainLossPage' });
+
+const { fromFinanceApproval } = useFromFinanceApproval();
 
 const route = useRoute();
 const userStore = useUserStore();
@@ -97,7 +100,7 @@ async function init() {
     const locationList = resolveDeptGainLossLocationOptionsFromInit(data);
     locationOptions.value = mapDeptGainLossInitOptionsToApiItems(locationList);
     practitionerOptions.value = mapInventoryPractitionerInitOptions(
-      [data?.nurseOptions, data?.warehouseKeeperOptions, data?.pharmacistOptions],
+      [data?.pharmacistOptions, data?.warehouseKeeperOptions],
       userStore.userInfo as null | Record<string, unknown>,
     );
     itemTableTypeOptions.value = normalizeInventoryItemTableTypeOptions(
@@ -208,9 +211,9 @@ onMounted(async () => {
 
 <template>
   <WarehouseDocWorkstation
-    aside-width="280px"
     queue-title=""
     aside-dense
+    :show-aside="!fromFinanceApproval"
     :show-aside-filter="false"
     :show-toolbar="false"
   >

@@ -94,14 +94,19 @@ watch([pageNo, pageSize], () => {
 
 <template>
   <ElDialog v-model="visible" :title="title" destroy-on-close width="760px">
-    <div class="mb-3 flex gap-2">
-      <ElInput
-        v-model="keyword"
-        clearable
-        placeholder="名称 / 拼音 / 医保编码（≥2 字）"
-        @keyup.enter="handleSearch"
-      />
-      <ElButton :loading="loading" type="primary" @click="handleSearch">搜索</ElButton>
+    <div class="mb-3 flex flex-nowrap items-center gap-2">
+      <div class="min-w-0 flex-1">
+        <ElInput
+          v-model="keyword"
+          class="w-full"
+          clearable
+          placeholder="名称 / 拼音 / 医保编码（≥2 字）"
+          @keyup.enter="handleSearch"
+        />
+      </div>
+      <ElButton class="shrink-0" :loading="loading" type="primary" @click="handleSearch">
+        搜索
+      </ElButton>
     </div>
     <ElTable
       v-loading="loading"

@@ -2,10 +2,12 @@
 import type { FilterExpose } from '../types/Filter.d';
 import type { TableLayoutProps, TreeNodeData } from '../types/TableLayout.d';
 
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue';
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue';
 
 import { ArrowLeft, ArrowRight, MoreFilled, Refresh, Search } from '@element-plus/icons-vue';
 import { ElTreeV2 } from 'element-plus';
+
+import { isInsideOverlayContainer, TABLE_LAYOUT_OVERLAY_HOST } from '../utils/overlay-container';
 
 import Filter from './Filter.vue';
 import Table from './Table.vue';
@@ -66,12 +68,20 @@ const emit = defineEmits<{
 }>();
 const queryFormComponentRef = ref<FilterExpose | null>(null);
 const tableRef = ref<any>(null);
+const rootRef = ref<HTMLDivElement | null>(null);
 const sideSearchKeyword = ref<string>('');
 const treeRef = ref<InstanceType<typeof import('element-plus').ElTree> | null>(null);
 const currentTreeNode = ref<null | TreeNodeData>(null);
 const sideQueryCollapsed = ref<boolean>(false);
 const isRefreshing = ref<boolean>(false);
 const allNodeExpanded = ref<boolean>(true);
+/** 弹层内不用 h-full，避免表体随弹窗内容被撑高 */
+const insideOverlay = ref(false);
+const overlayHostInjected = inject(TABLE_LAYOUT_OVERLAY_HOST, false);
+
+function resolveInsideOverlay() {
+  return overlayHostInjected === true || isInsideOverlayContainer(rootRef.value);
+}
 
 // 左侧树虚拟化：自动测量可视高度，传给 ElTreeV2 的 height（必须是 number）
 const sideTreeViewportRef = ref<HTMLElement | null>(null);
@@ -79,16 +89,24 @@ const sideTreeHeight = ref<number>(360);
 let sideTreeResizeObserver: null | ResizeObserver = null;
 
 onMounted(() => {
-  if (typeof ResizeObserver === 'undefined') return;
-  sideTreeResizeObserver = new ResizeObserver(() => {
-    const el = sideTreeViewportRef.value;
-    if (!el) return;
-    // 避免 0 导致 TreeV2 无法渲染
-    sideTreeHeight.value = Math.max(240, Math.floor(el.clientHeight || 0));
+  insideOverlay.value = resolveInsideOverlay();
+  nextTick(() => {
+    insideOverlay.value = resolveInsideOverlay();
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    sideTreeResizeObserver = new ResizeObserver(() => {
+      const el = sideTreeViewportRef.value;
+      if (!el) {
+        return;
+      }
+      // 避免 0 导致 TreeV2 无法渲染
+      sideTreeHeight.value = Math.max(240, Math.floor(el.clientHeight || 0));
+    });
+    if (sideTreeViewportRef.value) {
+      sideTreeResizeObserver.observe(sideTreeViewportRef.value);
+    }
   });
-  if (sideTreeViewportRef.value) {
-    sideTreeResizeObserver.observe(sideTreeViewportRef.value);
-  }
 });
 
 onBeforeUnmount(() => {
@@ -306,6 +324,11 @@ const handleSelectionChange = (selection: Record<string, any>[]) => {
   emit('selectionChange', selection);
 };
 
+/** 清空表格勾选（转发 Table.clearSelection） */
+async function clearSelection() {
+  await tableRef.value?.clearSelection?.();
+}
+
 const handleSortChange = ({
   column,
   prop,
@@ -351,12 +374,17 @@ defineExpose({
   handleQuery,
   resetQuery,
   gridApi: computed(() => tableRef.value?.gridApi),
+  clearSelection,
 });
 </script>
 
 <template>
-  <div class="box-border flex h-full min-h-0 flex-col overflow-hidden p-2">
-    <div class="relative flex min-h-0 flex-1 gap-0">
+  <div
+    ref="rootRef"
+    class="box-border flex min-h-0 w-full min-w-0 flex-col overflow-hidden p-2"
+    :class="insideOverlay ? 'table-layout--overlay h-auto' : 'h-full'"
+  >
+    <div class="relative flex min-h-0 w-full min-w-0 gap-0" :class="insideOverlay ? '' : 'flex-1'">
       <transition
         enter-active-class="transition-all duration-300 ease-in-out"
         leave-active-class="transition-all duration-300 ease-in-out"
@@ -416,11 +444,11 @@ defineExpose({
                 {{ allNode[defaultProps.label] || '全部' }}
               </span>
             </div>
-            <!-- 可滚动的树形组件 -->
+            <!-- 可滚动的树形组件（非虚拟树时依赖本容器 overflow 出滚动条） -->
             <div
               v-show="showAllNode ? allNodeExpanded : true"
               ref="sideTreeViewportRef"
-              class="min-h-0 flex-1"
+              class="min-h-0 flex-1 overflow-y-auto"
             >
               <!-- 节点多时启用虚拟化（ElTreeV2） -->
               <ElTreeV2
@@ -514,8 +542,11 @@ defineExpose({
 
       <!-- 主内容区域 -->
       <div
-        class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-        :class="{ 'with-side-query': showSideQuery && !sideQueryCollapsed }"
+        class="flex min-h-0 w-full min-w-0 flex-col overflow-hidden"
+        :class="[
+          insideOverlay ? '' : 'flex-1',
+          { 'with-side-query': showSideQuery && !sideQueryCollapsed },
+        ]"
       >
         <Filter
           v-if="showTopQuery"
@@ -545,7 +576,8 @@ defineExpose({
         <!-- 表格区域 -->
         <Table
           ref="tableRef"
-          class="min-h-0 flex-1"
+          class="min-h-0"
+          :class="insideOverlay ? '' : 'flex-1'"
           :table-data="tableData"
           :loading="loading"
           :border="border"
@@ -590,5 +622,13 @@ defineExpose({
 <style scoped lang="scss">
 :deep(.el-tree--highlight-current) {
   background-color: #fff !important;
+}
+
+/* 弹层内按内容定高，但表格仍须铺满容器宽度（minWidth 列才能吃掉剩余空间） */
+.table-layout--overlay :deep(.vxe-grid),
+.table-layout--overlay :deep(.vxe-table),
+.table-layout--overlay :deep(.vxe-table--body-wrapper),
+.table-layout--overlay :deep(.vxe-table--header-wrapper) {
+  width: 100% !important;
 }
 </style>

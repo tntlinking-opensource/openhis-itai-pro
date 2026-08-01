@@ -6,6 +6,7 @@ import type { TableColumn } from '../types/TableLayout.d';
 
 import {
   computed,
+  inject,
   nextTick,
   onBeforeUnmount,
   onMounted,
@@ -16,6 +17,12 @@ import {
 } from 'vue';
 
 import { VxeGrid } from 'vxe-table';
+
+import {
+  findConstrainedOverlayMaxHeight,
+  isInsideOverlayContainer,
+  TABLE_LAYOUT_OVERLAY_HOST,
+} from '../utils/overlay-container';
 
 defineOptions({
   name: 'Table',
@@ -200,7 +207,15 @@ const computedTableData = computed(() => {
 
 const tableContainerRef = ref<HTMLDivElement | null>(null);
 const tableBodyRef = ref<HTMLDivElement | null>(null);
+/** 自动测得的高度上限（一律按 maxHeight 使用，避免强制 height 把表体撑高） */
 const tableHeight = ref<null | number>(null);
+/** 弹层内：默认内容高度；仅存在限高滚动容器时才设 maxHeight */
+const insideOverlay = ref(false);
+const overlayHostInjected = inject(TABLE_LAYOUT_OVERLAY_HOST, false);
+
+function resolveInsideOverlay() {
+  return overlayHostInjected === true || isInsideOverlayContainer(tableContainerRef.value);
+}
 
 function updateAutoTableHeight() {
   if (props.tableHeight || props.maxHeight) {
@@ -210,28 +225,49 @@ function updateAutoTableHeight() {
   if (!el) {
     return;
   }
+  if (insideOverlay.value) {
+    // 弹层：有固定滚动容器则封顶，否则不锁高度（确认收费等场景）
+    tableHeight.value = findConstrainedOverlayMaxHeight(el);
+    return;
+  }
   const height = el.clientHeight;
   if (height > 0) {
     tableHeight.value = height;
   }
 }
 
+function bindAutoHeightObserver() {
+  tableResizeObserver?.disconnect();
+  tableResizeObserver = null;
+  if (props.tableHeight || props.maxHeight) {
+    tableHeight.value = null;
+    return;
+  }
+  updateAutoTableHeight();
+  if (typeof ResizeObserver === 'undefined' || !tableBodyRef.value) {
+    return;
+  }
+  // 弹层且无限高容器：不监听，避免父级被内容撑开后反复加高
+  if (insideOverlay.value && tableHeight.value == null) {
+    return;
+  }
+  tableResizeObserver = new ResizeObserver(() => {
+    updateAutoTableHeight();
+  });
+  tableResizeObserver.observe(tableBodyRef.value);
+}
+
 let tableResizeObserver: null | ResizeObserver = null;
 
 onMounted(() => {
-  if (props.tableHeight || props.maxHeight) {
-    return;
-  }
-  setTimeout(() => {
-    updateAutoTableHeight();
-    if (typeof ResizeObserver === 'undefined' || !tableBodyRef.value) {
-      return;
-    }
-    tableResizeObserver = new ResizeObserver(() => {
-      updateAutoTableHeight();
-    });
-    tableResizeObserver.observe(tableBodyRef.value);
-  }, 50);
+  insideOverlay.value = resolveInsideOverlay();
+  // teleport 挂载后再测一次，避免首帧尚未挂到 dialog 根上
+  nextTick(() => {
+    insideOverlay.value = resolveInsideOverlay();
+    setTimeout(() => {
+      bindAutoHeightObserver();
+    }, 50);
+  });
 });
 
 onBeforeUnmount(() => {
@@ -243,26 +279,55 @@ watch(
   () => [props.tableHeight, props.maxHeight],
   () => {
     if (!props.tableHeight && !props.maxHeight) {
-      updateAutoTableHeight();
+      bindAutoHeightObserver();
       return;
     }
     tableHeight.value = null;
+    tableResizeObserver?.disconnect();
+    tableResizeObserver = null;
   },
 );
 
+const gridRef = useTemplateRef<VxeGridInstance>('gridRef');
+
+const gridApi = computed(() => gridRef.value || null);
+
+/** 清空表格勾选（Vxe 内部态 + 通知业务侧 selectionChange([])） */
+async function clearSelection() {
+  await nextTick();
+  const grid = gridRef.value as
+    | null
+    | (VxeGridInstance & {
+        clearCheckboxReserve?: () => void;
+        clearCheckboxRow?: () => void;
+      });
+  if (grid) {
+    if (typeof grid.clearCheckboxRow === 'function') {
+      grid.clearCheckboxRow();
+    }
+    if (typeof grid.clearCheckboxReserve === 'function') {
+      grid.clearCheckboxReserve();
+    }
+  }
+  emit('selectionChange', []);
+}
+
 watch(
   () => props.tableData,
-  () => {
+  async () => {
     if (props.isAllData && internalPageNo.value !== 1 && props.tableData.length > 0) {
       internalPageNo.value = 1;
     }
+    // 列表数据刷新后同步清空勾选，避免业务侧 selectedRows 已空但 UI 仍勾选
+    await clearSelection();
   },
+  { flush: 'post' },
 );
 
 watch(
   () => props.loading,
   (loading) => {
-    if (!loading) {
+    if (!loading && !props.tableHeight && !props.maxHeight) {
       nextTick(() => updateAutoTableHeight());
     }
   },
@@ -354,13 +419,8 @@ const gridOptions = computed(() => {
     options.maxHeight =
       typeof props.maxHeight === 'string' ? props.maxHeight : `${props.maxHeight}px`;
   } else if (tableHeight.value) {
-    // 当前页行数较少时不锁死高度，避免正文区被压成一行、其余行需滚动才可见
-    const rowCount = computedTableData.value.length;
-    const pageSize = computedPageSize.value;
-    const useCompactAutoHeight = rowCount > 0 && rowCount <= Math.min(pageSize, 50);
-    if (!useCompactAutoHeight) {
-      options.height = `${tableHeight.value}px`;
-    }
+    // 用 maxHeight 而非 height：少行按内容，多行在容器内滚动，避免弹窗打开后表体被撑高
+    options.maxHeight = `${tableHeight.value}px`;
   }
 
   return options;
@@ -396,10 +456,6 @@ const gridEvents = computed(() => ({
   },
 }));
 
-const gridRef = useTemplateRef<VxeGridInstance>('gridRef');
-
-const gridApi = computed(() => gridRef.value || null);
-
 const columnSlots = computed(() => {
   const resultSlots: string[] = [];
   for (const key of Object.keys(slots)) {
@@ -419,12 +475,21 @@ defineExpose({
   tableWrapperRef: tableContainerRef,
   gridApi,
   gridRef,
+  clearSelection,
 });
 </script>
 
 <template>
-  <div ref="tableContainerRef" class="flex min-h-0 flex-col overflow-hidden">
-    <div ref="tableBodyRef" class="relative min-h-0 flex-1 overflow-hidden">
+  <div
+    ref="tableContainerRef"
+    class="flex min-h-0 w-full min-w-0 flex-col overflow-hidden"
+    :class="insideOverlay ? 'h-auto' : 'h-full flex-1'"
+  >
+    <div
+      ref="tableBodyRef"
+      class="relative min-h-0 w-full min-w-0 overflow-hidden"
+      :class="insideOverlay ? '' : 'flex-1'"
+    >
       <VxeGrid ref="gridRef" v-bind="gridOptions" v-on="gridEvents as VxeGridListeners">
         <template #toolbar-actions>
           <slot name="toolbar-actions"></slot>

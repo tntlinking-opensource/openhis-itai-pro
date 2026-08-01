@@ -21,6 +21,7 @@ import { useAuthStore } from '#/store';
 import type { AuthApi } from '#/api/core/auth';
 
 import { isTenantScopeLostError, restoreLoginScopeOnce } from '#/utils/auth/restore-login-scope';
+import { tryHandleUnmappedYbNoComplianceError } from '#/utils/http/format-catalog-unmapped-yb-error';
 import { formatInsuranceRegisterError } from '#/utils/http/format-insurance-register-error';
 import { formatInventoryLocationError } from '#/utils/http/format-inventory-location-error';
 import { isExpectedEmptyResponseError } from '#/utils/http/expected-empty-response-errors';
@@ -120,6 +121,7 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
           code,
           errorCode: responseData?.errorCode,
           message: errorMessage,
+          errors: responseData?.errors,
         });
       }
 
@@ -190,9 +192,19 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
       // 这里可以根据业务进行定制,你可以拿到 error 内的信息进行定制化处理，根据不同的 code 做不同的提示，而不是直接使用 message.error 提示 msg
       // 当前mock接口返回的错误字段是 error 或者 message
       const responseData = error?.response?.data ?? error?.data ?? {};
-      const errorMessage = responseData?.message ?? responseData?.error ?? error?.message ?? '';
+      const rawMessage = responseData?.message ?? responseData?.error ?? error?.message ?? '';
+      const errorMessage =
+        typeof rawMessage === 'string'
+          ? rawMessage
+          : rawMessage == null
+            ? ''
+            : String(
+                (rawMessage as { message?: unknown }).message ??
+                  (rawMessage as { msg?: unknown }).msg ??
+                  '',
+              );
       const errorCode = responseData?.errorCode ?? error?.errorCode;
-      const displayMessage = errorMessage || msg;
+      const displayMessage = (errorMessage || msg || '请求失败').toString();
       const requestUrl = String(error?.config?.url ?? '');
 
       if (errorCode === 'MODULE_NOT_AVAILABLE') {
@@ -209,6 +221,15 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
 
       if (isExpectedEmptyResponseError(error)) {
         throw error;
+      }
+
+      const unmappedHandled = tryHandleUnmappedYbNoComplianceError(
+        typeof errorCode === 'string' ? errorCode : undefined,
+        displayMessage,
+        responseData?.errors,
+      );
+      if (unmappedHandled) {
+        return;
       }
 
       const registerInsuranceError = formatInsuranceRegisterError(

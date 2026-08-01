@@ -16,8 +16,8 @@ export interface AdmissionDiagnosisFormState {
   tcmSyndromeName: string;
   /** 可选诊断说明 */
   diagnosisDescription: string;
-  /** 引用已有病情事实（门诊预填时） */
-  conditionId?: string;
+  /** 引用已有就诊诊断行（门诊预填时） */
+  encounterDiagnosisId?: string;
   /** 只读展示文案（有申请登记带入时） */
   readonlyDisplay?: string;
 }

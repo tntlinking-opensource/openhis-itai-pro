@@ -1,5 +1,6 @@
 <!--
-  工作台库存/效期预警入口：仅库管、药师可见；点击跳转库存明细并带 warningMode。
+  工作台库存/效期预警入口：仅库管、药师可见；
+  点击跳转库存明细并带 warningMode；效期预警额外带 expireWithinDays 供查询区回填。
 -->
 <script setup lang="ts">
 import type { LoadInventoryWarningWorkbenchSummaryResponse } from '#/api/inventory/warehouse/inventory-detail';
@@ -35,16 +36,20 @@ const lowStockCount = computed(() => Number(summary.value.lowStockWarningCount ?
 const expireDays = computed(() => summary.value.expireWarningDays ?? 180);
 const minPackageQty = computed(() => summary.value.minPackageQuantityWarning ?? 30);
 
-const showSection = computed(
-  () => visible.value && (expireCount.value > 0 || lowStockCount.value > 0),
-);
+const showSection = computed(() => visible.value);
 
+/** 跳转库存明细，并带上预警模式及对应可见筛选项。 */
 function navigateWarning(
   mode: typeof INVENTORY_WARNING_MODE_EXPIRE | typeof INVENTORY_WARNING_MODE_LOW_STOCK,
 ) {
+  const query: Record<string, string> = { warningMode: mode };
+  // 效期预警：把「近效期(天)」一并写入路由，供明细查询区回填
+  if (mode === INVENTORY_WARNING_MODE_EXPIRE) {
+    query.expireWithinDays = String(expireDays.value);
+  }
   void router.push({
     path: '/inventory/stock-list',
-    query: { warningMode: mode },
+    query,
   });
 }
 

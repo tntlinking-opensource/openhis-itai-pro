@@ -3,6 +3,7 @@ import type { AdviceDrugItem } from './advice.types';
 
 import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
 
+import { formatWesternEditDoseSegment } from '#/utils/doctor-station/medication-dose-display';
 import { calcMoneyLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
 
 import { formatMoneyStrYuan, formatUnitPriceYuan, terminologyLabel } from './advice-format';
@@ -32,19 +33,14 @@ export function formatWesternCollapsedSummary(
   const usageLabel = terminologyLabel(opts.medicationRouteOptions, item.usage);
   const freqLabel = terminologyLabel(opts.medicationRateOptions, item.frequency);
   const totalUnitLabel = totalAmountUnitDisplayLabel(item);
-  const sd =
-    item.singleDose === undefined ||
-    item.singleDose === null ||
-    !Number.isFinite(Number(item.singleDose))
-      ? '—'
-      : String(item.singleDose);
+  const dosePart = formatWesternEditDoseSegment(item);
   const ta =
     item.totalAmount === undefined ||
     item.totalAmount === null ||
     !Number.isFinite(Number(item.totalAmount))
       ? '—'
       : String(item.totalAmount);
-  return `${sd}${item.doseMainUnit || ''}/次，共${ta}${totalUnitLabel}，${usageLabel}，${freqLabel}`;
+  return `${dosePart}，共${ta}${totalUnitLabel}，${usageLabel}，${freqLabel}`;
 }
 
 export function formatWesternCollapsedTooltip(

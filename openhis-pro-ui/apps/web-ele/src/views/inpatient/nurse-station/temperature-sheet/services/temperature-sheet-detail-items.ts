@@ -29,7 +29,6 @@ export const VITAL_ITEM_CODE = {
   PULSE: 'PULSE',
   RESP: 'RESP',
   SBP: 'SBP',
-  SKIN_TEST_POSITIVE: 'SKIN_TEST_POSITIVE',
   STOOL: 'STOOL',
   TEMP: 'TEMP',
   URINE_FREQ: 'URINE_FREQ',
@@ -50,6 +49,7 @@ export const SPECIAL_EVENT_ITEM_CODE = {
   PULSE_DEFICIT: 'PULSE_DEFICIT',
   REFUSE_TEMP: 'REFUSE_TEMP',
   SURGERY: 'SURGERY',
+  TEMP_EXTRA_MEASURE: 'TEMP_EXTRA_MEASURE',
   TEMP_NOT_RISING: 'TEMP_NOT_RISING',
   TRANSFER: 'TRANSFER',
 } as const;
@@ -265,12 +265,6 @@ export function buildDetailItemsFromFillRow(
       VITAL_ITEM_CODE.URINE_FREQ,
       extraRecord.urineCount,
     );
-    pushDetailItemIfPresent(
-      items,
-      TERM_VITAL_SIGNS_CODE,
-      VITAL_ITEM_CODE.SKIN_TEST_POSITIVE,
-      extraRecord.skinTestPositive,
-    );
     pushDetailItemIfPresent(items, TERM_VITAL_SIGNS_CODE, VITAL_ITEM_CODE.OTHER, extraRecord.other);
   }
 
@@ -331,6 +325,10 @@ export function applyDetailItemsToFillRow(
         row.tempNotRisingEnabled = true;
         continue;
       }
+      // 入院等下拉排除项不进 specialEvents，否则 ElSelect 无匹配选项导致不回显
+      if (isSpecialEventShortcutCode(itemCode)) {
+        continue;
+      }
       if (!row.specialEvents.includes(itemCode)) {
         row.specialEvents.push(itemCode);
       }
@@ -376,11 +374,6 @@ export function applyDetailItemsToFillRow(
       detailItems,
       TERM_VITAL_SIGNS_CODE,
       VITAL_ITEM_CODE.URINE_FREQ,
-    );
-    extraRecord.skinTestPositive = readDetailItemValue(
-      detailItems,
-      TERM_VITAL_SIGNS_CODE,
-      VITAL_ITEM_CODE.SKIN_TEST_POSITIVE,
     );
     extraRecord.other = readDetailItemValue(
       detailItems,

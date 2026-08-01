@@ -1,6 +1,7 @@
 <!-- 药库退货单（向供应商退货）：工作站 + 侧栏卡片队列 + 右侧明细。 -->
 <script lang="ts" setup>
 import type {
+  LinkableGoodsReceiptListRowDto,
   SupplierOptionDto,
   WarehouseOptionDto,
 } from '#/api/inventory/warehouse/return-to-supplier';
@@ -17,6 +18,7 @@ import {
   pageReturnToSupplierWorkbenchListApi,
 } from '#/api/inventory/warehouse/return-to-supplier';
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
+import { useFromFinanceApproval } from '#/composables/use-from-finance-approval';
 import {
   INV_ALL_LOCATIONS_FILTER_ID,
   normalizeSidebarLocationFilterValue,
@@ -32,6 +34,7 @@ defineOptions({
 });
 
 const route = useRoute();
+const { fromFinanceApproval } = useFromFinanceApproval();
 
 function createDefaultMonthRange(): [string, string] {
   const d = new Date();
@@ -64,7 +67,9 @@ const supplierOptionItems = ref<ApiOptionItem[]>([]);
 const orderList = ref<Record<string, unknown>[]>([]);
 const selectedOrder = ref<null | Record<string, unknown>>(null);
 const mainPaneResetKey = ref(0);
-const isAddDisabled = ref(false);
+const mainPaneRef = ref<InstanceType<typeof ReturnToSupplierMainPane> | null>(null);
+
+const showWelcomeEmpty = computed(() => selectedOrder.value === null);
 
 function mapSupplierOptions(list: SupplierOptionDto[]): ApiOptionItem[] {
   return list.map((s) => ({
@@ -146,15 +151,14 @@ async function getList() {
   }
 }
 
-function handleAdd() {
+async function handleCreateFromUpstream(row: LinkableGoodsReceiptListRowDto) {
   const draft = createDraftOrderRow();
   orderList.value = [draft, ...orderList.value.filter((r) => !r._draft)];
   selectedOrder.value = draft;
   tableForm.value.applyTime = formatDateTime(new Date());
   mainPaneResetKey.value += 1;
-  nextTick(() => {
-    isAddDisabled.value = true;
-  });
+  await nextTick();
+  await mainPaneRef.value?.applyLinkableInboundToDraft(row);
 }
 
 function handleOrderClick(order: Record<string, unknown>) {
@@ -163,7 +167,6 @@ function handleOrderClick(order: Record<string, unknown>) {
     // 切回草稿由主区 sync 恢复缓存；勿 bump resetKey，否则会冲掉恢复内容
     return;
   }
-  isAddDisabled.value = false;
 }
 
 async function handleDocumentSaved(payload: { busNo?: string }) {
@@ -176,7 +179,6 @@ async function handleDocumentSaved(payload: { busNo?: string }) {
     busNo,
     resolveReturnToSupplierBusNo,
   );
-  isAddDisabled.value = false;
 }
 
 async function handleDocumentRemoved() {
@@ -184,13 +186,11 @@ async function handleDocumentRemoved() {
     orderList.value = orderList.value.filter((r) => r !== selectedOrder.value);
     selectedOrder.value = null;
     mainPaneResetKey.value += 1;
-    isAddDisabled.value = false;
     return;
   }
   orderList.value = orderList.value.filter((r) => !r._draft);
   selectedOrder.value = null;
   mainPaneResetKey.value += 1;
-  isAddDisabled.value = false;
   await getList();
 }
 
@@ -209,7 +209,6 @@ watch(
     );
     if (!row) return;
     selectedOrder.value = row;
-    isAddDisabled.value = false;
   },
   { immediate: true },
 );
@@ -222,9 +221,9 @@ onMounted(async () => {
 
 <template>
   <WarehouseDocWorkstation
-    aside-width="280px"
     queue-title=""
     aside-dense
+    :show-aside="!fromFinanceApproval"
     :show-aside-filter="false"
     :show-toolbar="false"
   >
@@ -233,24 +232,25 @@ onMounted(async () => {
         v-model:date-range="listDateRange"
         v-model:keyword="listKeywordModel"
         v-model:source-location-id="tableForm.sourceLocationId"
-        :add-disabled="isAddDisabled"
         :cabinet-list-options="cabinetListOptions"
         :orders="orderList"
         :selected-order="selectedOrder"
-        @add="handleAdd"
         @search="getList"
         @select="handleOrderClick"
       />
     </template>
 
     <ReturnToSupplierMainPane
+      ref="mainPaneRef"
       class="min-h-0 flex-1"
       :apply-time="tableForm.applyTime"
       :bus-no="selectedBusNo"
       :is-draft-order="isDraftOrder"
       :reset-key="mainPaneResetKey"
+      :show-welcome-empty="showWelcomeEmpty"
       :supplier-options="supplierOptionItems"
       :warehouse-options="warehouseRawOptions"
+      @create-from-upstream="handleCreateFromUpstream"
       @document-removed="handleDocumentRemoved"
       @document-saved="handleDocumentSaved"
     />

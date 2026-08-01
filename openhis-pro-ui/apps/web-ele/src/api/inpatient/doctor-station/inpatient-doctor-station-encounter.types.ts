@@ -49,6 +49,8 @@ export interface InpatientDoctorStationPatientDto {
   primaryNurseName?: string;
   priorityEnum?: string;
   startTime?: string;
+  /** 出院时间（未出院为空） */
+  endTime?: string;
   statusEnum?: string;
   statusEnumText?: string;
   totalAmount?: number | string;

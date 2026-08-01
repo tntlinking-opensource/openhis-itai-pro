@@ -1,0 +1,349 @@
+/**
+ * 朝阳中药药材工作区（院点 override）。
+ * 检索对齐 mock 胶囊；药表对齐门诊挂号 register-style-table。
+ * 不走 SFC scoped：院点生产包会丢 scoped。
+ */
+.tcm-herb-workspace {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  gap: 0;
+  padding: 0;
+  box-sizing: border-box;
+  background: transparent;
+}
+
+.tcm-herb-workspace__toolbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.tcm-herb-workspace__search {
+  position: relative;
+  flex-shrink: 0;
+  z-index: 5;
+  width: 280px;
+  max-width: 100%;
+}
+
+.tcm-rx-panel__search-host .tcm-herb-workspace__search {
+  width: 320px;
+}
+
+.tcm-rx-panel__search-host .advice-order-select-trigger-host {
+  width: 100% !important;
+  max-width: 100%;
+}
+
+/**
+ * 对齐 mock `.search-box`：胶囊、图标在右；默认白底。
+ */
+.tcm-rx-panel__search-host .advice-order-select-input-wrap {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 2px 8px 2px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 30px;
+  background: #fff;
+  box-shadow: none;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.tcm-rx-panel__search-host .advice-order-select-input-wrap:focus-within {
+  border-color: #a0b8d0;
+  background: #fff;
+}
+
+.tcm-rx-panel__search-host .advice-order-select-input-wrap > span {
+  left: auto !important;
+  right: 10px;
+  color: #8a9aaa;
+  opacity: 1;
+}
+
+.tcm-rx-panel__search-host .advice-order-select-input-wrap .vxe-input {
+  height: 28px !important;
+  border: 0 !important;
+  border-radius: 0;
+  overflow: visible;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.tcm-rx-panel__search-host .advice-order-select-input-wrap .vxe-input--inner,
+.tcm-rx-panel__search-host .advice-order-select-input-wrap input {
+  height: 28px !important;
+  padding: 4px 28px 4px 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #1a2b3c;
+  font-size: 13px;
+  line-height: 28px !important;
+  box-shadow: none !important;
+}
+
+.tcm-rx-panel__search-host .advice-order-select-input-wrap .vxe-input--inner::placeholder,
+.tcm-rx-panel__search-host .advice-order-select-input-wrap input::placeholder {
+  color: #9aa9b8;
+}
+
+.tcm-rx-panel__search-host .advice-order-select-input-wrap .vxe-input.is--active .vxe-input--inner,
+.tcm-rx-panel__search-host
+  .advice-order-select-input-wrap
+  .vxe-input:focus-within
+  .vxe-input--inner,
+.tcm-rx-panel__search-host .advice-order-select-input-wrap input:focus {
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.tcm-herb-workspace__scroll {
+  height: 100%;
+}
+
+.tcm-herb-workspace__scroll .el-scrollbar__view {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.tcm-herb-workspace__list {
+  min-height: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* 药表：对齐挂号 register-style-table */
+.tcm-herb-workspace__strips {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 160px;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #e6edf4;
+  border-radius: 0;
+  background: #fff;
+}
+
+.tcm-herb-workspace__empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  padding: 24px 12px;
+  color: #4d6278;
+  font-size: 13px;
+  text-align: center;
+}
+
+.tcm-herb-workspace__strips-head,
+.tcm-herb-strip {
+  display: grid;
+  grid-template-columns: 50px repeat(6, minmax(0, 1fr));
+  align-items: center;
+  column-gap: 0;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.tcm-herb-workspace__strips-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 34px;
+  border-bottom: 2px solid #e6edf4;
+  background: #f7fafc;
+  color: #2c4054;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.tcm-herb-workspace__strips-head > * {
+  padding: 6px 10px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.tcm-herb-strip {
+  min-height: 34px;
+  height: 34px;
+  border-bottom: 1px solid #f0f4fa;
+  background: #fff;
+  color: #1a2b3c;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.tcm-herb-strip:last-child {
+  border-bottom: 0;
+}
+
+.tcm-herb-strip:hover {
+  background: #fafcff;
+}
+
+.tcm-herb-strip > * {
+  padding: 6px 10px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tcm-herb-strip__idx,
+.tcm-herb-workspace__col-idx {
+  color: #4d6278;
+  font-size: 13px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.tcm-herb-strip__name,
+.tcm-herb-workspace__col-name {
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.tcm-herb-strip__dose,
+.tcm-herb-workspace__col-dose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  overflow: visible;
+}
+
+.tcm-herb-strip__dose-input {
+  width: 58px;
+}
+
+.tcm-herb-strip__dose-input .el-input__wrapper {
+  padding-left: 6px;
+  padding-right: 6px;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 0 0 1px #dcdfe6 inset;
+}
+
+.tcm-herb-strip__dose-input .el-input__inner {
+  color: #1a2b3c;
+  font-size: 13px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.tcm-herb-strip__dose-input .el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset;
+}
+
+.tcm-herb-strip__dose-text {
+  font-variant-numeric: tabular-nums;
+}
+
+.tcm-herb-strip__unit {
+  color: #4d6278;
+  font-size: 12px;
+}
+
+.tcm-herb-strip__decoction,
+.tcm-herb-workspace__col-decoction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  overflow: visible;
+}
+
+.tcm-herb-strip__decoction-select {
+  width: 100%;
+  max-width: 112px;
+}
+
+.tcm-herb-strip__decoction-select .el-select__wrapper {
+  min-height: 26px;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 0 0 1px #dcdfe6 inset;
+}
+
+.tcm-herb-strip__decoction-select .el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset;
+}
+
+.tcm-herb-strip__decoction-tag {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: #f5f7fa;
+  color: #4d6278;
+  font-size: 12px;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tcm-herb-strip__decoction-tag--special {
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning-dark-2);
+}
+
+.tcm-herb-strip__price,
+.tcm-herb-workspace__col-price,
+.tcm-herb-strip__total,
+.tcm-herb-workspace__col-total {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.tcm-herb-strip__price,
+.tcm-herb-workspace__col-price {
+  color: #1a2b3c;
+  font-weight: 400;
+}
+
+.tcm-herb-strip__total,
+.tcm-herb-workspace__col-total {
+  color: #1a2b3c;
+  font-weight: 500;
+}
+
+.tcm-herb-strip__currency {
+  margin-right: 1px;
+  color: #4d6278;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.tcm-herb-strip__ops,
+.tcm-herb-workspace__col-ops {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+}
+
+@media (max-width: 1100px) {
+  .tcm-herb-workspace__strips-head > *,
+  .tcm-herb-strip > * {
+    padding: 6px 8px;
+  }
+}

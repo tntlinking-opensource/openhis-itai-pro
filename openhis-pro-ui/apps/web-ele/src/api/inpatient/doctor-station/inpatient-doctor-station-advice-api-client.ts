@@ -25,6 +25,10 @@ import type {
   StopLongTermInpatientDoctorStationAdviceResponse,
   CancelStopLongTermInpatientDoctorStationAdviceRequest,
   CancelStopLongTermInpatientDoctorStationAdviceResponse,
+  ChangeInpatientDoctorStationAdviceBusinessTimeRequest,
+  ChangeInpatientDoctorStationAdviceBusinessTimeResponse,
+  AppendSkinTestCompanionForLongTermMedicationRequest,
+  AppendSkinTestCompanionForLongTermMedicationResponse,
   UpdateInpatientDoctorStationMedicationAdviceGroupsRequest,
   UpdateInpatientDoctorStationMedicationAdviceGroupsResponse,
   WithdrawInpatientDoctorStationAdviceBatchRequest,
@@ -67,6 +71,12 @@ export interface InpatientDoctorStationAdviceHttpClient {
   httpCancelStopLongTermInpatientDoctorStationAdvice: (
     body: CancelStopLongTermInpatientDoctorStationAdviceRequest,
   ) => Promise<CancelStopLongTermInpatientDoctorStationAdviceResponse>;
+  httpChangeInpatientDoctorStationAdviceBusinessTime: (
+    body: ChangeInpatientDoctorStationAdviceBusinessTimeRequest,
+  ) => Promise<ChangeInpatientDoctorStationAdviceBusinessTimeResponse>;
+  httpAppendSkinTestCompanionForLongTermMedication: (
+    body: AppendSkinTestCompanionForLongTermMedicationRequest,
+  ) => Promise<AppendSkinTestCompanionForLongTermMedicationResponse>;
   httpCreateDischargeInpatientDoctorStationAdvice: (
     body: CreateDischargeInpatientDoctorStationAdviceRequest,
   ) => Promise<CreateDischargeInpatientDoctorStationAdviceResponse>;
@@ -110,6 +120,10 @@ export function createInpatientDoctorStationAdviceHttpClient(
       post('stopLongTermInpatientDoctorStationAdvice', body),
     httpCancelStopLongTermInpatientDoctorStationAdvice: (body) =>
       post('cancelStopLongTermInpatientDoctorStationAdvice', body),
+    httpChangeInpatientDoctorStationAdviceBusinessTime: (body) =>
+      post('changeInpatientDoctorStationAdviceBusinessTime', body),
+    httpAppendSkinTestCompanionForLongTermMedication: (body) =>
+      post('appendSkinTestCompanionForLongTermMedication', body),
     httpCreateDischargeInpatientDoctorStationAdvice: (body) =>
       post('createDischargeInpatientDoctorStationAdvice', body),
     httpSaveInpatientDoctorStationServiceApplyForm: (body) =>

@@ -1,4 +1,6 @@
-export { default as DiagnosisPickerDialog } from './components/diagnosis-picker-dialog.vue';
+export { default as AdviceDiagnosisBindPanel } from '#/components/doctor-station/diagnosis/components/advice-diagnosis-bind-panel.vue';
+export type { AdviceDiagnosisOptionsRefreshedPayload } from '#/components/doctor-station/diagnosis/components/advice-diagnosis-bind-panel.vue';
+export { default as DiagnosisPickerDialog } from '#/components/doctor-station/diagnosis/components/diagnosis-picker-dialog.vue';
 export { default as DiagnosisList } from './index.vue';
 export type {
   DiagnosisConfirmPayload,

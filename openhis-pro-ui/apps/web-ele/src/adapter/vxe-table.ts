@@ -24,6 +24,7 @@ import {
   formatInventoryQtyUnitCellText,
   formatInventoryTotalAmountDisplay,
   formatInventoryUnitPriceDisplay,
+  resolveInventoryUnitPriceDisplayDp,
 } from '#/utils/inventory/inventory-qty-unit-display';
 import { shouldInventoryRowShowPersistedForm } from '#/utils/inventory/inventory-doc-grid-edit';
 
@@ -370,6 +371,8 @@ setupVbenVxeTable({
         return h('span', String(formatted));
       },
     };
+    // PluginRenderElement 已注册同名渲染器；先 delete 再 add，避免 coverProp 警告
+    vxeUI.renderer.delete('ElDatePicker');
     vxeUI.renderer.add('ElDatePicker', elDatePickerRenderer);
 
     /** 未完成行常驻：ElInput 文本列（批号/备注等） */
@@ -470,7 +473,9 @@ setupVbenVxeTable({
       renderTableEdit(renderOpts, { row, column }) {
         const { props, options } = renderOpts;
         type RowOpt = { label: string; value: string };
-        const opts = (options ?? props?.options ?? []) as RowOpt[];
+        // getOptions：避开 vben use-vxe-grid 对 columns 的 cloneDeep 快照，始终读业务侧实时 options
+        const getOptions = props?.getOptions as (() => RowOpt[]) | undefined;
+        const opts = (getOptions?.() ?? options ?? props?.options ?? []) as RowOpt[];
         return h(
           ElSelect,
           {
@@ -495,7 +500,8 @@ setupVbenVxeTable({
         }
         const { options, props } = renderOpts;
         type RowOpt = { label: string; value: string };
-        const opts = (options ?? props?.options ?? []) as RowOpt[];
+        const getOptions = props?.getOptions as (() => RowOpt[]) | undefined;
+        const opts = (getOptions?.() ?? options ?? props?.options ?? []) as RowOpt[];
         const val = String(row[column.field] ?? '');
         const label = opts.find((o) => String(o.value) === val)?.label ?? val;
         return h('span', label);
@@ -603,7 +609,10 @@ setupVbenVxeTable({
       },
     });
 
-    /** 单价：编辑为数字；回显两位小数 + 计量单位 */
+    /**
+     * 单价：默认编辑/回显 2 位（BR-MON-001）；中药（categoryCode=4）3 位。
+     * 期初单特例：props.precision / props.displayDp = 6（显式传入优先生效）。
+     */
     const inventoryUnitPriceCellRenderer = {
       autofocus: '.el-input__inner',
       renderTableEdit(renderOpts, { row, column }) {
@@ -611,12 +620,18 @@ setupVbenVxeTable({
         const priceField = String(props?.priceField ?? column.field ?? 'unitPrice');
         const price = Number(row[priceField]);
         const priceModel = Number.isFinite(price) ? price : undefined;
+        const hasExplicitDp = props?.displayDp !== undefined || props?.precision !== undefined;
+        const explicitDp = Number(props?.displayDp ?? props?.precision);
+        const precision = resolveInventoryUnitPriceDisplayDp(
+          row as Record<string, unknown>,
+          hasExplicitDp && Number.isFinite(explicitDp) ? explicitDp : undefined,
+        );
         return h(ElInputNumber, {
           controls: false,
           align: 'right',
           class: '!w-full',
           min: 0,
-          precision: 2,
+          precision,
           modelValue: priceModel,
           'onUpdate:modelValue': (val: number | undefined) => {
             row[priceField] = val === undefined || val === null ? 0 : val;
@@ -630,7 +645,13 @@ setupVbenVxeTable({
         const { props } = renderOpts;
         const priceField = String(props?.priceField ?? column.field ?? 'unitPrice');
         const unitField = String(props?.unitField ?? 'selectedBandKind');
-        const text = formatInventoryUnitPriceDisplay(row, priceField, unitField);
+        const hasExplicitDp = props?.displayDp !== undefined || props?.precision !== undefined;
+        const explicitDp = Number(props?.displayDp ?? props?.precision);
+        const displayDp = resolveInventoryUnitPriceDisplayDp(
+          row as Record<string, unknown>,
+          hasExplicitDp && Number.isFinite(explicitDp) ? explicitDp : undefined,
+        );
+        const text = formatInventoryUnitPriceDisplay(row, priceField, unitField, displayDp);
         return h('span', { class: 'block w-full text-right' }, text);
       },
       renderTableDefault(renderOpts, params) {
@@ -638,7 +659,13 @@ setupVbenVxeTable({
         const { row, column } = params;
         const priceField = String(props?.priceField ?? column.field ?? 'unitPrice');
         const unitField = String(props?.unitField ?? 'selectedBandKind');
-        const text = formatInventoryUnitPriceDisplay(row, priceField, unitField);
+        const hasExplicitDp = props?.displayDp !== undefined || props?.precision !== undefined;
+        const explicitDp = Number(props?.displayDp ?? props?.precision);
+        const displayDp = resolveInventoryUnitPriceDisplayDp(
+          row as Record<string, unknown>,
+          hasExplicitDp && Number.isFinite(explicitDp) ? explicitDp : undefined,
+        );
+        const text = formatInventoryUnitPriceDisplay(row, priceField, unitField, displayDp);
         return h('span', { class: 'block w-full text-right' }, text);
       },
     };
@@ -655,8 +682,8 @@ setupVbenVxeTable({
       },
     });
 
-    /** 行内 options 字段驱动的 ElSelect（如护士站皮试执行人/核对人） */
-    vxeUI.renderer.add('RowOptionsElSelect', {
+    /** 行内 options 字段驱动的 ElSelect（如护士站皮试执行人/核对人；库存单据未完成行常驻） */
+    const rowOptionsElSelectRenderer = {
       autofocus: '.el-input__inner',
       renderTableEdit(renderOpts, { row, column }) {
         const { props } = renderOpts;
@@ -681,7 +708,11 @@ setupVbenVxeTable({
             ),
         );
       },
-      renderTableCell(renderOpts, { row, column }) {
+      renderTableCell(renderOpts, params) {
+        const { row, column } = params;
+        if (shouldInventoryRowShowPersistedForm(row)) {
+          return rowOptionsElSelectRenderer.renderTableEdit(renderOpts, params);
+        }
         type RowOpt = { label: string; value: string };
         const optionsField = String(renderOpts.props?.optionsField ?? '');
         const options = (row[optionsField] as RowOpt[] | undefined) ?? [];
@@ -689,7 +720,8 @@ setupVbenVxeTable({
         const hit = options.find((item) => item.value === value);
         return h('span', hit?.label || value || '—');
       },
-    });
+    };
+    vxeUI.renderer.add('RowOptionsElSelect', rowOptionsElSelectRenderer);
 
     // 自定义单位选择器，支持根据每行的 unitList 动态设置选项
     vxeUI.renderer.add('UnitSelect', {

@@ -1,5 +1,5 @@
 <!--
-  药库出库单左侧：历史出库单检索 + 卡片队列 + 新增（与进货侧栏同构）。
+  药库出库单左侧：历史出库单检索 + 卡片队列 + 空白新增（从请领单新建入口在右侧操作区）。
 -->
 <script setup lang="ts">
 import type { ApiOptionItem } from '#/types/api-response';
@@ -125,7 +125,7 @@ function handleQueueSelect(row: Record<string, unknown>) {
   emit('select', row);
 }
 
-/** 底部新增出库单。 */
+/** 底部空白新增出库单。 */
 function handleAdd() {
   emit('add');
 }
@@ -210,6 +210,8 @@ function handleAdd() {
         :resolve-warehouse-line="resolveQueueWarehouseLine"
         :selected-order="selectedOrder"
         :show-supplier="false"
+        empty-description="暂无出库单"
+        empty-add-label="新增出库单"
         @add="handleAdd"
         @select="handleQueueSelect"
       />

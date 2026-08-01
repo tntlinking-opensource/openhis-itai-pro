@@ -214,6 +214,14 @@ function displayWarehouseLine(item: Record<string, unknown>): string {
     displayText(item.targetLocationId_dictText) ||
     displayText(item.purposeLocationName) ||
     cabinetNameById(item.purposeLocationId ?? item.locationId);
+  // 领用/退领：底部展示「科室药房 → 领用科室」，避免只看见药房名
+  const consumingOrg = displayText(item.consumingOrganizationName);
+  if (dst && consumingOrg) {
+    return `${dst} → ${consumingOrg}`;
+  }
+  if (consumingOrg) {
+    return consumingOrg;
+  }
   if (src && dst && src !== dst) return `${src} → ${dst}`;
   if (dst) return dst;
   if (src) return src;

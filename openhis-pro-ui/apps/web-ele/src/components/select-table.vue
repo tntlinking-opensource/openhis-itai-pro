@@ -244,8 +244,14 @@ watch(keyword, () => {
   if (showPopup.value) debouncedSearch();
 });
 
+/** 选中后短暂抑制再次打开，避免下拉关闭瞬间点击穿透到输入框又弹开 */
+const suppressOpenUntilMs = ref(0);
+
 function openDropdown() {
   if (props.disabled) {
+    return;
+  }
+  if (Date.now() < suppressOpenUntilMs.value) {
     return;
   }
   showPopup.value = true;
@@ -305,9 +311,13 @@ async function commitSelection(item: OptionItem) {
     }
   }
 
+  // 先关下拉并抑制短时再开，再通知父级（父级常会清空 modelValue / 回填焦点）
+  suppressOpenUntilMs.value = Date.now() + 300;
+  openDropdownOnFocus.value = false;
+  showPopup.value = false;
+  keyword.value = '';
   emit('update:modelValue', newValue);
   emit('change', newValue);
-  showPopup.value = false;
 }
 
 const selectEvent: VxeTableEvents.CellClick = async (params: any) => {
@@ -375,7 +385,15 @@ function getKeywordDraft(): string {
   return String(keyword.value || inputValue.value || '').trim();
 }
 
-defineExpose({ getKeywordDraft });
+/** 外部触发重新加载（如选品过滤条件变更） */
+async function reload(options?: { resetPage?: boolean }) {
+  if (options?.resetPage) {
+    gridOptions.pagerConfig.currentPage = 1;
+  }
+  await loadData();
+}
+
+defineExpose({ getKeywordDraft, reload });
 </script>
 
 <template>
@@ -399,30 +417,43 @@ defineExpose({ getKeywordDraft });
 
     <template #dropdown>
       <div
-        class="h-[300px] w-full border border-[#dcdfe6] bg-white shadow-[0_0_6px_2px_rgb(0_0_0_/_10%)]"
+        class="select-table-dropdown border border-[#dcdfe6] bg-white p-2 shadow-[0_6px_16px_rgb(0_0_0_/_12%)]"
         :style="{
           width: typeof panelWidth === 'number' ? `${panelWidth}px` : String(panelWidth || '800px'),
         }"
       >
-        <VxeGrid
-          ref="gridRef"
-          class="select-table-dropdown-grid"
-          v-bind="gridOptions"
-          :loading="loading || isBeforeClosePending"
-          @cell-click="selectEvent"
-          @page-change="pageChangeEvent"
-        />
+        <div v-if="$slots.toolbar" class="mb-2 w-full">
+          <slot name="toolbar" />
+        </div>
+        <div class="h-[300px] w-full">
+          <VxeGrid
+            ref="gridRef"
+            class="select-table-dropdown-grid"
+            v-bind="gridOptions"
+            :loading="loading || isBeforeClosePending"
+            @cell-click="selectEvent"
+            @page-change="pageChangeEvent"
+          />
+        </div>
       </div>
     </template>
   </VxePulldown>
 </template>
 
 <style scoped>
+.select-table-dropdown {
+  box-sizing: border-box;
+}
+
 .select-table-dropdown-grid {
   width: 100%;
 }
 
 .select-table-dropdown-grid :deep(.vxe-table) {
+  width: 100% !important;
+}
+
+.select-table-dropdown-grid :deep(.vxe-grid) {
   width: 100% !important;
 }
 </style>

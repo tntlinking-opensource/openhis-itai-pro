@@ -1,10 +1,4 @@
-import type {
-  PatientItem,
-  PatientQueueScopeFilter,
-  PatientStatusFilter,
-  RegionItem,
-  WardItem,
-} from './types';
+import type { PatientItem, PatientStatusFilter, RegionItem, WardItem } from './types';
 
 import { computed, ref } from 'vue';
 
@@ -19,7 +13,6 @@ import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 import {
   mapQueueItemToPatientItem,
-  mapQueueScopeFilterToStatusFilter,
   mapStatusFilterToTaskFilter,
   mapWardTreeToRegionOptions,
   mapWardTreeToWardOptions,
@@ -34,7 +27,6 @@ export function useNurseStationPatientData() {
   const patients = ref<PatientItem[]>([]);
   const keyword = ref('');
   const statusFilter = ref<PatientStatusFilter>('all');
-  const queueScopeFilter = ref<PatientQueueScopeFilter>('in-hospital');
   const selectedRegionIds = ref<string[]>([]);
   const selectedWardIds = ref<string[]>([]);
   /** 病区/病房筛选区是否展开。 */
@@ -45,10 +37,6 @@ export function useNurseStationPatientData() {
     { label: '待校对', value: 'pending-audit' },
     { label: '待执行', value: 'pending-execute' },
     { label: '已处理', value: 'processed' },
-  ];
-  const queueScopeOptions: Array<{ label: string; value: PatientQueueScopeFilter }> = [
-    { label: '在院患者', value: 'in-hospital' },
-    { label: '已出院结算', value: 'settled-discharged' },
   ];
   const regionMap = computed(() => new Map(regionOptions.value.map((i) => [i.id, i.name])));
   /** 患者列表展示：病区 id 到名称的快速映射。 */
@@ -76,11 +64,9 @@ export function useNurseStationPatientData() {
   const filteredPatients = computed(() => {
     const regionIds = selectedRegionIds.value;
     const wardIds = selectedWardIds.value;
-    const isSettledDischargedList = queueScopeFilter.value === 'settled-discharged';
     return patients.value.filter((item) => {
       if (!item.regionId) {
-        // 已清床离院患者无活动位置，仍应出现在已出院结算列表
-        return isSettledDischargedList;
+        return false;
       }
       const matchRegion = regionIds.length === 0 || regionIds.includes(item.regionId);
       const matchWard = wardIds.length === 0 || !item.wardId || wardIds.includes(item.wardId);
@@ -113,7 +99,6 @@ export function useNurseStationPatientData() {
   async function fetchAllPatientQueueRows() {
     const locationParams = resolveQueueLocationParams();
     const taskFilter = mapStatusFilterToTaskFilter(statusFilter.value);
-    const statusScopeFilter = mapQueueScopeFilterToStatusFilter(queueScopeFilter.value);
     const rows: PatientItem[] = [];
     let pageNo = 1;
     let totalCount = 0;
@@ -122,7 +107,6 @@ export function useNurseStationPatientData() {
         ...locationParams,
         keyword: keyword.value.trim() || undefined,
         nurseStationTaskFilter: taskFilter,
-        nurseStationStatusFilter: statusScopeFilter,
         pageNo,
         pageSize: QUEUE_PAGE_SIZE,
       });
@@ -188,12 +172,6 @@ export function useNurseStationPatientData() {
     void loadPatientQueue();
   }
 
-  /** 列表范围筛选变更（在院 / 已出院结算）。 */
-  function changeQueueScopeFilter(value: PatientQueueScopeFilter) {
-    queueScopeFilter.value = value;
-    void loadPatientQueue();
-  }
-
   /** 病区勾选变更。 */
   function changeRegionIds(value: string[]) {
     selectedRegionIds.value = value;
@@ -211,7 +189,6 @@ export function useNurseStationPatientData() {
   async function refreshPatientFilters() {
     keyword.value = '';
     statusFilter.value = 'all';
-    queueScopeFilter.value = 'in-hospital';
     await loadPatientQueue();
   }
 
@@ -224,7 +201,6 @@ export function useNurseStationPatientData() {
   const patientListPanelDataContext = {
     availableWards,
     changeKeyword,
-    changeQueueScopeFilter,
     changeRegionIds,
     changeStatusFilter,
     changeWardIds,
@@ -233,8 +209,6 @@ export function useNurseStationPatientData() {
     keyword,
     pendingAuditCount,
     pendingExecuteCount,
-    queueScopeFilter,
-    queueScopeOptions,
     refreshPatientFilters,
     regionNameByIdRecord,
     regionOptions,
@@ -252,7 +226,6 @@ export function useNurseStationPatientData() {
     bedMapWardIds,
     bootstrapPatientWorkbench,
     changeKeyword,
-    changeQueueScopeFilter,
     changeRegionIds,
     changeStatusFilter,
     changeWardIds,
@@ -265,8 +238,6 @@ export function useNurseStationPatientData() {
     pendingExecuteCount,
     patientListPanelDataContext,
     queueLoading,
-    queueScopeFilter,
-    queueScopeOptions,
     regionNameByIdRecord,
     regionOptions,
     refreshPatientFilters,

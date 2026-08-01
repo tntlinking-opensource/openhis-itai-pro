@@ -2,15 +2,12 @@ import type { AdviceDrugItem, AdviceProductOption, AdviceRowItem } from './advic
 import type { HistoryAdviceRowItem } from './history-advice.types';
 
 import type {
-  DoctorStationAdviceCatalogRowDto,
   PrepickedProductKeyDto,
   TerminologyOptionDto,
 } from '#/api/doctor-station/advice.types';
 import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
 
-import { httpPageDoctorStationAdviceCatalog } from '#/api/doctor-station/advice.http';
 import { httpGetEncounterDiagnosis } from '#/api/doctor-station/diagnosis.http';
-import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import {
   convertAdviceCatalogSplitQtyToPackageDisplay,
   formatAdviceCatalogStockCellText,
@@ -22,10 +19,14 @@ import {
   convertInboundQtyBetweenBandKinds,
   normalizeInboundProductUnitBands,
 } from '#/utils/inventory/inbound-product-unit-bands';
+
+import { fetchAdviceCatalogRowsByPrepickedKeys } from './advice-catalog-prepicked';
+import { saveAdviceDraftBatchDirect } from './advice-draft-save.service';
 import {
   createAdviceDrugItem,
   inferDoseBandConvertK,
   pickMainDiagnosisDisplayName,
+  resolveDefaultDrugRowDiagnosisBinding,
 } from './advice-edit';
 import {
   buildAdviceDrugItemSeedFromListRow,
@@ -34,7 +35,6 @@ import {
 } from './advice-edit-hydrate';
 import { mapCatalogRowToOption } from './advice-list';
 import { buildAdviceDraftLines } from './advice-medication-draft';
-import { saveAdviceDraftBatchDirect } from './advice-draft-save.service';
 import { inferAdviceLineEditorKind, validateWesternEditLineItem } from './advice-row';
 import { ADVICE_PRICING_SOURCE_CODE } from './advice-tab.constants';
 import { unitCodeByBandKind } from './medication-unit-bands';
@@ -250,16 +250,12 @@ async function fetchCatalogOptionsByPrepickedKeys(
   if (!encounterId || !patientId) {
     return [];
   }
-  const res = await httpPageDoctorStationAdviceCatalog({
+  const rawRows = await fetchAdviceCatalogRowsByPrepickedKeys(keys, {
     encounterId,
     patientId,
     organizationUnitId: params.organizationUnitId,
-    pageNo: 1,
-    pageSize: Math.max(keys.length, 20),
-    prepickedProductKeys: keys,
     pricingSourceCode: ADVICE_PRICING_SOURCE_CODE,
   });
-  const { content: rawRows } = parsePagedRowsFromApiData<DoctorStationAdviceCatalogRowDto>(res);
   return rawRows.map((item) => mapCatalogRowToOption(item));
 }
 
@@ -285,11 +281,12 @@ function applyServicePerformOrgFallback(
   };
 }
 
+/** 历史行 → 编辑模型：诊断一律按本次就诊重绑（禁止沿用历史 encounterDiagnosisId） */
 function buildAdviceDrugItemFromHistoryRow(
   row: HistoryAdviceRowItem,
   catalog: AdviceProductOption,
   params: ApplyHistoryAdviceParams,
-  mainDiagnosisName: string,
+  encounterDiagnosisRows: EncounterDiagnosisRowDto[],
 ): AdviceDrugItem {
   const ctx = {
     feeNatureOptions: params.feeNatureOptions,
@@ -301,10 +298,18 @@ function buildAdviceDrugItemFromHistoryRow(
   const merged = mergeCatalogIntoAdviceDrugItemForEdit({ ...base, ...seed }, catalog, {
     resourceType: row.resourceType,
   });
+  // 优先主诊名匹配本次就诊；无匹配时回落到唯一诊断 / 空
+  const mainDiagnosisName = pickMainDiagnosisDisplayName(encounterDiagnosisRows);
+  const diagnosisBinding = resolveDefaultDrugRowDiagnosisBinding(
+    undefined,
+    mainDiagnosisName || undefined,
+    encounterDiagnosisRows,
+  );
   const item = inferDoseBandConvertK({
     ...base,
     ...merged,
-    diagnosis: mainDiagnosisName || seed.diagnosis || base.diagnosis,
+    diagnosis: diagnosisBinding.diagnosis,
+    encounterDiagnosisIds: diagnosisBinding.encounterDiagnosisIds,
     groupId: seed.groupId,
     expanded: false,
     medicationRequestId: undefined,
@@ -357,7 +362,6 @@ export async function applyHistoryAdviceToAdviceDraft(
     }
   }
 
-  const mainDiagnosisName = pickMainDiagnosisDisplayName(encounterDiagnosisRows);
   const stockIssues: HistoryAdviceMedicationStockIssue[] = [];
   const drugItems: AdviceDrugItem[] = [];
 
@@ -379,7 +383,7 @@ export async function applyHistoryAdviceToAdviceDraft(
       }
     }
 
-    drugItems.push(buildAdviceDrugItemFromHistoryRow(row, catalog, params, mainDiagnosisName));
+    drugItems.push(buildAdviceDrugItemFromHistoryRow(row, catalog, params, encounterDiagnosisRows));
   }
 
   if (stockIssues.length > 0) {

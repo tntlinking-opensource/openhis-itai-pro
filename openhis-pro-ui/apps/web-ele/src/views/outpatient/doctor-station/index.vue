@@ -26,13 +26,14 @@ import {
   DiagnosisList,
   ElepAdvice,
   ENSURE_CLINICAL_RECEPTION_KEY,
+  ReportQuery,
   TcmAdvice,
 } from '#/components/doctor-station';
-import DiagnosisForm from '#/components/outpatient/diagnosis-form.vue';
 import DoctorHeader from '#/components/outpatient/doctor-header.vue';
 import MedicalRecordForm from '#/components/outpatient/medical-record-form.vue';
 import PatientInfoBar from '#/components/outpatient/patient-info-bar.vue';
 import { confirmEmrDiscardUnsaved } from '#/emrEditor';
+import { clearEncounterDiagnosisSession } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-session';
 import { useAuthStore } from '#/store';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { resolveRequestErrorMessage } from '#/utils/http/resolve-request-error-message';
@@ -40,6 +41,8 @@ import {
   formatLocalDateYmd,
   getLocalDayRangeDateTimeStrings,
 } from '#/utils/format/date-range-quick';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { printDoctorStationPrescriptions } from '#/utils/print/print-doctor-station-prescription';
 import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 
 import { AdviceList } from './advice';
@@ -50,6 +53,10 @@ import InpatientAdmissionDialog from './inpatient-admission/inpatient-admission-
 import RefundApplicationDialog from './refund/refund-application-dialog.vue';
 import ServiceApplyTab from './service-apply/index.vue';
 import ServiceApplyDialog from './service-apply/service-apply-dialog.vue';
+import {
+  readDoctorOrderTabPreference,
+  writeDoctorOrderTabPreference,
+} from './services/order-tab-preference.service';
 import WorkInjuryDoctorApprovalAction from '#/chs/work-injury/work-injury-doctor-approval-action.vue';
 
 defineOptions({
@@ -105,60 +112,37 @@ function filterWaitingPatientsByStatus(
 }
 
 /**
- * 「当前接诊」Tab 仅展示 0～1 名在诊/暂离患者：以当前选中就诊为准，从队列结果集中取最新行。
+ * 按已记录的当前接诊 encounterId，从队列结果集刷新 `currentPatients`（0～1 人）。
+ * 禁止用「左侧任意选中」填充，避免未接诊误入当前接诊。
  */
-function syncCurrentPatientsFromSelected(rows: DoctorStationPatient[]): void {
-  const sel = selectedPatient.value;
-  if (!sel) {
+function refreshCurrentPatientsFromQueue(rows: DoctorStationPatient[]): void {
+  const id = String(currentPatients.value[0]?.encounterId ?? '').trim();
+  if (!id) {
     currentPatients.value = [];
     return;
   }
-  const id = String(sel.encounterId ?? '').trim();
   const fresh = rows.find((p) => String(p.encounterId ?? '').trim() === id);
-  const row = fresh ?? sel;
-  if (IN_PROGRESS_STATUS_CODES.has(normalizeQueueStatusEnum(row.statusEnum))) {
-    currentPatients.value = [row];
+  if (fresh && IN_PROGRESS_STATUS_CODES.has(normalizeQueueStatusEnum(fresh.statusEnum))) {
+    currentPatients.value = [fresh];
     return;
   }
   currentPatients.value = [];
 }
 
 /**
- * 患者队列展示优先级：有待诊则「患者队列 + 待诊」；无待诊有在诊则「患者队列 + 在诊」筛选。
- * 切换顶栏 Tab 与列表拉取后均须调用；「当前接诊」Tab 仅手动进入或由接诊流程切入，不在此批量填充。
+ * 患者队列拉取后：当前为「待诊」筛选且无待诊行时，自动切到「在诊」（仅在有在诊行时切换）。
+ * 不改变「当前接诊 / 患者队列」顶栏；当前接诊仅由接诊流程程序切入。
  */
-function applyPatientQueueDisplayPriority(
+function maybeAutoSwitchQueueStatusFilter(
   rows: DoctorStationPatient[],
-  options?: { requestedQueue?: 'current' | 'waiting'; skip?: boolean },
+  options?: { skip?: boolean },
 ): void {
   if (options?.skip) return;
-
-  const waitingRows = filterWaitingPatientsByStatus(rows, 'waiting');
-  const inProgressRows = filterWaitingPatientsByStatus(rows, 'in-progress');
-
-  if (waitingRows.length > 0) {
-    patientQueue.value = 'waiting';
-    queueStatusFilter.value = 'waiting';
-    return;
-  }
-
-  if (options?.requestedQueue === 'current') {
-    patientQueue.value = 'current';
-    return;
-  }
-
-  if (inProgressRows.length > 0) {
-    patientQueue.value = 'waiting';
-    queueStatusFilter.value = 'in-progress';
-    return;
-  }
-
-  if (options?.requestedQueue) {
-    patientQueue.value = options.requestedQueue;
-  }
-  if (patientQueue.value === 'waiting') {
-    queueStatusFilter.value = 'waiting';
-  }
+  if (patientQueue.value !== 'waiting') return;
+  if (queueStatusFilter.value !== 'waiting') return;
+  if (filterWaitingPatientsByStatus(rows, 'waiting').length > 0) return;
+  if (filterWaitingPatientsByStatus(rows, 'in-progress').length === 0) return;
+  queueStatusFilter.value = 'in-progress';
 }
 
 const authStore = useAuthStore();
@@ -265,6 +249,7 @@ const emrPatientInfo = computed(() => {
     gender: (p.genderEnumText ?? '').trim(),
     age,
     phone: p.phone ?? '',
+    insurance: (p.contractDisplay ?? '').trim(),
     medicalRecordNo: resolveOutpatientEmrMedicalRecordNo(p),
     idCard: p.idCard ?? '',
   };
@@ -287,7 +272,7 @@ const tabComponents = computed<Record<DoctorTab, Component>>(() => {
     [DOCTOR_TABS.SERVICE_APPLY]: ServiceApplyTab,
     [DOCTOR_TABS.TCM]: TcmAdvice,
     [DOCTOR_TABS.PRESCRIPTION]: ElepAdvice,
-    [DOCTOR_TABS.REPORT_QUERY]: DiagnosisForm,
+    [DOCTOR_TABS.REPORT_QUERY]: ReportQuery,
   };
 });
 
@@ -302,6 +287,9 @@ const doctorStationContextBindings = computed(() => {
     activeTab.value === DOCTOR_TABS.PRESCRIPTION
   ) {
     return { encounterId, patientId };
+  }
+  if (activeTab.value === DOCTOR_TABS.REPORT_QUERY) {
+    return { encounterId, patientId, stationScope: 'outpatient' as const };
   }
   if (activeTab.value === DOCTOR_TABS.SERVICE_APPLY) {
     return {
@@ -355,29 +343,22 @@ async function loadDoctorStationLists(options?: {
 
     const { content: waitingRows } = parsePagedRowsFromApiData<DoctorStationPatient>(waitingRes);
     waitingPatients.value = waitingRows;
-    currentPatients.value = [];
+    refreshCurrentPatientsFromQueue(waitingRows);
 
-    applyPatientQueueDisplayPriority(waitingRows, { skip: options?.skipDefaultSelection });
+    maybeAutoSwitchQueueStatusFilter(waitingRows, { skip: options?.skipDefaultSelection });
 
     if (options?.skipDefaultSelection) return waitingRows;
 
-    const selId = (selectedPatient.value?.encounterId ?? '').trim();
-
     if (patientQueue.value === 'current') {
-      syncCurrentPatientsFromSelected(waitingRows);
-      if (selId) {
-        const fresh = currentPatients.value.find(
-          (p) => String(p.encounterId ?? '').trim() === selId,
-        );
-        if (fresh) {
-          await applySelectedPatientChange(fresh);
-          return waitingRows;
-        }
+      if (currentPatients.value.length > 0) {
+        await applySelectedPatientChange(currentPatients.value[0] ?? null);
+        return waitingRows;
       }
-      await applySelectedPatientChange(currentPatients.value[0] ?? null);
-      return waitingRows;
+      // 当前接诊人已失效（完诊/不在队列）→ 退回患者队列
+      patientQueue.value = 'waiting';
     }
 
+    const selId = (selectedPatient.value?.encounterId ?? '').trim();
     if (selId) {
       const visible = filterWaitingPatientsByStatus(waitingRows, queueStatusFilter.value);
       const fresh = visible.find((p) => String(p.encounterId ?? '').trim() === selId);
@@ -410,6 +391,8 @@ async function applySelectedPatientChange(next: DoctorStationPatient | null): Pr
   if (prevId && prevId !== nextId) {
     const ok = await guardEmrUnsavedBeforeLeaveMedicalRecord();
     if (!ok) return false;
+    // 换就诊清空医嘱/申请单共用的诊断会话记忆
+    clearEncounterDiagnosisSession();
   }
   doctorPatientStore.setSelectedPatient(next);
   return true;
@@ -423,31 +406,26 @@ const handleTabChange = async (tab: string) => {
     if (!ok) return;
   }
   activeTab.value = next;
+  // 只记开药相关页签：西药医生常停在开立医嘱，中药医生常停在中医处方
+  if (next === DOCTOR_TABS.ORDER || next === DOCTOR_TABS.TCM) {
+    writeDoctorOrderTabPreference(next);
+  }
 };
 
 const handlePatientSelect = async (patient: DoctorStationPatient) => {
   await applySelectedPatientChange(patient);
 };
 
-/** 切换侧栏「患者队列 / 当前接诊」：按待诊优先规则决定实际 Tab，并同步侧栏选中（不调接诊写接口）。 */
+/**
+ * 侧栏顶栏切换：仅允许手切回「患者队列」。
+ * 「当前接诊」Radio 已 disabled，禁止手点进入；进入仅由接诊流程写 `patientQueue`。
+ */
 const handleQueueChange = async (queue: 'away' | 'completed' | 'current' | 'waiting') => {
-  if (queue !== 'current' && queue !== 'waiting') return;
+  if (queue !== 'waiting') return;
 
-  applyPatientQueueDisplayPriority(waitingPatients.value, { requestedQueue: queue });
+  patientQueue.value = 'waiting';
 
   const selId = (selectedPatient.value?.encounterId ?? '').trim();
-
-  if (patientQueue.value === 'current') {
-    syncCurrentPatientsFromSelected(waitingPatients.value);
-    const stillSelected =
-      selId && currentPatients.value.some((p) => String(p.encounterId ?? '').trim() === selId);
-    if (!stillSelected && currentPatients.value.length > 0) {
-      const applied = await applySelectedPatientChange(currentPatients.value[0] ?? null);
-      if (!applied) return;
-    }
-    return;
-  }
-
   if (selId) {
     const visible = filterWaitingPatientsByStatus(waitingPatients.value, queueStatusFilter.value);
     const stillSelected = visible.some((p) => String(p.encounterId ?? '').trim() === selId);
@@ -455,8 +433,7 @@ const handleQueueChange = async (queue: 'away' | 'completed' | 'current' | 'wait
   }
   const visible = filterWaitingPatientsByStatus(waitingPatients.value, queueStatusFilter.value);
   if (visible.length > 0) {
-    const applied = await applySelectedPatientChange(visible[0] ?? null);
-    if (!applied) return;
+    await applySelectedPatientChange(visible[0] ?? null);
   }
 };
 
@@ -507,14 +484,16 @@ const serviceApplyPrintMeta = computed(() => ({
   orderingPractitionerName: doctorDisplayName.value === '—' ? '' : doctorDisplayName.value.trim(),
 }));
 
-/** 打开检验/检查申请演示面板 */
-function openServiceApplyDialog(kind: ServiceApplyKind) {
+/** 打开检验/检查/治疗申请弹窗（打开前自动接诊） */
+async function openServiceApplyDialog(kind: ServiceApplyKind) {
+  const ok = await ensureReceptionForClinicalWork();
+  if (!ok) return;
   serviceApplyKind.value = kind;
   serviceApplyDialogVisible.value = true;
 }
 
-/** 申请单签发成功后刷新当前「申请单」列表 */
-async function handleServiceApplySigned() {
+/** 申请单暂存/签发成功后刷新当前「申请单」列表 */
+async function handleServiceApplyPersisted() {
   if (activeTab.value !== DOCTOR_TABS.SERVICE_APPLY) return;
   await nextTick();
   const inst = tabPanelRef.value as undefined | { reload?: () => Promise<void> };
@@ -524,7 +503,15 @@ async function handleServiceApplySigned() {
 }
 
 const handleQuickAction = async (
-  action: 'allergy' | 'exam' | 'lab' | 'pathology' | 'report' | 'surgery' | 'transfusion',
+  action:
+    | 'allergy'
+    | 'exam'
+    | 'lab'
+    | 'pathology'
+    | 'report'
+    | 'surgery'
+    | 'transfusion'
+    | 'treatment',
 ) => {
   if (!ensurePatientSelected()) return;
   if (action === 'report') {
@@ -535,12 +522,15 @@ const handleQuickAction = async (
     activeTab.value = DOCTOR_TABS.REPORT_QUERY;
     return;
   }
-  if (action === 'lab' || action === 'exam') {
+  if (action === 'lab' || action === 'exam' || action === 'treatment') {
     activeTab.value = DOCTOR_TABS.SERVICE_APPLY;
-    openServiceApplyDialog(action);
+    await openServiceApplyDialog(action);
     return;
   }
-  const actionTextMap: Record<Exclude<typeof action, 'exam' | 'lab' | 'report'>, string> = {
+  const actionTextMap: Record<
+    Exclude<typeof action, 'exam' | 'lab' | 'report' | 'treatment'>,
+    string
+  > = {
     transfusion: '输血申请',
     pathology: '病理申请',
     surgery: '手术申请',
@@ -551,7 +541,7 @@ const handleQuickAction = async (
 
 /**
  * 接诊或切在诊：与双击卡片同源；返回是否成功（含「已接诊仅切 UI」）。
- * 新增诊断 / 新增医嘱前通过 `ensureReceptionForClinicalWork` 间接调用。
+ * 临床写操作 / 打开申请单弹窗等通过 `ensureReceptionForClinicalWork` 间接调用。
  */
 async function ensureReceptionForPatient(patient: DoctorStationPatient): Promise<boolean> {
   if (acceptingEncounterId.value !== null) {
@@ -610,12 +600,21 @@ async function ensureReceptionForPatient(patient: DoctorStationPatient): Promise
   }
 }
 
-/** 接诊前是否已有在诊/暂离患者（决定双击接诊后右侧页签：无 → 病历，有 → 医嘱） */
+/** 接诊前是否已有在诊/暂离患者（决定双击接诊后右侧页签：无 → 病历，有 → 开药偏好页签） */
 function hasInProgressConsultationBeforeAccept(): boolean {
   if (currentPatients.value.length > 0) return true;
   return waitingPatients.value.some((p) =>
     IN_PROGRESS_STATUS_CODES.has(normalizeQueueStatusEnum(p.statusEnum)),
   );
+}
+
+/** 二次接诊落点：读本机开药偏好（开立医嘱 / 中医处方） */
+function resolvePostAcceptOrderTab(): DoctorTab {
+  const pref = readDoctorOrderTabPreference();
+  if (pref === DOCTOR_TABS.TCM) {
+    return DOCTOR_TABS.TCM;
+  }
+  return DOCTOR_TABS.ORDER;
 }
 
 /** 当前选中患者：临床写操作前自动接诊 / 切在诊（供子页 inject）。 */
@@ -642,7 +641,8 @@ const handlePatientAccept = async (patient: DoctorStationPatient) => {
   const navigateToOrder = hasInProgressConsultationBeforeAccept();
   const accepted = await ensureReceptionForPatient(patient);
   if (!accepted) return;
-  activeTab.value = navigateToOrder ? DOCTOR_TABS.ORDER : DOCTOR_TABS.MEDICAL_RECORD;
+  // 首诊进病历；后续接诊按该医生上次开药页签（西药/中药）跳转
+  activeTab.value = navigateToOrder ? resolvePostAcceptOrderTab() : DOCTOR_TABS.MEDICAL_RECORD;
 };
 
 const handleFormUpdate = (data: Record<string, unknown>) => {
@@ -749,18 +749,28 @@ const handleWorkInjuryApprovalCompleted = () => {
 const refundDialogVisible = ref(false);
 const admissionDialogVisible = ref(false);
 const prescriptionSheetDialogVisible = ref(false);
+const prescriptionPrintSubmitting = ref(false);
 
-/** 打开申请退费弹窗（须已选就诊） */
-const handleRefund = () => {
+/** 打开申请退费弹窗（须已选就诊；打开前自动接诊） */
+const handleRefund = async () => {
   if (!ensurePatientSelected()) return;
+  const ok = await ensureReceptionForClinicalWork();
+  if (!ok) return;
   refundDialogVisible.value = true;
 };
 
-/** 退费申请提交成功后刷新侧栏队列 */
-const handleRefundSubmitted = () => {
+/** 退费申请提交成功：刷新侧栏队列；当前在开立医嘱时同步刷新医嘱列表（收费/退费状态可能已变） */
+const handleRefundSubmitted = async () => {
   void loadDoctorStationLists({ skipDefaultSelection: true });
+  if (activeTab.value !== DOCTOR_TABS.ORDER) return;
+  await nextTick();
+  const inst = tabPanelRef.value;
+  if (inst && typeof inst.reload === 'function') {
+    await inst.reload();
+  }
 };
 
+/** 打开处方单查看弹窗（仅展示已签发药品） */
 const handlePrescription = () => {
   if (!ensurePatientSelected()) return;
   const patientId = (selectedPatient.value?.patientId ?? '').trim();
@@ -771,9 +781,42 @@ const handlePrescription = () => {
   prescriptionSheetDialogVisible.value = true;
 };
 
-/** 打开办理住院弹窗（须已选就诊） */
-const handleAdmission = () => {
+/** 打印当前就诊已签发中西药处方（直接用处方单笺面数据，不依赖收费） */
+const handlePrintPrescription = async () => {
   if (!ensurePatientSelected()) return;
+  const encounterId = preserveApiIdForRequest(selectedPatient.value?.encounterId);
+  const patientId = preserveApiIdForRequest(selectedPatient.value?.patientId);
+  const patient = selectedPatient.value;
+  if (!encounterId || !patientId || !patient) {
+    ElMessage.warning('缺少就诊或患者信息，无法打印处方');
+    return;
+  }
+  prescriptionPrintSubmitting.value = true;
+  try {
+    const result = await printDoctorStationPrescriptions({
+      encounterId,
+      patientId,
+      patient,
+      prescriptionScopeTabCode: 'CURRENT_ENCOUNTER',
+      jobName: '门诊医生站处方',
+    });
+    if (!result.ok) {
+      ElMessage.warning('暂无已签发的处方可打印');
+      return;
+    }
+    ElMessage.success(`已发送 ${result.count} 张处方单打印`);
+  } catch {
+    ElMessage.error('处方打印失败');
+  } finally {
+    prescriptionPrintSubmitting.value = false;
+  }
+};
+
+/** 打开办理住院弹窗（须已选就诊；打开前自动接诊） */
+const handleAdmission = async () => {
+  if (!ensurePatientSelected()) return;
+  const ok = await ensureReceptionForClinicalWork();
+  if (!ok) return;
   admissionDialogVisible.value = true;
 };
 </script>
@@ -822,6 +865,14 @@ const handleAdmission = () => {
             <ElButton type="primary" link @click="handleTemporaryLeave"> 暂离 </ElButton>
             <ElButton type="primary" link @click="handleRefund">退费</ElButton>
             <ElButton type="primary" link @click="handlePrescription"> 处方单 </ElButton>
+            <ElButton
+              type="primary"
+              link
+              :loading="prescriptionPrintSubmitting"
+              @click="handlePrintPrescription"
+            >
+              打印处方
+            </ElButton>
             <ElButton type="primary" link @click="handleAdmission">办理住院</ElButton>
           </template>
         </DoctorHeader>
@@ -876,7 +927,7 @@ const handleAdmission = () => {
       :patient-id="selectedPatient?.patientId ?? ''"
       :patient="serviceApplyPatientSummary"
       :print-meta="serviceApplyPrintMeta"
-      @signed="handleServiceApplySigned"
+      @saved="handleServiceApplyPersisted"
     />
   </div>
 </template>

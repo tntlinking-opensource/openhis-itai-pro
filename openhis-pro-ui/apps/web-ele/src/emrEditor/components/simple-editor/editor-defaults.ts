@@ -22,23 +22,23 @@ export const EDITOR_FONT_FAMILY_OPTIONS: { label: string; value: string }[] = [
   { label: 'Arial', value: 'Arial, Helvetica, sans-serif' },
 ];
 
-/** 工具栏「字号」下拉（value 为 font-size，与 Word 中文字号大致对应） */
+/** 工具栏「字号」下拉（value 用 pt，与 PrintConfig / Word 中文字号一致） */
 export const EDITOR_FONT_SIZE_OPTIONS: { label: string; value: string }[] = [
-  { label: '初号', value: '56px' },
-  { label: '小初', value: '48px' },
-  { label: '一号', value: '34px' },
-  { label: '小一', value: '32px' },
-  { label: '二号', value: '29px' },
-  { label: '小二', value: '24px' },
-  { label: '三号', value: '21px' },
-  { label: '小三', value: '20px' },
-  { label: '四号', value: '19px' },
-  { label: '小四', value: '16px' },
-  { label: '五号', value: '14px' },
-  { label: '小五', value: '12px' },
+  { label: '初号', value: '42pt' },
+  { label: '小初', value: '36pt' },
+  { label: '一号', value: '26pt' },
+  { label: '小一', value: '24pt' },
+  { label: '二号', value: '22pt' },
+  { label: '小二', value: '18pt' },
+  { label: '三号', value: '16pt' },
+  { label: '小三', value: '15pt' },
+  { label: '四号', value: '14pt' },
+  { label: '小四', value: '12pt' },
+  { label: '五号', value: '10.5pt' },
+  { label: '小五', value: '9pt' },
 ];
 
-/** 工具栏「行距」下拉（value 为块级 CSS line-height） */
+/** 工具栏「行距」下拉（value 为块级 CSS line-height；病历默认 1.5） */
 export const EDITOR_LINE_HEIGHT_OPTIONS: { label: string; value: string }[] = [
   { label: '行距 1', value: '1' },
   { label: '行距 1.15', value: '1.15' },
@@ -47,26 +47,29 @@ export const EDITOR_LINE_HEIGHT_OPTIONS: { label: string; value: string }[] = [
   { label: '行距 2.5', value: '2.5' },
 ];
 
-/** 工具栏「页边距」预设（屏幕编辑用 px） */
+/**
+ * 工具栏「页边距」预设。
+ * 「打印标准」= PrintConfig 国标页边距（上/下 25.4mm，左/右 31.8mm）。
+ */
 export const EDITOR_PAGE_MARGIN_PRESETS: {
   label: string;
   value: { bottom: string; left: string; right: string; top: string };
 }[] = [
   {
     label: '紧凑',
-    value: { top: '12px', right: '14px', bottom: '12px', left: '14px' },
+    value: { top: '15mm', right: '15mm', bottom: '15mm', left: '15mm' },
   },
   {
     label: '标准',
-    value: { top: '20px', right: '24px', bottom: '20px', left: '24px' },
+    value: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' },
   },
   {
     label: '适中',
-    value: { top: '24px', right: '36px', bottom: '24px', left: '36px' },
+    value: { top: '25mm', right: '25mm', bottom: '25mm', left: '25mm' },
   },
   {
     label: '宽松',
-    value: { top: '32px', right: '48px', bottom: '32px', left: '48px' },
+    value: { top: '30mm', right: '30mm', bottom: '30mm', left: '30mm' },
   },
   {
     label: '打印标准',
@@ -88,9 +91,9 @@ export const EDITOR_PARAGRAPH_SPACING_OPTIONS: {
   marginBottom?: null | string;
   marginTop?: null | string;
 }[] = [
-  { label: '紧凑', marginBottom: '0.35em', marginTop: '0' },
-  { label: '标准', marginBottom: '0.75em', marginTop: '0' },
-  { label: '宽松', marginBottom: '1em', marginTop: '0.35em' },
-  { label: '段前加大', marginTop: '0.75em' },
-  { label: '段后加大', marginBottom: '1.25em' },
+  { label: '紧凑', marginBottom: '0.15em', marginTop: '0' },
+  { label: '标准', marginBottom: '0.25em', marginTop: '0' },
+  { label: '宽松', marginBottom: '0.5em', marginTop: '0.15em' },
+  { label: '段前加大', marginTop: '0.5em' },
+  { label: '段后加大', marginBottom: '0.75em' },
 ];

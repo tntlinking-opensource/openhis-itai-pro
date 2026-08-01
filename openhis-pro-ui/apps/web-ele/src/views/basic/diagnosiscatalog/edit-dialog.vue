@@ -5,15 +5,25 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
 
-import { ElMessage } from 'element-plus';
+import { ElButton, ElMessage } from 'element-plus';
 
 import { useVbenForm } from '#/adapter/form';
 import {
   createDiagnosisCatalogApi,
   getDiagnosisCatalogApi,
   initDiagnosisCatalogApi,
+  pageDiagnosisCatalogApi,
   updateDiagnosisCatalogApi,
 } from '#/api';
+import SelectTable from '#/components/select-table.vue';
+import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+
+/** 国家临床版 2.0 */
+const SOURCE_CLINICAL_V2 = 'clinical_v2';
+/** 院内诊断（医院自维护） */
+const SOURCE_HOSPITAL_DX = 'hospital_dx';
+/** 疾病与诊断目录（医保 1307 主对照） */
+const SOURCE_GENERAL_DX = 'general_dx';
 
 interface Props {
   visible?: boolean;
@@ -31,14 +41,30 @@ const emit = defineEmits<{
 }>();
 
 const originalData = ref<Partial<DiagnosisCatalogItem>>({});
-
 const diagnosisCategoryList = ref<Array<{ label: string; value: number | string }>>([]);
 const ybDiagTypes = ref<Array<{ label: string; value: number | string }>>([]);
 const statusFlagOptions = ref<Array<{ label: string; value: number | string }>>([]);
+const currentSource = ref<string>('');
+const clinicSelectedLabel = ref('');
+const ybSelectedLabel = ref('');
 
-const isEditMode = computed(() => {
-  return !!props.formData?.id;
-});
+const isEditMode = computed(() => !!props.formData?.id);
+const isClinicalV2 = computed(() => currentSource.value === SOURCE_CLINICAL_V2);
+const isHospitalDx = computed(() => currentSource.value === SOURCE_HOSPITAL_DX);
+/** 医保类诊断目录（非国临、非院内）：编码默认即医保码 */
+const isYbDiagnosisCatalog = computed(
+  () =>
+    !!currentSource.value &&
+    currentSource.value !== SOURCE_CLINICAL_V2 &&
+    currentSource.value !== SOURCE_HOSPITAL_DX,
+);
+
+const crossCodeColumns = [
+  { prop: 'conditionCode', label: '编码', width: 140 },
+  { prop: 'name', label: '名称', minWidth: 220 },
+  { prop: 'pyStr', label: '拼音', width: 100 },
+  { prop: 'sourceEnum', label: '来源', width: 120 },
+];
 
 function normalizeDetailForForm(data: Record<string, unknown>) {
   const next: Record<string, unknown> = { ...data };
@@ -56,6 +82,70 @@ function normalizeDetailForForm(data: Record<string, unknown>) {
     next.statusEnum = String(next.statusEnum);
   }
   return next;
+}
+
+async function searchCatalogBySource(
+  sourceEnum: string | undefined,
+  params: Record<string, unknown>,
+) {
+  const response = await pageDiagnosisCatalogApi({
+    pageNo: Number(params.pageNo ?? 1) || 1,
+    pageSize: Number(params.pageSize ?? 20) || 20,
+    keyword: String(params.keyword ?? '').trim() || undefined,
+    sourceEnum,
+  });
+  const parsed = parsePagedRowsFromApiData<DiagnosisCatalogItem>(response.data);
+  let rows = parsed.content ?? [];
+  if (!sourceEnum) {
+    rows = rows.filter((r) => String(r.sourceEnum) !== SOURCE_CLINICAL_V2);
+  }
+  const content = rows.map((item) => ({
+    ...item,
+    value: String(item.conditionCode ?? ''),
+    label: String(item.name ?? ''),
+  }));
+  return { content, totalCount: parsed.totalCount };
+}
+
+function remoteSearchClinicalV2(params: Record<string, unknown>) {
+  return searchCatalogBySource(SOURCE_CLINICAL_V2, params);
+}
+
+/** 国临目录选医保：优先疾病与诊断目录 */
+function remoteSearchYbDx(params: Record<string, unknown>) {
+  return searchCatalogBySource(SOURCE_GENERAL_DX, params);
+}
+
+function onClinicCodePicked(code: string | string[]) {
+  const v = Array.isArray(code) ? (code[0] ?? '') : code;
+  formApi.setFieldValue('clinicCode', v || undefined);
+}
+
+function onClinicBeforeClose(item: Record<string, unknown>) {
+  clinicSelectedLabel.value = String(item.name ?? item.label ?? '');
+  return true;
+}
+
+function onYbNoPicked(code: string | string[]) {
+  const v = Array.isArray(code) ? (code[0] ?? '') : code;
+  formApi.setFieldValue('ybNo', v || undefined);
+}
+
+function onYbBeforeClose(item: Record<string, unknown>) {
+  ybSelectedLabel.value = String(item.name ?? item.label ?? '');
+  const code = String(item.ybNo ?? item.conditionCode ?? item.value ?? '').trim();
+  formApi.setFieldValue('ybNo', code || undefined);
+  return true;
+}
+
+function clearClinicCode() {
+  formApi.setFieldValue('clinicCode', undefined);
+  clinicSelectedLabel.value = '';
+}
+
+function clearYbNo() {
+  formApi.setFieldValue('ybNo', undefined);
+  ybSelectedLabel.value = '';
 }
 
 async function handleSubmit() {
@@ -79,20 +169,36 @@ async function handleSubmit() {
       }
     });
 
-    if (submitData.ybFlag !== undefined) {
-      submitData.ybFlag = submitData.ybFlag ? 1 : 0;
-    }
-    if (submitData.ybMatchFlag !== undefined) {
-      submitData.ybMatchFlag = submitData.ybMatchFlag ? 1 : 0;
+    if (submitData.sourceEnum === SOURCE_CLINICAL_V2) {
+      submitData.clinicCode = String(submitData.conditionCode ?? '').trim() || undefined;
+      const yb = String(submitData.ybNo ?? '').trim();
+      submitData.ybNo = yb || undefined;
+      submitData.ybFlag = yb ? 1 : 0;
+      submitData.ybMatchFlag = yb ? 1 : 0;
+    } else if (submitData.sourceEnum === SOURCE_HOSPITAL_DX) {
+      const yb = String(submitData.ybNo ?? '').trim();
+      const clinic = String(submitData.clinicCode ?? '').trim();
+      submitData.ybNo = yb || undefined;
+      submitData.clinicCode = clinic || undefined;
+      submitData.ybFlag = yb ? 1 : 0;
+      submitData.ybMatchFlag = yb && clinic ? 1 : 0;
+    } else if (submitData.sourceEnum) {
+      const yb =
+        String(submitData.ybNo ?? '').trim() || String(submitData.conditionCode ?? '').trim();
+      submitData.ybNo = yb || undefined;
+      submitData.ybFlag = yb ? 1 : 0;
+      // 有国临对照才算已对码
+      const clinic = String(submitData.clinicCode ?? '').trim();
+      submitData.ybMatchFlag = clinic ? 1 : 0;
     }
 
     if (isEditMode.value) {
       await updateDiagnosisCatalogApi(submitData);
-      ElMessage.success('更新成功');
+      ElMessage.success('更新成功（对照已同步到对侧目录）');
     } else {
       const { id: _id, ...createData } = submitData;
       await createDiagnosisCatalogApi(createData);
-      ElMessage.success('创建成功');
+      ElMessage.success('创建成功（对照已同步到对侧目录）');
     }
     emit('success');
     modalApi.close();
@@ -104,7 +210,29 @@ async function handleSubmit() {
   }
 }
 
+async function resolveLabel(sourceEnum: string, code: string, apply: (name: string) => void) {
+  try {
+    const res = await pageDiagnosisCatalogApi({
+      pageNo: 1,
+      pageSize: 5,
+      keyword: code,
+      sourceEnum,
+    });
+    const parsed = parsePagedRowsFromApiData<DiagnosisCatalogItem>(res.data);
+    const hit = (parsed.content ?? []).find(
+      (r) => String(r.conditionCode) === code || String(r.ybNo) === code,
+    );
+    if (hit?.name) {
+      apply(`${hit.conditionCode} ${hit.name}`);
+    }
+  } catch {
+    // ignore
+  }
+}
+
 async function loadFormData() {
+  clinicSelectedLabel.value = '';
+  ybSelectedLabel.value = '';
   const id = props.formData?.id;
   if (id) {
     modalApi.setState({ loading: true });
@@ -113,8 +241,23 @@ async function loadFormData() {
       const data = response.data;
       if (data) {
         originalData.value = { ...data };
-        const normalized = normalizeDetailForForm(data as Record<string, unknown>);
-        formApi.setValues(normalized);
+        currentSource.value = String(data.sourceEnum ?? '');
+        formApi.setValues(normalizeDetailForForm(data as Record<string, unknown>));
+        clinicSelectedLabel.value = String(data.clinicCode ?? '');
+        ybSelectedLabel.value = String(data.ybNo ?? '');
+        if (data.sourceEnum !== SOURCE_CLINICAL_V2 && data.clinicCode) {
+          await resolveLabel(SOURCE_CLINICAL_V2, String(data.clinicCode), (n) => {
+            clinicSelectedLabel.value = n;
+          });
+        }
+        if (
+          (data.sourceEnum === SOURCE_CLINICAL_V2 || data.sourceEnum === SOURCE_HOSPITAL_DX) &&
+          data.ybNo
+        ) {
+          await resolveLabel(SOURCE_GENERAL_DX, String(data.ybNo), (n) => {
+            ybSelectedLabel.value = n;
+          });
+        }
       } else {
         ElMessage.warning('未找到疾病目录信息');
         modalApi.close();
@@ -127,15 +270,14 @@ async function loadFormData() {
     } finally {
       modalApi.setState({ loading: false });
     }
+  } else if (props.formData && Object.keys(props.formData).length > 0) {
+    originalData.value = { ...props.formData };
+    currentSource.value = String(props.formData.sourceEnum ?? '');
+    formApi.setValues(normalizeDetailForForm(props.formData as Record<string, unknown>));
   } else {
-    if (props.formData && Object.keys(props.formData).length > 0) {
-      originalData.value = { ...props.formData };
-      const normalized = normalizeDetailForForm(props.formData as Record<string, unknown>);
-      formApi.setValues(normalized);
-    } else {
-      originalData.value = {};
-      await formApi.resetForm();
-    }
+    originalData.value = {};
+    currentSource.value = '';
+    await formApi.resetForm();
   }
 }
 
@@ -186,6 +328,45 @@ const convertOptions = (
   }));
 };
 
+/** 对照选码区：按来源只留一边 SelectTable；院内诊断可同时挂国临/医保对照 */
+const crossCodeSchema = computed(() => {
+  if (isClinicalV2.value) {
+    return [
+      {
+        component: 'Input' as const,
+        fieldName: 'ybNo',
+        label: '医保编码',
+        formItemClass: 'col-span-2',
+      },
+    ];
+  }
+  if (isHospitalDx.value) {
+    return [
+      {
+        component: 'Input' as const,
+        fieldName: 'clinicCode',
+        label: '国临码',
+      },
+      {
+        component: 'Input' as const,
+        fieldName: 'ybNo',
+        label: '医保编码',
+      },
+    ];
+  }
+  if (isYbDiagnosisCatalog.value) {
+    return [
+      {
+        component: 'Input' as const,
+        fieldName: 'clinicCode',
+        label: '国临码',
+        formItemClass: 'col-span-2',
+      },
+    ];
+  }
+  return [];
+});
+
 const [Form, formApi] = useVbenForm(
   reactive({
     commonConfig: {
@@ -217,6 +398,45 @@ const [Form, formApi] = useVbenForm(
           filterable: true,
           placeholder: '请选择疾病类型',
           clearable: true,
+          disabled: isEditMode.value,
+          onChange: (v: string) => {
+            currentSource.value = String(v ?? '');
+            // 切换来源时清空对侧选码，避免脏数据
+            formApi.setFieldValue('clinicCode', undefined);
+            formApi.setFieldValue('ybNo', undefined);
+            clinicSelectedLabel.value = '';
+            ybSelectedLabel.value = '';
+          },
+        },
+      },
+      {
+        component: 'Input',
+        fieldName: 'conditionCode',
+        label: isClinicalV2.value
+          ? '国临编码'
+          : isHospitalDx.value
+            ? '院内编码'
+            : isYbDiagnosisCatalog.value
+              ? '诊断编码'
+              : '编码',
+        componentProps: {
+          placeholder: isClinicalV2.value
+            ? '请输入国家临床版诊断编码'
+            : isHospitalDx.value
+              ? '请输入院内诊断编码'
+              : isYbDiagnosisCatalog.value
+                ? '请输入诊断/医保编码'
+                : '请先选择诊断目录',
+          clearable: true,
+          disabled: !currentSource.value,
+          onChange: async (v: string) => {
+            if (isClinicalV2.value) {
+              formApi.setFieldValue('clinicCode', v || undefined);
+            }
+            if (isYbDiagnosisCatalog.value) {
+              formApi.setFieldValue('ybNo', v || undefined);
+            }
+          },
         },
       },
       {
@@ -230,24 +450,7 @@ const [Form, formApi] = useVbenForm(
           clearable: true,
         },
       },
-      {
-        component: 'Input',
-        fieldName: 'diseaseCode',
-        label: '特慢病编码',
-        componentProps: {
-          placeholder: '请输入特慢病编码',
-          clearable: true,
-        },
-      },
-      {
-        component: 'Input',
-        fieldName: 'ybNo',
-        label: '医保编码',
-        componentProps: {
-          placeholder: '请输入医保编码',
-          clearable: true,
-        },
-      },
+      ...crossCodeSchema.value,
       {
         component: 'Select',
         fieldName: 'statusEnum',
@@ -258,16 +461,6 @@ const [Form, formApi] = useVbenForm(
           placeholder: '请选择状态',
           clearable: true,
         },
-      },
-      {
-        component: 'Checkbox',
-        fieldName: 'ybFlag',
-        label: '医保标记',
-      },
-      {
-        component: 'Checkbox',
-        fieldName: 'ybMatchFlag',
-        label: '医保对码',
       },
       {
         component: 'Input',
@@ -318,12 +511,55 @@ watch(
 
 <template>
   <Modal
-    class="diagnosis-form-dialog w-[720px]"
+    class="diagnosis-form-dialog w-[760px]"
     :title="isEditMode ? '编辑疾病目录' : '新增疾病目录'"
     :close-on-click-modal="false"
     :close-on-press-escape="false"
   >
-    <Form />
+    <p class="diagnosis-form-dialog__hint">
+      {{
+        isHospitalDx
+          ? '院内诊断以院内编码为主；国临码/医保编码为可选对照，不自动回写对侧目录。'
+          : '对照请从对侧目录选择，保存后自动同步。'
+      }}
+    </p>
+    <Form>
+      <!-- 插槽名必须等于 fieldName，Form 按 fieldName 分发 -->
+      <template #ybNo="slotProps">
+        <div v-if="isClinicalV2 || isHospitalDx" class="diagnosis-form-dialog__picker">
+          <SelectTable
+            :model-value="slotProps?.value ?? undefined"
+            :selected-label="ybSelectedLabel"
+            placeholder="从「疾病与诊断目录」选择医保编码"
+            :remote-method="remoteSearchYbDx"
+            :columns="crossCodeColumns"
+            value-key="conditionCode"
+            label-key="name"
+            :panel-width="680"
+            :before-close="onYbBeforeClose"
+            @update:model-value="onYbNoPicked"
+          />
+          <ElButton link type="danger" @click="clearYbNo">清除</ElButton>
+        </div>
+      </template>
+      <template #clinicCode="slotProps">
+        <div v-if="isYbDiagnosisCatalog || isHospitalDx" class="diagnosis-form-dialog__picker">
+          <SelectTable
+            :model-value="slotProps?.value ?? undefined"
+            :selected-label="clinicSelectedLabel"
+            placeholder="从「国家临床版2.0」选择国临码"
+            :remote-method="remoteSearchClinicalV2"
+            :columns="crossCodeColumns"
+            value-key="conditionCode"
+            label-key="name"
+            :panel-width="680"
+            :before-close="onClinicBeforeClose"
+            @update:model-value="onClinicCodePicked"
+          />
+          <ElButton link type="danger" @click="clearClinicCode">清除</ElButton>
+        </div>
+      </template>
+    </Form>
   </Modal>
 </template>
 
@@ -334,5 +570,25 @@ watch(
 
 .diagnosis-form-dialog :deep(.el-form-item) {
   margin-bottom: 12px;
+}
+
+.diagnosis-form-dialog__hint {
+  margin: 0 0 12px;
+  color: #666;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.diagnosis-form-dialog__picker {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+.diagnosis-form-dialog__picker :deep(.vxe-pulldown),
+.diagnosis-form-dialog__picker :deep(.vxe-input) {
+  flex: 1;
+  width: 100%;
 }
 </style>

@@ -35,12 +35,6 @@ interface Props {
   doctorName?: string;
 }
 
-function genderEnumToLabel(v: null | number | undefined): string {
-  if (v === 1) return '男';
-  if (v === 2) return '女';
-  return '';
-}
-
 const paymentTypeTagConfig = computed(() => {
   const label = (props.patient.serviceTypeName ?? '').trim();
   if (!label) return null;
@@ -85,9 +79,7 @@ const startTimeDisplay = computed(() => {
 
       <div class="flex items-center gap-2">
         <span class="text-text-main text-sm font-semibold">
-          {{
-            (patient.genderEnumText ?? '').trim() || genderEnumToLabel(patient.genderEnum) || '—'
-          }}
+          {{ (patient.genderEnumText ?? '').trim() || '—' }}
         </span>
         <span v-if="ageDisplay" class="text-text-main text-sm">{{ ageDisplay }}</span>
       </div>

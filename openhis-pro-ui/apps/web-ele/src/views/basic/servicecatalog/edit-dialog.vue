@@ -39,6 +39,10 @@ import {
   isCatalogStructureLocked,
   isServiceCatalogFieldLocked,
 } from '#/views/basic/catalog/catalog-editability';
+import {
+  resolveCatalogRecordNavState,
+  type CatalogRecordNavDirection,
+} from '#/views/basic/catalog/catalog-record-nav';
 
 interface ServiceCatalogChildRow {
   activityId?: number;
@@ -57,15 +61,31 @@ interface Props {
   visible?: boolean;
   formData?: Partial<ServiceCatalogItem>;
   initOptions?: ServiceCatalogInitResponse;
+  /** 当前列表页记录 id */
+  recordIds?: string[];
+  /** 列表当前页码（从 1 起），供跨页上下翻 */
+  pageNo?: number;
+  /** 列表每页条数 */
+  pageSize?: number;
+  /** 当前筛选条件下的总条数 */
+  listTotal?: number;
+  /** 列表正在为上下翻换页 */
+  navigating?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   visible: false,
   formData: () => ({}),
   initOptions: () => ({}),
+  recordIds: () => [],
+  pageNo: 1,
+  pageSize: 10,
+  listTotal: 0,
+  navigating: false,
 });
 
 const emit = defineEmits<{
+  navigate: [direction: CatalogRecordNavDirection];
   success: [];
   'update:visible': [value: boolean];
 }>();
@@ -128,6 +148,44 @@ const isEditMode = computed(() => {
   return !!props.formData?.id;
 });
 
+/** 编辑态且列表有多条时展示上下翻（可跨页） */
+const recordNavState = computed(() =>
+  resolveCatalogRecordNavState(props.recordIds, props.formData?.id, {
+    pageNo: props.pageNo,
+    pageSize: props.pageSize,
+    listTotal: props.listTotal,
+  }),
+);
+
+const showRecordNav = computed(() => {
+  if (!isEditMode.value) {
+    return false;
+  }
+  return recordNavState.value.listTotal > 1;
+});
+
+const canNavigatePrev = computed(() => recordNavState.value.canPrev);
+
+const canNavigateNext = computed(() => recordNavState.value.canNext);
+
+const recordNavBusy = computed(() => loading.value || props.navigating);
+
+/** 切换到上一条诊疗（必要时由列表翻页） */
+function handleNavigatePrev() {
+  if (!canNavigatePrev.value || recordNavBusy.value) {
+    return;
+  }
+  emit('navigate', -1);
+}
+
+/** 切换到下一条诊疗（必要时由列表翻页） */
+function handleNavigateNext() {
+  if (!canNavigateNext.value || recordNavBusy.value) {
+    return;
+  }
+  emit('navigate', 1);
+}
+
 const activityDefId = computed(() => originalData.value?.id ?? props.formData?.id);
 
 const pickerContext = computed(() => ({
@@ -169,19 +227,53 @@ async function loadDefaultContractBusNo() {
   }
 }
 
-function openCatalogPicker() {
+async function openCatalogPicker() {
+  try {
+    const values = (await formApi.getValues()) as Record<string, unknown>;
+    syncInsuranceFormData({
+      ...insuranceFormData.value,
+      name: values.name as string | undefined,
+      ybNo: values.ybNo as string | undefined,
+      chrgitmLv: values.chrgitmLv as ServiceCatalogItem['chrgitmLv'],
+      ybMatchFlag: values.ybMatchFlag as ServiceCatalogItem['ybMatchFlag'],
+    });
+  } catch {
+    // 表单未就绪时仍打开选码弹窗
+  }
   pickerVisible.value = true;
 }
 
-function applyCatalogSelection(row: NationalCatalogItem) {
+function parsePriceUplmt(value: string | undefined | null): number | undefined {
+  if (value === null || value === undefined || value === '') {
+    return undefined;
+  }
+  const num = Number(String(value).trim());
+  return Number.isFinite(num) && num >= 0 ? num : undefined;
+}
+
+async function applyCatalogSelection(row: NationalCatalogItem) {
+  const currentValues = (await formApi.getValues()) as Record<string, unknown>;
+  const currentName = String(currentValues.name ?? '').trim();
+  const hilistName = String(row.hilistName ?? '').trim();
+  const shouldFillName = !isEditMode.value || !currentName;
+
   formApi.setFieldValue('ybNo', row.hilistCode ?? '');
+  formApi.setFieldValue('ybFlag', 'YES');
   const lv = catalogChrgitmLvToFormValue(row.chrgitmLv);
   if (lv !== undefined) {
     formApi.setFieldValue('chrgitmLv', lv);
   }
   formApi.setFieldValue('ybMatchFlag', 'NO');
+  if (shouldFillName && hilistName) {
+    formApi.setFieldValue('name', hilistName);
+  }
+  const maxPrice = parsePriceUplmt(row.priceUplmtAmt);
+  if (maxPrice !== undefined) {
+    formApi.setFieldValue('maximumRetailPrice', maxPrice);
+  }
   syncInsuranceFormData({
     ...insuranceFormData.value,
+    name: shouldFillName && hilistName ? hilistName : currentName || insuranceFormData.value.name,
     ybNo: row.hilistCode,
     chrgitmLv: lv,
     ybMatchFlag: 'NO',
@@ -281,6 +373,12 @@ const defaultChildrenRow = (): ServiceCatalogChildRow => ({
   childrenRetailPrice: undefined,
 });
 
+/** 子项执行次数：空或非法时回落为 1 */
+function normalizeChildrenNum(value: unknown): number {
+  const num = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(num) && num > 0 ? Math.trunc(num) : 1;
+}
+
 /** 将接口金额字段转为数字，非法值返回 undefined */
 function coerceRetailPrice(value: unknown): number | undefined {
   if (value === null || value === undefined || value === '') {
@@ -304,11 +402,11 @@ function formatChildLineTotal(item: ServiceCatalogChildRow): string {
   if (price === undefined || price === null || !Number.isFinite(price)) {
     return '-';
   }
-  const count = item.childrenNum && item.childrenNum > 0 ? item.childrenNum : 1;
+  const count = normalizeChildrenNum(item.childrenNum);
   return formatMoneyDisplay(calcMoneyLineTotal(price, count));
 }
 
-/** 按子项单价与执行次数合计零售价（6 位加总后 2 位） */
+/** 按子项单价与执行次数合计售价（6 位加总后 2 位） */
 function calcChildrenRetailTotal(list: ServiceCatalogChildRow[]): number {
   const lineTotals: number[] = [];
   for (const item of list) {
@@ -320,13 +418,13 @@ function calcChildrenRetailTotal(list: ServiceCatalogChildRow[]): number {
     if (unitPrice === undefined || unitPrice === null) {
       continue;
     }
-    const count = item.childrenNum && item.childrenNum > 0 ? item.childrenNum : 1;
+    const count = normalizeChildrenNum(item.childrenNum);
     lineTotals.push(calcMoneyLineTotal(unitPrice, count));
   }
   return sumMoneyThenSettle(lineTotals);
 }
 
-/** 存在已选子项时，将零售价同步为子项合计 */
+/** 存在已选子项时，将售价同步为子项合计 */
 function syncRetailPriceFromChildren() {
   if (!hasSelectedChildren.value) {
     return;
@@ -356,16 +454,20 @@ async function hydrateChildrenRetailPrices(
   );
 }
 
-/** 选中/清空子项时同步名称与单价 */
+/** 选中/清空子项时同步名称、单价；选中后执行次数默认 1 */
 function handleChildSelect(item: ServiceCatalogChildRow, selected: ServiceCatalogItem[]) {
   const row = selected[0];
   if (!row) {
     item.childrenName = '';
+    item.childrenNum = undefined;
     item.childrenRetailPrice = undefined;
     return;
   }
   item.childrenName = String(row.name ?? '');
   item.childrenRetailPrice = coerceRetailPrice(row.retailPrice);
+  if (item.childrenNum === null || item.childrenNum === undefined) {
+    item.childrenNum = 1;
+  }
 }
 
 /** 清空弹窗表单与子项列表 */
@@ -387,7 +489,7 @@ function syncServiceEditabilitySchema() {
   formApi.updateSchema(buildCatalogEditabilitySchemaPatches('service', editabilityCode.value));
 }
 
-/** 零售价禁用态：业务引用锁定优先，其次有子项时自动合计 */
+/** 售价禁用态：业务引用锁定优先，其次有子项时自动合计 */
 function syncRetailPriceFieldSchema() {
   if (!formApi?.isMounted) {
     return;
@@ -398,7 +500,7 @@ function syncRetailPriceFieldSchema() {
       fieldName: 'retailPrice',
       componentProps: {
         disabled: lockedByEditability || hasSelectedChildren.value,
-        placeholder: hasSelectedChildren.value ? '由子项自动合计' : '请输入零售价',
+        placeholder: hasSelectedChildren.value ? '由子项自动合计' : '请输入售价',
       },
     },
   ]);
@@ -457,23 +559,17 @@ async function handleSubmit() {
       ...formValues,
     } as Record<string, unknown>;
 
-    // 过滤诊疗子项中的空行（名称和执行次数都为空的行不提交）
+    // 未选诊疗项目的空子项行不提交；已选行补齐执行次数默认 1
     if (Array.isArray(mergedData.children)) {
       mergedData.children = mergedData.children
-        .filter(
-          (item: {
-            childrenId: null | string;
-            childrenName: string;
-            childrenNum: null | number;
-          }) => {
-            if (!item) return false;
-            const hasName = !!item.childrenName;
-            const hasNum =
-              item.childrenNum !== null && item.childrenNum !== undefined && item.childrenNum !== 0;
-            return hasName || hasNum;
-          },
-        )
-        .map(({ childrenRetailPrice: _price, ...child }) => child);
+        .filter((item: { childrenId?: null | string } | null | undefined) => {
+          if (!item) return false;
+          return Boolean(String(item.childrenId ?? '').trim());
+        })
+        .map(({ childrenRetailPrice: _price, ...child }) => ({
+          ...child,
+          childrenNum: normalizeChildrenNum(child.childrenNum),
+        }));
       if (mergedData.children.length === 0) {
         delete mergedData.children;
       }
@@ -481,6 +577,8 @@ async function handleSubmit() {
 
     mapLegacyPackageUnitFields(mergedData);
     delete mergedData.salesUnitCode;
+    // 诊疗目录无进价（采购参考价）；不提交，避免回写 PURCHASE 定价行
+    delete mergedData.purchasePrice;
     const normalizedYbFlag = normalizeWhetherFlagForSubmit(mergedData.ybFlag);
     if (normalizedYbFlag !== undefined) {
       mergedData.ybFlag = normalizedYbFlag;
@@ -526,16 +624,32 @@ async function applyDetailFormValues(normalizedData: Record<string, unknown>) {
   syncInsuranceFormData(normalizedData);
   syncFormFieldAvailability();
   await nextTick();
-  // schema/options 刷新后再写一次，避免 ElSelectV2 丢回显
+  // schema/options 刷新后再写一次，避免 ElSelectV2 / TreeSelect 丢回显
   await reapplyMrSettlementTypeCode(normalizedData);
+  const packageUnit = normalizedData.packageUnitCode;
+  if (packageUnit !== undefined && packageUnit !== null && packageUnit !== '') {
+    await formApi.setFieldValue('packageUnitCode', String(packageUnit));
+  }
 }
+
+/** 避免快速上下翻时旧请求回写覆盖新详情 */
+let serviceDetailLoadSeq = 0;
 
 async function loadFormData() {
   const id = props.formData?.id;
   if (id) {
+    const loadSeq = ++serviceDetailLoadSeq;
     loading.value = true;
     try {
+      // 切换记录前先清空，避免上一张残留字段/子项混入回显
+      await resetFormState();
+      if (loadSeq !== serviceDetailLoadSeq) {
+        return;
+      }
       const response = await getServiceCatalogApi({ id: String(id) });
+      if (loadSeq !== serviceDetailLoadSeq) {
+        return;
+      }
       const data = response.data;
       if (data) {
         const editability = applyCatalogEditabilityFromDetail(data);
@@ -552,9 +666,13 @@ async function loadFormData() {
                   child.childrenId !== null && child.childrenId !== undefined
                     ? String(child.childrenId)
                     : undefined,
+                childrenNum: normalizeChildrenNum(child.childrenNum),
               }))
             : [defaultChildrenRow()];
         childrenList.value = await hydrateChildrenRetailPrices(mappedChildren);
+        if (loadSeq !== serviceDetailLoadSeq) {
+          return;
+        }
         syncRetailPriceFromChildren();
         // 子项加载会触发 schema 刷新，再补一次病案结算类型回显
         await nextTick();
@@ -564,12 +682,17 @@ async function loadFormData() {
         modalApi.close();
       }
     } catch (error) {
+      if (loadSeq !== serviceDetailLoadSeq) {
+        return;
+      }
       console.error('获取服务目录详情失败:', error);
       ElMessage.error('获取服务目录详情失败，请稍后重试');
       modalApi.close();
       return;
     } finally {
-      loading.value = false;
+      if (loadSeq === serviceDetailLoadSeq) {
+        loading.value = false;
+      }
     }
   } else {
     if (props.formData && Object.keys(props.formData).length > 0) {
@@ -579,7 +702,10 @@ async function loadFormData() {
       // 初始化子项列表
       const presetChildren =
         props.formData.children && Array.isArray(props.formData.children)
-          ? [...props.formData.children]
+          ? props.formData.children.map((child) => ({
+              ...child,
+              childrenNum: normalizeChildrenNum(child.childrenNum),
+            }))
           : [];
       childrenList.value =
         presetChildren.length > 0
@@ -699,7 +825,7 @@ const convertTreeOptions = (options: unknown): TreeOption[] => {
     )
     .map((item) => ({
       label: item.label,
-      value: item.value,
+      value: String(item.value),
       children: item.children ? convertTreeOptions(item.children) : undefined,
     }));
 };
@@ -797,25 +923,14 @@ const [Form, formApi] = useVbenForm(
       },
       {
         component: 'InputNumber',
-        fieldName: 'purchasePrice',
-        label: '成本价',
-        componentProps: {
-          precision: 2,
-          min: 0,
-          controlsPosition: 'right',
-          placeholder: '请输入成本价',
-        },
-      },
-      {
-        component: 'InputNumber',
         fieldName: 'retailPrice',
-        label: '零售价',
+        label: '售价',
         rules: 'required',
         componentProps: {
           precision: 2,
           min: 0,
           controlsPosition: 'right',
-          placeholder: hasSelectedChildren.value ? '由子项自动合计' : '请输入零售价',
+          placeholder: hasSelectedChildren.value ? '由子项自动合计' : '请输入售价',
           disabled: hasSelectedChildren.value,
         },
       },
@@ -931,12 +1046,9 @@ const [Form, formApi] = useVbenForm(
   }),
 );
 
+/** 追加一行空子项（未选项目时不预填执行次数） */
 const addChild = () => {
-  childrenList.value.push({
-    childrenId: undefined,
-    childrenName: '',
-    childrenNum: undefined,
-  });
+  childrenList.value.push(defaultChildrenRow());
 };
 
 const removeChild = (index: number) => {
@@ -945,11 +1057,22 @@ const removeChild = (index: number) => {
 
 watch(
   () => props.formData?.id,
-  async (id) => {
-    if (!props.visible || id) {
+  async (id, prevId) => {
+    if (!props.visible) {
       return;
     }
-    await resetFormState();
+    // 弹窗已打开时切换上下一条：重新拉详情；id 清空则回新增态
+    if (id === prevId) {
+      return;
+    }
+    if (!id) {
+      await resetFormState();
+      return;
+    }
+    if (prevId === undefined) {
+      return;
+    }
+    await loadFormData();
   },
 );
 
@@ -1002,7 +1125,7 @@ watch(
       type="warning"
       :closable="false"
       show-icon
-      :title="editabilityMessage || '该诊疗项目已产生业务引用，分类/单位/价格等字段不可修改'"
+      :title="editabilityMessage || '该诊疗项目已产生业务引用，名称/分类/单位/价格等字段不可修改'"
     />
     <div ref="formAreaRef" @keydown.capture="handleServiceFormKeydown">
       <Form>
@@ -1042,7 +1165,7 @@ watch(
                   <el-input-number
                     v-model="item.childrenNum"
                     size="small"
-                    :min="0"
+                    :min="1"
                     :precision="0"
                     placeholder="次数"
                     class="service-catalog-form-dialog__child-num w-full min-w-0"
@@ -1066,10 +1189,7 @@ watch(
           </div>
         </template>
       </Form>
-      <div
-        v-if="isEditMode"
-        class="mt-3 flex flex-wrap gap-2 border-t border-[var(--el-border-color-lighter)] pt-3"
-      >
+      <div class="mt-3 flex flex-wrap gap-2 border-t border-[var(--el-border-color-lighter)] pt-3">
         <ElButton type="success" plain @click="openCatalogPicker">从国家目录选择</ElButton>
         <ElButton
           v-if="canUpload3301"
@@ -1096,6 +1216,16 @@ watch(
       :context="pickerContext"
       @confirm="applyCatalogSelection"
     />
+    <template #prepend-footer>
+      <div v-if="showRecordNav" class="mr-auto flex gap-2">
+        <ElButton :disabled="!canNavigatePrev || recordNavBusy" @click="handleNavigatePrev">
+          上一个
+        </ElButton>
+        <ElButton :disabled="!canNavigateNext || recordNavBusy" @click="handleNavigateNext">
+          下一个
+        </ElButton>
+      </div>
+    </template>
   </Modal>
 </template>
 

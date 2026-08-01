@@ -12,7 +12,10 @@ import {
   SERVICE_APPLY_BODY_STRUCTURE_TABLE,
   SERVICE_APPLY_SPECIMEN_TABLE,
 } from '#/utils/service-apply-display';
-import { SERVICE_APPLY_CATEGORY_BY_KIND } from '#/views/outpatient/doctor-station/service-apply/service-apply.constants';
+import {
+  SERVICE_APPLY_CATEGORY_BY_KIND,
+  SERVICE_APPLY_KIND_LABEL,
+} from '#/views/outpatient/doctor-station/service-apply/service-apply.constants';
 import { buildServiceApplyDiagnosisOptions } from '#/views/outpatient/doctor-station/service-apply/service-apply.service';
 import { rowLooksDraftForSign } from '#/views/outpatient/doctor-station/advice/services/advice-row';
 
@@ -36,7 +39,7 @@ export interface SchedulePrintServiceApplyFormsOptions {
   items: ServiceApplySelectedItem[];
   performOrgId: string;
   performOrgName: string;
-  encounterDiagnosisId: string;
+  encounterDiagnosisIds: string[];
   encounterDiagnosisRows: EncounterDiagnosisRowDto[];
   bodyStructureOptions: TerminologyOptionDto[];
   specimenDefinitionOptions: TerminologyOptionDto[];
@@ -79,16 +82,18 @@ function formatAdviceStartTimeToOrderDateText(startTime: string): string {
 }
 
 function resolveDiagnosisText(
-  encounterDiagnosisId: string,
+  encounterDiagnosisIds: string[],
   encounterDiagnosisRows: SchedulePrintServiceApplyFormsOptions['encounterDiagnosisRows'],
 ): string {
-  const selectedId = str(encounterDiagnosisId);
-  if (!selectedId) {
+  const selectedIds = (encounterDiagnosisIds ?? []).map((id) => str(id)).filter(Boolean);
+  if (selectedIds.length === 0) {
     return '';
   }
   const options = buildServiceApplyDiagnosisOptions(encounterDiagnosisRows);
-  const hit = options.find((item) => item.value === selectedId);
-  return hit?.label ?? '';
+  return selectedIds
+    .map((id) => options.find((item) => item.value === id)?.label ?? '')
+    .filter(Boolean)
+    .join('、');
 }
 
 function formatServiceRequestDetailDisplayText(
@@ -118,6 +123,9 @@ function inferServiceApplyKindFromAdviceRow(row: AdviceRowItem): ServiceApplyKin
   if (code === SERVICE_APPLY_CATEGORY_BY_KIND.exam || code === '23') {
     return 'exam';
   }
+  if (code === SERVICE_APPLY_CATEGORY_BY_KIND.treatment || code === '21') {
+    return 'treatment';
+  }
   const table = str(row.serviceRequestDetails?.[0]?.targetTable);
   if (table === SERVICE_APPLY_SPECIMEN_TABLE) {
     return 'lab';
@@ -126,6 +134,20 @@ function inferServiceApplyKindFromAdviceRow(row: AdviceRowItem): ServiceApplyKin
     return 'exam';
   }
   return null;
+}
+
+/** 打印场景：检验 test-print；检查/治疗暂复用 examination-print（治疗模板未独立落地） */
+function resolveServiceApplyPrintScenario(applyKind: ServiceApplyKind) {
+  if (applyKind === 'lab') {
+    return {
+      scenarioCode: PRINT_SCENARIO.testPrint,
+      jobName: `${SERVICE_APPLY_KIND_LABEL.lab}申请单`,
+    };
+  }
+  return {
+    scenarioCode: PRINT_SCENARIO.examinationPrint,
+    jobName: `${SERVICE_APPLY_KIND_LABEL[applyKind]}申请单`,
+  };
 }
 
 function adviceRowToSelectedItem(row: AdviceRowItem): ServiceApplySelectedItem {
@@ -165,7 +187,7 @@ function buildFormPrintSource(
     orderingPractitionerName: str(meta.orderingPractitionerName),
     orderDateText: formatServiceApplyOrderDateText(),
     diagnosisText: resolveDiagnosisText(
-      options.encounterDiagnosisId,
+      options.encounterDiagnosisIds,
       options.encounterDiagnosisRows,
     ),
     performOrgName: str(options.performOrgName),
@@ -176,15 +198,13 @@ function buildFormPrintSource(
 }
 
 /**
- * 同一申请单多项目合并一张打印（检查 examination-print / 检验 test-print）。
+ * 同一申请单多项目合并一张打印（检查/治疗 examination-print / 检验 test-print）。
  */
 export async function printServiceApplyForms(options: SchedulePrintServiceApplyFormsOptions) {
   if (options.items.length === 0) {
     return [];
   }
-  const scenarioCode =
-    options.applyKind === 'lab' ? PRINT_SCENARIO.testPrint : PRINT_SCENARIO.examinationPrint;
-  const jobName = options.applyKind === 'lab' ? '检验申请单' : '检查申请单';
+  const { scenarioCode, jobName } = resolveServiceApplyPrintScenario(options.applyKind);
   const encounterId = str(options.encounterId);
   const patientId = str(options.patientId);
   const prescriptionNo = str(options.prescriptionNo);
@@ -236,9 +256,7 @@ export async function printServiceApplyFromAdviceRows(
     if (!applyKind) {
       continue;
     }
-    const scenarioCode =
-      applyKind === 'lab' ? PRINT_SCENARIO.testPrint : PRINT_SCENARIO.examinationPrint;
-    const jobName = applyKind === 'lab' ? '检验申请单' : '检查申请单';
+    const { scenarioCode, jobName } = resolveServiceApplyPrintScenario(applyKind);
     const headRow = groupRows[0];
     const diagnosisSummary = str(headRow.diagnosisSummary);
     const lines = groupRows.map((row) => adviceRowToSelectedItem(row));

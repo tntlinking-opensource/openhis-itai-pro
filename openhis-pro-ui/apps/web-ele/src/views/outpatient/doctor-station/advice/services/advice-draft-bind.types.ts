@@ -15,6 +15,11 @@ export interface AdviceDraftBindDialogRow {
   quantity: number;
   unitCode: string;
   unitName: string;
+  /**
+   * 同用法跨组合并展示时：确认后按组展开的绑定项（含展示用首项）。
+   * 未合并时可不设，落库仅用 bindItem。
+   */
+  fanOutBindItems?: DoctorStationAdviceDraftBindItemDto[];
 }
 
 /** 弹窗内按来源分组的「不再提示」选项 */

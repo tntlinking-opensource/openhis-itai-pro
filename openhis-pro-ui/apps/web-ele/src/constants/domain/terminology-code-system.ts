@@ -19,16 +19,14 @@ export const TerminologyCodeSystemName = {
   FIN_TYPE_CODE: 'fin_type_code',
   ANTIBIOTIC_TYPE_CODE: 'antibiotic_type_code',
   DDD_CODE: 'ddd_code',
+  /** DDD（限定日剂量）单位 → med_medication_definition.ddd_unit_code */
+  DDD_UNIT: 'ddd_unit',
   DOSE_FROM_CODE: 'dose_from_code',
   RX_FLAG: 'rx_flag',
   DOSAGE_INSTRUCTION: 'dosage_instruction',
   UNIT_CODE: 'unit_code',
   CONDITION_DEFINITION_SOURCE: 'condition_definition_source',
   DIAG_TYPE: 'diag_type',
-  PURCHASE_UNIT: 'purchase_unit',
-  SALES_UNIT: 'sales_unit',
-  SPLIT_UNIT: 'split_unit',
-  STOCK_UNIT: 'stock_unit',
   DOSE_UNIT: 'dose_unit',
   /** 耗材分类 → 实体 category_code */
   DEVICE_CATEGORY_CODE: 'device_category_code',

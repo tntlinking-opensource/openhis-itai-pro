@@ -18,6 +18,12 @@ import {
   inventoryPickNumberField,
   inventoryPickStringField,
 } from '#/utils/inventory/inventory-product-pick-list';
+import {
+  applyInventoryRowCategoryCode,
+  resolveInventoryRowCategoryCode,
+} from '#/utils/inventory/inventory-qty-unit-display';
+
+export { applyInventoryRowCategoryCode } from '#/utils/inventory/inventory-qty-unit-display';
 
 /** 单头表单 grid 列间距（与调拨/损益页对齐）。 */
 export const INV_DOC_HEAD_FORM_GRID_CLASS =
@@ -41,7 +47,7 @@ export interface CreateDefaultInvDocGridOptionsParams {
   beforeEditMethod?: () => boolean;
 }
 
-/** 库房单据明细表 gridOptions 基线（row 编辑 + keepSource） */
+/** 库房单据明细表 gridOptions 基线（row 编辑 + keepSource + 纵向虚拟滚动） */
 export function createDefaultInvDocGridOptions<TRow extends object>(
   params: CreateDefaultInvDocGridOptionsParams,
 ): VxeGridProps<TRow> {
@@ -55,6 +61,16 @@ export function createDefaultInvDocGridOptions<TRow extends object>(
     size: 'medium',
     keepSource: true,
     columnConfig: { resizable: true },
+    // 固定行高：纵向虚拟滚动前提；medium 约 48px
+    rowConfig: {
+      isHover: true,
+      height: 48,
+    },
+    // 超过 gt 行启用虚拟滚动，避免上百行全量挂载 DOM（期初迁移常见 200+ 行）
+    virtualYConfig: {
+      enabled: true,
+      gt: 40,
+    },
     data: [],
     editConfig: {
       enabled: true,
@@ -95,6 +111,9 @@ export type InventoryQtyUnitListRow = {
   unitList?: { label?: string; value: string; value_dictText?: string }[];
   unitBands?: InboundProductUnitBand[];
   price?: number;
+  /** 药品分类码（medication_category_code）；中药=4 时单价三位展示 */
+  categoryCode?: string;
+  productCatalog?: { categoryCode?: string; unitBands?: unknown; unitBandsJson?: unknown } | null;
 };
 
 /** 药库非入库选品回填：从 pick.unitBands 写入计量带、单位码与展示单价（与出库单同构）。 */
@@ -103,6 +122,7 @@ export function applyWarehouseNonInboundProductPickUnitsToRow(
   row: InventoryQtyUnitListRow,
   options?: { legacyUnitPrice?: number },
 ): void {
+  applyInventoryRowCategoryCode(row as Record<string, unknown>, pick);
   const bands = normalizeInboundProductUnitBands(pick.unitBands);
   row.unitBands = bands.length > 0 ? bands : undefined;
   const legacyUnitPrice =
@@ -174,9 +194,15 @@ export interface HydrateInventoryDetailLineInput {
   itemQuantity?: null | number;
   unitCode?: null | string;
   unitCodeDictText?: null | string;
-  productCatalog?: { unitBands?: unknown; unitBandsJson?: unknown } | null;
+  productCatalog?: {
+    categoryCode?: string;
+    unitBands?: unknown;
+    unitBandsJson?: unknown;
+  } | null;
   unitBands?: unknown;
   unitBandsJson?: unknown;
+  /** 部分接口把分类码放在明细顶层 */
+  categoryCode?: null | string;
 }
 
 export interface HydratedInventoryDetailQty {
@@ -186,6 +212,9 @@ export interface HydratedInventoryDetailQty {
   unitCode: string;
   unitCodeDictText?: string;
   unitList?: { label: string; value: string }[];
+  /** 药品分类码（中药单价三位展示） */
+  categoryCode?: string;
+  productCatalog?: HydrateInventoryDetailLineInput['productCatalog'];
 }
 
 /** 详情/上游明细：SPLIT → 按 unitCode 还原展示数量与计量带（INV 改造清单 §1.2） */
@@ -202,7 +231,10 @@ export function hydrateInventoryDetailLineQtyForGrid(
     ln.itemQuantity === undefined || ln.itemQuantity === null ? 0 : Number(ln.itemQuantity);
   const persistedQty = Number.isFinite(rawQty) ? rawQty : 0;
   const unitCodeStr = String(ln.unitCode ?? '').trim();
-  const dictText = String(ln.unitCodeDictText ?? '').trim();
+  const dictTextRaw = String(ln.unitCodeDictText ?? '').trim();
+  // 调用方若把裸 unitCode（如「9」）误填进 unitCodeDictText，勿压过计量带展示名
+  const dictText = dictTextRaw !== '' && dictTextRaw !== unitCodeStr ? dictTextRaw : '';
+  const categoryCode = resolveInventoryRowCategoryCode(ln as unknown as Record<string, unknown>);
 
   if (bands.length === 0) {
     return {
@@ -210,6 +242,8 @@ export function hydrateInventoryDetailLineQtyForGrid(
       bandKind: 'LEGACY',
       unitCode: unitCodeStr,
       unitCodeDictText: dictText || unitCodeStr,
+      categoryCode: categoryCode || undefined,
+      productCatalog: catalog,
     };
   }
 
@@ -240,6 +274,8 @@ export function hydrateInventoryDetailLineQtyForGrid(
     unitCode: hydrated.unitCode,
     unitCodeDictText: dictText || bandLabel || hydrated.unitCode,
     unitList: enrichedUnitList,
+    categoryCode: categoryCode || undefined,
+    productCatalog: catalog,
   };
 }
 
@@ -252,6 +288,12 @@ export function applyHydratedInventoryDetailQtyToRow(
   row.unitCode = hydrated.unitCode;
   if (hydrated.unitCodeDictText) {
     row.unitCodeDictText = hydrated.unitCodeDictText;
+  }
+  if (hydrated.categoryCode) {
+    row.categoryCode = hydrated.categoryCode;
+  }
+  if (hydrated.productCatalog) {
+    row.productCatalog = hydrated.productCatalog;
   }
   if (hydrated.unitBands?.length) {
     row.unitBands = hydrated.unitBands;

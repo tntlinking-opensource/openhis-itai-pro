@@ -22,3 +22,6 @@ apps/web-ele/dist.zip
 
 # Hospital customization (kept in private repo only)
 projects/
+
+# Private agent / editor tooling
+.cursor/

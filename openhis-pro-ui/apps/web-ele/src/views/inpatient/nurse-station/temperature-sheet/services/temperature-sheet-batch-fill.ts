@@ -1,10 +1,10 @@
 import type { NurseStationModulePatient } from '../../components/nurse-station-module-patient.types';
-import type { TemperatureSheetFillRowDraft } from './map-nurse-station-temperature-sheet';
-
 import type {
-  SaveNurseStationTemperatureSheetAtRecordedTimeRequest,
-  TemperatureSheetTimeSlot,
-} from '#/api/inpatient/nurse-station/inpatient-nurse-station-temperature-sheet.types';
+  TemperatureSheetExtraRecordDraft,
+  TemperatureSheetFillRowDraft,
+} from './map-nurse-station-temperature-sheet';
+
+import type { SaveNurseStationTemperatureSheetAtRecordedTimeRequest } from '#/api/inpatient/nurse-station/inpatient-nurse-station-temperature-sheet.types';
 
 import { httpGetNurseStationTemperatureSheetData } from '#/api/inpatient/nurse-station/inpatient-nurse-station-temperature-sheet.http';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
@@ -12,9 +12,13 @@ import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
   applyFillSlotsToDraft,
   createEmptyExtraRecord,
+  createEmptyFillRow,
   createEmptyFillRows,
   mapFillRowToSaveRequest,
+  normalizeTemperatureSheetRecordTime,
+  syncFillRowChartTimeSlot,
 } from './map-nurse-station-temperature-sheet';
+import { applyDetailItemsToFillRow } from './temperature-sheet-detail-items';
 import {
   syncSpecialEventShortcutFields,
   syncSpecialEventTimesOnSelectionChange,
@@ -26,11 +30,13 @@ export const TEMPERATURE_SHEET_BATCH_LOAD_CONCURRENCY = 8;
 /** 批量保存单批提交上限 */
 export const TEMPERATURE_SHEET_BATCH_SAVE_LIMIT = 50;
 
-/** 按时点批量录入：单行患者草稿 */
+/** 按时间批量录入：单行患者草稿 */
 export interface TemperatureSheetBatchFillRowDraft {
   bedNo: string;
   dayRows: TemperatureSheetFillRowDraft[];
   encounterId: string;
+  /** 补充记录（图表槽为 22 时随本条保存，否则另提 22:00） */
+  extraRecord: TemperatureSheetExtraRecordDraft;
   gender: string;
   loadError?: string;
   name: string;
@@ -43,28 +49,70 @@ export interface TemperatureSheetBatchLoadProgress {
   total: number;
 }
 
+/** 补充记录是否有待保存内容 */
+export function hasTemperatureSheetExtraRecordContent(
+  extraRecord: TemperatureSheetExtraRecordDraft,
+): boolean {
+  return Object.values(extraRecord).some((value) => value.trim().length > 0);
+}
+
 /** 自然排序床号 */
 export function compareTemperatureSheetBatchBedNo(a: string, b: string): number {
   return a.trim().localeCompare(b.trim(), 'zh-CN', { numeric: true });
 }
 
-/** 从当日 6 槽回显中提取目标时次行 */
+/** 当前时分 HH:mm（批量默认录入时间） */
+export function resolveDefaultBatchRecordTimeHm(): string {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+}
+
+/** 按实际时分从回显槽中取行；无精确匹配则建空行 */
+function resolveFillRowByRecordTime(
+  fillSlots: Parameters<typeof applyFillSlotsToDraft>[0],
+  recordTime: string,
+): TemperatureSheetFillRowDraft {
+  const normalized = normalizeTemperatureSheetRecordTime(recordTime);
+  const matchedSlot = (fillSlots ?? []).find(
+    (slot) => normalizeTemperatureSheetRecordTime(slot.timeSlot) === normalized,
+  );
+  const row = createEmptyFillRow();
+  row.recordTime = normalized;
+  syncFillRowChartTimeSlot(row);
+  if (!matchedSlot) {
+    return row;
+  }
+  row.vitalSignId = matchedSlot.vitalSignId?.trim() || undefined;
+  applyDetailItemsToFillRow(row, createEmptyExtraRecord(), matchedSlot.detailItems);
+  return row;
+}
+
+/** 从当日回显中提取目标时分行与补充记录 */
 export function resolveBatchSlotRowFromFillSlots(
   fillSlots: Parameters<typeof applyFillSlotsToDraft>[0],
-  timeSlot: TemperatureSheetTimeSlot,
-): { dayRows: TemperatureSheetFillRowDraft[]; slotRow: TemperatureSheetFillRowDraft } {
+  recordTime: string,
+): {
+  dayRows: TemperatureSheetFillRowDraft[];
+  extraRecord: TemperatureSheetExtraRecordDraft;
+  slotRow: TemperatureSheetFillRowDraft;
+} {
   const draft = applyFillSlotsToDraft(fillSlots ?? []);
-  const slotRow = draft.rows.find((row) => row.timeSlot === timeSlot) ?? draft.rows[0];
-  return { dayRows: draft.rows, slotRow };
+  return {
+    dayRows: draft.rows,
+    extraRecord: draft.extraRecord,
+    slotRow: resolveFillRowByRecordTime(fillSlots ?? [], recordTime),
+  };
 }
 
 /** 由护士站患者列表构造批量录入行骨架 */
 export function buildEmptyBatchFillRow(
   patient: NurseStationModulePatient,
-  timeSlot: TemperatureSheetTimeSlot,
+  recordTime: string,
 ): TemperatureSheetBatchFillRowDraft {
   const dayRows = createEmptyFillRows();
-  const slotRow = dayRows.find((row) => row.timeSlot === timeSlot) ?? dayRows[0];
+  const slotRow = createEmptyFillRow();
+  slotRow.recordTime = normalizeTemperatureSheetRecordTime(recordTime);
+  syncFillRowChartTimeSlot(slotRow);
   return {
     encounterId: preserveApiIdForRequest(patient.id) ?? '',
     patientId: preserveApiIdForRequest(patient.patientId ?? patient.id) ?? '',
@@ -73,6 +121,7 @@ export function buildEmptyBatchFillRow(
     gender: patient.gender?.trim() || '',
     dayRows,
     slotRow,
+    extraRecord: createEmptyExtraRecord(),
   };
 }
 
@@ -94,7 +143,11 @@ async function mapWithConcurrency<T, R>(
     while (nextIndex < items.length) {
       const current = nextIndex;
       nextIndex += 1;
-      results[current] = await mapper(items[current], current);
+      const item = items[current];
+      if (item === undefined) {
+        continue;
+      }
+      results[current] = await mapper(item, current);
       done += 1;
       onProgress?.({ done, total: items.length });
     }
@@ -105,13 +158,14 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-/** 并行加载左侧列表患者在指定日期的目标时次回显 */
+/** 并行加载左侧列表患者在指定日期、时分的回显 */
 export async function loadTemperatureSheetBatchFillRows(
   patients: NurseStationModulePatient[],
   recordDate: string,
-  timeSlot: TemperatureSheetTimeSlot,
+  recordTime: string,
   onProgress?: (progress: TemperatureSheetBatchLoadProgress) => void,
 ): Promise<TemperatureSheetBatchFillRowDraft[]> {
+  const normalizedTime = normalizeTemperatureSheetRecordTime(recordTime);
   const sortedPatients = [...patients].sort((a, b) =>
     compareTemperatureSheetBatchBedNo(a.bedNo, b.bedNo),
   );
@@ -124,7 +178,7 @@ export async function loadTemperatureSheetBatchFillRows(
       const patientId = preserveApiIdForRequest(patient.patientId ?? patient.id);
       if (!encounterId || !patientId) {
         return {
-          ...buildEmptyBatchFillRow(patient, timeSlot),
+          ...buildEmptyBatchFillRow(patient, normalizedTime),
           loadError: '患者标识无效',
         };
       }
@@ -137,9 +191,9 @@ export async function loadTemperatureSheetBatchFillRows(
           pageIndex: 0,
           focusRecordDate: recordDate,
         });
-        const { dayRows, slotRow } = resolveBatchSlotRowFromFillSlots(
+        const { dayRows, extraRecord, slotRow } = resolveBatchSlotRowFromFillSlots(
           response.fillSlots ?? [],
-          timeSlot,
+          normalizedTime,
         );
         syncSpecialEventTimesOnSelectionChange(slotRow);
         syncSpecialEventShortcutFields(slotRow);
@@ -151,10 +205,11 @@ export async function loadTemperatureSheetBatchFillRows(
           gender: patient.gender?.trim() || '',
           dayRows,
           slotRow,
+          extraRecord,
         };
       } catch {
         return {
-          ...buildEmptyBatchFillRow(patient, timeSlot),
+          ...buildEmptyBatchFillRow(patient, normalizedTime),
           encounterId,
           patientId,
           loadError: '加载失败',
@@ -167,31 +222,69 @@ export async function loadTemperatureSheetBatchFillRows(
   return rows;
 }
 
-/** 判断批量行是否有待保存内容 */
+/** 判断批量行是否有待保存内容（体征或补充记录） */
 export function hasBatchFillRowSaveContent(row: TemperatureSheetBatchFillRowDraft): boolean {
-  const extraRecord = createEmptyExtraRecord();
-  return (
-    mapFillRowToSaveRequest(row.slotRow, extraRecord, '', row.encounterId, row.patientId) !== null
-  );
+  if (
+    mapFillRowToSaveRequest(row.slotRow, row.extraRecord, '', row.encounterId, row.patientId) !==
+    null
+  ) {
+    return true;
+  }
+  return hasTemperatureSheetExtraRecordContent(row.extraRecord);
 }
 
-/** 收集批量保存请求（仅含已填写行） */
+/** 解析图表 22 槽草稿（非 22 槽时单独提交补充记录） */
+function resolveBatchSlot22Row(
+  row: TemperatureSheetBatchFillRowDraft,
+): TemperatureSheetFillRowDraft {
+  const found = row.dayRows.find((item) => item.timeSlot === '22');
+  if (found) {
+    return found;
+  }
+  return createEmptyFillRow('22');
+}
+
+/** 收集批量保存请求（补充记录挂图表 22 槽） */
 export function collectBatchTemperatureSheetSaveRequests(
   rows: TemperatureSheetBatchFillRowDraft[],
   recordDate: string,
 ): SaveNurseStationTemperatureSheetAtRecordedTimeRequest[] {
-  const extraRecord = createEmptyExtraRecord();
   const requests: SaveNurseStationTemperatureSheetAtRecordedTimeRequest[] = [];
+  const requestKeys = new Set<string>();
+
+  /** 追加去重后的保存请求 */
+  function pushRequest(
+    request: SaveNurseStationTemperatureSheetAtRecordedTimeRequest | null,
+  ): void {
+    if (!request) {
+      return;
+    }
+    const key = `${request.encounterId}|${request.timeSlot}`;
+    if (requestKeys.has(key)) {
+      return;
+    }
+    requestKeys.add(key);
+    requests.push(request);
+  }
+
   for (const row of rows) {
-    const request = mapFillRowToSaveRequest(
-      row.slotRow,
-      extraRecord,
-      recordDate,
-      row.encounterId,
-      row.patientId,
+    // 当前时分落入图表 22 槽时带补充项，其它时次仅体征
+    const slotExtra = row.slotRow.timeSlot === '22' ? row.extraRecord : createEmptyExtraRecord();
+    pushRequest(
+      mapFillRowToSaveRequest(row.slotRow, slotExtra, recordDate, row.encounterId, row.patientId),
     );
-    if (request) {
-      requests.push(request);
+
+    // 非 22 槽但填了补充项：额外提交 22:00（保留当日已有 22 点体征）
+    if (row.slotRow.timeSlot !== '22' && hasTemperatureSheetExtraRecordContent(row.extraRecord)) {
+      pushRequest(
+        mapFillRowToSaveRequest(
+          resolveBatchSlot22Row(row),
+          row.extraRecord,
+          recordDate,
+          row.encounterId,
+          row.patientId,
+        ),
+      );
     }
   }
   return requests;
@@ -219,7 +312,7 @@ export async function saveTemperatureSheetBatchFillRows(
       const response = await saveFn(request);
       savedCount += 1;
       const row = rowByEncounterId.get(request.encounterId);
-      if (row && response.vitalSignId) {
+      if (row && response.vitalSignId && request.timeSlot === row.slotRow.recordTime) {
         row.slotRow.vitalSignId = response.vitalSignId.trim() || undefined;
       }
     } catch (error) {

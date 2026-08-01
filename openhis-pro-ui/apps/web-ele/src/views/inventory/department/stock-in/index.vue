@@ -59,9 +59,25 @@ const cabinetListOptions = ref<Record<string, unknown>[]>([]);
 const warehouseCabinetOptions = ref<Record<string, unknown>[]>([]);
 const warehouseOptions = ref<ApiOptionItem[]>([]);
 const pharmacyOptions = ref<ApiOptionItem[]>([]);
+/** 侧栏制单人/审批人解析（药师 + 库管合并） */
+const practitionerOption = ref<ApiOptionItem[]>([]);
 const orderList = ref<Record<string, unknown>[]>([]);
 const selectedOrder = ref<null | Record<string, unknown>>(null);
 const mainPaneResetKey = ref(0);
+
+/** 合并 init 药师/库管下拉，供队列卡片按 id 回显姓名 */
+function mergePractitionerOptions(
+  pharmacists?: ApiOptionItem[],
+  keepers?: ApiOptionItem[],
+): ApiOptionItem[] {
+  const byValue = new Map<string, ApiOptionItem>();
+  for (const o of [...(pharmacists ?? []), ...(keepers ?? [])]) {
+    const key = String(o.value ?? '').trim();
+    if (!key || byValue.has(key)) continue;
+    byValue.set(key, o);
+  }
+  return [...byValue.values()];
+}
 
 function toQueueRow(r: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -92,6 +108,10 @@ async function init() {
     const data = res.data;
     pharmacyOptions.value = mapInitOptionDtoToApiItems(data?.departmentPharmacyLocationOptions);
     warehouseOptions.value = mapInitOptionDtoToApiItems(data?.warehouseLocationOptions);
+    practitionerOption.value = mergePractitionerOptions(
+      mapInitOptionDtoToApiItems(data?.pharmacistOptions),
+      mapInitOptionDtoToApiItems(data?.warehouseKeeperOptions),
+    );
     cabinetListOptions.value = mapDepartmentStockInInitToCabinetRows(
       data?.departmentPharmacyLocationOptions,
     );
@@ -107,6 +127,7 @@ async function init() {
   } catch {
     pharmacyOptions.value = [];
     warehouseOptions.value = [];
+    practitionerOption.value = [];
     cabinetListOptions.value = [];
     warehouseCabinetOptions.value = [];
   }
@@ -154,7 +175,6 @@ onMounted(async () => {
 
 <template>
   <WarehouseDocWorkstation
-    aside-width="280px"
     queue-title=""
     aside-dense
     :show-aside-filter="false"
@@ -168,6 +188,7 @@ onMounted(async () => {
         v-model:source-location-id="tableForm.sourceLocationId"
         :cabinet-list-options="cabinetListOptions"
         :orders="orderList"
+        :practitioner-option="practitionerOption"
         :selected-order="selectedOrder"
         :warehouse-list-options="warehouseCabinetOptions"
         @search="getList"

@@ -116,7 +116,7 @@ export function buildOutpatientTcmPrescriptionPrintData(
     ageText: str(head.ageText),
     genderEnumText: str(head.genderEnumText),
     orderingDepartmentName: str(head.orderingDepartmentName),
-    feeNatureText: str(head.feeNatureText),
+    feeNatureText: str(head.feeNatureText) || '自费',
     prescriptionDateText: str(head.prescriptionDateText),
     encounterBusNo: str(head.encounterBusNo),
     patientPhone: str(head.patientPhone),

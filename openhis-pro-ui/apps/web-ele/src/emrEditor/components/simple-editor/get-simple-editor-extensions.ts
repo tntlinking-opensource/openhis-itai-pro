@@ -48,9 +48,18 @@ export function getSimpleEditorExtensions(options?: { placeholder?: string }): E
     TaskItem.configure({ nested: true }),
     Link.configure({ openOnClick: false, autolink: true }),
     Underline,
-    Image.configure({ inline: false, allowBase64: true }),
+    // inline：院徽可与医院名称同一段落紧挨显示
+    Image.configure({ inline: true, allowBase64: true }),
     Placeholder.configure({
-      placeholder: options?.placeholder ?? '开始输入…',
+      /**
+       * 仅整篇为空时显示（空白 Tab 引导文案）。
+       * 已打开模板/病历中的空段落不得再显示「请选择左侧模板…」。
+       */
+      placeholder: ({ editor }) => {
+        if (!editor.isEmpty) return '';
+        return options?.placeholder ?? '开始输入…';
+      },
+      showOnlyWhenEditable: true,
     }),
     TextStyle,
     FontFamily.configure({ types: ['textStyle'] }),

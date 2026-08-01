@@ -22,3 +22,6 @@ export { default as UnitQuantityInput } from './components/UnitQuantityInput.vue
 
 // Types
 export * from './types';
+
+/** 弹层宿主标记（AppDialog provide / TableLayout inject） */
+export { TABLE_LAYOUT_OVERLAY_HOST } from './utils/overlay-container';

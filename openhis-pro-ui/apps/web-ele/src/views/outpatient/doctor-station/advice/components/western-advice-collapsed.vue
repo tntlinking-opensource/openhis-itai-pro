@@ -5,6 +5,7 @@ import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
 
 import { formatMoneyStrYuan, formatUnitPriceYuan } from '../services/advice-format';
 import { totalAmountUnitDisplayLabel } from '../services/medication-unit-bands';
+import { formatWesternEditDoseSegment } from '#/utils/doctor-station/medication-dose-display';
 
 defineOptions({ name: 'WesternAdviceCollapsed' });
 
@@ -29,23 +30,19 @@ function terminologyLabel(options: TerminologyOptionDto[] | undefined, code: str
   return lb || c;
 }
 
+/** 收起态剂量+用法频次摘要（剂量段含最小单位括号，单位相同则省略） */
 function summaryLine(item: AdviceDrugItem) {
   const usageLabel = terminologyLabel(props.medicationRouteOptions, item.usage);
   const freqLabel = terminologyLabel(props.medicationRateOptions, item.frequency);
   const totalUnitLabel = totalAmountUnitDisplayLabel(item);
-  const sd =
-    item.singleDose === undefined ||
-    item.singleDose === null ||
-    !Number.isFinite(Number(item.singleDose))
-      ? '—'
-      : String(item.singleDose);
+  const dosePart = formatWesternEditDoseSegment(item);
   const ta =
     item.totalAmount === undefined ||
     item.totalAmount === null ||
     !Number.isFinite(Number(item.totalAmount))
       ? '—'
       : String(item.totalAmount);
-  return `${sd}${item.doseMainUnit || ''}/次，共${ta}${totalUnitLabel}，${usageLabel}，${freqLabel}`;
+  return `${dosePart}，共${ta}${totalUnitLabel}，${usageLabel}，${freqLabel}`;
 }
 </script>
 

@@ -33,6 +33,7 @@ import {
 
 import {
   httpReverseInpatientSettle,
+  httpRecallInpatientDischarge,
   httpConfirmInpatientSettle,
   httpLoadInpatientSettlePageInit,
   httpLoadInpatientSettleSummary,
@@ -64,6 +65,7 @@ import {
 } from './inpatient-settle.constants';
 import InpatientSettleDialog from './components/inpatient-settle-dialog.vue';
 import {
+  getInpatientContractBusNo,
   loadInpatientRegisterContractMeta,
   type InpatientRegisterContractMeta,
 } from '../register/services/inpatient-register-contract-meta';
@@ -82,10 +84,17 @@ import {
   type InpatientSettleFooterActionCode,
   type InpatientSettleToolbarActionCode,
 } from './settle-toolbar-action';
+import DetailAuditRemindDialog from '#/chs/components/detail-audit-remind-dialog.vue';
+import {
+  runIpDetailAuditGate,
+  type DetailAuditRemindDialogExpose,
+} from '#/chs/composables/use-detail-audit-gate';
 
 defineOptions({
   name: 'ChargeIpSettle',
 });
+
+const detailAuditDialogRef = ref<DetailAuditRemindDialogExpose | null>(null);
 
 interface FeeCategoryRow {
   amount: string;
@@ -126,6 +135,7 @@ interface SettlementHistoryRow {
   operatorName: string;
   paymentId: string;
   paymentMethod: string;
+  recallEnabled?: boolean;
   recordType?: string;
   reimbursementAmount: string;
   reverseDisabledReason?: string;
@@ -253,8 +263,12 @@ const settleScanCode = ref('');
 const settleScanStatusText = ref('');
 const paymentChannelSelectOptions = ref([...FALLBACK_PAY_CHANNEL_OPTIONS]);
 
-const { scanPayEnabled, effectivePayChannelOptions, refreshUnionPayCapabilities } =
-  useUnionPayScanPay(() => paymentChannelSelectOptions.value);
+const {
+  scanPayEnabled,
+  hasScanPayChannel,
+  effectivePayChannelOptions,
+  refreshUnionPayCapabilities,
+} = useUnionPayScanPay(() => paymentChannelSelectOptions.value);
 const lockedChargeItemIds = ref<string[]>([]);
 const workspaceLoading = ref(false);
 
@@ -1029,6 +1043,7 @@ function mapPaymentToHistoryRow(
     recordType: payment.recordType,
     reverseEnabled: payment.reverseEnabled,
     reverseDisabledReason: payment.reverseDisabledReason,
+    recallEnabled: payment.recallEnabled,
     detailRows: [],
   };
 }
@@ -1146,6 +1161,51 @@ async function handleReverseInpatientSettle(row: SettlementHistoryRow) {
   }
 }
 
+/** 对已离院患者执行出院召回（IF-IP-RCL-01；内嵌反结） */
+async function handleRecallInpatientDischarge(row: SettlementHistoryRow) {
+  if (!isSettledQueueTab.value) {
+    return;
+  }
+  if (!row.recallEnabled) {
+    ElMessage.warning('当前结算单不可召回');
+    return;
+  }
+  const { encounterId, patientId } = resolveActiveSettlePatientIds();
+  if (!encounterId || !patientId) {
+    ElMessage.warning('请先搜索并选择患者');
+    return;
+  }
+  const paymentId = preserveApiIdForRequest(row.paymentId);
+  try {
+    await ElMessageBox.confirm(
+      '召回将撤销出院结算并使患者回到已入科（未占床）。需医护配合调整费用后重新办理出院再结算。是否继续？',
+      '出院召回',
+      { type: 'warning', confirmButtonText: '确认召回', cancelButtonText: '取消' },
+    );
+  } catch {
+    return;
+  }
+  reverseSettleLoading.value = true;
+  try {
+    const result = await httpRecallInpatientDischarge({
+      encounterId,
+      patientId,
+      paymentId: paymentId || undefined,
+    });
+    const tips: string[] = ['出院召回成功，患者已回已入科（未占床）'];
+    if (result.refundPaymentId) {
+      tips.push(`逆向单：${result.refundPaymentId}`);
+    }
+    ElMessage.success(tips.join('；'));
+    await reloadWorkspace();
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '出院召回失败';
+    ElMessage.error(message);
+  } finally {
+    reverseSettleLoading.value = false;
+  }
+}
+
 /** 预结算并打开确认弹窗 */
 async function handleOpenSettleDialog() {
   const { encounterId, patientId } = resolveActiveSettlePatientIds();
@@ -1209,6 +1269,32 @@ async function handleOpenSettleDialog() {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : '医保读卡失败';
+        ElMessage.error(message);
+        return;
+      }
+      try {
+        const contractBusNo = getInpatientContractBusNo(contractId, contractMeta.value);
+        const { continued } = await runIpDetailAuditGate({
+          params: {
+            encounterId,
+            chargeItemIds,
+            settleMode: settleMode || undefined,
+            contractId,
+            contractBusNo,
+            trigScen: '9',
+            psnNo: insurancePayload.psnNo,
+            insuplcAdmdvs: insurancePayload.insuplcAdmdvs,
+            insutype: insurancePayload.insutype,
+          },
+          dialogRef: detailAuditDialogRef,
+          loadingHint: '医保事前提醒分析中（3101）…',
+        });
+        if (!continued) {
+          ElMessage.info('已按事前提醒返回修改，未继续预结算');
+          return;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '事前提醒失败';
         ElMessage.error(message);
         return;
       }
@@ -1290,6 +1376,7 @@ async function handleConfirmSettleFromDialog() {
   try {
     let clientScanResult;
     if (isScanPayChannel(settlePayChannelCode.value) && payAmount > 0) {
+      await refreshUnionPayCapabilities();
       if (!scanPayEnabled.value) {
         ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
         return;
@@ -1696,13 +1783,22 @@ watch(settleQueueTab, () => {
                     </ElTag>
                   </template>
                 </ElTableColumn>
-                <ElTableColumn label="操作" width="100" fixed="right" align="center">
+                <ElTableColumn label="操作" width="140" fixed="right" align="center">
                   <template #default="{ row }">
                     <ElButton type="primary" link @click="handleOpenSettlementDetail(row)">
                       明细
                     </ElButton>
+                    <ElButton
+                      v-if="isSettledQueueTab && row.recallEnabled"
+                      type="warning"
+                      link
+                      :loading="reverseSettleLoading"
+                      @click="handleRecallInpatientDischarge(row)"
+                    >
+                      召回
+                    </ElButton>
                     <ElTooltip
-                      v-if="isSettledQueueTab"
+                      v-else-if="isSettledQueueTab"
                       :content="row.reverseDisabledReason ?? '反结'"
                       :disabled="Boolean(row.reverseEnabled)"
                     >
@@ -1874,10 +1970,12 @@ watch(settleQueueTab, () => {
       :insurance-breakdown-items="settlementInsuranceBreakdown"
       :settle-mode-label="currentSettleModeLabel"
       :pay-channel-options="settlePayChannelOptions"
-      :scan-pay-enabled="scanPayEnabled"
+      :scan-pay-enabled="hasScanPayChannel"
       :scan-status-text="settleScanStatusText"
       @confirm="handleConfirmSettleFromDialog"
     />
+
+    <DetailAuditRemindDialog ref="detailAuditDialogRef" warn-type="1" />
   </Page>
 </template>
 

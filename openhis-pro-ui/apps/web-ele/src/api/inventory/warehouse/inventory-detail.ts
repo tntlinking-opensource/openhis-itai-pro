@@ -324,16 +324,38 @@ export async function listInventoryDetailBackupBusNoApi(
 
 /** 现库行本库仍在库追溯码查询入参 */
 export interface ListInStockTraceNumbersByInventoryItemRequest {
-  locationId: string;
+  /** 本库查询必填；hospitalWide 浏览可空 */
+  locationId?: string;
   itemId: string;
-  lotNumber: string;
+  /** 本库/库取必填；hospitalWide 按药品全批浏览时忽略 */
+  lotNumber?: string;
   itemTable?: string;
+  /** 发药库取：本库无码时才回落全院同品同批在院码；本库有码则只用本库 */
+  hospitalWideFallbackWhenEmpty?: boolean;
+  /**
+   * 按药品查全院在院码（含全部批号；扫码弹窗「药品→批号→码」）。
+   * 为 true 时优先于 hospitalWideFallbackWhenEmpty。
+   */
+  hospitalWide?: boolean;
 }
 
 export interface InventoryItemTraceNumberRowDto {
   traceNo?: string;
+  /** 批号（主档；全院按药品浏览时供按批分组） */
+  lotNumber?: string;
+  /** 本库净拆零量（本库查询）；全院浏览可空 */
   locationNetSplitQuantity?: number | string;
+  /** 主档拆零剩余量（单位见 splitUnitCode） */
+  remainingSplitQuantity?: number | string;
+  /** 拆零单位编码（药典） */
+  splitUnitCode?: string;
+  /** 拆零单位展示名 */
+  splitUnitCodeLabel?: string;
   traceUnitCode?: string;
+  /** 追溯码单位展示名 */
+  traceUnitCodeLabel?: string;
+  /** 主档贴码比例快照（1 码对应拆零量） */
+  traceUnitRatio?: number | string;
   inHospitalStatusEnum?: string;
   inHospitalStatusLabel?: string;
 }
@@ -351,6 +373,39 @@ export async function listInStockTraceNumbersByInventoryItemApi(
 ) {
   const res = await requestClient.post<ApiResponse<ListInStockTraceNumbersByInventoryItemResponse>>(
     `${BASE}/listInStockTraceNumbersByInventoryItem`,
+    body,
+  );
+  return res.data ?? { items: [] };
+}
+
+/** 批量判定主表品批是否已有追溯码（有码批/无码批） */
+export interface BatchExistsTraceMasterByItemLotKey {
+  itemId: string;
+  lotNumber: string;
+  itemTable?: string;
+}
+
+export interface BatchExistsTraceMasterByItemLotRequest {
+  keys: BatchExistsTraceMasterByItemLotKey[];
+}
+
+export interface BatchExistsTraceMasterByItemLotRow {
+  itemId?: string;
+  lotNumber?: string;
+  itemTable?: string;
+  lotHasTraceMaster?: boolean;
+}
+
+export interface BatchExistsTraceMasterByItemLotResponse {
+  items?: BatchExistsTraceMasterByItemLotRow[];
+}
+
+/** 批量查询品批是否已有主档追溯码 */
+export async function batchExistsTraceMasterByItemLotApi(
+  body: BatchExistsTraceMasterByItemLotRequest,
+) {
+  const res = await requestClient.post<ApiResponse<BatchExistsTraceMasterByItemLotResponse>>(
+    `${BASE}/batchExistsTraceMasterByItemLot`,
     body,
   );
   return res.data ?? { items: [] };

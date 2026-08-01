@@ -48,6 +48,8 @@ export const useAuthStore = defineStore('auth', () => {
   const loginLoading = ref(false);
   const selectedTenantId = ref<string>('');
   const selectedHospitalId = ref<string>('');
+  /** 登录所选医院展示名（打印抬头等）；与 selectedHospitalId 同步落盘 */
+  const selectedHospitalName = ref<string>('');
   const selectedOrganizationId = ref<string>('');
   const tenantList = ref<any[]>([]);
   const userInfo = ref<AuthApi.LoginUser | null>(null);
@@ -55,7 +57,7 @@ export const useAuthStore = defineStore('auth', () => {
   const platformAdmin = ref(false);
   /** 当前用户是否具备财务审批登录角色（applicationConfiguration.canFinanceApprove） */
   const canFinanceApprove = ref(false);
-  /** 平台管理员在无科室时是否已跳过选科 */
+  /** 无可登录科室时是否已跳过选科（医院级会话） */
   const organizationUnitSkipped = ref(false);
 
   const setTenantList = (tenants: any[]) => {
@@ -177,12 +179,23 @@ export const useAuthStore = defineStore('auth', () => {
     return [];
   }
 
-  function setSelectedHospital(hospitalId: string) {
+  function setSelectedHospital(hospitalId: string, hospitalName?: string) {
     selectedHospitalId.value = hospitalId;
     if (hospitalId) {
       localStorage.setItem('selectedHospitalId', String(hospitalId));
+      if (hospitalName !== undefined) {
+        const name = String(hospitalName ?? '').trim();
+        selectedHospitalName.value = name;
+        if (name) {
+          localStorage.setItem('selectedHospitalName', name);
+        } else {
+          localStorage.removeItem('selectedHospitalName');
+        }
+      }
     } else {
       localStorage.removeItem('selectedHospitalId');
+      selectedHospitalName.value = '';
+      localStorage.removeItem('selectedHospitalName');
     }
   }
 
@@ -194,6 +207,20 @@ export const useAuthStore = defineStore('auth', () => {
     if (stored) {
       selectedHospitalId.value = stored;
       return selectedHospitalId.value;
+    }
+    return '';
+  }
+
+  /** 登录所选医院名称（打印/抬头用） */
+  function getSelectedHospitalName(): string {
+    if (selectedHospitalName.value.trim()) {
+      return selectedHospitalName.value.trim();
+    }
+    const stored = localStorage.getItem('selectedHospitalName');
+    if (stored) {
+      const name = stored.trim();
+      selectedHospitalName.value = name;
+      return name;
     }
     return '';
   }
@@ -242,14 +269,28 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
-   * 科室/租户会话就绪后拉取 applicationConfiguration，刷新 canFinanceApprove。
-   * 登录初次的 configuration 往往在选科之前，须以选科后会话为准。
+   * 科室/租户会话就绪后拉取 applicationConfiguration，刷新权限码与 canFinanceApprove。
+   * 登录初次的 configuration 往往在选科之前，须以选科后会话为准；代理切换后亦依赖此刷新。
    */
   async function refreshApplicationConfiguration(): Promise<void> {
     try {
       const { getApplicationConfigurationApi } = await import('#/api/core/auth');
       const configuration = await getApplicationConfigurationApi();
+      if (configuration?.auth?.grantedPolicies) {
+        const permissions = configuration.auth.grantedPolicies;
+        accessStore.setAccessCodes(Object.keys(permissions).filter((key) => permissions[key]));
+      }
+      setPlatformAdmin(
+        canSkipLoginDepartmentSelection({
+          roles: configuration?.currentUser?.roles,
+          username: configuration?.currentUser?.userName,
+        }),
+      );
       syncCanFinanceApproveFromConfiguration(configuration);
+      const { syncImpersonationMetaFromConfiguration } = await import(
+        '#/composables/use-impersonation'
+      );
+      syncImpersonationMetaFromConfiguration(configuration);
     } catch (error) {
       console.warn('[auth] refreshApplicationConfiguration failed', error);
     }
@@ -350,23 +391,56 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function fetchUserInfo() {
     try {
-      const response = await getUserInfoApi();
-      const userData = (response as any).data || response;
-      if (userData) {
-        const userInfo: AuthApi.LoginUser = {
-          userId: String(userData.userId || userData.id || ''),
-          username: userData.userName || userData.username || '',
-          realName: userData.nickName || userData.realName || '',
-          avatar: userData.avatar || '',
-          roles: userData.roles?.map((role: any) => role.roleKey || role.roleName || role) || [],
-          ...userData,
+      // 优先走 applicationConfiguration（后端无 /user/info）
+      const { getApplicationConfigurationApi } = await import('#/api/core/auth');
+      const configuration = await getApplicationConfigurationApi();
+      const currentUser = configuration?.currentUser;
+      if (currentUser) {
+        const prev = userStore.userInfo;
+        const userInfo = {
+          ...(prev ?? {}),
+          id: currentUser.id ?? prev?.id,
+          userId: String(currentUser.id ?? prev?.id ?? ''),
+          userName: currentUser.userName || prev?.userName || '',
+          username: currentUser.userName || prev?.username || '',
+          name: currentUser.name ?? prev?.name ?? null,
+          realName: currentUser.name || prev?.realName || currentUser.userName || '',
+          email: currentUser.email || prev?.email || '',
+          phoneNumber: currentUser.phoneNumber ?? prev?.phoneNumber ?? null,
+          avatar: prev?.avatar || '',
+          roles: currentUser.roles || [],
+          practitionerId: currentUser.practitionerId ?? prev?.practitionerId,
+          organizationId: currentUser.organizationId ?? prev?.organizationId,
         };
-        userStore.setUserInfo(userInfo);
-        return userInfo;
+        userStore.setUserInfo(userInfo as any);
+        if (currentUser.roles?.length) {
+          userStore.setUserRoles(currentUser.roles);
+        }
+        syncCanFinanceApproveFromConfiguration(configuration);
+        return userInfo as any;
       }
       return null;
     } catch (error) {
       console.error('Failed to fetch user info:', error);
+      // 兼容旧实现：若配置接口失败再尝试 /user/info
+      try {
+        const response = await getUserInfoApi();
+        const userData = (response as any).data || response;
+        if (userData) {
+          const userInfo: AuthApi.LoginUser = {
+            ...userData,
+            userId: String(userData.userId || userData.id || ''),
+            username: userData.userName || userData.username || '',
+            realName: userData.nickName || userData.realName || userData.name || '',
+            avatar: userData.avatar || '',
+            roles: userData.roles?.map((role: any) => role.roleKey || role.roleName || role) || [],
+          } as any;
+          userStore.setUserInfo(userInfo as any);
+          return userInfo;
+        }
+      } catch (fallbackError) {
+        console.error('Failed to fetch user info fallback:', fallbackError);
+      }
       return null;
     }
   }
@@ -380,6 +454,7 @@ export const useAuthStore = defineStore('auth', () => {
     authLogin,
     fetchUserInfo,
     getSelectedHospital,
+    getSelectedHospitalName,
     getPlatformAdmin,
     getCanFinanceApprove,
     getSelectedOrganization,
@@ -392,6 +467,7 @@ export const useAuthStore = defineStore('auth', () => {
     platformAdmin,
     organizationUnitSkipped,
     selectedHospitalId,
+    selectedHospitalName,
     selectedOrganizationId,
     selectedTenantId,
     setPlatformAdmin,

@@ -1,41 +1,15 @@
 <script lang="ts" setup>
-import type { Warehouse } from '#/api/basic/warehouse';
-import type { Department } from '#/api/core/system/department.types';
-
-import {
-  activatePractitionerRoleApi,
-  assignPractitionerRoleApi,
-  deactivatePractitionerRoleApi,
-  editPractitionerRoleApi,
-  getLocationOptionByIdApi,
-  legacyRoleCodeToLabel,
-  listLocationOptionsByOrganizationApi,
-  listPractitionerAssignmentsApi,
-  loadBusinessBuiltInRoleOptions,
-  PLATFORM_ROLE_CODE,
-  retirePractitionerRoleApi,
-  type RoleOptionDto,
-} from '#/api/basic/position';
-
 import type {
   AssignPractitionerRoleItemPayload,
   EditPractitionerRoleItemPayload,
   LocationOptionDto,
   PractitionerAssignmentRow,
+  RoleOptionDto,
 } from '#/api/basic/position';
+import type { Warehouse } from '#/api/basic/warehouse';
+import type { Department } from '#/api/core/system/department.types';
 
 import { computed, onMounted, ref, watch } from 'vue';
-
-import {
-  getWarehouseListApi,
-  isManagedPharmacyLocationFormEnum,
-  isWarehouseFormEnum,
-  WAREHOUSE_STATUS_ENUM,
-} from '#/api/basic/warehouse';
-import { getDepartmentTreeApi } from '#/api/core/system/department';
-import { getRegistrationTypeListApi } from '#/api/core/system/registration';
-import SectionTitle from '#/components/layouts/section-title.vue';
-import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import {
   ElAlert,
@@ -52,16 +26,43 @@ import {
   ElTag,
 } from 'element-plus';
 
+import {
+  activatePractitionerRoleApi,
+  assignPractitionerRoleApi,
+  deactivatePractitionerRoleApi,
+  editPractitionerRoleApi,
+  getLocationOptionByIdApi,
+  legacyRoleCodeToLabel,
+  listLocationOptionsByOrganizationApi,
+  listPractitionerAssignmentsApi,
+  loadBusinessBuiltInRoleOptions,
+  PLATFORM_ROLE_CODE,
+  retirePractitionerRoleApi,
+} from '#/api/basic/position';
+import {
+  getWarehouseListApi,
+  isManagedPharmacyLocationFormEnum,
+  isWarehouseFormEnum,
+  WAREHOUSE_STATUS_ENUM,
+} from '#/api/basic/warehouse';
+import { getDepartmentTreeApi } from '#/api/core/system/department';
+import {
+  getRegistrationTypeListApi,
+  isRegistrationTypeActive,
+} from '#/api/core/system/registration';
+import SectionTitle from '#/components/layouts/section-title.vue';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+
 defineOptions({
   name: 'PositionAssignmentsPanel',
 });
 
 const props = defineProps<{
   practitionerId?: string;
-  /** 左侧选中用户的登录名，用于区分平台 admin 等场景 */
-  userName?: string;
   /** 左侧「系统角色」展示串，与下方业务岗位列表无自动同步关系 */
   roleNames?: string;
+  /** 左侧选中用户的登录名，用于区分平台 admin 等场景 */
+  userName?: string;
 }>();
 
 const rows = ref<PractitionerAssignmentRow[]>([]);
@@ -83,7 +84,7 @@ const addForm = ref({
   serviceIds: [] as string[],
 });
 
-const editingId = ref<string | null>(null);
+const editingId = ref<null | string>(null);
 
 interface AssignmentEditDraft {
   assignmentId?: string;
@@ -93,7 +94,7 @@ interface AssignmentEditDraft {
   locationIds?: string[];
   name?: string;
   specialtyCode?: string;
-  typeCode?: number | null;
+  typeCode?: null | number;
   serviceIds?: string[];
 }
 
@@ -166,10 +167,13 @@ function flattenDepartmentTree(
 async function loadRegistrationTypeOptions() {
   try {
     const list = await getRegistrationTypeListApi();
-    registrationTypeOptions.value = (list ?? []).map((item) => ({
-      label: item.name,
-      value: String(item.id),
-    }));
+    // 岗位绑定仅展示启用中的号源类型
+    registrationTypeOptions.value = (list ?? [])
+      .filter((item) => isRegistrationTypeActive(item))
+      .map((item) => ({
+        label: item.name,
+        value: String(item.id),
+      }));
   } catch {
     registrationTypeOptions.value = [];
   }
@@ -237,12 +241,12 @@ function resetAddForm() {
   showAddForm.value = false;
 }
 
-function toNullableOrgId(v: string): string | null | undefined {
+function toNullableOrgId(v: string): null | string | undefined {
   const id = preserveApiIdForRequest(v);
   return id ?? undefined;
 }
 
-function toNullableLocationId(v: string | undefined): string | null | undefined {
+function toNullableLocationId(v: string | undefined): null | string | undefined {
   const id = preserveApiIdForRequest(v);
   return id ?? undefined;
 }
@@ -263,7 +267,9 @@ function collectInventoryLocationIdsForRole(roleCode?: null | number): string[] 
   return rows.value
     .filter((row) => row.roleCode === roleCode && row.activeFlag !== false)
     .map((row) =>
-      row.locationId != null && String(row.locationId) !== '' ? String(row.locationId) : '',
+      row.locationId !== undefined && row.locationId !== null && String(row.locationId) !== ''
+        ? String(row.locationId)
+        : '',
     )
     .filter((id) => !!id);
 }
@@ -290,7 +296,7 @@ async function loadLocationOptionsForAdd() {
 }
 
 function unwrapResultData<T>(res: unknown): T | undefined {
-  if (res == null) {
+  if (res === null || res === undefined) {
     return undefined;
   }
   if (typeof res === 'object' && res !== null && 'data' in res) {
@@ -306,7 +312,7 @@ async function loadLocationOptionsForEdit() {
   if (curId && !opts.some((o) => o.value === String(curId))) {
     const raw = await getLocationOptionByIdApi(curId);
     const extra = unwrapResultData<LocationOptionDto | null | undefined>(raw);
-    if (extra?.value != null && extra.label) {
+    if (extra?.value !== undefined && extra.value !== null && extra.label) {
       opts = [{ label: extra.label, value: String(extra.value) }, ...opts];
     }
   }
@@ -392,7 +398,9 @@ async function startEdit(row: PractitionerAssignmentRow) {
   }
   editingId.value = id;
   const roleIdFromRow =
-    row.roleId != null && String(row.roleId) !== '' ? String(row.roleId) : undefined;
+    row.roleId !== undefined && row.roleId !== null && String(row.roleId) !== ''
+      ? String(row.roleId)
+      : undefined;
   const inventory = usesInventoryLocation(roleIdFromRow, row.roleCode);
   editForm.value = {
     assignmentId: id,
@@ -485,8 +493,8 @@ async function handleRetire(row: PractitionerAssignmentRow) {
     await retirePractitionerRoleApi(id, '工作台废弃');
     ElMessage.success('已废弃');
     await loadAssignments();
-  } catch (e: unknown) {
-    if (e !== 'cancel') {
+  } catch (error: unknown) {
+    if (error !== 'cancel') {
       /* error toast */
     }
   }
@@ -513,7 +521,7 @@ async function handleToggleActive(row: PractitionerAssignmentRow) {
 
 const hasPractitioner = computed(() => !!preserveApiIdForRequest(props.practitionerId));
 
-/** 平台 admin 账号通常不做业务岗位维护 */
+/** 平台 admin：无医务人员主档时的提示文案分支 */
 const isPlatformAdminUser = computed(() => (props.userName ?? '').trim().toLowerCase() === 'admin');
 
 /** 左侧已展示系统角色，但尚未写入 adm_pr_assign 时用于空态提示 */
@@ -567,7 +575,7 @@ onMounted(async () => {
     >
       <template v-if="isPlatformAdminUser">
         admin
-        为平台管理账号，通常无需分配业务岗位。若需为其配置医师/药师等业务身份，请先在「用户管理」中编辑该用户并保存（填写性别等基本信息，将自动创建医务人员主档），再回到本页维护具体岗位。
+        的科室/库房/药房/病区请优先在「用户管理」编辑用户中维护。若本页需细调岗位，请先在「用户管理」保存该用户（填写性别等基本信息以建立医务人员主档），再回到本页操作。
       </template>
       <template v-else>
         左侧「系统角色」仅控制登录权限，不能代替下方业务岗位。请先在「用户管理」中编辑该用户并保存（需填写性别等基本信息以建立医务人员主档），再在此维护科室/位置等岗位分配。

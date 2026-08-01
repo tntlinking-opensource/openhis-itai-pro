@@ -1,0 +1,139 @@
+/**
+ * 挂号列表皮肤（RegisterStyleTableLayout）。
+ * 不走 SFC scoped：院点构建下 scoped CSS 会整段丢失，
+ * 空 vxe-toolbar 回退默认高度，表现为标题与表头之间多出一行空白。
+ */
+
+/* 页面工作站：填满父级；弹层内（table-layout--overlay）保持内容高度，避免被撑高 */
+.register-style-table:not(.table-layout--overlay) > .relative {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.register-style-table.table-layout--overlay {
+  width: 100%;
+}
+
+.register-style-table.table-layout--overlay .vxe-grid,
+.register-style-table.table-layout--overlay .vxe-table {
+  width: 100% !important;
+}
+
+.register-style-table .vxe-grid {
+  --vxe-ui-table-border-color: #f0f4fa;
+  --vxe-ui-table-header-background-color: #f7fafc;
+  --vxe-ui-font-color: #1a2b3c;
+  --vxe-ui-font-size-small: 13px;
+  --vxe-ui-table-row-height-small: 34px;
+  font-size: 13px;
+}
+
+.register-style-table .vxe-table--header-wrapper {
+  border-bottom: 2px solid #e6edf4;
+}
+
+.register-style-table .vxe-header--column {
+  height: 34px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  color: #2c4054;
+  background: #f7fafc;
+}
+
+.register-style-table .vxe-header--column .vxe-cell {
+  height: 34px;
+  padding: 6px 10px;
+  line-height: 20px;
+}
+
+.register-style-table .vxe-body--column {
+  height: 34px;
+  border-bottom: 1px solid #f0f4fa;
+  background-image: none;
+}
+
+.register-style-table .vxe-body--column .vxe-cell {
+  height: 34px;
+  padding: 6px 10px;
+  line-height: 20px;
+  color: #1a2b3c;
+  white-space: nowrap;
+}
+
+.register-style-table .vxe-body--row {
+  background: #fff;
+}
+
+.register-style-table .vxe-body--row:hover .vxe-body--column {
+  background: #fafcff;
+}
+
+.register-style-table .vxe-table--border-line {
+  display: none;
+}
+
+.register-style-table .vxe-table--body-wrapper {
+  overflow-x: auto;
+}
+
+.register-style-table .vxe-table--fixed-right-wrapper .vxe-body--column .vxe-cell {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.register-style-table .vxe-toolbar {
+  padding: 0 0 8px;
+  background: transparent;
+}
+
+/* 无自定义工具条时整段隐藏，避免空 toolbar 占位成「空行」 */
+.register-style-table--hide-toolbar .vxe-toolbar {
+  display: none !important;
+}
+
+.register-style-table .vxe-pager {
+  padding-top: 12px;
+  font-size: 13px;
+  color: #4d6278;
+  background: transparent;
+}
+
+.register-style-table .vxe-pager .vxe-pager--wrapper {
+  justify-content: space-between;
+}
+
+.register-style-table .vxe-pager .vxe-pager--btn,
+.register-style-table .vxe-pager .vxe-pager--num-btn,
+.register-style-table .vxe-pager .vxe-pager--jump-prev,
+.register-style-table .vxe-pager .vxe-pager--jump-next {
+  min-width: 28px;
+  height: 28px;
+  color: #4d6278;
+  background: transparent;
+  border: 1px solid #dce3eb;
+  border-radius: 4px;
+}
+
+.register-style-table .vxe-pager .vxe-pager--num-btn.is--active {
+  color: #fff;
+  background: #2a7de1;
+  border-color: #2a7de1;
+}
+
+.register-style-table .vxe-pager .vxe-pager--sizes .vxe-input {
+  height: 28px;
+}
+
+.register-style-table .vxe-pager .vxe-pager--sizes .vxe-input--inner {
+  font-size: 13px;
+  border: 1px solid #dce3eb;
+  border-radius: 4px;
+}
+
+/* 行选中高亮（业务单据 / 支付记录等） */
+.register-style-table .is-selected-bill-row .vxe-body--column,
+.register-style-table .is-selected-payment-row .vxe-body--column {
+  background-color: var(--el-color-primary-light-9) !important;
+}

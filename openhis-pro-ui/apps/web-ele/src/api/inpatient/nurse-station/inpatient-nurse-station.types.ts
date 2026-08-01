@@ -27,16 +27,13 @@ export interface LoadWardTreeResponse {
   wardNodes: NurseStationWardTreeNodeDto[];
 }
 
-/** 护士站列表状态筛选：已出院结算（与后端 STATUS_FILTER_SETTLED_DISCHARGED 一致） */
-export const NURSE_STATION_STATUS_FILTER_SETTLED_DISCHARGED = 'SETTLED_DISCHARGED';
-
 /** 在院患者队列分页请求 */
 export interface PagePatientQueueRequest extends PageParams {
   houseId?: string;
   keyword?: string;
   nurseStationExecutionDate?: string;
   nurseStationTaskFilter?: string;
-  /** 列表状态筛选；空=默认在院；SETTLED_DISCHARGED=已出院结算 */
+  /** @deprecated 列表状态筛选已废止，勿传 */
   nurseStationStatusFilter?: string;
   wardId?: string;
 }
@@ -55,6 +52,8 @@ export interface PatientQueueItemDto {
   attendingDoctorName?: string;
   bedId?: string;
   bedName?: string;
+  /** 费用性质/医保类型展示（有医保账户优先） */
+  contractDisplay?: string;
   diagnosisSummary?: string;
   encounterBusNo?: string;
   encounterId: string;
@@ -81,8 +80,6 @@ export interface PatientQueueItemDto {
   nursingLevelServiceRequestId?: string;
   /** 护理级别医嘱状态 DRAFT/ACTIVE/VERIFIED/STOPPED */
   nursingLevelStatusEnum?: string;
-  /** 是否可展示出院召回行操作 */
-  recallEnabled?: boolean;
   startTime?: string;
   statusEnum?: string;
   statusEnumText?: string;

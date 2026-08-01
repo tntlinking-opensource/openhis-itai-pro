@@ -4,6 +4,8 @@ import type {
   ListNurseStationNursingRecordsRequest,
   ListNurseStationNursingRecordsResponse,
   LoadNurseStationNursingRecordInitResponse,
+  SaveNurseStationNursingRecordRequest,
+  SaveNurseStationNursingRecordResponse,
   SaveNurseStationNursingRecordsBatchRequest,
   SaveNurseStationNursingRecordsBatchResponse,
 } from './inpatient-nurse-station-nursing-record.types';
@@ -26,6 +28,16 @@ export async function httpListNurseStationNursingRecords(
 ): Promise<ListNurseStationNursingRecordsResponse> {
   return publicRequestClient.post<ListNurseStationNursingRecordsResponse>(
     `${BASE}/listNurseStationNursingRecords`,
+    body,
+  );
+}
+
+/** 时间轴保存/更新单条护理记录 */
+export async function httpSaveNurseStationNursingRecord(
+  body: SaveNurseStationNursingRecordRequest,
+): Promise<SaveNurseStationNursingRecordResponse> {
+  return publicRequestClient.post<SaveNurseStationNursingRecordResponse>(
+    `${BASE}/saveNurseStationNursingRecord`,
     body,
   );
 }

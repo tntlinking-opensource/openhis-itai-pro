@@ -9,6 +9,8 @@ export interface InpatientReturnMedicineQueuePatient {
   bedName: string;
   refundEnum: string;
   refundEnumText: string;
+  /** 费用性质展示名（队列 contractDisplay；卡片底栏胶囊） */
+  feeNatureLabel?: string;
 }
 
 /** 退药明细表格行 */

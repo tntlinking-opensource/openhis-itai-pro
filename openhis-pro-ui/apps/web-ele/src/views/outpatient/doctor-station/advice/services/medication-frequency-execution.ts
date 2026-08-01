@@ -26,9 +26,13 @@ export function buildMedicationFrequencyPlanTimeRange(medicationDays: number): {
   startTime: string;
   endTime: string;
 } {
+  const days = Math.trunc(Number(medicationDays));
+  if (!Number.isFinite(days) || days < 1) {
+    throw new RangeError(`medicationDays must be a positive integer, got: ${medicationDays}`);
+  }
   const start = startAtNextLocalDayMidnight();
   const end = new Date(start);
-  end.setDate(end.getDate() + Math.trunc(medicationDays));
+  end.setDate(end.getDate() + days);
   return {
     startTime: formatLocalDateTimeForApi(start),
     endTime: formatLocalDateTimeForApi(end),
@@ -55,7 +59,8 @@ export async function resolveFrequencyExecutionCount(
 ): Promise<number> {
   const rateCode = String(params.rateCode ?? '').trim();
   const days = Math.trunc(Number(params.medicationDays));
-  if (!rateCode || days < 1) return 0;
+  // NaN < 1 为 false，须用 isFinite，避免算出 Invalid Date
+  if (!rateCode || !Number.isFinite(days) || days < 1) return 0;
 
   const { startTime, endTime } = buildMedicationFrequencyPlanTimeRange(days);
   try {

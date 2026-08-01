@@ -8,7 +8,12 @@ import {
 } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-select';
 
 import type { AdviceDrugItem, AdviceProductOption } from './advice.types';
-import { defaultContractSelection, firstTerminologyCode, terminologyLabel } from './advice-format';
+import {
+  defaultContractSelection,
+  defaultMedicationRateCode,
+  firstTerminologyCode,
+  terminologyLabel,
+} from './advice-format';
 import {
   defaultTotalAmountUnitCode,
   doseConvertRatioSplitToDose,
@@ -27,6 +32,34 @@ export interface WesternProductSelectPatchOptions {
   totalUnitDefaultKind?: 'PACKAGE' | 'SALES' | 'SPLIT';
 }
 
+/** 从目录选项提取医保等级（仅展示；无值时清空，避免沿用上一项目） */
+export function pickCatalogChrgitmLvPatch(
+  row: Pick<AdviceProductOption, 'chrgitmLv' | 'chrgitmLvText'>,
+): Pick<AdviceDrugItem, 'chrgitmLv' | 'chrgitmLvText'> {
+  const lvRaw = row.chrgitmLv;
+  const hasLv = lvRaw !== null && lvRaw !== undefined && String(lvRaw).trim() !== '';
+  const lvText = String(row.chrgitmLvText ?? '').trim();
+  return {
+    chrgitmLv: hasLv ? lvRaw : undefined,
+    chrgitmLvText: lvText || undefined,
+  };
+}
+
+/** 选品/回填：把目录库存字段落到编辑行，供药品信息行展示。 */
+export function pickCatalogStockPatch(
+  row: Pick<AdviceProductOption, 'availableQuantity' | 'availableQuantityText' | 'inventoryList'>,
+): Pick<AdviceDrugItem, 'availableQuantity' | 'availableQuantityText' | 'inventoryList'> {
+  const qtyRaw = row.availableQuantity;
+  const hasQty = qtyRaw !== null && qtyRaw !== undefined && String(qtyRaw).trim() !== '';
+  const text = String(row.availableQuantityText ?? '').trim();
+  const inventoryList = Array.isArray(row.inventoryList) ? row.inventoryList : undefined;
+  return {
+    availableQuantity: hasQty ? qtyRaw : undefined,
+    availableQuantityText: text || undefined,
+    inventoryList,
+  };
+}
+
 export interface CreateAdviceDrugItemContext {
   feeNatureOptions: TerminologyOptionDto[];
   medicationRateOptions: TerminologyOptionDto[];
@@ -43,7 +76,7 @@ export function createAdviceDrugItem(
   const frequency =
     freqSeed !== undefined && String(freqSeed).trim() !== ''
       ? String(freqSeed)
-      : firstTerminologyCode(ctx.medicationRateOptions);
+      : defaultMedicationRateCode(ctx.medicationRateOptions, seed?.therapyEnum);
   const usage =
     usageSeed !== undefined && String(usageSeed).trim() !== ''
       ? String(usageSeed)
@@ -89,6 +122,8 @@ export function createAdviceDrugItem(
     selectedDrugName: String(s?.selectedDrugName ?? '').trim(),
     selectedDrugSpec: String(s?.selectedDrugSpec ?? '').trim(),
     selectedDrugPrice: s?.selectedDrugPrice ?? '',
+    chrgitmLv: s?.chrgitmLv,
+    chrgitmLvText: String(s?.chrgitmLvText ?? '').trim() || undefined,
     doseMainUnit: String(s?.doseMainUnit ?? '').trim(),
     doseSubUnit: String(s?.doseSubUnit ?? '').trim(),
     doseConvertRatio: numFromSeed('doseConvertRatio'),
@@ -120,6 +155,7 @@ export function createAdviceDrugItem(
     })(),
     performOrgName: String(s?.performOrgName ?? '').trim() || undefined,
     therapyEnum: String(s?.therapyEnum ?? '').trim() || undefined,
+    remark: String(s?.remark ?? '').trim() || undefined,
   };
 }
 
@@ -199,6 +235,8 @@ export function buildWesternProductSelectPatch(
   if (linePrice !== undefined) {
     patch.selectedDrugPrice = linePrice;
   }
+  Object.assign(patch, pickCatalogChrgitmLvPatch(row));
+  Object.assign(patch, pickCatalogStockPatch(row));
   return patch;
 }
 

@@ -34,7 +34,7 @@ export function validateAdmissionDiagnosisFormState(
 export function buildAdmissionDiagnosesFromFormState(
   state: AdmissionDiagnosisFormState,
   options: {
-    prefilledConditionId?: string;
+    prefilledEncounterDiagnosisId?: string;
     prefilledWesternDefinitionId?: string;
   } = {},
 ): AdmissionDiagnosisSubmitDto[] {
@@ -72,16 +72,17 @@ export function buildAdmissionDiagnosesFromFormState(
     return [];
   }
   const prefilledDefId = preserveApiIdForRequest(options.prefilledWesternDefinitionId);
-  const conditionId =
-    prefilledDefId === conditionDefinitionId
-      ? preserveApiIdForRequest(options.prefilledConditionId)
-      : undefined;
+  const prefilledEdId =
+    preserveApiIdForRequest(options.prefilledEncounterDiagnosisId) ||
+    preserveApiIdForRequest(state.encounterDiagnosisId);
+  const encounterDiagnosisId =
+    !prefilledDefId || prefilledDefId === conditionDefinitionId ? prefilledEdId : undefined;
   return [
     {
       primaryFlag: true,
       conditionDefinitionId,
       tcmFlag: false,
-      ...(conditionId ? { conditionId } : {}),
+      ...(encounterDiagnosisId ? { encounterDiagnosisId } : {}),
       ...(userDescription ? { description: userDescription } : {}),
     },
   ];

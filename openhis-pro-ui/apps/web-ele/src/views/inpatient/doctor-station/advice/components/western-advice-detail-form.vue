@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
 
-import type { DiagnosisConfirmPayload, DiagnosisItem } from '#/components/doctor-station/diagnosis';
 import type { AdviceDrugItem, AdviceDrugPatchPayload } from '../services/advice.types';
 
-import { ref } from 'vue';
+import { computed } from 'vue';
 
-import { ElButton, ElCheckbox, ElInputNumber, ElMessage, ElOption, ElSelect } from 'element-plus';
+import { ElCheckbox, ElInputNumber, ElOption, ElSelect } from 'element-plus';
 
-import { DiagnosisPickerDialog } from '#/components/doctor-station/diagnosis';
+import { formatAdviceDrugInfoStockText } from '#/utils/doctor-station/advice-catalog-stock-display';
+import { formatPackagePerMinUnitText } from '#/utils/doctor-station/medication-package-min-unit-display';
+
 import {
   contractSelectionFromValue,
   formatMoneyStrYuan,
@@ -29,7 +30,6 @@ const props = withDefaults(
     medicationRouteOptions?: TerminologyOptionDto[];
     /** init 返回的费用性质（合同）下拉 */
     feeNatureOptions?: TerminologyOptionDto[];
-    patientDiagnoses: DiagnosisItem[];
     calcTotalFee: (item: AdviceDrugItem) => string;
   }>(),
   {
@@ -40,7 +40,6 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-  'update:patientDiagnoses': [value: DiagnosisItem[]];
   patch: [payload: AdviceDrugPatchPayload];
 }>();
 
@@ -53,6 +52,12 @@ function patchContract(contractId: string) {
   patch('contractId', sel.contractId);
   patch('feeNature', sel.feeNature);
 }
+
+/** 包装与最小单位不同时：「每盒30片」类文案 */
+const packagePerMinUnitText = computed(() => formatPackagePerMinUnitText(props.item));
+
+/** 选品库存：「库存：4盒6片」；无库存字段时为空 */
+const stockDisplayText = computed(() => formatAdviceDrugInfoStockText(props.item));
 
 function handleTotalAmountUnitChange(value: unknown) {
   const nu = String(value ?? '').trim();
@@ -79,54 +84,6 @@ function handleTotalAmountUnitChange(value: unknown) {
     patch('selectedDrugPrice', linePrice);
   }
 }
-
-const diagnosisDialogVisible = ref(false);
-const diagnosisDialogOpenByAuto = ref(false);
-const diagnosisDialogConfirmed = ref(false);
-const diagnosisAutoPromptMuted = ref(false);
-
-function openDiagnosisDialog(byAuto = false) {
-  diagnosisDialogOpenByAuto.value = byAuto;
-  diagnosisDialogConfirmed.value = false;
-  if (!byAuto) {
-    diagnosisAutoPromptMuted.value = false;
-  }
-  diagnosisDialogVisible.value = true;
-}
-
-function handleDiagnosisFocus() {
-  const current = props.item;
-  if (
-    props.patientDiagnoses.length === 0 &&
-    !current.diagnosis &&
-    !diagnosisAutoPromptMuted.value
-  ) {
-    openDiagnosisDialog(true);
-  }
-}
-
-function handleDiagnosisConfirm(payload: DiagnosisConfirmPayload) {
-  diagnosisDialogConfirmed.value = true;
-  const exists = props.patientDiagnoses.some((item) => item.id === payload.selected.id);
-  const next = exists ? props.patientDiagnoses : [...props.patientDiagnoses, payload.selected];
-  emit('update:patientDiagnoses', next);
-  patch('diagnosis', payload.selected.name);
-  diagnosisAutoPromptMuted.value = false;
-  if (payload.saveAsCommon) {
-    ElMessage.success('诊断已保存为常用');
-  }
-}
-
-function handleDiagnosisDialogVisibleChange(visible: boolean) {
-  diagnosisDialogVisible.value = visible;
-  if (visible) return;
-  if (diagnosisDialogOpenByAuto.value && !diagnosisDialogConfirmed.value) {
-    diagnosisAutoPromptMuted.value = true;
-    ElMessage.info('当前患者尚未开立诊断，可点击诊断字段右侧“新增”直接开诊断');
-  }
-  diagnosisDialogOpenByAuto.value = false;
-  diagnosisDialogConfirmed.value = false;
-}
 </script>
 
 <template>
@@ -134,8 +91,19 @@ function handleDiagnosisDialogVisibleChange(visible: boolean) {
     <div class="product-info-row">
       <span class="meta-label product-info-label">药品信息:</span>
       <span class="product-text">
-        {{ item.selectedDrugName || '-' }}【{{ item.selectedDrugSpec || '-' }}】 单价：
-        {{ formatUnitPriceYuan(item.selectedDrugPrice) }}
+        {{ item.selectedDrugName || '-' }}【{{ item.selectedDrugSpec || '-' }}】
+        <template v-if="packagePerMinUnitText">
+          <span class="product-info-gap">{{ packagePerMinUnitText }}</span>
+        </template>
+        <template v-if="stockDisplayText">
+          <span class="product-info-gap">{{ stockDisplayText }}</span>
+        </template>
+        <span class="product-info-gap"
+          >单价：{{ formatUnitPriceYuan(item.selectedDrugPrice) }}</span
+        >
+        <span v-if="item.chrgitmLvText" class="chrgitm-lv-text product-info-gap">{{
+          item.chrgitmLvText
+        }}</span>
       </span>
       <span class="product-total-amount">总金额：{{ formatMoneyStrYuan(calcTotalFee(item)) }}</span>
     </div>
@@ -150,27 +118,6 @@ function handleDiagnosisDialogVisibleChange(visible: boolean) {
           <ElOption label="住院西药房" value="住院西药房" />
           <ElOption label="门诊药房" value="门诊药房" />
         </ElSelect>
-      </div>
-      <div class="field-item">
-        <span class="meta-label">诊断</span>
-        <div class="diagnosis-field-wrap">
-          <ElSelect
-            :model-value="item.diagnosis"
-            filterable
-            clearable
-            placeholder="请选择诊断"
-            @focus="handleDiagnosisFocus"
-            @update:model-value="(value: unknown) => patch('diagnosis', String(value || ''))"
-          >
-            <ElOption
-              v-for="diagnosis in patientDiagnoses"
-              :key="diagnosis.id"
-              :label="diagnosis.name"
-              :value="diagnosis.name"
-            />
-          </ElSelect>
-          <ElButton link type="primary" @click="openDiagnosisDialog(false)">添加诊断</ElButton>
-        </div>
       </div>
       <div class="field-item">
         <span class="meta-label">费用性质</span>
@@ -297,13 +244,6 @@ function handleDiagnosisDialogVisibleChange(visible: boolean) {
         </div>
       </div>
     </div>
-
-    <DiagnosisPickerDialog
-      :model-value="diagnosisDialogVisible"
-      :patient-diagnoses="patientDiagnoses"
-      @update:model-value="handleDiagnosisDialogVisibleChange"
-      @confirm="handleDiagnosisConfirm"
-    />
   </div>
 </template>
 
@@ -337,6 +277,16 @@ function handleDiagnosisDialogVisibleChange(visible: boolean) {
   font-weight: 700;
   flex: 1;
   min-width: 0;
+}
+
+.product-info-gap {
+  margin-left: 12px;
+}
+
+/* 医保等级：仅展示甲/乙/自费等文案，醒目区分于品名单价 */
+.chrgitm-lv-text {
+  color: var(--el-color-warning);
+  font-weight: 700;
 }
 
 .meta-label {
@@ -375,7 +325,7 @@ function handleDiagnosisDialogVisibleChange(visible: boolean) {
 }
 
 .top-row {
-  grid-template-columns: 220px 320px 220px 180px;
+  grid-template-columns: 220px 220px 180px;
   gap: 10px 14px;
   margin-bottom: 10px;
 }
@@ -397,16 +347,6 @@ function handleDiagnosisDialogVisibleChange(visible: boolean) {
 .field-item :deep(.el-select),
 .field-item :deep(.el-input-number) {
   width: 100%;
-}
-
-.diagnosis-field-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.diagnosis-field-wrap :deep(.el-select) {
-  width: calc(100% - 48px);
 }
 
 .skin-test-item :deep(.el-checkbox) {

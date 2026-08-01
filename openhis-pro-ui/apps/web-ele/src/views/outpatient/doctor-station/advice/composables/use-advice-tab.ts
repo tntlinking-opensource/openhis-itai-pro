@@ -17,6 +17,7 @@ import type {
 import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
 import type { DiagnosisItem } from '#/components/doctor-station/diagnosis';
 import type { DrugGroupDisplayItem } from '#/utils/doctor-station/drug-group-table';
+import type { DetailAuditRemindDialogExpose } from '#/chs/composables/use-detail-audit-gate';
 
 import {
   computed,
@@ -27,6 +28,7 @@ import {
   onUnmounted,
   ref,
   watch,
+  type Ref,
 } from 'vue';
 
 import { ElMessage, ElTable } from 'element-plus';
@@ -39,11 +41,19 @@ import {
   httpUpdateDoctorStationMedicationAdviceGroups,
   httpWithdrawDoctorStationAdviceBatch,
 } from '#/api/doctor-station/advice.http';
+import { httpGetEncounterDiagnosis } from '#/api/doctor-station/diagnosis.http';
 import { useEnsureClinicalReception } from '#/components/doctor-station/use-ensure-clinical-reception';
+import {
+  clearEncounterDiagnosisSession,
+  readEncounterDiagnosisSession,
+} from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-session';
+import { runOpDetailAuditGate } from '#/chs/composables/use-detail-audit-gate';
+import { pickFirstInsuranceContract } from '#/chs/utils/resolve-insurance-contract-bus-no';
 import { useAuthStore } from '#/store';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
 
+import { fetchAdviceCatalogRowsByPrepickedKeys } from '../services/advice-catalog-prepicked';
 import {
   saveAdviceDraftBatchDirect,
   saveAdviceDraftBatchWithManualUsageBind,
@@ -56,6 +66,7 @@ import {
 } from '../services/advice-edit-hydrate';
 import { defaultContractSelection, firstTerminologyCode } from '../services/advice-format';
 import {
+  excludeServiceApplyFormAdviceRows,
   flattenAdviceRowsForResourceOps,
   getAdviceStatusTagType,
   mapCatalogRowToOption,
@@ -65,6 +76,7 @@ import {
   buildAdviceDraftDeleteLineFromDrugItem,
   buildAdviceDraftLines,
   collectRemovedAdviceDraftDeleteLines,
+  validateMedicationAssignGroupRows,
 } from '../services/advice-medication-draft';
 import {
   inferAdviceLineEditorKind,
@@ -91,9 +103,13 @@ export interface UseAdviceTabProps {
 /**
  * 门诊医生站「开立医嘱」页签：列表、内嵌编辑卡、中药弹窗、签发/撤回/删除。
  */
-export function useAdviceTab(props: UseAdviceTabProps) {
+export function useAdviceTab(
+  props: UseAdviceTabProps,
+  options?: { detailAuditDialogRef?: Ref<DetailAuditRemindDialogExpose | null> },
+) {
   const authStore = useAuthStore();
   const { ensureReceptionBeforeClinicalWork } = useEnsureClinicalReception();
+  const detailAuditDialogRef = options?.detailAuditDialogRef;
 
   const medicationRateOptions = ref<TerminologyOptionDto[]>([]);
   const medicationRouteOptions = ref<TerminologyOptionDto[]>([]);
@@ -151,6 +167,10 @@ export function useAdviceTab(props: UseAdviceTabProps) {
 
   const editorForm = ref<AdviceEditForm>(createEditForm());
   const editorPatientDiagnoses = ref<DiagnosisItem[]>([]);
+  /** 当前就诊开立会话内上次选中的诊断 ids（刷新页面后清空） */
+  const lastSelectedEncounterDiagnosisIds = ref<string[]>(
+    readEncounterDiagnosisSession(props.encounterId),
+  );
   /** 双击进入编辑时带入的列表行资源类型；空表示新增西药医嘱卡片 */
   const editingAdviceResourceType = ref('');
   /** 递增后让编辑卡内当前展开行的选药下拉自动展开 */
@@ -230,6 +250,7 @@ export function useAdviceTab(props: UseAdviceTabProps) {
         key: '__editor__',
         isEditor: true,
         status: '',
+        chargeStatus: '',
         type: '',
         content: '',
         startTime: '',
@@ -293,7 +314,33 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     }
   }
 
+  /** 签发前查询就诊诊断，未开立则拦截并提示 */
+  async function ensureEncounterHasDiagnosisForSign(
+    encounterId: string,
+    patientId: string,
+  ): Promise<boolean> {
+    try {
+      const res = await httpGetEncounterDiagnosis({ encounterId, patientId });
+      const list = res?.diagnosisList ?? res?.content ?? [];
+      if (Array.isArray(list) && list.length > 0) {
+        return true;
+      }
+      ElMessage.warning('当前患者尚未开立诊断，请先到「诊断」页签开立诊断后再签发医嘱');
+      return false;
+    } catch (error: unknown) {
+      const msg =
+        error && typeof error === 'object' && 'message' in error
+          ? String((error as { message?: unknown }).message)
+          : '';
+      ElMessage.error(msg.trim() || '查询诊断信息失败，请稍后重试');
+      return false;
+    }
+  }
+
   /** 将列表中 DRAFT 态行批量提交签发 */
+  /**
+   * 签发：有勾选则只签发勾选中的草稿；未勾选则签发当前列表全部草稿。
+   */
   const handleSign = async () => {
     if (showEditor.value && editorDirty.value) {
       ElMessage.warning('请先保存或关闭当前编辑卡片');
@@ -305,16 +352,31 @@ export function useAdviceTab(props: UseAdviceTabProps) {
       ElMessage.warning('缺少就诊或患者信息');
       return;
     }
-    const draftRows = flattenAdviceRowsForResourceOps(rows.value).filter((r) =>
-      rowLooksDraftForSign(r),
-    );
+    const receptionOk = await ensureReceptionBeforeClinicalWork();
+    if (!receptionOk) return;
+    // 勾选优先；未勾选回落全表草稿
+    const flatSel = flattenAdviceRowsForResourceOps(tableSelection.value);
+    const useSelection = flatSel.length > 0;
+    const candidateRows = useSelection ? flatSel : flattenAdviceRowsForResourceOps(rows.value);
+    // 仅 DRAFT 可进签发目标
+    const draftRows = candidateRows.filter((r) => rowLooksDraftForSign(r));
     const targets = draftRows
       .map((r) => resourceKeyFromRow(r))
       .filter(Boolean) as DoctorStationAdviceResourceKeyDto[];
     if (targets.length === 0) {
-      ElMessage.warning('当前列表没有状态为 DRAFT 的医嘱可签发');
+      ElMessage.warning(
+        useSelection
+          ? '勾选行中没有状态为 DRAFT 的医嘱可签发'
+          : '当前列表没有状态为 DRAFT 的医嘱可签发',
+      );
       return;
     }
+    if (useSelection && targets.length < flatSel.length) {
+      ElMessage.warning('已跳过不可签发行（仅草稿可签）');
+    }
+    const hasDiagnosis = await ensureEncounterHasDiagnosisForSign(encounterId, patientId);
+    if (!hasDiagnosis) return;
+    const insuranceContract = await pickFirstInsuranceContract(draftRows.map((r) => r.contractId));
     await withAdviceMutationLoading(async () => {
       try {
         const res = await httpSignDoctorStationAdviceBatch({
@@ -325,6 +387,52 @@ export function useAdviceTab(props: UseAdviceTabProps) {
         if (res.success === false) {
           ElMessage.error(String(res.message || '').trim() || '签发失败');
           return;
+        }
+        if (insuranceContract && detailAuditDialogRef) {
+          try {
+            const { continued } = await runOpDetailAuditGate({
+              params: {
+                encounterId,
+                contractId: insuranceContract.contractId,
+                contractBusNo: insuranceContract.contractBusNo,
+                trigScen: '2',
+              },
+              dialogRef: detailAuditDialogRef,
+            });
+            if (!continued) {
+              const withdrawRes = await httpWithdrawDoctorStationAdviceBatch({
+                encounterId,
+                patientId,
+                targets,
+              });
+              if (withdrawRes.success === false) {
+                ElMessage.error(
+                  String(withdrawRes.message || '').trim() ||
+                    '事前提醒要求返回修改，但自动签退失败，请手工签退',
+                );
+              } else {
+                ElMessage.warning('已按事前提醒返回修改，本次签发已自动签退');
+              }
+              clearAdviceTableSelection();
+              await loadAdviceList();
+              return;
+            }
+          } catch (auditError: unknown) {
+            try {
+              await httpWithdrawDoctorStationAdviceBatch({
+                encounterId,
+                patientId,
+                targets,
+              });
+            } catch {
+              /* 签退失败时仍抛出审核错误 */
+            }
+            const msg = auditError instanceof Error ? auditError.message : '事前提醒失败';
+            ElMessage.error(`${msg}；已尝试签退本次签发`);
+            clearAdviceTableSelection();
+            await loadAdviceList();
+            return;
+          }
         }
         ElMessage.success(String(res.message || '').trim() || '签发成功');
         clearAdviceTableSelection();
@@ -339,7 +447,7 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     });
   };
 
-  /** 将勾选行批量签退 */
+  /** 将勾选行批量签退（必须勾选） */
   const handleWithdraw = async () => {
     if (showEditor.value && editorDirty.value) {
       ElMessage.warning('请先保存或关闭当前编辑卡片');
@@ -351,6 +459,8 @@ export function useAdviceTab(props: UseAdviceTabProps) {
       ElMessage.warning('缺少就诊或患者信息');
       return;
     }
+    const receptionOk = await ensureReceptionBeforeClinicalWork();
+    if (!receptionOk) return;
     const flatSel = flattenAdviceRowsForResourceOps(tableSelection.value);
     const withdrawable = flatSel.filter((r) => rowLooksWithdrawable(r, rowLooksDraft));
     const targets = withdrawable
@@ -359,6 +469,9 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     if (targets.length === 0) {
       ElMessage.warning('请勾选至少一条已签发且可签退的医嘱');
       return;
+    }
+    if (targets.length < flatSel.length) {
+      ElMessage.warning('已跳过不可签退行');
     }
     await withAdviceMutationLoading(async () => {
       try {
@@ -388,7 +501,7 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     });
   };
 
-  /** 将勾选草稿行以 DELETE 行方式提交暂存批次 */
+  /** 将勾选草稿行以 DELETE 行方式提交暂存批次（必须勾选） */
   const handleDelete = async () => {
     if (showEditor.value && editorDirty.value) {
       ElMessage.warning('请先保存或关闭当前编辑卡片');
@@ -400,6 +513,8 @@ export function useAdviceTab(props: UseAdviceTabProps) {
       ElMessage.warning('缺少就诊或患者信息');
       return;
     }
+    const receptionOk = await ensureReceptionBeforeClinicalWork();
+    if (!receptionOk) return;
     const flatSelDel = flattenAdviceRowsForResourceOps(tableSelection.value);
     const deletable = flatSelDel.filter((r) => rowLooksDeletable(r, rowLooksDraft));
     const lines: DoctorStationAdviceDraftLineRequest[] = deletable.map((row) => {
@@ -414,6 +529,9 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     if (lines.length === 0) {
       ElMessage.warning('请勾选至少一条可删除的草稿医嘱');
       return;
+    }
+    if (lines.length < flatSelDel.length) {
+      ElMessage.warning('已跳过不可删除行（仅草稿可删）');
     }
     await withAdviceMutationLoading(async () => {
       try {
@@ -474,6 +592,8 @@ export function useAdviceTab(props: UseAdviceTabProps) {
       ElMessage.warning('缺少就诊或患者信息');
       return;
     }
+    const receptionOk = await ensureReceptionBeforeClinicalWork();
+    if (!receptionOk) return;
     const flatUg = flattenAdviceRowsForResourceOps(tableSelection.value);
     const meds = medicationDraftRowsWithRequestId(flatUg);
     const withGroup = meds.filter((r) => String(r.groupId ?? '').trim() !== '');
@@ -513,10 +633,18 @@ export function useAdviceTab(props: UseAdviceTabProps) {
       ElMessage.warning('缺少就诊或患者信息');
       return;
     }
+    const receptionOk = await ensureReceptionBeforeClinicalWork();
+    if (!receptionOk) return;
     const flatAg = flattenAdviceRowsForResourceOps(tableSelection.value);
     const meds = medicationDraftRowsWithRequestId(flatAg);
     if (meds.length === 0) {
       ElMessage.warning('请勾选至少一条草稿药品医嘱（需已暂存含 requestId）');
+      return;
+    }
+    // 并组门禁：用法/频次/用药天数/诊断一致
+    const assignGroupError = validateMedicationAssignGroupRows(meds);
+    if (assignGroupError) {
+      ElMessage.warning(assignGroupError);
       return;
     }
     /** 每组并组操作使用新的毫秒时间戳，保证与近期其他并组组号不冲突 */
@@ -564,7 +692,8 @@ export function useAdviceTab(props: UseAdviceTabProps) {
       });
       const { content: list } = parsePagedRowsFromApiData<DoctorStationAdviceRowDto>(res);
       const merged = mergeMedicationAdviceRowsForListDisplay(list);
-      rows.value = merged;
+      // 检验/检查/治疗申请单仅在「申请单」页签展示
+      rows.value = excludeServiceApplyFormAdviceRows(merged);
     } catch {
       rows.value = [];
     } finally {
@@ -642,15 +771,11 @@ export function useAdviceTab(props: UseAdviceTabProps) {
         ? String(orgRaw)
         : undefined;
     try {
-      const res = await httpPageDoctorStationAdviceCatalog({
+      const rawRows = await fetchAdviceCatalogRowsByPrepickedKeys(keys, {
         encounterId,
         patientId,
         organizationUnitId,
-        pageNo: 1,
-        pageSize: Math.max(keys.length, 20),
-        prepickedProductKeys: keys,
       });
-      const { content: rawRows } = parsePagedRowsFromApiData<DoctorStationAdviceCatalogRowDto>(res);
       return rawRows.map((item) => mapCatalogRowToOption(item));
     } catch {
       return [];
@@ -747,6 +872,8 @@ export function useAdviceTab(props: UseAdviceTabProps) {
       ElMessage.warning('缺少就诊或患者信息，无法保存');
       return;
     }
+    const receptionOk = await ensureReceptionBeforeClinicalWork();
+    if (!receptionOk) return;
     const invalidEntry = groupItems
       .map((item, i) => ({ item, i }))
       .find(({ item }) => !validateWesternRow(item));
@@ -834,6 +961,8 @@ export function useAdviceTab(props: UseAdviceTabProps) {
       ElMessage.warning('缺少就诊或患者信息，无法删除');
       return;
     }
+    const receptionOk = await ensureReceptionBeforeClinicalWork();
+    if (!receptionOk) return;
     const deletedRequestId = String(item.medicationRequestId ?? '').trim();
     await withAdviceMutationLoading(async () => {
       try {
@@ -889,6 +1018,8 @@ export function useAdviceTab(props: UseAdviceTabProps) {
       ElMessage.warning('卡片中有未保存数据，不允许编辑其他行');
       return;
     }
+    const receptionOk = await ensureReceptionBeforeClinicalWork();
+    if (!receptionOk) return;
     editingAdviceResourceType.value = (row.resourceType || '').trim();
     const members = row.mergedAdviceRows;
     editorOpening.value = true;
@@ -939,6 +1070,9 @@ export function useAdviceTab(props: UseAdviceTabProps) {
   watch(
     () => [props.encounterId, props.patientId],
     () => {
+      // 换患者/就诊：清空会话诊断记忆（医嘱 / 申请单共用）
+      clearEncounterDiagnosisSession();
+      lastSelectedEncounterDiagnosisIds.value = [];
       if (!isTabActive.value) return;
       if (showEditor.value) {
         showEditor.value = false;
@@ -957,6 +1091,11 @@ export function useAdviceTab(props: UseAdviceTabProps) {
   onActivated(() => {
     isTabActive.value = true;
     attachAdviceEscKeydown();
+    // 申请单等其它页签可能已更新共用诊断记忆，回到医嘱时同步
+    const fromSession = readEncounterDiagnosisSession(props.encounterId);
+    if (fromSession.length > 0) {
+      lastSelectedEncounterDiagnosisIds.value = fromSession;
+    }
     void loadAdviceTabData();
   });
 
@@ -1009,6 +1148,7 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     handleSpanMethod,
     handleToolbarPlaceholder,
     handleWithdraw,
+    lastSelectedEncounterDiagnosisIds,
     loadAdviceInit,
     loadAdviceList,
     medicationRateOptions,

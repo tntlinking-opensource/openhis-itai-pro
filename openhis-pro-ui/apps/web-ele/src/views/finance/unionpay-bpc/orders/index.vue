@@ -15,12 +15,15 @@ import {
   ElDescriptionsItem,
   ElDrawer,
   ElMessage,
+  ElMessageBox,
   ElTag,
 } from 'element-plus';
 
 import { isUnionPayWinReady } from '#/api/local/openhisWin';
+import { queryOrderApi, refundApi, toClientRefundResultDto } from '#/api/local/unionPayWin';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
 import {
+  httpConfirmOrphanClientRefund,
   httpPageBpcOrders,
   httpQueryBpcOrder,
   httpRetrySettleFromBpcOrder,
@@ -49,6 +52,7 @@ const settleCheck = ref<Awaited<ReturnType<typeof httpRetrySettleFromBpcOrder>> 
 const winReady = ref(false);
 const posQueryLoading = ref(false);
 const settleCheckLoading = ref(false);
+const orphanRefundLoading = ref(false);
 
 const queryParams = reactive<PageBpcOrdersRequest & { dateRange?: string[] }>({
   pageNo: 1,
@@ -113,6 +117,13 @@ const formItems = computed<FormItemConfig[]>(() => [
     clearable: true,
     options: [{ label: '仅待补结算', value: true }],
   },
+  {
+    label: '孤儿补退',
+    prop: 'orphanRefundOnly',
+    type: 'select',
+    clearable: true,
+    options: [{ label: '仅 HIS已退·银联未退', value: true }],
+  },
 ]);
 
 const tableColumns: TableColumn[] = [
@@ -126,6 +137,7 @@ const tableColumns: TableColumn[] = [
   { prop: 'status', label: 'BPC状态', width: 96, slot: 'status' },
   { prop: 'paymentStatus', label: 'HIS支付', width: 96, slot: 'paymentStatus' },
   { prop: 'pendingSettle', label: '补结算', width: 88, slot: 'pendingSettle' },
+  { prop: 'orphanRefund', label: '孤儿补退', width: 100, slot: 'orphanRefund' },
   { prop: 'action', label: '操作', fixed: 'right', width: 100, align: 'center', slot: 'action' },
 ];
 
@@ -231,6 +243,7 @@ async function getList(params?: PageBpcOrdersRequest & { dateRange?: string[] })
     dateFrom: p.dateRange?.[0],
     dateTo: p.dateRange?.[1],
     pendingSettleOnly: p.pendingSettleOnly === true ? true : undefined,
+    orphanRefundOnly: p.orphanRefundOnly === true ? true : undefined,
     paymentId: p.paymentId ? String(p.paymentId).trim() || undefined : undefined,
     merTradeNo: p.merTradeNo?.trim() || undefined,
     tradeNo: p.tradeNo?.trim() || undefined,
@@ -257,6 +270,7 @@ function handleReset() {
   queryParams.payType = '';
   queryParams.tranType = '';
   queryParams.pendingSettleOnly = undefined;
+  queryParams.orphanRefundOnly = undefined;
   queryParams.dateRange = defaultDateRange();
   queryParams.pageNo = 1;
   void getList();
@@ -340,6 +354,79 @@ async function queryFromPos() {
   }
 }
 
+/**
+ * 孤儿补退：Win 银联退货成功后，仅确认落 BPC，不重做 HIS 本地退费。
+ */
+async function compensateOrphanRefund() {
+  const row = drawerRow.value;
+  if (!row?.orphanRefund) {
+    return;
+  }
+  if (!row.paymentId || !row.merTradeNo || !row.tradeNo || row.txnAmtFen == null) {
+    ElMessage.warning('订单信息不完整，无法补退');
+    return;
+  }
+  if (!winReady.value) {
+    ElMessage.warning('本机未检测到 OpenHIS.Win 银联组件，无法补退');
+    return;
+  }
+  const refundAmountYuan = formatMoneyDisplay(row.txnAmtFen / 100);
+  try {
+    await ElMessageBox.confirm(
+      `确认为支付单 ${row.paymentId} 发起银联补退 ¥${refundAmountYuan}？\n（HIS 已退费，仅补退银联，不会再次冲账）`,
+      '银联孤儿补退',
+      { type: 'warning', confirmButtonText: '确认补退', cancelButtonText: '取消' },
+    );
+  } catch {
+    return;
+  }
+
+  orphanRefundLoading.value = true;
+  try {
+    let winRespCode = '00';
+    let winRespMsg: string | undefined;
+    try {
+      const winResult = await refundApi({
+        merTradeNo: row.merTradeNo,
+        tradeNo: row.tradeNo,
+        refundAmountYuan,
+      });
+      const clientRefund = toClientRefundResultDto(winResult, refundAmountYuan);
+      winRespCode = clientRefund.respCode || '00';
+      winRespMsg = clientRefund.respMsg;
+    } catch (winError) {
+      const winMessage = winError instanceof Error ? winError.message : '银联退货失败';
+      try {
+        await ElMessageBox.confirm(
+          `${winMessage}\n\n若确认银联侧已退款成功，可仅同步 BPC 状态（不会再次发起银联退货）。是否继续？`,
+          '银联补退未确认',
+          { type: 'warning', confirmButtonText: '仅同步状态', cancelButtonText: '取消' },
+        );
+      } catch {
+        throw winError instanceof Error ? winError : new Error(winMessage);
+      }
+      winRespMsg = winMessage;
+    }
+    // confirm 契约：merTradeNo/tradeNo 为原消费单号（勿用 Win 退货回传的新单号）
+    await httpConfirmOrphanClientRefund({
+      paymentId: row.paymentId,
+      merTradeNo: row.merTradeNo,
+      tradeNo: row.tradeNo,
+      refundAmount: refundAmountYuan,
+      respCode: winRespCode,
+      respMsg: winRespMsg,
+    });
+    ElMessage.success('银联补退成功');
+    drawerOpen.value = false;
+    await getList();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '银联补退失败';
+    ElMessage.error(message);
+  } finally {
+    orphanRefundLoading.value = false;
+  }
+}
+
 async function copyText(text?: string) {
   const value = String(text ?? '').trim();
   if (!value) {
@@ -400,6 +487,10 @@ onMounted(() => {
       </template>
       <template #pendingSettle="{ row }">
         <ElTag v-if="row.pendingSettle" type="warning" size="small">待补</ElTag>
+        <span v-else>-</span>
+      </template>
+      <template #orphanRefund="{ row }">
+        <ElTag v-if="row.orphanRefund" type="danger" size="small">待补退</ElTag>
         <span v-else>-</span>
       </template>
       <template #action="{ row }">
@@ -481,6 +572,17 @@ onMounted(() => {
         </ElDescriptions>
 
         <div
+          v-if="drawerRow.orphanRefund"
+          class="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-900"
+        >
+          <div class="mb-1 font-medium">孤儿单：HIS 已退费，银联尚未退货</div>
+          <p class="text-xs">
+            请在本机启动 OpenHIS.Win 后点击「银联补退」。只会向银联发起退货并更新 BPC
+            状态，不会再次冲 HIS 账。
+          </p>
+        </div>
+
+        <div
           v-if="drawerRow.pendingSettle"
           class="mb-4 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
         >
@@ -509,9 +611,18 @@ onMounted(() => {
           <ElButton :loading="posQueryLoading" type="primary" plain @click="queryFromPos">
             POS 查单（本机 Win）
           </ElButton>
+          <ElButton
+            v-if="drawerRow.orphanRefund"
+            :loading="orphanRefundLoading"
+            type="danger"
+            @click="compensateOrphanRefund"
+          >
+            银联补退
+          </ElButton>
         </div>
         <p v-if="!winReady" class="mt-3 text-xs text-gray-500">
-          POS 查单需在本机启动 OpenHIS.Win；财务 PC 未安装时可仅用上方列表与 Whale 快照对账。
+          POS 查单 / 银联补退需在本机启动 OpenHIS.Win；财务 PC 未安装时可仅用上方列表与 Whale
+          快照对账。
         </p>
       </template>
     </ElDrawer>

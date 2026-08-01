@@ -14,9 +14,18 @@ export interface NurseStationParticipantFormIds {
   primaryNurseId: string;
 }
 
+export interface MapParticipantsToFormIdsOptions {
+  /**
+   * 待入科首次分床：办理入院 / 门诊转住院带来的医生默认落到「住院医生」（必填）；
+   * 登记落库的 ATTENDING_DOCTOR 亦归到住院医生；主治 / 主任不自动带入。
+   */
+  bringDoctorToInpatientDoctor?: boolean;
+}
+
 /** 从详情参与者列表解析各角色医务人员 id */
 export function mapParticipantsToFormIds(
   participants: ParticipantDto[] | undefined,
+  options?: MapParticipantsToFormIdsOptions,
 ): NurseStationParticipantFormIds {
   const result: NurseStationParticipantFormIds = {
     inpatientDoctorId: '',
@@ -27,6 +36,8 @@ export function mapParticipantsToFormIds(
   if (!participants?.length) {
     return result;
   }
+  let admitterId = '';
+  let attendingId = '';
   for (const row of participants) {
     const role = (row.roleCode ?? '').trim();
     const id = preserveApiIdForRequest(row.practitionerId) ?? '';
@@ -34,15 +45,22 @@ export function mapParticipantsToFormIds(
       continue;
     }
     if (role === NURSE_STATION_PARTICIPANT_ROLE.INPATIENT_DOCTOR) {
-      result.inpatientDoctorId = id;
+      admitterId = id;
     } else if (role === NURSE_STATION_PARTICIPANT_ROLE.ATTENDING_DOCTOR) {
-      result.attendingDoctorId = id;
+      attendingId = id;
     } else if (role === NURSE_STATION_PARTICIPANT_ROLE.CHIEF_DOCTOR) {
       result.chiefDoctorId = id;
     } else if (role === NURSE_STATION_PARTICIPANT_ROLE.PRIMARY_NURSE) {
       result.primaryNurseId = id;
     }
   }
+  if (options?.bringDoctorToInpatientDoctor) {
+    // 待入科：带到住院医生；申请 ADMITTER / 登记 ATTENDING 均可；主治、主任不自动带
+    result.inpatientDoctorId = admitterId || attendingId;
+    return result;
+  }
+  result.inpatientDoctorId = admitterId;
+  result.attendingDoctorId = attendingId;
   return result;
 }
 

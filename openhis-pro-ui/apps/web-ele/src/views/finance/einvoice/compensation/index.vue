@@ -156,7 +156,7 @@ const tableColumns: TableColumn[] = [
   { prop: 'patientName', label: '患者', minWidth: 100, fixed: 'left' },
   { prop: 'encounterBusNo', label: '就诊号', minWidth: 140, showOverflowTooltip: true },
   { prop: 'issueKindLabel', label: '业务线', width: 80 },
-  { prop: 'paymentAmt', label: '支付金额', width: 100, slot: 'paymentAmt' },
+  { prop: 'totalAmt', label: '开票金额', width: 100, slot: 'totalAmt' },
   { prop: 'busNo', label: 'busNo', minWidth: 160, showOverflowTooltip: true },
   { prop: 'exceptionTypeLabel', label: '异常类型', width: 110, slot: 'exceptionType' },
   { prop: 'waitingMinutes', label: '等待时长', width: 100, slot: 'waitingMinutes' },
@@ -363,8 +363,8 @@ onMounted(() => {
           批量立即开具
         </ElButton>
       </template>
-      <template #paymentAmt="{ row }">
-        {{ row.paymentAmt != null ? formatMoneyDisplay(row.paymentAmt) : '-' }}
+      <template #totalAmt="{ row }">
+        {{ row.totalAmt != null ? formatMoneyDisplay(row.totalAmt) : '-' }}
       </template>
       <template #exceptionType="{ row }">
         <ElTag :type="exceptionTagType(row.exceptionType)" size="small">

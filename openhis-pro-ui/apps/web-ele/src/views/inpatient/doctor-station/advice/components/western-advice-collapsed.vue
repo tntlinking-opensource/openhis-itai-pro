@@ -6,6 +6,7 @@ import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
 import { formatMoneyStrYuan, formatUnitPriceYuan } from '../services/advice-format';
 import { isInpatientLongTermMedicationTherapy } from '../services/advice-row';
 import { totalAmountUnitDisplayLabel } from '../services/medication-unit-bands';
+import { formatWesternEditDoseSegment } from '#/utils/doctor-station/medication-dose-display';
 
 const props = withDefaults(
   defineProps<{
@@ -28,23 +29,18 @@ function terminologyLabel(options: TerminologyOptionDto[] | undefined, code: str
   return lb || c;
 }
 
+/** 收起态剂量+用法频次摘要（长期无总量；剂量段含最小单位括号） */
 function summaryLine(item: AdviceDrugItem) {
   const usageLabel = terminologyLabel(props.medicationRouteOptions, item.usage);
   const freqLabel = terminologyLabel(props.medicationRateOptions, item.frequency);
   const totalUnitLabel = totalAmountUnitDisplayLabel(item);
-  const sd =
-    item.singleDose === undefined ||
-    item.singleDose === null ||
-    !Number.isFinite(Number(item.singleDose))
-      ? '—'
-      : String(item.singleDose);
+  const dosePart = formatWesternEditDoseSegment(item);
   const ta =
     item.totalAmount === undefined ||
     item.totalAmount === null ||
     !Number.isFinite(Number(item.totalAmount))
       ? '—'
       : String(item.totalAmount);
-  const dosePart = `${sd}${item.doseMainUnit || ''}/次`;
   if (isInpatientLongTermMedicationTherapy(item.therapyEnum)) {
     return `${dosePart}，${usageLabel}，${freqLabel}`;
   }
@@ -59,8 +55,9 @@ function summaryLine(item: AdviceDrugItem) {
       {{ formatUnitPriceYuan(item.selectedDrugPrice) }}
     </div>
     <div class="collapsed-meta">
-      {{ item.pharmacy }} | {{ item.diagnosis || '-' }} | {{ item.feeNature }} |
-      {{ summaryLine(item) }} | 总金额：{{ formatMoneyStrYuan(calcTotalFee(item)) }}
+      {{ item.pharmacy }} | {{ item.feeNature }} | {{ summaryLine(item) }} | 总金额：{{
+        formatMoneyStrYuan(calcTotalFee(item))
+      }}
     </div>
   </div>
 </template>

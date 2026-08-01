@@ -26,6 +26,8 @@ const props = defineProps<Props>();
 const emit = defineEmits<{
   cancelExecute: [row: NurseAdviceExecuteRow];
   execute: [];
+  /** 输液药品行：单独打印本组瓶贴 */
+  printInfusionLabel: [row: NurseAdviceExecuteRow];
   selectionChange: [keys: string[]];
 }>();
 
@@ -63,6 +65,10 @@ const onSelectionChange = (selection: NurseAdviceExecuteRow[]) => {
 const executeRowSelectable = (row: NurseAdviceExecuteRow) =>
   !isNurseExecuteMedicationRow(row) &&
   !(row.statusEnum && isNurseExecuteRowCompleted(row.statusEnum));
+
+/** 输液/注射药品行可打单组瓶贴 */
+const canPrintInfusionLabelRow = (row: NurseAdviceExecuteRow) =>
+  isNurseExecuteMedicationRow(row) && row.infusionFlag === true;
 
 /** 同一申请单首行：用于组间分隔线 */
 const isApplyFormGroupStart = (row: NurseAdviceExecuteRow, rowIndex: number): boolean => {
@@ -277,17 +283,28 @@ defineExpose({
             {{ row.performerDisplay ?? '—' }}
           </template>
         </ElTableColumn>
-        <ElTableColumn label="操作" width="96" align="center" fixed="right">
+        <ElTableColumn label="操作" width="120" align="center" fixed="right">
           <template #default="{ row }">
-            <ElButton
-              v-if="row.canCancelExecute"
-              type="danger"
-              link
-              size="small"
-              @click="emit('cancelExecute', row)"
-            >
-              取消执行
-            </ElButton>
+            <div class="flex flex-wrap items-center justify-center gap-1">
+              <ElButton
+                v-if="canPrintInfusionLabelRow(row)"
+                type="primary"
+                link
+                size="small"
+                @click="emit('printInfusionLabel', row)"
+              >
+                打印
+              </ElButton>
+              <ElButton
+                v-if="row.canCancelExecute"
+                type="danger"
+                link
+                size="small"
+                @click="emit('cancelExecute', row)"
+              >
+                取消执行
+              </ElButton>
+            </div>
           </template>
         </ElTableColumn>
       </ElTable>

@@ -157,6 +157,13 @@
   left: 50% !important;
   max-width: calc(100% - 32px) !important;
   transform: translateX(-50%) !important;
+  /* 全局提示字号：相对 EP 默认（约 14px）加大两号 */
+  --el-message-font-size: 16px;
+  font-size: 16px;
+}
+
+.el-message .el-message__content {
+  font-size: inherit;
 }
 
 html.invert-mode {

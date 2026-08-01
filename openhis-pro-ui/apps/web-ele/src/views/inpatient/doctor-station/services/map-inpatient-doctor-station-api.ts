@@ -1,6 +1,6 @@
-import type { InpatientDoctorStationPatientDto } from '#/api/inpatient/doctor-station/inpatient-doctor-station-encounter.types';
-
 import type { InpatientDoctorStationPatient } from '../doctorPatientStore';
+
+import type { InpatientDoctorStationPatientDto } from '#/api/inpatient/doctor-station/inpatient-doctor-station-encounter.types';
 
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
@@ -55,6 +55,7 @@ export function mapDoctorStationPatientQueueRow(
     priorityEnum: dto.priorityEnum,
     pendingSettlementTotal: dto.pendingSettlementTotal,
     startTime: dto.startTime,
+    endTime: dto.endTime,
     statusEnum: dto.statusEnum,
     statusEnumText: dto.statusEnumText,
     totalAmount: dto.totalAmount,

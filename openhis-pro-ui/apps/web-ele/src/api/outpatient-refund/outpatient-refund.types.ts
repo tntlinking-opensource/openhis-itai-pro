@@ -75,6 +75,12 @@ export interface OutpatientRefundPaymentGroupDto {
   preservedLines: OutpatientRefundLineItemDto[];
   refundableAmount: number | string;
   refundingLines: OutpatientRefundLineItemDto[];
+  /** 原支付医保个账金额 */
+  ybAcctPay?: null | number | string;
+  /** 原支付医保统筹金额 */
+  ybFundPaySumamt?: null | number | string;
+  /** 原支付自付渠道合计 */
+  selfPayAmount?: null | number | string;
 }
 
 /** 加载就诊退费明细请求（与 OutpatientRefundQueueTab 一致） */
@@ -120,7 +126,8 @@ export interface ExecuteOutpatientBillRefundByPaymentRequest {
   originalPaymentId: string;
   preservedNewChargeItemIds?: string[];
   refundingChargeItemIds: string[];
-  refundPaymentDetails: RefundPaymentDetailSubmitDto[];
+  /** 可选；服务端按原支付原路返回，前端可不传 */
+  refundPaymentDetails?: RefundPaymentDetailSubmitDto[];
 }
 
 /** 按原支付执行门诊账单退费响应 */

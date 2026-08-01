@@ -8,6 +8,7 @@ import type {
   PricingConfirmationTableRow,
 } from './services/map-nurse-station-inpatient-billing';
 
+import type { OrderTemplateHeaderItem } from '#/api/basic/order-template';
 import type {
   NurseStationPricingCatalogRowDto,
   NurseStationPricingWriteItemDto,
@@ -41,9 +42,15 @@ import {
   isEncounterClinicalOrderMutationBlocked,
 } from '#/utils/inpatient/encounter-clinical-order-gate';
 
+import {
+  INPATIENT_BILLING_DEFAULT_TAB,
+  INPATIENT_BILLING_TABS,
+} from '#/views/inpatient/nurse-station/inpatient-billing/inpatient-billing-tab.config';
+
 import AutoRollPanel from './components/auto-roll-panel.vue';
 import OrderBillingPanel from './components/order-billing-panel.vue';
 import PricingConfirmationPanel from './components/pricing-confirmation-panel.vue';
+import PricingOrderTemplatePanel from './components/pricing-order-template-panel.vue';
 import {
   buildNurseStationStickyPatientInfoFromModulePatient,
   buildNurseStationStickyPatientInfoPlaceholder,
@@ -66,8 +73,10 @@ import {
   PRICING_PRODUCT_TABLE_DEVICE,
   PRICING_PRODUCT_TABLE_SERVICE,
 } from './services/map-nurse-station-inpatient-billing';
-
-type BillingTab = 'auto-roll' | 'order-billing' | 'pricing-confirmation';
+import {
+  applyPricingOrderTemplateToSelectedItems,
+  PricingOrderTemplateApplyError,
+} from './services/pricing-order-template-apply.service';
 
 interface SelectedPricingCatalogItem {
   rowKey: string;
@@ -94,9 +103,14 @@ const pricingRows = ref<PricingConfirmationTableRow[]>([]);
 const selectedPricingRowIds = ref<string[]>([]);
 const pricingTableKey = ref(0);
 const pricingTimeRange = ref<string[]>([]);
-const activeTab = ref<BillingTab>('pricing-confirmation');
+const activeTab = ref(INPATIENT_BILLING_DEFAULT_TAB);
+const inpatientBillingTabs = INPATIENT_BILLING_TABS;
 const autoRollPanelRef = ref<InstanceType<typeof AutoRollPanel> | null>(null);
 const batchDialogVisible = ref(false);
+const pricingOrderTemplateApplying = ref(false);
+const pricingOrderTemplatePanelRef = ref<InstanceType<typeof PricingOrderTemplatePanel> | null>(
+  null,
+);
 const projectKeyword = ref('');
 const projectType = ref<PricingCatalogCategory>('device');
 const selectedPricingMap = ref<Map<string, SelectedPricingCatalogItem>>(new Map());
@@ -182,7 +196,7 @@ const batchPricingDialogTitle = computed(() =>
 const billingPatientSingleSelected = computed(() => props.patients.length === 1);
 /** 单选患者后可查看住院记账（不受出院结算轨限制）。 */
 const canViewBilling = computed(() => billingPatientSingleSelected.value);
-/** 选中患者处于出院结算轨：禁止划价/补费/取消划价等写操作。 */
+/** 选中患者处于出院结算轨：禁止划价/补费/冲销等写操作。 */
 const isEncounterChargeMutationBlocked = computed(() =>
   billingPatientSingleSelected.value
     ? isEncounterClinicalOrderMutationBlocked(props.patients[0]?.statusEnum)
@@ -403,6 +417,66 @@ function closeBatchPricingDialog() {
   supplementFeeOrderRow.value = null;
 }
 
+/** 套用划价组套：预览结构 → prepicked 目录 → 写入右侧已选清单 */
+async function handlePricingOrderTemplateSelect(header: OrderTemplateHeaderItem) {
+  if (!canOperateBilling.value) {
+    if (isEncounterChargeMutationBlocked.value) {
+      ElMessage.warning(ENCOUNTER_CLINICAL_ORDER_MUTATION_BLOCKED_MESSAGE);
+      return;
+    }
+    ElMessage.warning('住院记账仅支持单选患者，请在左侧只勾选 1 位患者');
+    return;
+  }
+  if (pricingOrderTemplateApplying.value) {
+    return;
+  }
+  const orderTemplateId = preserveApiIdForRequest(header.orderTemplateId);
+  if (!orderTemplateId) {
+    ElMessage.warning('组套无效，无法套用');
+    return;
+  }
+  pricingOrderTemplateApplying.value = true;
+  try {
+    const result = await applyPricingOrderTemplateToSelectedItems({
+      orderTemplateId,
+      organizationUnitId: resolvePricingOrganizationUnitId(),
+      existingSelected: selectedPricingItems.value,
+    });
+    // 整表替换，保证 Map 变更触发已选清单重算
+    selectedPricingMap.value = new Map(
+      result.items.map((item) => [
+        item.rowKey,
+        {
+          rowKey: item.rowKey,
+          catalog: item.catalog,
+          category: item.category,
+          quantity: item.quantity,
+        },
+      ]),
+    );
+    if (result.missingProductNames.length > 0) {
+      const previewNames = result.missingProductNames.slice(0, 3).join('、');
+      const more =
+        result.missingProductNames.length > 3 ? `等 ${result.missingProductNames.length} 项` : '';
+      ElMessage.warning(
+        `已套用组套「${result.templateName}」（${result.appliedLineCount} 项）；未找到：${previewNames}${more}`,
+      );
+    } else {
+      ElMessage.success(`已套用组套「${result.templateName}」（${result.appliedLineCount} 项）`);
+    }
+    pricingOrderTemplatePanelRef.value?.clearSelection();
+  } catch (error) {
+    pricingOrderTemplatePanelRef.value?.clearSelection();
+    if (error instanceof PricingOrderTemplateApplyError) {
+      ElMessage.error(error.message);
+      return;
+    }
+    ElMessage.error('组套套用失败，请稍后重试');
+  } finally {
+    pricingOrderTemplateApplying.value = false;
+  }
+}
+
 /** 清空右侧已选项目。 */
 function clearSelectedPricingItems() {
   selectedPricingMap.value.clear();
@@ -482,7 +556,7 @@ function handlePricingSelectionChange(ids: string[]) {
   selectedPricingRowIds.value = ids;
 }
 
-/** 取消划价：勾选待结算行整行还原（IF-IP-PRC-06） */
+/** 冲销：勾选待结算行整行冲销留痕（IF-IP-PRC-06） */
 async function handleCancelPricing() {
   if (!canOperateBilling.value) {
     if (isEncounterChargeMutationBlocked.value) {
@@ -501,14 +575,14 @@ async function handleCancelPricing() {
     return;
   }
   if (items.length > PRICING_CANCEL_BATCH_LIMIT) {
-    ElMessage.warning(`单次最多取消 ${PRICING_CANCEL_BATCH_LIMIT} 条划价记录`);
+    ElMessage.warning(`单次最多冲销 ${PRICING_CANCEL_BATCH_LIMIT} 条划价记录`);
     return;
   }
 
   try {
     await ElMessageBox.confirm(
-      `确认取消已选 ${items.length} 条划价记录？取消后费用与耗材发放将整行还原，补费父医嘱不变。`,
-      '取消划价',
+      `确认冲销已选 ${items.length} 条划价记录？冲销后费用与耗材发放将整行对冲留痕，补费父医嘱不变。`,
+      '冲销',
       {
         type: 'warning',
         confirmButtonText: '确定',
@@ -521,7 +595,7 @@ async function handleCancelPricing() {
 
   const res = await cancelPricingRequest.run({ items });
   const count = res.processedCount ?? items.length;
-  ElMessage.success(`已成功取消 ${count} 条划价记录`);
+  ElMessage.success(`已成功冲销 ${count} 条划价记录`);
   clearSelectedPricingRows();
   await loadPricedOrders();
   if (activeTab.value === 'order-billing') {
@@ -677,12 +751,15 @@ watch(activeTab, (tab) => {
       type="warning"
       :closable="false"
       show-icon
-      :title="`${ENCOUNTER_CLINICAL_ORDER_MUTATION_BLOCKED_MESSAGE}（仅可查看，不可划价、补费或取消划价）`"
+      :title="`${ENCOUNTER_CLINICAL_ORDER_MUTATION_BLOCKED_MESSAGE}（仅可查看，不可划价、补费或冲销）`"
     />
     <ElTabs v-model="activeTab" class="billing-tabs">
-      <ElTabPane label="医嘱计费" name="order-billing" />
-      <ElTabPane label="非医嘱计费" name="pricing-confirmation" />
-      <ElTabPane label="自动计费" name="auto-roll" />
+      <ElTabPane
+        v-for="tab in inpatientBillingTabs"
+        :key="tab.name"
+        :label="tab.label"
+        :name="tab.name"
+      />
     </ElTabs>
 
     <PricingConfirmationPanel
@@ -711,7 +788,7 @@ watch(activeTab, (tab) => {
     />
 
     <OrderBillingPanel
-      v-else
+      v-else-if="activeTab === 'order-billing'"
       v-model:category="orderBillingCategory"
       v-model:keyword="orderBillingKeyword"
       v-model:dept="orderBillingDept"
@@ -762,7 +839,7 @@ watch(activeTab, (tab) => {
       v-model="batchDialogVisible"
       class="batch-pricing-dialog-wrapper"
       :title="batchPricingDialogTitle"
-      width="1480px"
+      width="1680px"
       @closed="closeBatchPricingDialog"
     >
       <div class="batch-pricing-dialog">
@@ -786,7 +863,15 @@ watch(activeTab, (tab) => {
         </div>
 
         <div class="batch-pricing-dialog__body">
-          <section class="batch-pricing-panel batch-pricing-panel--left">
+          <PricingOrderTemplatePanel
+            ref="pricingOrderTemplatePanelRef"
+            :active="batchDialogVisible"
+            :applying="pricingOrderTemplateApplying"
+            :disabled="!canOperateBilling"
+            @select="handlePricingOrderTemplateSelect"
+          />
+
+          <section class="batch-pricing-panel batch-pricing-panel--catalog">
             <header class="batch-pricing-panel__header">项目检索</header>
             <div class="batch-pricing-filter">
               <ElRadioGroup v-model="projectType" @change="handleProjectTypeChange">
@@ -974,8 +1059,8 @@ watch(activeTab, (tab) => {
 
 .batch-pricing-dialog__body {
   display: grid;
-  gap: 16px;
-  grid-template-columns: minmax(520px, 1fr) minmax(640px, 1.35fr);
+  gap: 12px;
+  grid-template-columns: minmax(220px, 0.7fr) minmax(480px, 1.1fr) minmax(520px, 1.2fr);
   height: 480px;
 }
 

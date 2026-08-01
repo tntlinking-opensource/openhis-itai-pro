@@ -38,7 +38,7 @@ export function mapEncounterDiagnosisToAdmissionFormState(
 ): AdmissionDiagnosisFormState {
   const base = createEmptyAdmissionDiagnosisFormState();
   base.diagnosisDescription = resolveUserDiagnosisDescription(primary);
-  base.conditionId = preserveApiIdForRequest(primary.conditionId) || undefined;
+  base.encounterDiagnosisId = preserveApiIdForRequest(primary.encounterDiagnosisId) || undefined;
 
   if (isTcmDiagnosisRow(primary)) {
     const groupKey = String(primary.tcmSyndromeGroup ?? '').trim();

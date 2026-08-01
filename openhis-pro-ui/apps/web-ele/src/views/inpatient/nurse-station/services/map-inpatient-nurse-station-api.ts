@@ -3,19 +3,11 @@ import type {
   PatientQueueItemDto,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station.types';
 
-import { NURSE_STATION_STATUS_FILTER_SETTLED_DISCHARGED } from '#/api/inpatient/nurse-station/inpatient-nurse-station.types';
-
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { resolveAdministrativeGenderLabel } from '#/utils/gender/resolve-administrative-gender-label';
 import { normalizeAdmCondTermCode } from '#/utils/terminology/resolve-adm-cond-code-label';
 
-import type {
-  PatientItem,
-  PatientQueueScopeFilter,
-  PatientStatusFilter,
-  RegionItem,
-  WardItem,
-} from '../types';
+import type { PatientItem, PatientStatusFilter, RegionItem, WardItem } from '../types';
 
 /** 任务筛选：前端下拉值与后端 code 一致，空表示全部 */
 export function mapStatusFilterToTaskFilter(status: PatientStatusFilter): string | undefined {
@@ -23,16 +15,6 @@ export function mapStatusFilterToTaskFilter(status: PatientStatusFilter): string
     return undefined;
   }
   return status;
-}
-
-/** 列表范围筛选 → 后端 nurseStationStatusFilter */
-export function mapQueueScopeFilterToStatusFilter(
-  scope: PatientQueueScopeFilter,
-): string | undefined {
-  if (scope === 'settled-discharged') {
-    return NURSE_STATION_STATUS_FILTER_SETTLED_DISCHARGED;
-  }
-  return undefined;
 }
 
 /** 病区树 → 左侧「病区」勾选项 */
@@ -146,10 +128,13 @@ export function mapQueueItemToPatientItem(
     name: (dto.patientName ?? '').trim() || '—',
     gender: resolveAdministrativeGenderLabel(dto.genderEnumText, dto.genderEnum),
     age: parseAgeTextToNumber(dto.ageText),
+    ageText: (dto.ageText ?? '').trim() || undefined,
     level: (dto.nursingLevelName ?? '').trim(),
     priorityEnum: normalizeAdmCondTermCode(dto.priorityEnum) || undefined,
-    feeType: (dto.organizationName ?? '').trim() || '—',
+    feeType: (dto.contractDisplay ?? '').trim() || '—',
     diagnosis: (dto.diagnosisSummary ?? '').trim() || '—',
+    attendingDoctorName: (dto.attendingDoctorName ?? '').trim() || undefined,
+    primaryNurseName: (dto.primaryNurseName ?? '').trim() || undefined,
     accountId: preserveApiIdForRequest(dto.accountId),
     accountBalance: dto.accountBalance,
     accountBalanceDisplayMode: dto.accountBalanceDisplayMode,
@@ -157,14 +142,16 @@ export function mapQueueItemToPatientItem(
     accountBalanceSubText: dto.accountBalanceSubText,
     availableBalance: dto.availableBalance,
     pendingSettlementTotal: dto.pendingSettlementTotal,
+    paidAmount: dto.paidAmount,
     regionId,
+    wardName: (dto.wardName ?? '').trim() || undefined,
     wardId: houseLocationId,
+    houseName: (dto.houseName ?? '').trim() || undefined,
     bedNo: (dto.bedName ?? '').trim(),
     bedLocationId: String(dto.bedId ?? '').trim(),
     statusEnum: (dto.statusEnum ?? '').trim(),
     statusEnumText: (dto.statusEnumText ?? '').trim() || undefined,
     lowBalanceWarning: dto.lowBalanceWarning === true,
-    recallEnabled: dto.recallEnabled === true,
     pendingAudit,
     pendingExecute,
     taskTag: '',

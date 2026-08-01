@@ -43,9 +43,11 @@ export interface ReturnToSupplierListRowDto {
   typeEnum?: number;
   statusEnum?: number;
   categoryEnum?: number;
-  sourceLocationId?: number;
-  purposeLocationId?: number;
-  supplierId?: number;
+  sourceLocationId?: number | string;
+  purposeLocationId?: number | string;
+  supplierId?: number | string;
+  /** 供应商展示名（列表富化） */
+  supplierName?: string;
   itemId?: number;
   itemTable?: string;
   itemQuantity?: number;
@@ -54,6 +56,14 @@ export interface ReturnToSupplierListRowDto {
   traceNo?: string;
   price?: number;
   totalPrice?: number;
+  /** 单据总金额（与 totalPrice 同口径） */
+  totalAmount?: number;
+  applicantId?: number | string;
+  /** 制单人展示名（列表富化） */
+  creatorName?: string;
+  approverId?: number | string;
+  /** 审批人展示名（列表富化） */
+  approverName?: string;
   applyTime?: string;
   approvalTime?: string;
 }

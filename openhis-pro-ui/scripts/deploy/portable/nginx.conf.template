@@ -1,4 +1,6 @@
 worker_processes  1;
+# NSSM/Windows 服务下须前台运行，避免主进程退出导致服务反复 StartPending
+daemon off;
 error_log  logs/error.log;
 pid        logs/nginx.pid;
 
@@ -28,6 +30,18 @@ http {
 
         location / {
             try_files $uri $uri/ /index.html;
+        }
+
+        # 公开健康检查（须在 location /api/ 之前；后端在 /api/health，非 /api/app）
+        location = /api/health {
+            proxy_pass http://{{BACKEND_HOST}}:{{BACKEND_PORT}}/api/health;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_connect_timeout 5s;
+            proxy_read_timeout 30s;
+            proxy_send_timeout 30s;
         }
 
         location /api/ {

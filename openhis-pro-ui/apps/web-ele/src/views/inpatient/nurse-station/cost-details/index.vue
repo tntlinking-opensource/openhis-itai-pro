@@ -13,12 +13,20 @@ import type {
 import { computed, onMounted, ref, watch } from 'vue';
 
 import dayjs from 'dayjs';
-import { ElMessage } from 'element-plus';
+import { ElButton, ElMessage } from 'element-plus';
 
 import {
   httpLoadNurseStationCostDetailPageInit,
   httpQueryNurseStationInpatientCostDetail,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-cost-detail.http';
+import type { PreSettleInpatientChargesResponse } from '#/api/inpatient-settle';
+import DetailAuditRemindDialog from '#/chs/components/detail-audit-remind-dialog.vue';
+import InpatientClinicalPreSettlePreviewDialog from '#/chs/components/inpatient-clinical-pre-settle-preview-dialog.vue';
+import type { DetailAuditRemindDialogExpose } from '#/chs/composables/use-detail-audit-gate';
+import {
+  buildClinicalPreSettleInsuranceBreakdown,
+  runInpatientClinicalPreSettle,
+} from '#/chs/composables/use-inpatient-clinical-pre-settle';
 import InpatientPatientInfoHeader from '#/components/inpatient/patient-info-header.vue';
 import { useRequest } from '#/hooks/use-request';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
@@ -28,6 +36,8 @@ import {
   buildNurseStationStickyPatientInfoFromModulePatient,
   buildNurseStationStickyPatientInfoPlaceholder,
 } from '../components/build-nurse-station-sticky-patient-info';
+import { loadPrintPendingRows } from '../print-center/load-print-pending';
+import { printInpatientPrintCenter } from '../print-center/print-center-print';
 import {
   isCostDetailPresentationMode,
   isCostDetailStatusFilter,
@@ -61,6 +71,7 @@ const DEFAULT_STATUS_FILTER: NurseStationCostDetailStatusFilter = 'PENDING_SETTL
 
 const costDetailQuickDay = ref<CostDetailQuickDay>('today');
 const costDetailDateRange = ref<string[]>([]);
+const costDetailKeyword = ref('');
 const costDetailStatusEnum = ref<NurseStationCostDetailStatusFilter>(DEFAULT_STATUS_FILTER);
 const presentationMode = ref<NurseStationCostDetailPresentationMode>('DETAIL');
 const presentationOptions = ref<NurseStationCostDetailPresentationOptionDto[]>(
@@ -73,6 +84,13 @@ const detailLines = ref<NurseStationCostDetailLineDto[]>([]);
 const summaryLines = ref<NurseStationCostSummaryLineDto[]>([]);
 const totals = ref<NurseStationCostDetailTotalsDto | null>(null);
 const pageInitialized = ref(false);
+/** 费用清单打印中 */
+const printingFeeList = ref(false);
+
+const detailAuditDialogRef = ref<DetailAuditRemindDialogExpose | null>(null);
+const clinicalPreSettleLoading = ref(false);
+const clinicalPreSettleVisible = ref(false);
+const clinicalPreSettleSnapshot = ref<PreSettleInpatientChargesResponse | null>(null);
 
 const initRequest = useRequest(httpLoadNurseStationCostDetailPageInit, { manual: true });
 const queryRequest = useRequest(httpQueryNurseStationInpatientCostDetail, { manual: true });
@@ -165,6 +183,54 @@ function handlePresentationModeChange(mode: NurseStationCostDetailPresentationMo
 function handleCostDetailReset() {
   handleCostDetailQuickDayChange('today');
   costDetailStatusEnum.value = DEFAULT_STATUS_FILTER;
+  costDetailKeyword.value = '';
+}
+
+/** 按当前日期区间打印住院费用清单 */
+async function handlePrintFeeList() {
+  if (!canOperateCostDetail.value || props.patients.length !== 1) {
+    ElMessage.warning('费用清单仅支持单选患者，请在左侧只勾选 1 位患者');
+    return;
+  }
+  const [dateFrom, dateTo] = costDetailDateRange.value;
+  if (!dateFrom || !dateTo) {
+    ElMessage.warning('请选择有效的查询日期');
+    return;
+  }
+  if (dayjs(dateFrom).isAfter(dayjs(dateTo))) {
+    ElMessage.warning('请选择有效的查询日期');
+    return;
+  }
+  if (printingFeeList.value) {
+    return;
+  }
+  printingFeeList.value = true;
+  try {
+    const selectedRows = await loadPrintPendingRows({
+      docType: 'fee_list',
+      patients: props.patients,
+      dateFrom,
+      dateTo,
+      executionDeadline: `${dateTo} 23:59:59`,
+    });
+    if (selectedRows.length <= 0) {
+      ElMessage.warning('暂无「费用清单」可打印数据');
+      return;
+    }
+    const result = await printInpatientPrintCenter({
+      docType: 'fee_list',
+      patients: props.patients,
+      selectedRows,
+      dateFrom,
+      dateTo,
+      executionDeadline: `${dateTo} 23:59:59`,
+    });
+    if (result.ok) {
+      ElMessage.success(`已发送打印：费用清单，共 ${result.count} 份`);
+    }
+  } finally {
+    printingFeeList.value = false;
+  }
 }
 
 /** 校验查询入参是否完整。 */
@@ -191,6 +257,8 @@ function resolveQueryPayload() {
     ElMessage.warning('查询参数错误，请刷新页面');
     return null;
   }
+  // 关键字 trim 后空串不传，避免后端无意义过滤
+  const keyword = costDetailKeyword.value.trim();
   return {
     encounterId: context.encounterId,
     patientId: context.patientId,
@@ -198,6 +266,7 @@ function resolveQueryPayload() {
     dateTo,
     presentationMode: presentationMode.value,
     statusEnum: costDetailStatusEnum.value,
+    keyword: keyword || undefined,
   };
 }
 
@@ -242,16 +311,67 @@ onMounted(async () => {
     await handleCostDetailQuery();
   }
 });
+
+/** 完整预结算：3101→2303 仅展示金额 */
+async function handleClinicalPreSettle() {
+  const context = selectedPatientContext.value;
+  if (!context) {
+    ElMessage.warning('费用明细仅支持单选患者，请在左侧只勾选 1 位患者');
+    return;
+  }
+  clinicalPreSettleLoading.value = true;
+  try {
+    const result = await runInpatientClinicalPreSettle({
+      params: {
+        encounterId: context.encounterId,
+        patientId: context.patientId,
+        encounterBusNo: context.patient.encounterBusNo,
+        statusEnum: context.patient.statusEnum,
+        contractDisplay: context.patient.feeType,
+      },
+      dialogRef: detailAuditDialogRef,
+    });
+    if (!result) {
+      return;
+    }
+    clinicalPreSettleSnapshot.value = result.snapshot;
+    clinicalPreSettleVisible.value = true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '完整预结算失败';
+    ElMessage.error(message);
+  } finally {
+    clinicalPreSettleLoading.value = false;
+  }
+}
+
+const clinicalPreSettleInsuranceBreakdown = computed(() =>
+  buildClinicalPreSettleInsuranceBreakdown(clinicalPreSettleSnapshot.value),
+);
 </script>
 
 <template>
   <div class="cost-details-page flex min-h-0 flex-1 flex-col">
     <InpatientPatientInfoHeader :patient-info="stickyPatientInfo" />
+    <div class="cost-details-toolbar">
+      <ElButton
+        type="primary"
+        :disabled="!canOperateCostDetail"
+        :loading="clinicalPreSettleLoading"
+        @click="handleClinicalPreSettle"
+      >
+        完整预结算
+      </ElButton>
+      <span class="cost-details-toolbar__hint">
+        可随时试算医保金额（3101→2303），不落账；正式结算仍须护士出院后到收费处办理
+      </span>
+    </div>
     <CostDetailPanel
       v-model:date-range="costDetailDateRange"
+      v-model:keyword="costDetailKeyword"
       v-model:status-enum="costDetailStatusEnum"
       :detail-lines="detailLines"
       :loading="queryRequest.loading.value || initRequest.loading.value"
+      :printing="printingFeeList"
       :presentation-mode="presentationMode"
       :presentation-options="presentationOptions"
       :quick-day="costDetailQuickDay"
@@ -259,9 +379,20 @@ onMounted(async () => {
       :summary-lines="summaryLines"
       :totals="totals"
       @on-presentation-mode-change="handlePresentationModeChange"
+      @on-print="handlePrintFeeList"
       @on-query="handleCostDetailQuery"
       @on-quick-day-change="handleCostDetailQuickDayChange"
       @on-reset="handleCostDetailReset"
+    />
+
+    <DetailAuditRemindDialog ref="detailAuditDialogRef" warn-type="1" />
+    <InpatientClinicalPreSettlePreviewDialog
+      v-model="clinicalPreSettleVisible"
+      :display-amount="clinicalPreSettleSnapshot?.displayAmount ?? 0"
+      :receivable-total="clinicalPreSettleSnapshot?.receivableTotal ?? 0"
+      :preview-text="clinicalPreSettleSnapshot?.previewText"
+      :insurance-pre-settled="clinicalPreSettleSnapshot?.insurancePreSettled"
+      :insurance-breakdown-items="clinicalPreSettleInsuranceBreakdown"
     />
   </div>
 </template>
@@ -278,5 +409,18 @@ onMounted(async () => {
 
 .cost-details-page :deep(.inpatient-patient-info-header) {
   margin-bottom: 0;
+}
+
+.cost-details-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px 0;
+}
+
+.cost-details-toolbar__hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 </style>

@@ -145,6 +145,8 @@ import {
   clearInventoryHeadFormValidation,
   validateInventoryHeadFormFields,
 } from '#/utils/inventory/inventory-doc-head-form-validation';
+import { buildInvDocumentTitle, printInvDocument } from '#/utils/print/print-inv-document';
+import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 import { useUserStore } from '@vben/stores';
 
 defineOptions({ name: 'InventoryTransferMainPane' });
@@ -164,6 +166,8 @@ interface TransferPreviewRow {
   itemId?: number | string;
   inventoryItemId?: number | string;
   productName: string;
+  /** 药品分类码；中药=4 时单价三位展示 */
+  categoryCode?: string;
   spec: string;
   manufacturer: string;
   itemQuantity?: number;
@@ -219,10 +223,7 @@ const isReadOnlyShell = computed(() => props.variant === 'in');
 
 /** 选品源库位选项池（调出侧）。 */
 const productPickSourceLocationOptions = computed((): ApiOptionItem[] => {
-  if (isDepartmentDomain.value && props.variant === 'out') {
-    return props.pharmacyOptions;
-  }
-  if (isPharmacyDomain.value) return props.pharmacyOptions;
+  if (isDepartmentDomain.value || isPharmacyDomain.value) return props.pharmacyOptions;
   return props.warehouseOptions;
 });
 
@@ -237,15 +238,14 @@ const transferCategoryEnum = computed(() => {
 });
 
 const sourceTypeEnum = computed(() => {
-  if (isDepartmentDomain.value) return 'PHARMACY';
-  return isPharmacyDomain.value ? 'PHARMACY' : 'CABINET';
+  if (isDepartmentDomain.value || isPharmacyDomain.value) return 'PHARMACY';
+  return 'CABINET';
 });
 
+/** 科室/药房/药库均为平级调拨：源与目的同级，禁止跨药房↔药库。 */
 const purposeTypeEnum = computed(() => {
-  if (isDepartmentDomain.value) {
-    return props.variant === 'out' ? 'CABINET' : 'PHARMACY';
-  }
-  return isPharmacyDomain.value ? 'PHARMACY' : 'CABINET';
+  if (isDepartmentDomain.value || isPharmacyDomain.value) return 'PHARMACY';
+  return 'CABINET';
 });
 
 const listSource = computed(() => {
@@ -260,12 +260,18 @@ const normalizedItemTableTypeOptions = computed(() =>
   normalizeInventoryItemTableTypeOptions(props.itemTableTypeOptions),
 );
 
-const HEAD_ITEM_TABLE_TYPE = computed(() =>
-  resolveDefaultInventoryItemTableType(
+/** 科室默认耗材，药库/药房默认药品。 */
+function preferredItemTableType(): string {
+  return isDepartmentDomain.value ? INV_ITEM_TABLE_TYPE_DEVICE : INV_ITEM_TABLE_TYPE_MEDICATION;
+}
+
+/** 取当前可选项目类型默认值。 */
+function firstItemTableTypeValue(): string {
+  return resolveDefaultInventoryItemTableType(
     normalizedItemTableTypeOptions.value,
-    isDepartmentDomain.value ? INV_ITEM_TABLE_TYPE_DEVICE : INV_ITEM_TABLE_TYPE_MEDICATION,
-  ),
-);
+    preferredItemTableType(),
+  );
+}
 
 const pinnedPractitionerOptions = ref<ApiOptionItem[]>([]);
 
@@ -276,64 +282,50 @@ const effectivePractitionerOptions = computed(() =>
   }),
 );
 
+/** 详情回显时把经手人 id pin 进下拉（无姓名时仍 pin，避免 ElSelect 空白）。 */
 function pinPractitionerOption(id: unknown, label?: string) {
   const v = String(id ?? '').trim();
   if (v === '') return;
+  if (effectivePractitionerOptions.value.some((o) => String(o.value ?? '').trim() === v)) return;
   const lbl = String(label ?? '').trim();
-  if (effectivePractitionerOptions.value.some((o) => o.value === v)) return;
-  if (lbl !== '' && lbl !== v) {
-    pinnedPractitionerOptions.value = [{ label: lbl, value: v }];
-  }
+  pinnedPractitionerOptions.value = [{ label: lbl !== '' && lbl !== v ? lbl : v, value: v }];
 }
 
 const sourceLocationLabel = computed(() => {
-  if (isDepartmentDomain.value) {
-    return props.variant === 'out' ? '调出科室药房' : '源药库';
-  }
+  if (isDepartmentDomain.value) return '调出科室药房';
   if (isPharmacyDomain.value) return '调出药房';
   return '调出药库';
 });
 
 const purposeLocationLabel = computed(() => {
-  if (isDepartmentDomain.value) {
-    return props.variant === 'out' ? '调入药库' : '目的科室药房';
-  }
+  if (isDepartmentDomain.value) return '调入科室药房';
   if (isPharmacyDomain.value) return '调入药房';
   return '调入药库';
 });
 
-/** 单头调出库位：药房域/科室出库为药房，药库域为药库（同级调拨，禁止药房↔药库互调）。 */
+/** 科室「调出/调入科室药房」字数更长，加宽 label，避免折行叠字。 */
+const headFormLabelWidth = computed(() => (isDepartmentDomain.value ? '120px' : '96px'));
+
+/** 单头调出库位：科室/药房用药房选项，药库用库房选项（平级调拨）。 */
 const sourceLocationOptions = computed(() => {
-  let base: ApiOptionItem[];
-  if (isDepartmentDomain.value) {
-    base = props.variant === 'in' ? props.warehouseOptions : props.pharmacyOptions;
-  } else if (isPharmacyDomain.value) {
-    base = props.pharmacyOptions;
-  } else {
-    base = props.warehouseOptions;
-  }
+  const base =
+    isDepartmentDomain.value || isPharmacyDomain.value
+      ? props.pharmacyOptions
+      : props.warehouseOptions;
   return filterTransferLocationOptionsExcluding(base, purposeLocationId.value);
 });
 
-/** 单头调入库位：与调出同级（药房↔药房、药库↔药库）；排除已选调出库位。 */
+/** 单头调入库位：与调出同级；排除已选调出库位。 */
 const purposeLocationOptions = computed(() => {
-  let base: ApiOptionItem[];
-  if (isDepartmentDomain.value) {
-    base = props.variant === 'in' ? props.pharmacyOptions : props.warehouseOptions;
-  } else if (isPharmacyDomain.value) {
-    base = props.pharmacyOptions;
-  } else {
-    base = props.warehouseOptions;
-  }
+  const base =
+    isDepartmentDomain.value || isPharmacyDomain.value
+      ? props.pharmacyOptions
+      : props.warehouseOptions;
   return filterTransferLocationOptionsExcluding(base, sourceLocationId.value);
 });
 
 const transferSameLocationWarning = computed(() => {
-  if (isDepartmentDomain.value) {
-    return props.variant === 'out'
-      ? '调出科室药房与调入药库不能相同'
-      : '源药库与目的科室药房不能相同';
-  }
+  if (isDepartmentDomain.value) return '调出科室药房与调入科室药房不能相同';
   if (isPharmacyDomain.value) return '调出药房与调入药房不能相同';
   return '调出药库与调入药库不能相同';
 });
@@ -365,10 +357,9 @@ function resolveDistinctLocationIdFromOptions(
 }
 
 function transferLocationPoolOptions(): ApiOptionItem[] {
-  if (isDepartmentDomain.value) {
-    return props.variant === 'in' ? props.pharmacyOptions : props.warehouseOptions;
+  if (isDepartmentDomain.value || isPharmacyDomain.value) {
+    return props.pharmacyOptions;
   }
-  if (isPharmacyDomain.value) return props.pharmacyOptions;
   return props.warehouseOptions;
 }
 
@@ -399,6 +390,7 @@ const productPickGateLocationId = computed(() =>
 );
 
 const practitionerId = ref<number | string | undefined>(undefined);
+const headItemTableType = ref(firstItemTableTypeValue());
 const detailStatusEnum = ref<number | undefined>(undefined);
 const headApplyTime = ref(formatDateTime(new Date()));
 const saving = ref(false);
@@ -415,16 +407,32 @@ const headerStatusText = computed(() => {
 });
 
 const docActionFlags = computed(() => {
+  const hasPersistedBusNo = Boolean(headerBusNo.value);
   const base = buildStockOutDocActionFlags({
-    hasPersistedBusNo: Boolean(headerBusNo.value),
+    hasPersistedBusNo,
     isDraft: isNewDraft.value,
     status: detailStatusEnum.value,
   });
   const busy = saving.value;
+  // 调拨入库只读壳：仅开放打印，禁掉制单/审驳
+  if (isReadOnlyShell.value) {
+    return {
+      ...base,
+      saveDisabled: true,
+      saveAndSubmitDisabled: true,
+      removeDisabled: true,
+      submitApprovalDisabled: true,
+      withdrawDisabled: true,
+      approveDisabled: true,
+      rejectDisabled: true,
+      printDisabled: busy || !hasPersistedBusNo,
+    };
+  }
   return {
     ...base,
     saveDisabled: base.saveDisabled || busy,
     saveAndSubmitDisabled: base.saveAndSubmitDisabled || busy,
+    printDisabled: busy || !hasPersistedBusNo,
   };
 });
 
@@ -436,7 +444,9 @@ function resolveOccurrenceTimeForApi(): string {
 
 function formatTransferDetailTotalAmount(total: unknown): string {
   if (total === undefined || total === null || total === '') return '';
-  return formatMoneyDisplay(total);
+  const n = Number(total);
+  if (!Number.isFinite(n)) return String(total).trim();
+  return formatMoneyDisplay(n);
 }
 
 /** 编辑态：按数量 × 单价刷新金额（详情 load 不重算 totalPrice）。 */
@@ -566,6 +576,7 @@ function mapDetailLineToGrid(
     medicinePick: name ? { id: itemIdRaw as number | string | undefined, name } : undefined,
     itemTable: ln.itemTable,
     itemId: itemIdRaw,
+    productName: name,
     spec: transferDetailLineSpecification(ln, catalog),
     manufacturer: String(ln.manufacturer ?? '').trim(),
     itemQuantity: rawQty,
@@ -597,6 +608,29 @@ function mapDetailLineToGrid(
       },
     ];
   }
+  // 源库存：详情 availableQuantity 为拆零，换算到当前展示计量带（与选品/切单位口径一致）
+  const availRaw = (ln as { availableQuantity?: number | string | null }).availableQuantity;
+  if (availRaw !== undefined && availRaw !== null) {
+    const splitAvail = Number(availRaw);
+    if (Number.isFinite(splitAvail)) {
+      const bands = row.unitBands ?? [];
+      const bandKind = String(row.selectedBandKind ?? '')
+        .trim()
+        .toUpperCase();
+      if (bands.length > 0 && bandKind && bandKind !== 'LEGACY' && bandKind !== 'SPLIT') {
+        const displayAvail = convertInboundQtyBetweenBandKinds(
+          splitAvail,
+          'SPLIT',
+          bandKind,
+          bands,
+        );
+        row.sourceStockQuantity =
+          displayAvail !== undefined && Number.isFinite(displayAvail) ? displayAvail : splitAvail;
+      } else {
+        row.sourceStockQuantity = splitAvail;
+      }
+    }
+  }
   return row;
 }
 
@@ -625,7 +659,7 @@ const columns: VxeGridPropTypes.Column[] = [
       props: {
         listSource: listSource,
         query: async () => ({
-          productTableName: HEAD_ITEM_TABLE_TYPE.value,
+          productTableName: headItemTableType.value,
           sourceLocationId: productPickGateLocationId.value,
         }),
         onSelected: (product: Record<string, unknown>, row: TransferPreviewRow) => {
@@ -784,6 +818,7 @@ function resetDetailForCreate() {
   pinnedPractitionerOptions.value = [];
   sourceLocationId.value = undefined;
   purposeLocationId.value = undefined;
+  headItemTableType.value = firstItemTableTypeValue();
   practitionerId.value = resolveDefaultPractitionerIdForSelect(
     effectivePractitionerOptions.value,
     userStore.userInfo as null | Record<string, unknown>,
@@ -841,11 +876,16 @@ async function loadDetail(busNo: string, loadGen?: number) {
     sourceLocationId.value = data.sourceLocationId ?? undefined;
     purposeLocationId.value = data.purposeLocationId ?? undefined;
     pinnedPractitionerOptions.value = [];
-    pinPractitionerOption(data.practitionerId);
+    pinPractitionerOption(
+      data.practitionerId,
+      (data as { practitionerName?: string }).practitionerName,
+    );
     practitionerId.value = coercePractitionerIdForSelect(
       data.practitionerId,
       effectivePractitionerOptions.value,
     );
+    const firstLineTable = String(data.lines?.[0]?.itemTable ?? '').trim();
+    headItemTableType.value = firstLineTable !== '' ? firstLineTable : firstItemTableTypeValue();
     headApplyTime.value = formatDateTime(new Date());
     const gridRows = (data.lines ?? []).map((ln, i) => mapDetailLineToGrid(ln, i));
     void nextTick(() => {
@@ -908,9 +948,7 @@ function validateBeforeSave(rows: TransferPreviewRow[]): boolean {
   if (!sourceLocationId.value || !purposeLocationId.value) {
     ElMessage.warning(
       isDepartmentDomain.value
-        ? props.variant === 'out'
-          ? '请选择调出科室药房与调入药库'
-          : '请选择源药库与目的科室药房'
+        ? '请选择调出科室药房与调入科室药房'
         : isPharmacyDomain.value
           ? '请选择调出药房与调入药房'
           : '请选择调出药库与调入药库',
@@ -1189,6 +1227,7 @@ interface TransferDraftSnap {
   sourceLocationId?: number | string;
   purposeLocationId?: number | string;
   practitionerId?: number | string;
+  headItemTableType: string;
   originalBusNo?: string;
   headApplyTime: string;
   rows: TransferPreviewRow[];
@@ -1206,6 +1245,7 @@ async function syncFromParentContext() {
         sourceLocationId: sourceLocationId.value,
         purposeLocationId: purposeLocationId.value,
         practitionerId: practitionerId.value,
+        headItemTableType: headItemTableType.value,
         originalBusNo: originalBusNo.value,
         headApplyTime: headApplyTime.value,
         rows: collectGridRows().map((r) => ({ ...r })),
@@ -1216,6 +1256,7 @@ async function syncFromParentContext() {
         sourceLocationId.value = snap.sourceLocationId;
         purposeLocationId.value = snap.purposeLocationId;
         practitionerId.value = snap.practitionerId;
+        headItemTableType.value = snap.headItemTableType;
         originalBusNo.value = snap.originalBusNo;
         headApplyTime.value = snap.headApplyTime;
         transferGridEdit.resetFormMode();
@@ -1248,6 +1289,21 @@ watch(
   { immediate: true },
 );
 
+watch(
+  normalizedItemTableTypeOptions,
+  (opts) => {
+    if (opts.length === 0) return;
+    const current = String(headItemTableType.value ?? '').trim();
+    if (!current || !opts.some((o) => o.value === current)) {
+      headItemTableType.value = resolveDefaultInventoryItemTableType(
+        opts,
+        preferredItemTableType(),
+      );
+    }
+  },
+  { immediate: true },
+);
+
 watch(sourceLocationId, (src) => {
   if (!documentEditable.value) return;
   if (!isSameTransferLocationId(src, purposeLocationId.value)) return;
@@ -1262,16 +1318,106 @@ watch(purposeLocationId, (purpose, oldPurpose) => {
   purposeLocationId.value = oldPurpose;
   ElMessage.warning(transferSameLocationWarning.value);
 });
+
+/** 解析下拉选项展示名 */
+function resolvePrintOptionLabel(options: ApiOptionItem[] | undefined, value: unknown): string {
+  const key = String(value ?? '').trim();
+  if (!key) return '';
+  const hit = options?.find((item) => String(item.value ?? '') === key);
+  return String(hit?.label ?? '').trim();
+}
+
+/** 明细行当前计量单位展示文案 */
+function resolveTransferPrintUnitLabel(row: TransferPreviewRow): string {
+  const kind = String(row.selectedBandKind ?? '').trim();
+  const byKind = row.unitList?.find((item) => String(item.value ?? '') === kind);
+  if (byKind) {
+    return String(byKind.label ?? byKind.value_dictText ?? '').trim();
+  }
+  return String(row.unitCodeDictText ?? row.unitCode ?? '').trim();
+}
+
+/** 打印调拨单（计价流转模版；入库/出库按 variant 定标题） */
+async function handlePrint() {
+  const busNo = String(headerBusNo.value ?? '').trim();
+  if (!busNo) {
+    ElMessage.warning('请先保存单据后再打印');
+    return;
+  }
+  const productRows = collectGridRows().filter((row) => isPresentItemId(row.itemId));
+  if (productRows.length === 0) {
+    ElMessage.warning('没有可打印的明细');
+    return;
+  }
+
+  const sourceName = resolvePrintOptionLabel(transferLocationPoolOptions(), sourceLocationId.value);
+  const destName = resolvePrintOptionLabel(transferLocationPoolOptions(), purposeLocationId.value);
+  const itemTypeText = resolvePrintOptionLabel(
+    normalizedItemTableTypeOptions.value,
+    headItemTableType.value,
+  );
+  const practitionerName = resolvePrintOptionLabel(
+    effectivePractitionerOptions.value,
+    practitionerId.value,
+  );
+  const docKindLabel = props.variant === 'in' ? '调拨入库单' : '调拨出库单';
+  const titleLocation =
+    sourceName && destName ? `${sourceName}→${destName}` : sourceName || destName;
+  const documentTitle = buildInvDocumentTitle(titleLocation, docKindLabel);
+  const applyTimeText = String(headApplyTime.value ?? '')
+    .trim()
+    .replace('T', ' ');
+
+  // 按当前网格展示值组装 PrintData
+  const lineRows = productRows.map((row) => ({
+    productName: String(row.productName ?? '').trim(),
+    specText: String(row.spec ?? '').trim(),
+    manufacturerText: String(row.manufacturer ?? '').trim(),
+    qty: row.itemQuantity,
+    unitLabel: resolveTransferPrintUnitLabel(row),
+    unitPrice: row.price,
+    amount: row.totalPrice,
+    lotNumber: String(row.lotNumber ?? '').trim(),
+    expiryText: '',
+  }));
+
+  await printInvDocument({
+    family: 'movement',
+    source: {
+      hospitalName: resolvePrintHospitalName(),
+      documentTitle,
+      docNo: busNo,
+      applyTimeText,
+      itemTypeText,
+      sourceLocationText: sourceName,
+      supplierText: '',
+      linkDocText: String(originalBusNo.value ?? '').trim(),
+      destLocationText: destName,
+      invoiceNoText: '',
+      practitionerName,
+      lineRows,
+      preparedByName: practitionerName,
+      approvedByName: '',
+    },
+    bizRef: {
+      busNo,
+      docKind: props.variant === 'in' ? 'transfer-in' : 'transfer-out',
+      domain: props.domain,
+    },
+    jobName: documentTitle,
+  });
+}
 </script>
 
 <template>
   <div class="transfer-main-pane flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     <InvMainShell>
       <template #actionBar>
-        <div v-if="!isReadOnlyShell" class="flex w-full flex-wrap items-center justify-end gap-2">
+        <div class="flex w-full flex-wrap items-center justify-end gap-2">
           <InvDocActions
             v-bind="docActionFlags"
             @approve="handleApprove"
+            @print="handlePrint"
             @reject="handleReject"
             @remove-doc="handleRemoveDoc"
             @save="handleSaveDoc"
@@ -1305,7 +1451,7 @@ watch(purposeLocationId, (purpose, oldPurpose) => {
             ref="headFormRef"
             :model="headFormModel"
             :rules="headFormRules"
-            label-width="96px"
+            :label-width="headFormLabelWidth"
             class="compact-head-form mt-1"
           >
             <div :class="INV_DOC_HEAD_FORM_GRID_CLASS">
@@ -1363,7 +1509,13 @@ watch(purposeLocationId, (purpose, oldPurpose) => {
                 </ElSelect>
               </ElFormItem>
               <ElFormItem v-if="!isReadOnlyShell" label="项目类型">
-                <ElSelect :model-value="HEAD_ITEM_TABLE_TYPE" class="w-full" filterable disabled>
+                <ElSelect
+                  v-model="headItemTableType"
+                  class="w-full"
+                  filterable
+                  placeholder="请选择"
+                  :disabled="!documentEditable"
+                >
                   <ElOption
                     v-for="t in normalizedItemTableTypeOptions"
                     :key="String(t.value)"
@@ -1371,15 +1523,6 @@ watch(purposeLocationId, (purpose, oldPurpose) => {
                     :value="String(t.value)"
                   />
                 </ElSelect>
-              </ElFormItem>
-              <ElFormItem label="关联单号">
-                <ElInput
-                  v-model="originalBusNo"
-                  clearable
-                  maxlength="64"
-                  placeholder="可选，请领单号等"
-                  :disabled="!documentEditable"
-                />
               </ElFormItem>
               <ElFormItem label="制单时间">
                 <ElDatePicker
@@ -1426,7 +1569,11 @@ watch(purposeLocationId, (purpose, oldPurpose) => {
       </div>
     </InvMainShell>
   </div>
-  <InvDocTraceScanBridge ref="traceScanBridgeRef" scene="inventoryOut" />
+  <InvDocTraceScanBridge
+    ref="traceScanBridgeRef"
+    scene="inventoryOut"
+    :default-location-id="sourceLocationId"
+  />
 </template>
 
 <style scoped lang="scss">
@@ -1436,6 +1583,7 @@ watch(purposeLocationId, (purpose, oldPurpose) => {
 
 .compact-head-form :deep(.el-form-item__label) {
   padding-right: 8px;
+  white-space: nowrap;
 }
 
 .inv-doc-head-section {

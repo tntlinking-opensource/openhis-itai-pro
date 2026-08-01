@@ -30,5 +30,9 @@ export { useEmrMetadata } from './composables/use-emr-metadata';
 export { normalizeEmrRootDoc, parseEmrContentToDoc } from './document-content';
 export { findTableByName, getTableCellTextByName, listNamedTableCells } from './table-by-name';
 export type { ApplyEmrTemplatePayload, PatientInfoForEmrMetadata } from './emr-patient-metadata';
-export { buildMetadataValuesFromPatientInfo } from './emr-patient-metadata';
+export {
+  applyMetadataValuesToContentJson,
+  buildMetadataValuesFromPatientInfo,
+  mergeEmrMetadataValues,
+} from './emr-patient-metadata';
 export type { EmrMetadataField } from './types';

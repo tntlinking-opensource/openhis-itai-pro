@@ -68,7 +68,11 @@ let cachedHiprintSocketHost = '';
 let hiprintHostResolvePromise: null | Promise<string> = null;
 let hiprintHealthNegativeUntil = 0;
 let healthFetchPromise: null | Promise<null | OpenHisWinHealthResponse> = null;
-let healthFetchOrigin = '';
+let healthFetchKey = '';
+
+function buildHealthFetchKey(origin: string, timeoutMs: number, bypassNegativeCache: boolean) {
+  return `${origin}|${timeoutMs}|${bypassNegativeCache ? 1 : 0}`;
+}
 
 /** electron-hiprint Socket.IO 地址（同步兜底：env 或默认 17521） */
 export function getHiprintSocketHost(): string {
@@ -193,23 +197,25 @@ async function fetchOpenHisWinHealthOnce(
   }
 }
 
-/** 探测 OpenHIS.Win 是否在线及银联能力（同 origin 并发复用同一 in-flight 请求） */
+/** 探测 OpenHIS.Win 是否在线及银联能力（同 origin+超时+缓存策略 才复用 in-flight，避免被 hiprint 短超时拖死） */
 export async function fetchOpenHisWinHealth(
   origin = getOpenHisWinOrigin(),
   timeoutMs = HEALTH_TIMEOUT_MS,
   options?: { bypassNegativeCache?: boolean },
 ): Promise<null | OpenHisWinHealthResponse> {
-  if (!options?.bypassNegativeCache && Date.now() < hiprintHealthNegativeUntil) {
+  const bypassNegativeCache = Boolean(options?.bypassNegativeCache);
+  if (!bypassNegativeCache && Date.now() < hiprintHealthNegativeUntil) {
     return null;
   }
-  if (healthFetchPromise && healthFetchOrigin === origin) {
+  const key = buildHealthFetchKey(origin, timeoutMs, bypassNegativeCache);
+  if (healthFetchPromise && healthFetchKey === key) {
     return healthFetchPromise;
   }
-  healthFetchOrigin = origin;
-  healthFetchPromise = fetchOpenHisWinHealthOnce(origin, timeoutMs)
+  healthFetchKey = key;
+  const pending = fetchOpenHisWinHealthOnce(origin, timeoutMs)
     .then((result) => {
       if (!result) {
-        if (!options?.bypassNegativeCache) {
+        if (!bypassNegativeCache) {
           markHiprintHealthUnavailable();
         }
       } else if (result.status === 'ok') {
@@ -218,10 +224,13 @@ export async function fetchOpenHisWinHealth(
       return result;
     })
     .finally(() => {
-      healthFetchPromise = null;
-      healthFetchOrigin = '';
+      if (healthFetchKey === key) {
+        healthFetchPromise = null;
+        healthFetchKey = '';
+      }
     });
-  return healthFetchPromise;
+  healthFetchPromise = pending;
+  return pending;
 }
 
 /** 是否展示银联扫码入口（Win 在线 + unionpay 能力 + native 就绪） */

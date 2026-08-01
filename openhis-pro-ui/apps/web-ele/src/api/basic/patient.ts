@@ -69,53 +69,6 @@ export interface PatientInitResponse {
   studentStatusOptions?: ApiOptionItem[];
   /** 学籍-体检结果 */
   physicalExamResultOptions?: ApiOptionItem[];
-  /** 学生开关配置值（等于 "1" 时显示学籍信息按钮） */
-  studentSwitchValue?: string;
-}
-
-/** 患者学籍（adm_patient_student，与患者一对一） */
-export interface PatientStudentDto {
-  /** 学籍主键，无记录时为空 */
-  id?: string;
-  patientId: string;
-  /** 姓名（来自患者） */
-  name: string;
-  gender: number;
-  idNumber: string;
-  pyStr?: string;
-  wbStr?: string;
-  age?: null | number;
-  studentId?: string;
-  phone?: string;
-  college?: string;
-  major?: string;
-  educationLevel?: null | number;
-  enrollmentDate?: string;
-  graduationDate?: string;
-  grade?: string;
-  studyMode?: null | number;
-  studentStatus?: null | number;
-  physicalExamResult?: null | number;
-  counselor?: string;
-  counselorPhone?: string;
-}
-
-export interface SavePatientStudentParams {
-  patientId: string;
-  age?: null | number;
-  studentId?: string;
-  phone?: string;
-  college?: string;
-  major?: string;
-  educationLevel?: null | number;
-  enrollmentDate?: string;
-  graduationDate?: string;
-  grade?: string;
-  studyMode?: null | number;
-  studentStatus?: null | number;
-  physicalExamResult?: null | number;
-  counselor?: string;
-  counselorPhone?: string;
 }
 
 export async function getPatientListApi(params: GetPatientPageParams) {
@@ -192,7 +145,7 @@ export interface EditPatientParams extends CreatePatientParams {
 }
 
 export async function createPatientApi(params: CreatePatientParams) {
-  return publicRequestClient.post('/patient/createPatient', params);
+  return publicRequestClient.post<Patient>('/patient/createPatient', params);
 }
 
 export async function editPatientApi(params: EditPatientParams) {
@@ -201,23 +154,4 @@ export async function editPatientApi(params: EditPatientParams) {
 
 export async function deletePatientApi(id: number | string) {
   return publicRequestClient.post('/patient/deletePatient', preserveApiIdForRequest(id));
-}
-
-/** 学籍回显（需患者已维护证件号） */
-export async function getPatientStudentApi(patientId: number | string) {
-  return publicRequestClient.post<PatientStudentDto>(
-    '/patient/getPatientStudent',
-    preserveApiIdForRequest(patientId),
-  );
-}
-
-export async function savePatientStudentApi(params: SavePatientStudentParams) {
-  return publicRequestClient.post<PatientStudentDto>('/patient/savePatientStudent', params);
-}
-
-export async function deletePatientStudentApi(patientId: number | string) {
-  return publicRequestClient.post(
-    '/patient/deletePatientStudent',
-    preserveApiIdForRequest(patientId),
-  );
 }

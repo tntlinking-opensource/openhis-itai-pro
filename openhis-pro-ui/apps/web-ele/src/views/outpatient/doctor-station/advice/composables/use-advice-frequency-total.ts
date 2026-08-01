@@ -140,7 +140,8 @@ export function useAdviceFrequencyTotal(options: {
     if (!item?.selectedId?.trim()) return 0;
     const rateCode = String(item.frequency ?? '').trim();
     const days = Math.trunc(Number(item.medicationDays));
-    if (!rateCode || days < 1) {
+    // NaN < 1 为 false；天数清空/非法时勿调频次接口
+    if (!rateCode || !Number.isFinite(days) || days < 1) {
       setField(index, 'frequencyExecutionCount', undefined);
       return 0;
     }

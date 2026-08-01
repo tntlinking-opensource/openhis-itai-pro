@@ -25,6 +25,7 @@ function Remove-UiOpenSourceExcludedPaths {
         [scriptblock]$RemoveDir
     )
     foreach ($rel in $RelativePaths) {
+        if ([string]::IsNullOrWhiteSpace($rel)) { continue }
         $target = Join-Path $OutputDir ($rel -replace '/', '\')
         if (-not (Test-Path $target)) { continue }
         $item = Get-Item -LiteralPath $target -Force
@@ -39,8 +40,11 @@ function Remove-UiOpenSourceExcludedPaths {
 
 function Assert-UiOpenSourceTreeClean {
     param([string]$OutputDir)
-    $projectsDir = Join-Path $OutputDir 'projects'
-    if (Test-Path $projectsDir) {
-        throw 'Export validation failed: projects/ still present'
+    $forbidden = @('projects', '.cursor')
+    foreach ($name in $forbidden) {
+        $path = Join-Path $OutputDir $name
+        if (Test-Path $path) {
+            throw "Export validation failed: $name/ still present under $OutputDir"
+        }
     }
 }

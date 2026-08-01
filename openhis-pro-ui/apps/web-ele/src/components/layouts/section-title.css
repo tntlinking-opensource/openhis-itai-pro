@@ -1,0 +1,24 @@
+/**
+ * 区块标题（左侧主色竖条）。
+ * 独立 CSS：避免院点构建下 SFC scoped style 生产丢失。
+ */
+.section-title {
+  position: relative;
+  padding-left: 10px;
+  font-size: var(--section-title-font-size, 16px);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--el-text-color-primary);
+}
+
+.section-title::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 3px;
+  height: var(--section-title-bar-height, 14px);
+  background: var(--el-color-primary);
+  border-radius: 2px;
+  content: '';
+  transform: translateY(-50%);
+}

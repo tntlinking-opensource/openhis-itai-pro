@@ -1,123 +1,67 @@
 import type {
   DailySettlementChannelRowDto,
+  DailySettlementExpenseNatureSummaryDto,
+  DailySettlementInsuranceTypeSummaryDto,
   DailySettlementSummaryDto,
 } from '#/api/outpatient/daily-settlement';
 
-/** 门诊费用日结单 PrintData（与 op-dailySettlement-print 模板 field 一致） */
+/** 标签+金额单元格（模板四列表格列绑定）。 */
+export interface OutpatientDailySettlementPrintMetric {
+  labelText: string;
+  valueText: string;
+}
+
+/** 四列一行（上半区 fin_type / 渠道汇总）。 */
+export interface OutpatientDailySettlementPrintGridRow {
+  cell1Text: string;
+  cell2Text: string;
+  cell3Text: string;
+  cell4Text: string;
+}
+
+/** 费用性质下险种子行。 */
+export interface OutpatientDailySettlementPrintNatureType {
+  titleText: string;
+  personCountText: string;
+  metrics: OutpatientDailySettlementPrintMetric[];
+}
+
+/** 费用性质块（与页面 DailySettlementSummaryPanel 同构）。 */
+export interface OutpatientDailySettlementPrintNatureBlock {
+  titleText: string;
+  personCountText: string;
+  metrics: OutpatientDailySettlementPrintMetric[];
+  types: OutpatientDailySettlementPrintNatureType[];
+}
+
+/**
+ * 门诊/住院费用日结单 PrintData（动态：页面有什么打什么）。
+ * SOURCE: hospitalName=C；其余均为 P（预览/凭证 rows + summary）
+ */
 export interface OutpatientDailySettlementPrintData {
   hospitalName: string;
   cashierName: string;
   settlementPeriodText: string;
-  westernMedicineAmountText: string;
-  outsourcedDrugAmountText: string;
-  herbalMedicineAmountText: string;
-  labTestAmountText: string;
-  surgeryAmountText: string;
-  diagnosisAmountText: string;
-  treatmentAmountText: string;
-  nursingAmountText: string;
-  bedAmountText: string;
-  registrationFeeAmountText: string;
-  consultationFeeAmountText: string;
-  otherFeeAmountText: string;
-  anesthesiaAmountText: string;
-  dietAmountText: string;
-  bloodTransfusionAmountText: string;
-  selfPreparedOrderAmountText: string;
-  medicalConsumablesAmountText: string;
-  circulatingMaterialAmountText: string;
-  materialAmountText: string;
-  officeSuppliesAmountText: string;
-  examinationAmountText: string;
-  proprietaryChineseMedicineAmountText: string;
-  ctAmountText: string;
-  electrodiagnosisAmountText: string;
-  totalIncomeAmountText: string;
-  wechatAmountText: string;
-  alipayAmountText: string;
-  onlineBankingAmountText: string;
-  selfPayCashTotalAmountText: string;
-  selfPayVisitCountText: string;
-  provincialInsuranceVisitCountText: string;
-  municipalInsuranceVisitCountText: string;
-  provincialInsuranceCashAmountText: string;
-  provincialInsurancePoolingAmountText: string;
-  provincialInsuranceAccountAmountText: string;
-  provincialInsuranceFundAmountText: string;
-  municipalInsuranceCashAmountText: string;
-  municipalInsurancePoolingAmountText: string;
-  municipalInsuranceAccountAmountText: string;
-  municipalInsuranceFundAmountText: string;
-  provincialInsuranceTotalAmountText: string;
-  municipalInsuranceTotalAmountText: string;
-  cashIncomeTotalAmountText: string;
-  physicalExamVisitCountText: string;
+  /** 上半区 fin_type 四列表（由 rows 动态切行）。 */
+  finTypeRows: OutpatientDailySettlementPrintGridRow[];
+  /** 渠道汇总四列表（总收入/微信/应交现金等）。 */
+  channelRows: OutpatientDailySettlementPrintGridRow[];
+  /** 费用性质块（含险种子行；模板 longText 循环）。 */
+  natureBlocks: OutpatientDailySettlementPrintNatureBlock[];
 }
 
-/** 日结 mapper 入参（P：日结预览接口 rows + summary） */
+/** 日结 mapper 入参（P：日结预览/凭证；C：机构名） */
 export interface OutpatientDailySettlementPrintSource {
   hospitalName?: string;
   cashierName?: string;
   settlementPeriodText?: string;
   rows?: DailySettlementChannelRowDto[];
-  summary?: DailySettlementSummaryDto;
+  summary?: DailySettlementSummaryDto & { depositAmount?: string };
 }
 
-type FinTypePrintField = keyof Pick<
-  OutpatientDailySettlementPrintData,
-  | 'anesthesiaAmountText'
-  | 'bedAmountText'
-  | 'bloodTransfusionAmountText'
-  | 'circulatingMaterialAmountText'
-  | 'consultationFeeAmountText'
-  | 'ctAmountText'
-  | 'diagnosisAmountText'
-  | 'dietAmountText'
-  | 'electrodiagnosisAmountText'
-  | 'examinationAmountText'
-  | 'herbalMedicineAmountText'
-  | 'labTestAmountText'
-  | 'materialAmountText'
-  | 'medicalConsumablesAmountText'
-  | 'nursingAmountText'
-  | 'officeSuppliesAmountText'
-  | 'otherFeeAmountText'
-  | 'outsourcedDrugAmountText'
-  | 'proprietaryChineseMedicineAmountText'
-  | 'registrationFeeAmountText'
-  | 'selfPreparedOrderAmountText'
-  | 'surgeryAmountText'
-  | 'treatmentAmountText'
-  | 'westernMedicineAmountText'
->;
-
-/** fin_type_code → 模板 field（与 PrintJson 静态标签一致） */
-const FIN_TYPE_CODE_TO_FIELD: Record<string, FinTypePrintField> = {
-  '1001': 'westernMedicineAmountText',
-  '1002': 'outsourcedDrugAmountText',
-  '1003': 'herbalMedicineAmountText',
-  '1004': 'labTestAmountText',
-  '1005': 'surgeryAmountText',
-  '1007': 'diagnosisAmountText',
-  '1008': 'treatmentAmountText',
-  '1009': 'nursingAmountText',
-  '1010': 'bedAmountText',
-  '1011': 'registrationFeeAmountText',
-  '1012': 'consultationFeeAmountText',
-  '1013': 'otherFeeAmountText',
-  '2001': 'anesthesiaAmountText',
-  '2002': 'dietAmountText',
-  '2003': 'bloodTransfusionAmountText',
-  '2004': 'selfPreparedOrderAmountText',
-  '2005': 'medicalConsumablesAmountText',
-  '2006': 'circulatingMaterialAmountText',
-  '2007': 'materialAmountText',
-  '2008': 'officeSuppliesAmountText',
-  '2009': 'examinationAmountText',
-  '2010': 'proprietaryChineseMedicineAmountText',
-  '2011': 'ctAmountText',
-  '2012': 'electrodiagnosisAmountText',
-};
+const UNKNOWN_CONTRACT_NAME = '未标注费用性质';
+const UNKNOWN_INSUTYPE_NAME = '未分险种';
+const GRID_COLS = 4;
 
 function str(value: null | number | string | undefined): string {
   if (value === null || value === undefined) {
@@ -137,92 +81,153 @@ function formatMoneyText(value: null | number | string | undefined, unit = '元'
   return `${raw} ${unit}`;
 }
 
-function formatCountText(value: null | number | string | undefined, unit = '人'): string {
-  const raw = str(value);
-  if (!raw) {
-    return `0 ${unit}`;
-  }
-  if (raw.includes(unit)) {
-    return raw;
-  }
-  return `${raw} ${unit}`;
+function formatPersonCountText(count: number | undefined): string {
+  return `${count ?? 0} 人`;
 }
 
-function createEmptyFinTypeAmounts(): Record<FinTypePrintField, string> {
-  return {
-    westernMedicineAmountText: '0.00 元',
-    outsourcedDrugAmountText: '0.00 元',
-    herbalMedicineAmountText: '0.00 元',
-    labTestAmountText: '0.00 元',
-    surgeryAmountText: '0.00 元',
-    diagnosisAmountText: '0.00 元',
-    treatmentAmountText: '0.00 元',
-    nursingAmountText: '0.00 元',
-    bedAmountText: '0.00 元',
-    registrationFeeAmountText: '0.00 元',
-    consultationFeeAmountText: '0.00 元',
-    otherFeeAmountText: '0.00 元',
-    anesthesiaAmountText: '0.00 元',
-    dietAmountText: '0.00 元',
-    bloodTransfusionAmountText: '0.00 元',
-    selfPreparedOrderAmountText: '0.00 元',
-    medicalConsumablesAmountText: '0.00 元',
-    circulatingMaterialAmountText: '0.00 元',
-    materialAmountText: '0.00 元',
-    officeSuppliesAmountText: '0.00 元',
-    examinationAmountText: '0.00 元',
-    proprietaryChineseMedicineAmountText: '0.00 元',
-    ctAmountText: '0.00 元',
-    electrodiagnosisAmountText: '0.00 元',
-  };
+function toCellText(label: string, valueText: string): string {
+  const name = str(label) || '—';
+  return `${name}：${valueText}`;
 }
 
-function mapFinTypeRows(
+function chunkToGridRows(
+  items: OutpatientDailySettlementPrintMetric[],
+): OutpatientDailySettlementPrintGridRow[] {
+  const rows: OutpatientDailySettlementPrintGridRow[] = [];
+  for (let i = 0; i < items.length; i += GRID_COLS) {
+    const slice = items.slice(i, i + GRID_COLS);
+    const cells = [0, 1, 2, 3].map((offset) => {
+      const item = slice[offset];
+      if (!item) {
+        return '';
+      }
+      return toCellText(item.labelText, item.valueText);
+    });
+    rows.push({
+      cell1Text: cells[0] ?? '',
+      cell2Text: cells[1] ?? '',
+      cell3Text: cells[2] ?? '',
+      cell4Text: cells[3] ?? '',
+    });
+  }
+  return rows;
+}
+
+function mapFinTypeItems(
   rows: DailySettlementChannelRowDto[] | undefined,
-): Record<FinTypePrintField, string> {
-  const amounts = createEmptyFinTypeAmounts();
-  for (const row of rows ?? []) {
-    const code = str(row.categoryCode);
-    const field = FIN_TYPE_CODE_TO_FIELD[code];
-    if (!field) {
-      continue;
-    }
+): OutpatientDailySettlementPrintMetric[] {
+  return (rows ?? []).map((row) => {
     const unit = str(row.unit) || '元';
-    amounts[field] = formatMoneyText(row.amount, unit);
-  }
-  return amounts;
+    return {
+      labelText: str(row.category) || '—',
+      valueText: formatMoneyText(row.amount, unit),
+    };
+  });
 }
 
-/** 日结预览 → PrintData */
+function mapChannelItems(
+  summary: OutpatientDailySettlementPrintSource['summary'] | undefined,
+): OutpatientDailySettlementPrintMetric[] {
+  if (!summary) {
+    return [];
+  }
+  const items: OutpatientDailySettlementPrintMetric[] = [
+    { labelText: '总收入', valueText: formatMoneyText(summary.totalIncome) },
+    { labelText: '微信', valueText: formatMoneyText(summary.wechatAmount) },
+    { labelText: '支付宝', valueText: formatMoneyText(summary.alipayAmount) },
+    { labelText: '银行卡', valueText: formatMoneyText(summary.onlineBankAmount) },
+    {
+      labelText: '应交现金',
+      valueText: formatMoneyText(summary.cashDueAmount ?? summary.cashAmount),
+    },
+    {
+      labelText: '医保补偿',
+      valueText: formatMoneyText(summary.insuranceCompensationAmount),
+    },
+  ];
+  if (summary.depositAmount !== undefined) {
+    items.push({
+      labelText: '预交金',
+      valueText: formatMoneyText(summary.depositAmount),
+    });
+  }
+  return items;
+}
+
+function moneyMetrics(
+  parts: Array<{ label: string; value?: string }>,
+): OutpatientDailySettlementPrintMetric[] {
+  return parts.map((part) => ({
+    labelText: part.label,
+    valueText: formatMoneyText(part.value),
+  }));
+}
+
+function mapInsutypeTypes(
+  types: DailySettlementInsuranceTypeSummaryDto[] | undefined,
+): OutpatientDailySettlementPrintNatureType[] {
+  const result: OutpatientDailySettlementPrintNatureType[] = [];
+  (types ?? []).forEach((type) => {
+    if (!type) {
+      return;
+    }
+    const title = str(type.insutypeName) || UNKNOWN_INSUTYPE_NAME;
+    // 与页面一致：「未分险种」与费用性质汇总重复，不单独打印
+    if (title === UNKNOWN_INSUTYPE_NAME) {
+      return;
+    }
+    result.push({
+      titleText: title,
+      personCountText: formatPersonCountText(type.personCount),
+      metrics: moneyMetrics([
+        { label: '现金', value: type.cashAmount },
+        { label: '统筹', value: type.fundAmount },
+        { label: '账户', value: type.accountAmount },
+        { label: '总额', value: type.totalAmount },
+      ]),
+    });
+  });
+  return result;
+}
+
+function mapNatureBlocks(
+  natures: DailySettlementExpenseNatureSummaryDto[] | undefined,
+): OutpatientDailySettlementPrintNatureBlock[] {
+  const blocks: OutpatientDailySettlementPrintNatureBlock[] = [];
+  (natures ?? []).forEach((nature) => {
+    if (!nature) {
+      return;
+    }
+    const insurance = Boolean(nature.insurance);
+    const metrics = insurance
+      ? moneyMetrics([
+          { label: '现金', value: nature.cashAmount },
+          { label: '统筹', value: nature.fundAmount },
+          { label: '账户', value: nature.accountAmount },
+          { label: '总额', value: nature.totalAmount },
+        ])
+      : moneyMetrics([{ label: '总额', value: nature.totalAmount }]);
+    blocks.push({
+      titleText: str(nature.contractName) || UNKNOWN_CONTRACT_NAME,
+      personCountText: formatPersonCountText(nature.personCount),
+      metrics,
+      types: insurance ? mapInsutypeTypes(nature.insuranceTypeSummaries) : [],
+    });
+  });
+  return blocks;
+}
+
+/** 日结预览/凭证 → PrintData（字段与页面展示同源） */
 export function buildOutpatientDailySettlementPrintData(
   source: OutpatientDailySettlementPrintSource,
 ): OutpatientDailySettlementPrintData {
-  const finTypeAmounts = mapFinTypeRows(source.rows);
   const summary = source.summary;
   return {
     hospitalName: str(source.hospitalName),
     cashierName: str(source.cashierName),
     settlementPeriodText: str(source.settlementPeriodText) || str(summary?.dateRange),
-    ...finTypeAmounts,
-    totalIncomeAmountText: formatMoneyText(summary?.totalIncome),
-    wechatAmountText: formatMoneyText(summary?.wechatAmount),
-    alipayAmountText: formatMoneyText(summary?.alipayAmount),
-    onlineBankingAmountText: formatMoneyText(summary?.onlineBankAmount),
-    selfPayCashTotalAmountText: formatMoneyText(summary?.selfPayCashTotal),
-    selfPayVisitCountText: formatCountText(summary?.selfPayCount),
-    provincialInsuranceVisitCountText: formatCountText(summary?.provincialInsuranceCount),
-    municipalInsuranceVisitCountText: formatCountText(summary?.municipalInsuranceCount),
-    provincialInsuranceCashAmountText: formatMoneyText(summary?.provincialInsuranceCash),
-    provincialInsurancePoolingAmountText: formatMoneyText(summary?.provincialInsuranceFund),
-    provincialInsuranceAccountAmountText: formatMoneyText(summary?.provincialInsuranceAccount),
-    provincialInsuranceFundAmountText: formatMoneyText(summary?.provincialInsuranceFundTotal),
-    municipalInsuranceCashAmountText: formatMoneyText(summary?.municipalInsuranceCash),
-    municipalInsurancePoolingAmountText: formatMoneyText(summary?.municipalInsuranceFund),
-    municipalInsuranceAccountAmountText: formatMoneyText(summary?.municipalInsuranceAccount),
-    municipalInsuranceFundAmountText: formatMoneyText(summary?.municipalInsuranceFundTotal),
-    provincialInsuranceTotalAmountText: formatMoneyText(summary?.provincialInsuranceTotal),
-    municipalInsuranceTotalAmountText: formatMoneyText(summary?.municipalInsuranceTotal),
-    cashIncomeTotalAmountText: formatMoneyText(summary?.totalCashIncome),
-    physicalExamVisitCountText: formatCountText(summary?.physicalExamCount),
+    finTypeRows: chunkToGridRows(mapFinTypeItems(source.rows)),
+    channelRows: chunkToGridRows(mapChannelItems(summary)),
+    natureBlocks: mapNatureBlocks(summary?.expenseNatureSummaries),
   };
 }

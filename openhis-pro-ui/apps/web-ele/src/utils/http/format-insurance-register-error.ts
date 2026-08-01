@@ -1,4 +1,30 @@
-/** 将医保挂号/2201 相关后端错误转为友好、可持久展示的用户文案。 */
+/** 进销存交易号 3501–3513（含查询 3508–3513）。 */
+const INV_INFNO_RE = /35(?:0[1-9]|1[0-3])/;
+
+/** 从错误原文识别进销存交易号；无交易号时用字段特征兜底。 */
+function detectInventoryInfno(msg: string): null | string {
+  const match = msg.match(INV_INFNO_RE);
+  if (match) {
+    return match[0];
+  }
+  // 平台有时把查询行 JSON 直接放进 errMsg，无「3510 平台失败」前缀
+  if (
+    msg.includes('fixmedinsBchno') ||
+    msg.includes('medinsProdPurcNo') ||
+    msg.includes('splerName') ||
+    msg.includes('medinsListNames')
+  ) {
+    return '3510';
+  }
+  return null;
+}
+
+/** 明确为 2201 挂号登记失败（避免 admdvs「2201xx」误伤）。 */
+function isOutpatientRegister2201(msg: string): boolean {
+  return /(?:^|[^\d])2201(?:[^\d]|$)/.test(msg) || msg.includes('挂号登记');
+}
+
+/** 将医保挂号/收费/进销存等相关后端错误转为友好、可持久展示的用户文案。 */
 export function formatInsuranceRegisterError(
   errorCode: string | undefined,
   rawMessage: string,
@@ -8,6 +34,15 @@ export function formatInsuranceRegisterError(
     return null;
   }
 
+  if (
+    errorCode === 'C-PROJECT-UNMAPPED' ||
+    msg.includes('无国家码映射') ||
+    msg.includes('尚未映射国家医保目录编码')
+  ) {
+    return null;
+  }
+
+  const inventoryInfno = detectInventoryInfno(msg);
   const isRegisterInsurance =
     errorCode === 'INS-011' ||
     errorCode === 'INS-C03' ||
@@ -15,7 +50,8 @@ export function formatInsuranceRegisterError(
     errorCode === 'INS-015' ||
     errorCode === 'REG-VAL-002' ||
     errorCode === 'REG-VAL-003' ||
-    msg.includes('2201') ||
+    isOutpatientRegister2201(msg) ||
+    inventoryInfno != null ||
     msg.includes('医保编码') ||
     msg.includes('yb_no') ||
     msg.includes('医师编码');
@@ -25,6 +61,26 @@ export function formatInsuranceRegisterError(
   }
 
   if (errorCode === 'INS-011' || msg.includes('yb_no') || msg.includes('医保编码')) {
+    if (msg.includes('收费项缺少')) {
+      const itemMatch = msg.match(/收费项缺少国家医保编码\(yb_no\)[：:]\s*([^，,]+)/);
+      const itemName = itemMatch?.[1]?.trim();
+      const itemHint = itemName ? `「${itemName}」` : '所选收费项';
+      return {
+        title: '医保收费：收费项缺少国家医保编码',
+        message: [
+          `${itemHint}尚未维护国家医保目录编码（yb_no），无法上传费用明细完成医保结算。`,
+          '',
+          '请按以下步骤处理：',
+          '1. 打开【基础数据 / 耗材或药品目录】找到对应产品',
+          '2. 完成医保目录对照，填写「医保编码 / yb_no」并保存',
+          '3. 回到收费页刷新后重新确认收费',
+          '',
+          '说明：费用性质为医保时，所有待收明细都必须有国家码；无国码项目请改自费或先对码。',
+          '',
+          `技术详情：${msg}`,
+        ].join('\n'),
+      };
+    }
     if (msg.includes('医师') || msg.includes('接诊')) {
       const nameMatch = msg.match(/医师缺少医保编码\(yb_no\):\s*(.+)/);
       const doctorName = nameMatch?.[1]?.trim();
@@ -122,16 +178,66 @@ export function formatInsuranceRegisterError(
     };
   }
 
-  if (errorCode === 'INS-C03' || errorCode === 'INS-009' || msg.includes('2201')) {
+  if (msg.includes('2204') || msg.includes('费用上传')) {
     const clean = msg.split('>>>')[0]?.trim() || msg;
     return {
-      title: '医保平台挂号登记失败',
+      title: '医保收费：费用明细上传失败',
       message: [
         clean,
         '',
         '常见原因：',
-        '· 医师/科室医保编码未维护或填写错误',
+        '· 耗材/药品「医保编码」未维护或位数不符合平台规则（耗材上传截前 15 位）',
         '· 当日医保签到（9001）失效，可尝试重新读卡签到',
+        '',
+        '若仍失败，请联系信息科或医保办，并提供上述技术详情。',
+      ].join('\n'),
+    };
+  }
+
+  // INS-C03/INS-009 为通用平台失败码，须按交易号区分文案，禁止一律套「挂号登记」
+  if (errorCode === 'INS-C03' || errorCode === 'INS-009' || isOutpatientRegister2201(msg)) {
+    const clean = msg.split('>>>')[0]?.trim() || msg;
+
+    if (inventoryInfno) {
+      return {
+        title: `医保进销存（${inventoryInfno}）调用失败`,
+        message: [
+          clean,
+          '',
+          '常见原因：',
+          '· 当日医保签到（9001）失效，请先重新签到后再查',
+          '· 查询条件与平台数据不一致（批次流水号、机构目录编码、起止日期等）',
+          '· 医保专网或平台短暂异常',
+          '',
+          '若仍失败，请联系信息科或医保办，并提供上述技术详情。',
+        ].join('\n'),
+      };
+    }
+
+    if (isOutpatientRegister2201(msg)) {
+      return {
+        title: '医保平台挂号登记失败',
+        message: [
+          clean,
+          '',
+          '常见原因：',
+          '· 医师/科室医保编码未维护或填写错误',
+          '· 当日医保签到（9001）失效，可尝试重新读卡签到',
+          '· 医保专网或平台短暂异常',
+          '',
+          '若仍失败，请联系信息科或医保办，并提供上述技术详情。',
+        ].join('\n'),
+      };
+    }
+
+    return {
+      title: '医保平台调用失败',
+      message: [
+        clean,
+        '',
+        '常见原因：',
+        '· 当日医保签到（9001）失效，可尝试重新签到',
+        '· 业务入参与平台校验规则不符',
         '· 医保专网或平台短暂异常',
         '',
         '若仍失败，请联系信息科或医保办，并提供上述技术详情。',
@@ -140,11 +246,7 @@ export function formatInsuranceRegisterError(
   }
 
   return {
-    title: '医保挂号遇到问题',
-    message: [
-      msg,
-      '',
-      '请核对读卡、费用性质、医生/科室医保编码后重试；仍无法解决请联系信息科。',
-    ].join('\n'),
+    title: '医保业务遇到问题',
+    message: [msg, '', '请核对签到状态与业务入参后重试；仍无法解决请联系信息科。'].join('\n'),
   };
 }

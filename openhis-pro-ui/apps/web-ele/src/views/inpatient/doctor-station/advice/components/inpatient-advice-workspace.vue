@@ -1,13 +1,23 @@
 <script setup lang="ts">
-import type { InpatientAdviceQuickAction } from './inpatient-advice-quick-action-bar.vue';
 import type { UseInpatientAdviceTabProps } from '../composables/use-inpatient-advice-tab';
 import type { AdviceRowItem, InpatientAdviceTherapyType } from '../services/advice.types';
+import type { InpatientAdviceQuickAction } from './inpatient-advice-quick-action-bar.vue';
 
 import type { OrderTemplateHeaderItem } from '#/api/basic/order-template';
 
-import { ref } from 'vue';
+import { h, ref } from 'vue';
 
-import { ElButton, ElMessage, ElMessageBox, ElTable, ElTableColumn, ElTag } from 'element-plus';
+import {
+  ElButton,
+  ElDatePicker,
+  ElMessage,
+  ElMessageBox,
+  ElRadio,
+  ElRadioGroup,
+  ElTable,
+  ElTableColumn,
+  ElTag,
+} from 'element-plus';
 
 import {
   ORDER_TEMPLATE_APPLY_CONTEXT_DOCTOR,
@@ -15,20 +25,21 @@ import {
   ORDER_TEMPLATE_WORKSTATION_INPATIENT,
   previewOrderTemplateApplyApi,
 } from '#/api/basic/order-template';
-import AppDialog from '#/components/app-dialog.vue';
 import AdviceOrderDisplayCell from '#/components/outpatient/advice-order-display-cell.vue';
-import TcmAdvice from '#/components/doctor-station/tcm-advice/tcm-advice.vue';
-import OrderTemplateSidePanel from '#/views/outpatient/doctor-station/advice/components/order-template-side-panel.vue';
 import { useAuthStore } from '#/store';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
-import {
-  buildServiceApplyFormCellClassName,
-  buildServiceApplyFormRowClassName,
-  isServiceApplyFormGroupStart,
-} from '#/utils/service-apply-form-group-display';
+import { isServiceApplyFormGroupStart } from '#/utils/service-apply-form-group-display';
+import type { AdviceRowItem as OutpatientAdviceRowItem } from '#/views/outpatient/doctor-station/advice/services/advice.types';
+import OrderTemplateSidePanel from '#/views/outpatient/doctor-station/advice/components/order-template-side-panel.vue';
+import type { ServiceApplyDocumentGroup } from '#/views/outpatient/doctor-station/service-apply/service-apply-doc-groups';
 
 import { useInpatientAdviceTab } from '../composables/use-inpatient-advice-tab';
-import { adviceTherapyTypeClass, resolveAdviceTherapyTypeText } from '../services/advice-list';
+import {
+  adviceTherapyTypeClass,
+  getSkinTestDisplayTagType,
+  resolveAdviceTherapyTypeText,
+} from '../services/advice-list';
+import { rowLooksDraft } from '../services/advice-row';
 import {
   applyOrderTemplateToAdviceDraft,
   OrderTemplateApplyError,
@@ -46,6 +57,7 @@ const props = withDefaults(defineProps<UseInpatientAdviceTabProps>(), {
 });
 
 const emit = defineEmits<{
+  editServiceApply: [group: ServiceApplyDocumentGroup];
   quickAction: [action: InpatientAdviceQuickAction];
 }>();
 
@@ -58,31 +70,40 @@ const {
   adviceTableRef,
   adviceWorkspaceTableLoading,
   adviceWriteDisabled,
-  addDrugGuardWestern,
+  buildServiceApplyEditGroup,
   calcDrugLineTotalFee,
   feeNatureOptions,
   editorForm,
   editorInitialGroup,
   editorOpening,
-  editorPatientDiagnoses,
   encounterId,
   getAdviceStatusTagType,
-  getCellClassName: getBaseCellClassName,
+  getCellClassName,
   getTableRows,
   handleAdd,
+  handleAddEntrust,
   handleCloseEditor,
   handleDelete,
   handleEditorDirtyChange,
   handleMedicationAssignGroup,
   handleMedicationUngroup,
-  handleOpenTcmDialog,
-  handleRowDblclick,
+  handleRowDblclick: handleAdviceRowDblclick,
   handleSaveGroup,
   handleSign,
   handleSpanMethod,
   handleWithdraw,
   handleStopLongTerm,
   handleCancelStopLongTerm,
+  handleAppendSkinTest,
+  canEditOpenedBusinessTime,
+  canEditStopBusinessTime,
+  beginInlineBusinessTimeEdit,
+  bindInlineBusinessTimePickerRef,
+  confirmInlineBusinessTime,
+  handleInlineBusinessTimeVisible,
+  inlineBusinessTimeEdit,
+  isInlineBusinessTimeEditing,
+  listTherapyFilter,
   loadAdviceInit,
   medicationRateOptions,
   medicationRouteOptions,
@@ -93,62 +114,71 @@ const {
   productColumns,
   queryProductOptions,
   reload,
-  tcmDialogVisible,
+  setListTherapyFilter,
   validateWesternRow,
 } = useInpatientAdviceTab(props);
 
-/** 医嘱表最右列索引（申请单聚组右边框） */
-const ADVICE_APPLY_FORM_TABLE_EDGE_RIGHT_INDEX = 9;
-
-/** 申请单聚组：表格行 class-name */
-const resolveAdviceRowClassName = ({ row, rowIndex }: { row: AdviceRowItem; rowIndex: number }) => {
-  const tableRows = getTableRows();
-  return buildServiceApplyFormRowClassName({ row, rowIndex, rows: tableRows });
-};
-
-/** 合并编辑行与申请单聚组的 cell-class-name */
-const getCellClassName = ({
-  columnIndex,
-  row,
-  rowIndex,
-  column,
-}: {
-  columnIndex: number;
-  row: AdviceRowItem;
-  rowIndex: number;
-  column?: { fixed?: boolean | string };
-}) => {
-  const base = getBaseCellClassName({ columnIndex, row });
-  const applyForm = buildServiceApplyFormCellClassName({
-    row,
-    rowIndex,
-    rows: getTableRows(),
-    columnIndex,
-    edgeRightIndex: ADVICE_APPLY_FORM_TABLE_EDGE_RIGHT_INDEX,
-    columnFixed: column?.fixed,
-  });
-  return [base, applyForm].filter((part) => part.length > 0).join(' ');
-};
+/** 双击：申请单草稿弹窗编辑；其余走医嘱编辑卡 */
+async function handleRowDblclick(row: AdviceRowItem) {
+  if (adviceWriteDisabled.value) return;
+  if (row.isEditor) return;
+  const applyGroup = buildServiceApplyEditGroup(row);
+  if (applyGroup) {
+    if (!rowLooksDraft(row)) {
+      ElMessage.warning('已签发申请单请先撤回后再修改');
+      return;
+    }
+    emit('editServiceApply', {
+      applyFormNo: applyGroup.applyFormNo,
+      lines: applyGroup.lines as unknown as OutpatientAdviceRowItem[],
+    });
+    return;
+  }
+  await handleAdviceRowDblclick(row);
+}
 
 defineExpose({
   loadAdviceInit,
   reload,
+  handleAddEntrust,
 });
-
-/** 组套套用前选择长临医嘱类型 */
+/** 组套套用前选择长临/出院带药类型 */
 async function promptInpatientTemplateTherapyType(): Promise<InpatientAdviceTherapyType | null> {
+  let picked: InpatientAdviceTherapyType = 'TEMPORARY';
   try {
-    await ElMessageBox.confirm('组套套用后将以所选类型写入医嘱草稿，请确认。', '选择医嘱类型', {
-      confirmButtonText: '长期医嘱',
-      cancelButtonText: '临时医嘱',
+    await ElMessageBox({
+      title: '选择医嘱类型',
+      message: h({
+        setup() {
+          const selected = ref<InpatientAdviceTherapyType>('TEMPORARY');
+          return () =>
+            h('div', { class: 'ip-advice-template-therapy-prompt' }, [
+              h('p', { style: 'margin: 0 0 12px' }, '组套套用后将以所选类型写入医嘱草稿，请确认。'),
+              h(
+                ElRadioGroup,
+                {
+                  modelValue: selected.value,
+                  'onUpdate:modelValue': (v: boolean | number | string | undefined) => {
+                    selected.value = String(v ?? '') as InpatientAdviceTherapyType;
+                    picked = selected.value;
+                  },
+                },
+                () => [
+                  h(ElRadio, { label: 'LONG_TERM' }, () => '长期医嘱'),
+                  h(ElRadio, { label: 'TEMPORARY' }, () => '临时医嘱'),
+                  h(ElRadio, { label: 'DISCHARGE_MEDICATION' }, () => '出院带药'),
+                ],
+              ),
+            ]);
+        },
+      }),
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
       distinguishCancelAndClose: true,
       type: 'info',
     });
-    return 'LONG_TERM';
-  } catch (action) {
-    if (action === 'cancel') {
-      return 'TEMPORARY';
-    }
+    return picked;
+  } catch {
     return null;
   }
 }
@@ -204,7 +234,12 @@ async function handleOrderTemplateSelect(header: null | OrderTemplateHeaderItem)
       feeNatureOptions: feeNatureOptions.value,
       existingAdviceRows: getTableRows().filter((row) => !row.isEditor),
     });
-    const therapyLabel = therapyTypeCode === 'LONG_TERM' ? '长期' : '临时';
+    const therapyLabelMap: Record<InpatientAdviceTherapyType, string> = {
+      LONG_TERM: '长期',
+      TEMPORARY: '临时',
+      DISCHARGE_MEDICATION: '出院带药',
+    };
+    const therapyLabel = therapyLabelMap[therapyTypeCode] ?? '临时';
     ElMessage.success(
       `已套用组套「${preview?.header?.name ?? header.name ?? ''}」为${therapyLabel}医嘱（${result.appliedLineCount} 项）`,
     );
@@ -222,9 +257,31 @@ async function handleOrderTemplateSelect(header: null | OrderTemplateHeaderItem)
   }
 }
 
-/** 底部快捷申请条上抛主壳 */
-function handleQuickAction(action: InpatientAdviceQuickAction) {
+/** 底部快捷申请：嘱托在本页直接开立，其余上抛主壳 */
+async function handleQuickAction(action: InpatientAdviceQuickAction) {
+  if (action === 'entrust') {
+    await handleAddEntrust();
+    return;
+  }
   emit('quickAction', action);
+}
+
+/** 临时医嘱：起止列不展示「开/停」两行，仅开立时间+开立人 */
+function isTemporaryTherapyRow(row: AdviceRowItem): boolean {
+  return (
+    String(row.therapyTypeCode ?? '')
+      .trim()
+      .toUpperCase() === 'TEMPORARY'
+  );
+}
+
+/** 开立医生展示名（占位「—」不展示） */
+function adviceOrderingDoctorLabel(row: AdviceRowItem): string {
+  const name = String(row.orderingDoctor ?? '').trim();
+  if (!name || name === '—') {
+    return '';
+  }
+  return name;
 }
 </script>
 
@@ -241,11 +298,8 @@ function handleQuickAction(action: InpatientAdviceQuickAction) {
 
     <div class="ip-advice-workspace flex h-full min-h-0 flex-col p-2">
       <div class="mb-2 flex w-full flex-shrink-0 flex-wrap items-center gap-1">
-        <ElButton type="primary" :disabled="adviceWriteDisabled" @click="handleAdd()"
-          >新增</ElButton
-        >
-        <ElButton type="primary" :disabled="adviceWriteDisabled" @click="handleOpenTcmDialog()">
-          中药处方
+        <ElButton type="primary" :disabled="adviceWriteDisabled" @click="handleAdd()">
+          新增
         </ElButton>
         <ElButton
           type="primary"
@@ -282,6 +336,15 @@ function handleQuickAction(action: InpatientAdviceQuickAction) {
           取消停嘱
         </ElButton>
         <ElButton
+          type="primary"
+          plain
+          :disabled="adviceWriteDisabled"
+          :loading="adviceMutationLoading"
+          @click="handleAppendSkinTest()"
+        >
+          追加皮试
+        </ElButton>
+        <ElButton
           type="danger"
           plain
           :disabled="adviceWriteDisabled"
@@ -290,12 +353,43 @@ function handleQuickAction(action: InpatientAdviceQuickAction) {
         >
           删除
         </ElButton>
-        <ElButton plain :disabled="adviceWriteDisabled" @click="handleMedicationUngroup"
-          >拆组</ElButton
-        >
-        <ElButton plain :disabled="adviceWriteDisabled" @click="handleMedicationAssignGroup"
-          >并组</ElButton
-        >
+        <ElButton plain :disabled="adviceWriteDisabled" @click="handleMedicationUngroup">
+          拆组
+        </ElButton>
+        <ElButton plain :disabled="adviceWriteDisabled" @click="handleMedicationAssignGroup">
+          并组
+        </ElButton>
+        <div class="ip-advice-list-therapy-filter ml-auto flex flex-wrap items-center gap-1">
+          <span class="text-muted-foreground text-sm">类型</span>
+          <ElButton
+            size="small"
+            :type="listTherapyFilter === '' ? 'primary' : 'default'"
+            @click="setListTherapyFilter('')"
+          >
+            全部
+          </ElButton>
+          <ElButton
+            size="small"
+            :type="listTherapyFilter === 'LONG_TERM' ? 'primary' : 'default'"
+            @click="setListTherapyFilter('LONG_TERM')"
+          >
+            长期
+          </ElButton>
+          <ElButton
+            size="small"
+            :type="listTherapyFilter === 'TEMPORARY' ? 'primary' : 'default'"
+            @click="setListTherapyFilter('TEMPORARY')"
+          >
+            临时
+          </ElButton>
+          <ElButton
+            size="small"
+            :type="listTherapyFilter === 'DISCHARGE_MEDICATION' ? 'primary' : 'default'"
+            @click="setListTherapyFilter('DISCHARGE_MEDICATION')"
+          >
+            出院带药
+          </ElButton>
+        </div>
       </div>
 
       <div
@@ -306,12 +400,11 @@ function handleQuickAction(action: InpatientAdviceQuickAction) {
           v-loading="adviceWorkspaceTableLoading"
           :data="getTableRows()"
           :span-method="handleSpanMethod"
-          :row-class-name="resolveAdviceRowClassName"
           :cell-class-name="getCellClassName"
           border
           stripe
-          class="advice-table"
-          max-height="calc(100vh - 230px)"
+          class="advice-table h-full"
+          height="100%"
           @row-dblclick="handleRowDblclick"
           @selection-change="onAdviceSelectionChange"
         >
@@ -333,7 +426,6 @@ function handleQuickAction(action: InpatientAdviceQuickAction) {
                 v-if="row.isEditor"
                 v-loading="editorOpening"
                 v-model="editorForm"
-                v-model:patient-diagnoses="editorPatientDiagnoses"
                 :fee-nature-options="feeNatureOptions"
                 :encounter-id="encounterId"
                 :medication-rate-options="medicationRateOptions"
@@ -346,7 +438,6 @@ function handleQuickAction(action: InpatientAdviceQuickAction) {
                 :query-product-options="queryProductOptions"
                 :validate-row="validateWesternRow"
                 :save-loading="adviceMutationLoading"
-                :add-drug-guard="addDrugGuardWestern"
                 @close="handleCloseEditor"
                 @editor-dirty-change="handleEditorDirtyChange"
                 @save-group="handleSaveGroup"
@@ -357,10 +448,8 @@ function handleQuickAction(action: InpatientAdviceQuickAction) {
                     :fee-nature-options="feeNatureOptions"
                     :medication-rate-options="medicationRateOptions"
                     :medication-route-options="medicationRouteOptions"
-                    :patient-diagnoses="scope.patientDiagnoses"
                     :calc-total-fee="calcDrugLineTotalFee"
                     @patch="scope.patch"
-                    @update:patient-diagnoses="scope.updatePatientDiagnoses"
                   />
                 </template>
                 <template #collapsed="scope">
@@ -397,33 +486,180 @@ function handleQuickAction(action: InpatientAdviceQuickAction) {
           </ElTableColumn>
           <ElTableColumn prop="content" label="医嘱内容" min-width="350">
             <template #default="{ row, $index }">
-              <div
-                class="advice-order-content-wrap"
-                :class="{ 'is-apply-form-block': Boolean(row.applyFormNo?.trim()) }"
-              >
+              <AdviceOrderDisplayCell
+                :row-key="row.key"
+                :group-items="row.groupItems"
+                :content="row.content"
+                :dosage-text="row.dosageText"
+                :extension="row.extension"
+                :apply-form-no="
+                  isServiceApplyFormGroupStart(row, $index, getTableRows())
+                    ? row.applyFormNo
+                    : undefined
+                "
+              />
+            </template>
+          </ElTableColumn>
+          <ElTableColumn prop="chrgitmLvText" label="项目类别" width="88" align="center">
+            <template #default="{ row }">
+              <span v-if="!row.isEditor">{{ row.chrgitmLvText || '—' }}</span>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="起止时间" width="228" align="center">
+            <template #default="{ row }">
+              <div v-if="!row.isEditor" class="ip-advice-time-range">
+                <!-- 临时：单行开立时间 + 开立人，无开/停前缀 -->
                 <div
-                  v-if="isServiceApplyFormGroupStart(row, $index, getTableRows())"
-                  class="doctor-apply-form-group-label"
+                  v-if="isTemporaryTherapyRow(row)"
+                  class="ip-advice-time-range__line"
+                  :class="{
+                    'is-editable': canEditOpenedBusinessTime(row),
+                    'is-editing': isInlineBusinessTimeEditing(row, 'OPENED'),
+                  }"
+                  :title="canEditOpenedBusinessTime(row) ? '点击修改开立时间' : undefined"
+                  @click.stop="
+                    canEditOpenedBusinessTime(row) && beginInlineBusinessTimeEdit('OPENED', row)
+                  "
                 >
-                  <ElTag size="small" effect="plain" type="primary">
-                    申请单 {{ row.applyFormNo }}
-                  </ElTag>
+                  <ElDatePicker
+                    v-if="isInlineBusinessTimeEditing(row, 'OPENED')"
+                    :ref="bindInlineBusinessTimePickerRef"
+                    v-model="inlineBusinessTimeEdit.value"
+                    type="datetime"
+                    size="small"
+                    value-format="YYYY-MM-DD HH:mm"
+                    format="YYYY-MM-DD HH:mm"
+                    time-format="HH:mm"
+                    :clearable="false"
+                    :editable="false"
+                    teleported
+                    placement="bottom-start"
+                    class="ip-advice-time-inline-picker"
+                    popper-class="ip-advice-time-picker-popper"
+                    @click.stop
+                    @change="confirmInlineBusinessTime"
+                    @visible-change="handleInlineBusinessTimeVisible"
+                  />
+                  <template v-else>
+                    <span class="ip-advice-time-range__time">{{ row.startTime || '—' }}</span>
+                  </template>
+                  <span v-if="adviceOrderingDoctorLabel(row)" class="ip-advice-time-range__doctor">
+                    {{ adviceOrderingDoctorLabel(row) }}
+                  </span>
                 </div>
-                <AdviceOrderDisplayCell
-                  :row-key="row.key"
-                  :group-items="row.groupItems"
-                  :content="row.content"
-                  :dosage-text="row.dosageText"
-                  :extension="row.extension"
-                />
+                <!-- 长期/出院带药：开一行、停一行；无停嘱时间显示「-」 -->
+                <template v-else>
+                  <div
+                    class="ip-advice-time-range__line"
+                    :class="{
+                      'is-editable': canEditOpenedBusinessTime(row),
+                      'is-editing': isInlineBusinessTimeEditing(row, 'OPENED'),
+                    }"
+                    :title="canEditOpenedBusinessTime(row) ? '点击修改开立时间' : undefined"
+                    @click.stop="
+                      canEditOpenedBusinessTime(row) && beginInlineBusinessTimeEdit('OPENED', row)
+                    "
+                  >
+                    <span class="ip-advice-time-range__tag">开</span>
+                    <ElDatePicker
+                      v-if="isInlineBusinessTimeEditing(row, 'OPENED')"
+                      :ref="bindInlineBusinessTimePickerRef"
+                      v-model="inlineBusinessTimeEdit.value"
+                      type="datetime"
+                      size="small"
+                      value-format="YYYY-MM-DD HH:mm"
+                      format="YYYY-MM-DD HH:mm"
+                      time-format="HH:mm"
+                      :clearable="false"
+                      :editable="false"
+                      teleported
+                      placement="bottom-start"
+                      class="ip-advice-time-inline-picker"
+                      popper-class="ip-advice-time-picker-popper"
+                      @click.stop
+                      @change="confirmInlineBusinessTime"
+                      @visible-change="handleInlineBusinessTimeVisible"
+                    />
+                    <template v-else>
+                      <span class="ip-advice-time-range__time">{{ row.startTime || '—' }}</span>
+                    </template>
+                    <span
+                      v-if="adviceOrderingDoctorLabel(row)"
+                      class="ip-advice-time-range__doctor"
+                    >
+                      {{ adviceOrderingDoctorLabel(row) }}
+                    </span>
+                  </div>
+                  <div
+                    class="ip-advice-time-range__line ip-advice-time-range__end"
+                    :class="{
+                      'is-editable': canEditStopBusinessTime(row),
+                      'is-editing': isInlineBusinessTimeEditing(row, 'STOP'),
+                    }"
+                    :title="canEditStopBusinessTime(row) ? '点击修改停嘱时间' : undefined"
+                    @click.stop="
+                      canEditStopBusinessTime(row) && beginInlineBusinessTimeEdit('STOP', row)
+                    "
+                  >
+                    <span class="ip-advice-time-range__tag">停</span>
+                    <ElDatePicker
+                      v-if="isInlineBusinessTimeEditing(row, 'STOP')"
+                      :ref="bindInlineBusinessTimePickerRef"
+                      v-model="inlineBusinessTimeEdit.value"
+                      type="datetime"
+                      size="small"
+                      value-format="YYYY-MM-DD HH:mm"
+                      format="YYYY-MM-DD HH:mm"
+                      time-format="HH:mm"
+                      :clearable="false"
+                      :editable="false"
+                      teleported
+                      placement="bottom-start"
+                      class="ip-advice-time-inline-picker"
+                      popper-class="ip-advice-time-picker-popper"
+                      @click.stop
+                      @change="confirmInlineBusinessTime"
+                      @visible-change="handleInlineBusinessTimeVisible"
+                    />
+                    <template v-else>
+                      <span class="ip-advice-time-range__time">{{ row.endTime || '-' }}</span>
+                    </template>
+                    <span
+                      v-if="row.endTime && row.stopperName"
+                      class="ip-advice-time-range__doctor"
+                    >
+                      {{ row.stopperName }}
+                    </span>
+                  </div>
+                </template>
               </div>
             </template>
           </ElTableColumn>
-          <ElTableColumn prop="startTime" label="开立时间" width="170" align="center" />
           <ElTableColumn prop="lineTotalAmount" label="总金额" width="100" align="center" />
-          <ElTableColumn prop="diagnosisSummary" label="诊断" min-width="140" align="center" />
-          <ElTableColumn prop="orderingDoctor" label="开立医生" width="100" align="center" />
-          <ElTableColumn prop="skinTestText" label="皮试" width="72" align="center" />
+          <ElTableColumn prop="skinTestText" label="皮试" width="96" align="center">
+            <template #default="{ row }">
+              <div class="ip-advice-skin-test-cell">
+                <ElTag
+                  v-if="getSkinTestDisplayTagType(row)"
+                  :type="getSkinTestDisplayTagType(row)!"
+                  size="small"
+                  effect="light"
+                >
+                  {{ row.skinTestText }}
+                </ElTag>
+                <span v-else>{{ row.skinTestText }}</span>
+                <ElTag
+                  v-if="row.needAppendSkinTestFlag"
+                  type="warning"
+                  size="small"
+                  effect="plain"
+                  title="发放批号与上次皮试批号不一致，建议追加皮试检查"
+                >
+                  换批
+                </ElTag>
+              </div>
+            </template>
+          </ElTableColumn>
         </ElTable>
       </div>
 
@@ -432,22 +668,6 @@ function handleQuickAction(action: InpatientAdviceQuickAction) {
         :disabled="adviceWriteDisabled"
         @action="handleQuickAction"
       />
-
-      <AppDialog
-        v-model="tcmDialogVisible"
-        title="中药处方"
-        width="1280px"
-        destroy-on-close
-        append-to-body
-      >
-        <div class="h-[78vh] min-h-[560px]">
-          <TcmAdvice
-            :encounter-id="encounterId"
-            :patient-id="patientId"
-            station-scope="inpatient"
-          />
-        </div>
-      </AppDialog>
     </div>
   </div>
 </template>
@@ -455,7 +675,8 @@ function handleQuickAction(action: InpatientAdviceQuickAction) {
 <style scoped>
 .ip-advice-workspace-root {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  /* 组套侧栏自带宽度并可收起，列宽随内容 */
+  grid-template-columns: auto minmax(0, 1fr);
   min-height: 0;
 }
 
@@ -487,6 +708,14 @@ function handleQuickAction(action: InpatientAdviceQuickAction) {
   overflow: visible !important;
 }
 
+.ip-advice-skin-test-cell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  justify-content: center;
+}
+
 .advice-table :deep(.advice-editor-cell) {
   overflow: visible !important;
 }
@@ -496,61 +725,119 @@ function handleQuickAction(action: InpatientAdviceQuickAction) {
   overflow-y: auto;
 }
 
-/* 同一申请单多行：浅底 + 四边框成一组；组间顶部分隔；组内无横线 */
-.advice-table :deep(td.doctor-apply-form-cell) {
-  background-color: var(--el-color-primary-light-9) !important;
-}
-
-.advice-table :deep(td.doctor-apply-form-cell.is-group-edge-left) {
-  border-left: 2px solid var(--el-color-primary-light-5) !important;
-}
-
-.advice-table :deep(td.doctor-apply-form-cell.is-group-edge-right) {
-  border-right: 2px solid var(--el-color-primary-light-5) !important;
-}
-
-.advice-table :deep(td.doctor-apply-form-cell.is-group-start) {
-  border-top: 2px solid var(--el-color-primary-light-5) !important;
-}
-
-.advice-table :deep(td.doctor-apply-form-cell.is-group-end) {
-  border-bottom: 2px solid var(--el-color-primary-light-5) !important;
-}
-
-.advice-table :deep(td.doctor-apply-form-cell.is-group-continue) {
-  border-top: none !important;
-}
-
-.advice-table :deep(td.doctor-apply-form-cell:not(.is-group-end)) {
-  border-bottom: none !important;
-}
-
-.advice-table :deep(td.doctor-apply-form-cell.is-group-start.is-group-edge-left) {
-  border-top-left-radius: 4px;
-}
-
-.advice-table :deep(td.doctor-apply-form-cell.is-group-start.is-group-edge-right) {
-  border-top-right-radius: 4px;
-}
-
-.advice-table :deep(td.doctor-apply-form-cell.is-group-end.is-group-edge-left) {
-  border-bottom-left-radius: 4px;
-}
-
-.advice-table :deep(td.doctor-apply-form-cell.is-group-end.is-group-edge-right) {
-  border-bottom-right-radius: 4px;
-}
-
-.advice-order-content-wrap.is-apply-form-block {
-  padding-left: 8px;
-}
-
-.doctor-apply-form-group-label {
-  margin-bottom: 4px;
-}
-
 .ip-advice-type-sep {
   color: var(--el-text-color-secondary);
+}
+
+.ip-advice-time-range {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  max-width: 100%;
+  line-height: 1.3;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.ip-advice-time-range__line {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 22px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  transition: background-color 0.15s ease;
+}
+
+.ip-advice-time-range__line.is-editable:not(.is-editing) {
+  cursor: pointer;
+}
+
+.ip-advice-time-range__line.is-editable:not(.is-editing):hover {
+  background: var(--el-fill-color-light);
+}
+
+.ip-advice-time-range__line.is-editable:not(.is-editing):hover .ip-advice-time-range__time {
+  color: var(--el-color-primary);
+}
+
+.ip-advice-time-range__line.is-editing {
+  cursor: default;
+  background: transparent;
+  padding-left: 2px;
+  padding-right: 2px;
+}
+
+.ip-advice-time-range__tag {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--el-fill-color);
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 14px;
+  text-align: center;
+}
+
+.ip-advice-time-range__end .ip-advice-time-range__tag {
+  background: var(--el-fill-color-dark);
+  color: var(--el-text-color-regular);
+}
+
+.ip-advice-time-range__time {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--el-text-color-primary);
+  letter-spacing: 0;
+}
+
+.ip-advice-time-range__end .ip-advice-time-range__time {
+  color: var(--el-text-color-regular);
+}
+
+.ip-advice-time-range__doctor {
+  max-width: 4.5em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--el-color-primary);
+  opacity: 0.85;
+}
+
+/* 就地选择器：贴近纯文本，去掉粗边框与时钟图标 */
+.ip-advice-time-inline-picker {
+  width: 148px;
+}
+
+.ip-advice-time-inline-picker :deep(.el-input__wrapper) {
+  padding: 0 4px;
+  background: transparent;
+  box-shadow: none !important;
+  border-radius: 0;
+  border-bottom: 1px solid var(--el-color-primary);
+}
+
+.ip-advice-time-inline-picker :deep(.el-input__wrapper.is-focus),
+.ip-advice-time-inline-picker :deep(.el-input__wrapper:hover) {
+  box-shadow: none !important;
+  border-bottom-color: var(--el-color-primary);
+}
+
+.ip-advice-time-inline-picker :deep(.el-input__prefix),
+.ip-advice-time-inline-picker :deep(.el-input__suffix) {
+  display: none;
+}
+
+.ip-advice-time-inline-picker :deep(.el-input__inner) {
+  height: 20px;
+  padding: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 20px;
+  color: var(--el-color-primary);
 }
 
 .ip-advice-therapy-text--long {
@@ -566,5 +853,33 @@ function handleQuickAction(action: InpatientAdviceQuickAction) {
 .ip-advice-therapy-text--discharge {
   color: #5b8c3e;
   font-weight: 500;
+}
+</style>
+
+<!-- 面板 teleported 到 body，需非 scoped 覆盖 -->
+<style>
+.ip-advice-time-picker-popper.el-picker__popper {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgb(15 23 42 / 10%);
+}
+
+.ip-advice-time-picker-popper .el-picker-panel {
+  border: none;
+  box-shadow: none;
+}
+
+/* 去掉顶部「日期 + 时间」双输入条，只保留日历与时分列 */
+.ip-advice-time-picker-popper .el-date-picker__time-header {
+  display: none;
+}
+
+.ip-advice-time-picker-popper .el-picker-panel__footer {
+  padding: 6px 10px;
+  border-top: 1px solid var(--el-border-color-extra-light);
+}
+
+.ip-advice-time-picker-popper .el-picker-panel__link-btn {
+  font-size: 12px;
 }
 </style>

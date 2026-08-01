@@ -7,7 +7,7 @@ interface PaperNavMeta {
   slot: string;
 }
 
-const SLOT_ORDER = ['date', 'time', ''];
+const SLOT_ORDER = [''];
 
 function readPaperNavMeta(el: HTMLElement): PaperNavMeta | null {
   const col = el.dataset.navCol;

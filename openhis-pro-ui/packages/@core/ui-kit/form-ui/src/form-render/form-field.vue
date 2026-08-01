@@ -142,7 +142,8 @@ const fieldRules = computed(() => {
 
   let rules = currentRules.value;
   if (!rules) {
-    return isRequired.value ? 'required' : null;
+    // 与 shouldRequired 一致：schema.required / dependencies.required 均需落到校验规则
+    return isRequired.value || required === true ? 'required' : null;
   }
 
   if (isString(rules)) {

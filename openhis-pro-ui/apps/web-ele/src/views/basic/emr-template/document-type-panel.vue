@@ -148,6 +148,23 @@ defineExpose({
     >
       <ElTableColumn prop="name" label="名称" min-width="88" show-overflow-tooltip />
       <ElTableColumn prop="code" label="编码" min-width="100" show-overflow-tooltip />
+      <ElTableColumn label="分类" width="88" align="center">
+        <template #default="{ row }">
+          {{
+            row.categoryCode === 'OUTPATIENT'
+              ? '门诊病历'
+              : row.categoryCode === 'INPATIENT'
+                ? '住院病历'
+                : row.categoryCode === 'NOTICE'
+                  ? '告知书'
+                  : row.categoryCode === 'SURGERY'
+                    ? '手术病历'
+                    : row.categoryCode === 'OTHER'
+                      ? '其他'
+                      : (row.categoryCode ?? '-')
+          }}
+        </template>
+      </ElTableColumn>
       <ElTableColumn label="状态" width="56" align="center">
         <template #default="{ row }">
           <ElTag :type="row.isEnabled !== false ? 'success' : 'info'" size="small">

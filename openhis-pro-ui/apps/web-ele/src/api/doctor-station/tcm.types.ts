@@ -44,6 +44,8 @@ export interface TcmDiagnosisGroupRowDto {
   rank?: null | number;
   medicalTypeCode?: null | string;
   diagnosisDesc?: null | string;
+  /** 病名医保诊断编码；未对码时为空，列表展示「-」 */
+  ybNo?: null | string;
 }
 
 export interface ListTcmDiagnosisGroupsResponse {
@@ -65,6 +67,8 @@ export interface TcmDiagnosisCatalogRowDto {
   conditionName?: null | string;
   sourceCode?: null | string;
   sourceText?: null | string;
+  /** 医保诊断编码；未对码时为空，列表展示「-」 */
+  ybNo?: null | string;
 }
 
 export interface PageTcmConditionDefinitionResponse {
@@ -75,9 +79,9 @@ export interface PageTcmConditionDefinitionResponse {
 /** saveTcmDiagnosisGroupsBatch */
 export interface TcmDiagnosisGroupItemRequest {
   tcmSyndromeGroup?: null | string;
-  diseaseDefinitionId: string;
+  diseaseDefinitionId?: null | string;
   diseaseConditionId?: null | string;
-  syndromeDefinitionId: string;
+  syndromeDefinitionId?: null | string;
   syndromeConditionId?: null | string;
   primaryFlag: number;
   rank: number;
@@ -250,6 +254,17 @@ export interface WithdrawOrDeleteTcmRxResponse {
   success?: boolean | null;
 }
 
+/** voidTcmDecoctionCharge：单独取消已签发方的代煎费 */
+export interface VoidTcmDecoctionChargeRequest {
+  encounterId: string;
+  patientId: string;
+  prescriptionGroupKey: string;
+}
+
+export interface VoidTcmDecoctionChargeResponse {
+  success?: boolean | null;
+}
+
 /** listPatientTcmHerbalPrescriptionHistory */
 export interface ListPatientTcmRxHistoryRequest {
   patientId: string;
@@ -260,7 +275,12 @@ export interface ListPatientTcmRxHistoryRequest {
 export interface TcmRxHistoryRowDto {
   prescriptionNo?: null | string;
   encounterId?: null | string;
-  authoredAt?: null | string;
+  /** 开立时间（后端 req_opened_time） */
+  reqOpenedTime?: null | string;
+  /** 保留类型字段，UI 不展示 */
+  reqAuthoredTime?: null | string;
+  /** 开立人姓名 */
+  authoredByName?: null | string;
   summaryText?: null | string;
   medicationNames?: null | string[];
 }

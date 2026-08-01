@@ -19,6 +19,10 @@ import {
   listDischargePendingMedications,
 } from '../services/list-discharge-pending';
 import {
+  buildClearBedConfirmMessage,
+  loadMissingDispenseTraceTips,
+} from '../services/list-missing-dispense-trace-tips';
+import {
   blockingReasonToLabel,
   encounterStatusToDischargeLabel,
   filterDischargeExecutionRows,
@@ -190,11 +194,18 @@ async function handleDischarge() {
   }
 }
 
-/** 清床离院 */
+/** 清床离院（先 tip 软提示，用户确认后仍可清） */
 async function handleClearBed() {
-  if (!encounterId.value) return;
+  if (!encounterId.value || !clearBedEnabled.value) return;
+  // Pre：拉取缺追溯码 tip；接口失败不挡清床，回落基础确认文案
+  let tipsResponse: Awaited<ReturnType<typeof loadMissingDispenseTraceTips>> | null = null;
   try {
-    await ElMessageBox.confirm('确认清床离院？释床后患者将从护士站列表移除。', '清床离院', {
+    tipsResponse = await loadMissingDispenseTraceTips(encounterId.value);
+  } catch {
+    tipsResponse = null;
+  }
+  try {
+    await ElMessageBox.confirm(buildClearBedConfirmMessage(tipsResponse), '清床离院', {
       type: 'warning',
       confirmButtonText: '清床',
       cancelButtonText: '取消',
@@ -211,7 +222,7 @@ async function handleClearBed() {
     ElMessage.success('清床成功');
     await props.onRefresh?.();
   } catch {
-    // 业务错误文案由全局 HTTP 拦截器统一弹出
+    // 业务错误文案由全局 HTTP 拦截器统一弹出（含 EX-IP-ATD-404 未冲销）
   }
 }
 
@@ -283,7 +294,7 @@ watch(
             </ElTableColumn>
             <ElTableColumn label="开立时间" width="160">
               <template #default="{ row }">
-                {{ formatDischargeReqTime(row.reqAuthoredTime) }}
+                {{ formatDischargeReqTime(row.reqOpenedTime) }}
               </template>
             </ElTableColumn>
             <ElTableColumn

@@ -17,6 +17,7 @@ import {
   getChargeTypeListApi,
 } from '#/api/core/system/charge-type';
 
+import { BASIC_TABLE_MAX_HEIGHT } from '../basic-table-max-height';
 import EditDialog from './edit-dialog.vue';
 
 const allData = ref<ChargeType[]>([]);
@@ -170,6 +171,7 @@ onMounted(() => {
       :query-params="queryParams"
       :form-items="formItems"
       :table-columns="tableColumns"
+      :max-height="BASIC_TABLE_MAX_HEIGHT"
       :show-side-query="false"
       :show-top-query="true"
       :show-pagination="false"

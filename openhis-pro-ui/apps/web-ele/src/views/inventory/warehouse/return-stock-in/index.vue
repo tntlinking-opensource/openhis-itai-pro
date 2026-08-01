@@ -1,21 +1,20 @@
-﻿<!-- 退库入库单：工作站 + 侧栏卡片队列 + 右侧明细。 -->
+<!-- 退货入库单：只读壳单台账（退库 agree 自动生成）。 -->
 <script lang="ts" setup>
 import type { LocationOptionDto } from '#/api/inventory/warehouse/return-stock-in';
 
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-
-import { formatDateTime } from '@vben/utils';
 
 import {
   loadReturnStockInFormInitApi,
-  pageReturnStockInsApi,
-  WHS_RSI_TYPE_ENUM,
+  mapReturnStockInInitToCabinetRows,
+  pageReturnStockInWorkbenchListApi,
 } from '#/api/inventory/warehouse/return-stock-in';
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
 import {
-  pickWorkbenchOrderAfterSave,
-  preserveLocationIdForRequest,
+  enrichStockOutQueueCardRow,
+  INV_ALL_LOCATIONS_FILTER_ID,
+  resolveDefaultAllLocationsFilterValue,
 } from '#/utils/inventory/inventory-workbench-list';
 
 import ReturnStockInAsidePane from './return-stock-in-aside-pane.vue';
@@ -25,6 +24,7 @@ defineOptions({ name: 'InventoryWarehouseReturnStockInPage' });
 
 const route = useRoute();
 
+/** 侧栏默认日期：当月 1 号至当天 */
 function createDefaultMonthRange(): [string, string] {
   const d = new Date();
   const y = d.getFullYear();
@@ -42,8 +42,8 @@ const listKeywordModel = computed({
   },
 });
 
-const tableForm = ref<{ applyTime?: string; purposeLocationId?: number | string }>({
-  purposeLocationId: undefined,
+const tableForm = ref<{ purposeLocationId?: number | string }>({
+  purposeLocationId: INV_ALL_LOCATIONS_FILTER_ID,
 });
 
 const warehouseRawOptions = ref<LocationOptionDto[]>([]);
@@ -53,35 +53,9 @@ const cabinetListOptions = ref<Record<string, unknown>[]>([]);
 const orderList = ref<Record<string, unknown>[]>([]);
 const selectedOrder = ref<null | Record<string, unknown>>(null);
 const mainPaneResetKey = ref(0);
-const isAddDisabled = ref(false);
 const LIST_PAGE_SIZE = 200;
 
-function locationOptionsToCabinetRows(list: LocationOptionDto[]): Record<string, unknown>[] {
-  return list.map((w) => {
-    const id = w.locationId;
-    return {
-      id,
-      value: id,
-      name: w.displayName ?? String(id ?? ''),
-      label: w.displayName ?? String(id ?? ''),
-    };
-  });
-}
-
-function isDraftOrderRow(row?: null | Record<string, unknown>): boolean {
-  return Boolean(row?._draft);
-}
-
-function createDraftOrderRow(): Record<string, unknown> {
-  return {
-    _draft: true,
-    _clientDraftId: `draft:${Date.now()}:${Math.random().toString(36).slice(2, 9)}`,
-    statusEnum_enumText: '编辑中',
-    applyTime: formatDateTime(new Date()),
-    purposeLocationId: tableForm.value.purposeLocationId,
-  };
-}
-
+/** 从队列行解析业务单号 */
 function resolveBusNo(row?: null | Record<string, unknown>): string | undefined {
   if (!row) return undefined;
   for (const k of ['busNo', 'supplyBusNo', 'orderBusNo']) {
@@ -94,8 +68,17 @@ function resolveBusNo(row?: null | Record<string, unknown>): string | undefined 
 }
 
 const selectedBusNo = computed(() => resolveBusNo(selectedOrder.value) ?? '');
-const isDraftOrder = computed(() => Boolean(selectedOrder.value?._draft));
+/** 壳单禁止草稿新建 */
+const isDraftOrder = computed(() => false);
 
+function toQueueRow(r: Record<string, unknown>): Record<string, unknown> {
+  return enrichStockOutQueueCardRow(r, {
+    sourceOptions: pharmacyRawOptions.value,
+    purposeOptions: warehouseRawOptions.value,
+  });
+}
+
+/** 加载药库/药房/科室选项；侧栏默认「全部库房」 */
 async function init() {
   try {
     const res = await loadReturnStockInFormInitApi();
@@ -103,10 +86,16 @@ async function init() {
     warehouseRawOptions.value = data?.warehouseOptions ?? [];
     departmentRawOptions.value = data?.departmentOptions ?? [];
     pharmacyRawOptions.value = data?.pharmacyOptions ?? [];
-    cabinetListOptions.value = locationOptionsToCabinetRows(warehouseRawOptions.value);
-    if (tableForm.value.purposeLocationId === undefined && cabinetListOptions.value.length > 0) {
-      const first = cabinetListOptions.value[0] as Record<string, unknown>;
-      tableForm.value.purposeLocationId = (first.id ?? first.value) as number | string | undefined;
+    cabinetListOptions.value = mapReturnStockInInitToCabinetRows(warehouseRawOptions.value);
+    if (
+      tableForm.value.purposeLocationId === undefined ||
+      tableForm.value.purposeLocationId === null ||
+      String(tableForm.value.purposeLocationId).trim() === '' ||
+      tableForm.value.purposeLocationId === 0
+    ) {
+      tableForm.value.purposeLocationId = resolveDefaultAllLocationsFilterValue(
+        cabinetListOptions.value,
+      );
     }
   } catch {
     warehouseRawOptions.value = [];
@@ -116,72 +105,27 @@ async function init() {
   }
 }
 
+/** 刷新历史退货入库单队列（库位 0 = 全部可见药库） */
 async function getList() {
-  const pid = tableForm.value.purposeLocationId;
-  const draftRows = orderList.value.filter((r) => r._draft);
-  if (pid === undefined || pid === null || String(pid).trim() === '') {
-    orderList.value = [...draftRows];
-    return;
-  }
   const dr = listDateRange.value;
   try {
-    const res = await pageReturnStockInsApi({
-      purposeLocationId: preserveLocationIdForRequest(pid),
-      typeEnum: WHS_RSI_TYPE_ENUM,
+    const { records } = await pageReturnStockInWorkbenchListApi({
+      purposeLocationId: tableForm.value.purposeLocationId,
       keyword: queryParams.value.keyword?.trim() || undefined,
+      applyTimeBegin: dr?.[0],
+      applyTimeEnd: dr?.[1],
       pageNo: 1,
       pageSize: LIST_PAGE_SIZE,
-      ...(dr?.[0] ? { applyTimeFrom: dr[0] } : {}),
-      ...(dr?.[1] ? { applyTimeTo: dr[1] } : {}),
     });
-    orderList.value = [...draftRows, ...(res.data?.records ?? [])];
+    orderList.value = records.map((r) => toQueueRow(r as Record<string, unknown>));
   } catch {
-    orderList.value = [...draftRows];
+    orderList.value = [];
   }
 }
 
-function handleAdd() {
-  const draft = createDraftOrderRow();
-  orderList.value = [draft, ...orderList.value.filter((r) => !r._draft)];
-  selectedOrder.value = draft;
-  tableForm.value.applyTime = formatDateTime(new Date());
-  mainPaneResetKey.value += 1;
-  nextTick(() => {
-    isAddDisabled.value = true;
-  });
-}
-
+/** 选中队列卡片 */
 function handleOrderClick(order: Record<string, unknown>) {
   selectedOrder.value = order;
-  if (isDraftOrderRow(order)) {
-    // 切回草稿由主区 sync 恢复缓存；勿 bump resetKey，否则会冲掉恢复内容
-    return;
-  }
-  isAddDisabled.value = false;
-}
-
-async function handleDocumentSaved(payload: { busNo?: string }) {
-  orderList.value = orderList.value.filter((r) => !r._draft);
-  await getList();
-  const busNo = payload.busNo?.trim();
-  if (!busNo) return;
-  selectedOrder.value = pickWorkbenchOrderAfterSave(orderList.value, busNo, resolveBusNo);
-  isAddDisabled.value = false;
-}
-
-async function handleDocumentRemoved() {
-  if (selectedOrder.value?._draft) {
-    orderList.value = orderList.value.filter((r) => r !== selectedOrder.value);
-    selectedOrder.value = null;
-    mainPaneResetKey.value += 1;
-    isAddDisabled.value = false;
-    return;
-  }
-  orderList.value = orderList.value.filter((r) => !r._draft);
-  selectedOrder.value = null;
-  mainPaneResetKey.value += 1;
-  isAddDisabled.value = false;
-  await getList();
 }
 
 watch(
@@ -197,7 +141,6 @@ watch(
     const row = orderList.value.find((item) => resolveBusNo(item) === String(busNo));
     if (!row) return;
     selectedOrder.value = row;
-    isAddDisabled.value = false;
   },
   { immediate: true },
 );
@@ -210,7 +153,6 @@ onMounted(async () => {
 
 <template>
   <WarehouseDocWorkstation
-    aside-width="280px"
     queue-title=""
     aside-dense
     :show-aside-filter="false"
@@ -221,11 +163,9 @@ onMounted(async () => {
         v-model:date-range="listDateRange"
         v-model:keyword="listKeywordModel"
         v-model:purpose-location-id="tableForm.purposeLocationId"
-        :add-disabled="isAddDisabled"
         :cabinet-list-options="cabinetListOptions"
         :orders="orderList"
         :selected-order="selectedOrder"
-        @add="handleAdd"
         @search="getList"
         @select="handleOrderClick"
       />
@@ -233,7 +173,6 @@ onMounted(async () => {
 
     <ReturnStockInMainPane
       class="min-h-0 flex-1"
-      :apply-time="tableForm.applyTime"
       :bus-no="selectedBusNo"
       :is-draft-order="isDraftOrder"
       :reset-key="mainPaneResetKey"
@@ -241,8 +180,6 @@ onMounted(async () => {
       :warehouse-options="warehouseRawOptions"
       :department-options="departmentRawOptions"
       :pharmacy-options="pharmacyRawOptions"
-      @document-removed="handleDocumentRemoved"
-      @document-saved="handleDocumentSaved"
     />
   </WarehouseDocWorkstation>
 </template>

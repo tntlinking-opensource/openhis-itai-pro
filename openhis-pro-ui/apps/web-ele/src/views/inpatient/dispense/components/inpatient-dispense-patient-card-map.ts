@@ -21,5 +21,7 @@ export function toInpatientDispensePatientCardModel(
     visitNo: p.hospitalizationNo || undefined,
     priority: bedLabel,
     isRegistered: true,
+    // 住院卡片费用性质走 paymentType；与门诊 contractDisplay 同业务口径
+    paymentType: p.feeNatureLabel,
   };
 }

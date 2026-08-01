@@ -73,6 +73,7 @@ function westernPatchFromCatalogRow(row: ProductOption): Partial<AdviceDrugItem>
   const rc = row.rateCode?.trim();
   if (mc) patch.usage = mc;
   if (rc) patch.frequency = rc;
+  patch.injectFlag = row.injectFlag === true;
   if (splitName) patch.doseMainUnit = splitName;
   if (doseName) patch.doseSubUnit = doseName;
   if (ratio !== undefined && Number.isFinite(ratio)) patch.doseConvertRatio = ratio;
@@ -103,6 +104,22 @@ function westernPatchFromCatalogRow(row: ProductOption): Partial<AdviceDrugItem>
   if (linePrice !== undefined) {
     patch.selectedDrugPrice = linePrice;
   }
+  // 医保等级：目录带出，仅展示
+  const lvRaw = row.chrgitmLv;
+  if (lvRaw !== null && lvRaw !== undefined && String(lvRaw).trim() !== '') {
+    patch.chrgitmLv = lvRaw;
+  } else {
+    patch.chrgitmLv = undefined;
+  }
+  const lvText = String(row.chrgitmLvText ?? '').trim();
+  patch.chrgitmLvText = lvText || undefined;
+  // 库存：目录带出，供药品信息行展示
+  const qtyRaw = row.availableQuantity;
+  patch.availableQuantity =
+    qtyRaw !== null && qtyRaw !== undefined && String(qtyRaw).trim() !== '' ? qtyRaw : undefined;
+  const stockText = String(row.availableQuantityText ?? '').trim();
+  patch.availableQuantityText = stockText || undefined;
+  patch.inventoryList = Array.isArray(row.inventoryList) ? row.inventoryList : undefined;
   return patch;
 }
 
@@ -111,10 +128,11 @@ function withExpandedIndex(items: AdviceDrugItem[], index: number): AdviceDrugIt
   return items.map((item, i) => ({ ...item, expanded: i === index }));
 }
 
-/** 从上一行复制「成组默认」字段，新开空白药品行。 */
+/** 从上一行复制「成组默认」字段，新开空白药品行（不继承诊断，避免误绑）。 */
 function seedFromLastRow(last: AdviceDrugItem): Partial<AdviceDrugItem> {
   return {
-    diagnosis: last.diagnosis,
+    diagnosis: '',
+    encounterDiagnosisIds: [],
     contractId: last.contractId,
     feeNature: lastItemField(last, 'feeNature'),
     frequency: last.frequency,

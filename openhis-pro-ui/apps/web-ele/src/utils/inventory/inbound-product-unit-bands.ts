@@ -1,7 +1,8 @@
 /**
- * 进货/选品等多计量带：PURCHASE、SPLIT、STOCK 等；`ratioToSplit` 表示「1 个本带单位 = 多少个拆零基准（SPLIT）单位」。
+ * 进货/选品等多计量带：PURCHASE、SPLIT、STOCK、PACKAGE 等；`ratioToSplit` 表示「1 个本带单位 = 多少个拆零基准（SPLIT）单位」。
  * 保存接口时数量通常持久化为 **SPLIT**（见 {@link persistDisplayQtyAsSplitForBands}）；药库非入库界面默认展示带为 **STOCK**，进货默认 **PURCHASE**（不用 STOCK 作默认）。
  * 药库非入库展示单价优先取目标带 `unitPrice`，缺省时以 **PACKAGE** 单价换算到展示带（见 {@link warehouseNonInboundResolveDisplayUnitPrice}）。
+ * 单位下拉：仅业务四槽；同 `unitCode` 且同 `ratioToSplit` 合并为一项，选项 value 优先 **PACKAGE → SPLIT → STOCK → PURCHASE**；**TRACE 不进下拉**（追溯贴码单位仅扫码桥使用）。
  * 跨域目录单价换算见 {@link ../product-unit-band-price.ts}。
  */
 
@@ -14,6 +15,14 @@ export interface InboundProductUnitBand {
   ratioToSplit?: number;
   unitPrice?: null | number;
 }
+
+/**
+ * 库房单据数量单位下拉允许的业务槽；同码同倍合并时的优先级（包装 > 拆零 > 库存 > 采购）。
+ * TRACE / DOSE 等不在此列，不得进入数量单位下拉。
+ */
+export const INVENTORY_UNIT_BAND_SELECT_PREFER = ['PACKAGE', 'SPLIT', 'STOCK', 'PURCHASE'] as const;
+
+type InventoryUnitBandSelectKind = (typeof INVENTORY_UNIT_BAND_SELECT_PREFER)[number];
 
 /** 解析接口返回的 `unitBands` 数组或 JSON 字符串 */
 export function normalizeInboundProductUnitBands(
@@ -40,12 +49,113 @@ function bandKindKey(b: InboundProductUnitBand): string {
     .toUpperCase();
 }
 
-/** 优先 PURCHASE，否则第一条 */
-export function defaultInboundUnitBandKind(bands: InboundProductUnitBand[]): string {
-  const hit = bands.find((b) => bandKindKey(b) === 'PURCHASE');
-  if (hit) return 'PURCHASE';
-  const first = bands[0];
+function isInventoryUnitBandSelectKind(kind: string): kind is InventoryUnitBandSelectKind {
+  return (INVENTORY_UNIT_BAND_SELECT_PREFER as readonly string[]).includes(kind);
+}
+
+function ratioOf(band: InboundProductUnitBand | undefined): number | undefined {
+  if (!band) return undefined;
+  const r = Number(band.ratioToSplit);
+  if (!Number.isFinite(r) || r <= 0) return undefined;
+  return r;
+}
+
+/** 业务四槽中与指定 unitCode 同码的带（忽略 TRACE 等）。 */
+function businessBandsWithUnitCode(
+  bands: InboundProductUnitBand[],
+  unitCode: string,
+): InboundProductUnitBand[] {
+  const code = String(unitCode ?? '').trim();
+  if (!code) return [];
+  return bands.filter((b) => {
+    const k = bandKindKey(b);
+    if (!isInventoryUnitBandSelectKind(k)) return false;
+    return String(b.unitCode ?? '').trim() === code;
+  });
+}
+
+/** 同码各带 ratioToSplit 均有值且相等时才可合并。 */
+function canMergeSameUnitCodeBands(sameCodeBands: InboundProductUnitBand[]): boolean {
+  if (sameCodeBands.length <= 1) return true;
+  const ratios: number[] = [];
+  for (const b of sameCodeBands) {
+    const r = ratioOf(b);
+    if (r === undefined) return false;
+    ratios.push(r);
+  }
+  const first = ratios[0];
+  return ratios.every((r) => r === first);
+}
+
+/** 同码可合并时取优先槽；不可合并时返回空（由调用方按页偏好再选）。 */
+function preferredSelectKindAmong(sameCodeBands: InboundProductUnitBand[]): string {
+  for (const k of INVENTORY_UNIT_BAND_SELECT_PREFER) {
+    if (sameCodeBands.some((b) => bandKindKey(b) === k)) return k;
+  }
+  const first = sameCodeBands[0];
   return first ? bandKindKey(first) : '';
+}
+
+/**
+ * 将期望 bandKind 收敛到 {@link inboundUnitBandSelectOptions} 中实际存在的 value，
+ * 避免同码合并后默认/回显仍指向已被合并掉的槽（如下拉无 STOCK 却 selectedBandKind=STOCK）。
+ */
+function coerceBandKindToSelectOption(
+  bands: InboundProductUnitBand[],
+  desiredKind: string,
+): string {
+  const desired = String(desiredKind ?? '')
+    .trim()
+    .toUpperCase();
+  if (desired === '') return '';
+  if (desired === 'LEGACY') return 'LEGACY';
+  const opts = inboundUnitBandSelectOptions(bands);
+  if (opts.length === 0) return desired;
+  if (opts.some((o) => o.value === desired)) return desired;
+  const desiredBand = findInboundUnitBandByKind(bands, desired);
+  const code = String(desiredBand?.unitCode ?? '').trim();
+  if (code) {
+    for (const o of opts) {
+      const b = findInboundUnitBandByKind(bands, o.value);
+      if (b && String(b.unitCode ?? '').trim() === code) return o.value;
+    }
+  }
+  const first = opts[0];
+  return first ? first.value : desired;
+}
+
+/**
+ * 同码多带推断：可合并时统一 **PACKAGE → SPLIT → STOCK → PURCHASE**；
+ * 同码不同倍时按 `conflictPrefer` 顺序取（进货偏采购、非入库偏库存）。
+ */
+function inferSelectBandKindFromUnitCode(
+  bands: InboundProductUnitBand[],
+  unitCode: string,
+  conflictPrefer: readonly InventoryUnitBandSelectKind[],
+  whenEmpty: (bands: InboundProductUnitBand[]) => string,
+): string {
+  const code = String(unitCode ?? '').trim();
+  if (!code || bands.length === 0) return whenEmpty(bands);
+  const same = businessBandsWithUnitCode(bands, code);
+  if (same.length === 0) {
+    const hit = bands.find((b) => String(b.unitCode ?? '').trim() === code);
+    return hit ? bandKindKey(hit) : whenEmpty(bands);
+  }
+  if (canMergeSameUnitCodeBands(same)) {
+    return preferredSelectKindAmong(same);
+  }
+  for (const k of conflictPrefer) {
+    if (same.some((b) => bandKindKey(b) === k)) return k;
+  }
+  return preferredSelectKindAmong(same) || whenEmpty(bands);
+}
+
+/** 进货默认：优先 PURCHASE；若该槽已同码合并进下拉他项，则收敛到下拉实际 value。 */
+export function defaultInboundUnitBandKind(bands: InboundProductUnitBand[]): string {
+  if (bands.length === 0) return '';
+  const hit = bands.find((b) => bandKindKey(b) === 'PURCHASE');
+  const desired = hit ? 'PURCHASE' : bandKindKey(bands[0]!);
+  return coerceBandKindToSelectOption(bands, desired);
 }
 
 export function findInboundUnitBandByKind(
@@ -54,13 +164,6 @@ export function findInboundUnitBandByKind(
 ): InboundProductUnitBand | undefined {
   const k = kind.trim().toUpperCase();
   return (bands ?? []).find((b) => bandKindKey(b) === k);
-}
-
-function ratioOf(band: InboundProductUnitBand | undefined): number | undefined {
-  if (!band) return undefined;
-  const r = Number(band.ratioToSplit);
-  if (!Number.isFinite(r) || r <= 0) return undefined;
-  return r;
 }
 
 /**
@@ -307,35 +410,124 @@ export function handleInventoryUnitBandChanged(
   args.onAfterChanged?.();
 }
 
-/** 下拉选项：按 bandKind 去重，展示 unitName */
+/**
+ * 数量单位下拉选项：仅业务四槽（排除 TRACE/DOSE 等）；
+ * 同 `unitCode` 且同 `ratioToSplit` 合并为一项，value 取 {@link INVENTORY_UNIT_BAND_SELECT_PREFER}；
+ * 同码不同倍不合并（保留各槽，避免静默错算）。
+ */
 export function inboundUnitBandSelectOptions(
   bands: InboundProductUnitBand[],
 ): { label: string; value: string }[] {
-  const seen = new Set<string>();
+  const business = (bands ?? []).filter((b) => isInventoryUnitBandSelectKind(bandKindKey(b)));
+  const groups = new Map<string, InboundProductUnitBand[]>();
+  for (const b of business) {
+    const code = String(b.unitCode ?? '').trim();
+    const key = code || `__kind:${bandKindKey(b)}`;
+    const list = groups.get(key);
+    if (list) {
+      list.push(b);
+    } else {
+      groups.set(key, [b]);
+    }
+  }
+
+  const kindToBand = new Map<string, InboundProductUnitBand>();
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      const only = group[0]!;
+      kindToBand.set(bandKindKey(only), only);
+      continue;
+    }
+    if (canMergeSameUnitCodeBands(group)) {
+      const prefer = preferredSelectKindAmong(group);
+      const band = group.find((b) => bandKindKey(b) === prefer) ?? group[0]!;
+      kindToBand.set(prefer, band);
+      continue;
+    }
+    for (const b of group) {
+      kindToBand.set(bandKindKey(b), b);
+    }
+  }
+
   const out: { label: string; value: string }[] = [];
-  for (const b of bands) {
-    const k = bandKindKey(b);
-    if (!k || seen.has(k)) continue;
-    seen.add(k);
+  for (const k of INVENTORY_UNIT_BAND_SELECT_PREFER) {
+    const b = kindToBand.get(k);
+    if (!b) continue;
     const name = String(b.unitName ?? '').trim() || k;
     out.push({ value: k, label: name });
   }
   return out;
 }
 
-/** 根据当前行的 unitCode 反推 bandKind（优先 PURCHASE） */
+/**
+ * 目录追溯码贴码单位（可游离于五类业务计量带；与 {@code ProductDefinitionDisplayDto} 对齐）。
+ */
+export interface CatalogTraceUnitHint {
+  traceUnitCode?: string;
+  traceUnitRatio?: number | string | null;
+}
+
+/** 解析目录追溯单位与倍数；缺码或缺正数倍数时返回空。 */
+export function resolveCatalogTraceUnitHint(
+  catalog?: CatalogTraceUnitHint | null,
+  bands?: InboundProductUnitBand[],
+): { traceUnitCode: string; traceUnitRatio: number } | undefined {
+  if (catalog) {
+    const code = String(catalog.traceUnitCode ?? '').trim();
+    const ratio = Number(catalog.traceUnitRatio);
+    if (code && Number.isFinite(ratio) && ratio > 0) {
+      return { traceUnitCode: code, traceUnitRatio: ratio };
+    }
+  }
+  // 兼容仅挂 TRACE 槽、顶层字段暂未透出的选品载荷
+  const traceBand = findInboundUnitBandByKind(bands ?? [], 'TRACE');
+  const bandCode = String(traceBand?.unitCode ?? '').trim();
+  const bandRatio = ratioOf(traceBand);
+  if (bandCode && bandRatio !== undefined) {
+    return { traceUnitCode: bandCode, traceUnitRatio: bandRatio };
+  }
+  return undefined;
+}
+
+/**
+ * 按单位 code 取 ratioToSplit（1 该单位 = 多少拆零）。
+ * 同码多带时优先 PACKAGE → SPLIT → STOCK → PURCHASE（与下拉合并优先级一致）。
+ * 目录游离追溯单位：传 {@code catalogTrace}，码命中时直接用 {@code traceUnitRatio}（不依赖下拉）。
+ */
+export function resolveUnitCodeRatioToSplit(
+  bands: InboundProductUnitBand[],
+  unitCode: string,
+  catalogTrace?: CatalogTraceUnitHint | null,
+): number | undefined {
+  const code = String(unitCode ?? '').trim();
+  if (!code) return undefined;
+  // 游离追溯单位：不要求出现在 unitBands 内，也不进数量单位下拉
+  const catalogHint = resolveCatalogTraceUnitHint(catalogTrace, bands);
+  if (catalogHint && catalogHint.traceUnitCode === code) {
+    return catalogHint.traceUnitRatio;
+  }
+  if (bands.length === 0) return undefined;
+  for (const k of INVENTORY_UNIT_BAND_SELECT_PREFER) {
+    const b = findInboundUnitBandByKind(bands, k);
+    if (b && String(b.unitCode ?? '').trim() === code) {
+      return ratioOf(b);
+    }
+  }
+  const hit = bands.find((b) => String(b.unitCode ?? '').trim() === code);
+  return ratioOf(hit);
+}
+
+/** 根据当前行的 unitCode 反推 bandKind（同码可合并时与下拉一致；冲突时偏 PURCHASE）。 */
 export function inferInboundBandKindFromUnitCode(
   bands: InboundProductUnitBand[],
   unitCode: string,
 ): string {
-  const code = String(unitCode ?? '').trim();
-  if (!code || bands.length === 0) return defaultInboundUnitBandKind(bands);
-  const pur = bands.find(
-    (b) => bandKindKey(b) === 'PURCHASE' && String(b.unitCode ?? '').trim() === code,
+  return inferSelectBandKindFromUnitCode(
+    bands,
+    unitCode,
+    ['PURCHASE', 'PACKAGE', 'STOCK', 'SPLIT'],
+    defaultInboundUnitBandKind,
   );
-  if (pur) return 'PURCHASE';
-  const hit = bands.find((b) => String(b.unitCode ?? '').trim() === code);
-  return hit ? bandKindKey(hit) : defaultInboundUnitBandKind(bands);
 }
 
 // --- 多计量带通用：落库 **SPLIT** 数量（进货/出库等均适用；仅「默认展示带」策略不同） ---
@@ -530,16 +722,26 @@ function warehouseStockPackageSameCodeRatioConflict(bands: InboundProductUnitBan
 }
 
 /**
- * SPLIT 账面量 → 界面展示计量带：默认可编辑 **STOCK**；同码多带冲突时回落 **PACKAGE**。
+ * SPLIT 账面量 → 界面展示计量带：默认可编辑 **STOCK**；同码多带冲突时回落 **PACKAGE**；
+ * 再收敛到下拉实际选项（同码同倍合并后可能仅剩 PACKAGE）。
  */
 function resolveWarehouseNonInboundSplitDisplayBandKind(bands: InboundProductUnitBand[]): string {
   if (warehouseStockPackageSameCodeRatioConflict(bands)) {
-    return 'PACKAGE';
+    return coerceBandKindToSelectOption(bands, 'PACKAGE');
   }
-  if (ratioOf(findInboundUnitBandByKind(bands, 'STOCK'))) return 'STOCK';
-  if (ratioOf(findInboundUnitBandByKind(bands, 'PACKAGE'))) return 'PACKAGE';
-  if (ratioOf(findInboundUnitBandByKind(bands, 'SPLIT'))) return 'SPLIT';
-  return warehouseNonInboundDefaultBandKindWithoutConflict(bands);
+  if (ratioOf(findInboundUnitBandByKind(bands, 'STOCK'))) {
+    return coerceBandKindToSelectOption(bands, 'STOCK');
+  }
+  if (ratioOf(findInboundUnitBandByKind(bands, 'PACKAGE'))) {
+    return coerceBandKindToSelectOption(bands, 'PACKAGE');
+  }
+  if (ratioOf(findInboundUnitBandByKind(bands, 'SPLIT'))) {
+    return coerceBandKindToSelectOption(bands, 'SPLIT');
+  }
+  return coerceBandKindToSelectOption(
+    bands,
+    warehouseNonInboundDefaultBandKindWithoutConflict(bands),
+  );
 }
 
 function warehouseNonInboundDefaultBandKindWithoutConflict(
@@ -554,14 +756,17 @@ function warehouseNonInboundDefaultBandKindWithoutConflict(
 
 /**
  * 药库除入库外的业务：有 `unitBands` 时默认选 **STOCK**（无可用 STOCK 则 SPLIT，再退化为进货默认带）。
- * 同码多带倍数冲突时默认 **PACKAGE**，与库存明细展示口径一致。
+ * 同码多带倍数冲突时默认 **PACKAGE**；最终收敛到 {@link inboundUnitBandSelectOptions} 的 value。
  */
 export function warehouseNonInboundDefaultBandKind(bands: InboundProductUnitBand[]): string {
   if (bands.length === 0) return 'LEGACY';
   if (warehouseStockPackageSameCodeRatioConflict(bands)) {
-    return 'PACKAGE';
+    return coerceBandKindToSelectOption(bands, 'PACKAGE');
   }
-  return warehouseNonInboundDefaultBandKindWithoutConflict(bands);
+  return coerceBandKindToSelectOption(
+    bands,
+    warehouseNonInboundDefaultBandKindWithoutConflict(bands),
+  );
 }
 
 /**
@@ -644,28 +849,21 @@ export function warehouseNonInboundPickListUnitCode(unitBands: unknown): string 
 }
 
 /**
- * 同码多带（如盒）时优先匹配 **STOCK**，再 SPLIT / PACKAGE / PURCHASE，与进货侧「优先 PURCHASE」区分。
+ * 同码多带（如盒）可合并时与下拉一致（PACKAGE 优先）；同码不同倍时优先 **STOCK**，再 SPLIT / PACKAGE / PURCHASE。
  */
 export function inferWarehouseNonInboundBandKindFromUnitCode(
   bands: InboundProductUnitBand[],
   unitCode: string,
 ): string {
-  const code = String(unitCode ?? '').trim();
-  if (!code || bands.length === 0) return warehouseNonInboundDefaultBandKind(bands);
-  if (warehouseStockPackageSameCodeRatioConflict(bands)) {
-    const pkg = findInboundUnitBandByKind(bands, 'PACKAGE');
-    if (pkg && String(pkg.unitCode ?? '').trim() === code) return 'PACKAGE';
-  }
-  const kindsOrder = ['STOCK', 'SPLIT', 'PACKAGE', 'PURCHASE'] as const;
-  for (const kk of kindsOrder) {
-    const b = findInboundUnitBandByKind(bands, kk);
-    if (b && String(b.unitCode ?? '').trim() === code) return kk;
-  }
-  const hit = bands.find((b) => String(b.unitCode ?? '').trim() === code);
-  return hit ? bandKindKey(hit) : warehouseNonInboundDefaultBandKind(bands);
+  return inferSelectBandKindFromUnitCode(
+    bands,
+    unitCode,
+    ['STOCK', 'SPLIT', 'PACKAGE', 'PURCHASE'],
+    warehouseNonInboundDefaultBandKind,
+  );
 }
 
-/** 药库出库等详情回显：SPLIT 数量按保存时 `unitCode` 换算；同码多带优先 STOCK（见 {@link inferWarehouseNonInboundBandKindFromUnitCode}）。 */
+/** 药库出库等详情回显：SPLIT 数量按保存时 `unitCode` 换算；同码推断见 {@link inferWarehouseNonInboundBandKindFromUnitCode}。 */
 export function hydrateWarehouseDetailQtyFromPersisted(args: {
   bands: InboundProductUnitBand[];
   persistedItemQuantity: number;

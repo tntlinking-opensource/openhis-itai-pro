@@ -1,0 +1,354 @@
+/**
+ * 住院结算页关键布局。
+ * 不走 SFC scoped：院点构建下 scoped 丢失会导致栅格/工具条/页签布局塌陷。
+ */
+.settle-page {
+  background: transparent !important;
+  box-shadow: none;
+}
+
+.settle-page .el-card__body {
+  height: 100%;
+}
+
+.settle-page .settle-card.el-card {
+  border: none;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 6%);
+}
+
+.settle-page .el-tabs__header {
+  margin-bottom: 0;
+}
+
+.settle-page .settle-detail-tabs .el-tabs__item.is-active {
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
+
+.settle-page .settle-detail-tabs .el-tabs__active-bar {
+  height: 3px;
+  border-radius: 2px;
+}
+
+.settle-page .el-table th.el-table__cell {
+  background: #f5f7fa;
+}
+
+.settle-page .el-select,
+.settle-page .el-date-editor {
+  width: 100%;
+}
+
+.settle-toolbar__main {
+  min-width: 280px;
+}
+
+.settle-patient-select {
+  min-width: 200px;
+  max-width: 560px;
+}
+
+.settle-page .settle-patient-select .el-input__wrapper {
+  border-radius: 8px;
+}
+
+.settle-queue-tab {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+.settle-page .settle-queue-tab .el-radio-button .el-radio-button__inner {
+  padding: 6px 16px;
+  border: 1px solid var(--el-border-color-lighter) !important;
+  border-radius: 16px !important;
+  box-shadow: none !important;
+}
+
+.settle-page .settle-queue-tab .el-radio-button.is-active .el-radio-button__inner {
+  color: var(--el-color-primary);
+  border-color: var(--el-color-primary) !important;
+  background: #fff;
+}
+
+.patient-info-bar {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-fill-color-light);
+  padding: 8px 12px;
+}
+
+.patient-info-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 8px;
+  width: 65%;
+  max-width: 65%;
+}
+
+.patient-info-item {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.patient-info-item--tags .patient-info-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.patient-info-label {
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.patient-info-value {
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settle-filter-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.settle-inline-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settle-inline-field__label {
+  flex-shrink: 0;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.settle-main-layout {
+  display: grid;
+  min-height: 0;
+  gap: 12px;
+  grid-template-columns: minmax(0, 50fr) minmax(0, 50fr);
+}
+
+.settle-main-left {
+  min-width: 0;
+}
+
+.settle-main-right {
+  min-width: 0;
+  height: 100%;
+}
+
+.settle-page .settle-fee-card-body,
+.settle-page .settle-history-card-body {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.settle-detail-panel {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.settle-detail-panel--fee {
+  height: 100%;
+}
+
+.settle-detail-panel--history {
+  height: 100%;
+}
+
+.settle-detail-tabs {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.settle-page .settle-detail-tabs .el-tabs__content {
+  flex: 1;
+  min-height: 0;
+}
+
+.settle-page .settle-detail-tabs .el-tab-pane {
+  height: 100%;
+}
+
+.settle-history-table-wrap {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.summary-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.summary-grid--five {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.summary-item {
+  border: 1px solid #eef0f3;
+  border-radius: 8px;
+  background: #fafbfc;
+  padding: 12px 14px;
+}
+
+.summary-item__label {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.summary-item__value {
+  margin-top: 6px;
+  color: var(--el-color-primary);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.payment-footer-layout {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.payment-footer-left {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.payment-footer-amount-line {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.payment-footer-amount-label {
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.payment-footer-meta {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.payment-footer-meta-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+}
+
+.payment-footer-meta-label {
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+}
+
+.payment-footer-meta-label--gap {
+  margin-left: 12px;
+}
+
+.payment-footer-meta-value {
+  color: var(--el-text-color-primary);
+  font-weight: 500;
+}
+
+.payment-footer-pay-method {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.settle-page .payment-footer-pay-method .el-radio {
+  margin-right: 8px;
+}
+
+.settle-page .payment-footer-pay-method .el-radio__label {
+  padding-left: 4px;
+  font-size: 13px;
+}
+
+.payment-footer-hint {
+  margin: 4px 0 0;
+}
+
+.settle-payable-amount {
+  color: var(--el-color-primary);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.payment-footer-actions {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settle-history-detail-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (width <= 1400px) {
+  .settle-main-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) minmax(260px, 0.5fr);
+  }
+
+  .summary-grid--five {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .payment-footer-layout {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .payment-footer-meta {
+    padding: 0;
+  }
+
+  .payment-footer-actions {
+    justify-content: flex-start;
+  }
+}

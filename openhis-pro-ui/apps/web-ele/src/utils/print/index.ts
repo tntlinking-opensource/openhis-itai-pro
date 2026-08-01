@@ -19,7 +19,12 @@ export {
   type ServiceApplyPrintMeta,
 } from './print-service-apply';
 export { printDailySettlement } from './print-daily-settlement';
-export { printInfusionLabel, printTreatmentSheet } from './print-nurse-station';
+export { printPharmacyDailySettlement } from './print-pharmacy-daily-settlement';
+export {
+  printInfusionLabel,
+  printSpecimenBarcode,
+  printTreatmentSheet,
+} from './print-nurse-station';
 export {
   printRegistrationReceipt,
   schedulePrintRegistrationReceipt,

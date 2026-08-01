@@ -3,6 +3,7 @@ import type { TableColumn } from '@vben-core/table-layout-ui';
 
 import type {
   ChargeQueueRowDto,
+  ChargeSettlementInsuranceSummaryDto,
   PendingChargeItemRowDto,
   PreSettleChargeLinePreviewDto,
   PreSettleOutpatientChargesResponse,
@@ -13,15 +14,15 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
 import { RotateCw } from '@vben/icons';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
-
 import { useDebounceFn } from '@vueuse/core';
 import {
   runWorkInjuryCharge2207Invoke,
   runWorkInjuryChargePreSettleInvoke,
+  runWorkInjuryRefundReverse,
 } from '#/chs/work-injury/use-work-injury-settle';
 import dayjs from 'dayjs';
 import {
+  ElBadge,
   ElButton,
   ElCard,
   ElDatePicker,
@@ -39,20 +40,24 @@ import {
   httpLoadPendingChargeItems,
   httpPageOutpatientChargeQueue,
   httpPreSettleOutpatientCharges,
-  httpSwitchEncounterChargeItemsToInsurance,
   httpSwitchEncounterChargeItemsToSelfPay,
 } from '#/api/outpatient-charge/outpatient-charge.http';
 import BillingPatientCard from '#/components/charge/billing-patient-card.vue';
 import EinvoiceBillAmountMismatchBanner from '#/components/einvoice/EinvoiceBillAmountMismatchBanner.vue';
+import RegisterStyleTableLayout from '#/components/layouts/register-style-table-layout.vue';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
 import SelectFuzzyInput from '#/components/select-fuzzy-input.vue';
 import { usePrintClientWarmup } from '#/composables/use-print-client-warmup';
-import { useUnionPayScanPay } from '#/composables/payment/useUnionPayScanPay';
+import { isScanPayChannel, useUnionPayScanPay } from '#/composables/payment/useUnionPayScanPay';
 import { useRequest } from '#/hooks/use-request';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import { buildDefaultDateRangeShortcuts } from '#/utils/format/date-picker-shortcuts';
 import { sumMoneyThenSettle } from '#/utils/format/money-scale';
-import { optionDtosToPayChannelOptions } from '#/utils/payment/payment-channel-options';
+import {
+  FALLBACK_DEFAULT_PAY_CHANNEL,
+  optionDtosToPayChannelOptions,
+} from '#/utils/payment/payment-channel-options';
 import { settleWithScanRecovery } from '#/utils/payment/scan-settle-recovery';
 import { submitScanPayment } from '#/utils/payment/submit-scan-payment';
 import { printChargeReceipt, schedulePrintChargeReceipt } from '#/utils/print/print-charge-receipt';
@@ -61,6 +66,7 @@ import {
   formatPatientFeeMoney,
   summarizeOutpatientChargeFeeAmounts,
 } from '../services/patient-fee-summary.service';
+import '../charge-workbench-panel.css';
 import {
   CHARGE_ITEM_STATUS_LABEL_TAG,
   DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE,
@@ -68,14 +74,33 @@ import {
   OUTPATIENT_CHARGE_SETTLE_OUTCOME_COMPLETED,
   resolveOutpatientChargeSwitchAccountMessage,
 } from './outpatient-charge.constants';
+import {
+  chooseOutpatientChargeInsuranceMedium,
+  outpatientChargeReadCredentialFailHint,
+  outpatientChargeReadCredentialHint,
+  outpatientChargeReadCredentialLabel,
+  resolveOutpatientChargeInsuranceContext,
+  selectionIncludesInsuranceItems,
+} from './use-outpatient-charge-insurance';
 import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
+import { isUnmappedYbNoComplianceError } from '#/utils/http/format-catalog-unmapped-yb-error';
+import ChargeProgressDialog, { type ChargeProgressStep } from './charge-progress-dialog.vue';
+import ChargePaymentRecordsDialog from './payment-records-dialog.vue';
 import ChargeSettlementDialog from './settlement-dialog.vue';
+import DetailAuditRemindDialog from '#/chs/components/detail-audit-remind-dialog.vue';
+import {
+  runOpDetailAuditGate,
+  type DetailAuditRemindDialogExpose,
+} from '#/chs/composables/use-detail-audit-gate';
+import { resolveInsuranceContractById } from '#/chs/utils/resolve-insurance-contract-bus-no';
 
 defineOptions({
   name: 'ChargeOpCharge',
 });
 
 usePrintClientWarmup();
+
+const detailAuditDialogRef = ref<DetailAuditRemindDialogExpose | null>(null);
 
 const QUEUE_TAB = {
   ALL: 'ALL',
@@ -86,6 +111,8 @@ const QUEUE_TAB = {
 const queueTabCode = ref<string>(QUEUE_TAB.PENDING);
 const keyword = ref('');
 const dateRange = ref<[string, string] | null>(null);
+/** 区间查询：展开面板默认快捷时间范围 */
+const dateRangeShortcuts = buildDefaultDateRangeShortcuts();
 const queuePager = reactive({
   pageNo: 1,
   pageSize: 20,
@@ -96,13 +123,19 @@ const queueLoading = ref(false);
 
 const selectedEncounterId = ref('');
 const pendingItems = ref<PendingChargeItemRowDto[]>([]);
-/** 当前就诊是否允许转医保/转自费（医保双账户挂号） */
-const encounterAccountSwitchEnabled = ref(false);
+/** 本就诊全部成功支付摘要（账单时间倒序） */
+const settlementInsuranceOptions = ref<ChargeSettlementInsuranceSummaryDto[]>([]);
+/** 当前选中的支付流水主键（支付记录弹窗 / 补打回落） */
+const selectedSettlementPaymentId = ref('');
+/** 支付记录弹窗 */
+const paymentRecordsVisible = ref(false);
 const selectedChargeRows = ref<PendingChargeItemRowDto[]>([]);
 
 const preSettleSnapshot = ref<null | PreSettleOutpatientChargesResponse>(null);
 /** 预结算成功时锁定勾选 id，避免弹窗打开后表格勾选变化导致与草稿不一致 */
 const lockedChargeItemIds = ref<string[]>([]);
+/** 读卡 1101 返回的个账支付前余额，供确认收费弹窗「账户信息」展示 */
+const settlementInsuranceBalc = ref<null | number | string>(null);
 
 /** 结算弹窗预览行：从待收明细补齐数量与单位（预结算接口不返回） */
 const settlementPreviews = computed<PreSettleChargeLinePreviewDto[]>(() => {
@@ -156,6 +189,33 @@ const settlementSummarySelfPay = computed(() =>
 const settlementInsuranceGroups = computed(() => preSettleSnapshot.value?.insuranceGroups ?? []);
 const settlementVisible = ref(false);
 const preSettleLoading = ref(false);
+
+/** 确认收费过程进度（读卡 / 预结算 / 正式结算） */
+const chargeProgressVisible = ref(false);
+const chargeProgressTitle = ref('收费处理中');
+const chargeProgressSteps = ref<ChargeProgressStep[]>([]);
+const chargeProgressActiveIndex = ref(0);
+const chargeProgressDetail = ref('');
+
+function openChargeProgress(title: string, steps: ChargeProgressStep[], detail = '') {
+  chargeProgressTitle.value = title;
+  chargeProgressSteps.value = steps;
+  chargeProgressActiveIndex.value = 0;
+  chargeProgressDetail.value = detail;
+  chargeProgressVisible.value = true;
+}
+
+function setChargeProgressStep(index: number, detail?: string) {
+  chargeProgressActiveIndex.value = index;
+  if (detail !== undefined) {
+    chargeProgressDetail.value = detail;
+  }
+}
+
+function closeChargeProgress() {
+  chargeProgressVisible.value = false;
+  chargeProgressDetail.value = '';
+}
 const confirmSettleLoading = ref(false);
 /** 补打收费小票 loading */
 const reprintLoading = ref(false);
@@ -168,27 +228,68 @@ const payChannelOptions = ref([...OUTPATIENT_CHARGE_PAY_CHANNEL_OPTIONS]);
 const scanCode = ref('');
 const scanStatusText = ref('');
 
-const { scanPayEnabled, effectivePayChannelOptions, refreshUnionPayCapabilities } =
-  useUnionPayScanPay(() => payChannelOptions.value);
+const {
+  scanPayEnabled,
+  hasScanPayChannel,
+  effectivePayChannelOptions,
+  refreshUnionPayCapabilities,
+} = useUnionPayScanPay(() => payChannelOptions.value);
+
+/** 预结算后患者现金应付（个账/基金全额时为 0） */
+const settlementCashPay = computed(() => {
+  const cash = Number(preSettleSnapshot.value?.displayAmount ?? 0);
+  return Number.isFinite(cash) ? cash : 0;
+});
+
+/** 零现金时禁止选扫码，避免误提交 SCAN_PAY 导致 2207 后本地回滚 */
+const settlementPayChannelOptions = computed(() => {
+  if (settlementCashPay.value > 0.001) {
+    return effectivePayChannelOptions.value;
+  }
+  return effectivePayChannelOptions.value.filter((opt) => !isScanPayChannel(opt.value));
+});
+
+const settlementScanPayEnabled = computed(
+  () => hasScanPayChannel.value && settlementCashPay.value > 0.001,
+);
 
 const chargeTableQueryParams = reactive({
   pageNo: 1,
   pageSize: 20,
 });
 
-const chargeTableLayoutRef = ref<InstanceType<typeof TableLayout> | null>(null);
+const chargeTableLayoutRef = ref<InstanceType<typeof RegisterStyleTableLayout> | null>(null);
+/** 程序同步勾选时跳过 selection-change，避免 clearCheckboxRow 把已选清空 */
+const syncingChargeSelection = ref(false);
 
-/** 待收表格底层 VxeGrid（TableLayout → Table 暴露的 gridApi，可能多层 ref） */
+/** 待收表格底层 VxeGrid（RegisterStyleTableLayout → gridApi，可能多层 ref） */
 function getChargeVxeGrid(): null | Record<string, unknown> {
   let cur: unknown = (chargeTableLayoutRef.value as null | { gridApi?: unknown })?.gridApi;
   for (let i = 0; i < 4 && cur && typeof cur === 'object' && 'value' in cur; i++) {
-    cur = (cur as { value: unknown }).value;
+    const obj = cur as Record<string, unknown>;
+    // 已是 Vxe 实例时勿再拆 .value（实例上也可能有 value 字段）
+    if (
+      typeof obj.setCheckboxRow === 'function' ||
+      typeof obj.setAllCheckboxRow === 'function' ||
+      typeof obj.clearCheckboxRow === 'function'
+    ) {
+      break;
+    }
+    cur = obj.value;
   }
   if (!cur || typeof cur !== 'object') {
     return null;
   }
   const g = cur as { grid?: Record<string, unknown> };
-  return (g.grid ?? cur) as Record<string, unknown>;
+  const resolved = (g.grid ?? cur) as Record<string, unknown>;
+  if (
+    typeof resolved.setCheckboxRow === 'function' ||
+    typeof resolved.setAllCheckboxRow === 'function' ||
+    typeof resolved.clearCheckboxRow === 'function'
+  ) {
+    return resolved;
+  }
+  return (g.grid as Record<string, unknown> | undefined) ?? (cur as Record<string, unknown>);
 }
 
 /** 是否已结算行（仅认 statusCode） */
@@ -215,6 +316,7 @@ async function resetSettlementAfterAdviceChanged() {
   scanCode.value = '';
   scanStatusText.value = '';
   preSettleSnapshot.value = null;
+  settlementInsuranceBalc.value = null;
   lockedChargeItemIds.value = [];
   await loadPendingForSelectedEncounter();
 }
@@ -231,28 +333,58 @@ function chargeItemSelectionSelectable(arg0: Record<string, unknown>, _index: nu
   return isPendingChargeItemSelectable(row);
 }
 
-/** 选中患者并加载待收明细后：仅勾选可收费行（已结算禁用勾选） */
-function selectAllPendingRowsInGrid(items: PendingChargeItemRowDto[]) {
+/**
+ * 选中患者并加载待收明细后：仅勾选可收费行。
+ * Table.vue 在 tableData 变更后会 post-flush → clearSelection（再 await nextTick），
+ * 必须等清空完成后再勾，否则会被冲掉。
+ */
+async function selectAllPendingRowsInGrid(items: PendingChargeItemRowDto[]) {
   const selectable = items.filter((r) => isPendingChargeItemSelectable(r));
+  syncingChargeSelection.value = true;
   selectedChargeRows.value = selectable.length > 0 ? [...selectable] : [];
-  void nextTick(() => {
-    const grid = getChargeVxeGrid();
-    if (!grid) {
-      return;
-    }
-    if (typeof grid.clearCheckboxRow === 'function') {
-      grid.clearCheckboxRow();
-    }
-    if (items.length === 0) {
-      return;
-    }
-    if (typeof grid.setCheckboxRow !== 'function') {
-      return;
-    }
-    for (const row of items) {
-      grid.setCheckboxRow(row, isPendingChargeItemSelectable(row));
-    }
+
+  // 对齐 Table.clearSelection：flush post + 其内部 nextTick；再 macro task 兜底
+  await nextTick();
+  await nextTick();
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
   });
+
+  let grid = getChargeVxeGrid();
+  if (!grid) {
+    await nextTick();
+    grid = getChargeVxeGrid();
+  }
+
+  if (grid && selectable.length > 0) {
+    // 优先全选（checkMethod 会跳过已结算）；避免 setCheckboxRow 行引用对不上
+    if (typeof grid.setAllCheckboxRow === 'function') {
+      grid.setAllCheckboxRow(true);
+    } else if (typeof grid.setCheckboxRow === 'function') {
+      const selectedIds = new Set(selectable.map((row) => row.chargeItemId));
+      const tableDataResult =
+        typeof grid.getTableData === 'function'
+          ? (grid.getTableData() as {
+              fullData?: PendingChargeItemRowDto[];
+              tableData?: PendingChargeItemRowDto[];
+            })
+          : null;
+      const tableRows =
+        tableDataResult?.fullData ?? tableDataResult?.tableData ?? pendingItems.value;
+      for (const row of tableRows) {
+        if (!isPendingChargeItemSelectable(row)) {
+          continue;
+        }
+        grid.setCheckboxRow(row, selectedIds.has(row.chargeItemId));
+      }
+    }
+  } else if (grid && typeof grid.clearCheckboxRow === 'function') {
+    grid.clearCheckboxRow();
+  }
+
+  await nextTick();
+  selectedChargeRows.value = selectable.length > 0 ? [...selectable] : [];
+  syncingChargeSelection.value = false;
 }
 
 /** 将金额安全格式化为两位小数字符串 */
@@ -279,6 +411,49 @@ const chargeItemQuantityFormatter: NonNullable<TableColumn['formatter']> = (
   }
   const unit = String((row as PendingChargeItemRowDto).quantityUnit ?? '').trim();
   return unit ? `${display}${unit}` : display;
+};
+
+/**
+ * 收费项 → 收费时间：取成功支付摘要 billDate（与小票收费时间同源）。
+ * 同一明细若出现在多笔支付中，保留 options 中先遇到的一笔（摘要按账单时间倒序）。
+ */
+const chargeTimeByItemId = computed(() => {
+  const map = new Map<string, string>();
+  for (const payment of settlementInsuranceOptions.value) {
+    const billDate = String(payment.billDate ?? '').trim();
+    if (!billDate) {
+      continue;
+    }
+    // 优先 chargeItemIds；缺省时从 chargeLines 回落
+    const ids = payment.chargeItemIds ?? [];
+    if (ids.length > 0) {
+      for (const rawId of ids) {
+        const id = String(rawId ?? '').trim();
+        if (id && !map.has(id)) {
+          map.set(id, billDate);
+        }
+      }
+      continue;
+    }
+    for (const line of payment.chargeLines ?? []) {
+      const id = String(line.chargeItemId ?? '').trim();
+      if (id && !map.has(id)) {
+        map.set(id, billDate);
+      }
+    }
+  }
+  return map;
+});
+
+/** 收费时间列：已结算行按支付 billDate 格式化；待收或无支付关联显示「—」 */
+const chargeItemChargeTimeFormatter: NonNullable<TableColumn['formatter']> = (row) => {
+  const id = String((row as PendingChargeItemRowDto).chargeItemId ?? '').trim();
+  const billDate = id ? chargeTimeByItemId.value.get(id) : undefined;
+  if (!billDate) {
+    return '—';
+  }
+  const parsed = dayjs(billDate);
+  return parsed.isValid() ? parsed.format('YYYY-MM-DD HH:mm:ss') : '—';
 };
 
 /** 当前选中队列行 */
@@ -313,6 +488,20 @@ const chargePatientFeeSummary = computed(() => {
   return summarizeOutpatientChargeFeeAmounts(pendingItems.value, isOutpatientChargeItemSettled);
 });
 
+/** 主区收费明细始终全量展示 */
+const displayedPendingItems = computed(() => pendingItems.value);
+
+const paymentRecordsCount = computed(() => settlementInsuranceOptions.value.length);
+
+/** 打开支付记录弹窗（仅弹窗展示，主页不固定支付/单据区） */
+function handleOpenPaymentRecords() {
+  if (!selectedEncounterId.value) {
+    ElMessage.warning('请先选择就诊');
+    return;
+  }
+  paymentRecordsVisible.value = true;
+}
+
 const billAmountMismatchContext = computed(() => {
   const snap = preSettleSnapshot.value;
   if (snap) {
@@ -343,8 +532,12 @@ const { run: runLoadPending, loading: tableLoading } = useRequest(httpLoadPendin
   onSuccess: (data) => {
     const items = data.items ?? [];
     pendingItems.value = items;
-    encounterAccountSwitchEnabled.value = data.accountSwitchEnabled === true;
-    selectAllPendingRowsInGrid(items);
+    const options = data.settlementInsuranceOptions ?? [];
+    settlementInsuranceOptions.value = options;
+    selectedSettlementPaymentId.value = String(
+      data.settlementInsuranceSummary?.paymentId ?? options[0]?.paymentId ?? '',
+    );
+    selectAllPendingRowsInGrid(displayedPendingItems.value);
   },
 });
 
@@ -379,7 +572,9 @@ const loadPendingForSelectedEncounter = async () => {
   const eid = selectedEncounterId.value;
   if (!eid) {
     pendingItems.value = [];
-    encounterAccountSwitchEnabled.value = false;
+    settlementInsuranceOptions.value = [];
+    selectedSettlementPaymentId.value = '';
+    paymentRecordsVisible.value = false;
     selectedChargeRows.value = [];
     void nextTick(() => {
       const grid = getChargeVxeGrid();
@@ -389,7 +584,12 @@ const loadPendingForSelectedEncounter = async () => {
     });
     return;
   }
-  await runLoadPending({ encounterId: eid, includePriceExtension: true });
+  const paymentId = String(currentQueueRow.value?.paymentId ?? '').trim() || undefined;
+  await runLoadPending({
+    encounterId: eid,
+    includePriceExtension: true,
+    paymentId,
+  });
 };
 
 /** 关键字/日期变更后回到第一页再查队列 */
@@ -414,6 +614,10 @@ watch(queueTabCode, () => {
 
 watch(selectedEncounterId, () => {
   preSettleSnapshot.value = null;
+  settlementInsuranceBalc.value = null;
+  settlementInsuranceOptions.value = [];
+  selectedSettlementPaymentId.value = '';
+  paymentRecordsVisible.value = false;
   lockedChargeItemIds.value = [];
   selectedChargeRows.value = [];
   void loadPendingForSelectedEncounter();
@@ -441,6 +645,7 @@ const handleChoosePatient = (patient: BillingPatientCardPatient) => {
   const id = patient.id;
   if (selectedEncounterId.value === id) {
     preSettleSnapshot.value = null;
+    settlementInsuranceBalc.value = null;
     lockedChargeItemIds.value = [];
     selectedChargeRows.value = [];
     void loadPendingForSelectedEncounter();
@@ -467,6 +672,9 @@ const handleQueueSizeChange = () => {
 
 /** 表格勾选变更：缓存已选收费项（全选等场景下过滤掉不可勾选的已结算行） */
 const handleChargeSelectionChange = (selection: PendingChargeItemRowDto[]) => {
+  if (syncingChargeSelection.value) {
+    return;
+  }
   selectedChargeRows.value = selection.filter((r) => isPendingChargeItemSelectable(r));
 };
 
@@ -541,6 +749,15 @@ const chargeTableColumns: TableColumn[] = [
     showOverflowTooltip: true,
   },
   {
+    prop: 'chrgitmLvText',
+    label: '医保类别',
+    minWidth: 88,
+    align: 'center',
+    headerAlign: 'center',
+    formatter: chargeItemDashFormatter,
+    showOverflowTooltip: true,
+  },
+  {
     prop: 'feeNatureDisplay',
     label: '费用性质',
     minWidth: 100,
@@ -576,45 +793,35 @@ const chargeTableColumns: TableColumn[] = [
     showOverflowTooltip: true,
   },
   {
-    prop: 'chargeItemActions',
-    label: '操作',
-    width: 88,
+    prop: 'chargeTime',
+    label: '收费时间',
+    minWidth: 168,
     align: 'center',
     headerAlign: 'center',
-    slot: 'chargeItemActionsCell',
+    formatter: chargeItemChargeTimeFormatter,
+    showOverflowTooltip: true,
   },
 ];
 
 const switchAccountLoading = ref(false);
 
-/** 就诊维度批量切换记账账户（IF-OPC-04/05） */
-const submitEncounterAccountSwitch = async (
-  insurance: boolean,
-  confirmTitle: string,
-  confirmBody: string,
-  successText: string,
-) => {
+/** 就诊维度转自费：将待收明细 accountId 批量切至自费账户（IF-OPC-05） */
+const handleSwitchSelfPay = async () => {
   const eid = selectedEncounterId.value;
   if (!eid) {
     ElMessage.warning('请先选择就诊');
     return;
   }
-  if (!encounterAccountSwitchEnabled.value) {
-    ElMessage.warning('当前就诊为自费挂号，不支持转医保/转自费');
-    return;
-  }
-  await ElMessageBox.confirm(confirmBody, confirmTitle, {
+  await ElMessageBox.confirm('将当前就诊下待收费用项批量切换到自费记账账户，是否继续？', '转自费', {
     cancelButtonText: '取消',
     confirmButtonText: '确定',
     type: 'warning',
   });
   switchAccountLoading.value = true;
   try {
-    const res = insurance
-      ? await httpSwitchEncounterChargeItemsToInsurance({ encounterId: eid })
-      : await httpSwitchEncounterChargeItemsToSelfPay({ encounterId: eid });
+    const res = await httpSwitchEncounterChargeItemsToSelfPay({ encounterId: eid });
     if (res.success) {
-      ElMessage.success(successText);
+      ElMessage.success('已切换为自费记账');
       await loadPendingForSelectedEncounter();
       return;
     }
@@ -623,24 +830,6 @@ const submitEncounterAccountSwitch = async (
     switchAccountLoading.value = false;
   }
 };
-
-/** 就诊维度转医保：将待收明细 accountId 批量切至医保账户 */
-const handleSwitchInsurance = () =>
-  submitEncounterAccountSwitch(
-    true,
-    '转医保',
-    '将当前就诊下待收费用项批量切换到医保记账账户，是否继续？',
-    '已切换为医保记账',
-  );
-
-/** 就诊维度转自费：将待收明细 accountId 批量切至自费账户，后续可按自费结账 */
-const handleSwitchSelfPay = () =>
-  submitEncounterAccountSwitch(
-    false,
-    '转自费',
-    '将当前就诊下待收费用项批量切换到自费记账账户，是否继续？',
-    '已切换为自费记账',
-  );
 
 /** 打开结算前先做预结算，拿到草稿与应收 */
 const handleOpenSettlement = async () => {
@@ -653,14 +842,112 @@ const handleOpenSettlement = async () => {
     ElMessage.warning('请选择待收费用项');
     return;
   }
+  const rows = selectedChargeRows.value;
+  const needInsurance = selectionIncludesInsuranceItems(rows);
+  let insuranceMedium: Awaited<ReturnType<typeof chooseOutpatientChargeInsuranceMedium>> = null;
+  if (needInsurance) {
+    insuranceMedium = await chooseOutpatientChargeInsuranceMedium();
+    if (!insuranceMedium) {
+      return;
+    }
+  }
+  const readCredentialLabel = insuranceMedium
+    ? outpatientChargeReadCredentialLabel(insuranceMedium)
+    : '读取医保凭证';
+  const progressSteps: ChargeProgressStep[] = needInsurance
+    ? [
+        { key: 'read-card', label: readCredentialLabel },
+        { key: 'person-1101', label: '核验参保人员信息（1101）' },
+        { key: 'detail-audit', label: '医保事前提醒（3101）' },
+        { key: 'pre-settle', label: '医保预结算通信（2201→2206）' },
+        { key: 'open-dialog', label: '打开结算确认' },
+      ]
+    : [
+        { key: 'pre-settle', label: '生成支付草稿与应收' },
+        { key: 'open-dialog', label: '打开结算确认' },
+      ];
+
   preSettleLoading.value = true;
+  openChargeProgress('确认收费处理中', progressSteps, '正在准备…');
+  await nextTick();
   try {
-    const rows = selectedChargeRows.value;
-    // TODO: 医保读卡插件就绪后恢复 resolveOutpatientChargeInsuranceContext(rows)
+    let insuranceCtx: Awaited<ReturnType<typeof resolveOutpatientChargeInsuranceContext>> = null;
+    settlementInsuranceBalc.value = null;
+    if (needInsurance && insuranceMedium) {
+      insuranceCtx = await resolveOutpatientChargeInsuranceContext(rows, {
+        medium: insuranceMedium,
+        onPhase: (phase) => {
+          if (phase === 'plugin' || phase === 'read-card') {
+            setChargeProgressStep(0, outpatientChargeReadCredentialHint(insuranceMedium));
+            return;
+          }
+          setChargeProgressStep(1, '正在核验参保人员信息（1101）…');
+        },
+      });
+      if (!insuranceCtx?.psnNo) {
+        ElMessage.warning(outpatientChargeReadCredentialFailHint(insuranceMedium));
+        return;
+      }
+      settlementInsuranceBalc.value =
+        insuranceCtx.balc === undefined || insuranceCtx.balc === null || insuranceCtx.balc === ''
+          ? null
+          : insuranceCtx.balc;
+    }
+
+    if (needInsurance && insuranceCtx) {
+      setChargeProgressStep(2, '医保事前提醒分析中（3101），请稍候…');
+      const resolved = await resolveInsuranceContractById(insuranceCtx.contractId);
+      try {
+        const { continued } = await runOpDetailAuditGate({
+          params: {
+            encounterId: eid,
+            chargeItemIds: rows.map((r) => r.chargeItemId),
+            contractId: insuranceCtx.contractId,
+            contractBusNo: resolved?.contractBusNo,
+            trigScen: '7',
+            psnNo: insuranceCtx.psnNo,
+            insuplcAdmdvs: insuranceCtx.insuplcAdmdvs,
+            insutype: insuranceCtx.insutype,
+            // 结算补慢病 2201 时用读卡原样凭证
+            mdtrtCertType: insuranceCtx.ybMediumType,
+            mdtrtCertNo: insuranceCtx.ybCardInfo,
+          },
+          dialogRef: detailAuditDialogRef,
+        });
+        if (!continued) {
+          ElMessage.info('已按事前提醒返回修改，未继续预结算');
+          return;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '事前提醒失败';
+        ElMessage.error(message);
+        return;
+      }
+    }
+
+    const preSettleStepIndex = needInsurance ? 3 : 0;
+    const openDialogStepIndex = needInsurance ? 4 : 1;
+    setChargeProgressStep(
+      preSettleStepIndex,
+      needInsurance ? '医保预结算通信中（2201→2206），请稍候…' : '正在计算应收并生成支付草稿…',
+    );
     const res = await httpPreSettleOutpatientCharges({
       chargeItemIds: rows.map((r) => r.chargeItemId),
       encounterId: eid,
+      ...(insuranceCtx
+        ? {
+            psnNo: insuranceCtx.psnNo,
+            ybMediumType: insuranceCtx.ybMediumType,
+            ybCardInfo: insuranceCtx.ybCardInfo,
+            insuplcAdmdvs: insuranceCtx.insuplcAdmdvs,
+            insutype: insuranceCtx.insutype,
+            contractId: insuranceCtx.contractId,
+          }
+        : {}),
     });
+    if (res.settlementComposition === 'WORK_INJURY_INVOKE') {
+      setChargeProgressStep(preSettleStepIndex, '工伤医保逐步通信中…');
+    }
     preSettleSnapshot.value =
       res.settlementComposition === 'WORK_INJURY_INVOKE'
         ? await runWorkInjuryChargePreSettleInvoke(
@@ -669,10 +956,16 @@ const handleOpenSettlement = async () => {
             rows.map((r) => r.chargeItemId),
           )
         : res;
+    setChargeProgressStep(openDialogStepIndex, '预结算完成，即将打开确认窗口…');
     lockedChargeItemIds.value = selectedChargeRows.value.map((r) => r.chargeItemId);
-    paymentForm.payChannelCode = DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE;
+    const cashPay = Number(preSettleSnapshot.value?.displayAmount ?? 0);
+    paymentForm.payChannelCode =
+      Number.isFinite(cashPay) && cashPay > 0.001
+        ? DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE
+        : FALLBACK_DEFAULT_PAY_CHANNEL;
     settlementVisible.value = true;
   } finally {
+    closeChargeProgress();
     preSettleLoading.value = false;
   }
 };
@@ -684,37 +977,84 @@ const handleConfirmSettlement = async () => {
   if (!snap || !eid) {
     return;
   }
-  const isScanPay = paymentForm.payChannelCode === 'SCAN_PAY';
-  if (isScanPay && !scanCode.value.trim()) {
+  // 应收为 0（如医保全额覆盖）时无需银联扫码/付款码
+  const cashPay = Number(snap.displayAmount ?? 0);
+  const payableCash = Number.isFinite(cashPay) ? cashPay : 0;
+  const needScanPay = payableCash > 0.001 && isScanPayChannel(paymentForm.payChannelCode);
+  if (needScanPay && !scanCode.value.trim()) {
     ElMessage.warning('请输入付款码');
     return;
   }
+
+  const hasInsuranceSettle = Boolean(
+    snap.workInjurySessionId ||
+      snap.ybChrgBchno ||
+      (snap.insuranceGroups?.some((g) => String(g.chrgBchno ?? '').trim()) ?? false),
+  );
+  const progressSteps: ChargeProgressStep[] = [];
+  if (snap.workInjurySessionId) {
+    progressSteps.push({ key: 'wi-2207', label: '工伤医保正式结算（2207）' });
+  }
+  if (needScanPay) {
+    progressSteps.push({ key: 'scan-pay', label: '银联扫码支付' });
+  }
+  if (hasInsuranceSettle && !snap.workInjurySessionId) {
+    progressSteps.push({ key: 'yb-2207', label: '医保正式结算（2207）' });
+  }
+  progressSteps.push({ key: 'local-settle', label: '院内落账与出票' });
+
   confirmSettleLoading.value = true;
   scanStatusText.value = '';
+  openChargeProgress('正在确认收费', progressSteps, '请稍候，勿重复点击…');
+  await nextTick();
+  let step = 0;
+  let workInjury2207Done = false;
   try {
     if (snap.workInjurySessionId) {
+      setChargeProgressStep(step, '工伤医保正式结算通信中…');
       await runWorkInjuryCharge2207Invoke(snap, eid, lockedChargeItemIds.value);
+      workInjury2207Done = true;
+      step += 1;
     }
     let clientScanResult;
-    if (isScanPay) {
+    if (needScanPay) {
+      await refreshUnionPayCapabilities();
       if (!scanPayEnabled.value) {
         ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
         return;
       }
+      setChargeProgressStep(step, '等待银联支付结果…');
       scanStatusText.value = '等待支付结果…';
       const scanOutcome = await submitScanPayment({
         paymentDraftId: snap.paymentDraftId,
-        amount: snap.displayAmount ?? 0,
+        amount: payableCash,
         scanCode: scanCode.value,
       });
       clientScanResult = scanOutcome.clientScanResult;
       scanStatusText.value = `支付成功${scanOutcome.clientScanResult.tradeNo ? `，单号 ${scanOutcome.clientScanResult.tradeNo}` : ''}`;
+      step += 1;
     }
 
     const insuranceGroupBchnos =
       snap.insuranceGroups
         ?.map((group) => String(group.chrgBchno ?? '').trim())
         .filter((value) => value.length > 0) ?? [];
+    // 零现金：占位 CASH 金额 0（禁止 SCAN_PAY）；有现金：按所选渠道提交应付额
+    const paymentDetails =
+      payableCash > 0.001
+        ? [
+            {
+              amount: payableCash,
+              payChannelCode: paymentForm.payChannelCode,
+            },
+          ]
+        : [
+            {
+              amount: 0,
+              payChannelCode: FALLBACK_DEFAULT_PAY_CHANNEL,
+            },
+          ];
+    setChargeProgressStep(step, hasInsuranceSettle ? '医保正式结算与院内落账中…' : '院内落账中…');
     const payResult = await (clientScanResult
       ? settleWithScanRecovery(clientScanResult, () =>
           httpConfirmOutpatientChargeSettlement({
@@ -722,12 +1062,7 @@ const handleConfirmSettlement = async () => {
             chargeItemIds: lockedChargeItemIds.value,
             encounterId: eid,
             outcomeEnum: OUTPATIENT_CHARGE_SETTLE_OUTCOME_COMPLETED,
-            paymentDetails: [
-              {
-                amount: snap.displayAmount,
-                payChannelCode: paymentForm.payChannelCode,
-              },
-            ],
+            paymentDetails,
             paymentDraftId: snap.paymentDraftId,
             clientScanResult,
             ...(insuranceGroupBchnos.length > 0
@@ -742,12 +1077,7 @@ const handleConfirmSettlement = async () => {
           chargeItemIds: lockedChargeItemIds.value,
           encounterId: eid,
           outcomeEnum: OUTPATIENT_CHARGE_SETTLE_OUTCOME_COMPLETED,
-          paymentDetails: [
-            {
-              amount: snap.displayAmount,
-              payChannelCode: paymentForm.payChannelCode,
-            },
-          ],
+          paymentDetails,
           paymentDraftId: snap.paymentDraftId,
           ...(insuranceGroupBchnos.length > 0
             ? { ybChrgBchnos: insuranceGroupBchnos }
@@ -760,6 +1090,7 @@ const handleConfirmSettlement = async () => {
     scanCode.value = '';
     scanStatusText.value = '';
     preSettleSnapshot.value = null;
+    settlementInsuranceBalc.value = null;
     lockedChargeItemIds.value = [];
     void loadChargeQueue().then(() => loadPendingForSelectedEncounter());
     schedulePrintChargeReceipt({
@@ -768,15 +1099,27 @@ const handleConfirmSettlement = async () => {
       jobName: '收费小票',
     });
   } catch (error) {
+    if (workInjury2207Done) {
+      try {
+        await runWorkInjuryRefundReverse({
+          encounterId: eid,
+          originalPaymentId: String(snap.paymentDraftId),
+        });
+        ElMessage.warning('院内落账失败，已尝试冲正工伤结算；请勿重复收费');
+      } catch {
+        ElMessage.error('院内落账失败，且工伤冲正未完成，请联系医保办，勿重复收费');
+      }
+    }
     if (isOutpatientChargeStaleSettlementError(error)) {
       await resetSettlementAfterAdviceChanged();
       return;
     }
-    if (!isStaleCrossRoleError(error)) {
+    if (!isStaleCrossRoleError(error) && !isUnmappedYbNoComplianceError(error)) {
       const message = error instanceof Error ? error.message : '门诊收费失败';
       ElMessage.error(message);
     }
   } finally {
+    closeChargeProgress();
     confirmSettleLoading.value = false;
     if (!settlementVisible.value) {
       scanStatusText.value = '';
@@ -791,7 +1134,8 @@ async function handleReprintChargeReceipt() {
   if (!row || !eid) {
     return;
   }
-  const paymentId = String(row.paymentId ?? '').trim();
+  const paymentId =
+    String(selectedSettlementPaymentId.value ?? '').trim() || String(row.paymentId ?? '').trim();
   if (!paymentId) {
     ElMessage.warning('暂无支付流水，无法补打收费小票');
     return;
@@ -854,6 +1198,7 @@ onMounted(() => {
                   unlink-panels
                   clearable
                   class="charge-filter-toolbar__date min-w-0 flex-1"
+                  :shortcuts="dateRangeShortcuts"
                 />
                 <ElButton
                   type="default"
@@ -965,20 +1310,20 @@ onMounted(() => {
               <div class="mb-2 flex flex-wrap items-center gap-2">
                 <SectionTitle title="收费项目列表" />
                 <div class="flex-1"></div>
-                <ElButton
-                  :disabled="
-                    !selectedEncounterId || !encounterAccountSwitchEnabled || switchAccountLoading
-                  "
-                  :loading="switchAccountLoading"
+                <ElBadge
+                  :hidden="paymentRecordsCount < 1"
+                  :max="99"
+                  :value="paymentRecordsCount"
                   class="mr-1"
-                  @click="handleSwitchInsurance"
                 >
-                  转医保
-                </ElButton>
+                  <ElButton :disabled="!selectedEncounterId" @click="handleOpenPaymentRecords">
+                    支付记录
+                  </ElButton>
+                </ElBadge>
+                <!-- 临时隐藏：门诊转自费 -->
                 <ElButton
-                  :disabled="
-                    !selectedEncounterId || !encounterAccountSwitchEnabled || switchAccountLoading
-                  "
+                  v-if="false"
+                  :disabled="!selectedEncounterId || switchAccountLoading"
                   :loading="switchAccountLoading"
                   class="mr-1"
                   @click="handleSwitchSelfPay"
@@ -1004,20 +1349,19 @@ onMounted(() => {
                 </ElButton>
               </div>
               <div class="charge-detail-wrapper">
-                <TableLayout
+                <RegisterStyleTableLayout
                   ref="chargeTableLayoutRef"
                   :key="selectedEncounterId || 'no-encounter'"
-                  :table-data="pendingItems"
+                  class="!p-0"
+                  :table-data="displayedPendingItems"
                   :loading="tableLoading"
-                  :total="pendingItems.length"
+                  :total="displayedPendingItems.length"
                   :query-params="chargeTableQueryParams"
                   :table-columns="chargeTableColumns"
                   :show-pagination="false"
                   :show-top-query="false"
                   :max-height="600"
                   row-key="chargeItemId"
-                  border
-                  stripe
                   @selection-change="handleChargeSelectionChange"
                 >
                   <template #statusCell="{ row }">
@@ -1029,8 +1373,7 @@ onMounted(() => {
                     </template>
                   </template>
                   <template #totalPrice="{ row }">¥{{ formatMoney(row.totalPrice) }}</template>
-                  <template #chargeItemActionsCell>—</template>
-                </TableLayout>
+                </RegisterStyleTableLayout>
                 <div class="ml-4 mt-2 text-sm text-[var(--el-text-color-regular)]">
                   已选 {{ selectedChargeRows.length }} 项，合计 ¥{{
                     formatMoney(selectedChargeSum)
@@ -1043,103 +1386,40 @@ onMounted(() => {
       </template>
     </StationTriPaneLayout>
 
+    <ChargePaymentRecordsDialog
+      v-model="paymentRecordsVisible"
+      v-model:payment-id="selectedSettlementPaymentId"
+      :charge-items="pendingItems"
+      :payments="settlementInsuranceOptions"
+    />
+
     <ChargeSettlementDialog
       v-model="settlementVisible"
       v-model:pay-channel-code="paymentForm.payChannelCode"
       v-model:scan-code="scanCode"
       :loading="confirmSettleLoading"
       :display-amount="preSettleSnapshot?.displayAmount ?? 0"
+      :insurance-account-balance="settlementInsuranceBalc"
       :insurance-breakdown-items="settlementInsuranceBreakdown"
       :insurance-groups="settlementInsuranceGroups"
       :previews="settlementPreviews"
       :selected-charge-count="lockedChargeItemIds.length"
       :summary-insurance-amount="settlementSummaryInsurance"
       :summary-self-pay-amount="settlementSummarySelfPay"
-      :pay-channel-options="effectivePayChannelOptions"
-      :scan-pay-enabled="scanPayEnabled"
+      :pay-channel-options="settlementPayChannelOptions"
+      :scan-pay-enabled="settlementScanPayEnabled"
       :scan-status-text="scanStatusText"
       @confirm-charge="handleConfirmSettlement"
     />
+
+    <ChargeProgressDialog
+      v-model="chargeProgressVisible"
+      :title="chargeProgressTitle"
+      :steps="chargeProgressSteps"
+      :active-index="chargeProgressActiveIndex"
+      :detail="chargeProgressDetail"
+    />
+
+    <DetailAuditRemindDialog ref="detailAuditDialogRef" warn-type="1" />
   </div>
 </template>
-
-<style scoped>
-.charge-filter-toolbar {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.charge-filter-toolbar__status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 12px;
-  line-height: 1.25;
-}
-
-.charge-filter-toolbar__status :deep(.el-radio) {
-  margin-right: 0;
-  height: auto;
-  line-height: 1.25;
-}
-
-.charge-filter-toolbar__date :deep(.el-input__wrapper) {
-  width: 100%;
-}
-
-.charge-patient-scroll {
-  min-height: 200px;
-}
-
-.patient-info-bar {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  background: var(--el-fill-color-light);
-  padding: 10px 12px;
-}
-
-.patient-info-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px 16px;
-}
-
-.patient-info-item {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-}
-
-.patient-info-label {
-  color: var(--el-text-color-secondary);
-  font-size: 14px;
-  white-space: nowrap;
-}
-
-.patient-info-value {
-  color: var(--el-text-color-primary);
-  font-size: 14px;
-  font-weight: 500;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.charge-detail-wrapper :deep(button[title='全屏']),
-.charge-detail-wrapper :deep(button[aria-label='全屏']),
-.charge-detail-wrapper :deep(.iconify[data-icon*='fullscreen']) {
-  display: none !important;
-}
-
-.charge-detail-wrapper :deep(.vxe-grid) {
-  height: auto !important;
-  max-height: none !important;
-}
-
-.charge-detail-wrapper :deep(.vxe-table--body-wrapper) {
-  max-height: none !important;
-}
-</style>

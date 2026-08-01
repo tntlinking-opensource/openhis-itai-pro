@@ -10,10 +10,13 @@ import { VbenButton } from '@vben-core/shadcn-ui';
 
 interface Props {
   formSchema?: VbenFormSchema[];
+  /** 是否展示底部「更新基本信息」按钮，默认展示 */
+  showSubmit?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   formSchema: () => [],
+  showSubmit: true,
 });
 
 const emit = defineEmits<{
@@ -47,8 +50,10 @@ defineExpose({
 });
 </script>
 <template>
-  <div @keydown.enter.prevent="handleSubmit">
+  <div @keydown.enter.prevent="showSubmit ? handleSubmit() : undefined">
     <Form />
-    <VbenButton type="submit" class="mt-4" @click="handleSubmit"> 更新基本信息 </VbenButton>
+    <VbenButton v-if="showSubmit" type="submit" class="mt-4" @click="handleSubmit">
+      更新基本信息
+    </VbenButton>
   </div>
 </template>

@@ -18,6 +18,8 @@ export interface PageNurseStationPatientQueueRequest {
 export interface NurseStationPatientQueueItemDto {
   ageText?: null | string;
   birthDate?: null | string;
+  /** 费用性质展示（有医保账户优先医保合同名） */
+  contractDisplay?: null | string;
   encounterId: string;
   encounterTime?: null | string;
   genderEnum?: null | string;
@@ -52,6 +54,11 @@ export interface NurseStationTreatmentLineDto {
   dose?: null | number | string;
   doseUnitCode?: null | string;
   doseUnitName?: null | string;
+  /** 单次剂量展示串（后端；最小单位为主，括号附计量，单位相同时无括号） */
+  dosageDisplay?: null | string;
+  splitDose?: null | number | string;
+  splitDoseUnitCode?: null | string;
+  splitDoseUnitName?: null | string;
   encounterId?: null | string;
   groupId?: null | string;
   /** 是否输液/注射相关（优先 med_medication_request.infusion_flag，未落库时回落 med_medication_definition.inject_flag） */
@@ -243,7 +250,10 @@ export interface OutpatientSkinTestRowDto {
   performLocationId?: null | string;
   practitionerId?: null | string;
   practitionerName?: null | string;
+  /** 登记/开始时间（cln_allergy_intolerance.recorded_date） */
   recordedDate?: null | string;
+  /** 末次反应时间（cln_allergy_intolerance.last_occurrence） */
+  lastOccurrence?: null | string;
   serviceRequestId: string;
   severityCode?: null | string;
   severityText?: null | string;
@@ -280,7 +290,10 @@ export interface SaveOutpatientSkinTestRecordRequest {
   medicationRequestId: string;
   patientId: string;
   practitionerId: string;
+  /** 登记/开始时间 */
   recordedDate?: null | string;
+  /** 末次反应时间（结束时间） */
+  lastOccurrence?: null | string;
   serviceRequestId: string;
   severityCode?: null | string;
   verificationStatusCode: string;

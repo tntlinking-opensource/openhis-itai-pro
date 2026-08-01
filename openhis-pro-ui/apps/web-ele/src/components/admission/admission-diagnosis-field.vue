@@ -95,7 +95,6 @@ function handleMedicineTypeChange(next: AdmissionDiagnosisMedicineType) {
     ...createEmptyAdmissionDiagnosisFormState(),
     medicineType: next,
     diagnosisDescription: props.modelValue.diagnosisDescription,
-    conditionId: props.modelValue.conditionId,
     readonlyDisplay: props.modelValue.readonlyDisplay,
   });
   if (next === 'tcm') {
@@ -259,7 +258,13 @@ watch(
           placeholder="请选择西医入院诊断"
           class="admission-diagnosis-field__control"
           :disabled="disabled"
-          @update:model-value="(val) => patchModelValue({ westernDefinitionId: String(val ?? '') })"
+          @update:model-value="
+            (val) =>
+              patchModelValue({
+                westernDefinitionId: String(val ?? ''),
+                encounterDiagnosisId: undefined,
+              })
+          "
         >
           <ElOption
             v-for="item in westernSelectOptions"

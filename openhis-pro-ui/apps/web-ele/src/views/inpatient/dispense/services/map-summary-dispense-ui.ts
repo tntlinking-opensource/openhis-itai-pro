@@ -109,13 +109,30 @@ export function mapSummaryMergedLinesToTraceLines(
     const name = String(line.medicationName ?? '').trim();
     const spec = String(line.specificationText ?? '').trim();
     const itemName = name && spec ? `${name}【${spec}】` : name || spec || '—';
+    // 代表批号优先；展示批号串取首段作匹配批号
+    const lotFromMaster = String(line.representativeLotNumber ?? '').trim();
+    const lotFromDisplay = String(line.lotNumberText ?? '')
+      .split('、')[0]
+      ?.trim();
+    const batchNo = lotFromMaster || lotFromDisplay || '—';
+    const quantityValue = parseOptionalPositiveNumber(line.itemQuantity);
     return {
       id,
+      medicationId: preserveApiIdForRequest(line.itemId) || undefined,
       itemName,
       quantity: formatSummaryMergedLineQuantity(line),
+      unitCode: String(line.unitCode ?? '').trim() || undefined,
+      quantityValue,
+      packageUnitCode: String(line.packageUnitCode ?? '').trim() || undefined,
+      packageUnitRatio: parseOptionalPositiveNumber(line.packageUnitRatio),
+      splitUnitCode: String(line.splitUnitCode ?? '').trim() || undefined,
+      // 主档贴码快照：待扫个数换算真源
+      traceUnitCode: String(line.traceUnitCode ?? '').trim() || undefined,
+      traceUnitRatio: parseOptionalPositiveNumber(line.traceUnitRatio),
+      lotHasTraceMaster: line.lotHasTraceMaster === true,
       spec,
       traceCode: String(line.traceNo ?? '').trim(),
-      batchNo: String(line.lotNumberText ?? '').trim() || '—',
+      batchNo,
       amount:
         line.totalPrice != null && line.totalPrice !== ''
           ? formatMoneyDisplay(line.totalPrice)
@@ -137,6 +154,14 @@ export function mapSummaryMergedLinesToTraceLines(
       isLastInRx: true,
     };
   });
+}
+
+/** 可选正数（数量/包装比/主档贴码比） */
+function parseOptionalPositiveNumber(raw: null | number | string | undefined): number | undefined {
+  if (raw === null || raw === undefined || raw === '') return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  return n;
 }
 
 /** @deprecated 汇总追溯码不按患者发放行采集，请用 {@link mapSummaryMergedLinesToTraceLines} */

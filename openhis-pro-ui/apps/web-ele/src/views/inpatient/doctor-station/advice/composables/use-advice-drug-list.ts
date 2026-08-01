@@ -98,6 +98,22 @@ function westernPatchFromCatalogRow(row: ProductOption): Partial<AdviceDrugItem>
   if (linePrice !== undefined) {
     patch.selectedDrugPrice = linePrice;
   }
+  // 医保等级：目录带出，仅展示
+  const lvRaw = row.chrgitmLv;
+  if (lvRaw !== null && lvRaw !== undefined && String(lvRaw).trim() !== '') {
+    patch.chrgitmLv = lvRaw;
+  } else {
+    patch.chrgitmLv = undefined;
+  }
+  const lvText = String(row.chrgitmLvText ?? '').trim();
+  patch.chrgitmLvText = lvText || undefined;
+  // 库存：目录带出，供药品信息行展示
+  const qtyRaw = row.availableQuantity;
+  patch.availableQuantity =
+    qtyRaw !== null && qtyRaw !== undefined && String(qtyRaw).trim() !== '' ? qtyRaw : undefined;
+  const stockText = String(row.availableQuantityText ?? '').trim();
+  patch.availableQuantityText = stockText || undefined;
+  patch.inventoryList = Array.isArray(row.inventoryList) ? row.inventoryList : undefined;
   return patch;
 }
 

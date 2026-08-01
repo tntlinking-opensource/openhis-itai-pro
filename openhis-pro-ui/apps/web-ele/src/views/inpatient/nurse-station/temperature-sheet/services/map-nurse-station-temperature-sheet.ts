@@ -18,6 +18,7 @@ import {
   resolveSlot22DetailItems,
   VITAL_ITEM_CODE,
 } from './temperature-sheet-detail-items';
+import { resolveTemperatureSheetTimeSlotFromHm } from './temperature-sheet-time-format';
 
 export const TEMPERATURE_SHEET_TIME_SLOTS: TemperatureSheetTimeSlot[] = [
   '02',
@@ -27,6 +28,9 @@ export const TEMPERATURE_SHEET_TIME_SLOTS: TemperatureSheetTimeSlot[] = [
   '18',
   '22',
 ];
+
+/** 单人主录入行 Vue key 序号（避免改时间后 key 冲突） */
+let temperatureSheetFillRowUidSeq = 0;
 
 export interface TemperatureSheetChartPoint {
   date: string;
@@ -47,12 +51,17 @@ export interface TemperatureSheetFillRowDraft {
   medicationCoolingEnabled: boolean;
   physicalCoolingEnabled: boolean;
   pulse: string;
+  /** 实际测量时间 HH:mm（保存提交值） */
+  recordTime: string;
   respiratory: string;
+  /** 行唯一键（可改时间时保持稳定） */
+  rowUid: string;
   specialEvents: string[];
   specialEventTimesByCode: Record<string, string>;
   systolic: string;
   temp: string;
   tempNotRisingEnabled: boolean;
+  /** 图表三测槽（由 recordTime 推导，补充记录挂 22 槽） */
   timeSlot: TemperatureSheetTimeSlot;
   vitalSignId?: string;
 }
@@ -62,7 +71,6 @@ export interface TemperatureSheetExtraRecordDraft {
   height: string;
   intake: string;
   other: string;
-  skinTestPositive: string;
   stoolCount: string;
   urine: string;
   urineCount: string;
@@ -76,7 +84,6 @@ export interface TemperatureSheetFooterDayCell {
   height: string;
   intake: string;
   other: string;
-  skinTestPositive: string;
   stoolCount: string;
   urine: string;
   urineCount: string;
@@ -106,7 +113,6 @@ export const TEMPERATURE_SHEET_FOOTER_SUPPLEMENT_ROWS = [
   { field: 'urine', label: '尿量(ml)' },
   { field: 'weight', label: '体重(kg)' },
   { field: 'height', label: '身高(cm)' },
-  { field: 'skinTestPositive', label: '皮试阳性' },
 ] as const satisfies ReadonlyArray<{
   field: keyof Omit<TemperatureSheetFooterDayCell, 'bloodPressureFirst' | 'bloodPressureSecond'>;
   label: string;
@@ -476,18 +482,29 @@ export function buildFooterDayCellsFromGridRows(
       urine: readVitalValueFromDetailItems(previousDayDetailItems22, VITAL_ITEM_CODE.URINE_VOL),
       weight: readVitalValueFromDetailItems(detailItems22, VITAL_ITEM_CODE.WEIGHT),
       height: readVitalValueFromDetailItems(detailItems22, VITAL_ITEM_CODE.HEIGHT),
-      skinTestPositive: readVitalValueFromDetailItems(
-        detailItems22,
-        VITAL_ITEM_CODE.SKIN_TEST_POSITIVE,
-      ),
     };
   });
 }
 
-/** 创建空白录入行 */
-export function createEmptyFillRows(): TemperatureSheetFillRowDraft[] {
-  return TEMPERATURE_SHEET_TIME_SLOTS.map((timeSlot) => ({
-    timeSlot,
+/** 生成录入行唯一键 */
+function createTemperatureSheetFillRowUid(): string {
+  temperatureSheetFillRowUidSeq += 1;
+  return `ts-fill-${temperatureSheetFillRowUidSeq}`;
+}
+
+/** 创建单条空白录入行（默认当前时分，并推导图表槽） */
+export function createEmptyFillRow(
+  timeSlot?: TemperatureSheetTimeSlot,
+): TemperatureSheetFillRowDraft {
+  const now = new Date();
+  const recordTime = timeSlot
+    ? formatTemperatureSheetTimeSlotHm(timeSlot)
+    : `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const resolvedSlot = timeSlot ?? resolveTemperatureSheetTimeSlotFromHm(recordTime);
+  return {
+    rowUid: createTemperatureSheetFillRowUid(),
+    recordTime,
+    timeSlot: resolvedSlot,
     temp: '',
     pulse: '',
     respiratory: '',
@@ -502,7 +519,76 @@ export function createEmptyFillRows(): TemperatureSheetFillRowDraft[] {
     tempNotRisingEnabled: false,
     cooledTemperature: '',
     medicationCooledTemperature: '',
-  }));
+  };
+}
+
+/** 创建固定 6 槽空白录入行（批量/图表骨架） */
+export function createEmptyFillRows(): TemperatureSheetFillRowDraft[] {
+  return TEMPERATURE_SHEET_TIME_SLOTS.map((timeSlot) => createEmptyFillRow(timeSlot));
+}
+
+/** 单人主录入默认：仅 1 条待填写 */
+export function createDefaultEditableFillRows(): TemperatureSheetFillRowDraft[] {
+  return [createEmptyFillRow()];
+}
+
+/** 时次转 HH:mm（录入时间展示） */
+export function formatTemperatureSheetTimeSlotHm(timeSlot: TemperatureSheetTimeSlot): string {
+  return `${timeSlot}:00`;
+}
+
+/** 将接口 timeSlot（槽 code 或 HH:mm）规范为 HH:mm */
+export function normalizeTemperatureSheetRecordTime(raw: null | string | undefined): string {
+  const text = (raw ?? '').trim();
+  if (!text) {
+    return dayjsNowHm();
+  }
+  if (TEMPERATURE_SHEET_TIME_SLOTS.includes(text as TemperatureSheetTimeSlot)) {
+    return formatTemperatureSheetTimeSlotHm(text as TemperatureSheetTimeSlot);
+  }
+  const hmMatch = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(text);
+  if (hmMatch) {
+    const hour = Number(hmMatch[1]);
+    const minute = Number(hmMatch[2]);
+    if (
+      Number.isFinite(hour) &&
+      Number.isFinite(minute) &&
+      hour >= 0 &&
+      hour <= 23 &&
+      minute >= 0 &&
+      minute <= 59
+    ) {
+      return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    }
+  }
+  return dayjsNowHm();
+}
+
+/** 当前时分 HH:mm */
+function dayjsNowHm(): string {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+}
+
+/** 按 recordTime 同步图表三测槽 */
+export function syncFillRowChartTimeSlot(row: TemperatureSheetFillRowDraft): void {
+  row.timeSlot = resolveTemperatureSheetTimeSlotFromHm(row.recordTime);
+}
+
+/** 列出尚未占用的三测时次 */
+export function listUnusedTemperatureSheetTimeSlots(
+  rows: TemperatureSheetFillRowDraft[],
+): TemperatureSheetTimeSlot[] {
+  const used = new Set(rows.map((row) => row.timeSlot));
+  return TEMPERATURE_SHEET_TIME_SLOTS.filter((slot) => !used.has(slot));
+}
+
+/** 判断录入行是否已有体征/特殊事件内容（不含补充记录） */
+export function hasEditableFillRowVitalContent(row: TemperatureSheetFillRowDraft): boolean {
+  if (row.vitalSignId?.trim()) {
+    return true;
+  }
+  return hasFillRowSaveContent(row, createEmptyExtraRecord());
 }
 
 /** 创建空白补充记录 */
@@ -515,12 +601,11 @@ export function createEmptyExtraRecord(): TemperatureSheetExtraRecordDraft {
     stoolCount: '',
     abdominalCircumference: '',
     urineCount: '',
-    skinTestPositive: '',
     other: '',
   };
 }
 
-/** 将接口回显槽位写入录入草稿 */
+/** 将接口回显槽位写入录入草稿（固定 6 槽，供批量回显） */
 export function applyFillSlotsToDraft(fillSlots: TemperatureSheetFillSlotDto[]): {
   extraRecord: TemperatureSheetExtraRecordDraft;
   rows: TemperatureSheetFillRowDraft[];
@@ -529,17 +614,51 @@ export function applyFillSlotsToDraft(fillSlots: TemperatureSheetFillSlotDto[]):
   const extraRecord = createEmptyExtraRecord();
   const rowMap = new Map(rows.map((row) => [row.timeSlot, row]));
 
-  // 按槽位回显主录入与 22 点补充项
+  // 按实际时分归到图表槽回显；同槽多条取较晚的时分覆盖
   for (const slot of fillSlots) {
-    const timeSlot = (slot.timeSlot ?? '').trim() as TemperatureSheetTimeSlot;
-    const target = rowMap.get(timeSlot);
+    const recordTime = normalizeTemperatureSheetRecordTime(slot.timeSlot);
+    const chartSlot = resolveTemperatureSheetTimeSlotFromHm(recordTime);
+    const target = rowMap.get(chartSlot);
     if (!target) {
       continue;
     }
+    target.recordTime = recordTime;
+    target.timeSlot = chartSlot;
     target.vitalSignId = slot.vitalSignId?.trim() || undefined;
     applyDetailItemsToFillRow(target, extraRecord, slot.detailItems);
   }
 
+  return { rows, extraRecord };
+}
+
+/** 将接口回显转为单人可编辑行：按实际时分逐条；无数据时默认 1 空行 */
+export function applyFillSlotsToEditableDraft(fillSlots: TemperatureSheetFillSlotDto[]): {
+  extraRecord: TemperatureSheetExtraRecordDraft;
+  rows: TemperatureSheetFillRowDraft[];
+} {
+  const extraRecord = createEmptyExtraRecord();
+  const rows: TemperatureSheetFillRowDraft[] = [];
+
+  // 每条回显对应一行，保留用户自选时分
+  for (const slot of fillSlots) {
+    const recordTime = normalizeTemperatureSheetRecordTime(slot.timeSlot);
+    const row = createEmptyFillRow();
+    row.recordTime = recordTime;
+    syncFillRowChartTimeSlot(row);
+    row.vitalSignId = slot.vitalSignId?.trim() || undefined;
+    applyDetailItemsToFillRow(row, extraRecord, slot.detailItems);
+    if (hasEditableFillRowVitalContent(row)) {
+      rows.push(row);
+    }
+  }
+
+  rows.sort((a, b) => a.recordTime.localeCompare(b.recordTime));
+  if (rows.length === 0) {
+    return {
+      rows: createDefaultEditableFillRows(),
+      extraRecord,
+    };
+  }
   return { rows, extraRecord };
 }
 
@@ -568,7 +687,7 @@ export function mapFillRowToSaveRequest(
     encounterId,
     patientId,
     recordDate,
-    timeSlot: row.timeSlot,
+    timeSlot: row.recordTime,
     vitalSignId: row.vitalSignId,
     detailItems,
   };
@@ -582,9 +701,27 @@ export function collectTemperatureSheetSaveRequests(
   encounterId: string,
   patientId: string,
 ): SaveNurseStationTemperatureSheetAtRecordedTimeRequest[] {
-  return rows
+  const requests = rows
     .map((row) => mapFillRowToSaveRequest(row, extraRecord, recordDate, encounterId, patientId))
     .filter((item): item is SaveNurseStationTemperatureSheetAtRecordedTimeRequest => item !== null);
+
+  // 补充记录仅挂 22:00：有补充内容但当前行集无 22 槽时补提一条
+  const hasExtraContent = Object.values(extraRecord).some((value) => value.trim().length > 0);
+  if (hasExtraContent && !requests.some((request) => request.timeSlot === '22')) {
+    const slot22Row = rows.find((row) => row.timeSlot === '22') ?? createEmptyFillRow('22');
+    const extraRequest = mapFillRowToSaveRequest(
+      slot22Row,
+      extraRecord,
+      recordDate,
+      encounterId,
+      patientId,
+    );
+    if (extraRequest) {
+      requests.push(extraRequest);
+    }
+  }
+
+  return requests;
 }
 
 /** 批量保存后回写各槽 vitalSignId */
@@ -596,7 +733,7 @@ export function applySavedVitalSignIdsToFillRows(
     savedResults.map((item) => [item.timeSlot, item.vitalSignId?.trim() || undefined]),
   );
   return rows.map((row) => {
-    const vitalSignId = savedMap.get(row.timeSlot);
+    const vitalSignId = savedMap.get(row.recordTime) ?? savedMap.get(row.timeSlot) ?? undefined;
     if (!vitalSignId) {
       return row;
     }

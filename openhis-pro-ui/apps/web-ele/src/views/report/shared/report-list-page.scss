@@ -56,7 +56,8 @@
   min-width: 0;
 }
 
-.report-list-page__query-control--daterange {
+.report-list-page__query-control--daterange,
+.report-list-page__query-control--datetimerange {
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -84,7 +85,13 @@
     max-width: 360px;
   }
 
-  .daily-settlement-query-control--backup {
+  .report-list-page__query-control--datetimerange {
+    width: 400px;
+    max-width: 400px;
+  }
+
+  .daily-settlement-query-control--backup,
+  .period-balance-detail-query-control--backup {
     width: 200px;
     max-width: 200px;
   }

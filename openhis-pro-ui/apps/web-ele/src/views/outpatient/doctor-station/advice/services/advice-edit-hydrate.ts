@@ -3,7 +3,13 @@ import type { AdviceDrugItem, AdviceProductOption, AdviceRowItem } from './advic
 
 import type { PrepickedProductKeyDto } from '#/api/doctor-station/advice.types';
 
-import { buildWesternProductSelectPatch } from './advice-edit';
+import { parseEncounterDiagnosisIds } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-select';
+
+import {
+  buildDeviceProductSelectPatch,
+  buildWesternProductSelectPatch,
+  pickCatalogChrgitmLvPatch,
+} from './advice-edit';
 import { preferredTotalUnitBandKindFromOrderCalcRule } from './medication-order-total-calc';
 import {
   hydrateAdviceRowDoseFromBackend,
@@ -51,6 +57,10 @@ export function buildAdviceDrugItemSeedFromListRow(
   const unitName = String(row.listUnitName ?? '').trim();
   const diagnosisRaw = String(row.conditionDefinitionName ?? row.diagnosisSummary ?? '').trim();
   const diagnosis = diagnosisRaw === '—' ? '' : diagnosisRaw;
+  // 复用为新开：历史就诊诊断 id 不能绑到本次就诊，由调用方按本次诊断重绑
+  const encounterDiagnosisIds = options?.reuseAsNew
+    ? []
+    : parseEncounterDiagnosisIds(row.encounterDiagnosisIds);
   const displayName = String(row.adviceDisplayName ?? '').trim();
   const spec = String(row.specificationText ?? '').trim();
   const content = String(row.content ?? '').trim();
@@ -63,8 +73,10 @@ export function buildAdviceDrugItemSeedFromListRow(
     productTableName: tbl || undefined,
     selectedDrugName: displayName || nameMatch?.[1]?.trim() || content,
     selectedDrugSpec: spec || specMatch?.[1] || '',
-    diagnosis,
+    diagnosis: options?.reuseAsNew ? '' : diagnosis,
+    encounterDiagnosisIds,
     skinTest: row.skinTestFlag === true,
+    injectFlag: row.injectionFlag === true,
     frequency: String(row.rateCode ?? '').trim(),
     usage: String(row.methodCode ?? '').trim(),
     medicationDays: positiveInt(row.dispensePerDuration),
@@ -120,11 +132,13 @@ export function mergeCatalogIntoAdviceDrugItemForEdit(
 
   const preserved: Partial<AdviceDrugItem> = {
     diagnosis: seed.diagnosis,
+    encounterDiagnosisIds: seed.encounterDiagnosisIds,
     feeNature: seed.feeNature,
     frequency: seed.frequency,
     usage: seed.usage,
     medicationDays: seed.medicationDays,
     skinTest: seed.skinTest,
+    injectFlag: seed.injectFlag === true || catalog.injectFlag === true,
     pharmacy: seed.pharmacy,
     sortNumber: seed.sortNumber,
     groupId: seed.groupId,
@@ -147,6 +161,7 @@ export function mergeCatalogIntoAdviceDrugItemForEdit(
     return {
       ...base,
       ...preserved,
+      ...pickCatalogChrgitmLvPatch(catalog),
       performOrgId,
       performOrgName,
       selectedDrugPrice: catalog.price ?? seed.selectedDrugPrice ?? '',
@@ -161,16 +176,26 @@ export function mergeCatalogIntoAdviceDrugItemForEdit(
   }
 
   if (tbl === 'adm_device_definition') {
-    const uCode = String(catalog.defaultUnitCode ?? seed.totalAmountUnit ?? '').trim();
-    const uName = String(catalog.defaultUnitName ?? '').trim();
+    const catalogPatch = buildDeviceProductSelectPatch(catalog);
+    const seedUnit = String(seed.totalAmountUnit ?? '').trim();
+    const totalUnit = seedUnit || String(catalogPatch.totalAmountUnit ?? '').trim();
+    let selectedDrugPrice =
+      catalogPatch.selectedDrugPrice ?? catalog.price ?? seed.selectedDrugPrice;
+    if (totalUnit) {
+      const linePrice = resolveAdviceLineUnitPrice({
+        bands: catalog.unitBands ?? catalogPatch.unitBands,
+        catalogUnitPrice: catalogPatch.catalogUnitPrice ?? catalog.catalogUnitPrice,
+        totalAmountUnit: totalUnit,
+      });
+      if (linePrice !== undefined) selectedDrugPrice = linePrice;
+    }
     return {
       ...base,
       ...preserved,
-      selectedDrugPrice: catalog.price ?? seed.selectedDrugPrice ?? '',
-      unitBands: catalog.unitBands,
-      totalUnitSalesCode: uCode || undefined,
-      totalUnitSalesName: uName || uCode || undefined,
-      totalAmountUnit: String(seed.totalAmountUnit ?? uCode).trim() || uCode,
+      ...catalogPatch,
+      ...pickCatalogChrgitmLvPatch(catalog),
+      totalAmountUnit: totalUnit,
+      selectedDrugPrice,
     };
   }
 
@@ -208,5 +233,7 @@ export function mergeCatalogIntoAdviceDrugItemForEdit(
     ...preserved,
     totalAmountUnit: totalUnit,
     selectedDrugPrice,
+    // 回填已落库剂量，不预选目录默认/最大/最小 radio
+    dosePresetKind: undefined,
   };
 }

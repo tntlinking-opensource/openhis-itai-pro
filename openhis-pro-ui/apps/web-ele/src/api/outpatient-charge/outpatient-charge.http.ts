@@ -16,6 +16,7 @@ import type {
 } from './outpatient-charge.types';
 
 import { publicRequestClient } from '#/api/request';
+import { chsLongRequestConfig } from '#/chs/constants/request-timeout';
 
 /** 收费页下拉：收费项状态等 */
 export async function httpLoadChargePageInit(
@@ -67,23 +68,25 @@ export async function httpSwitchEncounterChargeItemsToSelfPay(
   );
 }
 
-/** 门诊预结算：生成支付草稿与预览金额 */
+/** 门诊预结算：生成支付草稿与预览金额（含医保 2201–2206，使用长超时） */
 export async function httpPreSettleOutpatientCharges(
   body: PreSettleOutpatientChargesRequest,
 ): Promise<PreSettleOutpatientChargesResponse> {
   return publicRequestClient.post<PreSettleOutpatientChargesResponse>(
     '/outpatientCharge/preSettleOutpatientCharges',
     body,
+    chsLongRequestConfig(),
   );
 }
 
-/** 门诊正式结算（确认收费） */
+/** 门诊正式结算（确认收费；含医保 2207，使用长超时） */
 export async function httpConfirmOutpatientChargeSettlement(
   body: ConfirmOutpatientChargeSettlementRequest,
 ): Promise<ConfirmOutpatientChargeSettlementResponse> {
   return publicRequestClient.post<ConfirmOutpatientChargeSettlementResponse>(
     '/outpatientCharge/confirmOutpatientChargeSettlement',
     body,
+    chsLongRequestConfig(),
   );
 }
 

@@ -3,7 +3,6 @@ import type { NurseStationModulePatient } from '../../components/nurse-station-m
 import type { PatientItem } from '../../types';
 import type { TemperatureSheetBatchFillRowDraft } from '../services/temperature-sheet-batch-fill';
 
-import type { TemperatureSheetTimeSlot } from '#/api/inpatient/nurse-station/inpatient-nurse-station-temperature-sheet.types';
 import type { OptionDto } from '#/api/inpatient/nurse-station/inpatient-nurse-station.types';
 
 import { computed, inject, nextTick, ref } from 'vue';
@@ -16,6 +15,7 @@ import { httpSaveNurseStationTemperatureSheetAtRecordedTime } from '#/api/inpati
 import { useFormKeyboardNavigation } from '#/hooks/use-form-keyboard-navigation';
 import { useRequest } from '#/hooks/use-request';
 import { nurseStationPatientListPanelContextKey } from '../../components/patient-list-panel.context';
+import TemperatureSheetBottomTimePicker from './temperature-sheet-bottom-time-picker.vue';
 import TemperatureSheetFillSlotSpecial from './temperature-sheet-fill-slot-special.vue';
 import TemperatureSheetSingleFillDrawer from './temperature-sheet-single-fill-drawer.vue';
 import {
@@ -23,12 +23,14 @@ import {
   hasBatchFillRowSaveContent,
   isBatchFillRowPersisted,
   loadTemperatureSheetBatchFillRows,
+  resolveDefaultBatchRecordTimeHm,
   saveTemperatureSheetBatchFillRows,
   TEMPERATURE_SHEET_BATCH_SAVE_LIMIT,
 } from '../services/temperature-sheet-batch-fill';
 import {
   isBloodPressureInputDisabled,
-  TEMPERATURE_SHEET_TIME_SLOTS,
+  normalizeTemperatureSheetRecordTime,
+  syncFillRowChartTimeSlot,
 } from '../services/map-nurse-station-temperature-sheet';
 import {
   buildSpecialEventLabelMap,
@@ -36,10 +38,7 @@ import {
   type TemperatureSheetSpecialEventOption,
   validateFillRowsSpecialEvents,
 } from '../services/temperature-sheet-special-events';
-import {
-  formatTemperatureSheetTimeSlotRange,
-  resolveTemperatureSheetTimeSlotFromHour,
-} from '../services/temperature-sheet-time-format';
+import { resolveTemperatureSheetTimeSlotFromHm } from '../services/temperature-sheet-time-format';
 import '../styles/temperature-sheet-fill-drawer.css';
 
 defineOptions({
@@ -56,9 +55,8 @@ const listPanelContext = inject(nurseStationPatientListPanelContextKey, null);
 const initRequest = useRequest(httpLoadNurseStationTemperatureSheetInit, { manual: true });
 
 const recordDate = ref('');
-const activeTimeSlot = ref<TemperatureSheetTimeSlot>(
-  resolveTemperatureSheetTimeSlotFromHour(dayjs().hour()),
-);
+/** 本次批量录入时间 HH:mm（用户自选，不预制固定槽） */
+const activeRecordTime = ref(resolveDefaultBatchRecordTimeHm());
 const batchRows = ref<TemperatureSheetBatchFillRowDraft[]>([]);
 const loading = ref(false);
 const saving = ref(false);
@@ -66,11 +64,6 @@ const loadProgress = ref({ done: 0, total: 0 });
 const batchFormAreaRef = ref<HTMLElement | null>(null);
 const singleFillDrawerRef = ref<InstanceType<typeof TemperatureSheetSingleFillDrawer> | null>(null);
 const specialEventOptions = ref<TemperatureSheetSpecialEventOption[]>([]);
-
-const timeSlotOptions = TEMPERATURE_SHEET_TIME_SLOTS.map((slot) => ({
-  label: `${slot}:00（${formatTemperatureSheetTimeSlotRange(slot)}）`,
-  value: slot,
-}));
 
 const specialEventSelectOptions = computed(() =>
   buildSpecialEventSelectOptions(specialEventOptions.value),
@@ -133,9 +126,6 @@ const loadProgressText = computed(() => {
   }
   return `加载中 ${loadProgress.value.done}/${loadProgress.value.total}`;
 });
-const activeTimeSlotRangeText = computed(() =>
-  formatTemperatureSheetTimeSlotRange(activeTimeSlot.value),
-);
 const filledRowCount = computed(
   () => batchRows.value.filter((row) => hasBatchFillRowSaveContent(row)).length,
 );
@@ -199,7 +189,7 @@ async function loadBatchRows(): Promise<void> {
     batchRows.value = await loadTemperatureSheetBatchFillRows(
       wardPatients.value,
       recordDate.value,
-      activeTimeSlot.value,
+      activeRecordTime.value,
       (progress) => {
         loadProgress.value = progress;
       },
@@ -209,10 +199,22 @@ async function loadBatchRows(): Promise<void> {
   }
 }
 
+/** 修改批量录入时间后刷新各患者该时分回显 */
+function handleActiveRecordTimeChange(timeHm: string): void {
+  const nextTime = normalizeTemperatureSheetRecordTime(timeHm);
+  if (nextTime === activeRecordTime.value) {
+    return;
+  }
+  activeRecordTime.value = nextTime;
+  if (visible.value) {
+    void loadBatchRows();
+  }
+}
+
 /** 预加载数据后再打开抽屉，避免滑入后内容撑高导致二次上弹 */
 async function prepareOpen(): Promise<void> {
   initRecordDateIfEmpty();
-  activeTimeSlot.value = resolveTemperatureSheetTimeSlotFromHour(dayjs().hour());
+  activeRecordTime.value = resolveDefaultBatchRecordTimeHm();
   await ensureSpecialEventOptionsLoaded();
   await loadBatchRows();
 }
@@ -269,7 +271,7 @@ async function openSingleFillForRow(row: TemperatureSheetBatchFillRowDraft): Pro
       gender: row.gender,
     },
     recordDate: recordDate.value,
-    activeTimeSlot: activeTimeSlot.value,
+    activeTimeSlot: resolveTemperatureSheetTimeSlotFromHm(activeRecordTime.value),
   });
 }
 
@@ -288,6 +290,17 @@ async function handleSaveBatch(): Promise<void> {
     ElMessage.warning('请选择录入日期');
     return;
   }
+  if (!activeRecordTime.value.trim()) {
+    ElMessage.warning('请选择录入时间');
+    return;
+  }
+
+  // 写回统一录入时间到各行（防止中途改时间未刷新）
+  const normalizedTime = normalizeTemperatureSheetRecordTime(activeRecordTime.value);
+  for (const row of batchRows.value) {
+    row.slotRow.recordTime = normalizedTime;
+    syncFillRowChartTimeSlot(row.slotRow);
+  }
 
   const specialEventError = validateBatchSpecialEvents();
   if (specialEventError) {
@@ -297,7 +310,7 @@ async function handleSaveBatch(): Promise<void> {
 
   const saveRequests = collectBatchTemperatureSheetSaveRequests(batchRows.value, recordDate.value);
   if (saveRequests.length === 0) {
-    ElMessage.warning('请至少为一位患者填写生命体征');
+    ElMessage.warning('请至少为一位患者填写生命体征或补充记录');
     return;
   }
   if (saveRequests.length > TEMPERATURE_SHEET_BATCH_SAVE_LIMIT) {
@@ -346,7 +359,7 @@ defineExpose({
     :with-header="false"
     class="temp-batch-fill-drawer"
     direction="btt"
-    size="72%"
+    size="82%"
   >
     <div ref="batchFormAreaRef" class="batch-fill-drawer" @keydown="handleBatchFormKeydown">
       <div class="batch-toolbar">
@@ -356,22 +369,23 @@ defineExpose({
               v-model="recordDate"
               format="YYYY-MM-DD"
               placeholder="录入日期"
+              popper-class="temperature-sheet-fill-popper"
+              teleported
               type="date"
               value-format="YYYY-MM-DD"
               @change="loadBatchRows"
             />
-            <ElSelect v-model="activeTimeSlot" style="width: 220px" @change="loadBatchRows">
-              <ElOption
-                v-for="option in timeSlotOptions"
-                :key="option.value"
-                :label="option.label"
-                :value="option.value"
+            <div class="batch-record-time">
+              <span class="batch-record-time-label">时间</span>
+              <TemperatureSheetBottomTimePicker
+                :model-value="activeRecordTime"
+                @update:model-value="handleActiveRecordTimeChange"
               />
-            </ElSelect>
+            </div>
             <ElButton plain size="small" @click="shiftRecordDateByDays(-1)">上一天</ElButton>
             <ElButton plain size="small" @click="shiftRecordDateByDays(1)">下一天</ElButton>
           </div>
-          <ElTag type="info">{{ patientCountText }} · {{ activeTimeSlotRangeText }}</ElTag>
+          <ElTag type="info">{{ patientCountText }} · {{ activeRecordTime }}</ElTag>
           <ElTag v-if="loadProgressText" type="warning">{{ loadProgressText }}</ElTag>
         </div>
         <div class="batch-toolbar-right">
@@ -383,10 +397,8 @@ defineExpose({
 
       <section class="batch-card">
         <header class="batch-card-title">
-          生命体征（按时点批量录入）
-          <ElTag size="small" type="info"
-            >字段与单人录入一致；快捷项：出院/物理降温/药物降温/体温不升</ElTag
-          >
+          生命体征（按时间批量录入）
+          <ElTag size="small" type="info">快捷项：出院/物理降温/药物降温/体温不升</ElTag>
         </header>
 
         <div v-loading="loading" class="batch-card-body">
@@ -414,72 +426,131 @@ defineExpose({
                 'is-load-error': Boolean(row.loadError),
               }"
             >
-              <button
-                class="batch-bed-cell batch-patient-link"
-                title="打开单人录入"
-                type="button"
-                @click="openSingleFillForRow(row)"
-              >
-                {{ row.bedNo }}
-              </button>
-              <button
-                class="batch-name-cell batch-patient-link"
-                title="打开单人录入"
-                type="button"
-                @click="openSingleFillForRow(row)"
-              >
-                <span class="batch-name">{{ row.name }}</span>
-                <span v-if="row.gender" class="batch-gender">{{ row.gender }}</span>
-                <ElTag
-                  v-if="row.loadError"
-                  class="batch-load-error-tag"
-                  size="small"
-                  type="danger"
-                  >{{ row.loadError }}</ElTag
+              <div class="batch-vital-row">
+                <button
+                  class="batch-bed-cell batch-patient-link"
+                  title="打开单人录入"
+                  type="button"
+                  @click="openSingleFillForRow(row)"
                 >
-              </button>
-              <div class="nav-cell" :data-nav-col="0" :data-nav-row="index">
-                <ElInput v-model="row.slotRow.temp" placeholder="体温">
-                  <template #suffix>℃</template>
-                </ElInput>
-              </div>
-              <div class="nav-cell" :data-nav-col="1" :data-nav-row="index">
-                <ElInput v-model="row.slotRow.pulse" placeholder="脉搏">
-                  <template #suffix>次/分</template>
-                </ElInput>
-              </div>
-              <div class="nav-cell" :data-nav-col="2" :data-nav-row="index">
-                <ElInput v-model="row.slotRow.respiratory" placeholder="呼吸">
-                  <template #suffix>次/分</template>
-                </ElInput>
-              </div>
-              <div class="nav-cell" :data-nav-col="3" :data-nav-row="index">
-                <ElInput v-model="row.slotRow.heartRate" placeholder="心率">
-                  <template #suffix>bpm</template>
-                </ElInput>
-              </div>
-              <div class="nav-cell" :data-nav-col="4" :data-nav-row="index">
-                <ElInput
-                  v-model="row.slotRow.systolic"
-                  :disabled="isRowBloodPressureDisabled(row)"
-                  placeholder="收缩压"
+                  {{ row.bedNo }}
+                </button>
+                <button
+                  class="batch-name-cell batch-patient-link"
+                  title="打开单人录入"
+                  type="button"
+                  @click="openSingleFillForRow(row)"
                 >
-                  <template #suffix>mmHg</template>
-                </ElInput>
+                  <span class="batch-name">{{ row.name }}</span>
+                  <span v-if="row.gender" class="batch-gender">{{ row.gender }}</span>
+                  <ElTag
+                    v-if="row.loadError"
+                    class="batch-load-error-tag"
+                    size="small"
+                    type="danger"
+                    >{{ row.loadError }}</ElTag
+                  >
+                </button>
+                <div class="nav-cell" :data-nav-col="0" :data-nav-row="index">
+                  <ElInput v-model="row.slotRow.temp" placeholder="体温">
+                    <template #suffix>℃</template>
+                  </ElInput>
+                </div>
+                <div class="nav-cell" :data-nav-col="1" :data-nav-row="index">
+                  <ElInput v-model="row.slotRow.pulse" placeholder="脉搏">
+                    <template #suffix>次/分</template>
+                  </ElInput>
+                </div>
+                <div class="nav-cell" :data-nav-col="2" :data-nav-row="index">
+                  <ElInput v-model="row.slotRow.respiratory" placeholder="呼吸">
+                    <template #suffix>次/分</template>
+                  </ElInput>
+                </div>
+                <div class="nav-cell" :data-nav-col="3" :data-nav-row="index">
+                  <ElInput v-model="row.slotRow.heartRate" placeholder="心率">
+                    <template #suffix>bpm</template>
+                  </ElInput>
+                </div>
+                <div class="nav-cell" :data-nav-col="4" :data-nav-row="index">
+                  <ElInput
+                    v-model="row.slotRow.systolic"
+                    :disabled="isRowBloodPressureDisabled(row)"
+                    placeholder="收缩压"
+                  >
+                    <template #suffix>mmHg</template>
+                  </ElInput>
+                </div>
+                <div class="nav-cell" :data-nav-col="5" :data-nav-row="index">
+                  <ElInput
+                    v-model="row.slotRow.diastolic"
+                    :disabled="isRowBloodPressureDisabled(row)"
+                    placeholder="舒张压"
+                  >
+                    <template #suffix>mmHg</template>
+                  </ElInput>
+                </div>
+                <TemperatureSheetFillSlotSpecial
+                  :row="row.slotRow"
+                  :special-event-select-options="specialEventSelectOptions"
+                />
               </div>
-              <div class="nav-cell" :data-nav-col="5" :data-nav-row="index">
-                <ElInput
-                  v-model="row.slotRow.diastolic"
-                  :disabled="isRowBloodPressureDisabled(row)"
-                  placeholder="舒张压"
-                >
-                  <template #suffix>mmHg</template>
-                </ElInput>
+
+              <div class="batch-extra-row">
+                <span class="batch-extra-title">补充</span>
+                <span class="batch-extra-name-spacer" aria-hidden="true"></span>
+                <div class="batch-extra-item">
+                  <span class="batch-extra-label">体重</span>
+                  <ElInput v-model="row.extraRecord.weight" placeholder="体重" size="small">
+                    <template #suffix>kg</template>
+                  </ElInput>
+                </div>
+                <div class="batch-extra-item">
+                  <span class="batch-extra-label">小便</span>
+                  <ElInput v-model="row.extraRecord.urineCount" placeholder="次数" size="small">
+                    <template #suffix>次</template>
+                  </ElInput>
+                </div>
+                <div class="batch-extra-item">
+                  <span class="batch-extra-label">腹围</span>
+                  <ElInput
+                    v-model="row.extraRecord.abdominalCircumference"
+                    placeholder="腹围"
+                    size="small"
+                  >
+                    <template #suffix>cm</template>
+                  </ElInput>
+                </div>
+                <div class="batch-extra-item">
+                  <span class="batch-extra-label">大便</span>
+                  <ElInput v-model="row.extraRecord.stoolCount" placeholder="次数" size="small">
+                    <template #suffix>次</template>
+                  </ElInput>
+                </div>
+                <div class="batch-extra-item">
+                  <span class="batch-extra-label">身高</span>
+                  <ElInput v-model="row.extraRecord.height" placeholder="身高" size="small">
+                    <template #suffix>cm</template>
+                  </ElInput>
+                </div>
+                <div class="batch-extra-item">
+                  <span class="batch-extra-label">入量</span>
+                  <ElInput v-model="row.extraRecord.intake" placeholder="入量" size="small">
+                    <template #suffix>ml</template>
+                  </ElInput>
+                </div>
+                <div class="batch-extra-item">
+                  <span class="batch-extra-label">尿量</span>
+                  <ElInput v-model="row.extraRecord.urine" placeholder="尿量" size="small">
+                    <template #suffix>ml</template>
+                  </ElInput>
+                </div>
+                <div class="batch-extra-item">
+                  <span class="batch-extra-label">其他</span>
+                  <ElInput v-model="row.extraRecord.other" placeholder="其他" size="small">
+                    <template #suffix>ml</template>
+                  </ElInput>
+                </div>
               </div>
-              <TemperatureSheetFillSlotSpecial
-                :row="row.slotRow"
-                :special-event-select-options="specialEventSelectOptions"
-              />
             </div>
           </div>
         </div>
@@ -525,6 +596,20 @@ defineExpose({
   gap: 6px;
   flex-shrink: 0;
 }
+.batch-record-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 140px;
+}
+.batch-record-time-label {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+}
+.batch-record-time :deep(.bottom-time-trigger) {
+  width: 100%;
+}
 .batch-card {
   display: flex;
   flex-direction: column;
@@ -556,7 +641,7 @@ defineExpose({
   min-height: 0;
 }
 .batch-grid-head,
-.batch-row {
+.batch-vital-row {
   display: grid;
   grid-template-columns: 88px 88px repeat(6, 160px) minmax(0, 1fr);
   gap: 8px;
@@ -646,10 +731,53 @@ defineExpose({
 .batch-load-error-tag {
   flex-shrink: 0;
 }
-.batch-row .nav-cell :deep(.el-input) {
+.batch-vital-row .nav-cell :deep(.el-input) {
   width: 100%;
 }
-.batch-row .nav-cell :deep(.el-input__suffix) {
+.batch-vital-row .nav-cell :deep(.el-input__suffix) {
+  color: #6b7280;
+  font-size: 11px;
+}
+.batch-extra-row {
+  display: grid;
+  /* 前两列对齐床号/姓名，后 8 列与体温等列同宽 160px */
+  grid-template-columns: 88px 88px repeat(8, 160px);
+  gap: 8px;
+  align-items: end;
+  margin-top: 4px;
+  min-width: 0;
+}
+.batch-extra-title {
+  align-self: center;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4b5563;
+}
+.batch-extra-name-spacer {
+  min-width: 0;
+}
+.batch-extra-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.batch-extra-label {
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  font-size: 12px;
+  color: #4b5563;
+  white-space: nowrap;
+}
+.batch-extra-item :deep(.el-input) {
+  width: 100%;
+}
+.batch-extra-item :deep(.el-input__wrapper) {
+  min-height: 26px;
+}
+.batch-extra-item :deep(.el-input__suffix) {
   color: #6b7280;
   font-size: 11px;
 }

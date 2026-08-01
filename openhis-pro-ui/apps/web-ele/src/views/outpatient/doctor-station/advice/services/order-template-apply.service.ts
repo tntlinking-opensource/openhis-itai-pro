@@ -1,8 +1,12 @@
 import type { AdviceDrugItem, AdviceProductOption, AdviceRowItem } from './advice.types';
+import type {
+  OrderTemplateApplyConfirmLineKind,
+  OrderTemplateApplyConfirmPreview,
+  OrderTemplateApplyConfirmTemplateRow,
+} from './order-template-apply-confirm.types';
 
 import type { OrderTemplateLineRowItem } from '#/api/basic/order-template';
 import type {
-  DoctorStationAdviceCatalogRowDto,
   DoctorStationAdviceDraftLineRequest,
   PrepickedProductKeyDto,
   TerminologyOptionDto,
@@ -17,9 +21,7 @@ import {
   ORDER_TEMPLATE_LINE_KIND_MEDICATION,
   ORDER_TEMPLATE_LINE_KIND_SERVICE,
 } from '#/api/basic/order-template';
-import { httpPageDoctorStationAdviceCatalog } from '#/api/doctor-station/advice.http';
 import { httpGetEncounterDiagnosis } from '#/api/doctor-station/diagnosis.http';
-import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import {
   convertAdviceCatalogSplitQtyToPackageDisplay,
   formatAdviceCatalogStockCellText,
@@ -27,19 +29,20 @@ import {
   resolveAdviceCatalogPackageDisplayQty,
   sumAdviceCatalogInventorySplitQty,
 } from '#/utils/doctor-station/advice-catalog-stock-display';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
   convertInboundQtyBetweenBandKinds,
   normalizeInboundProductUnitBands,
 } from '#/utils/inventory/inbound-product-unit-bands';
-
-import { saveAdviceDraftBatchDirect } from './advice-draft-save.service';
-import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
   applyLineDoseFieldsFromBands,
   hydrateDraftLineDoseFromDosageText,
 } from '#/views/basic/ordertemplate/order-template-medication-units';
 
+import { fetchAdviceCatalogRowsByPrepickedKeys } from './advice-catalog-prepicked';
+import { saveAdviceDraftBatchDirect } from './advice-draft-save.service';
 import {
+  buildDeviceProductSelectPatch,
   buildWesternProductSelectPatch,
   createAdviceDrugItem,
   inferDoseBandConvertK,
@@ -49,13 +52,11 @@ import { mapCatalogRowToOption } from './advice-list';
 import { buildAdviceDraftLines } from './advice-medication-draft';
 import { inferAdviceLineEditorKind, validateWesternEditLineItem } from './advice-row';
 import { ADVICE_PRICING_SOURCE_CODE } from './advice-tab.constants';
-import { totalAmountUnitDisplayLabel } from './medication-unit-bands';
-import { unitCodeByBandKind } from './medication-unit-bands';
-import type {
-  OrderTemplateApplyConfirmLineKind,
-  OrderTemplateApplyConfirmPreview,
-  OrderTemplateApplyConfirmTemplateRow,
-} from './order-template-apply-confirm.types';
+import {
+  resolveAdviceLineUnitPrice,
+  totalAmountUnitDisplayLabel,
+  unitCodeByBandKind,
+} from './medication-unit-bands';
 
 /** 组套套用：药品库存不足明细 */
 export interface OrderTemplateMedicationStockIssue {
@@ -125,6 +126,26 @@ function prepickedKeyFromTemplateLine(
     return null;
   }
   return { productDefinitionId: defId, productTableName: tbl };
+}
+
+/**
+ * 套用时为模板 groupKey 分配新 groupId，避免多次套用同一组套时并成一组。
+ * 同一次套用内同一 groupKey 仍映射为同一新号。
+ */
+function remapTemplateGroupIds(items: AdviceDrugItem[]): AdviceDrugItem[] {
+  const oldToNew = new Map<string, string>();
+  let seq = 0;
+  return items.map((item) => {
+    const oldGid = String(item.groupId ?? '').trim();
+    if (!oldGid) {
+      return item;
+    }
+    if (!oldToNew.has(oldGid)) {
+      oldToNew.set(oldGid, String(Date.now() + seq));
+      seq += 1;
+    }
+    return { ...item, groupId: oldToNew.get(oldGid) };
+  });
 }
 
 /** 成组行补齐组首的用法/天数/频次（与组套维护端一致） */
@@ -255,6 +276,33 @@ function convertRequiredQtyToPackageDisplay(
   return convertAdviceCatalogSplitQtyToPackageDisplay(splitQty, unitBands);
 }
 
+/** 组套行展示名（预览 enrich 后的 productName 优先） */
+function resolveTemplateLineProductName(line: OrderTemplateLineRowItem, index: number): string {
+  const fromLine = String(line.productName ?? '').trim();
+  if (fromLine) {
+    return fromLine;
+  }
+  return `第 ${index + 1} 项`;
+}
+
+/** 可开立目录未命中：按行类型给出友好原因（停供/停用/无库存） */
+function resolveCatalogMissingApplyMessage(line: OrderTemplateLineRowItem, index: number): string {
+  const name = resolveTemplateLineProductName(line, index);
+  const kind = String(line.lineKindEnum ?? '')
+    .trim()
+    .toUpperCase();
+  if (kind === ORDER_TEMPLATE_LINE_KIND_MEDICATION) {
+    return `药品「${name}」暂无库存，无法套用组套`;
+  }
+  if (kind === ORDER_TEMPLATE_LINE_KIND_SERVICE) {
+    return `诊疗项目「${name}」已停用，无法套用组套`;
+  }
+  if (kind === ORDER_TEMPLATE_LINE_KIND_DEVICE) {
+    return `耗材「${name}」暂不可用，无法套用组套`;
+  }
+  return `「${name}」当前不可开立，无法套用组套`;
+}
+
 /** 校验单条药品行库存；不足时返回明细文案 */
 function resolveMedicationStockIssue(
   line: OrderTemplateLineRowItem,
@@ -262,10 +310,9 @@ function resolveMedicationStockIssue(
 ): null | OrderTemplateMedicationStockIssue {
   const productName = String(line.productName ?? catalog.name ?? '').trim() || '未命名药品';
   if (isAdviceCatalogZeroStock(catalog)) {
-    const availableText = formatAdviceCatalogStockCellText(catalog);
     return {
       productName,
-      detail: `库存不足（当前 ${availableText}）`,
+      detail: '暂无库存',
     };
   }
 
@@ -321,16 +368,12 @@ async function fetchCatalogOptionsByPrepickedKeys(
   if (!encounterId || !patientId) {
     return [];
   }
-  const res = await httpPageDoctorStationAdviceCatalog({
+  const rawRows = await fetchAdviceCatalogRowsByPrepickedKeys(keys, {
     encounterId,
     patientId,
     organizationUnitId: params.organizationUnitId,
-    pageNo: 1,
-    pageSize: Math.max(keys.length, 20),
-    prepickedProductKeys: keys,
     pricingSourceCode: ADVICE_PRICING_SOURCE_CODE,
   });
-  const { content: rawRows } = parsePagedRowsFromApiData<DoctorStationAdviceCatalogRowDto>(res);
   return rawRows.map((item) => mapCatalogRowToOption(item));
 }
 
@@ -544,21 +587,28 @@ function buildAdviceDrugItemFromTemplateLine(
   }
 
   if (tbl === 'adm_device_definition') {
-    const uCode = templateUnitCode || String(catalog.defaultUnitCode ?? '').trim() || 'U';
-    const uName = templateUnitName || String(catalog.defaultUnitName ?? '').trim() || uCode;
+    const devicePatch = buildDeviceProductSelectPatch(catalog);
+    const uCode = templateUnitCode || String(devicePatch.totalAmountUnit ?? '').trim() || 'U';
+    let selectedDrugPrice = devicePatch.selectedDrugPrice ?? catalog.price ?? '';
+    if (uCode) {
+      const linePrice = resolveAdviceLineUnitPrice({
+        bands: catalog.unitBands ?? devicePatch.unitBands,
+        catalogUnitPrice: devicePatch.catalogUnitPrice ?? catalog.catalogUnitPrice,
+        totalAmountUnit: uCode,
+      });
+      if (linePrice !== undefined) selectedDrugPrice = linePrice;
+    }
     return {
       ...seed,
+      ...devicePatch,
       selectedId: String(catalog.id ?? '').trim(),
       selectedDrugName: catalog.name || '',
       selectedDrugSpec: catalog.spec || '',
       productTableName: catalog.productTableName,
-      selectedDrugPrice: catalog.price ?? '',
-      unitBands: catalog.unitBands,
+      selectedDrugPrice,
       diagnosis: mainDiagnosisName,
       totalAmount: templateQty,
       totalAmountUnit: uCode,
-      totalUnitSalesCode: uCode,
-      totalUnitSalesName: uName,
       performOrgId,
       performOrgName,
       expanded: false,
@@ -601,14 +651,14 @@ async function loadEncounterDiagnosisRows(
 /** 组套行 → 展示类型 */
 function resolveTemplateLineKindLabel(line: OrderTemplateLineRowItem): string {
   switch (line.lineKindEnum) {
+    case ORDER_TEMPLATE_LINE_KIND_DEVICE: {
+      return '耗材';
+    }
     case ORDER_TEMPLATE_LINE_KIND_MEDICATION: {
       return '药品';
     }
     case ORDER_TEMPLATE_LINE_KIND_SERVICE: {
       return '诊疗';
-    }
-    case ORDER_TEMPLATE_LINE_KIND_DEVICE: {
-      return '耗材';
     }
     default: {
       return '项目';
@@ -695,7 +745,7 @@ function shouldAppendTemplateProductSpec(
   if (!specNorm || baseName.includes(specNorm)) {
     return false;
   }
-  if (lineKind === 'SERVICE' && ['次', '项', 'U'].includes(specNorm)) {
+  if (lineKind === 'SERVICE' && ['U', '次', '项'].includes(specNorm)) {
     return false;
   }
   return true;
@@ -713,11 +763,11 @@ function resolveTemplateConfirmLineKind(
     return 'MEDICATION';
   }
   switch (line.lineKindEnum) {
-    case ORDER_TEMPLATE_LINE_KIND_SERVICE: {
-      return 'SERVICE';
-    }
     case ORDER_TEMPLATE_LINE_KIND_DEVICE: {
       return 'DEVICE';
+    }
+    case ORDER_TEMPLATE_LINE_KIND_SERVICE: {
+      return 'SERVICE';
     }
     default: {
       return 'MEDICATION';
@@ -824,7 +874,7 @@ export function buildDraftLinesFromConfirmedTemplateRows(
   templateRows: OrderTemplateApplyConfirmTemplateRow[],
 ): DoctorStationAdviceDraftLineRequest[] {
   return [...templateRows]
-    .sort((left, right) => left.lineIndex - right.lineIndex)
+    .toSorted((left, right) => left.lineIndex - right.lineIndex)
     .map((row) => {
       const source = draftLines[row.lineIndex];
       if (!source) {
@@ -911,17 +961,19 @@ async function buildOrderTemplateApplyDraftPack(
 
   const mainDiagnosisName = pickMainDiagnosisDisplayName(encounterDiagnosisRows);
   const stockIssues: OrderTemplateMedicationStockIssue[] = [];
+  const catalogMissingMessages: string[] = [];
   const drugItems: AdviceDrugItem[] = [];
 
-  for (const line of normalizedLines) {
+  for (let index = 0; index < normalizedLines.length; index += 1) {
+    const line = normalizedLines[index];
     const key = prepickedKeyFromTemplateLine(line);
     if (!key) {
       continue;
     }
     const catalog = catalogMap.get(`${key.productTableName}:${key.productDefinitionId}`);
     if (!catalog) {
-      const name = String(line.productName ?? '').trim() || '未知项目';
-      throw new OrderTemplateApplyError(`目录中未找到「${name}」，无法套用组套`);
+      catalogMissingMessages.push(resolveCatalogMissingApplyMessage(line, index));
+      continue;
     }
 
     if (line.lineKindEnum === ORDER_TEMPLATE_LINE_KIND_MEDICATION) {
@@ -936,9 +988,13 @@ async function buildOrderTemplateApplyDraftPack(
     );
   }
 
+  if (catalogMissingMessages.length > 0) {
+    throw new OrderTemplateApplyError(catalogMissingMessages.join('；'));
+  }
+
   if (stockIssues.length > 0) {
-    const names = stockIssues.map((item) => `「${item.productName}」${item.detail}`).join('；');
-    throw new OrderTemplateApplyError(`以下药品库存不足：${names}`, stockIssues);
+    const names = stockIssues.map((item) => `药品「${item.productName}」${item.detail}`).join('；');
+    throw new OrderTemplateApplyError(`${names}，无法套用组套`, stockIssues);
   }
 
   const invalidIndex = drugItems.findIndex((item) => !validateWesternEditLineItem(item));
@@ -952,9 +1008,11 @@ async function buildOrderTemplateApplyDraftPack(
     );
   }
 
+  const remappedDrugItems = remapTemplateGroupIds(drugItems);
+
   const draftLines = (() => {
     try {
-      return buildAdviceDraftLines(drugItems, [], {
+      return buildAdviceDraftLines(remappedDrugItems, [], {
         encounterDiagnosisRows,
         existingAdviceRows: params.existingAdviceRows ?? [],
       });
@@ -963,7 +1021,7 @@ async function buildOrderTemplateApplyDraftPack(
     }
   })();
 
-  const templateRows = buildTemplateConfirmRows(normalizedLines, catalogMap, drugItems);
+  const templateRows = buildTemplateConfirmRows(normalizedLines, catalogMap, remappedDrugItems);
 
   return { draftLines, normalizedLines, templateRows };
 }
@@ -991,8 +1049,11 @@ export async function applyOrderTemplateToAdviceDraft(
     throw new OrderTemplateApplyError('缺少就诊或患者信息，无法套用组套');
   }
 
-  let draftLines =
-    params.preparedDraftLines ?? (await buildOrderTemplateApplyDraftPack(params)).draftLines;
+  let draftLines = params.preparedDraftLines;
+  if (draftLines === undefined) {
+    const pack = await buildOrderTemplateApplyDraftPack(params);
+    draftLines = pack.draftLines;
+  }
 
   if (params.preConfirmedTemplateRows !== undefined) {
     draftLines = buildDraftLinesFromConfirmedTemplateRows(

@@ -140,11 +140,11 @@ export function buildSnapshotFromEcVoucher(
   };
 }
 
-/** 电子凭证 01 类型须同时具备身份证号与姓名 */
+/** 电子凭证 01 须有证号+姓名；社保卡 03 须有 card_sn（1101/2201 同校验） */
 export function validateSnapshotForInsurance1101(snapshot: PatientIdentitySnapshot): null | string {
   const cred = snapshot.insuranceCredential;
   if (cred?.mdtrtCertType === '01' && (!snapshot.certno || !snapshot.patientName)) {
-    return '医保码未返回身份证号或姓名，无法调用医保 1101';
+    return '医保码未返回身份证号或姓名，无法调用医保';
   }
   if (cred?.mdtrtCertType === '03' && !(cred.cardSn ?? '').trim()) {
     return '社保卡读卡缺少卡识别码，请重新读卡';

@@ -1,9 +1,7 @@
-import type { DiagnosisItem } from '#/components/doctor-station/diagnosis';
-import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
 import type { InpatientDoctorStationAdviceDraftLineRequest } from '#/api/inpatient/doctor-station/inpatient-doctor-station-advice.types';
 
 import type { AdviceDrugItem } from './advice.types';
-import { resolveMedicationContractId, resolveMedicationEncounterDiagnosisId } from './advice-edit';
+import { resolveMedicationContractId } from './advice-edit';
 import {
   inferAdviceLineEditorKind,
   isInpatientLongTermMedicationTherapy,
@@ -27,18 +25,6 @@ export function parseMedicationDefinitionId(selectedId: string): string | undefi
   return undefined;
 }
 
-/** 将所选诊断名称映射为就诊诊断 `conditionDefinitionId`，写入草稿 medicationPayload。 */
-export function resolveConditionDefinitionIdFromDiagnosisName(
-  diagnosisName: string,
-  patientDiagnoses: DiagnosisItem[],
-): string | undefined {
-  const name = diagnosisName.trim();
-  if (!name) return undefined;
-  const hit = patientDiagnoses.find((d) => d.name === name);
-  const did = String(hit?.conditionDefinitionId ?? '').trim();
-  return did || undefined;
-}
-
 function normalizedSortNumber(item: AdviceDrugItem, index: number): number {
   const sortRaw = item.sortNumber;
   const sortParsed = Number(sortRaw);
@@ -50,8 +36,6 @@ function normalizedSortNumber(item: AdviceDrugItem, index: number): number {
 function buildMedicationDraftLine(
   item: AdviceDrugItem,
   index: number,
-  patientDiagnoses: DiagnosisItem[],
-  encounterRows: EncounterDiagnosisRowDto[] = [],
 ): InpatientDoctorStationAdviceDraftLineRequest {
   const defId = parseMedicationDefinitionId(item.selectedId);
   const rid = item.medicationRequestId?.trim();
@@ -59,11 +43,6 @@ function buildMedicationDraftLine(
   if (op === 'CREATE' && !defId) {
     throw new Error('请从目录选择药品后再保存（需带 med_medication_definition 主键）');
   }
-  const conditionDefinitionId = resolveConditionDefinitionIdFromDiagnosisName(
-    item.diagnosis,
-    patientDiagnoses,
-  );
-  const encounterDiagnosisId = resolveMedicationEncounterDiagnosisId(item.diagnosis, encounterRows);
   const contractId = resolveMedicationContractId(item);
   const therapyEnum = String(item.therapyEnum ?? '').trim() || undefined;
   const longTerm = isInpatientLongTermMedicationTherapy(therapyEnum);
@@ -90,20 +69,33 @@ function buildMedicationDraftLine(
   const sortNumber = normalizedSortNumber(item, index);
 
   const gid = String(item.groupId ?? '').trim();
+  const remark = String(item.remark ?? '').trim();
 
   const medicationPayload: InpatientDoctorStationAdviceDraftLineRequest['medicationPayload'] = {
     quantity: qty,
     unitCode,
     skinTestFlag: Boolean(item.skinTest),
+    // 始终传备注（含空串），UPDATE 时可清空
+    remark,
     ...(therapyEnum ? { therapyEnum } : {}),
     ...(defId ? { medicationDefinitionId: defId } : {}),
     ...(dose === undefined ? {} : { dose }),
     ...(doseUnitCode ? { doseUnitCode } : {}),
+    ...(longTerm &&
+    item.firstDose !== undefined &&
+    item.firstDose !== null &&
+    Number(item.firstDose) > 0
+      ? {
+          firstDose: Number(item.firstDose),
+          firstDoseUnitCode:
+            String(
+              item.firstDoseUnitCode ?? item.totalAmountUnit ?? item.doseSubUnit ?? '',
+            ).trim() || undefined,
+        }
+      : {}),
     ...(dispensePerDuration === undefined ? {} : { dispensePerDuration }),
     ...(methodCode ? { methodCode } : {}),
     ...(rateCode ? { rateCode } : {}),
-    ...(conditionDefinitionId ? { conditionDefinitionId } : {}),
-    ...(encounterDiagnosisId ? { encounterDiagnosisId } : {}),
     ...(contractId ? { contractId } : {}),
     ...(gid ? { groupId: gid } : {}),
   };
@@ -122,7 +114,6 @@ function buildMedicationDraftLine(
 function buildServiceDraftLine(
   item: AdviceDrugItem,
   index: number,
-  _patientDiagnoses: DiagnosisItem[],
 ): InpatientDoctorStationAdviceDraftLineRequest {
   const defId = parseColonDefinitionId(item.selectedId);
   const rid = item.medicationRequestId?.trim();
@@ -143,15 +134,20 @@ function buildServiceDraftLine(
   const executionCount = Number.isFinite(execRaw) && execRaw > 0 ? execRaw : 1;
   const unitCode = String(item.totalAmountUnit ?? '').trim() || '次';
   const rateCode = String(item.frequency || '').trim() || undefined;
+  const entrustContent = String(item.entrustContent ?? '').trim() || undefined;
+  // 始终传备注（含空串），UPDATE 时可清空；套餐覆盖由后端优先 childOverridesJson
+  const remark = String(item.remark ?? '').trim();
   const servicePayload: NonNullable<
     InpatientDoctorStationAdviceDraftLineRequest['servicePayload']
   > = {
     activityDefinitionId: defId || '',
     quantity,
     unitCode,
+    remark,
     ...(performOrgRaw && /^\d+$/.test(performOrgRaw) ? { performOrgId: performOrgRaw } : {}),
     ...(rateCode ? { rateCode } : {}),
     ...(!longTerm ? { executionCount } : {}),
+    ...(entrustContent ? { entrustContent } : {}),
   };
   return {
     lineOp: op,
@@ -165,25 +161,19 @@ function buildServiceDraftLine(
 
 /**
  * 将编辑卡多行组装为暂存批次 lines：按行区分药品 / 诊疗 / 耗材（与目录复合 selectedId、productTableName 一致）。
+ * 住院开立不绑诊断，不传 encounterDiagnosisId / conditionDefinitionId。
  */
-export interface BuildInpatientAdviceDraftLinesOptions {
-  encounterDiagnosisRows?: EncounterDiagnosisRowDto[];
-}
-
 export function buildAdviceDraftLines(
   items: AdviceDrugItem[],
-  patientDiagnoses: DiagnosisItem[],
-  options?: BuildInpatientAdviceDraftLinesOptions,
 ): InpatientDoctorStationAdviceDraftLineRequest[] {
-  const encounterRows = options?.encounterDiagnosisRows ?? [];
   return items.map((item, index) => {
     const kind = inferAdviceLineEditorKind(item);
     if (kind === 'SERVICE') {
-      return buildServiceDraftLine(item, index, patientDiagnoses);
+      return buildServiceDraftLine(item, index);
     }
     if (kind === 'DEVICE') {
       throw new Error('住院医生站不支持开立耗材医嘱');
     }
-    return buildMedicationDraftLine(item, index, patientDiagnoses, encounterRows);
+    return buildMedicationDraftLine(item, index);
   });
 }

@@ -25,6 +25,9 @@ export interface BossCompensationRowDto {
   encounterBusNo?: string;
   issueKind?: string;
   issueKindLabel?: string;
+  /** 开票金额（票面） */
+  totalAmt?: number;
+  /** 患者现金支付金额 */
   paymentAmt?: number;
   busNo?: string;
   exceptionType?: CompensationExceptionType;

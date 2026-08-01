@@ -9,10 +9,10 @@ import { computed, onMounted, provide, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 
 import { submitDirectBedOperation } from './services/execute-bed-operation';
-import { submitRecallInpatientDischarge } from './services/recall-inpatient-discharge';
 import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
 
 import PatientAdmissionBedDialog from './components/patient-admission-bed-dialog.vue';
+import PatientLargeScreen from './components/patient-large-screen.vue';
 import { nurseStationPatientListPanelContextKey } from './components/patient-list-panel.context';
 import PatientListPanel from './components/patient-list-panel.vue';
 import { useNurseStationBedBoard } from './use-nurse-station-bed-board';
@@ -20,11 +20,14 @@ import { useNurseStationBedDrag } from './use-nurse-station-bed-drag';
 import { useNurseStationPatientData } from './use-nurse-station-patient-data';
 import { useNurseStationPatientProjections } from './use-nurse-station-patient-projections';
 import { useNurseStationSelection } from './use-nurse-station-selection';
+import { isNurseStationBedUnassigned } from './components/nurse-station-module-patient.types';
 import {
   MULTI_PATIENT_OPERATION_TABS,
+  NURSE_STATION_BED_REQUIRED_MESSAGE,
   OPERATION_TAB,
   OPERATION_TAB_LABEL,
   SINGLE_PATIENT_OPERATION_TABS,
+  doesNurseStationTabRequireBed,
   operationComponentByTab,
   operationLoaderByTab,
   operationSelectionPolicyByTab,
@@ -45,16 +48,17 @@ const {
   loadPatientQueue,
   patients,
   patientListPanelDataContext,
-  queueScopeFilter,
+  pendingAuditCount,
+  pendingExecuteCount,
+  refreshPatientFilters,
   regionNameByIdRecord,
   selectedRegionIds,
   selectedWardIds,
+  totalPatientCount,
   wardNameByIdRecord,
   wardOptions,
 } = useNurseStationPatientData();
 const IN_OUT_TRANSFER_TAB = OPERATION_TAB.IN_OUT_TRANSFER;
-/** 已出院结算列表：仅召回可用，禁止选中患者与右侧业务操作 */
-const isRecallListMode = computed(() => queueScopeFilter.value === 'settled-discharged');
 const { bedBoardGroups, bedBoardLoading, bedBoardPanel, loadBedBoard } = useNurseStationBedBoard({
   selectedHouseIds: () => selectedWardIds.value,
   selectedWardIds: () => selectedRegionIds.value,
@@ -62,7 +66,6 @@ const { bedBoardGroups, bedBoardLoading, bedBoardPanel, loadBedBoard } = useNurs
 });
 const {
   activePatientId,
-  clearSelection,
   initSelectionState,
   patientListPanelSelectionContext,
   selectedPatientIds,
@@ -72,9 +75,10 @@ const {
 } = useNurseStationSelection({
   filteredPatients,
   patients,
-  selectionDisabled: isRecallListMode,
 });
 const patientQueueBootstrapped = ref(false);
+/** 患者大屏默认隐藏，由左侧队列按钮展开。 */
+const largeScreenVisible = ref(false);
 const admissionBedDialogVisible = ref(false);
 const admissionBedDialogPatient = ref<null | PatientItem>(null);
 const admissionBedDialogOperation = ref<AdmissionBedOperationIntent | null>(null);
@@ -91,13 +95,44 @@ const { selectedPatients, singlePanelPatients } = useNurseStationPatientProjecti
 });
 /** 根据当前导航获取主工作区组件（未映射项显示占位态）。 */
 const currentOperationComponent = computed(() => operationComponentByTab[activeOperationTab.value]);
+
+/** 仅保留已分床患者，避免未分床就诊进入业务模块。 */
+function filterBedAssignedModulePatients<T extends { bedNo: string }>(list: T[]): T[] {
+  // 与左侧卡片一致：无床号展示名视为未分床
+  return list.filter((item) => !isNurseStationBedUnassigned(item.bedNo));
+}
+
+/**
+ * 当前页签是否因选中患者未分床而门禁。
+ * 多选：有勾选但无一已分床；单选：主患者存在且未分床。
+ */
+const operationBlockedByUnassignedBed = computed(() => {
+  if (!doesNurseStationTabRequireBed(activeOperationTab.value)) {
+    return false;
+  }
+  if (MULTI_PATIENT_OPERATION_TABS.has(activeOperationTab.value)) {
+    if (selectedPatients.value.length === 0) {
+      return false;
+    }
+    return filterBedAssignedModulePatients(selectedPatients.value).length === 0;
+  }
+  if (SINGLE_PATIENT_OPERATION_TABS.has(activeOperationTab.value)) {
+    const patient = singlePanelPatients.value[0];
+    if (!patient) {
+      return false;
+    }
+    return isNurseStationBedUnassigned(patient.bedNo);
+  }
+  return false;
+});
+
 /** 根据当前导航拼装组件入参，保证 KeepAlive 缓存切换不丢状态。 */
 const currentOperationProps = computed<Record<string, unknown>>(() => {
   if (MULTI_PATIENT_OPERATION_TABS.has(activeOperationTab.value)) {
-    return { patients: selectedPatients.value };
+    return { patients: filterBedAssignedModulePatients(selectedPatients.value) };
   }
   if (SINGLE_PATIENT_OPERATION_TABS.has(activeOperationTab.value)) {
-    return { patients: singlePanelPatients.value };
+    return { patients: filterBedAssignedModulePatients(singlePanelPatients.value) };
   }
   if (activeOperationTab.value === IN_OUT_TRANSFER_TAB) {
     return {
@@ -116,20 +151,44 @@ const currentOperationProps = computed<Record<string, unknown>>(() => {
   }
   return {};
 });
+
+/** 目标页签在当前选中下是否会触发未分床门禁。 */
+function isTabBlockedByUnassignedBed(tab: OperationTab): boolean {
+  if (!doesNurseStationTabRequireBed(tab)) {
+    return false;
+  }
+  if (MULTI_PATIENT_OPERATION_TABS.has(tab)) {
+    if (selectedPatients.value.length === 0) {
+      return false;
+    }
+    return filterBedAssignedModulePatients(selectedPatients.value).length === 0;
+  }
+  if (SINGLE_PATIENT_OPERATION_TABS.has(tab)) {
+    const patient = singlePanelPatients.value[0];
+    if (!patient) {
+      return false;
+    }
+    return isNurseStationBedUnassigned(patient.bedNo);
+  }
+  return false;
+}
+
 /** 统一处理 tab 切换引发的选择策略变化。 */
 function onWorkbenchTabChange(tabId: OperationTab, prevTabId: OperationTab) {
   if (tabId === prevTabId) return;
   const policy = getSelectionPolicyByTab(tabId);
   setSelectionPolicy(policy, (msg) => ElMessage.warning(msg));
 }
+
 /** 切换右侧业务导航：首次进入模块时显示 loading，加载完成后再切换。 */
 async function handleOperationTabClick(tab: OperationTab) {
-  if (isRecallListMode.value) {
-    return;
-  }
   const nextTab = tab;
   const prevTab = activeOperationTab.value;
   if (nextTab === activeOperationTab.value) return;
+  // 未分床仅允许进入入出转；其余页签提示后仍切换，由门禁空态承接
+  if (isTabBlockedByUnassignedBed(nextTab)) {
+    ElMessage.warning(NURSE_STATION_BED_REQUIRED_MESSAGE);
+  }
   const loader = operationLoaderByTab[nextTab];
   if (!loader || loadedOperationTabs.value.has(nextTab)) {
     activeOperationTab.value = nextTab;
@@ -152,6 +211,11 @@ async function handleOperationTabClick(tab: OperationTab) {
     operationTabLoading.value = false;
   }
 }
+
+/** 门禁空态：跳转入出转完成分床 */
+function handleGoAssignBed() {
+  void handleOperationTabClick(IN_OUT_TRANSFER_TAB);
+}
 /** 床位图点击占床：单选该患者并与左侧列表联动。 */
 function handleBedMapSelectPatient(id: string) {
   setActivePatient(id);
@@ -166,68 +230,7 @@ function openAdmissionBedDialog(patient: PatientItem, intent: AdmissionBedOperat
 
 /** 双击患者卡片：在院列表打开入科选床弹窗。 */
 function handlePatientCardDblClick(patient: PatientItem) {
-  if (queueScopeFilter.value === 'settled-discharged') {
-    return;
-  }
   openAdmissionBedDialog(patient, null);
-}
-
-/** 切换至入出转管理并加载入科床位图（召回成功后引导二次分床）。 */
-async function switchToInOutTransferTab() {
-  const prevTab = activeOperationTab.value;
-  if (activeOperationTab.value === IN_OUT_TRANSFER_TAB) {
-    await loadBedBoard('admission');
-    return;
-  }
-  const loader = operationLoaderByTab[IN_OUT_TRANSFER_TAB];
-  if (loader && !loadedOperationTabs.value.has(IN_OUT_TRANSFER_TAB)) {
-    operationTabLoading.value = true;
-    try {
-      await loader();
-      loadedOperationTabs.value.add(IN_OUT_TRANSFER_TAB);
-    } finally {
-      operationTabLoading.value = false;
-    }
-  }
-  await loadBedBoard('admission');
-  activeOperationTab.value = IN_OUT_TRANSFER_TAB;
-  onWorkbenchTabChange(IN_OUT_TRANSFER_TAB, prevTab);
-}
-
-/** 召回成功后切至入出转管理、选中患者并提示重新分床。 */
-async function navigateAfterRecallSuccess(patient: PatientItem) {
-  queueScopeFilter.value = 'in-hospital';
-  await loadPatientQueue();
-  await switchToInOutTransferTab();
-  setActivePatient(patient.id);
-  try {
-    await ElMessageBox.alert(
-      `患者「${patient.name}」已召回至待入科，请在右侧入科床位图中为该患者重新分床。`,
-      '请重新分床',
-      { type: 'info', confirmButtonText: '知道了' },
-    );
-  } catch {
-    // 用户关闭提示框，不影响后续操作
-  }
-}
-
-/** 出院召回：确认后提交 ATD-07 并刷新队列（仅已清床离院患者）。 */
-async function handleRecallPatient(patient: PatientItem) {
-  try {
-    await ElMessageBox.confirm(
-      `确认将患者「${patient.name}」出院召回？将撤回出院医嘱并恢复待入科，须至入出转管理二次分床。`,
-      '出院召回',
-      { type: 'warning', confirmButtonText: '确认召回', cancelButtonText: '取消' },
-    );
-  } catch {
-    return;
-  }
-  try {
-    await submitRecallInpatientDischarge(patient.id);
-    await navigateAfterRecallSuccess(patient);
-  } catch {
-    // 业务错误由 request 拦截器展示后端 message，此处不再重复弹窗
-  }
 }
 
 /** 床位图拖放：仅首次分床打开入科弹窗 */
@@ -295,9 +298,6 @@ async function handleInOutTransferRefresh() {
 /** 出院医嘱校对等写操作后：刷新队列，并保证出 Tab 床位图与就诊态一致 */
 async function refreshWorkbenchAfterEncounterFlowChange() {
   await loadPatientQueue();
-  if (isRecallListMode.value) {
-    return;
-  }
   if (activeOperationTab.value === IN_OUT_TRANSFER_TAB) {
     await loadBedBoard(bedBoardPanel.value);
     return;
@@ -315,12 +315,37 @@ watch(admissionBedDialogVisible, (open) => {
   }
 });
 
-/** 切换至已出院结算时清空选中，避免右侧模块沿用旧患者自动拉数 */
-watch(isRecallListMode, (recallMode) => {
-  if (recallMode) {
-    clearSelection();
+/** 展开患者一览大屏（铺满护士站工作区）。 */
+function openPatientLargeScreen() {
+  largeScreenVisible.value = true;
+}
+
+/** 大屏快捷入口：收敛为当前患者后切换业务页签（大屏暂不自动收起）。 */
+function handleLargeScreenShortcut(payload: { patientId: string; tab: OperationTab }) {
+  const patient = patients.value.find((row) => row.id === payload.patientId);
+  // 未分床仅允许跳转入出转分床
+  if (
+    patient &&
+    isNurseStationBedUnassigned(patient.bedNo) &&
+    doesNurseStationTabRequireBed(payload.tab)
+  ) {
+    ElMessage.warning(NURSE_STATION_BED_REQUIRED_MESSAGE);
+    selectedPatientIds.value = new Set([payload.patientId]);
+    setActivePatient(payload.patientId);
+    void handleOperationTabClick(IN_OUT_TRANSFER_TAB);
+    return;
   }
-});
+  // 先收敛为单患者，避免多选态切到单选页签时被策略收束清空
+  selectedPatientIds.value = new Set([payload.patientId]);
+  setActivePatient(payload.patientId);
+  void handleOperationTabClick(payload.tab);
+}
+
+/** 大屏内刷新：复用队列筛选刷新。 */
+function handleLargeScreenRefresh() {
+  void refreshPatientFilters();
+}
+
 /** 向患者列表子组件提供工作站上下文。 */
 const patientListPanelContext: NurseStationPatientListPanelContext = {
   ...patientListPanelDataContext,
@@ -328,16 +353,13 @@ const patientListPanelContext: NurseStationPatientListPanelContext = {
   ...patientListPanelDragContext,
   refreshWorkbenchAfterEncounterFlowChange,
   onPatientCardDblClick: handlePatientCardDblClick,
-  onRecallPatient: handleRecallPatient,
+  openPatientLargeScreen,
 };
 provide(nurseStationPatientListPanelContextKey, patientListPanelContext);
 setSelectionPolicy(getSelectionPolicyByTab(activeOperationTab.value), () => {});
 
 /** 左侧病区/病房筛选变化时，同步刷新入出转床位图 */
 watch([selectedRegionIds, selectedWardIds], () => {
-  if (isRecallListMode.value) {
-    return;
-  }
   if (
     activeOperationTab.value === IN_OUT_TRANSFER_TAB &&
     loadedOperationTabs.value.has(IN_OUT_TRANSFER_TAB)
@@ -371,6 +393,18 @@ onMounted(async () => {
       @saved="handleAdmissionBedDialogSaved"
     />
 
+    <PatientLargeScreen
+      v-model="largeScreenVisible"
+      :patients="filteredPatients"
+      :total-patient-count="totalPatientCount"
+      :pending-audit-count="pendingAuditCount"
+      :pending-execute-count="pendingExecuteCount"
+      :region-name-by-id="regionNameByIdRecord"
+      :ward-name-by-id="wardNameByIdRecord"
+      @shortcut="handleLargeScreenShortcut"
+      @refresh="handleLargeScreenRefresh"
+    />
+
     <div class="nurse-workbench__operation">
       <div class="nurse-operation-tabs">
         <button
@@ -378,8 +412,7 @@ onMounted(async () => {
           :key="tab"
           type="button"
           class="nurse-operation-tabs__item"
-          :class="{ 'is-active': activeOperationTab === tab, 'is-disabled': isRecallListMode }"
-          :disabled="isRecallListMode"
+          :class="{ 'is-active': activeOperationTab === tab }"
           @click="handleOperationTabClick(tab)"
         >
           {{ OPERATION_TAB_LABEL[tab] }}
@@ -387,26 +420,26 @@ onMounted(async () => {
       </div>
       <div class="nurse-operation-content">
         <div
-          v-if="isRecallListMode"
-          class="nurse-operation-content__recall-placeholder flex min-h-80 items-center justify-center"
-        >
-          <ElEmpty description="已出院结算模式下仅支持出院召回，请从左侧患者列表点击「召回」" />
-        </div>
-        <div
-          v-else
           v-loading="operationTabLoading"
           element-loading-text="模块加载中..."
           class="nurse-operation-content__inner"
         >
-          <KeepAlive :max="7">
-            <component
-              :is="currentOperationComponent"
-              v-if="currentOperationComponent"
-              :key="activeOperationTab"
-              v-bind="currentOperationProps"
-            />
-          </KeepAlive>
-          <ElEmpty v-if="!currentOperationComponent" description="该模块正在建设中" />
+          <div v-if="operationBlockedByUnassignedBed" class="nurse-operation-bed-gate">
+            <ElEmpty :description="NURSE_STATION_BED_REQUIRED_MESSAGE">
+              <ElButton type="primary" @click="handleGoAssignBed">去入出转分床</ElButton>
+            </ElEmpty>
+          </div>
+          <template v-else>
+            <KeepAlive :max="7">
+              <component
+                :is="currentOperationComponent"
+                v-if="currentOperationComponent"
+                :key="activeOperationTab"
+                v-bind="currentOperationProps"
+              />
+            </KeepAlive>
+            <ElEmpty v-if="!currentOperationComponent" description="该模块正在建设中" />
+          </template>
         </div>
       </div>
     </div>
@@ -420,7 +453,9 @@ onMounted(async () => {
   height: 100%;
   margin: 0;
   min-height: 0;
+  overflow: hidden;
   padding: 0;
+  position: relative;
   width: 100%;
 }
 .nurse-workbench__operation {
@@ -480,24 +515,12 @@ onMounted(async () => {
   width: 80px;
 }
 
-.nurse-operation-tabs__item.is-disabled,
-.nurse-operation-tabs__item:disabled {
-  color: var(--el-text-color-placeholder);
-  cursor: not-allowed;
-}
-
-.nurse-operation-tabs__item.is-disabled:hover,
-.nurse-operation-tabs__item:disabled:hover {
-  color: var(--el-text-color-placeholder);
-}
-
 .nurse-operation-content {
   background: #f3f5f8;
   height: calc(100% - 46px);
   padding: 0;
 }
-.nurse-operation-content__inner,
-.nurse-operation-content__recall-placeholder {
+.nurse-operation-content__inner {
   background: #f3f5f8;
   display: flex;
   flex-direction: column;
@@ -509,6 +532,14 @@ onMounted(async () => {
   display: flex;
   flex: 1;
   flex-direction: column;
+  min-height: 0;
+}
+
+.nurse-operation-bed-gate {
+  align-items: center;
+  display: flex;
+  flex: 1;
+  justify-content: center;
   min-height: 0;
 }
 </style>

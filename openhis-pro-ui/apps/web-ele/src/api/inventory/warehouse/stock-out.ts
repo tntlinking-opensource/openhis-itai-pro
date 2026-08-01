@@ -236,6 +236,8 @@ export interface PageProductsForStockOutRequest {
   supplierId?: number;
   manufacturer?: string;
   includeInventory?: boolean;
+  /** true=仅返回账面量>0；false/未传=含零库存 */
+  positiveQuantityOnly?: boolean;
   pageNo: number;
   pageSize: number;
   keyword?: string;

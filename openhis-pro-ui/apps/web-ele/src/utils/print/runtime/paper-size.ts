@@ -16,12 +16,11 @@ const STANDARD_PAGE_SIZE_NAMES = new Set([
   'Tabloid',
 ]);
 
-/** 业务场景默认纸张（优先于模板 panel.paperType） */
+/** 业务场景默认纸张（优先于模板 panel.paperType；门诊处方勿写死，以模板为准） */
 const SCENARIO_PAGE_SIZE: Partial<Record<PrintScenario, string>> = {
-  [PRINT_SCENARIO.outpatientRx]: 'A5',
-  [PRINT_SCENARIO.outpatientTcmRx]: 'A5',
   [PRINT_SCENARIO.examinationPrint]: 'A5',
   [PRINT_SCENARIO.testPrint]: 'A5',
+  [PRINT_SCENARIO.pharmacyDailySettlementPrint]: 'A4',
 };
 
 export interface HiprintPageSizeOptions {
@@ -74,15 +73,19 @@ export function resolveHiprintPageSize(
   scenarioCode?: string,
 ): HiprintPageSizeOptions {
   const panel = readFirstPanel(printJson);
-  const landscape = resolveLandscape(panel);
   const trimmedScenarioCode = scenarioCode?.trim();
   const scenarioSize =
     trimmedScenarioCode && trimmedScenarioCode in SCENARIO_PAGE_SIZE
       ? SCENARIO_PAGE_SIZE[trimmedScenarioCode as PrintScenario]
       : undefined;
   if (scenarioSize) {
-    return { pageSize: scenarioSize, landscape };
+    // 标准纸名（A4/A5…）靠 landscape 表达横竖
+    return { pageSize: scenarioSize, landscape: resolveLandscape(panel) };
   }
   const pageSize = panel ? resolvePageSizeFromPanel(panel) : undefined;
-  return { pageSize, landscape };
+  // 自定义微米纸张（瓶签等）：宽高已表达方向；再设 landscape=true 会被 Electron 二次旋转，方向反了
+  if (pageSize && typeof pageSize === 'object') {
+    return { pageSize, landscape: false };
+  }
+  return { pageSize, landscape: resolveLandscape(panel) };
 }

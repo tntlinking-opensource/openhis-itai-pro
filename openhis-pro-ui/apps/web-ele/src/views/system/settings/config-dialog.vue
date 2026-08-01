@@ -37,7 +37,7 @@ const providerName = ref<string>('G');
 
 const settings = ref<Setting[]>([]);
 const loading = ref(false);
-const editingId = ref<null | number>(null);
+const editingId = ref<null | string>(null);
 const editingValue = ref<string>('');
 
 const userKeyMap = ref<Record<string, string>>({});
@@ -103,6 +103,21 @@ async function loadSettings() {
   }
 }
 
+/**
+ * 打开弹窗时回填左侧表单：标题/名称随当前定义刷新；
+ * 若已有全局(G)配置则把其值回显到「值」输入框，便于核对与改写后另存。
+ */
+async function syncFormEcho() {
+  const globalSetting = settings.value.find((row) => row.providerName === 'G');
+  await formApi.setValues({
+    title: titleText.value,
+    name: nameText.value,
+    providerName: 'G',
+    providerKey: '',
+    value: globalSetting?.value ?? '',
+  });
+}
+
 /** 提交左侧表单；可选保存成功后关闭弹窗。 */
 async function persistForm(closeAfterSave: boolean): Promise<boolean> {
   const { valid } = await formApi.validate();
@@ -111,19 +126,30 @@ async function persistForm(closeAfterSave: boolean): Promise<boolean> {
   modalApi.lock(true);
   try {
     const v = await formApi.getValues();
-    await createSettingApi({
-      name: nameText.value,
-      description: titleText.value,
-      value: v.value || '',
-      providerName: v.providerName,
-      providerKey: v.providerName === 'G' ? '' : v.providerKey,
-    });
+    const provider = v.providerName as string;
+    // 全局(G)已存在时走更新，避免回显后再次「创建」触发「设置已存在」。
+    const existingGlobal =
+      provider === 'G' ? settings.value.find((row) => row.providerName === 'G') : undefined;
+    if (existingGlobal) {
+      await updateSettingApi({
+        id: existingGlobal.id,
+        request: {
+          description: titleText.value,
+          value: v.value || '',
+        },
+      });
+    } else {
+      await createSettingApi({
+        name: nameText.value,
+        description: titleText.value,
+        value: v.value || '',
+        providerName: provider,
+        providerKey: provider === 'G' ? '' : v.providerKey,
+      });
+    }
     ElMessage.success('保存成功');
     await loadSettings();
-    await formApi.setValues({
-      providerKey: '',
-      value: '',
-    });
+    await syncFormEcho();
     if (closeAfterSave) {
       modalApi.close();
     }
@@ -142,11 +168,19 @@ async function handleSave() {
   await persistForm(false);
 }
 
-/** 确定：有未提交的值则先保存再关闭，否则直接关闭。 */
+/** 确定：有未提交的改动则先保存再关闭，否则直接关闭。 */
 async function handleConfirm() {
   const values = await formApi.getValues();
-  const hasPendingInput = Boolean((values.value || '').trim());
-  if (!hasPendingInput) {
+  const currentValue = (values.value || '').trim();
+  if (!currentValue) {
+    modalApi.close();
+    return;
+  }
+  const provider = values.providerName as string;
+  const globalSetting =
+    provider === 'G' ? settings.value.find((row) => row.providerName === 'G') : undefined;
+  // 回显的 G 值未改动时，点确定只关闭，避免无意义写库。
+  if (globalSetting != null && currentValue === (globalSetting.value || '').trim()) {
     modalApi.close();
     return;
   }
@@ -154,7 +188,7 @@ async function handleConfirm() {
 }
 
 function startEdit(row: Setting) {
-  editingId.value = row.id;
+  editingId.value = String(row.id);
   editingValue.value = row.value || '';
 }
 
@@ -174,12 +208,14 @@ async function saveEdit(row: Setting) {
   ElMessage.success('更新成功');
   cancelEdit();
   await loadSettings();
+  await syncFormEcho();
 }
 
 async function handleDelete(row: Setting) {
   await deleteSettingApi(row.id);
   ElMessage.success('删除成功');
   await loadSettings();
+  await syncFormEcho();
 }
 
 const [Modal, modalApi] = useVbenModal({
@@ -190,8 +226,9 @@ const [Modal, modalApi] = useVbenModal({
     providerName.value = 'G';
     await loadProviderKeys(providerName.value);
     await formApi.resetForm();
-    await formApi.setValues({ providerName: 'G', providerKey: '', value: '' });
     await loadSettings();
+    // 须在列表加载后回填，才能把已有 G 值写到左侧「值」输入框。
+    await syncFormEcho();
   },
   onConfirm: handleConfirm,
   showCancelButton: true,
@@ -212,14 +249,12 @@ const [Form, formApi] = useVbenForm({
         fieldName: 'title',
         label: '标题',
         componentProps: { disabled: true },
-        defaultValue: titleText.value,
       },
       {
         component: 'Input',
         fieldName: 'name',
         label: '名称',
         componentProps: { disabled: true },
-        defaultValue: nameText.value,
       },
       {
         component: 'Select',
@@ -296,7 +331,7 @@ watch(
                 {{ row.providerName
                 }}<span v-if="row.providerKey">:{{ formatProviderKey(row) }}</span>
               </div>
-              <div v-if="editingId !== row.id" class="truncate text-xs text-gray-500">
+              <div v-if="editingId !== String(row.id)" class="truncate text-xs text-gray-500">
                 {{ row.value }}
               </div>
               <div v-else class="mt-1 flex items-center gap-2">
@@ -311,7 +346,7 @@ watch(
             </div>
             <div class="shrink-0">
               <ElButton
-                v-if="editingId !== row.id"
+                v-if="editingId !== String(row.id)"
                 size="small"
                 link
                 type="primary"

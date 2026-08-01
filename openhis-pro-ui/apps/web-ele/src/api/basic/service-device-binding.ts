@@ -7,6 +7,10 @@ import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 export const SERVICE_DEVICE_BIND_TYPE_USAGE = 'USAGE';
 export const SERVICE_DEVICE_BIND_TYPE_ACTIVITY = 'ACTIVITY';
 
+/** 适用范围：与领域 ServiceDeviceTemplateRangeCode 一致 */
+export const SERVICE_DEVICE_RANGE_OUTPATIENT = 'OUTPATIENT';
+export const SERVICE_DEVICE_RANGE_INPATIENT = 'INPATIENT';
+
 /** 目标表名：与 TableNameConstants 一致 */
 export const SERVICE_DEVICE_TARGET_TABLE_ACTIVITY = 'wkf_activity_definition';
 export const SERVICE_DEVICE_TARGET_TABLE_DEVICE = 'adm_device_definition';
@@ -18,6 +22,7 @@ export const SERVICE_DEVICE_STATUS_INACTIVE = 'INACTIVE';
 export interface ServiceDeviceBindingItem {
   id?: string;
   rangeCode?: string;
+  rangeName?: string;
   typeCode?: string;
   typeName?: string;
   itemTable?: string;

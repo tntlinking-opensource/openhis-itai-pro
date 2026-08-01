@@ -37,6 +37,8 @@ export interface LoadDeptIssueFormInitRequest {
 
 export interface LoadDeptIssueFormInitResponse {
   departmentPharmacyOptions?: DeptPharmacyOptionDto[];
+  /** 启用行政科室下拉（领用科室） */
+  organizationOptions?: DeptIssueOptionDto[];
   productTableOptions?: DeptIssueOptionDto[];
   statusOptions?: DeptIssueOptionDto[];
   pharmacistOptions?: DeptIssueOptionDto[];
@@ -54,6 +56,10 @@ export interface DeptIssueListRowDto {
   applyTime?: string;
   approverId?: number | string;
   approvalTime?: string;
+  /** 整单金额（侧栏总金额） */
+  totalAmount?: number;
+  /** 与 totalAmount 同口径 */
+  totalPrice?: number;
 }
 
 export interface PageDeptIssuesRequest {
@@ -81,15 +87,25 @@ export interface DeptIssueDetailLineDto {
   id?: number | string;
   itemTable?: string;
   itemId?: number | string;
+  /** 后端 IF-DEP-IS-03 字段名 */
+  itemName?: string;
   productName?: string;
+  spec?: string;
   specification?: string;
   manufacturer?: string;
   lotNumber?: string;
   traceNo?: string;
   itemQuantity?: number;
   unitCode?: string;
+  unitName?: string;
+  unitCodeDictText?: string;
   price?: number;
   totalPrice?: number;
+  /** 批号效期止点（落库 end_time） */
+  endTime?: string;
+  /** 行备注 remake */
+  remake?: string;
+  productCatalog?: { unitBands?: unknown; unitBandsJson?: unknown };
 }
 
 export interface GetDeptIssueDetailResponse {
@@ -117,10 +133,16 @@ export interface DeptIssueLineDto {
   itemQuantity?: number;
   unitCode?: string;
   price?: number;
+  /** 批号效期止点（选品 expirationDate → endTime） */
+  endTime?: string;
+  /** 行备注 remake */
+  remake?: string;
 }
 
 export interface CreateDeptIssueRequest {
   purposeLocationId: number | string;
+  /** 领用科室行政 Organization 主键（与科室药房解耦） */
+  consumingOrganizationId: number | string;
   practitionerId?: number | string;
   reason?: string;
   remake?: string;
@@ -130,6 +152,8 @@ export interface CreateDeptIssueRequest {
 export interface UpdateDeptIssueRequest {
   busNo: string;
   purposeLocationId: number | string;
+  /** 领用科室行政 Organization 主键（与科室药房解耦） */
+  consumingOrganizationId: number | string;
   practitionerId?: number | string;
   reason?: string;
   remake?: string;
@@ -185,6 +209,8 @@ export interface PageProductsForDeptIssueRequest {
   productTableName?: string;
   keyword?: string;
   purposeLocationId?: number | string;
+  /** true=仅返回账面量>0；false/未传=含零库存 */
+  positiveQuantityOnly?: boolean;
   pageNo: number;
   pageSize: number;
 }
@@ -194,10 +220,14 @@ export interface ProductDefinitionItemDto {
   productTableName?: string;
   productName?: string;
   merchandiseName?: string;
+  specification?: string;
+  manufacturer?: string;
   unitCode?: string;
   minUnitCode?: string;
   lotNumber?: string;
+  expirationDate?: string;
   price?: number;
+  purchaseUnitPrice?: number;
   availableQuantity?: number | string;
   inventoryItemId?: number | string;
 }

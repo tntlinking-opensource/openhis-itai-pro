@@ -48,9 +48,20 @@ const queryParams = ref<ScheduledJobExecutionLogListParams>({
   success: undefined,
 });
 
-const tableData = ref<ScheduledJobExecutionLog[]>([]);
+type ScheduledJobExecutionLogRow = ScheduledJobExecutionLog & { _logRowKey: string };
+
+const tableData = ref<ScheduledJobExecutionLogRow[]>([]);
 const loading = ref(false);
 const total = ref(0);
+
+/**
+ * 列表行唯一键。Snowflake Long 若被当成 Number，末位会抹平，多条记录 id 撞车后
+ * TableLayout/vxe 的 keyField 只会渲染去重后的行（表现为 total=4 却只见 2 行）。
+ */
+function buildLogRowKey(row: ScheduledJobExecutionLog, index: number) {
+  const id = row.id != null && String(row.id) !== '' ? String(row.id) : '';
+  return id ? `${id}#${index}` : `row-${index}`;
+}
 
 const tableColumns: TableColumn[] = [
   { type: 'index', label: '序号', width: 60 },
@@ -155,7 +166,11 @@ async function loadData() {
       tenantId,
       success,
     });
-    tableData.value = response.content || [];
+    const content = response.content || [];
+    tableData.value = content.map((row, index) => ({
+      ...row,
+      _logRowKey: buildLogRowKey(row, index),
+    }));
     total.value = response.totalCount || 0;
   } catch {
     ElMessage.error('加载执行记录失败');
@@ -237,7 +252,7 @@ onMounted(async () => {
     :table-columns="tableColumns"
     :show-top-query="true"
     :show-pagination="true"
-    row-key="id"
+    row-key="_logRowKey"
     @query="handleQuery"
     @reset="handleReset"
     @pagination="handlePagination"

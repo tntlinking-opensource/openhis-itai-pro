@@ -19,6 +19,8 @@ export function mapReturnPatientRowToQueuePatient(
   row: ReturnPatientRowDto,
 ): ReturnMedicineQueuePatient {
   const reception = row.receptionTime ? formatDateTime(row.receptionTime) : '';
+  // 费用性质：透传后端合同名；空则卡片组件回落「自费」
+  const feeNature = row.contractDisplay?.trim() || undefined;
   return {
     id: String(row.encounterId ?? '').trim(),
     patientName: row.patientName?.trim() || '—',
@@ -29,6 +31,7 @@ export function mapReturnPatientRowToQueuePatient(
     departmentName: row.departmentName?.trim() || '—',
     refundEnum: row.refundEnum?.trim() || '',
     refundEnumText: row.refundEnumText?.trim() || '—',
+    feeNatureLabel: feeNature,
   };
 }
 

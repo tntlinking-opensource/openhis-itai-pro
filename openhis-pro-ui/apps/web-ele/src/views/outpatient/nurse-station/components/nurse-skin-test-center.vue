@@ -28,6 +28,7 @@ import SectionTitle from '#/components/layouts/section-title.vue';
 import PatientInfoBar from '#/components/outpatient/patient-info-bar.vue';
 
 import {
+  calcSkinTestLastOccurrence,
   isSkinTestPositiveClinicalCode,
   mapSkinTestEnumOptions,
   mapSkinTestRowToTableRow,
@@ -70,11 +71,6 @@ interface Props {
 const cardRows = ref<NurseSkinTestTableRow[]>([]);
 
 const clinicalSelectOptions = computed(() => mapSkinTestEnumOptions(props.clinicalStatusOptions));
-const verificationSelectOptions = computed(() =>
-  mapSkinTestEnumOptions(props.verificationStatusOptions),
-);
-const criticalitySelectOptions = computed(() => mapSkinTestEnumOptions(props.criticalityOptions));
-const severitySelectOptions = computed(() => mapSkinTestEnumOptions(props.severityOptions));
 
 const showEmptyState = computed(
   () => !props.skinTestTableLoading && props.skinTestRows.length === 0,
@@ -103,7 +99,7 @@ function practitionerOptionsForRow(row: NurseSkinTestTableRow): { label: string;
 /** 接口行同步到卡片草稿列表 */
 function syncCardRowsFromApi() {
   cardRows.value = props.skinTestRows.map((row) =>
-    mapSkinTestRowToTableRow(row, props.defaultPractitionerId),
+    mapSkinTestRowToTableRow(row, props.defaultPractitionerId, props.verificationStatusOptions),
   );
 }
 
@@ -114,6 +110,7 @@ watch(
       props.defaultPractitionerId,
       props.defaultPractitionerName,
       props.practitionerOptions,
+      props.verificationStatusOptions,
     ] as const,
   () => {
     syncCardRowsFromApi();
@@ -126,9 +123,6 @@ function validateDraft(draft: NurseSkinTestRowDraft): null | string {
   if (!draft.clinicalStatusCode.trim()) {
     return '请选择临床结果';
   }
-  if (!draft.verificationStatusCode.trim()) {
-    return '请选择验证状态';
-  }
   if (!draft.practitionerId.trim()) {
     return '请选择执行护士';
   }
@@ -138,7 +132,17 @@ function validateDraft(draft: NurseSkinTestRowDraft): null | string {
   if (!draft.patientId.trim()) {
     return '患者信息无效，请刷新列表';
   }
+  if (!(draft.recordedDate ?? '').trim()) {
+    return '请选择开始时间';
+  }
   return null;
+}
+
+/** 开始时间变更：末次反应时间联动为 +20 分钟 */
+function handleStartTimeChange(row: NurseSkinTestTableRow, value: string | null) {
+  const start = (value ?? '').trim() || undefined;
+  row.recordedDate = start;
+  row.lastOccurrence = calcSkinTestLastOccurrence(start);
 }
 
 /** 提交当前卡片保存 */
@@ -252,55 +256,6 @@ function isPositiveClinicalRow(row: NurseSkinTestTableRow): boolean {
               </ElCol>
               <ElCol :xs="24" :sm="12" :md="6">
                 <ElFormItem
-                  label="验证状态"
-                  label-position="top"
-                  required
-                  class="skin-test-card__field"
-                >
-                  <ElSelect v-model="row.verificationStatusCode" class="w-full" placeholder="必选">
-                    <ElOption
-                      v-for="opt in verificationSelectOptions"
-                      :key="opt.value"
-                      :label="opt.label"
-                      :value="opt.value"
-                    />
-                  </ElSelect>
-                </ElFormItem>
-              </ElCol>
-              <ElCol :xs="24" :sm="12" :md="6">
-                <ElFormItem label="危险程度" label-position="top" class="skin-test-card__field">
-                  <ElSelect
-                    v-model="row.criticalityCode"
-                    class="w-full"
-                    placeholder="可选"
-                    clearable
-                  >
-                    <ElOption
-                      v-for="opt in criticalitySelectOptions"
-                      :key="opt.value"
-                      :label="opt.label"
-                      :value="opt.value"
-                    />
-                  </ElSelect>
-                </ElFormItem>
-              </ElCol>
-              <ElCol :xs="24" :sm="12" :md="6">
-                <ElFormItem label="严重程度" label-position="top" class="skin-test-card__field">
-                  <ElSelect v-model="row.severityCode" class="w-full" placeholder="可选" clearable>
-                    <ElOption
-                      v-for="opt in severitySelectOptions"
-                      :key="opt.value"
-                      :label="opt.label"
-                      :value="opt.value"
-                    />
-                  </ElSelect>
-                </ElFormItem>
-              </ElCol>
-            </ElRow>
-
-            <ElRow :gutter="12" class="skin-test-card__row skin-test-card__row--spaced">
-              <ElCol :xs="24" :sm="12" :md="6">
-                <ElFormItem
                   label="执行护士"
                   label-position="top"
                   required
@@ -343,20 +298,41 @@ function isPositiveClinicalRow(row: NurseSkinTestTableRow): boolean {
                   </ElSelect>
                 </ElFormItem>
               </ElCol>
+            </ElRow>
+
+            <ElRow :gutter="12" class="skin-test-card__row skin-test-card__row--spaced">
               <ElCol :xs="24" :sm="12" :md="6">
-                <ElFormItem label="记录时间" label-position="top" class="skin-test-card__field">
+                <ElFormItem
+                  label="开始时间"
+                  label-position="top"
+                  required
+                  class="skin-test-card__field"
+                >
                   <ElDatePicker
-                    v-model="row.recordedDate"
+                    :model-value="row.recordedDate"
                     class="!w-full"
                     type="datetime"
                     format="YYYY-MM-DD HH:mm:ss"
                     value-format="YYYY-MM-DD HH:mm:ss"
                     placeholder="默认当前"
                     clearable
+                    @update:model-value="(value) => handleStartTimeChange(row, value)"
                   />
                 </ElFormItem>
               </ElCol>
-              <ElCol :xs="24" :sm="12" :md="6" />
+              <ElCol :xs="24" :sm="12" :md="6">
+                <ElFormItem label="结束时间" label-position="top" class="skin-test-card__field">
+                  <ElDatePicker
+                    :model-value="row.lastOccurrence"
+                    class="!w-full"
+                    type="datetime"
+                    format="YYYY-MM-DD HH:mm:ss"
+                    value-format="YYYY-MM-DD HH:mm:ss"
+                    placeholder="开始时间 + 20 分钟"
+                    disabled
+                  />
+                </ElFormItem>
+              </ElCol>
             </ElRow>
 
             <ElRow :gutter="12" class="skin-test-card__row">

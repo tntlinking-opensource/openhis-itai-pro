@@ -7,21 +7,11 @@ import { ref, watch } from 'vue';
 interface UseNurseStationSelectionOptions {
   patients: Ref<PatientItem[]>;
   filteredPatients: ComputedRef<PatientItem[]>;
-  /** 已出院结算列表：禁止选中患者，避免右侧模块自动拉数 */
-  selectionDisabled?: Ref<boolean>;
 }
 
 /** 维护护士站单选/多选策略与主患者上下文。 */
 export function useNurseStationSelection(options: UseNurseStationSelectionOptions) {
-  const { filteredPatients, patients, selectionDisabled } = options;
-
-  /** 清空选中态与主患者（切换至已出院结算列表时使用）。 */
-  function clearSelection() {
-    selectedPatientIds.value.clear();
-    activePatientId.value = null;
-    lastTouchedPatientId.value = null;
-    syncPatientSelectedFlags();
-  }
+  const { filteredPatients, patients } = options;
 
   /** 当前页签对应的患者选择策略。 */
   const selectionPolicy = ref<SelectionPolicy>('single');
@@ -34,14 +24,6 @@ export function useNurseStationSelection(options: UseNurseStationSelectionOption
 
   /** 将选中 id 集合同步回患者卡片 selected 展示态。 */
   function syncPatientSelectedFlags() {
-    if (selectionDisabled?.value) {
-      selectedPatientIds.value.clear();
-      activePatientId.value = null;
-      for (const item of patients.value) {
-        item.selected = false;
-      }
-      return;
-    }
     const validIds = new Set(patients.value.map((item) => item.id));
     for (const id of [...selectedPatientIds.value]) {
       if (!validIds.has(id)) {
@@ -74,10 +56,6 @@ export function useNurseStationSelection(options: UseNurseStationSelectionOption
 
   /** 初始化默认选中与主患者。 */
   function initSelectionState() {
-    if (selectionDisabled?.value) {
-      clearSelection();
-      return;
-    }
     // 兼容 mock 数据里预置的 selected 字段。
     const preselectedIds = patients.value.filter((item) => item.selected).map((item) => item.id);
     selectedPatientIds.value = new Set(preselectedIds);
@@ -90,9 +68,6 @@ export function useNurseStationSelection(options: UseNurseStationSelectionOption
 
   /** 设置主操作患者（列表点击、床位图点击等入口统一走此方法）。 */
   function setActivePatient(id: string) {
-    if (selectionDisabled?.value) {
-      return;
-    }
     activePatientId.value = id;
     lastTouchedPatientId.value = id;
     if (selectionPolicy.value === 'single') {
@@ -147,9 +122,6 @@ export function useNurseStationSelection(options: UseNurseStationSelectionOption
 
   /** 点击卡片区域切换患者选中状态。 */
   function togglePatientCardSelection(id: string) {
-    if (selectionDisabled?.value) {
-      return;
-    }
     if (selectionPolicy.value === 'single') {
       setActivePatient(id);
       return;
@@ -169,9 +141,6 @@ export function useNurseStationSelection(options: UseNurseStationSelectionOption
 
   /** 勾选框切换患者选中。 */
   function togglePatientSelection(id: string, value: boolean) {
-    if (selectionDisabled?.value) {
-      return;
-    }
     if (selectionPolicy.value === 'single') {
       if (value) {
         setActivePatient(id);
@@ -203,7 +172,6 @@ export function useNurseStationSelection(options: UseNurseStationSelectionOption
 
   return {
     activePatientId,
-    clearSelection,
     initSelectionState,
     patientListPanelSelectionContext,
     selectedPatientIds,

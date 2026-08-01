@@ -1,0 +1,225 @@
+/**
+ * 门诊/住院发药报表 — POST /api/app/{outpatient|inpatient}MedicationDispenseReport/{method}
+ */
+import type { ApiOptionItem, PageParams } from '#/types/api-response';
+import type { BinaryExportResult } from '#/utils/export/download-binary-export';
+
+import { publicRequestClient } from '#/api/request';
+
+export const PRESENTATION_MODE_SUMMARY = 'SUMMARY' as const;
+export const PRESENTATION_MODE_DETAIL = 'DETAIL' as const;
+export type MedicationDispensePresentationMode =
+  | typeof PRESENTATION_MODE_DETAIL
+  | typeof PRESENTATION_MODE_SUMMARY;
+
+export const SUMMARY_DIMENSION_PHARMACY = 'PHARMACY' as const;
+export const SUMMARY_DIMENSION_ITEM = 'ITEM' as const;
+export const SUMMARY_DIMENSION_CATEGORY = 'CATEGORY' as const;
+export const SUMMARY_DIMENSION_DEPARTMENT = 'DEPARTMENT' as const;
+
+export const SOURCE_CODE_ALL = 'ALL' as const;
+export const SOURCE_CODE_PATIENT_DISPENSE = 'PATIENT_DISPENSE' as const;
+export const SOURCE_CODE_DEPT_ISSUE = 'DEPT_ISSUE' as const;
+
+export type MedicationDispenseReportScope = 'inpatient' | 'outpatient';
+
+const OUTPATIENT_BASE = '/outpatientMedicationDispenseReport';
+const INPATIENT_BASE = '/inpatientMedicationDispenseReport';
+
+export interface LoadMedicationDispenseReportPageInitResponse {
+  defaultDateFrom?: string;
+  defaultDateTo?: string;
+  pharmacyOptions?: ApiOptionItem[];
+  categoryOptions?: ApiOptionItem[];
+  practitionerOptions?: ApiOptionItem[];
+  recordTypeOptions?: ApiOptionItem[];
+  summaryDimensionOptions?: ApiOptionItem[];
+  sourceOptions?: ApiOptionItem[];
+  feeNatureOptions?: ApiOptionItem[];
+}
+
+export interface MedicationDispenseReportFilter {
+  dispenseDateFrom: string;
+  dispenseDateTo: string;
+  recordTypeCode?: string;
+  pharmacyLocationId?: string;
+  medicationCategoryCodes?: string[];
+  dispenserPractitionerId?: string;
+  drugKeyword?: string;
+  patientKeyword?: string;
+  sourceCode?: string;
+  feeNatureContractNo?: string;
+}
+
+export interface SummarizeMedicationDispenseReportParams extends MedicationDispenseReportFilter {
+  summaryDimension?: string;
+}
+
+export interface MedicationDispenseSummaryRowDto {
+  dimensionKey?: string;
+  summaryDimension?: string;
+  dimensionName?: string;
+  locationId?: string;
+  medicationId?: string;
+  categoryCode?: string;
+  organizationId?: string;
+  netQuantity?: number | string;
+  /** 进价净额 */
+  purchaseNetAmount?: number | string;
+  /** 售价净额 */
+  saleNetAmount?: number | string;
+  /** 净金额（售价别名） */
+  netAmount?: number | string;
+  lineCount?: number;
+}
+
+export interface SummarizeMedicationDispenseReportResponse {
+  rows?: MedicationDispenseSummaryRowDto[];
+  totalQuantity?: number | string;
+  /** 进价净额合计 */
+  purchaseTotalAmount?: number | string;
+  /** 售价净额合计 */
+  saleTotalAmount?: number | string;
+  /** 净金额合计（售价别名） */
+  totalAmount?: number | string;
+}
+
+export interface PageMedicationDispenseReportDetailParams
+  extends MedicationDispenseReportFilter,
+    PageParams {}
+
+export interface MedicationDispenseDetailRowDto {
+  sourceCode?: string;
+  sourceText?: string;
+  businessTime?: string;
+  dispenseId?: string;
+  supplyRequestId?: string;
+  busNo?: string;
+  recordTypeCode?: string;
+  recordTypeText?: string;
+  pharmacyLocationId?: string;
+  pharmacyLocationName?: string;
+  dispenserPractitionerId?: string;
+  dispenserName?: string;
+  patientId?: string;
+  patientName?: string;
+  encounterId?: string;
+  /** 门诊号 */
+  encounterBusNo?: string;
+  /** 住院号 */
+  inpatientNo?: string;
+  wardName?: string;
+  bedNo?: string;
+  prescriptionNo?: string;
+  medicationId?: string;
+  medicationCode?: string;
+  medicationName?: string;
+  medicationSpec?: string;
+  quantity?: number | string;
+  unitCode?: string;
+  unitText?: string;
+  /** 单价（售价别名） */
+  unitPrice?: number | string;
+  /** 金额（售价别名） */
+  totalAmount?: number | string;
+  purchaseUnitPrice?: number | string;
+  purchaseAmount?: number | string;
+  saleUnitPrice?: number | string;
+  saleAmount?: number | string;
+  lotNumber?: string;
+  traceNo?: string;
+  departmentId?: string;
+  departmentName?: string;
+  usageText?: string;
+  manufacturerText?: string;
+  medReqId?: string;
+  feeNatureContractNo?: string;
+  feeNatureDisplay?: string;
+  medType?: string;
+  medTypeDisplay?: string;
+}
+
+export interface PageMedicationDispenseReportDetailResponse {
+  content?: MedicationDispenseDetailRowDto[];
+  totalCount?: number;
+  pageNo?: number;
+  pageSize?: number;
+}
+
+export interface ExportMedicationDispenseReportParams extends MedicationDispenseReportFilter {
+  presentationMode: MedicationDispensePresentationMode;
+  summaryDimension?: string;
+}
+
+export type ExportMedicationDispenseReportResponse = BinaryExportResult;
+
+/** 解析门诊/住院 AppService 基路径。 */
+function resolveBase(scope: MedicationDispenseReportScope) {
+  if (scope === 'inpatient') {
+    return INPATIENT_BASE;
+  }
+  return OUTPATIENT_BASE;
+}
+
+/** 加载发药报表页筛选项与默认日期。 */
+export async function loadMedicationDispenseReportPageInitApi(
+  scope: MedicationDispenseReportScope,
+) {
+  const base = resolveBase(scope);
+  const method =
+    scope === 'inpatient'
+      ? 'loadInpatientMedicationDispenseReportPageInit'
+      : 'loadOutpatientMedicationDispenseReportPageInit';
+  return publicRequestClient.post<LoadMedicationDispenseReportPageInitResponse>(
+    `${base}/${method}`,
+    {},
+  );
+}
+
+/** 按药房/品规/类型/科室净汇总。 */
+export async function summarizeMedicationDispenseReportApi(
+  scope: MedicationDispenseReportScope,
+  body: SummarizeMedicationDispenseReportParams,
+) {
+  const base = resolveBase(scope);
+  const method =
+    scope === 'inpatient'
+      ? 'summarizeInpatientMedicationDispenseReport'
+      : 'summarizeOutpatientMedicationDispenseReport';
+  return publicRequestClient.post<SummarizeMedicationDispenseReportResponse>(
+    `${base}/${method}`,
+    body,
+  );
+}
+
+/** 明细分页（患者发退药 ∪ 科室领用/退领）。 */
+export async function pageMedicationDispenseReportDetailApi(
+  scope: MedicationDispenseReportScope,
+  body: PageMedicationDispenseReportDetailParams,
+) {
+  const base = resolveBase(scope);
+  const method =
+    scope === 'inpatient'
+      ? 'pageInpatientMedicationDispenseReportDetail'
+      : 'pageOutpatientMedicationDispenseReportDetail';
+  return publicRequestClient.post<PageMedicationDispenseReportDetailResponse>(
+    `${base}/${method}`,
+    body,
+  );
+}
+
+/** 导出当前 Tab（汇总 / 明细）xlsx。 */
+export async function exportMedicationDispenseReportApi(
+  scope: MedicationDispenseReportScope,
+  body: ExportMedicationDispenseReportParams,
+) {
+  const base = resolveBase(scope);
+  const method =
+    scope === 'inpatient'
+      ? 'exportInpatientMedicationDispenseReport'
+      : 'exportOutpatientMedicationDispenseReport';
+  return publicRequestClient.post<ExportMedicationDispenseReportResponse>(
+    `${base}/${method}`,
+    body,
+  );
+}

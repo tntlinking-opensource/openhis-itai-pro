@@ -14,7 +14,7 @@ export function toPatientCardPatient(p: NursePatient): OutpatientPatientCardPayl
     startTime: p.registrationTime ?? p.admissionTime,
     receptionTime: null,
     statusEnumText: p.status,
-    serviceTypeName: p.paymentType ?? null,
+    contractDisplay: p.paymentType ?? null,
     pendingExecuteCount: p.pendingExecuteCount,
     riskHint: p.riskHint,
   };

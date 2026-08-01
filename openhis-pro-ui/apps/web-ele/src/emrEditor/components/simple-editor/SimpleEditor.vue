@@ -18,6 +18,7 @@ import {
   ElDropdownItem,
   ElDropdownMenu,
   ElIcon,
+  ElInput,
   ElInputNumber,
   ElMessage,
   ElMessageBox,
@@ -82,6 +83,8 @@ const props = withDefaults(
      * document：填写文书（固定字无背景，与正文一致）
      */
     surface?: 'document' | 'template';
+    /** 是否显示排版工具栏；医生站书写病历时可关，模板制作保持默认 true */
+    showToolbar?: boolean;
   }>(),
   {
     autoRestoreDraft: true,
@@ -95,6 +98,7 @@ const props = withDefaults(
     readOnly: false,
     surface: 'document',
     layoutLocked: false,
+    showToolbar: true,
   },
 );
 
@@ -208,7 +212,7 @@ const mergedMetaValues = computed(() => ({
  * 将 metadata 写入正文中的元数据节点。
  * @param ed 编辑器实例
  * @param vals fieldKey / elementId → 展示值
- * @param readonlyOnly 为 true 时仅更新只读绑定域；为 false 时在套用模版后预填只读+可改域
+ * @param readonlyOnly 为 true 时：只读域始终同步；可改域仅在当前值为空时预填（保留医生已录入）
  */
 function applyMetadataValuesToDocNodes(
   ed: Editor,
@@ -218,7 +222,9 @@ function applyMetadataValuesToDocNodes(
   const { tr, doc } = ed.state;
   doc.descendants((node, pos) => {
     if (node.type.name === 'emrMetadataChip') {
-      if (readonlyOnly && node.attrs.editable !== false) return;
+      const editable = node.attrs.editable !== false;
+      const cur = String(node.attrs.value ?? '').trim();
+      if (readonlyOnly && editable && cur) return;
       const fk = node.attrs.fieldKey as string;
       if (!fk) return;
       const nextVal = vals[fk] ?? '';
@@ -230,7 +236,9 @@ function applyMetadataValuesToDocNodes(
       return;
     }
     if (node.type.name === 'emrDataElement') {
-      if (readonlyOnly && node.attrs.editable !== false) return;
+      const editable = node.attrs.editable !== false;
+      const cur = String(node.attrs.value ?? '').trim();
+      if (readonlyOnly && editable && cur) return;
       const id = String(node.attrs.elementId ?? '');
       if (!id) return;
       const nextVal = vals[id] ?? '';
@@ -309,11 +317,9 @@ const editor = useEditor({
           top: event.clientY,
         });
         if (!coords) return false;
-        // 制作模板：正文占位默认展示 label；套用/书写文书时用患者元数据
+        // 制作模板：value 留空，靠下划线槽位辨认；套用/书写文书时用患者元数据
         const value =
-          props.surface === 'template'
-            ? String(payload.label ?? '')
-            : (mergedMetaValues.value[payload.fieldKey] ?? '');
+          props.surface === 'template' ? '' : (mergedMetaValues.value[payload.fieldKey] ?? '');
         const editable = payload.editable !== false;
         event.preventDefault();
         const def = getDataElementDef(payload.fieldKey);
@@ -351,7 +357,7 @@ const editor = useEditor({
 
 watch(
   () => props.modelValue,
-  async (val) => {
+  (val) => {
     const ed = editor.value;
     if (!ed || ed.isDestroyed) return;
     const cur = JSON.stringify(ed.getJSON());
@@ -362,9 +368,9 @@ watch(
       .setMeta(EMR_CONTENT_LOCK_BYPASS_META, true)
       .setContent(val ?? defaultEmrEditorDoc, { emitUpdate: false })
       .run();
-    await nextTick();
+    // 同步写入：勿 await nextTick，否则元数据 watch 与套模板竞态时会出现首屏空白、再点才填充
     if (props.surface === 'document') {
-      applyMetadataValuesToDocNodes(ed, mergedMetaValues.value, false);
+      applyMetadataValuesToDocNodes(ed, mergedMetaValues.value, true);
     }
   },
   { deep: true },
@@ -676,6 +682,143 @@ function onDividerLineWidthChange(v: number | undefined) {
   applyDividerLineAttrs({ lineWidth: v });
 }
 
+/** 侧栏元数据分组顺序（未列出的来源排在 MANUAL 前） */
+const META_SOURCE_GROUP_ORDER = [
+  'PATIENT',
+  'ENCOUNTER',
+  'ADMISSION',
+  'DEPT',
+  'WARD',
+  'DIAGNOSIS',
+  'ALLERGY',
+  'VITAL_SIGN',
+  'LAB_SUMMARY',
+  'EXAM_SUMMARY',
+  'USER',
+  'USER_DEPT',
+  'PRACTITIONER',
+  'ORG',
+  'INSURANCE',
+  'SYSTEM',
+  'SETTING',
+  'DOCUMENT',
+  'TEMPLATE',
+  'VERSION',
+  'CONST',
+  'DICT',
+  'READ_MODEL',
+  'EXPR',
+  'FIELD_REF',
+  'HTTP_API',
+  'REQUEST',
+  'MANUAL',
+] as const;
+
+const META_SOURCE_LABELS: Record<string, string> = {
+  PATIENT: '患者主档',
+  ENCOUNTER: '就诊',
+  ADMISSION: '入院',
+  DEPT: '科室',
+  WARD: '病区',
+  DIAGNOSIS: '诊断',
+  ALLERGY: '过敏',
+  VITAL_SIGN: '体征',
+  LAB_SUMMARY: '检验',
+  EXAM_SUMMARY: '检查',
+  USER: '当前用户',
+  USER_DEPT: '用户科室',
+  PRACTITIONER: '医务人员',
+  ORG: '机构',
+  INSURANCE: '医保',
+  SYSTEM: '系统',
+  SETTING: '系统配置',
+  DOCUMENT: '文书',
+  TEMPLATE: '模板',
+  VERSION: '版本',
+  CONST: '常量',
+  DICT: '字典',
+  READ_MODEL: '读模型',
+  EXPR: '表达式',
+  FIELD_REF: '引用字段',
+  HTTP_API: '外部接口',
+  REQUEST: '请求覆盖',
+  MANUAL: '手工录入',
+  OTHER: '其他',
+};
+
+/** 默认展开：患者 + 就诊相关 */
+const META_SOURCE_DEFAULT_OPEN = new Set(['PATIENT', 'ENCOUNTER', 'ADMISSION', 'DEPT', 'WARD']);
+
+const metaSearchKeyword = ref('');
+/** true = 折叠；未写入则按默认展开规则 */
+const metaGroupCollapsed = ref<Record<string, boolean>>({});
+
+function metaSourceKey(field: EmrMetadataField) {
+  const s = field.valueSource?.trim();
+  return s || 'OTHER';
+}
+
+function metaSourceLabel(source: string) {
+  return META_SOURCE_LABELS[source] ?? source;
+}
+
+function isMetaGroupOpen(source: string) {
+  if (metaSearchKeyword.value.trim()) return true;
+  if (Object.prototype.hasOwnProperty.call(metaGroupCollapsed.value, source)) {
+    return !metaGroupCollapsed.value[source];
+  }
+  return META_SOURCE_DEFAULT_OPEN.has(source);
+}
+
+function toggleMetaGroup(source: string) {
+  if (metaSearchKeyword.value.trim()) return;
+  const nextCollapsed = isMetaGroupOpen(source);
+  metaGroupCollapsed.value = { ...metaGroupCollapsed.value, [source]: nextCollapsed };
+}
+
+function metaChipTitle(field: EmrMetadataField) {
+  const val = mergedMetaValues.value[field.fieldKey];
+  const parts = [field.label, field.fieldKey];
+  if (val) parts.push(val);
+  return parts.join(' · ');
+}
+
+const filteredMetadataFields = computed(() => {
+  const kw = metaSearchKeyword.value.trim().toLowerCase();
+  const list = props.metadataFields ?? [];
+  if (!kw) return list;
+  return list.filter(
+    (f) => f.label.toLowerCase().includes(kw) || f.fieldKey.toLowerCase().includes(kw),
+  );
+});
+
+const metadataFieldGroups = computed(() => {
+  const buckets = new Map<string, EmrMetadataField[]>();
+  for (const f of filteredMetadataFields.value) {
+    const key = metaSourceKey(f);
+    const arr = buckets.get(key);
+    if (arr) arr.push(f);
+    else buckets.set(key, [f]);
+  }
+  const orderIndex = new Map(META_SOURCE_GROUP_ORDER.map((k, i) => [k as string, i] as const));
+  const keys = [...buckets.keys()].sort((a, b) => {
+    const rank = (k: string) =>
+      k === 'OTHER'
+        ? Number.MAX_SAFE_INTEGER
+        : (orderIndex.get(k) ?? META_SOURCE_GROUP_ORDER.length);
+    const ia = rank(a);
+    const ib = rank(b);
+    if (ia !== ib) return ia - ib;
+    return a.localeCompare(b);
+  });
+  return keys.map((source) => ({
+    source,
+    label: metaSourceLabel(source),
+    fields: buckets.get(source)!,
+    open: isMetaGroupOpen(source),
+  }));
+});
+
 function onMetaDragStart(e: DragEvent, field: EmrMetadataField) {
   if (props.layoutLocked || props.readOnly) {
     e.preventDefault();
@@ -960,6 +1103,7 @@ defineExpose({
     :class="{
       'simple-editor--layout-locked': layoutLocked,
       'simple-editor--surface-template': surface === 'template',
+      'simple-editor--surface-document': surface === 'document',
     }"
     :style="pageMarginStyle"
   >
@@ -970,36 +1114,64 @@ defineExpose({
           拖到正文插入字段：正文内仅展示取值；「只读」随患者信息更新，「可改」可手工修正。
         </p>
         <p v-else class="simple-editor__sidebar-hint">版式已锁定，不可从侧栏拖入新字段。</p>
-        <div
-          v-for="f in metadataFields"
-          :key="f.fieldKey"
-          class="simple-editor__meta-chip"
-          :class="{ 'simple-editor__meta-chip--layout-locked': layoutLocked }"
-          :draggable="canChangeLayout"
-          @dragstart="onMetaDragStart($event, f)"
+        <ElInput
+          v-model="metaSearchKeyword"
+          class="simple-editor__sidebar-search"
+          clearable
+          placeholder="搜索名称 / 编码"
+          size="small"
         >
-          <div class="simple-editor__meta-chip-head">
-            <span class="simple-editor__meta-chip-label">{{ f.label }}</span>
-            <span
-              class="simple-editor__meta-chip-badge"
-              :class="
-                f.editable === false
-                  ? 'simple-editor__meta-chip-badge--locked'
-                  : 'simple-editor__meta-chip-badge--edit'
-              "
+          <template #prefix>
+            <ElIcon><Search /></ElIcon>
+          </template>
+        </ElInput>
+        <div v-if="metadataFieldGroups.length === 0" class="simple-editor__sidebar-empty">
+          无匹配字段
+        </div>
+        <div v-for="g in metadataFieldGroups" :key="g.source" class="simple-editor__meta-group">
+          <button
+            type="button"
+            class="simple-editor__meta-group-head"
+            :aria-expanded="g.open"
+            @click="toggleMetaGroup(g.source)"
+          >
+            <ElIcon
+              class="simple-editor__meta-group-caret"
+              :class="{ 'simple-editor__meta-group-caret--open': g.open }"
             >
-              {{ f.editable === false ? '只读' : '可改' }}
-            </span>
+              <ArrowDown />
+            </ElIcon>
+            <span class="simple-editor__meta-group-label">{{ g.label }}</span>
+            <span class="simple-editor__meta-group-count">{{ g.fields.length }}</span>
+          </button>
+          <div v-show="g.open" class="simple-editor__meta-group-body">
+            <div
+              v-for="f in g.fields"
+              :key="f.fieldKey"
+              class="simple-editor__meta-chip"
+              :class="{ 'simple-editor__meta-chip--layout-locked': layoutLocked }"
+              :draggable="canChangeLayout"
+              :title="metaChipTitle(f)"
+              @dragstart="onMetaDragStart($event, f)"
+            >
+              <span class="simple-editor__meta-chip-label">{{ f.label }}</span>
+              <span
+                class="simple-editor__meta-chip-badge"
+                :class="
+                  f.editable === false
+                    ? 'simple-editor__meta-chip-badge--locked'
+                    : 'simple-editor__meta-chip-badge--edit'
+                "
+              >
+                {{ f.editable === false ? '只读' : '可改' }}
+              </span>
+            </div>
           </div>
-          <span class="simple-editor__meta-chip-key">{{ f.fieldKey }}</span>
-          <span class="simple-editor__meta-chip-val">
-            {{ mergedMetaValues[f.fieldKey] ?? '—' }}
-          </span>
         </div>
       </aside>
 
       <div class="simple-editor__main">
-        <div class="simple-editor__toolbar">
+        <div v-if="showToolbar" class="simple-editor__toolbar">
           <ElButton
             class="simple-editor__icon-btn"
             text
@@ -1584,7 +1756,7 @@ defineExpose({
 }
 
 .simple-editor__sidebar {
-  width: 200px;
+  width: 220px;
   flex-shrink: 0;
   padding: 10px 10px 12px;
   border-right: 1px solid #e5e7eb;
@@ -1603,16 +1775,83 @@ defineExpose({
   font-size: 11px;
   color: #6b7280;
   line-height: 1.4;
-  margin: 0 0 10px;
+  margin: 0 0 8px;
+}
+
+.simple-editor__sidebar-search {
+  margin-bottom: 8px;
+}
+
+.simple-editor__sidebar-empty {
+  font-size: 12px;
+  color: #9ca3af;
+  padding: 8px 2px;
+}
+
+.simple-editor__meta-group {
+  margin-bottom: 4px;
+}
+
+.simple-editor__meta-group-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 4px 2px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: #4b5563;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.simple-editor__meta-group-head:hover {
+  color: #1f2937;
+}
+
+.simple-editor__meta-group-caret {
+  flex-shrink: 0;
+  font-size: 12px;
+  transition: transform 0.15s ease;
+  transform: rotate(-90deg);
+}
+
+.simple-editor__meta-group-caret--open {
+  transform: rotate(0deg);
+}
+
+.simple-editor__meta-group-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.simple-editor__meta-group-count {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: #9ca3af;
+}
+
+.simple-editor__meta-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 0 6px;
 }
 
 .simple-editor__meta-chip {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 8px;
-  margin-bottom: 8px;
-  border-radius: 8px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
   border: 1px dashed #c7d2fe;
   background: #eef2ff;
   cursor: grab;
@@ -1623,26 +1862,23 @@ defineExpose({
   cursor: grabbing;
 }
 
-.simple-editor__meta-chip-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
-
 .simple-editor__meta-chip-label {
-  font-size: 13px;
+  min-width: 0;
+  font-size: 12px;
   font-weight: 600;
   color: #312e81;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .simple-editor__meta-chip-badge {
   flex-shrink: 0;
-  padding: 1px 6px;
+  padding: 0 5px;
   border-radius: 4px;
   font-size: 10px;
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 .simple-editor__meta-chip-badge--locked {
@@ -1653,17 +1889,6 @@ defineExpose({
 .simple-editor__meta-chip-badge--edit {
   background: #dcfce7;
   color: #166534;
-}
-
-.simple-editor__meta-chip-key {
-  font-size: 11px;
-  color: #6366f1;
-  font-family: ui-monospace, monospace;
-}
-
-.simple-editor__meta-chip-val {
-  font-size: 12px;
-  color: #4b5563;
 }
 
 .simple-editor__main {

@@ -1,10 +1,11 @@
 import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
 
+import { formatWesternEditDoseSegment } from '#/utils/doctor-station/medication-dose-display';
 import { calcMoneyLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
 
 import type { AdviceDrugItem } from './advice.types';
 import type { AdviceLineEditorKind } from './advice-row';
-import { isInpatientLongTermMedicationTherapy } from './advice-row';
+import { isEntrustAdviceDrugItem, isInpatientLongTermMedicationTherapy } from './advice-row';
 import { formatMoneyStrYuan, formatUnitPriceYuan, terminologyLabel } from './advice-format';
 import { totalAmountUnitDisplayLabel } from './medication-unit-bands';
 
@@ -31,19 +32,13 @@ export function formatWesternCollapsedSummary(
   const usageLabel = terminologyLabel(opts.medicationRouteOptions, item.usage);
   const freqLabel = terminologyLabel(opts.medicationRateOptions, item.frequency);
   const totalUnitLabel = totalAmountUnitDisplayLabel(item);
-  const sd =
-    item.singleDose === undefined ||
-    item.singleDose === null ||
-    !Number.isFinite(Number(item.singleDose))
-      ? '—'
-      : String(item.singleDose);
+  const dosePart = formatWesternEditDoseSegment(item);
   const ta =
     item.totalAmount === undefined ||
     item.totalAmount === null ||
     !Number.isFinite(Number(item.totalAmount))
       ? '—'
       : String(item.totalAmount);
-  const dosePart = `${sd}${item.doseMainUnit || ''}/次`;
   if (isInpatientLongTermMedicationTherapy(item.therapyEnum)) {
     return `${dosePart}，${usageLabel}，${freqLabel}`;
   }
@@ -55,7 +50,7 @@ export function formatWesternCollapsedTooltip(
   opts: CollapsedSummaryOptions,
 ): string {
   const head = `${item.selectedDrugName || '-'}【${item.selectedDrugSpec || '-'}】单价：${formatUnitPriceYuan(item.selectedDrugPrice)}`;
-  const tail = `${item.diagnosis || '-'} | ${item.feeNature} | ${formatWesternCollapsedSummary(item, opts)} | 总金额：${formatMoneyStrYuan(calcLineTotalFee(item))}`;
+  const tail = `${item.feeNature} | ${formatWesternCollapsedSummary(item, opts)} | 总金额：${formatMoneyStrYuan(calcLineTotalFee(item))}`;
   return `${head} | ${tail}`;
 }
 
@@ -74,6 +69,10 @@ function formatServiceCollapsedSummary(
   item: AdviceDrugItem,
   opts?: CollapsedSummaryOptions,
 ): string {
+  if (isEntrustAdviceDrugItem(item)) {
+    const body = String(item.entrustContent ?? '').trim() || '—';
+    return `嘱托：${body}`;
+  }
   const qty =
     item.serviceQuantity === undefined ||
     item.serviceQuantity === null ||

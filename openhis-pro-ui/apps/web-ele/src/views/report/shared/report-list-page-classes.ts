@@ -14,3 +14,5 @@ export const REPORT_TABLE_EMPTY_VALUE = 'report-list-page__empty-value';
 export const REPORT_QUERY_CONTROL = 'report-list-page__query-control';
 
 export const REPORT_QUERY_CONTROL_DATERANGE = 'report-list-page__query-control--daterange';
+
+export const REPORT_QUERY_CONTROL_DATETIMERANGE = 'report-list-page__query-control--datetimerange';

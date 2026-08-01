@@ -144,9 +144,14 @@ function initComponentAdapter() {
           ),
         );
         return () => {
-          // 将 0/1 转换为 true/false 传递给 ElCheckbox
+          // API Boolean / 历史 0·1 均需能回显；仅认 1 时 true 会一直不勾选
           const modelValue = props.modelValue ?? attrs.modelValue;
-          const checkboxValue = modelValue === 1 || modelValue === '1';
+          const checkboxValue =
+            modelValue === true ||
+            modelValue === 1 ||
+            modelValue === '1' ||
+            modelValue === 'true' ||
+            modelValue === 'TRUE';
 
           // 处理更新事件，将 true/false 转换为 0/1
           const handleUpdate = (value: boolean) => {

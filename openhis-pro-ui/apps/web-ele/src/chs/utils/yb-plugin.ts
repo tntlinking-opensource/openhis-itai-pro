@@ -69,11 +69,11 @@ export interface YbSocialCardReadResult {
   psnName: string;
   /** 卡复位信息（历史字节，最多 26 位） */
   cardRest: string;
-  /** ReadCardBas 业务扩展区（跨省 03 时部分平台要求 Base64 卡串） */
+  /** ReadCardBas 业务扩展区（BusiCardInfo / pOutBusiBuff，东软 Base64 卡串） */
   busiCardInfo?: string;
 }
 
-/** 1101 就诊凭证（由社保卡读卡结果解析） */
+/** 社保卡就诊凭证（1101 / 2201 等共用同一解析结果） */
 export interface SocialCard1101Credential {
   cardSn?: string;
   certno?: string;
@@ -82,30 +82,30 @@ export interface SocialCard1101Credential {
   psnCertType: string;
 }
 
-function normalizeAdmdvsDigits(admdvs?: string): string {
-  return String(admdvs ?? '').replace(/\D/g, '');
-}
-
-/** 吉林省省内发卡（含长春本地、省内异地）：1101 应走 02 身份证，勿用 03 卡号（东软会 Base64 解密卡串）。 */
-export function isJilinInProvinceIssuingArea(issuingAreaCode?: string): boolean {
-  const insu = normalizeAdmdvsDigits(issuingAreaCode);
-  if (insu.length < 2) {
-    return true;
-  }
-  return insu.startsWith('22');
-}
-
 /**
- * 社保卡 → 1101 凭证。
- * 省内/本地：mdtrt_cert_type=02 + 身份证号；跨省：03 + 卡号 + card_sn。
+ * 社保卡 → 就诊凭证（1101 / 2201 规则一致，与省内省外无关）。
+ * <p>有 BusiCardInfo → 03 + 卡串 + card_sn（东软对 03 做 Base64 解密，勿传明文卡号）；
+ * 无卡串有身份证 → 02 + 身份证；否则 03 + 卡号 + card_sn。</p>
  */
 export function resolveSocialCard1101Credential(
   card: YbSocialCardReadResult,
 ): SocialCard1101Credential {
   const certno = (card.certno ?? '').trim().toUpperCase();
-  const inProvince = isJilinInProvinceIssuingArea(card.issuingAreaCode);
+  const busiCardInfo = (card.busiCardInfo ?? '').trim();
+  const cardSn = (card.cardSn ?? '').trim();
+  const cardNo = (card.mdtrtCertNo ?? '').trim();
 
-  if (certno && inProvince) {
+  if (busiCardInfo) {
+    return {
+      mdtrtCertType: '03',
+      mdtrtCertNo: busiCardInfo,
+      cardSn: cardSn || undefined,
+      certno: certno || undefined,
+      psnCertType: '01',
+    };
+  }
+
+  if (certno) {
     return {
       mdtrtCertType: '02',
       mdtrtCertNo: certno,
@@ -116,9 +116,9 @@ export function resolveSocialCard1101Credential(
 
   return {
     mdtrtCertType: '03',
-    mdtrtCertNo: card.mdtrtCertNo.trim(),
-    cardSn: card.cardSn?.trim() || undefined,
-    certno: certno || undefined,
+    mdtrtCertNo: cardNo,
+    cardSn: cardSn || undefined,
+    certno: undefined,
     psnCertType: '01',
   };
 }
@@ -686,7 +686,7 @@ export async function invokeYbPlugin(
       url,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
         body: JSON.stringify(data),
       },
       timeoutMs,
@@ -710,7 +710,7 @@ export async function invokeYbPlugin(
   return parsePluginPlainText(text, data.FunctionId);
 }
 
-/** 读社保卡并解析 1101 凭证（省内 02 / 跨省 03） */
+/** 读社保卡并解析就诊凭证（1101/2201 同口径：有卡串则 03，否则有证号则 02） */
 export async function invokeSocialCardRead(
   data: YbPluginInitInput,
   pluginUrl = getYbPluginDataUrl(),
@@ -723,7 +723,7 @@ export async function invokeSocialCardRead(
       url,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
         body: JSON.stringify({ ...data, FunctionId: YB_PLUGIN_FUNCTION_ID.SOCIAL_CARD }),
       },
       timeoutMs,

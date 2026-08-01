@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
+import './station-tri-pane-layout.css';
+
 /**
  * 门诊/临床「工作站」三窗格布局骨架（左队列 / 中主区 / 右辅助 + 底栏）。
  *
@@ -121,15 +123,3 @@ const gridCssVars = computed(() => ({
     <slot name="drawer"></slot>
   </div>
 </template>
-
-<style scoped>
-.station-tri-pane-layout__grid {
-  grid-template-columns: var(--stp-grid-cols);
-}
-
-@media (min-width: 1024px) {
-  .station-tri-pane-layout__grid {
-    grid-template-columns: var(--stp-grid-cols-lg);
-  }
-}
-</style>

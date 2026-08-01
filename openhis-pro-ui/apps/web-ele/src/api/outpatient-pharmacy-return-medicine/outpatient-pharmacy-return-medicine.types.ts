@@ -50,6 +50,8 @@ export interface ReturnPatientRowDto {
   refundEnumText?: null | string;
   encounterNo?: null | string;
   receptionTime?: null | string;
+  /** 费用性质展示名（就诊优先合同名；空则前端回落自费） */
+  contractDisplay?: null | string;
 }
 
 export interface PageReturnPatientResponse {

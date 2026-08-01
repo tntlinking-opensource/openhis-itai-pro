@@ -2,13 +2,19 @@
 import type { AdviceDrugItem, AdviceDrugPatchPayload } from '../services/advice.types';
 
 import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
+import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
 import type { DiagnosisConfirmPayload, DiagnosisItem } from '#/components/doctor-station/diagnosis';
 
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 
-import { ElButton, ElCheckbox, ElInputNumber, ElMessage, ElOption, ElSelect } from 'element-plus';
+import { ElCheckbox, ElInputNumber, ElMessage, ElOption, ElSelect } from 'element-plus';
 
-import { DiagnosisPickerDialog } from '#/components/doctor-station/diagnosis';
+import {
+  AdviceDiagnosisBindPanel,
+  DiagnosisPickerDialog,
+} from '#/components/doctor-station/diagnosis';
+import { formatAdviceDrugInfoStockText } from '#/utils/doctor-station/advice-catalog-stock-display';
+import { formatPackagePerMinUnitText } from '#/utils/doctor-station/medication-package-min-unit-display';
 
 import {
   contractSelectionFromValue,
@@ -34,17 +40,29 @@ const props = withDefaults(
     /** IF-DOR-18 用法选项 */
     medicationRouteOptions?: TerminologyOptionDto[];
     patientDiagnoses: DiagnosisItem[];
+    encounterId?: string;
+    patientId?: string;
   }>(),
   {
     medicationRateOptions: () => [],
     medicationRouteOptions: () => [],
     feeNatureOptions: () => [],
+    encounterId: '',
+    patientId: '',
   },
 );
 
 const emit = defineEmits<{
   patch: [payload: AdviceDrugPatchPayload];
   'update:patientDiagnoses': [value: DiagnosisItem[]];
+  /** 选择诊断弹窗内删除就诊诊断后，通知父级刷新 */
+  diagnosisDeleted: [encounterDiagnosisId: string];
+  /** 选择诊断弹窗内切换主诊后，通知父级刷新 */
+  diagnosisMainSwitched: [];
+  /** 打开选择诊断弹窗时已拉取最新列表 */
+  diagnosisOptionsRefreshed: [
+    payload: { displayRows: EncounterDiagnosisRowDto[]; items: DiagnosisItem[] },
+  ];
 }>();
 
 const patch = <K extends keyof AdviceDrugItem>(key: K, value: AdviceDrugItem[K]) => {
@@ -56,6 +74,12 @@ function patchContract(contractId: string) {
   patch('contractId', sel.contractId);
   patch('feeNature', sel.feeNature);
 }
+
+/** 包装与最小单位不同时：「每盒30片」类文案 */
+const packagePerMinUnitText = computed(() => formatPackagePerMinUnitText(props.item));
+
+/** 选品库存：「库存：4盒6片」；无库存字段时为空 */
+const stockDisplayText = computed(() => formatAdviceDrugInfoStockText(props.item));
 
 function handleTotalAmountUnitChange(value: unknown) {
   const nu = String(value ?? '').trim();
@@ -97,27 +121,64 @@ function openDiagnosisDialog(byAuto = false) {
   diagnosisDialogVisible.value = true;
 }
 
-function handleDiagnosisFocus() {
-  const current = props.item;
-  if (
-    props.patientDiagnoses.length === 0 &&
-    !current.diagnosis &&
-    !diagnosisAutoPromptMuted.value
-  ) {
-    openDiagnosisDialog(true);
-  }
-}
-
 function handleDiagnosisConfirm(payload: DiagnosisConfirmPayload) {
   diagnosisDialogConfirmed.value = true;
   const exists = props.patientDiagnoses.some((item) => item.id === payload.selected.id);
   const next = exists ? props.patientDiagnoses : [...props.patientDiagnoses, payload.selected];
   emit('update:patientDiagnoses', next);
-  patch('diagnosis', payload.selected.name);
+  const eid = String(payload.selected.encounterDiagnosisId ?? '').trim();
+  if (eid) {
+    const raw = [...(props.item.encounterDiagnosisIds ?? []), eid];
+    const mainIdSet = new Set(
+      next
+        .filter((d) => Number(d.mainDiagnosisFlag) === 1)
+        .map((d) => String(d.encounterDiagnosisId ?? d.id ?? '').trim())
+        .filter(Boolean),
+    );
+    const mains = raw.filter((id) => mainIdSet.has(id));
+    const others = raw.filter((id) => !mainIdSet.has(id));
+    const ordered = [...mains, ...others];
+    const names = ordered
+      .map((id) => {
+        const hit = next.find((d) => String(d.encounterDiagnosisId ?? d.id ?? '').trim() === id);
+        return String(hit?.name ?? '').trim();
+      })
+      .filter(Boolean);
+    patch('encounterDiagnosisIds', ordered);
+    patch('diagnosis', names.join('、'));
+  } else {
+    patch('diagnosis', payload.selected.name);
+  }
   diagnosisAutoPromptMuted.value = false;
-  if (payload.saveAsCommon) {
+  if (payload.saveAsPersonal || payload.saveAsDepartment || payload.saveAsCommon) {
     ElMessage.success('诊断已保存为常用');
   }
+}
+
+/** 多选诊断：主诊优先，同步展示名。 */
+function patchEncounterDiagnosisIds(value: unknown) {
+  const raw = Array.isArray(value)
+    ? value.map((id) => String(id ?? '').trim()).filter(Boolean)
+    : [];
+  const mainIdSet = new Set(
+    props.patientDiagnoses
+      .filter((d) => Number(d.mainDiagnosisFlag) === 1)
+      .map((d) => String(d.encounterDiagnosisId ?? d.id ?? '').trim())
+      .filter(Boolean),
+  );
+  const mains = raw.filter((id) => mainIdSet.has(id));
+  const others = raw.filter((id) => !mainIdSet.has(id));
+  const ordered = [...mains, ...others];
+  const names = ordered
+    .map((id) => {
+      const hit = props.patientDiagnoses.find(
+        (d) => String(d.encounterDiagnosisId ?? d.id ?? '').trim() === id,
+      );
+      return String(hit?.name ?? '').trim();
+    })
+    .filter(Boolean);
+  patch('encounterDiagnosisIds', ordered);
+  patch('diagnosis', names.join('、'));
 }
 
 function handleDiagnosisDialogVisibleChange(visible: boolean) {
@@ -137,8 +198,19 @@ function handleDiagnosisDialogVisibleChange(visible: boolean) {
     <div class="product-info-row">
       <span class="meta-label product-info-label">药品信息:</span>
       <span class="product-text">
-        {{ item.selectedDrugName || '-' }}【{{ item.selectedDrugSpec || '-' }}】 单价：
-        {{ formatUnitPriceYuan(item.selectedDrugPrice) }}
+        {{ item.selectedDrugName || '-' }}【{{ item.selectedDrugSpec || '-' }}】
+        <template v-if="packagePerMinUnitText">
+          <span class="product-info-gap">{{ packagePerMinUnitText }}</span>
+        </template>
+        <template v-if="stockDisplayText">
+          <span class="product-info-gap">{{ stockDisplayText }}</span>
+        </template>
+        <span class="product-info-gap"
+          >单价：{{ formatUnitPriceYuan(item.selectedDrugPrice) }}</span
+        >
+        <span v-if="item.chrgitmLvText" class="chrgitm-lv-text product-info-gap">{{
+          item.chrgitmLvText
+        }}</span>
       </span>
       <span class="product-total-amount">总金额：{{ formatMoneyStrYuan(calcTotalFee(item)) }}</span>
     </div>
@@ -157,25 +229,20 @@ function handleDiagnosisDialogVisibleChange(visible: boolean) {
       <div class="field-item">
         <span class="meta-label">诊断</span>
         <div class="diagnosis-field-wrap">
-          <ElSelect
-            :model-value="item.diagnosis"
-            filterable
-            clearable
-            placeholder="请选择诊断"
-            @focus="handleDiagnosisFocus"
-            @update:model-value="(value: unknown) => patch('diagnosis', String(value || ''))"
-          >
-            <ElOption
-              v-for="diagnosis in patientDiagnoses"
-              :key="diagnosis.id"
-              :label="diagnosis.name"
-              :value="diagnosis.name"
-            />
-          </ElSelect>
-          <ElButton link type="primary" @click="openDiagnosisDialog(false)">添加诊断</ElButton>
+          <AdviceDiagnosisBindPanel
+            :selected-ids="item.encounterDiagnosisIds ?? []"
+            :options="patientDiagnoses"
+            :encounter-id="encounterId"
+            :patient-id="patientId"
+            @update:selected-ids="patchEncounterDiagnosisIds"
+            @add-diagnosis="openDiagnosisDialog(false)"
+            @deleted="(id) => emit('diagnosisDeleted', id)"
+            @main-switched="() => emit('diagnosisMainSwitched')"
+            @options-refreshed="(payload) => emit('diagnosisOptionsRefreshed', payload)"
+          />
         </div>
       </div>
-      <div class="field-item">
+      <div class="field-item fee-nature-field">
         <span class="meta-label">费用性质</span>
         <ElSelect
           :model-value="item.contractId"
@@ -342,6 +409,16 @@ function handleDiagnosisDialogVisibleChange(visible: boolean) {
   min-width: 0;
 }
 
+.product-info-gap {
+  margin-left: 12px;
+}
+
+/* 医保等级：仅展示甲/乙/自费等文案，醒目区分于品名单价 */
+.chrgitm-lv-text {
+  color: var(--el-color-warning);
+  font-weight: 700;
+}
+
 .meta-label {
   color: #4b5563;
   font-size: 12px;
@@ -378,7 +455,7 @@ function handleDiagnosisDialogVisibleChange(visible: boolean) {
 }
 
 .top-row {
-  grid-template-columns: 220px 320px 220px 180px;
+  grid-template-columns: 220px 320px auto auto;
   gap: 10px 14px;
   margin-bottom: 10px;
 }
@@ -402,14 +479,20 @@ function handleDiagnosisDialogVisibleChange(visible: boolean) {
   width: 100%;
 }
 
-.diagnosis-field-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.fee-nature-field :deep(.el-select) {
+  width: 130px;
 }
 
-.diagnosis-field-wrap :deep(.el-select) {
-  width: calc(100% - 48px);
+.diagnosis-field-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.diagnosis-field-wrap :deep(.dx-bind) {
+  width: 100%;
 }
 
 .skin-test-item :deep(.el-checkbox) {

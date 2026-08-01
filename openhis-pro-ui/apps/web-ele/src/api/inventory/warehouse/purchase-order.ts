@@ -21,6 +21,8 @@ export interface LoadPurchaseOrderFormInitRequest {
 
 export interface LoadPurchaseOrderFormInitResponse {
   warehouseLocationOptions?: PurchaseOrderFormInitOptionDto[];
+  /** 关联科室采购申请弹窗：科室药房下拉（首项全部=0） */
+  departmentPharmacyLocationOptions?: PurchaseOrderFormInitOptionDto[];
   supplierOptions?: PurchaseOrderFormInitOptionDto[];
   warehouseKeeperOptions?: PurchaseOrderFormInitOptionDto[];
   statusOptions?: PurchaseOrderFormInitOptionDto[];
@@ -87,6 +89,8 @@ export interface PurchaseOrderDetailLineDto {
 
 export interface GetPurchaseOrderDetailResponse {
   busNo?: string;
+  /** 可选：来源科室采购申请单号 */
+  originalBusNo?: string;
   typeEnum?: string;
   statusEnum?: string;
   supplierId?: number | string;
@@ -113,6 +117,8 @@ export interface PurchaseOrderLineDto {
 
 export interface CreatePurchaseOrderRequest {
   purposeLocationId: number | string;
+  /** 可选：已同意科室采购申请单号；空=手工直建 */
+  originalBusNo?: string;
   categoryEnum?: string;
   supplierId?: number | string;
   practitionerId: number | string;
@@ -178,6 +184,8 @@ export interface RemovePurchaseOrderRequest {
 export interface PageProductsForPurchaseRequest {
   purposeLocationId: number | string;
   productTableName?: string;
+  /** 预警勾选带回的产品定义主键；非空时按 id 收窄选品 */
+  productDefinitionIds?: string[];
   keyword?: string;
   categoryCode?: string;
   activeFlag?: boolean;
@@ -199,16 +207,57 @@ export interface ProductDefinitionItemDto {
   unitCode?: string;
   minUnitCode?: string;
   categoryCode?: string;
+  categoryCodeDictText?: string;
   price?: number;
   purchasePrice?: number;
+  availableQuantity?: number | null;
+  unitBands?: unknown[];
   manufacturer?: string;
+  totalVolume?: string;
   pyStr?: string;
   wbStr?: string;
 }
 
 export interface PageProductsForPurchaseResponse {
   total?: number;
-  records: ProductDefinitionItemDto[];
+  totalCount?: number;
+  content?: ProductDefinitionItemDto[];
+  /** 兼容旧分页字段 */
+  records?: ProductDefinitionItemDto[];
+}
+
+/** 预警筛：expire=效期 / lowStock=库存 / all=全部 */
+export type PurchaseWarningFilter = 'all' | 'expire' | 'lowStock';
+
+export interface PagePurchaseWarningProductsRequest {
+  purposeLocationId: number | string;
+  productTableName: string;
+  warningFilter: PurchaseWarningFilter;
+  keyword?: string;
+  pageNo: number;
+  pageSize: number;
+}
+
+export interface PurchaseWarningProductRowDto {
+  productDefinitionId?: number | string;
+  productTableName?: string;
+  productBusNo?: string;
+  productName?: string;
+  specification?: string;
+  hitExpire?: boolean;
+  hitLowStock?: boolean;
+  latestExpirationDate?: string;
+  remainingDays?: number;
+  hospitalWidePackageQty?: number;
+}
+
+export interface PagePurchaseWarningProductsResponse {
+  totalCount?: number;
+  total?: number;
+  pageNo?: number;
+  pageSize?: number;
+  content?: PurchaseWarningProductRowDto[];
+  records?: PurchaseWarningProductRowDto[];
 }
 
 /** 列表「全部药库」占位 purposeLocationId（与 init OptionDto.value 一致，字符串） */
@@ -356,6 +405,80 @@ export async function removePurchaseOrderApi(body: RemovePurchaseOrderRequest) {
 export async function pageProductsForPurchaseApi(body: PageProductsForPurchaseRequest) {
   return requestClient.post<ApiResponse<PageProductsForPurchaseResponse>>(
     `${BASE}/pageProductsForPurchase`,
+    body,
+  );
+}
+
+/** 订货预警快捷选品分页：效期/低储/并集（品种维，只读） */
+export async function pagePurchaseWarningProductsApi(body: PagePurchaseWarningProductsRequest) {
+  return requestClient.post<ApiResponse<PagePurchaseWarningProductsResponse>>(
+    `${BASE}/pagePurchaseWarningProducts`,
+    body,
+  );
+}
+
+/** IF-WHS-PO-12：可关联科室采购申请分页（已同意且未被订货占用） */
+export interface PageLinkableDeptPurchaseRequestsRequest {
+  /** 申请科室药房；`0` 表示全部 */
+  purposeLocationId?: number | string;
+  keyword?: string;
+  applyTimeFrom?: string;
+  applyTimeTo?: string;
+  pageNo: number;
+  pageSize: number;
+}
+
+export interface LinkableDeptPurchaseRequestListRowDto {
+  busNo?: string;
+  purposeLocationId?: number | string;
+  purposeLocationName?: string;
+  statusEnum?: string;
+  statusEnumText?: string;
+  creatorName?: string;
+  approverId?: number | string;
+  approverName?: string;
+  totalAmount?: number;
+  approvalTime?: string;
+  applyTime?: string;
+  occurrenceTime?: string;
+}
+
+export interface PageLinkableDeptPurchaseRequestsResponse {
+  total?: number;
+  totalCount?: number;
+  records?: LinkableDeptPurchaseRequestListRowDto[];
+  content?: LinkableDeptPurchaseRequestListRowDto[];
+}
+
+/** IF-WHS-PO-13：按申请单号拉取订货预填明细（只读） */
+export interface GetLinkableDeptPurchaseRequestDetailRequest {
+  originalBusNo: string;
+}
+
+export interface GetLinkableDeptPurchaseRequestDetailResponse {
+  originalBusNo?: string;
+  deptPurchaseRequestBusNo?: string;
+  purposeLocationId?: number | string;
+  purposeLocationName?: string;
+  categoryEnum?: string;
+  practitionerId?: number | string;
+  lines: PurchaseOrderDetailLineDto[];
+}
+
+export async function pageLinkableDeptPurchaseRequestsApi(
+  body: PageLinkableDeptPurchaseRequestsRequest,
+) {
+  return requestClient.post<ApiResponse<PageLinkableDeptPurchaseRequestsResponse>>(
+    `${BASE}/pageLinkableDeptPurchaseRequests`,
+    body,
+  );
+}
+
+export async function getLinkableDeptPurchaseRequestDetailApi(
+  body: GetLinkableDeptPurchaseRequestDetailRequest,
+) {
+  return requestClient.post<ApiResponse<GetLinkableDeptPurchaseRequestDetailResponse>>(
+    `${BASE}/getLinkableDeptPurchaseRequestDetail`,
     body,
   );
 }

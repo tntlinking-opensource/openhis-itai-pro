@@ -14,6 +14,7 @@ defineOptions({
 
 const props = withDefaults(defineProps<Props>(), {
   showSupplySection: true,
+  supplyRoomRequired: false,
 });
 
 const emit = defineEmits<{
@@ -27,6 +28,8 @@ interface Props {
   supplyItems: SupplyItem[];
   selectedSupplyIds: string[];
   supplyRoomOptions: SupplyRoomOption[];
+  /** 有待发耗材执行时是否强制选择耗材房（院点可配置） */
+  supplyRoomRequired?: boolean;
   recentActionRecords: ActionRecord[];
   /** 未选患者时禁用打印 */
   canPrint: boolean;
@@ -54,13 +57,21 @@ const onPrint = (actionCode: NursePrintActionCode) => {
           勾选「待发放」随批执行；已配药/已发放可点「取消执行」回退。
         </p>
         <div class="mt-1.5 flex min-w-0 items-center gap-2">
-          <span class="shrink-0 text-sm text-gray-600">耗材房（可选）</span>
+          <span class="supply-room-label shrink-0 text-sm text-gray-600">
+            <span
+              v-if="props.supplyRoomRequired"
+              class="supply-room-required-mark"
+              aria-hidden="true"
+              >*</span
+            >
+            耗材房
+          </span>
           <div class="min-w-0 max-w-[11rem] flex-1 sm:max-w-[13rem]">
             <ElSelect
               v-model="selectedSupplyRoomId"
               class="supply-room-select w-full"
-              placeholder="不指定则按默认库位出库"
-              clearable
+              :placeholder="props.supplyRoomRequired ? '请选择耗材房' : '不指定则按默认库位出库'"
+              :clearable="!props.supplyRoomRequired"
               filterable
             >
               <ElOption
@@ -194,6 +205,16 @@ const onPrint = (actionCode: NursePrintActionCode) => {
 </template>
 
 <style scoped>
+.supply-room-required-mark {
+  display: inline-block;
+  margin-right: 2px;
+  color: var(--el-color-danger);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: -2px;
+}
+
 .print-action-grid {
   display: grid;
   width: 100%;

@@ -182,6 +182,8 @@ export interface PageProductsForPharmacyStocktakeRequest {
   purposeLocationId: number | string;
   productTableName: string;
   keyword?: string;
+  /** true=仅返回账面量>0；false/未传=含零库存 */
+  positiveQuantityOnly?: boolean;
   pageNo: number;
   pageSize: number;
 }

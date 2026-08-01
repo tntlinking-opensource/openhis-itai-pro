@@ -11,15 +11,17 @@ import { useUserStore } from '@vben/stores';
 import {
   loadDepartmentRequisitionFormInitApi,
   mapDepartmentRequisitionInitToCabinetRows,
+  mapDepartmentRequisitionListRowToQueueCard,
   pageDepartmentRequisitionWorkbenchListApi,
+  type DepartmentRequisitionListRowDto,
 } from '#/api/inventory/department/requisition';
-import { loadDeptGainLossFormInitApi } from '#/api/inventory/department/gain-loss';
-import { loadTransferOutFormInitApi } from '#/api/inventory/department/transfer-out';
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
 import {
   INV_ALL_LOCATIONS_FILTER_ID,
+  INV_ITEM_TABLE_TYPE_DEVICE,
   mapInitOptionDtoToApiItems,
   mapInventoryPractitionerInitOptions,
+  normalizeInventoryItemTableTypeOptions,
   normalizeSidebarLocationFilterValue,
   pickWorkbenchOrderAfterSave,
   resolveDefaultAllLocationsFilterValue,
@@ -59,6 +61,7 @@ const cabinetListOptions = ref<Record<string, unknown>[]>([]);
 const warehouseOptions = ref<ApiOptionItem[]>([]);
 const pharmacyOptions = ref<ApiOptionItem[]>([]);
 const practitionerOptions = ref<ApiOptionItem[]>([]);
+const itemTableTypeOptions = ref<ApiOptionItem[]>([]);
 const orderList = ref<Record<string, unknown>[]>([]);
 const selectedOrder = ref<null | Record<string, unknown>>(null);
 const mainPaneResetKey = ref(0);
@@ -78,38 +81,29 @@ function resolveBusNo(row?: null | Record<string, unknown>): string | undefined 
 const selectedBusNo = computed(() => resolveBusNo(selectedOrder.value) ?? '');
 const isDraftOrder = computed(() => Boolean(selectedOrder.value?._draft));
 
-function toQueueRow(r: Record<string, unknown>): Record<string, unknown> {
+function toQueueRow(r: DepartmentRequisitionListRowDto): Record<string, unknown> {
   return {
-    ...r,
-    supplyBusNo: r.busNo,
+    ...mapDepartmentRequisitionListRowToQueueCard(r),
     statusEnum_enumText: stockOutStatusLabel(r.statusEnum as number | string | undefined),
   };
 }
 
 async function init() {
   try {
-    const [res, gainLossRes, transferRes] = await Promise.all([
-      loadDepartmentRequisitionFormInitApi({}),
-      loadDeptGainLossFormInitApi().catch(() => null),
-      loadTransferOutFormInitApi().catch(() => null),
-    ]);
+    const res = await loadDepartmentRequisitionFormInitApi({});
     const data = res.data;
-    const glData = gainLossRes?.data;
-    const trData = transferRes?.data;
     warehouseOptions.value = mapInitOptionDtoToApiItems(data?.warehouseLocationOptions);
     pharmacyOptions.value = mapInitOptionDtoToApiItems(data?.pharmacyLocationOptions);
     cabinetListOptions.value = mapDepartmentRequisitionInitToCabinetRows(
       data?.pharmacyLocationOptions,
     );
     practitionerOptions.value = mapInventoryPractitionerInitOptions(
-      [
-        glData?.nurseOptions,
-        glData?.warehouseKeeperOptions,
-        trData?.nurseOptions,
-        trData?.warehouseKeeperOptions,
-        trData?.pharmacistOptions,
-      ],
+      [data?.pharmacistOptions, data?.warehouseKeeperOptions],
       userStore.userInfo,
+    );
+    itemTableTypeOptions.value = normalizeInventoryItemTableTypeOptions(
+      mapInitOptionDtoToApiItems(data?.inboundItemTableTypeOptions),
+      INV_ITEM_TABLE_TYPE_DEVICE,
     );
     if (
       tableForm.value.purposeLocationId === undefined ||
@@ -126,6 +120,7 @@ async function init() {
     pharmacyOptions.value = [];
     cabinetListOptions.value = [];
     practitionerOptions.value = [];
+    itemTableTypeOptions.value = [];
   }
 }
 
@@ -139,7 +134,10 @@ async function getList() {
       applyTimeBegin: dr?.[0],
       applyTimeEnd: dr?.[1],
     });
-    orderList.value = [...draftRows, ...records.map((r) => toQueueRow(r))];
+    orderList.value = [
+      ...draftRows,
+      ...records.map((r) => toQueueRow(r as DepartmentRequisitionListRowDto)),
+    ];
   } catch {
     orderList.value = [...draftRows];
   }
@@ -218,7 +216,6 @@ onMounted(async () => {
 
 <template>
   <WarehouseDocWorkstation
-    aside-width="280px"
     queue-title=""
     aside-dense
     :show-aside-filter="false"
@@ -251,6 +248,7 @@ onMounted(async () => {
       :warehouse-options="warehouseOptions"
       :pharmacy-options="pharmacyOptions"
       :practitioner-options="practitionerOptions"
+      :item-table-type-options="itemTableTypeOptions"
       head-section-title="科室药房请领单"
       purpose-location-label="科室药房"
       @document-removed="handleDocumentRemoved"

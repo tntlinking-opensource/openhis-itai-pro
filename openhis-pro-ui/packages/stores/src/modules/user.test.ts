@@ -1,24 +1,41 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { useUserStore } from './user';
+import { normalizeLoginUserInfo, useUserStore } from './user';
+
+describe('normalizeLoginUserInfo', () => {
+  it('maps backend userName/name to username/realName', () => {
+    const normalized = normalizeLoginUserInfo({
+      userName: 'admin',
+      name: '管理员',
+      email: 'a@b.c',
+    } as any);
+
+    expect(normalized.username).toBe('admin');
+    expect(normalized.userName).toBe('admin');
+    expect(normalized.realName).toBe('管理员');
+  });
+});
 
 describe('useUserStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
   });
 
-  it('returns correct userInfo', () => {
+  it('returns correct userInfo with display aliases', () => {
     const store = useUserStore();
-    const userInfo: any = { name: 'Jane Doe', roles: [{ value: 'user' }] };
-    store.setUserInfo(userInfo);
-    expect(store.userInfo).toEqual(userInfo);
+    store.setUserInfo({ userName: 'jane', name: 'Jane Doe', roles: ['user'] } as any);
+    expect(store.userInfo?.username).toBe('jane');
+    expect(store.userInfo?.realName).toBe('Jane Doe');
+    expect(store.userRoles).toEqual(['user']);
   });
 
   // 测试重置用户信息时的行为
   it('clears userInfo and userRoles when setting null userInfo', () => {
     const store = useUserStore();
     store.setUserInfo({
+      userName: 'u1',
+      name: 'U1',
       roles: [{ roleName: 'User', value: 'user' }],
     } as any);
     expect(store.userInfo).not.toBeNull();

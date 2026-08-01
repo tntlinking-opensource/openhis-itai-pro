@@ -84,6 +84,8 @@ export interface TransferOutDetailLineDto {
   traceNo?: string;
   price?: number;
   totalPrice?: number;
+  /** 源库可用量（拆零），与选品 availableQuantity 同口径 */
+  availableQuantity?: number;
   remake?: string;
   occurrenceTime?: string;
   productCatalog?: {
@@ -104,6 +106,7 @@ export interface GetTransferOutDetailResponse {
   purposeTypeEnum?: string;
   categoryEnum?: string;
   practitionerId?: number | string;
+  practitionerName?: string;
   lines: TransferOutDetailLineDto[];
 }
 
@@ -190,6 +193,8 @@ export interface PageProductsForTransferOutRequest {
   productTableName?: string;
   keyword?: string;
   sourceLocationId?: number | string;
+  /** true=仅返回账面量>0；false/未传=含零库存 */
+  positiveQuantityOnly?: boolean;
   pageNo: number;
   pageSize: number;
 }

@@ -1,0 +1,130 @@
+/**
+ * 朝阳中药方头（信息栏）布局。
+ * 不走 SFC scoped：院点生产包会丢 scoped，表现为标签竖排、控件拉满整行。
+ * label 颜色/字号不覆盖，沿用 Element Plus 表单默认样式。
+ */
+.tcm-rx-header__row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.tcm-rx-header .el-form-item {
+  margin-bottom: 0;
+}
+
+.tcm-rx-header .el-form-item__label {
+  white-space: nowrap;
+}
+
+.tcm-rx-header__item--diagnosis {
+  flex: 0 0 auto;
+}
+
+.tcm-rx-header__diagnosis {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tcm-rx-header__diagnosis .el-select {
+  width: 180px;
+}
+
+/* 住院：长期/临时 */
+.tcm-rx-header__therapy {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  height: 32px;
+  gap: 0;
+}
+
+.tcm-rx-header__therapy .el-radio-group {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  height: 32px;
+}
+
+.tcm-rx-header__therapy .el-radio {
+  margin-right: 8px;
+  height: 32px;
+}
+
+.tcm-rx-header__therapy .el-radio:last-child {
+  margin-right: 0;
+}
+
+.tcm-rx-header__therapy .el-radio__label {
+  white-space: nowrap;
+}
+
+@media (max-width: 1100px) {
+  .tcm-rx-header__row,
+  .tcm-rx-header--inpatient .tcm-rx-header__row {
+    flex-wrap: wrap;
+  }
+}
+
+.tcm-rx-header__item--select {
+  flex-shrink: 0;
+}
+
+.tcm-rx-header__item--select .el-select {
+  width: 100px;
+}
+
+.tcm-rx-header__item--num {
+  flex-shrink: 0;
+}
+
+.tcm-rx-header__num {
+  width: 52px;
+}
+
+.tcm-rx-header__item--check {
+  flex-shrink: 0;
+}
+
+.tcm-rx-header__item--check .el-form-item__content {
+  line-height: 32px;
+}
+
+/* 代煎：胶囊强调样式，勾选后高亮 */
+.tcm-rx-header__suffering {
+  height: 28px;
+  margin: 0;
+  padding: 0 12px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 14px;
+  background: var(--el-fill-color-blank);
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.tcm-rx-header__suffering .el-checkbox__label {
+  padding-left: 6px;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tcm-rx-header__suffering.is-checked {
+  border-color: var(--el-color-warning);
+  background: var(--el-color-warning-light-9);
+}
+
+.tcm-rx-header__suffering.is-checked .el-checkbox__label {
+  color: var(--el-color-warning-dark-2);
+}
+
+.tcm-rx-header__suffering.is-checked .el-checkbox__inner {
+  border-color: var(--el-color-warning);
+  background-color: var(--el-color-warning);
+}

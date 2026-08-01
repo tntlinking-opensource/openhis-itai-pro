@@ -18,7 +18,10 @@ export interface PagePendingDispenseSummaryLinesRequest extends PageParams {
 export interface NurseStationDispenseSummaryTimePointDto {
   dispenseId?: string;
   procedureId?: string;
+  /** 计划发药时刻（逻辑锚：勾选/截止/归组） */
   plannedDispenseTime?: string;
+  /** 实际执行时刻（领药时间列展示优先；无则回落 plannedDispenseTime） */
+  recordedTime?: string;
   quantity?: number | string;
   unitCode?: string;
   unitCodeText?: string;
@@ -65,7 +68,9 @@ export interface PagePendingDispenseSummaryLinesResponse {
 /** 分页查询汇总单头 */
 export interface PageMedicationSummarySlipHeadersRequest extends PageParams {
   purposeLocationId?: string;
+  /** 申请时间下界，须 YYYY-MM-DD HH:mm:ss（后端 LocalDateTime） */
   startDate?: string;
+  /** 申请时间上界，须 YYYY-MM-DD HH:mm:ss（后端 LocalDateTime） */
   endDate?: string;
   keyword?: string;
 }
@@ -87,13 +92,14 @@ export interface NurseStationDispenseSummarySlipHeaderDto {
   deliveryStatusEnumText?: string;
 }
 
-/** 分页查询汇总单头响应 */
+/** 分页查询汇总单头响应（rows 与 PagedResult.content 同源） */
 export interface PageMedicationSummarySlipHeadersResponse {
   pageNo?: number;
   pageSize?: number;
   totalCount?: number;
   total?: number;
   rows?: NurseStationDispenseSummarySlipHeaderDto[];
+  content?: NurseStationDispenseSummarySlipHeaderDto[];
 }
 
 /** 查询汇总单合并明细 */
@@ -121,6 +127,45 @@ export interface GetMedicationSummarySlipDetailResponse {
   summaryNo?: string;
   header?: NurseStationDispenseSummarySlipHeaderDto;
   lines?: NurseStationDispenseSummarySlipLineDto[];
+}
+
+/** 查询汇总单摆药明细（按患者） */
+export interface GetMedicationSummarySlipPatientDetailRequest {
+  summaryNo: string;
+}
+
+/** 摆药单查询 · 同 medReqId 合并后药品行 */
+export interface NurseStationDispenseSummaryPatientPickupLineDto {
+  medReqId?: string;
+  medicationId?: string;
+  medicationName?: string;
+  specificationText?: string;
+  itemQuantity?: number | string;
+  unitCode?: string;
+  unitCodeText?: string;
+  /** 满包整数 + 拆零余量展示（如 1盒1片） */
+  displayQuantityText?: string;
+  dosageInstruction?: string;
+  methodCode?: string;
+  methodCodeText?: string;
+  frequencyCode?: string;
+  frequencyCodeText?: string;
+}
+
+/** 摆药单查询 · 患者分组 */
+export interface NurseStationDispenseSummaryPatientPickupGroupDto {
+  encounterId?: string;
+  patientId?: string;
+  patientName?: string;
+  bedDisplay?: string;
+  lines?: NurseStationDispenseSummaryPatientPickupLineDto[];
+}
+
+/** 查询汇总单摆药明细响应 */
+export interface GetMedicationSummarySlipPatientDetailResponse {
+  summaryNo?: string;
+  header?: NurseStationDispenseSummarySlipHeaderDto;
+  patientGroups?: NurseStationDispenseSummaryPatientPickupGroupDto[];
 }
 
 /** 汇总保存 · 勾选发放行 */

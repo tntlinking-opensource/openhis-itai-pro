@@ -12,10 +12,6 @@ import {
 } from '#/api/core/auth';
 import { useAuthStore } from '#/store';
 import { unwrapApiList } from '#/utils/api/unwrap-api-list';
-import {
-  LOGIN_NO_DEPARTMENT_FOR_HOSPITAL_MESSAGE,
-  LOGIN_NO_DEPARTMENT_MESSAGE,
-} from '#/utils/auth/login-scope-flow';
 import { canSkipLoginDepartmentSelection } from '#/utils/auth/platform-admin';
 
 /** 登录上下文未就绪（须回登录页完成 租户→医院→科室） */
@@ -35,8 +31,8 @@ export function resetLoginScopeSync(): void {
   loginScopeSynced = false;
 }
 
-/** 平台管理员在无科室时确认跳过选科并写入服务端会话 */
-async function confirmPlatformAdminBootstrapSkip(): Promise<void> {
+/** 无可登录科室时确认医院级登录并写入服务端会话（任意用户，科室非必选） */
+async function confirmHospitalLevelSkip(): Promise<void> {
   const authStore = useAuthStore();
   await skipOrganizationUnitSelectionApi();
   authStore.setOrganizationUnitSkipped(true);
@@ -45,7 +41,7 @@ async function confirmPlatformAdminBootstrapSkip(): Promise<void> {
 
 /**
  * 以服务端 getAvailableOrganizationUnits 为准，校验并完成租户/医院/科室会话。
- * 平台管理员在无可登录科室时可跳过选科以进入系统做初始化。
+ * 无可登录科室时跳过选科，会话停留在医院级（科室非必选）。
  */
 function shouldSkipLoginDepartmentSelection(): boolean {
   const authStore = useAuthStore();
@@ -82,33 +78,32 @@ async function syncLoginScopeReady(): Promise<void> {
     if (!hospitalId) {
       throw new LoginScopeNotReadyError('请先选择医院');
     }
-    const allowed = hospitals.some((item) => String(item.id) === String(hospitalId));
-    if (!allowed) {
+    const matched = hospitals.find((item) => String(item.id) === String(hospitalId));
+    if (!matched) {
       authStore.setSelectedHospital('');
       throw new LoginScopeNotReadyError('请先选择医院');
     }
+    authStore.setSelectedHospital(
+      String(matched.id),
+      String(matched.displayName || matched.name || '').trim(),
+    );
     await selectHospitalApi({ hospitalId });
   } else if (hospitals.length === 1) {
-    hospitalId = String(hospitals[0]!.id);
-    authStore.setSelectedHospital(hospitalId);
-    await selectHospitalApi({ hospitalId: hospitals[0]!.id });
+    const only = hospitals[0]!;
+    hospitalId = String(only.id);
+    authStore.setSelectedHospital(hospitalId, String(only.displayName || only.name || '').trim());
+    await selectHospitalApi({ hospitalId: only.id });
   }
 
   const departments = unwrapApiList<AuthApi.OrganizationInfo>(
     await getAvailableOrganizationUnitsApi(),
   ).filter((item) => item.id !== null && item.id !== undefined && String(item.id).trim() !== '');
 
-  const hasSelectedHospital = hospitals.length > 0 && !!hospitalId;
+  // 无可登录科室：科室非必选，会话停留医院级（与是否 admin 无关）
   if (departments.length === 0) {
-    if (shouldSkipLoginDepartmentSelection()) {
-      await confirmPlatformAdminBootstrapSkip();
-      await authStore.refreshApplicationConfiguration();
-      return;
-    }
-    authStore.setSelectedOrganization('');
-    throw new LoginScopeNotReadyError(
-      hasSelectedHospital ? LOGIN_NO_DEPARTMENT_FOR_HOSPITAL_MESSAGE : LOGIN_NO_DEPARTMENT_MESSAGE,
-    );
+    await confirmHospitalLevelSkip();
+    await authStore.refreshApplicationConfiguration();
+    return;
   }
 
   authStore.setOrganizationUnitSkipped(false);
@@ -122,6 +117,12 @@ async function syncLoginScopeReady(): Promise<void> {
   } else {
     const storedOrgId = authStore.getSelectedOrganization();
     if (!storedOrgId || !allowedOrgIds.has(String(storedOrgId))) {
+      // 有可登录科室时须选科；平台管理员无存储科室时仍可走医院级（后端有科室则拒绝 skip）
+      if (shouldSkipLoginDepartmentSelection()) {
+        await confirmHospitalLevelSkip();
+        await authStore.refreshApplicationConfiguration();
+        return;
+      }
       authStore.setSelectedOrganization('');
       throw new LoginScopeNotReadyError('请先选择科室');
     }

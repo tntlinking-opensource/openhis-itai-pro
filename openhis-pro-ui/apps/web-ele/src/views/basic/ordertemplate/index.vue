@@ -79,11 +79,14 @@ const kindTabOptions = computed(() => {
 });
 
 const isGeneralKind = computed(() => activeKind.value === ORDER_TEMPLATE_KIND_GENERAL);
+const isPricingKind = computed(() => activeKind.value === ORDER_TEMPLATE_KIND_PRICING);
+/** 通用/划价组套不展示协定处方（仅中药组套保留） */
+const showAgreementBinding = computed(() => !isGeneralKind.value && !isPricingKind.value);
 
-/** 通用组套不展示协定处方绑定维度 */
+/** 左侧树绑定维度选项（通用/划价过滤协定处方） */
 const maintenanceBindingOptions = computed(() => {
   const options = initOptions.value.bindingOptions ?? [];
-  if (!isGeneralKind.value) {
+  if (showAgreementBinding.value) {
     return options;
   }
   return options.filter(
@@ -203,8 +206,8 @@ function handleSaveAsBinding(bindingEnum: string) {
   void editPanelRef.value?.submit?.(bindingEnum);
 }
 
-/** 清空右侧编辑区 */
-function handleClearPanel() {
+/** 新开空白组套（取消左侧选中并重置右侧编辑区） */
+function handleCreateNew() {
   resetEditorPanel();
 }
 
@@ -284,6 +287,7 @@ onActivated(() => {
           class="order-template-page__aside flex w-72 min-w-[240px] shrink-0 flex-col gap-2 border-r border-[var(--el-border-color-light)] pr-2"
         >
           <ElInput v-model="treeKeyword" clearable placeholder="搜索组套名称" class="w-full" />
+          <ElButton type="primary" class="w-full" @click="handleCreateNew">新建组套</ElButton>
 
           <div v-loading="loading" class="min-h-0 flex-1 overflow-auto">
             <ElTree
@@ -332,13 +336,13 @@ onActivated(() => {
                 存全院
               </ElButton>
               <ElButton
-                v-if="!isGeneralKind"
+                v-if="showAgreementBinding"
                 type="primary"
                 @click="handleSaveAsBinding(ORDER_TEMPLATE_BINDING_AGREEMENT)"
               >
                 存协方
               </ElButton>
-              <ElButton @click="handleClearPanel">清空</ElButton>
+              <ElButton @click="handleCreateNew">新建组套</ElButton>
               <ElButton
                 v-if="selectedTemplateId && selectedHeader?.statusEnum === 'DRAFT'"
                 type="primary"

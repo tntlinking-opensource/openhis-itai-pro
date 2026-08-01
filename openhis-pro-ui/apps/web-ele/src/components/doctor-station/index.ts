@@ -4,8 +4,9 @@ export {
 } from './clinical-reception-context';
 export { useEnsureClinicalReception } from './use-ensure-clinical-reception';
 
-export { default as DiagnosisPickerDialog } from './diagnosis/components/diagnosis-picker-dialog.vue';
-export { default as DiagnosisList } from './diagnosis/index.vue';
+// 须经 #/ 导入，院点 overrides 才会在 Vite resolve 时生效（相对路径不会被重载）
+export { default as DiagnosisPickerDialog } from '#/components/doctor-station/diagnosis/components/diagnosis-picker-dialog.vue';
+export { default as DiagnosisList } from '#/components/doctor-station/diagnosis/index.vue';
 export type {
   DiagnosisConfirmPayload,
   DiagnosisItem,
@@ -20,5 +21,6 @@ export {
   type DoctorStationDiagnosisScope,
 } from './diagnosis/services/encounter-diagnosis.service';
 
-export { default as TcmAdvice } from './tcm-advice/tcm-advice.vue';
+export { default as TcmAdvice } from '#/components/doctor-station/tcm-advice/tcm-advice-entry';
 export { default as ElepAdvice } from './elep-advice/elep-advice.vue';
+export { default as ReportQuery } from './report-query/index.vue';

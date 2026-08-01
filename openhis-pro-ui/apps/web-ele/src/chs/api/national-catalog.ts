@@ -18,6 +18,8 @@ export interface QueryNationalCatalogParams extends PageParams, Catalog1312Filte
   dedupeByHilistCode?: boolean;
   aprvno?: string;
   spec?: string;
+  /** 选码：排除平台已过期 */
+  excludePlatformExpired?: boolean;
 }
 
 export interface NationalCatalogItem {
@@ -38,6 +40,14 @@ export interface NationalCatalogItem {
   dosform?: string;
   aprvno?: string;
   prodentpName?: string;
+  /** 镜像 ⋈ overlay 合成后是否可选 */
+  isSelectable?: boolean;
+  /** 不可选原因 */
+  unselectableReason?: string;
+  noticeAvaliFlag?: string;
+  noticeEndDate?: string;
+  /** 局文限价上限 */
+  priceUplmtAmt?: string;
 }
 
 export interface Refresh1312Params extends Catalog1312FilterParams {

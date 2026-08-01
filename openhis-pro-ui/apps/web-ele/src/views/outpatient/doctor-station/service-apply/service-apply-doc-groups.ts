@@ -22,7 +22,7 @@ function trimText(value: unknown): string {
   return String(value).trim();
 }
 
-/** 从列表行推断检验/检查类型 */
+/** 从列表行推断检验/检查/治疗类型（优先 categoryEnum，明细表仅兜底） */
 export function inferServiceApplyKindFromAdviceRow(row: AdviceRowItem): ServiceApplyKind | null {
   const code = trimText(row.catalogCategoryCode).toUpperCase();
   if (code === SERVICE_APPLY_CATEGORY_BY_KIND.lab || code === '22') {
@@ -30,6 +30,9 @@ export function inferServiceApplyKindFromAdviceRow(row: AdviceRowItem): ServiceA
   }
   if (code === SERVICE_APPLY_CATEGORY_BY_KIND.exam || code === '23') {
     return 'exam';
+  }
+  if (code === SERVICE_APPLY_CATEGORY_BY_KIND.treatment || code === '21') {
+    return 'treatment';
   }
   const table = trimText(row.serviceRequestDetails?.[0]?.targetTable);
   if (table === SERVICE_APPLY_SPECIMEN_TABLE) {

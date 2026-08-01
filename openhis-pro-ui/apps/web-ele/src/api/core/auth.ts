@@ -174,6 +174,13 @@ export namespace AuthApi {
     tenantId: string;
     updatedAt: null;
   }
+
+  /** 选租户后一次拉齐的登录范围 */
+  export interface LoginScopeBootstrap {
+    hospitals?: LoginOrganizationOption[] | null;
+    departments?: null | OrganizationInfo[];
+    selectedHospitalId?: null | number | string;
+  }
 }
 
 /**
@@ -205,6 +212,13 @@ export async function selectHospitalApi(data: { hospitalId: number | string }) {
     '/auth/selectHospital',
     data,
   );
+}
+
+/**
+ * 选租户后一次拉齐：医院列表 +（单院时）可登录科室，压缩登录 RTT
+ */
+export async function bootstrapLoginScopeApi() {
+  return requestClient.post<ApiResponse<AuthApi.LoginScopeBootstrap>>('/auth/bootstrapLoginScope');
 }
 
 /**
@@ -245,7 +259,7 @@ export async function loginByOrgApi(data: AuthApi.LoginParamsByOrg) {
 }
 
 /**
- * 平台管理员在无可登录科室时跳过选科（用于租户初始化：先建医院/科室）
+ * 无可登录科室时跳过选科：会话停留医院级（科室非必选，任意用户）
  */
 export async function skipOrganizationUnitSelectionApi() {
   return requestClient.post('/auth/skipOrganizationUnitSelection');

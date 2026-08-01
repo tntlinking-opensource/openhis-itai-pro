@@ -111,6 +111,7 @@ const formItems = computed<FormItemConfig[]>(() => [
     options: docTypeFilterOptions.value,
     clearable: true,
     filterable: true,
+    multiple: false,
   },
   {
     label: '适用就诊',
@@ -118,6 +119,7 @@ const formItems = computed<FormItemConfig[]>(() => [
     type: 'select',
     options: [{ label: '全部', value: '' }, ...EMR_TEMPLATE_ENCOUNTER_CLASS_OPTIONS],
     clearable: true,
+    multiple: false,
   },
   {
     label: '使用范围',
@@ -125,6 +127,7 @@ const formItems = computed<FormItemConfig[]>(() => [
     type: 'select',
     options: [{ label: '全部', value: '' }, ...EMR_TEMPLATE_SCOPE_LEVEL_OPTIONS],
     clearable: true,
+    multiple: false,
   },
   {
     label: '状态',
@@ -136,6 +139,7 @@ const formItems = computed<FormItemConfig[]>(() => [
       { label: '停用', value: false },
     ],
     clearable: true,
+    multiple: false,
   },
 ]);
 

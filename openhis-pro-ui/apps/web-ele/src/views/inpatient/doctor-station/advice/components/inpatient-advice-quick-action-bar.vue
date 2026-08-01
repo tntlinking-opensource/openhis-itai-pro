@@ -3,25 +3,6 @@ import { ElButton } from 'element-plus';
 
 defineOptions({ name: 'InpatientAdviceQuickActionBar' });
 
-export type InpatientAdviceQuickAction =
-  | 'allergy'
-  | 'exam'
-  | 'lab'
-  | 'pathology'
-  | 'report'
-  | 'surgery'
-  | 'transfusion';
-
-const QUICK_ACTION_ITEMS: Array<{ action: InpatientAdviceQuickAction; label: string }> = [
-  { action: 'exam', label: '检查申请' },
-  { action: 'lab', label: '检验申请' },
-  { action: 'transfusion', label: '输血申请' },
-  { action: 'pathology', label: '病理申请' },
-  { action: 'surgery', label: '手术申请' },
-  { action: 'report', label: '报告查询' },
-  { action: 'allergy', label: '过敏史' },
-];
-
 const props = withDefaults(
   defineProps<{
     disabled?: boolean;
@@ -33,15 +14,36 @@ const emit = defineEmits<{
   action: [action: InpatientAdviceQuickAction];
 }>();
 
+export type InpatientAdviceQuickAction =
+  | 'allergy'
+  | 'entrust'
+  | 'exam'
+  | 'lab'
+  | 'pathology'
+  | 'surgery'
+  | 'transfusion'
+  | 'treatment';
+
+const QUICK_ACTION_ITEMS: Array<{ action: InpatientAdviceQuickAction; label: string }> = [
+  { action: 'exam', label: '检查申请' },
+  { action: 'entrust', label: '嘱托医嘱' },
+  { action: 'lab', label: '检验申请' },
+  { action: 'treatment', label: '治疗申请' },
+  { action: 'transfusion', label: '输血申请' },
+  { action: 'pathology', label: '病理申请' },
+  { action: 'surgery', label: '手术申请' },
+  { action: 'allergy', label: '过敏史' },
+];
+
 /** 底部快捷入口点击 */
 function handleClick(action: InpatientAdviceQuickAction) {
   emit('action', action);
 }
 
-/** 全局禁写时仍允许查看类入口（报告查询、过敏史） */
+/** 全局禁写时仍允许查看类入口（过敏史） */
 function isQuickActionDisabled(action: InpatientAdviceQuickAction): boolean {
   if (!props.disabled) return false;
-  return action !== 'allergy' && action !== 'report';
+  return action !== 'allergy';
 }
 </script>
 

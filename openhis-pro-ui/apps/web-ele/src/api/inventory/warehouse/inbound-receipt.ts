@@ -91,6 +91,8 @@ export interface InboundReceiptDetailLineDto {
   /** 明细行多计量带（与选品同源时可带回，用于切换单位换算） */
   unitBands?: InboundProductUnitBandDto[];
   unitBandsJson?: string;
+  /** 产品目录提示（含游离追溯单位；扫码应扫数用） */
+  productCatalog?: InboundProductCatalogHintDto | null;
 }
 
 export interface GetInboundReceiptDetailResponse {
@@ -104,6 +106,8 @@ export interface GetInboundReceiptDetailResponse {
   sourceTypeEnum?: string;
   purposeTypeEnum?: string;
   categoryEnum?: string;
+  /** 采购发票号（同单共享；与 busNo 一样取首行即可） */
+  invoiceNo?: string;
   rowVersion?: number;
   applyTime?: string;
   applicantId?: number;
@@ -164,6 +168,20 @@ export interface InboundProductUnitBandDto {
   unitPrice?: null | number;
 }
 
+/** 与后端 {@code ProductDefinitionCatalogEditorHintsDto} / DisplayDto 追溯字段对齐 */
+export interface InboundProductCatalogHintDto {
+  unitBands?: InboundProductUnitBandDto[];
+  unitBandsJson?: string;
+  /** 目录追溯码贴码单位（可游离于五类业务单位） */
+  traceUnitCode?: string;
+  /** 1 个追溯码单位对应的拆零数量 */
+  traceUnitRatio?: number;
+  purchasePrice?: number;
+  merchandiseName?: string;
+  categoryCode?: string;
+  totalVolume?: string;
+}
+
 export interface InboundProductDefinitionItemDto {
   /** 产品定义主键（雪花 Long 字符串），写入明细 itemId */
   productDefinitionId?: number | string;
@@ -187,6 +205,10 @@ export interface InboundProductDefinitionItemDto {
   wbStr?: string;
   /** 多计量带（PURCHASE / SPLIT / STOCK）；默认采购单位见前端 defaultInboundUnitBandKind */
   unitBands?: InboundProductUnitBandDto[];
+  /** 目录追溯码贴码单位（与 ProductDefinitionDisplayDto 对齐） */
+  traceUnitCode?: string;
+  /** 1 个追溯码单位对应的拆零数量 */
+  traceUnitRatio?: number;
 }
 
 export interface PageProductsForInboundReceiptResponse {
@@ -234,6 +256,11 @@ export interface CreateInboundReceiptRequestBody {
   supplierId?: number | string;
   /** 经手人：医务人员主键，与后端 {@code CreateInboundReceiptRequest.practitionerId} 一致（wkf_supply_request.practitioner_id） */
   practitionerId?: number | string;
+  /**
+   * 采购发票号（单头共享，落库每行 invoice_no；进销存 3503/3504 purc_invo_no）。
+   * 空则后端/上报侧默认占位 `0`。
+   */
+  invoiceNo?: string;
   lines: InboundReceiptLineDto[];
 }
 

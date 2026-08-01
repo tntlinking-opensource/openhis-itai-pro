@@ -2,7 +2,7 @@ import type { ReturnMedicineQueuePatient } from './types';
 
 import type { OutpatientPatientCardPayload } from '#/components/outpatient/patient-card.types';
 
-/** 退药队列行 → 门诊患者卡片（展示退药状态标签） */
+/** 退药队列行 → 门诊患者卡片（展示退药状态标签与费用性质胶囊） */
 export function toReturnPatientCardModel(
   p: ReturnMedicineQueuePatient,
 ): OutpatientPatientCardPayload {
@@ -16,5 +16,7 @@ export function toReturnPatientCardModel(
     organizationName: p.departmentName,
     statusEnum: p.refundEnum,
     statusEnumText: p.refundEnumText,
+    // 与发药队列同口径：合同展示名驱动底栏费用性质
+    contractDisplay: p.feeNatureLabel,
   };
 }

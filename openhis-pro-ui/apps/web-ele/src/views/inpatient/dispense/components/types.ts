@@ -11,4 +11,6 @@ export interface InpatientDispenseQueuePatient {
   admissionTimeLabel: string;
   attendingDoctorName: string;
   statusText: string;
+  /** 费用性质展示名（队列 contractDisplay；卡片底栏胶囊） */
+  feeNatureLabel?: string;
 }

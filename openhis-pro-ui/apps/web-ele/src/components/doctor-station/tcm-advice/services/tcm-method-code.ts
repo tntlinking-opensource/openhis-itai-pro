@@ -2,11 +2,11 @@ import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
 
 import { terminologyLabel } from '#/views/outpatient/doctor-station/advice/services/advice-format';
 
-/** 中药用法默认编码（种子 tcm_method_code.T01 水煎服） */
+/** 中药用法默认编码（种子 tcm_method_code.T01 水煎服 / 煎服） */
 export const DEFAULT_TCM_METHOD_CODE = 'T01';
 
-/** 中药默认用药频次（与后端 HERBAL_RATE_CODE 一致） */
-export const DEFAULT_TCM_RATE_CODE = 'QD';
+/** 中药默认用药频次：每日两次（种子 medication_rate.BID） */
+export const DEFAULT_TCM_RATE_CODE = 'BID';
 
 /** 解析中药用法展示名 */
 export function resolveTcmMethodLabel(
@@ -22,14 +22,17 @@ export function resolveTcmMethodLabel(
   return fb || trimmed;
 }
 
-/** 新建处方默认用法：优先字典首项，否则 T01 */
+/** 新建处方默认用法：优先 T01（水煎服），否则标签含「煎服」，再否则字典首项 */
 export function resolveDefaultTcmMethodCode(options: TerminologyOptionDto[] | undefined): string {
-  const first = String(options?.[0]?.value ?? '').trim();
-  if (first) return first;
-  const hasDefault = (options ?? []).some(
-    (opt) => String(opt.value ?? '').trim() === DEFAULT_TCM_METHOD_CODE,
-  );
-  return hasDefault ? DEFAULT_TCM_METHOD_CODE : '';
+  const list = options ?? [];
+  const hasDefault = list.some((opt) => String(opt.value ?? '').trim() === DEFAULT_TCM_METHOD_CODE);
+  if (hasDefault) return DEFAULT_TCM_METHOD_CODE;
+  // 兼容院点改名（如仅显示「煎服」）
+  const byLabel = list.find((opt) => String(opt.label ?? '').includes('煎服'));
+  if (byLabel) {
+    return String(byLabel.value ?? '').trim();
+  }
+  return String(list[0]?.value ?? '').trim() || DEFAULT_TCM_METHOD_CODE;
 }
 
 /** 解析用药频次展示名 */
@@ -46,7 +49,7 @@ export function resolveTcmRateLabel(
   return fb || trimmed;
 }
 
-/** 新建处方默认频次：住院临嘱优先 STAT，长期优先 QD */
+/** 新建处方默认频次：住院临嘱优先 STAT，长期/门诊优先 BID（每日两次） */
 export function resolveDefaultTcmRateCodeForTherapy(
   therapyEnum: string | undefined,
   options: TerminologyOptionDto[] | undefined,
@@ -66,12 +69,20 @@ export function resolveDefaultTcmRateCodeForTherapy(
   return resolveDefaultTcmRateCode(options);
 }
 
-/** 新建处方默认频次：优先 QD，否则字典首项 */
+/** 新建处方默认频次：优先 BID（每日两次），否则字典首项 */
 export function resolveDefaultTcmRateCode(options: TerminologyOptionDto[] | undefined): string {
   const hasDefault = (options ?? []).some(
     (opt) => String(opt.value ?? '').trim() === DEFAULT_TCM_RATE_CODE,
   );
   if (hasDefault) return DEFAULT_TCM_RATE_CODE;
+  // 兼容标签文案「每日两次」
+  const byLabel = (options ?? []).find((opt) => {
+    const label = String(opt.label ?? '');
+    return label.includes('每日两次') || label.toLowerCase().includes('bid');
+  });
+  if (byLabel) {
+    return String(byLabel.value ?? '').trim();
+  }
   const first = String(options?.[0]?.value ?? '').trim();
   return first || DEFAULT_TCM_RATE_CODE;
 }

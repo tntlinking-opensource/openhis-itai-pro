@@ -31,7 +31,10 @@ export interface LoadDeptIssueReturnFormInitRequest {
 export interface LoadDeptIssueReturnFormInitResponse {
   departmentPharmacies?: DeptIssueReturnOptionDto[];
   supplyStatuses?: DeptIssueReturnOptionDto[];
+  /** 后端部分版本字段名 */
   pharmacists?: DeptIssueReturnOptionDto[];
+  /** 与其它库存单据 init 对齐的别名 */
+  pharmacistOptions?: DeptIssueReturnOptionDto[];
 }
 
 export interface DeptIssueReturnListRowDto {
@@ -42,9 +45,15 @@ export interface DeptIssueReturnListRowDto {
   purposeLocationName?: string;
   consumingOrganizationName?: string;
   applicantId?: number | string;
+  applicantName?: string;
   applyTime?: string;
   approverId?: number | string;
+  approverName?: string;
   approvalTime?: string;
+  /** 整单金额（侧栏总金额） */
+  totalAmount?: number;
+  /** 与 totalAmount 同口径 */
+  totalPrice?: number;
 }
 
 export interface PageDeptIssueReturnsRequest {
@@ -72,15 +81,25 @@ export interface DeptIssueReturnDetailLineDto {
   id?: number | string;
   itemTable?: string;
   itemId?: number | string;
+  /** 后端详情字段名 */
+  itemName?: string;
   productName?: string;
+  spec?: string;
   specification?: string;
   manufacturer?: string;
   lotNumber?: string;
   traceNo?: string;
   itemQuantity?: number;
   unitCode?: string;
+  unitName?: string;
+  unitCodeDictText?: string;
   price?: number;
   totalPrice?: number;
+  /** 批号效期止点（落库 end_time） */
+  endTime?: string;
+  /** 行备注 remake */
+  remake?: string;
+  productCatalog?: { unitBands?: unknown; unitBandsJson?: unknown };
 }
 
 export interface GetDeptIssueReturnDetailResponse {
@@ -90,7 +109,9 @@ export interface GetDeptIssueReturnDetailResponse {
   purposeLocationId?: number | string;
   purposeLocationName?: string;
   consumingOrganizationName?: string;
+  practitionerId?: number | string;
   applicantId?: number | string;
+  applicantName?: string;
   applyTime?: string;
   approverId?: number | string;
   approvalTime?: string;
@@ -105,17 +126,23 @@ export interface DeptIssueReturnLineDto {
   itemQuantity?: number;
   unitCode?: string;
   price?: number;
+  /** 批号效期止点（落库 end_time） */
+  endTime?: string;
+  /** 行备注 remake */
+  remake?: string;
 }
 
 export interface CreateDeptIssueReturnRequest {
   originalBusNo: string;
   purposeLocationId: number | string;
+  practitionerId?: number | string;
   lines: DeptIssueReturnLineDto[];
 }
 
 export interface UpdateDeptIssueReturnRequest {
   busNo: string;
   purposeLocationId: number | string;
+  practitionerId?: number | string;
   lines: DeptIssueReturnLineDto[];
 }
 
@@ -207,7 +234,14 @@ export interface LinkableIssueReturnLineDto {
   unitCodeDictText?: string;
   productName?: string;
   specification?: string;
+  manufacturer?: string;
   price?: number;
+  totalPrice?: number;
+  endTime?: string;
+  remake?: string;
+  productCatalog?: { unitBands?: unknown; unitBandsJson?: unknown };
+  unitBands?: unknown;
+  unitBandsJson?: unknown;
 }
 
 export interface GetLinkableIssueDetailResponse {

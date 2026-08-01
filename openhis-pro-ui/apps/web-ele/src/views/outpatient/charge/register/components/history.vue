@@ -5,7 +5,7 @@ import type { RegisterHistoryTableRow } from '../services';
 
 import type { DateRangeQuickSpec } from '#/utils/format/date-range-quick';
 
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { TableLayout } from '@vben-core/table-layout-ui';
 
@@ -24,11 +24,16 @@ import {
 import AppDialog from '#/components/app-dialog.vue';
 import SelectFuzzyInput from '#/components/select-fuzzy-input.vue';
 import { isScanPayChannel } from '#/composables/payment/useUnionPayScanPay';
+import { buildDefaultDateRangeShortcuts } from '#/utils/format/date-picker-shortcuts';
 import { getDateRangeQuick } from '#/utils/format/date-range-quick';
 import { formatMoneyDisplay, formatMoneyYuanWithSymbol } from '#/utils/format/money-scale';
+import { FALLBACK_DEFAULT_PAY_CHANNEL } from '#/utils/payment/payment-channel-options';
 import { settleWithScanRecovery } from '#/utils/payment/scan-settle-recovery';
 import { submitScanPayment } from '#/utils/payment/submit-scan-payment';
-import { submitScanRefund } from '#/utils/payment/submit-scan-refund';
+import {
+  clearCachedClientRefundResult,
+  submitScanRefund,
+} from '#/utils/payment/submit-scan-refund';
 import { tagTypeByCode } from '#/utils/format/status-tag';
 import {
   printRegistrationReceipt,
@@ -84,9 +89,10 @@ const tableAreaHeight = ref<number>();
 
 let tableAreaResizeObserver: null | ResizeObserver = null;
 
-/** 收费 / 退号共用一个核对弹窗 */
+/** 收费 / 退号 / 取消挂号共用一个核对弹窗 */
 const historyActionDialogVisible = ref(false);
-const historyActionMode = ref<'cancel' | 'charge' | 'yb-cancel'>('charge');
+/** charge=续付；void=未收费取消；cancel=已挂号退号 */
+const historyActionMode = ref<'cancel' | 'charge' | 'void'>('charge');
 const historyActionRow = ref<null | RegisterHistoryTableRow>(null);
 const actionDialogLoading = ref(false);
 const historyRefreshLoading = ref(false);
@@ -98,12 +104,15 @@ const reprintEncounterId = ref<null | string>(null);
 const payChannelCode = ref(DEFAULT_REGISTER_PAY_CHANNEL_CODE);
 const scanCode = ref('');
 const scanStatusText = ref('');
+const scanCodeInputRef = ref<{ focus?: () => void } | null>(null);
 
 const {
   scanPayEnabled,
+  hasScanPayChannel,
   effectivePayChannelOptions,
   ensurePayChannelsLoaded,
   refreshPayChannelsForDialog,
+  refreshUnionPayCapabilities,
 } = useRegisterPayChannels();
 
 const showDateToolbar = computed(() => props.toolbarMode === 'full');
@@ -114,9 +123,35 @@ const showKeywordToolbar = computed(
 const showScanPaySection = computed(
   () =>
     historyActionMode.value === 'charge' &&
-    scanPayEnabled.value &&
-    isScanPayChannel(payChannelCode.value),
+    hasScanPayChannel.value &&
+    isScanPayChannel(payChannelCode.value) &&
+    Boolean(historyActionRow.value) &&
+    historyPayableCashAmount(historyActionRow.value!) > 0.001,
 );
+
+function focusScanCodeInput() {
+  void nextTick(() => {
+    requestAnimationFrame(() => {
+      scanCodeInputRef.value?.focus?.();
+    });
+  });
+}
+
+function onHistoryActionDialogOpened() {
+  if (showScanPaySection.value) {
+    focusScanCodeInput();
+  }
+}
+
+watch(payChannelCode, (code) => {
+  if (
+    historyActionDialogVisible.value &&
+    historyActionMode.value === 'charge' &&
+    isScanPayChannel(code)
+  ) {
+    focusScanCodeInput();
+  }
+});
 
 const historyActionTitle = computed(() => {
   if (historyActionMode.value === 'charge') {
@@ -125,20 +160,26 @@ const historyActionTitle = computed(() => {
   if (historyActionMode.value === 'cancel') {
     return '确认退号';
   }
-  if (historyActionMode.value === 'yb-cancel') {
-    return '确认医保退号';
+  if (historyActionMode.value === 'void') {
+    return '确认取消';
   }
   return '';
 });
 const tableData = ref<RegisterHistoryTableRow[]>([]);
 const total = ref(0);
-/** 与工具栏、分页绑定的查询条件（日期、keyword、分页） */
+/** 与工具栏、分页绑定的查询条件（日期、已提交 keyword、分页） */
 const queryParams = ref({
   pageNo: 1,
   pageSize: 20,
   dateRange: getDateRangeQuick({ strategy: 'calendar-day' }) as [string, string],
   keyword: '',
 });
+/** 区间查询：展开面板默认快捷时间范围 */
+const dateRangeShortcuts = buildDefaultDateRangeShortcuts();
+/** 已生效的检索关键字；输入框草稿不得直接参与分页，避免未回车就带条件查空 */
+const committedKeyword = ref('');
+/** 防止分页/筛选并发时旧请求回写空表 */
+let loadHistorySeq = 0;
 
 const tableColumns: TableColumn[] = [
   {
@@ -151,12 +192,14 @@ const tableColumns: TableColumn[] = [
   {
     prop: 'encounterBusNo',
     label: '就诊号',
+    minWidth: 70,
     align: 'center',
     headerAlign: 'center',
   },
   {
     prop: 'patientName',
     label: '患者信息',
+    minWidth: 60,
     align: 'center',
     headerAlign: 'center',
     formatter: (row) => formatPatientInfoCell(row as RegisterHistoryTableRow),
@@ -215,9 +258,16 @@ const tableColumns: TableColumn[] = [
     },
   },
   {
+    prop: 'cashierName',
+    label: '收费人',
+    align: 'center',
+    headerAlign: 'center',
+    formatter: (_row, _column, cellValue) => String(cellValue ?? '').trim() || '—',
+  },
+  {
     prop: 'startTime',
     label: '挂号时间',
-    minWidth: 140,
+    width: 150,
     align: 'center',
     headerAlign: 'center',
   },
@@ -232,7 +282,8 @@ const tableColumns: TableColumn[] = [
     prop: 'action',
     label: '操作',
     fixed: 'right',
-    minWidth: 180,
+    // 收费 + 补打 + 取消/退号；固定 width 避免吃掉多余横向空间
+    width: 140,
     slot: 'action',
     align: 'center',
     headerAlign: 'center',
@@ -240,23 +291,33 @@ const tableColumns: TableColumn[] = [
 ];
 
 /**
- * 按当前日期范围、关键字与分页拉取就诊记录表格数据。
+ * 按当前日期范围、已提交关键字与分页拉取就诊记录表格数据。
  */
 const handleQuery = async () => {
+  const seq = ++loadHistorySeq;
   loading.value = true;
   try {
     const [start, end] = queryParams.value.dateRange;
+    const pageNo = Number(queryParams.value.pageNo) || 1;
+    const pageSize = Number(queryParams.value.pageSize) || 20;
+    queryParams.value.pageNo = pageNo;
+    queryParams.value.pageSize = pageSize;
     const { list, total: totalCount } = await pageRegisterHistoryForTable({
       dateFrom: start ?? '',
       dateTo: end ?? '',
-      keyword: queryParams.value.keyword,
-      pageNo: queryParams.value.pageNo,
-      pageSize: queryParams.value.pageSize,
+      keyword: committedKeyword.value,
+      pageNo,
+      pageSize,
     });
+    if (seq !== loadHistorySeq) {
+      return;
+    }
     tableData.value = list;
     total.value = totalCount;
   } finally {
-    loading.value = false;
+    if (seq === loadHistorySeq) {
+      loading.value = false;
+    }
   }
 };
 
@@ -275,17 +336,6 @@ watch(
     queryParams.value.pageNo = 1;
     void handleQuery();
   },
-);
-
-watch(
-  keywordModel,
-  (val) => {
-    if (props.toolbarMode !== 'hidden') {
-      return;
-    }
-    queryParams.value.keyword = val ?? '';
-  },
-  { immediate: true },
 );
 
 /**
@@ -374,8 +424,19 @@ function resolveLocalActionErrorMessage(error: unknown, fallback: string): strin
   if (isRequestLayerError(error)) {
     return '';
   }
-  const message = error instanceof Error ? error.message.trim() : String(error ?? '').trim();
-  return message || fallback;
+  if (error instanceof Error) {
+    return error.message.trim() || fallback;
+  }
+  if (error && typeof error === 'object') {
+    const maybeMessage = (error as { message?: unknown }).message;
+    if (typeof maybeMessage === 'string' && maybeMessage.trim()) {
+      return maybeMessage.trim();
+    }
+  }
+  if (typeof error === 'string' && error.trim()) {
+    return error.trim();
+  }
+  return fallback;
 }
 
 async function handleHistoryRescanRefresh() {
@@ -410,12 +471,12 @@ function canReprintReceipt(row: RegisterHistoryTableRow): boolean {
   return Boolean(String(row.paymentId ?? '').trim());
 }
 
-/** 医保挂号且待收费：仅展示「医保退号」，不展示「退号」。 */
-function canShowYbCancel(row: RegisterHistoryTableRow): boolean {
-  if (row.statusEnum !== ENCOUNTER_STATUS_CODE.PLANNED) {
-    return false;
-  }
-  return Boolean(row.insurancePlatformRegistered || row.insurancePreSettled);
+/**
+ * 待挂号（未收费）展示「取消」。
+ * 自费与医保预结算均走 cancelPlannedRegistration（后端按需 2205/2202）。
+ */
+function canShowVoid(row: RegisterHistoryTableRow): boolean {
+  return String(row.statusEnum ?? '').trim() === ENCOUNTER_STATUS_CODE.PLANNED;
 }
 
 /** 已挂号 / 已分诊 / 在诊：展示窗口「退号」。 */
@@ -458,7 +519,9 @@ async function handleCharge(row: RegisterHistoryTableRow) {
   }
   historyActionMode.value = 'charge';
   historyActionRow.value = row;
-  payChannelCode.value = DEFAULT_REGISTER_PAY_CHANNEL_CODE;
+  const cashPay = historyPayableCashAmount(row);
+  payChannelCode.value =
+    cashPay > 0.001 ? DEFAULT_REGISTER_PAY_CHANNEL_CODE : FALLBACK_DEFAULT_PAY_CHANNEL;
   scanCode.value = '';
   scanStatusText.value = '';
   historyCredentialExpiredHint.value = false;
@@ -478,7 +541,9 @@ async function executeChargeRegister() {
   if (!draftId) {
     return;
   }
-  if (isScanPayChannel(payChannelCode.value) && !scanCode.value.trim()) {
+  const cashPay = historyPayableCashAmount(row);
+  const needScanPay = cashPay > 0.001 && isScanPayChannel(payChannelCode.value);
+  if (needScanPay && !scanCode.value.trim()) {
     ElMessage.warning('请输入付款码');
     return;
   }
@@ -486,7 +551,8 @@ async function executeChargeRegister() {
   scanStatusText.value = '';
   try {
     let clientScanResult;
-    if (isScanPayChannel(payChannelCode.value)) {
+    if (needScanPay) {
+      await refreshUnionPayCapabilities();
       if (!scanPayEnabled.value) {
         ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
         return;
@@ -494,13 +560,11 @@ async function executeChargeRegister() {
       scanStatusText.value = '等待支付结果…';
       const scanOutcome = await submitScanPayment({
         paymentDraftId: draftId,
-        amount: historyPayableCashAmount(row),
+        amount: cashPay,
         scanCode: scanCode.value,
       });
       clientScanResult = scanOutcome.clientScanResult;
     }
-
-    const cashPay = historyPayableCashAmount(row);
     const payDetails =
       cashPay > 0.001
         ? [
@@ -563,35 +627,35 @@ function handleCancel(row: RegisterHistoryTableRow) {
 }
 
 /**
- * 打开医保退号核对弹窗（PLANNED + 已 2201）。
+ * 打开取消核对弹窗（PLANNED 未收费）。
  */
-function handleYbCancel(row: RegisterHistoryTableRow) {
-  historyActionMode.value = 'yb-cancel';
+function handleVoid(row: RegisterHistoryTableRow) {
+  historyActionMode.value = 'void';
   historyActionRow.value = row;
   historyActionDialogVisible.value = true;
 }
 
 /**
- * 弹窗内确认医保退号。
+ * 弹窗内确认取消：调用 cancelPlannedRegistration（未上平台纯本地；有平台按需 2205/2202）。
  */
-async function executeYbCancelRegister() {
+async function executeVoidRegister() {
   const row = historyActionRow.value;
-  if (!row || historyActionMode.value !== 'yb-cancel') {
+  if (!row || historyActionMode.value !== 'void') {
     return;
   }
   actionDialogLoading.value = true;
   try {
     await cancelPlannedRegisterEncounter({
-      cancelReason: '窗口医保退号',
+      cancelReason: '窗口取消挂号',
       encounterId: row.encounterId,
     });
     historyActionDialogVisible.value = false;
     historyActionRow.value = null;
-    ElMessage.success('医保退号成功');
+    ElMessage.success('取消成功');
     await handleQuery();
     emit('recordsChanged');
   } catch (error) {
-    const message = resolveLocalActionErrorMessage(error, '医保退号失败，请稍后重试');
+    const message = resolveLocalActionErrorMessage(error, '取消失败，请稍后重试');
     if (message) {
       ElMessage.error(message);
     }
@@ -631,6 +695,9 @@ async function executeCancelRegister() {
       encounterId: row.encounterId,
       ...(clientRefundResult ? { clientRefundResult } : {}),
     });
+    if (paymentId) {
+      clearCachedClientRefundResult(paymentId);
+    }
     historyActionDialogVisible.value = false;
     historyActionRow.value = null;
     ElMessage.success('退号成功');
@@ -652,18 +719,24 @@ async function executeCancelRegister() {
 }
 
 /**
- * 表格分页变更：写回页码与每页条数后重新查询。
+ * 表格分页变更：写回页码与每页条数后重新查询（沿用已提交关键字）。
  */
 const handlePagination = ({ page, limit }: { limit: number; page: number }) => {
-  queryParams.value.pageNo = page;
-  queryParams.value.pageSize = limit;
-  handleQuery();
+  queryParams.value.pageNo = Number(page) || 1;
+  queryParams.value.pageSize = Number(limit) || queryParams.value.pageSize || 20;
+  void handleQuery();
 };
 
 /**
- * 关键字搜索：回到第一页再查，避免仍停留在深页导致空表误解。
+ * 关键字搜索：提交输入草稿后回到第一页再查。
  */
 const handleKeywordSearch = async () => {
+  const draft =
+    props.toolbarMode === 'hidden'
+      ? String(keywordModel.value ?? '')
+      : String(queryParams.value.keyword ?? '');
+  committedKeyword.value = draft.trim();
+  queryParams.value.keyword = committedKeyword.value;
   queryParams.value.pageNo = 1;
   await handleQuery();
 };
@@ -682,7 +755,7 @@ function applyDateRangeQuick(spec: DateRangeQuickSpec) {
   handleDateRangeChange();
 }
 
-/** 进入页面默认按「今天」条件拉一次列表（不等待本地 Win / 支付渠道 init） */
+/** 进入页面默认按父级日期（缺省今天）拉一次列表（不等待本地 Win / 支付渠道 init） */
 onMounted(() => {
   if (typeof ResizeObserver !== 'undefined' && tableAreaRef.value) {
     tableAreaResizeObserver = new ResizeObserver(() => {
@@ -692,6 +765,9 @@ onMounted(() => {
     tableAreaResizeObserver.observe(tableAreaRef.value);
   }
 
+  if (props.dateRange) {
+    queryParams.value.dateRange = props.dateRange;
+  }
   void handleQuery();
   void ensurePayChannelsLoaded();
 });
@@ -746,6 +822,7 @@ defineExpose({
               end-placeholder="结束日期"
               value-format="YYYY-MM-DD"
               style="width: 260px; max-width: 260px; flex: 0 0 260px"
+              :shortcuts="dateRangeShortcuts"
               @change="handleDateRangeChange"
             />
             <ElButton @click="applyDateRangeQuick({ strategy: 'calendar-day' })">今天</ElButton>
@@ -763,7 +840,7 @@ defineExpose({
 
       <template #status="{ row }">
         <ElTag :type="tagTypeByCode(row.statusEnum, ENCOUNTER_STATUS_EL_TAG_MAP)" effect="light">
-          {{ row.statusText }}
+          {{ row.statusEnum === ENCOUNTER_STATUS_CODE.CANCELLED ? '退号' : row.statusText }}
         </ElTag>
       </template>
 
@@ -786,8 +863,8 @@ defineExpose({
           >
             补打
           </ElButton>
-          <ElButton v-if="canShowYbCancel(row)" type="danger" link @click="handleYbCancel(row)">
-            医保退号
+          <ElButton v-if="canShowVoid(row)" type="danger" link @click="handleVoid(row)">
+            取消
           </ElButton>
           <ElButton v-if="canShowCancel(row)" type="danger" link @click="handleCancel(row)">
             退号
@@ -798,74 +875,66 @@ defineExpose({
 
     <AppDialog
       v-model="historyActionDialogVisible"
+      class="register-history-action-dialog"
       :title="historyActionTitle"
-      width="520px"
+      width="560px"
       append-to-body
       destroy-on-close
+      @opened="onHistoryActionDialogOpened"
       @closed="onHistoryActionDialogClosed"
     >
       <div
         v-if="historyActionRow"
-        class="max-h-[min(400px,58vh)] overflow-y-auto text-left text-[14px] leading-relaxed"
+        class="register-history-action-dialog__body text-left text-[14px] leading-relaxed"
       >
-        <div
-          class="mb-1 border-0 border-b border-solid border-[var(--el-border-color-lighter)] pb-1 text-[14px] font-semibold text-[var(--el-text-color-primary)]"
-        >
-          就诊与患者
-        </div>
-        <div class="grid grid-cols-[96px_1fr] gap-x-2 gap-y-1 py-0.5">
-          <span class="text-[var(--el-text-color-regular)]">就诊号</span>
-          <span class="break-all text-[var(--el-text-color-primary)]">{{
-            historyDialogCell(historyActionRow.encounterBusNo)
-          }}</span>
-          <span class="text-[var(--el-text-color-regular)]">患者姓名</span>
-          <span class="break-all text-[var(--el-text-color-primary)]">{{
-            historyDialogCell(historyActionRow.patientName)
-          }}</span>
-          <span class="text-[var(--el-text-color-regular)]">联系电话</span>
-          <span class="break-all text-[var(--el-text-color-primary)]">{{
-            historyDialogCell(historyActionRow.contactPhone)
-          }}</span>
-        </div>
-
         <template v-if="historyActionMode === 'charge'">
-          <div
-            class="mb-1 mt-4 border-0 border-b border-solid border-[var(--el-border-color-lighter)] pb-1 text-[14px] font-semibold text-[var(--el-text-color-primary)]"
-          >
-            费用与草稿
-          </div>
-          <div class="grid grid-cols-[96px_1fr] gap-x-2 gap-y-1 py-0.5">
-            <span class="text-[var(--el-text-color-regular)]">应收金额</span>
-            <span class="text-[var(--el-text-color-primary)]">{{
+          <div class="register-history-action-dialog__amount">
+            <span class="register-history-action-dialog__amount-label">应收金额</span>
+            <span class="register-history-action-dialog__amount-value">{{
               historyDialogAmountYuan({
                 ...historyActionRow,
                 amount: historyPayableCashAmount(historyActionRow),
               })
             }}</span>
+          </div>
+
+          <div class="register-history-action-dialog__meta">
+            <div class="register-history-action-dialog__meta-row">
+              <span>就诊号</span>
+              <span class="break-all">{{
+                historyDialogCell(historyActionRow.encounterBusNo)
+              }}</span>
+            </div>
+            <div class="register-history-action-dialog__meta-row">
+              <span>患者</span>
+              <span class="break-all">{{ historyDialogCell(historyActionRow.patientName) }}</span>
+            </div>
+            <div class="register-history-action-dialog__meta-row">
+              <span>挂号类型</span>
+              <span class="break-all">{{
+                historyDialogCell(historyActionRow.serviceTypeName)
+              }}</span>
+            </div>
             <template v-if="historyActionRow.insurancePreSettled">
-              <span class="text-[var(--el-text-color-regular)]">基金支付</span>
-              <span class="text-[var(--el-text-color-primary)]">{{
-                historyDialogAmountYuan({
-                  ...historyActionRow,
-                  amount: historyActionRow.ybFundPaySumamt ?? 0,
-                })
-              }}</span>
-              <span class="text-[var(--el-text-color-regular)]">个账支付</span>
-              <span class="text-[var(--el-text-color-primary)]">{{
-                historyDialogAmountYuan({
-                  ...historyActionRow,
-                  amount: historyActionRow.ybAcctPay ?? 0,
-                })
-              }}</span>
+              <div class="register-history-action-dialog__meta-row">
+                <span>基金支付</span>
+                <span>{{
+                  historyDialogAmountYuan({
+                    ...historyActionRow,
+                    amount: historyActionRow.ybFundPaySumamt ?? 0,
+                  })
+                }}</span>
+              </div>
+              <div class="register-history-action-dialog__meta-row">
+                <span>个账支付</span>
+                <span>{{
+                  historyDialogAmountYuan({
+                    ...historyActionRow,
+                    amount: historyActionRow.ybAcctPay ?? 0,
+                  })
+                }}</span>
+              </div>
             </template>
-            <span class="text-[var(--el-text-color-regular)]">支付草稿</span>
-            <span class="break-all text-[var(--el-text-color-primary)]">{{
-              historyDialogCell(historyActionRow.paymentDraftId)
-            }}</span>
-            <span class="text-[var(--el-text-color-regular)]">挂号类型</span>
-            <span class="break-all text-[var(--el-text-color-primary)]">{{
-              historyDialogCell(historyActionRow.serviceTypeName)
-            }}</span>
           </div>
 
           <ElAlert
@@ -889,16 +958,12 @@ defineExpose({
             </ElButton>
           </div>
 
-          <div class="mt-4">
-            <div
-              class="mb-1 border-0 border-b border-solid border-[var(--el-border-color-lighter)] pb-1 text-[14px] font-semibold text-[var(--el-text-color-primary)]"
-            >
-              支付方式
-            </div>
+          <div class="register-history-action-dialog__pay">
+            <div class="register-history-action-dialog__section-title">支付方式</div>
             <ElRadioGroup
               v-if="historyPayableCashAmount(historyActionRow) > 0.001"
               v-model="payChannelCode"
-              class="flex flex-wrap gap-2"
+              class="register-history-action-dialog__channels"
             >
               <ElRadioButton
                 v-for="opt in effectivePayChannelOptions"
@@ -909,36 +974,60 @@ defineExpose({
               </ElRadioButton>
             </ElRadioGroup>
             <p v-else class="text-[13px] text-[var(--el-text-color-secondary)]">
-              医保已全额覆盖，无需额外现金支付
+              {{
+                historyActionRow.insurancePreSettled
+                  ? '医保已全额覆盖，无需额外现金支付'
+                  : '本单金额为 0，无需支付'
+              }}
             </p>
           </div>
 
-          <div v-if="showScanPaySection" class="mt-3">
-            <div class="mb-2 text-[14px] font-semibold text-[var(--el-text-color-primary)]">
-              扫码支付
-            </div>
+          <div v-if="showScanPaySection" class="register-history-action-dialog__scan">
             <ElInput
+              ref="scanCodeInputRef"
               v-model="scanCode"
-              placeholder="请扫码或输入付款码"
+              size="large"
               clearable
+              placeholder="请扫码或输入付款码，回车确认收费"
               @keyup.enter="executeChargeRegister"
             />
-            <p v-if="scanStatusText" class="mt-2 text-[13px] text-blue-600">{{ scanStatusText }}</p>
+            <p v-if="scanStatusText" class="register-history-action-dialog__scan-status">
+              {{ scanStatusText }}
+            </p>
           </div>
         </template>
 
-        <template v-else-if="historyActionMode === 'yb-cancel'">
+        <template v-else-if="historyActionMode === 'void'">
           <div
-            class="mb-1 mt-4 border-0 border-b border-solid border-[var(--el-border-color-lighter)] pb-1 text-[14px] font-semibold text-[var(--el-text-color-primary)]"
+            class="mb-1 border-0 border-b border-solid border-[var(--el-border-color-lighter)] pb-1 text-[14px] font-semibold text-[var(--el-text-color-primary)]"
           >
-            医保退号说明
+            取消说明
           </div>
           <p class="text-[13px] leading-relaxed text-[var(--el-text-color-regular)]">
-            该记录已在医保平台完成挂号登记（2201）且尚未收费，确认后将撤销平台挂号并作废本地待挂号记录。
+            确认后将取消本笔未收费挂号并作废支付草稿。若本单已做过挂号费医保预结算，将按需撤销未结算明细与平台挂号（med_type=12）；未上平台则仅本地取消。
           </p>
         </template>
 
         <template v-else>
+          <div
+            class="mb-1 border-0 border-b border-solid border-[var(--el-border-color-lighter)] pb-1 text-[14px] font-semibold text-[var(--el-text-color-primary)]"
+          >
+            就诊与患者
+          </div>
+          <div class="grid grid-cols-[96px_1fr] gap-x-2 gap-y-1 py-0.5">
+            <span class="text-[var(--el-text-color-regular)]">就诊号</span>
+            <span class="break-all text-[var(--el-text-color-primary)]">{{
+              historyDialogCell(historyActionRow.encounterBusNo)
+            }}</span>
+            <span class="text-[var(--el-text-color-regular)]">患者姓名</span>
+            <span class="break-all text-[var(--el-text-color-primary)]">{{
+              historyDialogCell(historyActionRow.patientName)
+            }}</span>
+            <span class="text-[var(--el-text-color-regular)]">联系电话</span>
+            <span class="break-all text-[var(--el-text-color-primary)]">{{
+              historyDialogCell(historyActionRow.contactPhone)
+            }}</span>
+          </div>
           <div
             class="mb-1 mt-4 border-0 border-b border-solid border-[var(--el-border-color-lighter)] pb-1 text-[14px] font-semibold text-[var(--el-text-color-primary)]"
           >
@@ -987,12 +1076,12 @@ defineExpose({
             确认收费
           </ElButton>
           <ElButton
-            v-else-if="historyActionMode === 'yb-cancel'"
+            v-else-if="historyActionMode === 'void'"
             type="danger"
             :loading="actionDialogLoading"
-            @click="executeYbCancelRegister"
+            @click="executeVoidRegister"
           >
-            确认医保退号
+            确认取消
           </ElButton>
           <ElButton
             v-else-if="historyActionMode === 'cancel'"
@@ -1131,5 +1220,81 @@ defineExpose({
   flex-wrap: nowrap;
   align-items: center;
   white-space: nowrap;
+}
+
+.register-history-action-dialog__body {
+  max-height: min(460px, 62vh);
+  overflow-y: auto;
+}
+
+.register-history-action-dialog__amount {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: var(--el-color-primary-light-9);
+  border-radius: 8px;
+}
+
+.register-history-action-dialog__amount-label {
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+
+.register-history-action-dialog__amount-value {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--el-color-primary);
+}
+
+.register-history-action-dialog__meta {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.register-history-action-dialog__meta-row {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.register-history-action-dialog__meta-row > span:first-child {
+  color: var(--el-text-color-secondary);
+}
+
+.register-history-action-dialog__meta-row > span:last-child {
+  color: var(--el-text-color-primary);
+}
+
+.register-history-action-dialog__pay {
+  margin-top: 16px;
+}
+
+.register-history-action-dialog__section-title {
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.register-history-action-dialog__channels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.register-history-action-dialog__scan {
+  margin-top: 14px;
+}
+
+.register-history-action-dialog__scan-status {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--el-color-primary);
 }
 </style>

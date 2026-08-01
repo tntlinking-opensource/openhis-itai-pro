@@ -92,6 +92,8 @@ async function requestServiceList(params: Record<string, string | number | undef
       pageNo,
       pageSize,
       keyword: keyword.trim() || undefined,
+      // 维护父项时挑选子项，须能检索明细行
+      includeReferencedPackageChildren: true,
     });
     const parsed = parsePagedRowsFromApiData<ServiceCatalogItem>(response?.data);
     const excludeId =

@@ -62,6 +62,8 @@ async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pa
       pageNo,
       pageSize,
       keyword: keyword?.trim() || undefined,
+      // 维护父项时挑选子项，须能检索明细行
+      includeReferencedPackageChildren: true,
     });
     const parsed = parsePagedRowsFromApiData<ServiceCatalogItem>(response?.data);
     const excludeId = props.excludeId != null ? String(props.excludeId) : '';

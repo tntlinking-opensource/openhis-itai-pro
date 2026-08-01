@@ -22,9 +22,10 @@ export async function ensureInsuranceSignIn(
   if (!endpoint.fromPlugin) {
     if (warn) {
       const reason = endpoint.fallbackReason ?? '';
+      // 服务端 sign_mac 回退仍可成功签到；文案避免误判为「插件连不上」阻断业务
       const message = endpoint.pluginOnline
-        ? `本机 HeaSec 获取签到 MAC 失败：${reason}。将改由服务端 sign_mac 完成签到。`
-        : `本机读卡插件未启动：${reason}。将改由服务端 sign_mac 完成签到。`;
+        ? `本机未取到签到 MAC（${reason}），已改由服务端完成签到。`
+        : `本机未取到签到终端信息（${reason}），已改由服务端完成签到。`;
       ElMessage.warning({
         message,
         duration: 8000,

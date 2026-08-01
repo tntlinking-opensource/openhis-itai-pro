@@ -87,7 +87,9 @@ import {
   INV_ITEM_TABLE_TYPE_DEVICE,
   INV_ITEM_TABLE_TYPE_MEDICATION,
   coercePractitionerIdForSelect,
+  normalizeInventoryItemTableTypeOptions,
   requireSpecificInventoryLocationId,
+  resolveDefaultInventoryItemTableType,
   resolveFirstRealLocationIdFromOptionItems,
   resolveSpecificInventoryLocationId,
   resolveDefaultPractitionerIdForSelect,
@@ -110,6 +112,8 @@ import {
   stockOutStatusLabel,
   normalizeStockOutStatusSort,
 } from '#/utils/inventory/stock-out-doc-actions';
+import { buildInvDocumentTitle, printInvDocument } from '#/utils/print/print-inv-document';
+import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 
 defineOptions({ name: 'InventoryRequisitionMainPane' });
 
@@ -146,6 +150,7 @@ interface Props {
   warehouseOptions: ApiOptionItem[];
   pharmacyOptions: ApiOptionItem[];
   practitionerOptions?: ApiOptionItem[];
+  itemTableTypeOptions?: ApiOptionItem[];
   headSectionTitle?: string;
   purposeLocationLabel?: string;
 }
@@ -157,6 +162,7 @@ const props = withDefaults(defineProps<Props>(), {
   warehouseOptions: () => [],
   pharmacyOptions: () => [],
   practitionerOptions: () => [],
+  itemTableTypeOptions: () => [],
   headSectionTitle: '请领单信息',
   purposeLocationLabel: '目的药房',
 });
@@ -179,10 +185,22 @@ const productPickGateLocationId = computed(() =>
   resolveFirstRealLocationIdFromOptionItems(props.warehouseOptions),
 );
 
-/** 科室请领默认耗材；药房请领默认药品。 */
-const HEAD_ITEM_TABLE_TYPE = computed(() =>
-  isPharmacyVariant.value ? INV_ITEM_TABLE_TYPE_MEDICATION : INV_ITEM_TABLE_TYPE_DEVICE,
+const normalizedItemTableTypeOptions = computed(() =>
+  normalizeInventoryItemTableTypeOptions(props.itemTableTypeOptions),
 );
+
+/** 科室请领默认耗材；药房请领默认药品。 */
+function preferredItemTableType(): string {
+  return isPharmacyVariant.value ? INV_ITEM_TABLE_TYPE_MEDICATION : INV_ITEM_TABLE_TYPE_DEVICE;
+}
+
+/** 取当前可选项目类型默认值。 */
+function firstItemTableTypeValue(): string {
+  return resolveDefaultInventoryItemTableType(
+    normalizedItemTableTypeOptions.value,
+    preferredItemTableType(),
+  );
+}
 
 const pinnedPractitionerOptions = ref<ApiOptionItem[]>([]);
 
@@ -221,6 +239,7 @@ const headFormRules = computed(() =>
 );
 
 const practitionerId = ref<number | string | undefined>(undefined);
+const headItemTableType = ref(firstItemTableTypeValue());
 const detailStatusEnum = ref<number | string | undefined>(undefined);
 const headApplyTime = ref(formatDateTime(new Date()));
 const saving = ref(false);
@@ -236,8 +255,9 @@ const headerStatusText = computed(() => {
 });
 
 const docActionFlags = computed(() => {
+  const hasPersistedBusNo = Boolean(headerBusNo.value);
   const base = buildStockOutDocActionFlags({
-    hasPersistedBusNo: Boolean(headerBusNo.value),
+    hasPersistedBusNo,
     isDraft: isNewDraft.value,
     status: normalizeStockOutStatusSort(detailStatusEnum.value),
   });
@@ -246,6 +266,7 @@ const docActionFlags = computed(() => {
     ...base,
     saveDisabled: base.saveDisabled || busy,
     saveAndSubmitDisabled: base.saveAndSubmitDisabled || busy,
+    printDisabled: busy || !hasPersistedBusNo,
   };
 });
 
@@ -272,6 +293,16 @@ function formatRequisitionExpirationDisplay(raw: unknown): string {
   if (s.includes(' ')) return s.split(' ')[0] ?? s;
   if (s.includes('T')) return s.split('T')[0] ?? s;
   return s;
+}
+
+/** 表格有效期 → 请求体 endTime（与进货单 normalizeInboundLineDateTimeForApi 同构） */
+function normalizeRequisitionLineDateTimeForApi(dateStr: string): string | undefined {
+  const raw = String(dateStr ?? '').trim();
+  if (!raw) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return `${raw}T00:00:00`;
+  }
+  return raw.includes('T') ? raw : raw.replace(' ', 'T');
 }
 
 function recalcRequisitionLineTotal(row: RequisitionPreviewRow) {
@@ -424,7 +455,7 @@ const columns: VxeGridPropTypes.Column[] = [
       props: {
         listSource: listSource,
         query: async () => ({
-          productTableName: HEAD_ITEM_TABLE_TYPE.value,
+          productTableName: headItemTableType.value,
           sourceLocationId: resolveRequisitionProductPickSourceLocationId(),
         }),
         onSelected: (product: Record<string, unknown>, row: RequisitionPreviewRow) => {
@@ -547,6 +578,7 @@ function resetDetailForCreate() {
   pinnedPractitionerOptions.value = [];
   sourceLocationId.value = undefined;
   purposeLocationId.value = undefined;
+  headItemTableType.value = firstItemTableTypeValue();
   practitionerId.value = resolveDefaultPractitionerIdForSelect(
     effectivePractitionerOptions.value,
     userStore.userInfo as null | Record<string, unknown>,
@@ -589,6 +621,8 @@ async function loadDetail(busNo: string, loadGen?: number) {
       detailPractitionerId,
       effectivePractitionerOptions.value,
     );
+    const firstLineTable = String(data.lines?.[0]?.itemTable ?? '').trim();
+    headItemTableType.value = firstLineTable !== '' ? firstLineTable : firstItemTableTypeValue();
     const firstOcc = data.lines?.find((ln) => ln.occurrenceTime)?.occurrenceTime;
     headApplyTime.value = firstOcc ? formatDateTime(String(firstOcc)) : formatDateTime(new Date());
     const gridRows = (data.lines ?? []).map((ln, i) => mapDetailLineToGrid(ln, i));
@@ -634,6 +668,7 @@ function buildLinesPayload(
         legacyUnitCode: r.unitCode,
         selectedBandKind: r.selectedBandKind,
       }) || String(r.unitCode ?? '').trim();
+    const endTime = normalizeRequisitionLineDateTimeForApi(String(r.expirationDate ?? ''));
     return {
       itemTable: r.itemTable,
       itemId: r.itemId,
@@ -647,6 +682,7 @@ function buildLinesPayload(
       price: Number.isFinite(unit) && unit > 0 ? unit : undefined,
       totalPrice,
       occurrenceTime,
+      ...(endTime ? { endTime } : {}),
       remake: String(r.remark ?? '').trim() || undefined,
     };
   });
@@ -916,6 +952,7 @@ interface RequisitionDraftSnap {
   sourceLocationId?: number | string;
   purposeLocationId?: number | string;
   practitionerId?: number | string;
+  headItemTableType: string;
   headApplyTime: string;
   rows: RequisitionPreviewRow[];
 }
@@ -932,6 +969,7 @@ async function syncFromParentContext() {
         sourceLocationId: sourceLocationId.value,
         purposeLocationId: purposeLocationId.value,
         practitionerId: practitionerId.value,
+        headItemTableType: headItemTableType.value,
         headApplyTime: headApplyTime.value,
         rows: collectGridRows().map((r) => ({ ...r })),
       }),
@@ -941,6 +979,7 @@ async function syncFromParentContext() {
         sourceLocationId.value = snap.sourceLocationId;
         purposeLocationId.value = snap.purposeLocationId;
         practitionerId.value = snap.practitionerId;
+        headItemTableType.value = snap.headItemTableType;
         headApplyTime.value = snap.headApplyTime;
         requisitionGridEdit.resetFormMode();
         await nextTick();
@@ -973,6 +1012,21 @@ watch(
 );
 
 watch(
+  normalizedItemTableTypeOptions,
+  (opts) => {
+    if (opts.length === 0) return;
+    const current = String(headItemTableType.value ?? '').trim();
+    if (!current || !opts.some((o) => o.value === current)) {
+      headItemTableType.value = resolveDefaultInventoryItemTableType(
+        opts,
+        preferredItemTableType(),
+      );
+    }
+  },
+  { immediate: true },
+);
+
+watch(
   effectivePractitionerOptions,
   (opts) => {
     if (opts.length === 0) return;
@@ -996,6 +1050,90 @@ watch(documentEditable, (editable) => {
     }
   });
 });
+
+/** 解析下拉选项展示名 */
+function resolvePrintOptionLabel(options: ApiOptionItem[] | undefined, value: unknown): string {
+  const key = String(value ?? '').trim();
+  if (!key) return '';
+  const hit = options?.find((item) => String(item.value ?? '') === key);
+  return String(hit?.label ?? '').trim();
+}
+
+/** 明细行当前计量单位展示文案 */
+function resolveRequisitionPrintUnitLabel(row: RequisitionPreviewRow): string {
+  const kind = String(row.selectedBandKind ?? '').trim();
+  const byKind = row.unitList?.find((item) => String(item.value ?? '') === kind);
+  if (byKind) {
+    return String(byKind.label ?? byKind.value_dictText ?? '').trim();
+  }
+  return String(row.unitCodeDictText ?? row.unitCode ?? '').trim();
+}
+
+/** 打印请领单（计价流转模版） */
+async function handlePrint() {
+  const busNo = String(headerBusNo.value ?? '').trim();
+  if (!busNo) {
+    ElMessage.warning('请先保存单据后再打印');
+    return;
+  }
+  const productRows = collectGridRows().filter((row) => isPresentItemId(row.itemId));
+  if (productRows.length === 0) {
+    ElMessage.warning('没有可打印的明细');
+    return;
+  }
+
+  const sourceName = resolvePrintOptionLabel(props.warehouseOptions, sourceLocationId.value);
+  const destName = resolvePrintOptionLabel(props.pharmacyOptions, purposeLocationId.value);
+  const itemTypeText = resolvePrintOptionLabel(
+    normalizedItemTableTypeOptions.value,
+    headItemTableType.value,
+  );
+  const practitionerName = resolvePrintOptionLabel(
+    effectivePractitionerOptions.value,
+    practitionerId.value,
+  );
+  const documentTitle = buildInvDocumentTitle(sourceName || destName, '请领单');
+  const applyTimeText = String(headApplyTime.value ?? '')
+    .trim()
+    .replace('T', ' ');
+
+  // 按当前网格展示值组装 PrintData
+  const lineRows = productRows.map((row) => ({
+    productName: String(row.productName ?? '').trim(),
+    specText: String(row.spec ?? '').trim(),
+    manufacturerText: String(row.manufacturer ?? '').trim(),
+    qty: row.itemQuantity,
+    unitLabel: resolveRequisitionPrintUnitLabel(row),
+    unitPrice: row.price,
+    amount: row.totalPrice,
+    lotNumber: String(row.lotNumber ?? '').trim(),
+    expiryDate: String(row.expirationDate ?? '')
+      .trim()
+      .slice(0, 10),
+  }));
+
+  await printInvDocument({
+    family: 'movement',
+    source: {
+      hospitalName: resolvePrintHospitalName(),
+      documentTitle,
+      docNo: busNo,
+      applyTimeText,
+      itemTypeText,
+      sourceLocationText: sourceName,
+      supplierText: '',
+      linkDocText: '',
+      destLocationText: destName,
+      invoiceNoText: '',
+      practitionerName,
+      lineRows,
+      preparedByName: practitionerName,
+      approvedByName: '',
+    },
+    bizRef: { busNo, docKind: 'requisition', variant: props.variant },
+    jobName: documentTitle,
+  });
+}
 </script>
 
 <template>
@@ -1006,6 +1144,7 @@ watch(documentEditable, (editable) => {
           <InvDocActions
             v-bind="docActionFlags"
             @approve="handleApprove"
+            @print="handlePrint"
             @reject="handleReject"
             @remove-doc="handleRemoveDoc"
             @save="handleSaveDoc"
@@ -1087,6 +1226,22 @@ watch(documentEditable, (editable) => {
                     :key="String(p.value)"
                     :label="p.label"
                     :value="p.value"
+                  />
+                </ElSelect>
+              </ElFormItem>
+              <ElFormItem label="项目类型">
+                <ElSelect
+                  v-model="headItemTableType"
+                  class="w-full"
+                  filterable
+                  placeholder="请选择"
+                  :disabled="!documentEditable"
+                >
+                  <ElOption
+                    v-for="t in normalizedItemTableTypeOptions"
+                    :key="String(t.value)"
+                    :label="t.label"
+                    :value="String(t.value)"
                   />
                 </ElSelect>
               </ElFormItem>

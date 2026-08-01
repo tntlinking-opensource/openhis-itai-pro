@@ -7,7 +7,8 @@ import TraceBatchScanDialog from '#/components/trace/trace-batch-scan-dialog.vue
 import type { TraceBatchScanLine } from '#/utils/trace';
 
 import {
-  parseDispenseLineQuantity,
+  resolveDispenseOperationSplitQty,
+  resolveDispenseRequiredTraceCount,
   resolveDispenseTraceScanInventory,
 } from '../services/resolve-dispense-trace-scan-inventory';
 
@@ -39,14 +40,17 @@ const scanLines = computed((): TraceBatchScanLine[] =>
   props.lines.map((row) => {
     const inventory = resolveDispenseTraceScanInventory(row, props.inventoryPickByLineId);
     return {
-      id: row.id,
-      itemId: row.medicationId,
+      // id/itemId 统一 string，避免锁定行与明细 find 时 === 对不上
+      id: String(row.id ?? ''),
+      itemId: String(row.medicationId ?? '').trim() || undefined,
       locationId: inventory.locationId || props.defaultLocationId || undefined,
       lotNumber: inventory.lotNumber,
       itemName: row.itemName,
       spec: row.spec,
       rxNo: row.rxNo,
-      requiredTraceCount: parseDispenseLineQuantity(row),
+      requiredTraceCount: resolveDispenseRequiredTraceCount(row),
+      operationSplitQty: resolveDispenseOperationSplitQty(row),
+      lotHasTraceMaster: row.lotHasTraceMaster === true,
       traceNo: row.traceCode === '—' ? '' : String(row.traceCode ?? '').trim(),
     };
   }),

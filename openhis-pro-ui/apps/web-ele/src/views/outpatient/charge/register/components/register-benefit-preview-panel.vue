@@ -52,8 +52,12 @@ const props = withDefaults(
     scrollableTables?: boolean;
     /** 默认展示全部待遇检查基金项（含不享受） */
     defaultShowAllTreatment?: boolean;
-    /** vertical：label 在上、value 在下，无表格（挂号页左侧） */
+    /** 父级异步拉取待遇明细中（读卡后 2001/5301/5206） */
+    externalTreatmentLoading?: boolean;
+    /** vertical：挂号页左侧紧凑字段区 */
     layout?: 'default' | 'vertical';
+    /** 父级已展示费用性质匹配提示时隐藏本面板区划 Alert，避免重复 */
+    suppressAreaAlert?: boolean;
     ybCardInfo?: string;
     ybCardSn?: string;
     ybCertno?: string;
@@ -63,7 +67,9 @@ const props = withDefaults(
     scrollableTables: true,
     medType: '11',
     defaultShowAllTreatment: false,
+    externalTreatmentLoading: false,
     layout: 'default',
+    suppressAreaAlert: false,
   },
 );
 
@@ -72,6 +78,10 @@ const selectedInsuIndex = ref(0);
 const treatmentLoading = ref(false);
 /** 默认仅展示享受待遇的基金项；挂号页可配置为全部展示 */
 const showNotEnjoyedTreatment = ref(props.defaultShowAllTreatment);
+
+const panelTreatmentLoading = computed(
+  () => treatmentLoading.value || props.externalTreatmentLoading,
+);
 
 const tableMaxHeight = computed(() => (props.scrollableTables ? 160 : undefined));
 const opspTableMaxHeight = computed(() => (props.scrollableTables ? 140 : undefined));
@@ -86,6 +96,33 @@ const selectedInsuRow = computed<null | YbInsuInfoPreviewDto>(() => {
 });
 
 const areaAlertType = computed(() => benefitAreaAlertType(previewModel.value.areaHint?.areaKind));
+
+/** 仅异地/未知时展示区划提示；本地成功文案不占版面；父级已提示时不重复 */
+const showAreaAlert = computed(() => {
+  if (props.suppressAreaAlert) {
+    return false;
+  }
+  const hint = previewModel.value.areaHint;
+  if (!hint?.hintMessage) {
+    return false;
+  }
+  const kind = hint.areaKind;
+  return kind === 'IN_PROVINCE' || kind === 'CROSS_PROVINCE' || kind === 'UNKNOWN';
+});
+
+const insuplcDisplay = computed(() =>
+  formatInsuplcAdmdvsDisplay(
+    selectedInsuRow.value?.insuplcAdmdvs ?? previewModel.value.insuplcAdmdvs,
+  ),
+);
+
+const mdtrtDisplay = computed(() =>
+  formatInsuplcAdmdvsDisplay(previewModel.value.areaHint?.mdtrtareaAdmdvs),
+);
+
+const balcDisplay = computed(() =>
+  formatBenefitBalc(selectedInsuRow.value?.balc ?? previewModel.value.balc),
+);
 
 const treatmentCheckTitle = computed(() => `待遇检查（${formatMedType(props.medType ?? '11')}）`);
 
@@ -103,6 +140,9 @@ const displayedTreatmentRows = computed(() => {
 });
 
 const treatmentTableEmptyText = computed(() => {
+  if (panelTreatmentLoading.value && allTreatmentRows.value.length === 0) {
+    return '正在加载待遇信息…';
+  }
   if (allTreatmentRows.value.length === 0) {
     return '暂无待遇检查数据';
   }
@@ -201,11 +241,11 @@ defineExpose({
     :class="{ 'register-benefit-preview-panel--vertical': layout === 'vertical' }"
   >
     <ElAlert
-      v-if="previewModel.areaHint?.hintMessage"
+      v-if="showAreaAlert"
       :type="areaAlertType"
       :closable="false"
       show-icon
-      :title="previewModel.areaHint.hintMessage"
+      :title="previewModel.areaHint?.hintMessage"
       class="register-benefit-preview-panel__alert"
     />
 
@@ -226,218 +266,229 @@ defineExpose({
         </button>
       </div>
 
-      <div class="register-benefit-preview-panel__field-grid">
-        <div class="register-benefit-preview-panel__field">
-          <div class="register-benefit-preview-panel__field-label">姓名</div>
-          <div class="register-benefit-preview-panel__field-value">
+      <div class="register-benefit-preview-panel__hero">
+        <div class="register-benefit-preview-panel__hero-main">
+          <span class="register-benefit-preview-panel__hero-name">
             {{ displayBenefitDash(previewModel.psnName) }}
-          </div>
-        </div>
-        <div class="register-benefit-preview-panel__field">
-          <div class="register-benefit-preview-panel__field-label">证件号</div>
-          <div class="register-benefit-preview-panel__field-value">
-            {{ displayBenefitDash(previewModel.certno) }}
-          </div>
-        </div>
-        <div class="register-benefit-preview-panel__field">
-          <div class="register-benefit-preview-panel__field-label">人员编号</div>
-          <div class="register-benefit-preview-panel__field-value">
-            {{ displayBenefitDash(previewModel.psnNo) }}
-          </div>
-        </div>
-        <div class="register-benefit-preview-panel__field">
-          <div class="register-benefit-preview-panel__field-label">性别</div>
-          <div class="register-benefit-preview-panel__field-value">
+          </span>
+          <span class="register-benefit-preview-panel__hero-meta">
             {{ formatBenefitGend(previewModel.gend) }}
-          </div>
-        </div>
-        <div class="register-benefit-preview-panel__field">
-          <div class="register-benefit-preview-panel__field-label">出生日期</div>
-          <div class="register-benefit-preview-panel__field-value">
-            {{ displayBenefitDash(previewModel.brdy) }}
-          </div>
-        </div>
-        <div class="register-benefit-preview-panel__field">
-          <div class="register-benefit-preview-panel__field-label">{{ credentialLabel }}</div>
-          <div class="register-benefit-preview-panel__field-value">
-            {{ displayBenefitDash(cardNo) }}
-          </div>
-        </div>
-        <div class="register-benefit-preview-panel__field">
-          <div class="register-benefit-preview-panel__field-label">参保地</div>
-          <div class="register-benefit-preview-panel__field-value">
-            {{
-              formatInsuplcAdmdvsDisplay(
-                selectedInsuRow?.insuplcAdmdvs ?? previewModel.insuplcAdmdvs,
-              )
-            }}
-          </div>
-        </div>
-        <div class="register-benefit-preview-panel__field">
-          <div class="register-benefit-preview-panel__field-label">险种</div>
-          <div class="register-benefit-preview-panel__field-value">
+            <template v-if="previewModel.brdy"> · {{ previewModel.brdy }}</template>
+          </span>
+          <span class="register-benefit-preview-panel__hero-insu">
             {{ formatInsutype(selectedInsuRow?.insutype ?? previewModel.insutype) }}
-          </div>
+          </span>
         </div>
-        <div class="register-benefit-preview-panel__field">
-          <div class="register-benefit-preview-panel__field-label">个账余额</div>
-          <div
-            class="register-benefit-preview-panel__field-value register-benefit-preview-panel__field-value--accent"
-          >
-            {{ formatBenefitBalc(selectedInsuRow?.balc ?? previewModel.balc) }}
-          </div>
+        <div class="register-benefit-preview-panel__hero-balc">
+          <span class="register-benefit-preview-panel__hero-balc-label">个账余额</span>
+          <span class="register-benefit-preview-panel__hero-balc-value">{{ balcDisplay }}</span>
         </div>
-        <div class="register-benefit-preview-panel__field">
-          <div class="register-benefit-preview-panel__field-label">人员类别</div>
-          <div class="register-benefit-preview-panel__field-value">
-            {{ formatBenefitPsnType(selectedInsuRow?.psnType) }}
-          </div>
-        </div>
-        <div class="register-benefit-preview-panel__field">
-          <div class="register-benefit-preview-panel__field-label">参保状态</div>
-          <div class="register-benefit-preview-panel__field-value">
-            {{ formatBenefitPsnInsuStas(selectedInsuRow?.psnInsuStas) }}
-          </div>
-        </div>
-        <div class="register-benefit-preview-panel__field">
-          <div class="register-benefit-preview-panel__field-label">参保日期</div>
-          <div class="register-benefit-preview-panel__field-value">
-            {{ displayBenefitDash(selectedInsuRow?.psnInsuDate) }}
-          </div>
-        </div>
-        <div class="register-benefit-preview-panel__field">
-          <div class="register-benefit-preview-panel__field-label">公务员</div>
-          <div class="register-benefit-preview-panel__field-value">
-            {{ formatCvlservFlag(selectedInsuRow?.cvlservFlag) }}
-          </div>
-        </div>
-        <div class="register-benefit-preview-panel__field">
-          <div class="register-benefit-preview-panel__field-label">就医地</div>
-          <div class="register-benefit-preview-panel__field-value">
-            {{ displayBenefitDash(previewModel.areaHint?.mdtrtareaAdmdvs) }}
-          </div>
-        </div>
-        <div
-          class="register-benefit-preview-panel__field register-benefit-preview-panel__field--span-4"
-        >
-          <div class="register-benefit-preview-panel__field-label">单位名称</div>
-          <div class="register-benefit-preview-panel__field-value">
-            {{ displayBenefitDash(selectedInsuRow?.empName) }}
+      </div>
+
+      <div class="register-benefit-preview-panel__groups">
+        <div class="register-benefit-preview-panel__group">
+          <div class="register-benefit-preview-panel__group-title">身份信息</div>
+          <div class="register-benefit-preview-panel__field-grid">
+            <div class="register-benefit-preview-panel__field">
+              <div class="register-benefit-preview-panel__field-label">证件号</div>
+              <div
+                class="register-benefit-preview-panel__field-value"
+                :title="displayBenefitDash(previewModel.certno)"
+              >
+                {{ displayBenefitDash(previewModel.certno) }}
+              </div>
+            </div>
+            <div class="register-benefit-preview-panel__field">
+              <div class="register-benefit-preview-panel__field-label">人员编号</div>
+              <div
+                class="register-benefit-preview-panel__field-value"
+                :title="displayBenefitDash(previewModel.psnNo)"
+              >
+                {{ displayBenefitDash(previewModel.psnNo) }}
+              </div>
+            </div>
+            <div class="register-benefit-preview-panel__field">
+              <div class="register-benefit-preview-panel__field-label">{{ credentialLabel }}</div>
+              <div
+                class="register-benefit-preview-panel__field-value"
+                :title="displayBenefitDash(cardNo)"
+              >
+                {{ displayBenefitDash(cardNo) }}
+              </div>
+            </div>
           </div>
         </div>
 
-        <template v-if="displayedTreatmentRows.length > 0">
-          <template v-for="(row, index) in displayedTreatmentRows" :key="`trt-${index}`">
-            <div
-              class="register-benefit-preview-panel__field register-benefit-preview-panel__field--span-2"
-            >
-              <div class="register-benefit-preview-panel__field-label">基金类型</div>
-              <div class="register-benefit-preview-panel__field-value">
-                {{ formatFundPayType(row.fundPayType) }}
+        <div class="register-benefit-preview-panel__group">
+          <div class="register-benefit-preview-panel__group-title">参保信息</div>
+          <div class="register-benefit-preview-panel__field-grid">
+            <div class="register-benefit-preview-panel__field">
+              <div class="register-benefit-preview-panel__field-label">参保地</div>
+              <div
+                class="register-benefit-preview-panel__field-value register-benefit-preview-panel__field-value--emphasis"
+              >
+                {{ insuplcDisplay }}
               </div>
             </div>
             <div class="register-benefit-preview-panel__field">
-              <div class="register-benefit-preview-panel__field-label">享受标志</div>
+              <div class="register-benefit-preview-panel__field-label">就医地</div>
+              <div class="register-benefit-preview-panel__field-value">{{ mdtrtDisplay }}</div>
+            </div>
+            <div class="register-benefit-preview-panel__field">
+              <div class="register-benefit-preview-panel__field-label">人员类别</div>
               <div class="register-benefit-preview-panel__field-value">
-                {{ formatTreatmentFlag(row.trtEnjymntFlag) }}
+                {{ formatBenefitPsnType(selectedInsuRow?.psnType) }}
               </div>
             </div>
             <div class="register-benefit-preview-panel__field">
-              <div class="register-benefit-preview-panel__field-label">有效期</div>
+              <div class="register-benefit-preview-panel__field-label">参保状态</div>
               <div class="register-benefit-preview-panel__field-value">
-                {{ displayBenefitDash(row.begndate) }}-{{ displayBenefitDash(row.enddate) }}
+                {{ formatBenefitPsnInsuStas(selectedInsuRow?.psnInsuStas) }}
+              </div>
+            </div>
+            <div class="register-benefit-preview-panel__field">
+              <div class="register-benefit-preview-panel__field-label">参保日期</div>
+              <div class="register-benefit-preview-panel__field-value">
+                {{ displayBenefitDash(selectedInsuRow?.psnInsuDate) }}
+              </div>
+            </div>
+            <div class="register-benefit-preview-panel__field">
+              <div class="register-benefit-preview-panel__field-label">公务员</div>
+              <div class="register-benefit-preview-panel__field-value">
+                {{ formatCvlservFlag(selectedInsuRow?.cvlservFlag) }}
               </div>
             </div>
             <div
-              v-if="row.trtChkRslt"
-              class="register-benefit-preview-panel__field register-benefit-preview-panel__field--span-4"
+              class="register-benefit-preview-panel__field register-benefit-preview-panel__field--span-3"
             >
-              <div class="register-benefit-preview-panel__field-label">不享受原因</div>
+              <div class="register-benefit-preview-panel__field-label">单位名称</div>
               <div class="register-benefit-preview-panel__field-value">
-                {{ row.trtChkRslt }}
+                {{ displayBenefitDash(selectedInsuRow?.empName) }}
               </div>
             </div>
-          </template>
-        </template>
-        <div
-          v-else
-          class="register-benefit-preview-panel__field register-benefit-preview-panel__field--span-2"
-        >
-          <div class="register-benefit-preview-panel__field-label">{{ treatmentCheckTitle }}</div>
-          <div class="register-benefit-preview-panel__field-value">
-            <ElTag v-if="treatmentLoading" type="info" size="small">查询中</ElTag>
+          </div>
+        </div>
+
+        <div class="register-benefit-preview-panel__group">
+          <div class="register-benefit-preview-panel__group-title">{{ treatmentCheckTitle }}</div>
+          <div
+            v-if="displayedTreatmentRows.length > 0"
+            class="register-benefit-preview-panel__field-grid"
+          >
+            <template v-for="(row, index) in displayedTreatmentRows" :key="`trt-${index}`">
+              <div
+                class="register-benefit-preview-panel__field register-benefit-preview-panel__field--span-2"
+              >
+                <div class="register-benefit-preview-panel__field-label">基金类型</div>
+                <div class="register-benefit-preview-panel__field-value">
+                  {{ formatFundPayType(row.fundPayType) }}
+                </div>
+              </div>
+              <div class="register-benefit-preview-panel__field">
+                <div class="register-benefit-preview-panel__field-label">享受标志</div>
+                <div class="register-benefit-preview-panel__field-value">
+                  {{ formatTreatmentFlag(row.trtEnjymntFlag) }}
+                </div>
+              </div>
+              <div class="register-benefit-preview-panel__field">
+                <div class="register-benefit-preview-panel__field-label">有效期</div>
+                <div class="register-benefit-preview-panel__field-value">
+                  {{ displayBenefitDash(row.begndate) }}-{{ displayBenefitDash(row.enddate) }}
+                </div>
+              </div>
+              <div
+                v-if="row.trtChkRslt"
+                class="register-benefit-preview-panel__field register-benefit-preview-panel__field--span-3"
+              >
+                <div class="register-benefit-preview-panel__field-label">不享受原因</div>
+                <div class="register-benefit-preview-panel__field-value">
+                  {{ row.trtChkRslt }}
+                </div>
+              </div>
+            </template>
+          </div>
+          <div v-else class="register-benefit-preview-panel__group-empty">
+            <ElTag v-if="panelTreatmentLoading" type="info" size="small">查询中</ElTag>
             <template v-else>{{ treatmentTableEmptyText }}</template>
           </div>
         </div>
 
-        <template v-if="(previewModel.opspFilingList?.length ?? 0) > 0">
-          <template v-for="(row, index) in previewModel.opspFilingList" :key="`opsp-${index}`">
-            <div
-              class="register-benefit-preview-panel__field register-benefit-preview-panel__field--span-2"
-            >
-              <div class="register-benefit-preview-panel__field-label">慢特病备案</div>
-              <div class="register-benefit-preview-panel__field-value">
-                {{ displayBenefitDash(row.opspDiseName) }}
+        <div class="register-benefit-preview-panel__group">
+          <div class="register-benefit-preview-panel__group-title">慢特病备案</div>
+          <div
+            v-if="(previewModel.opspFilingList?.length ?? 0) > 0"
+            class="register-benefit-preview-panel__field-grid"
+          >
+            <template v-for="(row, index) in previewModel.opspFilingList" :key="`opsp-${index}`">
+              <div
+                class="register-benefit-preview-panel__field register-benefit-preview-panel__field--span-2"
+              >
+                <div class="register-benefit-preview-panel__field-label">病种</div>
+                <div class="register-benefit-preview-panel__field-value">
+                  {{ displayBenefitDash(row.opspDiseName) }}
+                </div>
               </div>
-            </div>
-            <div class="register-benefit-preview-panel__field">
-              <div class="register-benefit-preview-panel__field-label">开始日期</div>
-              <div class="register-benefit-preview-panel__field-value">
-                {{ displayBenefitDash(row.begndate) }}
+              <div class="register-benefit-preview-panel__field">
+                <div class="register-benefit-preview-panel__field-label">开始</div>
+                <div class="register-benefit-preview-panel__field-value">
+                  {{ displayBenefitDash(row.begndate) }}
+                </div>
               </div>
-            </div>
-            <div class="register-benefit-preview-panel__field">
-              <div class="register-benefit-preview-panel__field-label">结束日期</div>
-              <div class="register-benefit-preview-panel__field-value">
-                {{ displayBenefitDash(row.enddate) }}
+              <div class="register-benefit-preview-panel__field">
+                <div class="register-benefit-preview-panel__field-label">结束</div>
+                <div class="register-benefit-preview-panel__field-value">
+                  {{ displayBenefitDash(row.enddate) }}
+                </div>
               </div>
-            </div>
-          </template>
-        </template>
-        <div
-          v-else
-          class="register-benefit-preview-panel__field register-benefit-preview-panel__field--span-2"
-        >
-          <div class="register-benefit-preview-panel__field-label">慢特病备案</div>
-          <div class="register-benefit-preview-panel__field-value">—</div>
+            </template>
+          </div>
+          <div v-else class="register-benefit-preview-panel__group-empty">
+            <ElTag v-if="panelTreatmentLoading" type="info" size="small">加载中</ElTag>
+            <template v-else>—</template>
+          </div>
         </div>
 
-        <template v-if="(previewModel.cumulativeInfoList?.length ?? 0) > 0">
-          <template v-for="(row, index) in previewModel.cumulativeInfoList" :key="`cum-${index}`">
-            <div class="register-benefit-preview-panel__field">
-              <div class="register-benefit-preview-panel__field-label">累计险种</div>
-              <div class="register-benefit-preview-panel__field-value">
-                {{ formatInsutype(row.insutype) }}
-              </div>
-            </div>
-            <div class="register-benefit-preview-panel__field">
-              <div class="register-benefit-preview-panel__field-label">累计年月</div>
-              <div class="register-benefit-preview-panel__field-value">
-                {{ displayBenefitDash(row.cumYm) }}
-              </div>
-            </div>
-            <div
-              class="register-benefit-preview-panel__field register-benefit-preview-panel__field--span-2"
-            >
-              <div class="register-benefit-preview-panel__field-label">累计类别</div>
-              <div class="register-benefit-preview-panel__field-value">
-                {{ formatCumTypeCode(row.cumTypeCode) }}
-              </div>
-            </div>
-            <div class="register-benefit-preview-panel__field">
-              <div class="register-benefit-preview-panel__field-label">累计值</div>
-              <div class="register-benefit-preview-panel__field-value">
-                {{ displayBenefitDash(row.cum) }}
-              </div>
-            </div>
-          </template>
-        </template>
         <div
-          v-else
-          class="register-benefit-preview-panel__field register-benefit-preview-panel__field--span-2"
+          v-if="(previewModel.cumulativeInfoList?.length ?? 0) > 0 || panelTreatmentLoading"
+          class="register-benefit-preview-panel__group"
         >
-          <div class="register-benefit-preview-panel__field-label">费用累计（当月）</div>
-          <div class="register-benefit-preview-panel__field-value">—</div>
+          <div class="register-benefit-preview-panel__group-title">费用累计（当月）</div>
+          <div
+            v-if="(previewModel.cumulativeInfoList?.length ?? 0) > 0"
+            class="register-benefit-preview-panel__field-grid"
+          >
+            <template v-for="(row, index) in previewModel.cumulativeInfoList" :key="`cum-${index}`">
+              <div class="register-benefit-preview-panel__field">
+                <div class="register-benefit-preview-panel__field-label">累计险种</div>
+                <div class="register-benefit-preview-panel__field-value">
+                  {{ formatInsutype(row.insutype) }}
+                </div>
+              </div>
+              <div class="register-benefit-preview-panel__field">
+                <div class="register-benefit-preview-panel__field-label">累计年月</div>
+                <div class="register-benefit-preview-panel__field-value">
+                  {{ displayBenefitDash(row.cumYm) }}
+                </div>
+              </div>
+              <div
+                class="register-benefit-preview-panel__field register-benefit-preview-panel__field--span-2"
+              >
+                <div class="register-benefit-preview-panel__field-label">累计类别</div>
+                <div class="register-benefit-preview-panel__field-value">
+                  {{ formatCumTypeCode(row.cumTypeCode) }}
+                </div>
+              </div>
+              <div class="register-benefit-preview-panel__field">
+                <div class="register-benefit-preview-panel__field-label">累计值</div>
+                <div class="register-benefit-preview-panel__field-value">
+                  {{ displayBenefitDash(row.cum) }}
+                </div>
+              </div>
+            </template>
+          </div>
+          <div v-else class="register-benefit-preview-panel__group-empty">
+            <ElTag v-if="panelTreatmentLoading" type="info" size="small">加载中</ElTag>
+          </div>
         </div>
       </div>
 
@@ -500,7 +551,7 @@ defineExpose({
             {{ formatCvlservFlag(selectedInsuRow?.cvlservFlag) }}
           </ElDescriptionsItem>
           <ElDescriptionsItem label="就医地">
-            {{ displayBenefitDash(previewModel.areaHint?.mdtrtareaAdmdvs) }}
+            {{ formatInsuplcAdmdvsDisplay(previewModel.areaHint?.mdtrtareaAdmdvs) }}
           </ElDescriptionsItem>
           <ElDescriptionsItem label="单位名称" :span="3">
             {{ displayBenefitDash(selectedInsuRow?.empName) }}
@@ -544,7 +595,7 @@ defineExpose({
           <div class="mb-1 flex flex-wrap items-center justify-between gap-2 text-gray-500">
             <div class="flex items-center gap-2">
               <span>{{ treatmentCheckTitle }}</span>
-              <ElTag v-if="treatmentLoading" type="info" size="small">查询中</ElTag>
+              <ElTag v-if="panelTreatmentLoading" type="info" size="small">查询中</ElTag>
             </div>
             <div
               v-if="notEnjoyedTreatmentCount > 0"
@@ -563,7 +614,7 @@ defineExpose({
             class="mb-2"
           />
           <ElTable
-            v-loading="treatmentLoading"
+            v-loading="panelTreatmentLoading"
             :data="displayedTreatmentRows"
             size="small"
             :max-height="tableMaxHeight"
@@ -595,10 +646,11 @@ defineExpose({
         <div>
           <div class="mb-1 text-gray-500">慢特病备案</div>
           <ElTable
+            v-loading="panelTreatmentLoading"
             :data="previewModel.opspFilingList ?? []"
             size="small"
             :max-height="opspTableMaxHeight"
-            empty-text="暂无慢特病备案"
+            :empty-text="panelTreatmentLoading ? '正在加载…' : '暂无慢特病备案'"
           >
             <ElTableColumn
               prop="opspDiseName"
@@ -614,10 +666,11 @@ defineExpose({
         <div>
           <div class="mb-1 text-gray-500">费用累计（当月）</div>
           <ElTable
+            v-loading="panelTreatmentLoading"
             :data="previewModel.cumulativeInfoList ?? []"
             size="small"
             :max-height="opspTableMaxHeight"
-            empty-text="暂无累计信息"
+            :empty-text="panelTreatmentLoading ? '正在加载…' : '暂无累计信息'"
           >
             <ElTableColumn label="险种" min-width="140">
               <template #default="{ row }">
@@ -673,17 +726,109 @@ defineExpose({
   border-color: var(--el-color-primary);
 }
 
+.register-benefit-preview-panel__hero {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: linear-gradient(135deg, #f5f8fc 0%, #eef4fb 100%);
+  border: 1px solid #e2eaf3;
+  border-radius: 8px;
+}
+
+.register-benefit-preview-panel__hero-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.register-benefit-preview-panel__hero-name {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  color: var(--el-text-color-primary);
+}
+
+.register-benefit-preview-panel__hero-meta {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--el-text-color-secondary);
+}
+
+.register-benefit-preview-panel__hero-insu {
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--el-color-primary);
+  background: #fff;
+  border: 1px solid color-mix(in srgb, var(--el-color-primary) 28%, transparent);
+  border-radius: 999px;
+}
+
+.register-benefit-preview-panel__hero-balc {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-end;
+}
+
+.register-benefit-preview-panel__hero-balc-label {
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--el-text-color-secondary);
+}
+
+.register-benefit-preview-panel__hero-balc-value {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+  color: #c2410c;
+  font-variant-numeric: tabular-nums;
+}
+
+.register-benefit-preview-panel__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.register-benefit-preview-panel__group {
+  padding: 8px 10px;
+  background: var(--el-fill-color-blank, #fff);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+}
+
+.register-benefit-preview-panel__group-title {
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--el-text-color-secondary);
+}
+
+.register-benefit-preview-panel__group-empty {
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--el-text-color-placeholder);
+}
+
 .register-benefit-preview-panel__field-grid {
   display: grid;
-  grid-template-columns: repeat(4, 200px);
-  gap: 8px 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px 12px;
   align-items: start;
 }
 
 .register-benefit-preview-panel__field {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  gap: 6px;
+  align-items: baseline;
   min-width: 0;
 }
 
@@ -691,31 +836,47 @@ defineExpose({
   grid-column: span 2;
 }
 
+.register-benefit-preview-panel__field--span-3 {
+  grid-column: span 3;
+}
+
 .register-benefit-preview-panel__field--span-4 {
-  grid-column: span 4;
+  grid-column: span 3;
 }
 
 .register-benefit-preview-panel__field-label {
-  font-size: 13px;
+  flex-shrink: 0;
+  width: 56px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 20px;
-  color: var(--el-text-color-regular);
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+}
+
+.register-benefit-preview-panel__field-label::after {
+  content: '：';
 }
 
 .register-benefit-preview-panel__field-value {
-  min-height: 30px;
-  padding: 4px 0;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 13px;
-  line-height: 22px;
+  font-size: 12px;
+  line-height: 20px;
   color: var(--el-text-color-primary);
   white-space: nowrap;
 }
 
+.register-benefit-preview-panel__field-value--emphasis {
+  font-weight: 600;
+  color: var(--el-color-primary);
+}
+
 .register-benefit-preview-panel__field-value--accent {
   font-weight: 600;
-  color: #ea580c;
+  color: #c2410c;
 }
 
 .benefit-descriptions :deep(.el-descriptions__label) {

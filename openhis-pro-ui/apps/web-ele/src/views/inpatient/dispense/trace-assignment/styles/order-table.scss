@@ -1,0 +1,36 @@
+/* 追溯码分配页表格：横向分隔线、表头底色 */
+
+.order-table {
+  width: 100%;
+}
+
+.order-table :deep(.el-table__header th.el-table__cell) {
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+  font-weight: 600;
+  background: #eef9fd;
+  padding: 4px 0;
+}
+
+.order-table :deep(.el-table__header th.el-table__cell .cell) {
+  line-height: 18px;
+  padding: 0 8px;
+}
+
+.order-table :deep(.el-table__row td.el-table__cell) {
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+  padding: 8px 0;
+  vertical-align: middle;
+}
+
+.order-table--horizontal-only :deep(.el-table__header th.el-table__cell),
+.order-table--horizontal-only :deep(.el-table__body td.el-table__cell) {
+  border-right: none;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+.order-table--horizontal-only :deep(.el-table__inner-wrapper::before),
+.order-table--horizontal-only :deep(.el-table__inner-wrapper::after) {
+  display: none;
+}

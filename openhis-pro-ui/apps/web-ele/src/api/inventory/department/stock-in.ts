@@ -49,6 +49,13 @@ export interface StockInListRowDto {
   applyTime?: string;
   approvalTime?: string;
   originalBusNo?: string;
+  applicantId?: number | string;
+  /** 制单人姓名（后端 enrich，与出库列表 creatorName 同构） */
+  creatorName?: string;
+  approverId?: number | string;
+  approverName?: string;
+  /** 同号各行 totalPrice 之和 */
+  totalAmount?: number | string;
 }
 
 export interface PageStockInsRequest {
@@ -91,6 +98,9 @@ export interface StockInDetailLineDto {
   traceNo?: string;
   price?: number;
   totalPrice?: number;
+  startTime?: string;
+  endTime?: string;
+  productCatalog?: { unitBands?: unknown; unitBandsJson?: unknown };
 }
 
 export interface GetStockInDetailResponse {

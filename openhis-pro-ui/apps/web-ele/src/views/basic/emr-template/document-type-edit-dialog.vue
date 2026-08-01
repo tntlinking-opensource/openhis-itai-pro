@@ -40,8 +40,17 @@ const form = reactive({
   name: '',
   defaultTemplateId: '' as string,
   sortOrder: undefined as number | undefined,
+  categoryCode: 'INPATIENT' as string,
   isEnabled: true,
 });
+
+const categoryOptions = [
+  { label: '门诊病历', value: 'OUTPATIENT' },
+  { label: '住院病历', value: 'INPATIENT' },
+  { label: '告知书', value: 'NOTICE' },
+  { label: '手术病历', value: 'SURGERY' },
+  { label: '其他', value: 'OTHER' },
+];
 
 const defaultTemplateOptions = ref<{ label: string; value: string }[]>([]);
 
@@ -51,6 +60,7 @@ function resetForm() {
   form.name = '';
   form.defaultTemplateId = '';
   form.sortOrder = undefined;
+  form.categoryCode = 'INPATIENT';
   form.isEnabled = true;
   defaultTemplateOptions.value = [];
 }
@@ -114,6 +124,7 @@ async function openEdit(row: DocumentTypeDto) {
         ? String(detail.defaultTemplateId)
         : '';
     form.sortOrder = detail.sortOrder ?? undefined;
+    form.categoryCode = detail.categoryCode?.trim() || 'INPATIENT';
     form.isEnabled = detail.isEnabled !== false;
     await loadDefaultTemplateOptions(form.code);
   } catch (error) {
@@ -146,6 +157,7 @@ async function handleSubmit() {
         name,
         isEnabled: form.isEnabled,
         sortOrder: form.sortOrder,
+        categoryCode: form.categoryCode || undefined,
       });
       ElMessage.success('新建文书类型成功');
     } else {
@@ -158,6 +170,7 @@ async function handleSubmit() {
         name,
         isEnabled: form.isEnabled,
         sortOrder: form.sortOrder,
+        categoryCode: form.categoryCode || undefined,
       };
       if (form.defaultTemplateId) {
         params.defaultTemplateId = form.defaultTemplateId;
@@ -215,6 +228,16 @@ defineExpose({
         </ElFormItem>
         <ElFormItem label="类型名称" required>
           <ElInput v-model="form.name" placeholder="如 入院记录" maxlength="64" show-word-limit />
+        </ElFormItem>
+        <ElFormItem label="分类">
+          <ElSelect v-model="form.categoryCode" placeholder="选择分类" class="w-full">
+            <ElOption
+              v-for="opt in categoryOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
+          </ElSelect>
         </ElFormItem>
         <ElFormItem v-if="mode === 'edit'" label="默认模板">
           <ElSelect

@@ -13,6 +13,8 @@ export interface DocumentTypeDto {
   defaultTemplateName?: string;
   isEnabled?: boolean;
   sortOrder?: number;
+  /** OUTPATIENT / INPATIENT / NOTICE / SURGERY / OTHER */
+  categoryCode?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -33,6 +35,7 @@ export interface CreateDocumentTypeParams {
   defaultTemplateId?: string;
   isEnabled?: boolean;
   sortOrder?: number;
+  categoryCode?: string;
 }
 
 export interface UpdateDocumentTypeParams {
@@ -43,6 +46,7 @@ export interface UpdateDocumentTypeParams {
   clearDefaultTemplate?: boolean;
   isEnabled?: boolean;
   sortOrder?: number;
+  categoryCode?: string;
 }
 
 export interface DeleteDocumentTypeParams {

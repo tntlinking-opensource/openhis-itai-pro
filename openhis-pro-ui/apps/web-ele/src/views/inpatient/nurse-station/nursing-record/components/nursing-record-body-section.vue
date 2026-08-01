@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import type { NursingRecordViewRow } from './nursing-record.types';
 
+defineOptions({
+  name: 'NursingRecordBodySection',
+});
+
 interface Props {
   row: NursingRecordViewRow;
 }

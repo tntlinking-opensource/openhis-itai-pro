@@ -16,6 +16,7 @@ import {
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
 import {
   INV_ALL_LOCATIONS_FILTER_ID,
+  enrichStockOutQueueCardRow,
   mapInitOptionDtoToApiItems,
   normalizeSidebarLocationFilterValue,
   pickWorkbenchOrderAfterSave,
@@ -112,7 +113,20 @@ async function getList() {
       applyTimeBegin: dr?.[0],
       applyTimeEnd: dr?.[1],
     });
-    orderList.value = [...draftRows, ...(records as Record<string, unknown>[])];
+    // 侧栏卡片：制单人/审批人/金额/库位名与出库单队列映射同构
+    const locOpts = cabinetListOptions.value.map((o) => ({
+      locationId: o.id ?? o.value,
+      displayName: String(o.name ?? o.label ?? ''),
+    }));
+    orderList.value = [
+      ...draftRows,
+      ...records.map((r) =>
+        enrichStockOutQueueCardRow(r as Record<string, unknown>, {
+          sourceOptions: locOpts,
+          purposeOptions: locOpts,
+        }),
+      ),
+    ];
   } catch {
     orderList.value = [...draftRows];
   }
@@ -185,7 +199,6 @@ onMounted(async () => {
 
 <template>
   <WarehouseDocWorkstation
-    aside-width="280px"
     queue-title=""
     aside-dense
     :show-aside-filter="false"

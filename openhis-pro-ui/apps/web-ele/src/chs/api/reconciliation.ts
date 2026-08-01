@@ -28,9 +28,17 @@ export interface ClearOrg3206AResult {
 export interface SummarizeClearAmountParams extends ReconciliationContractRequest {
   begndate: string;
   enddate: string;
+  /** 可选：仅返回该险种分组 */
+  insutype?: string;
+  /** 可选：仅返回该清算类别分组（11 门诊 / 21 住院） */
+  clrType?: string;
 }
 
 export interface ClearAmountSummary {
+  /** 险种代码 */
+  insutype?: string;
+  /** 清算类别（11 门诊 / 21 住院） */
+  clrType?: string;
   medfeeSumamt?: number | string;
   medSumfee?: number | string;
   fundAppySum?: number | string;
@@ -158,13 +166,32 @@ export async function queryClearOrganizationsApi(
 
 export async function summarizeClearAmountsApi(
   params: SummarizeClearAmountParams,
-): Promise<ClearAmountSummary> {
-  const res = await requestClient.post<ApiResponse<ClearAmountSummary>>(
+): Promise<ClearAmountSummary[]> {
+  const res = await requestClient.post<ApiResponse<ClearAmountSummary[]>>(
     `${BASE}/summarizeClearAmounts`,
     params,
     chsLongRequestConfig(),
   );
-  return res.data ?? {};
+  return res.data ?? [];
+}
+
+/** 将分组汇总折叠为一条区间合计（月清算表单预填） */
+export function mergeClearAmountSummaries(rows: ClearAmountSummary[]): ClearAmountSummary {
+  let medfeeSumamt = 0;
+  let medSumfee = 0;
+  let fundAppySum = 0;
+  let cashPayamt = 0;
+  let acctPay = 0;
+  let setlCount = 0;
+  for (const row of rows) {
+    medfeeSumamt += Number(row.medfeeSumamt ?? 0);
+    medSumfee += Number(row.medSumfee ?? row.medfeeSumamt ?? 0);
+    fundAppySum += Number(row.fundAppySum ?? 0);
+    cashPayamt += Number(row.cashPayamt ?? 0);
+    acctPay += Number(row.acctPay ?? 0);
+    setlCount += Number(row.setlCount ?? 0);
+  }
+  return { medfeeSumamt, medSumfee, fundAppySum, cashPayamt, acctPay, setlCount };
 }
 
 export async function applyJilinClearApi(

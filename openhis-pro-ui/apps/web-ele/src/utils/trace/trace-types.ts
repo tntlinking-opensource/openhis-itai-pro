@@ -18,8 +18,26 @@ export interface TraceBatchScanLine {
   /** 扩展展示列（如处方号、规格） */
   spec?: string;
   rxNo?: string;
-  /** 本行应扫追溯码数量（comma 模式多为行数量；single 模式默认 1） */
+  /**
+   * 本行应扫追溯码数量（由业务页/桥接按「操作量 ÷ 每码追溯单位量」算好后传入；
+   * dialog 不再自行按原始数量推断）。
+   *
+   * <p>进货硬 Gate 仍用个数；消耗/流转优先 {@link operationSplitQty} 剩余覆盖。</p>
+   */
   requiredTraceCount?: number;
+  /**
+   * 本次操作拆零量（消耗/流转盖住判定用）；有值时扫码「够了」按剩余合计 ≥ 本值。
+   */
+  operationSplitQty?: number;
+  /**
+   * 主表该品批是否已有码（有码批=true）。
+   * false=无码批：扫码仅软提示数量，允许未建档码绑定；true=硬校验反查/在院。
+   */
+  lotHasTraceMaster?: boolean;
+  /** 追溯码所贴单位（进货行可选；匹配仍按码→品+批） */
+  traceUnitCode?: string;
+  /** 操作（录入）单位；与 traceUnitCode 相同时应扫数 = ceil(操作量) */
+  operationUnitCode?: string;
 }
 
 export interface TraceIdentityResolveItemDto {
@@ -29,6 +47,8 @@ export interface TraceIdentityResolveItemDto {
   itemId?: string;
   lotNumber?: string;
   traceUnitCode?: string;
+  /** 主档贴码比例快照（1 码对应拆零量） */
+  traceUnitRatio?: number | string;
   remainingSplitQuantity?: number | string;
   inHospitalStatusEnum?: string;
 }
@@ -90,6 +110,14 @@ export const TRACE_SCAN_SCENE_PRESETS = {
     sceneContext: 'INVENTORY',
   },
   stocktake: {
+    bindMode: 'comma',
+    allowNotFound: true,
+    rejectNotInHospital: false,
+    resolveProvider: 'dispense',
+    sceneContext: 'STOCKTAKE',
+  },
+  /** 损益：扫盈亏码本身（报溢可新码、报损须在院；同意时与正负同向直接加减） */
+  gainLoss: {
     bindMode: 'comma',
     allowNotFound: true,
     rejectNotInHospital: false,

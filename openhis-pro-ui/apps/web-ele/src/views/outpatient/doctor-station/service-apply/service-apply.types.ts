@@ -3,8 +3,8 @@ import type {
   ServiceApplyFormDetailItemRequest,
 } from '#/api/doctor-station/advice.types';
 
-/** 申请单类型：检验 / 检查 */
-export type ServiceApplyKind = 'exam' | 'lab';
+/** 申请单类型：检验 / 检查 / 治疗（AS-OP-DOR-003 BR-REQ-003） */
+export type ServiceApplyKind = 'exam' | 'lab' | 'treatment';
 
 /** 目录行（与 `DoctorStationAdviceCatalogRowDto` 一致，不做字段改名） */
 export type ServiceApplyCatalogRow = DoctorStationAdviceCatalogRowDto;

@@ -1,5 +1,5 @@
 <!--
-  药房退库单左侧：历史退库单检索 + 卡片队列 + 新增。
+  药房退库单左侧：历史退库单检索 + 卡片队列（从入库单新建入口在右侧操作区）。
 -->
 <script setup lang="ts">
 import { ref } from 'vue';
@@ -7,7 +7,6 @@ import { ref } from 'vue';
 import { RotateCw, Search } from '@vben/icons';
 
 import InvAsideShell from '@inventory/components/inv-aside-shell.vue';
-import InvPrimaryBtn from '@inventory/components/inv-primary-btn.vue';
 import InvQueueCards from '@inventory/components/inv-queue-cards.vue';
 import dayjs from 'dayjs';
 import isoWeek from 'dayjs/plugin/isoWeek';
@@ -17,18 +16,13 @@ import SectionTitle from '#/components/layouts/section-title.vue';
 
 defineOptions({ name: 'InventoryPharmacyReturnToWarehouseAsidePane' });
 
-withDefaults(
-  defineProps<{
-    addDisabled?: boolean;
-    cabinetListOptions: Record<string, unknown>[];
-    orders: Record<string, unknown>[];
-    selectedOrder?: null | Record<string, unknown>;
-  }>(),
-  { addDisabled: false },
-);
+defineProps<{
+  cabinetListOptions: Record<string, unknown>[];
+  orders: Record<string, unknown>[];
+  selectedOrder?: null | Record<string, unknown>;
+}>();
 
 const emit = defineEmits<{
-  add: [];
   search: [];
   select: [row: Record<string, unknown>];
 }>();
@@ -102,10 +96,6 @@ function handleRefreshClick() {
 function handleQueueSelect(row: Record<string, unknown>) {
   emit('select', row);
 }
-
-function handleAdd() {
-  emit('add');
-}
 </script>
 
 <template>
@@ -169,13 +159,10 @@ function handleAdd() {
         :location-context-id="sourceLocationId"
         :orders="orders"
         :selected-order="selectedOrder"
-        @add="handleAdd"
+        empty-description="暂无退库单"
+        :show-empty-add="false"
         @select="handleQueueSelect"
       />
-    </template>
-
-    <template #footer>
-      <InvPrimaryBtn label="新增退库单" :disabled="addDisabled" @click="handleAdd" />
     </template>
   </InvAsideShell>
 </template>

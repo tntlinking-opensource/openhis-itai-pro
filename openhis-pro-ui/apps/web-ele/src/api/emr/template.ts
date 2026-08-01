@@ -72,7 +72,7 @@ export interface CreateTemplateParams {
   encounterClassCode: string;
   organizationId?: string;
   ownerPractitionerId?: string;
-  /** 医生站存为模版：后端强制个人模板 */
+  /** 医生站存为模版：仅允许 PERSONAL / DEPARTMENT；所有者与科室取当前登录上下文 */
   fromDoctorStation?: boolean;
   content?: unknown;
   enabled?: boolean;
@@ -98,7 +98,7 @@ export interface DeleteTemplateParams {
 export async function getTemplateListApi(params: QueryTemplateParams) {
   const body = {
     ...params,
-    organizationId: params.organizationId ? Number(params.organizationId) : undefined,
+    organizationId: preserveApiIdForRequest(params.organizationId),
   };
   return publicRequestClient.post<PageApiResponse<TemplateDto>>('/template/getList', body);
 }
@@ -126,13 +126,12 @@ function buildScopePayload(params: {
 }) {
   const scopeLevel = params.scopeLevel.trim();
   const encounterClassCode = params.encounterClassCode.trim();
-  const organizationId = preserveApiIdForRequest(params.organizationId);
-  const ownerPractitionerId = preserveApiIdForRequest(params.ownerPractitionerId);
+  // 雪花 ID 必须用字符串提交，禁止 Number() 丢精度（否则个人模板 owner 对不上、listForStation 看不到）
   return {
     scopeLevel,
     encounterClassCode,
-    organizationId: organizationId ? Number(organizationId) : undefined,
-    ownerPractitionerId: ownerPractitionerId ? Number(ownerPractitionerId) : undefined,
+    organizationId: preserveApiIdForRequest(params.organizationId),
+    ownerPractitionerId: preserveApiIdForRequest(params.ownerPractitionerId),
   };
 }
 

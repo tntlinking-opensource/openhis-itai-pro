@@ -84,7 +84,7 @@ const props = defineProps({
   },
   supplyTypeOptions: { type: Array, default: () => [] },
   supplyStatusOptions: { type: Array, default: () => [] },
-  /** 透传单据头标题（如退库入库单）；缺省为「单据信息」 */
+  /** 透传单据头标题（如退货入库单）；缺省为「单据信息」 */
   headPanelTitle: { type: String, default: undefined },
   /** purchase-request：采购申请/订货；gain-loss：损益（接口与审批口径不同） */
   documentModule: {

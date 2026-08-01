@@ -63,9 +63,10 @@ function handleOpenNoRecord() {
 </script>
 
 <template>
-  <div class="register-toolbar-actions flex w-full items-center justify-between gap-2">
-    <div class="register-toolbar-actions__left flex items-center gap-2">
+  <div class="register-toolbar-actions flex w-full flex-nowrap items-center justify-between gap-2">
+    <div class="register-toolbar-actions__left flex min-w-0 flex-nowrap items-center gap-2">
       <SelectFuzzyInput
+        class="shrink-0"
         :model-value="props.keyword"
         placeholder="姓名"
         style="width: 220px; max-width: 220px; flex: 0 0 220px"
@@ -73,6 +74,7 @@ function handleOpenNoRecord() {
         @update:model-value="handleKeywordChange"
       />
       <ElInput
+        class="shrink-0"
         :model-value="props.idCard"
         clearable
         placeholder="请输入患者身份证号"
@@ -80,6 +82,7 @@ function handleOpenNoRecord() {
         @update:model-value="handleIdCardChange"
       />
       <ElSelect
+        class="shrink-0"
         :model-value="props.registrationListStatuses"
         clearable
         collapse-tags
@@ -96,8 +99,8 @@ function handleOpenNoRecord() {
           :value="item.value"
         />
       </ElSelect>
-      <ElButton type="primary" @click="handleSearch">查询</ElButton>
+      <ElButton class="shrink-0" type="primary" @click="handleSearch">查询</ElButton>
     </div>
-    <ElButton type="primary" @click="handleOpenNoRecord">住院登记</ElButton>
+    <ElButton class="shrink-0" type="primary" @click="handleOpenNoRecord">住院登记</ElButton>
   </div>
 </template>

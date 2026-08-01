@@ -111,7 +111,7 @@ function mapAdviceSkinTestRow(row: DoctorStationAdviceRowDto): PatientSkinTestHi
   const medicationRequestId = preserveApiIdForRequest(row.requestId);
   const medicationName = resolveAdviceMedicationName(row);
   const clinicalStatusText = outcomeText || outcomeCode || '—';
-  const recordedAt = formatRecordedAt(row.authoredAt);
+  const recordedAt = formatRecordedAt(row.reqOpenedTime);
   const key = [encounterId, medicationRequestId ?? '', outcomeCode, recordedAt ?? ''].join('|');
   return {
     key,

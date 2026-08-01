@@ -111,9 +111,27 @@ export interface SaveStaffParams {
   primaryOrgId?: string;
 }
 
+export interface StaffRoleScopesDto {
+  staffScopes?: StaffScopeCode[];
+}
+
 /** 当前操作者可维护的岗位人员信息块 */
 export async function getEditableScopesForCurrentUserApi() {
   return requestClient.post<StaffEditableScopesDto>('/position/getEditableScopesForCurrentUser');
+}
+
+/** 按所选角色汇总人员维护块 StaffScope（含自定义角色声明） */
+export async function resolveStaffScopesByRoleIdsApi(roleIds: string[]) {
+  const res = await requestClient.post<StaffRoleScopesDto | { data?: StaffRoleScopesDto }>(
+    '/position/resolveStaffScopesByRoleIds',
+    {
+      roleIds: roleIds.map((id) => preserveApiIdForRequest(id)).filter((id): id is string => !!id),
+    },
+  );
+  // requestClient 为 responseReturn:'body'，须从 Result.data 取业务体
+  const payload = (res as { data?: StaffRoleScopesDto }).data ?? (res as StaffRoleScopesDto);
+  const scopes = payload?.staffScopes;
+  return Array.isArray(scopes) ? scopes : [];
 }
 
 /** 加载岗位人员维护详情 */

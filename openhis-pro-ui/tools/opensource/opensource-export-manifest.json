@@ -1,6 +1,7 @@
 {
   "SchemaVersion": 1,
-  "Description": "openhis-pro-ui open-source export config",
+  "Description": "openhis-pro-ui open-source export config（排除院点 projects/ 等非开源内容）",
+  "DefaultOutputDir": "../openhis-itai-pro/openhis-pro-ui",
 
   "ExcludedRootDirectories": [
     "projects",
@@ -9,10 +10,21 @@
     ".git",
     ".turbo",
     ".idea",
-    ".vscode"
+    ".vscode",
+    ".cursor"
   ],
 
-  "ExcludedPaths": ["apps/web-ele/dist", "apps/web-ele/dist.zip"],
+  "ExcludedPaths": [
+    "apps/web-ele/dist",
+    "apps/web-ele/dist.zip",
+    "apps/web-ele/vite.config.local.mts",
+    "chufnag.json",
+    "zhongyaochufnag.json",
+    "outpatient-western-rx-print-json.json",
+    "_tmp_origin_settle_raw.bin",
+    "package-export.ps1",
+    "scripts/deploy/cache"
+  ],
 
   "VerifyBuildCommand": "build:ele"
 }

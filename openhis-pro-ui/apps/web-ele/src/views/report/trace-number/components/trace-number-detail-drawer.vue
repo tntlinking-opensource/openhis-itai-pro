@@ -1,53 +1,37 @@
 <!--
-  追溯码详情 Drawer：概览 + 流转明细。
+  追溯码流水 Drawer：按「从 → 到 + 单据 + 类别」展示可读流转。
 -->
 <script setup lang="ts">
-import type {
-  GetTraceNumberOverviewResponse,
-  TraceNumberRecordRowDto,
-} from '#/api/report/trace-number-report';
+import type { TraceNumberRecordRowDto } from '#/api/report/trace-number-report';
 
 import { computed, ref } from 'vue';
 
 import { useVbenDrawer } from '@vben/common-ui';
 
-import {
-  ElDescriptions,
-  ElDescriptionsItem,
-  ElTabPane,
-  ElTable,
-  ElTableColumn,
-  ElTabs,
-} from 'element-plus';
+import { ElTable, ElTableColumn } from 'element-plus';
 
-import { getTraceNumberOverviewApi, listTraceRecordsApi } from '#/api/report/trace-number-report';
+import { listTraceRecordsApi } from '#/api/report/trace-number-report';
 import { useRequest } from '#/hooks/use-request';
 import { fmtReportNumber } from '#/views/report/shared/report-format';
+
+import { buildTraceFlowDisplayRows } from './build-trace-flow-display-rows';
 
 defineOptions({ name: 'TraceNumberDetailDrawer' });
 
 const [Drawer, drawerApi] = useVbenDrawer();
 
 const activeTraceNo = ref('');
-const activeTab = ref<'overview' | 'records'>('overview');
-const overview = ref<GetTraceNumberOverviewResponse | null>(null);
-const recordRows = ref<TraceNumberRecordRowDto[]>([]);
-
-const { run: runOverview, loading: overviewLoading } = useRequest(getTraceNumberOverviewApi, {
-  manual: true,
-  onSuccess: (data) => {
-    overview.value = data ?? null;
-  },
-});
+const rawRecords = ref<TraceNumberRecordRowDto[]>([]);
 
 const { run: runRecords, loading: recordsLoading } = useRequest(listTraceRecordsApi, {
   manual: true,
   onSuccess: (data) => {
-    recordRows.value = data?.records ?? [];
+    rawRecords.value = data?.records ?? [];
   },
 });
 
-const drawerLoading = computed(() => overviewLoading.value || recordsLoading.value);
+/** 成对合并后的可读行。 */
+const displayRows = computed(() => buildTraceFlowDisplayRows(rawRecords.value));
 
 /** 格式化日期时间展示。 */
 function formatDateTime(value?: string) {
@@ -58,23 +42,22 @@ function formatDateTime(value?: string) {
   return text.length >= 19 ? text.slice(0, 19) : text;
 }
 
-/** 加载概览与明细并打开 Drawer。 */
-async function open(traceNo: string, tab: 'overview' | 'records' = 'overview') {
+/** 展示数量：无小数；空为 —。 */
+function formatQuantity(value?: number | string) {
+  const text = fmtReportNumber(value, 0);
+  return text || '—';
+}
+
+/** 加载流水并打开 Drawer。 */
+async function open(traceNo: string) {
   const code = traceNo.trim();
   if (!code) {
     return;
   }
   activeTraceNo.value = code;
-  activeTab.value = tab;
-  overview.value = null;
-  recordRows.value = [];
+  rawRecords.value = [];
   drawerApi.open();
-  await Promise.all([runOverview({ traceNo: code }), runRecords({ traceNo: code })]);
-}
-
-/** 切换 Tab 时按需刷新（首次已并行加载）。 */
-function handleTabChange(name: number | string) {
-  activeTab.value = String(name) as 'overview' | 'records';
+  await runRecords({ traceNo: code });
 }
 
 defineExpose({ open });
@@ -82,75 +65,86 @@ defineExpose({ open });
 
 <template>
   <Drawer
-    :title="`追溯码详情 · ${activeTraceNo || '—'}`"
-    class="trace-number-detail-drawer w-[960px]"
-    :loading="drawerLoading"
+    :title="`流转流水 · ${activeTraceNo || '—'}`"
+    class="trace-number-detail-drawer w-[980px]"
+    :loading="recordsLoading"
     :footer="false"
   >
-    <ElTabs v-model="activeTab" @tab-change="handleTabChange">
-      <ElTabPane label="概览" name="overview">
-        <ElDescriptions v-loading="overviewLoading" :column="2" border size="small">
-          <ElDescriptionsItem label="追溯码">
-            {{ overview?.traceNo ?? activeTraceNo }}
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="在院状态">
-            {{ overview?.inHospitalStatusLabel ?? '—' }}
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="药品编码">
-            {{ overview?.medicationCode ?? '—' }}
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="药品名称">
-            {{ overview?.medicationName ?? '—' }}
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="规格">
-            {{ overview?.specificationText ?? '—' }}
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="批号">
-            {{ overview?.lotNumber ?? '—' }}
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="追溯单位">
-            {{ overview?.traceUnitCode ?? '—' }}
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="拆零剩余">
-            {{ fmtReportNumber(overview?.remainingSplitQuantity, 2) }}
-          </ElDescriptionsItem>
-        </ElDescriptions>
-      </ElTabPane>
-
-      <ElTabPane label="明细" name="records">
-        <ElTable
-          v-loading="recordsLoading"
-          :data="recordRows"
-          border
-          stripe
-          size="small"
-          max-height="520"
-          empty-text="暂无流转记录"
-        >
-          <ElTableColumn prop="createdAt" label="时间" width="160" show-overflow-tooltip>
-            <template #default="{ row }">
-              {{ formatDateTime(row.createdAt) }}
-            </template>
-          </ElTableColumn>
-          <ElTableColumn prop="flowDirectionLabel" label="方向" width="72" show-overflow-tooltip />
-          <ElTableColumn prop="flowCategoryLabel" label="类别" width="96" show-overflow-tooltip />
-          <ElTableColumn
-            prop="operationTypeLabel"
-            label="操作类型"
-            min-width="120"
-            show-overflow-tooltip
-          />
-          <ElTableColumn prop="locationName" label="库位" min-width="120" show-overflow-tooltip />
-          <ElTableColumn prop="quantity" label="数量" width="88" align="right">
-            <template #default="{ row }">
-              {{ fmtReportNumber(row.quantity, 2) }}
-            </template>
-          </ElTableColumn>
-          <ElTableColumn prop="unitCodeLabel" label="单位" width="72" show-overflow-tooltip />
-          <ElTableColumn prop="busNo" label="单据号" min-width="140" show-overflow-tooltip />
-          <ElTableColumn prop="patientName" label="患者" width="96" show-overflow-tooltip />
-        </ElTable>
-      </ElTabPane>
-    </ElTabs>
+    <ElTable
+      v-loading="recordsLoading"
+      :data="displayRows"
+      border
+      stripe
+      size="small"
+      max-height="640"
+      empty-text="暂无流转记录"
+      row-key="key"
+    >
+      <ElTableColumn
+        prop="createdAt"
+        label="时间"
+        width="160"
+        align="center"
+        header-align="center"
+        show-overflow-tooltip
+      >
+        <template #default="{ row }">
+          {{ formatDateTime(row.createdAt) }}
+        </template>
+      </ElTableColumn>
+      <ElTableColumn
+        prop="fromLocation"
+        label="从"
+        min-width="120"
+        align="center"
+        header-align="center"
+        show-overflow-tooltip
+      />
+      <ElTableColumn
+        prop="toLocation"
+        label="到"
+        min-width="120"
+        align="center"
+        header-align="center"
+        show-overflow-tooltip
+      />
+      <ElTableColumn
+        prop="documentText"
+        label="单据"
+        min-width="220"
+        align="center"
+        header-align="center"
+        show-overflow-tooltip
+      />
+      <ElTableColumn
+        prop="categoryText"
+        label="类别"
+        width="96"
+        align="center"
+        header-align="center"
+        show-overflow-tooltip
+      />
+      <ElTableColumn prop="quantity" label="数量" width="72" align="right" header-align="right">
+        <template #default="{ row }">
+          {{ formatQuantity(row.quantity) }}
+        </template>
+      </ElTableColumn>
+      <ElTableColumn
+        prop="unitText"
+        label="单位"
+        width="64"
+        align="center"
+        header-align="center"
+        show-overflow-tooltip
+      />
+      <ElTableColumn
+        prop="patientName"
+        label="患者"
+        width="88"
+        align="center"
+        header-align="center"
+        show-overflow-tooltip
+      />
+    </ElTable>
   </Drawer>
 </template>

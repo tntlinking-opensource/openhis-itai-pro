@@ -1,0 +1,61 @@
+/**
+ * 住院护士站顶部患者信息条。
+ * 独立 CSS：避免院点构建下 SFC scoped style 生产丢失。
+ */
+.inpatient-patient-info-header {
+  align-items: center;
+  background: #fff;
+  border-bottom: 1px solid var(--el-border-color-light);
+  color: var(--el-text-color-primary);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 8px;
+  min-height: 42px;
+  padding: 6px 12px;
+}
+
+.inpatient-patient-info-header.is-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.inpatient-patient-info-header__main,
+.inpatient-patient-info-header__stage,
+.inpatient-patient-info-header__extra {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.inpatient-patient-info-header__identity {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.inpatient-patient-info-header__meta {
+  color: var(--el-text-color-primary);
+  display: inline-flex;
+  font-size: 14px;
+  gap: 2px;
+}
+
+.inpatient-patient-info-header__label {
+  color: var(--el-text-color-regular);
+  font-weight: 500;
+}
+
+.inpatient-patient-info-header__copy {
+  color: var(--el-color-primary);
+  cursor: pointer;
+  margin-left: 2px;
+}
+
+.inpatient-patient-info-header__insurance-tag {
+  --el-tag-bg-color: rgb(64 158 255 / 12%);
+  --el-tag-border-color: rgb(64 158 255 / 28%);
+  --el-tag-text-color: var(--el-color-primary);
+}

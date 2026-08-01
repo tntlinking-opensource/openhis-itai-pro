@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { CSSProperties } from 'vue';
+
 import { ElTable } from 'element-plus';
 
 import { REPORT_TABLE_CLASS } from '../report-list-page-classes';
@@ -13,6 +15,19 @@ interface Props {
 withDefaults(defineProps<Props>(), {
   stripe: true,
 });
+
+/**
+ * 表头对齐：优先列 headerAlign / align；未声明时默认 center。
+ * 费用、数量列应与单元格同向 right（见 frontend-report-query-search）。
+ */
+function resolveHeaderCellStyle({
+  column,
+}: {
+  column: { headerAlign?: string; align?: string };
+}): CSSProperties {
+  const align = column.headerAlign || column.align || 'center';
+  return { textAlign: align as CSSProperties['textAlign'] };
+}
 </script>
 
 <template>
@@ -22,7 +37,7 @@ withDefaults(defineProps<Props>(), {
     :stripe="stripe"
     border
     empty-text="暂无数据"
-    :header-cell-style="{ textAlign: 'center' }"
+    :header-cell-style="resolveHeaderCellStyle"
     :class="REPORT_TABLE_CLASS"
   >
     <slot />
@@ -31,6 +46,9 @@ withDefaults(defineProps<Props>(), {
 
 <style scoped lang="scss">
 .report-list-page__table {
+  /* 固定列表头走 EP 变量；打包后选择器优先级变化时避免回落白底 */
+  --el-table-header-bg-color: var(--el-color-primary-light-9);
+
   width: 100%;
   font-size: 13px;
 
@@ -56,6 +74,12 @@ withDefaults(defineProps<Props>(), {
     border-top: none;
     border-right: none !important;
     border-bottom: 2px solid var(--el-color-primary-light-5);
+  }
+
+  /* 与 EP `.el-table__header-wrapper tr th.el-table-fixed-column--*` 同级，避免打包后回落白底 */
+  :deep(.el-table__header-wrapper tr th.el-table-fixed-column--left),
+  :deep(.el-table__header-wrapper tr th.el-table-fixed-column--right) {
+    background-color: var(--el-color-primary-light-9);
   }
 
   :deep(td.el-table__cell) {

@@ -13,7 +13,11 @@ export function isAdminUsername(username?: null | string): boolean {
   return username?.trim().toLowerCase() === 'admin';
 }
 
-/** 无可登录科室时是否允许跳过选科（平台管理员或 admin 账号） */
+/**
+ * 是否平台管理员身份（角色或 admin 账号）。
+ * 注意：无可登录科室时的医院级登录对任意用户开放，不经此函数；
+ * 本函数仅用于 platformAdmin 标识及「有可登录科室但未选」时的特殊放行。
+ */
 export function canSkipLoginDepartmentSelection(options?: {
   roles?: null | string[];
   username?: null | string;

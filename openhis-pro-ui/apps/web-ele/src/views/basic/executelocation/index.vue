@@ -18,9 +18,10 @@ import { Page } from '@vben/common-ui';
 
 import { TableLayout } from '@vben-core/table-layout-ui';
 
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 
 import {
+  batchCreateExecuteLocationApi,
   createExecuteLocationApi,
   deleteExecuteLocationApi,
   initExecuteLocationApi,
@@ -49,8 +50,24 @@ interface ExecuteLocationTableRow extends ExecuteLocationItem {
   _clientKey: string;
 }
 
+/** 跨科室复制时暂存的规则模板（不含开立科室与主键） */
+interface CopiedRuleTemplate {
+  activityCategoryCode?: string;
+  activityDefinitionId?: string;
+  activityDefinitionName?: string;
+  executionOrgId?: string;
+  executionLocationId?: string;
+  startTime?: string;
+  endTime?: string;
+  displayOrder?: number;
+}
+
+/** 拉取全量规则时的分页大小（复制/粘贴去重均按全量，不限于当前页） */
+const FETCH_ALL_PAGE_SIZE = 200;
+
 const orgTree = ref<OrgTreeNode[]>([]);
 const currentOrgId = ref<string>('');
+const currentOrgName = ref('');
 const treeLoading = ref(false);
 
 const list = ref<ExecuteLocationTableRow[]>([]);
@@ -58,14 +75,23 @@ const loading = ref(false);
 const total = ref(0);
 
 const queryParams = reactive<PageExecuteLocationParams>({
-  executionOrgId: '',
+  organizationId: '',
   pageNo: 1,
   pageSize: 20,
 });
 
 const activityCategoryOptions = ref<ApiOptionItem[]>([]);
+/** 执行科室下拉（扁平，供行内与批量弹窗） */
+const executionOrgOptions = ref<ApiOptionItem[]>([]);
 const rowActivityDefinitionOptions = ref<Record<string, ApiOptionItem[]>>({});
 const batchDialogVisible = ref(false);
+const batchSaving = ref(false);
+const copyLoading = ref(false);
+const pasteLoading = ref(false);
+/** 跨科室剪贴板：复制源科室的全部规则模板 */
+const copiedRuleTemplates = ref<CopiedRuleTemplate[]>([]);
+const copiedFromOrgId = ref('');
+const copiedFromOrgName = ref('');
 let clientKeySeed = 0;
 let listRequestSeq = 0;
 
@@ -90,11 +116,75 @@ function nextClientKey() {
   return `draft:${++clientKeySeed}`;
 }
 
+/** 已落库主键：纯数字 Long 字符串 */
+function isPersistedRowId(id: ExecuteLocationItem['id']): id is string {
+  return id !== undefined && id !== null && /^\d+$/.test(String(id));
+}
+
 /** 规范化项目下拉 value/label，避免 ElSelect 因类型不一致无法回显名称 */
 function normalizeActivityDefinitionOptions(options: ApiOptionItem[]): ApiOptionItem[] {
   return options.map((option) => ({
     label: String(option.label ?? option.value ?? ''),
     value: String(option.value ?? ''),
+  }));
+}
+
+/** 开立科室树顶层节点 id（医院根），执行科室下拉须排除 */
+function collectHospitalRootIds(nodes: ExecuteLocationOrgOption[]): Set<string> {
+  const ids = new Set<string>();
+  for (const node of nodes) {
+    const value = String(node.value ?? '').trim();
+    if (value) {
+      ids.add(value);
+    }
+  }
+  return ids;
+}
+
+/** 递归扁平化机构树为下拉项：仅叶子科室，排除医院等上级节点 */
+function flattenOrgTree(
+  nodes: ExecuteLocationOrgOption[],
+  excludeIds?: Set<string>,
+): ApiOptionItem[] {
+  const seen = new Set<string>();
+  const result: ApiOptionItem[] = [];
+  const walk = (list: ExecuteLocationOrgOption[]) => {
+    for (const node of list) {
+      const children = node.children ?? [];
+      // 有子节点的是医院/上级，不当作可选执行科室
+      if (children.length > 0) {
+        walk(children);
+        continue;
+      }
+      const value = String(node.value ?? '').trim();
+      const label = String(node.label ?? '').trim();
+      if (!value || seen.has(value) || excludeIds?.has(value)) {
+        continue;
+      }
+      seen.add(value);
+      result.push({ value, label: label || value });
+    }
+  };
+  walk(nodes);
+  return result;
+}
+
+/** 将 init 机构树 Option 转为左侧 ElTree 节点 */
+function mapOrgOptionsToTree(options: ExecuteLocationOrgOption[]): OrgTreeNode[] {
+  return options.map((item) => ({
+    id: String(item.value),
+    name: item.label,
+    children:
+      item.children?.map((child) => ({
+        id: String(child.value),
+        name: child.label,
+        children:
+          child.children?.map((grand) => ({
+            id: String(grand.value),
+            name: grand.label,
+            children: [],
+          })) ?? [],
+      })) ?? [],
   }));
 }
 
@@ -159,6 +249,7 @@ function normalizeExecuteLocationRow(item: ExecuteLocationItem): ExecuteLocation
   return {
     ...item,
     id: toOptionalIdString(item.id),
+    organizationId: toOptionalIdString(item.organizationId),
     activityDefinitionId: toOptionalIdString(item.activityDefinitionId),
     activityDefinitionName: activityDefinitionName || undefined,
     executionOrgId: toOptionalIdString(item.executionOrgId),
@@ -220,94 +311,115 @@ const { run: runDelete, loading: deleteLoading } = useRequest(deleteExecuteLocat
 });
 
 watch(
-  [pageLoading, createLoading, updateLoading, deleteLoading],
+  [
+    pageLoading,
+    createLoading,
+    updateLoading,
+    deleteLoading,
+    batchSaving,
+    copyLoading,
+    pasteLoading,
+  ],
   () => {
     loading.value =
       !!pageLoading.value ||
       !!createLoading.value ||
       !!updateLoading.value ||
-      !!deleteLoading.value;
+      !!deleteLoading.value ||
+      !!batchSaving.value ||
+      !!copyLoading.value ||
+      !!pasteLoading.value;
   },
   { immediate: true },
 );
 
-/** 当前科室已配置的项目 ID，供批量添加去重 */
+/** 当前开立科室已配置的项目 ID，供批量添加去重 */
 const boundActivityDefinitionIds = computed(() =>
   list.value.map((row) => String(row.activityDefinitionId ?? '')).filter((id) => id.length > 0),
 );
+
+/** 剪贴板是否有可粘贴规则 */
+const hasCopiedRules = computed(() => copiedRuleTemplates.value.length > 0);
 
 const tableColumns: TableColumn[] = [
   {
     type: 'index',
     label: '序号',
-    width: '6%',
+    width: '5%',
     align: 'center',
   },
   {
     prop: 'activityCategoryCode',
     label: '诊疗大类',
-    width: '20%',
+    width: '14%',
     align: 'center',
     slot: 'activityCategory',
   },
   {
     prop: 'activityDefinitionId',
     label: '项目名称',
-    width: '18%',
+    width: '16%',
     align: 'center',
     slot: 'activityDefinition',
   },
   {
+    prop: 'executionOrgId',
+    label: '执行科室',
+    width: '16%',
+    align: 'center',
+    slot: 'executionOrg',
+  },
+  {
     prop: 'timeRange',
     label: '生效时段',
-    width: '40%',
+    width: '28%',
     align: 'center',
     slot: 'timeRange',
   },
   {
     label: '操作',
-    width: '16%',
+    width: '14%',
     align: 'center',
     slot: 'actions',
   },
 ];
 
+/** 初始化开立科室树、执行科室下拉与诊疗大类 */
 async function initPage() {
   treeLoading.value = true;
   try {
     const initData = await initExecuteLocationApi();
-
-    // 使用执行科室选项构造左侧树结构
-    orgTree.value =
-      ((initData.executionOrgOptions || []) as ExecuteLocationOrgOption[]).map((item) => ({
-        id: String(item.value),
-        name: item.label,
-        children:
-          item.children?.map((child) => ({
-            id: String(child.value),
-            name: child.label,
-            children:
-              child.children?.map((grand) => ({
-                id: String(grand.value),
-                name: grand.label,
-                children: [],
-              })) ?? [],
-          })) ?? [],
-      })) || [];
-
+    const orgOptions = (initData.organizationOptions || []) as ExecuteLocationOrgOption[];
+    orgTree.value = mapOrgOptionsToTree(orgOptions);
+    // 开立树顶层为医院根，执行科室下拉不得出现院名
+    const hospitalRootIds = collectHospitalRootIds(orgOptions);
+    // 执行科室：后端 init 已仅返回 DEPARTMENT；兼容树形时只取叶子，并再排除医院根
+    const execRaw = (initData.executionOrgOptions || []) as ExecuteLocationOrgOption[];
+    const hasNested = execRaw.some((n) => (n.children?.length ?? 0) > 0);
+    if (hasNested) {
+      executionOrgOptions.value = flattenOrgTree(execRaw, hospitalRootIds);
+    } else {
+      executionOrgOptions.value = execRaw
+        .map((item) => ({
+          value: String(item.value ?? '').trim(),
+          label: String(item.label ?? item.value ?? '').trim(),
+        }))
+        .filter((item) => item.value.length > 0 && !hospitalRootIds.has(item.value));
+    }
     activityCategoryOptions.value = initData.activityCategoryOptions || [];
   } finally {
     treeLoading.value = false;
   }
 }
 
+/** 按开立科室 + 诊疗大类拉取可选项目 */
 async function loadActivityDefinitionsForRow(row: ExecuteLocationTableRow) {
   if (!currentOrgId.value || !row.activityCategoryCode) {
     clearRowActivityDefinitionOptions(row);
     return;
   }
   const params: PageActivityDefinitionParams = {
-    executionOrgId: currentOrgId.value,
+    organizationId: currentOrgId.value,
     activityCategoryCode: row.activityCategoryCode,
     pageNo: 1,
     pageSize: 100,
@@ -330,7 +442,7 @@ function onActivityCategoryChange(row: ExecuteLocationTableRow) {
   clearRowActivityDefinitionOptions(row);
 }
 
-/** 加载当前科室执行规则列表 */
+/** 加载当前开立科室执行规则列表 */
 async function getList() {
   const requestSeq = ++listRequestSeq;
   if (!currentOrgId.value) {
@@ -338,9 +450,9 @@ async function getList() {
     total.value = 0;
     return;
   }
-  queryParams.executionOrgId = currentOrgId.value;
+  queryParams.organizationId = currentOrgId.value;
   const params: PageExecuteLocationParams = {
-    executionOrgId: queryParams.executionOrgId,
+    organizationId: queryParams.organizationId,
     pageNo: queryParams.pageNo,
     pageSize: queryParams.pageSize,
   };
@@ -380,47 +492,79 @@ function isOrgTreeLeafNode(data: OrgTreeNode, treeNode: { isLeaf?: boolean }): b
   return !children || children.length === 0;
 }
 
+/** 选中左侧开立科室叶子节点 */
 function handleOrgNodeClick(data: OrgTreeNode, treeNode: { isLeaf?: boolean }) {
   if (!isOrgTreeLeafNode(data, treeNode)) {
     return;
   }
   currentOrgId.value = data.id;
+  currentOrgName.value = data.name;
   queryParams.pageNo = 1;
   getList();
 }
 
-function validateRow(row: ExecuteLocationTableRow): boolean {
+/** 校验单行，返回错误文案；通过则返回 undefined */
+function getRowValidationError(row: ExecuteLocationTableRow): string | undefined {
   if (!row.activityCategoryCode) {
-    ElMessage.error('诊疗大类不能为空');
-    return false;
+    return '诊疗大类不能为空';
+  }
+  if (!String(row.executionOrgId ?? '').trim()) {
+    return '执行科室不能为空';
   }
   if (!row.startTime || !row.endTime) {
-    ElMessage.error('开始/结束时间不能为空');
-    return false;
+    return '开始/结束时间不能为空';
   }
   const startSeconds = parseTimeToSeconds(row.startTime);
   const endSeconds = parseTimeToSeconds(row.endTime);
   if (startSeconds === undefined || endSeconds === undefined) {
-    ElMessage.error('开始/结束时间格式不正确');
-    return false;
+    return '开始/结束时间格式不正确';
   }
   if (startSeconds > endSeconds) {
-    ElMessage.error('开始时间不能大于结束时间');
+    return '开始时间不能大于结束时间';
+  }
+  return undefined;
+}
+
+/** 校验单行并弹错 */
+function validateRow(row: ExecuteLocationTableRow): boolean {
+  const error = getRowValidationError(row);
+  if (error) {
+    ElMessage.error(error);
     return false;
   }
   return true;
 }
 
+/** 组装单行创建/更新请求体 */
+function buildSavePayload(
+  row: ExecuteLocationTableRow,
+): CreateExecuteLocationParams | UpdateExecuteLocationParams {
+  const normalizedId = isPersistedRowId(row.id) ? String(row.id) : undefined;
+  return {
+    ...(normalizedId ? { id: normalizedId } : {}),
+    organizationId: String(row.organizationId ?? ''),
+    activityDefinitionId: row.activityDefinitionId,
+    activityCategoryCode: String(row.activityCategoryCode ?? ''),
+    executionOrgId: String(row.executionOrgId ?? ''),
+    executionLocationId: row.executionLocationId,
+    startTime: String(row.startTime ?? ''),
+    endTime: String(row.endTime ?? ''),
+    priority: 1,
+    displayOrder: row.displayOrder,
+  };
+}
+
 function handleAddRow() {
   if (!currentOrgId.value) {
-    ElMessage.warning('请先在左侧选择一个具体科室');
+    ElMessage.warning('请先在左侧选择开立科室');
     return;
   }
   list.value.unshift({
     _clientKey: nextClientKey(),
+    organizationId: currentOrgId.value,
     activityCategoryCode: undefined,
     activityDefinitionId: undefined,
-    executionOrgId: currentOrgId.value,
+    executionOrgId: undefined,
     startTime: '00:00:00',
     endTime: '23:59:59',
     priority: 1,
@@ -429,42 +573,140 @@ function handleAddRow() {
 
 async function handleSaveRow(row: ExecuteLocationTableRow) {
   if (!currentOrgId.value) {
-    ElMessage.warning('请先选择执行科室');
+    ElMessage.warning('请先选择开立科室');
     return;
   }
-  row.executionOrgId = currentOrgId.value;
+  row.organizationId = currentOrgId.value;
 
   if (!validateRow(row)) {
     return;
   }
 
-  // 只有当 id 是纯数字（后端生成的 Long）时，才认为是已存在记录需要走更新
+  const payload = buildSavePayload(row);
   const normalizedId = isPersistedRowId(row.id) ? String(row.id) : undefined;
-
-  const activityCategoryCode = String(row.activityCategoryCode ?? '');
-  const executionOrgId = String(row.executionOrgId ?? '');
-  const startTime = String(row.startTime ?? '');
-  const endTime = String(row.endTime ?? '');
-
-  const payload: CreateExecuteLocationParams | UpdateExecuteLocationParams = {
-    ...(normalizedId ? { id: normalizedId } : {}),
-    activityDefinitionId: row.activityDefinitionId,
-    activityCategoryCode,
-    executionOrgId,
-    executionLocationId: row.executionLocationId,
-    startTime,
-    endTime,
-    priority: 1,
-    displayOrder: row.displayOrder,
-  };
 
   await (normalizedId
     ? runUpdate(payload as UpdateExecuteLocationParams)
     : runCreate(payload as CreateExecuteLocationParams));
 }
 
-function isPersistedRowId(id: ExecuteLocationItem['id']): id is string {
-  return id !== undefined && id !== null && /^\d+$/.test(String(id));
+/** 批量保存当前列表全部行：新增走 create/batchCreate，已落库走 update */
+async function handleBatchSave() {
+  if (!currentOrgId.value) {
+    ElMessage.warning('请先选择开立科室');
+    return;
+  }
+  if (!list.value.length) {
+    ElMessage.warning('当前没有可保存的数据');
+    return;
+  }
+
+  // 先整表校验，失败时指出行号
+  for (let index = 0; index < list.value.length; index += 1) {
+    const row = list.value[index];
+    if (!row) {
+      continue;
+    }
+    row.organizationId = currentOrgId.value;
+    const error = getRowValidationError(row);
+    if (error) {
+      ElMessage.error(`第 ${index + 1} 行：${error}`);
+      return;
+    }
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `将保存当前列表共 ${list.value.length} 条规则，确定继续吗？`,
+      '批量保存',
+      { type: 'warning' },
+    );
+  } catch {
+    return;
+  }
+
+  // 拆分：已落库待更新 / 未落库待新建
+  const updateRows = list.value.filter((row) => isPersistedRowId(row.id));
+  const createRows = list.value.filter((row) => !isPersistedRowId(row.id));
+
+  batchSaving.value = true;
+  let succeeded = 0;
+  try {
+    // 已落库行逐条更新
+    for (const row of updateRows) {
+      const displayIndex = list.value.indexOf(row) + 1;
+      try {
+        await updateExecuteLocationApi(buildSavePayload(row) as UpdateExecuteLocationParams);
+        succeeded += 1;
+      } catch {
+        ElMessage.error(`第 ${displayIndex} 行保存失败（已成功 ${succeeded} 条），请修正后重试`);
+        await getList();
+        return;
+      }
+    }
+
+    // 新建行按大类+执行科室+时段+地点分组：有项目 ID 走 batchCreate，大类默认行走单条 create
+    const groups = new Map<string, ExecuteLocationTableRow[]>();
+    for (const row of createRows) {
+      const groupKey = [
+        row.activityCategoryCode ?? '',
+        row.executionOrgId ?? '',
+        row.startTime ?? '',
+        row.endTime ?? '',
+        row.executionLocationId ?? '',
+      ].join('|');
+      const bucket = groups.get(groupKey) ?? [];
+      bucket.push(row);
+      groups.set(groupKey, bucket);
+    }
+
+    for (const group of groups.values()) {
+      const first = group[0];
+      if (!first) {
+        continue;
+      }
+      const withDefinition = group.filter((row) => !!row.activityDefinitionId);
+      const categoryDefaults = group.filter((row) => !row.activityDefinitionId);
+
+      if (withDefinition.length > 0) {
+        try {
+          await batchCreateExecuteLocationApi({
+            organizationId: currentOrgId.value,
+            executionOrgId: String(first.executionOrgId ?? ''),
+            activityCategoryCode: String(first.activityCategoryCode ?? ''),
+            activityDefinitionIds: withDefinition.map((row) => String(row.activityDefinitionId)),
+            executionLocationId: first.executionLocationId,
+            startTime: String(first.startTime ?? ''),
+            endTime: String(first.endTime ?? ''),
+            priority: 1,
+            displayOrder: first.displayOrder,
+          });
+          succeeded += withDefinition.length;
+        } catch {
+          ElMessage.error(`批量新建失败（已成功 ${succeeded} 条），请修正后重试`);
+          await getList();
+          return;
+        }
+      }
+
+      for (const row of categoryDefaults) {
+        const displayIndex = list.value.indexOf(row) + 1;
+        try {
+          await createExecuteLocationApi(buildSavePayload(row) as CreateExecuteLocationParams);
+          succeeded += 1;
+        } catch {
+          ElMessage.error(`第 ${displayIndex} 行保存失败（已成功 ${succeeded} 条），请修正后重试`);
+          await getList();
+          return;
+        }
+      }
+    }
+
+    ElMessage.success(`已批量保存 ${succeeded} 条`);
+    await getList();
+  } finally {
+    batchSaving.value = false;
+  }
 }
 
 async function handleDeleteRow(row: ExecuteLocationTableRow, index: number) {
@@ -482,13 +724,13 @@ async function handleDeleteRow(row: ExecuteLocationTableRow, index: number) {
 /** 打开批量添加弹窗 */
 function openBatchDialog() {
   if (!currentOrgId.value) {
-    ElMessage.warning('请先在左侧选择一个具体科室');
+    ElMessage.warning('请先在左侧选择开立科室');
     return;
   }
   batchDialogVisible.value = true;
 }
 
-/** 批量添加确认：写入表格草稿行，由用户逐条保存 */
+/** 批量添加确认：写入表格草稿行，由用户核对后批量保存整表 */
 function handleBatchConfirm(payload: BatchAddConfirmPayload) {
   const startSeconds = parseTimeToSeconds(payload.startTime);
   const endSeconds = parseTimeToSeconds(payload.endTime);
@@ -500,6 +742,10 @@ function handleBatchConfirm(payload: BatchAddConfirmPayload) {
     ElMessage.error('开始时间不能大于结束时间');
     return;
   }
+  if (!String(payload.executionOrgId ?? '').trim()) {
+    ElMessage.error('执行科室不能为空');
+    return;
+  }
 
   for (const item of payload.items) {
     const option = normalizeActivityDefinitionOptions([item])[0];
@@ -508,10 +754,11 @@ function handleBatchConfirm(payload: BatchAddConfirmPayload) {
     }
     const row: ExecuteLocationTableRow = {
       _clientKey: nextClientKey(),
+      organizationId: currentOrgId.value,
       activityCategoryCode: payload.activityCategoryCode,
       activityDefinitionId: option.value,
       activityDefinitionName: option.label,
-      executionOrgId: currentOrgId.value,
+      executionOrgId: payload.executionOrgId,
       startTime: payload.startTime,
       endTime: payload.endTime,
       priority: 1,
@@ -519,7 +766,184 @@ function handleBatchConfirm(payload: BatchAddConfirmPayload) {
     list.value.unshift(row);
     setRowActivityDefinitionOptions(row, [option]);
   }
-  ElMessage.success(`已添加 ${payload.items.length} 条项目配置，请核对后逐条保存`);
+  ElMessage.success(`已添加 ${payload.items.length} 条项目配置，请核对后点击批量保存`);
+}
+
+/** 规则去重键：大类+项目+执行科室+地点+时段（粘贴时跳过目标科室已有同配置） */
+function buildRuleConfigKey(
+  row: Pick<
+    ExecuteLocationItem,
+    | 'activityCategoryCode'
+    | 'activityDefinitionId'
+    | 'executionOrgId'
+    | 'executionLocationId'
+    | 'startTime'
+    | 'endTime'
+  >,
+): string {
+  return [
+    String(row.activityCategoryCode ?? ''),
+    toActivityDefinitionIdString(row.activityDefinitionId),
+    String(row.executionOrgId ?? ''),
+    String(row.executionLocationId ?? ''),
+    String(row.startTime ?? ''),
+    String(row.endTime ?? ''),
+  ].join('|');
+}
+
+/** 将规则行转为可跨科室粘贴的模板 */
+function toCopiedTemplates(rows: ExecuteLocationItem[]): CopiedRuleTemplate[] {
+  return rows.map((row) => ({
+    activityCategoryCode: row.activityCategoryCode,
+    activityDefinitionId: toOptionalIdString(row.activityDefinitionId),
+    activityDefinitionName: row.activityDefinitionName,
+    executionOrgId: toOptionalIdString(row.executionOrgId),
+    executionLocationId: toOptionalIdString(row.executionLocationId),
+    startTime: row.startTime,
+    endTime: row.endTime,
+    displayOrder: row.displayOrder,
+  }));
+}
+
+/**
+ * 分页拉取某开立科室的全部已落库规则（复制/粘贴去重用，不限于当前页）。
+ */
+async function fetchAllExecuteLocations(organizationId: string): Promise<ExecuteLocationItem[]> {
+  const all: ExecuteLocationItem[] = [];
+  let pageNo = 1;
+  let totalCount = Number.POSITIVE_INFINITY;
+
+  // 按页累加，直到收齐 totalCount 或本页为空
+  while (all.length < totalCount) {
+    const resp = await pageExecuteLocationApi({
+      organizationId,
+      pageNo,
+      pageSize: FETCH_ALL_PAGE_SIZE,
+    });
+    const content = resp.content || [];
+    totalCount = resp.totalCount ?? 0;
+    for (const item of content) {
+      all.push(normalizeExecuteLocationRow(item));
+    }
+    if (content.length === 0 || totalCount === 0) {
+      break;
+    }
+    pageNo += 1;
+    if (pageNo > 500) {
+      break;
+    }
+  }
+  return all;
+}
+
+/** 复制当前开立科室全部页规则到剪贴板，供其他科室粘贴 */
+async function handleCopyAll() {
+  if (!currentOrgId.value) {
+    ElMessage.warning('请先在左侧选择开立科室');
+    return;
+  }
+
+  copyLoading.value = true;
+  try {
+    const allRows = await fetchAllExecuteLocations(currentOrgId.value);
+    if (!allRows.length) {
+      ElMessage.warning('当前科室没有可复制的规则');
+      return;
+    }
+    copiedRuleTemplates.value = toCopiedTemplates(allRows);
+    copiedFromOrgId.value = currentOrgId.value;
+    copiedFromOrgName.value = currentOrgName.value;
+    ElMessage.success(
+      `已复制全部 ${copiedRuleTemplates.value.length} 条规则（来源：${currentOrgName.value}）`,
+    );
+  } catch {
+    ElMessage.error('复制失败，请稍后重试');
+  } finally {
+    copyLoading.value = false;
+  }
+}
+
+/** 将剪贴板规则以新增草稿粘贴到当前科室（跳过与目标全量已有配置重复的行） */
+async function handlePaste() {
+  if (!currentOrgId.value) {
+    ElMessage.warning('请先在左侧选择目标科室');
+    return;
+  }
+  if (!copiedRuleTemplates.value.length) {
+    ElMessage.warning('请先在其他科室点击「复制全部配置」');
+    return;
+  }
+  if (copiedFromOrgId.value && copiedFromOrgId.value === currentOrgId.value) {
+    ElMessage.warning('不能粘贴到来源科室，请先切换到其他开立科室');
+    return;
+  }
+
+  const sourceHint = copiedFromOrgName.value ? `（来源：${copiedFromOrgName.value}）` : '';
+  try {
+    await ElMessageBox.confirm(
+      `将把剪贴板中 ${copiedRuleTemplates.value.length} 条规则${sourceHint}粘贴到「${currentOrgName.value}」；与目标科室已有相同配置的将跳过。粘贴后请核对并点击批量保存。确定继续吗？`,
+      '粘贴配置',
+      { type: 'warning' },
+    );
+  } catch {
+    return;
+  }
+
+  pasteLoading.value = true;
+  try {
+    // 目标科室全量已落库规则 + 当前页未保存草稿，一并参与去重
+    const existingPersisted = await fetchAllExecuteLocations(currentOrgId.value);
+    const existingKeys = new Set<string>();
+    for (const row of existingPersisted) {
+      existingKeys.add(buildRuleConfigKey(row));
+    }
+    for (const row of list.value) {
+      existingKeys.add(buildRuleConfigKey(row));
+    }
+
+    let addedCount = 0;
+    let skippedCount = 0;
+    // 逐条按新增草稿写入当前列表；重复配置跳过
+    for (const template of copiedRuleTemplates.value) {
+      const key = buildRuleConfigKey(template);
+      if (existingKeys.has(key)) {
+        skippedCount += 1;
+        continue;
+      }
+      const row: ExecuteLocationTableRow = {
+        _clientKey: nextClientKey(),
+        organizationId: currentOrgId.value,
+        activityCategoryCode: template.activityCategoryCode,
+        activityDefinitionId: template.activityDefinitionId,
+        activityDefinitionName: template.activityDefinitionName,
+        executionOrgId: template.executionOrgId,
+        executionLocationId: template.executionLocationId,
+        startTime: template.startTime || '00:00:00',
+        endTime: template.endTime || '23:59:59',
+        priority: 1,
+        displayOrder: template.displayOrder,
+      };
+      list.value.unshift(row);
+      if (row.activityDefinitionId) {
+        hydrateRowActivityDefinitionOption(row);
+      }
+      existingKeys.add(key);
+      addedCount += 1;
+    }
+
+    if (!addedCount) {
+      ElMessage.warning('粘贴完成：目标科室已存在相同配置，未新增任何行');
+      return;
+    }
+    const skipHint = skippedCount ? `，跳过重复 ${skippedCount} 条` : '';
+    ElMessage.success(
+      `已粘贴新增 ${addedCount} 条规则${sourceHint}${skipHint}，请核对后点击批量保存（切换分页或科室前须先保存）`,
+    );
+  } catch {
+    ElMessage.error('粘贴失败，请稍后重试');
+  } finally {
+    pasteLoading.value = false;
+  }
 }
 
 onMounted(async () => {
@@ -536,10 +960,10 @@ onActivated(() => {
 <template>
   <Page>
     <div class="flex h-full gap-3">
-      <div
-        class="flex w-64 min-w-[220px] flex-col border-r border-[var(--el-border-color-light)] pr-2"
+      <aside
+        class="flex w-64 min-w-[220px] shrink-0 flex-col border-r border-[var(--el-border-color-light)] pr-2"
       >
-        <div class="mb-2 font-semibold">执行科室</div>
+        <div class="mb-2 font-semibold text-[var(--el-text-color-primary)]">开立科室</div>
         <div class="min-h-0 flex-1 overflow-auto" v-loading="treeLoading">
           <ElTree
             :data="orgTree"
@@ -551,9 +975,23 @@ onActivated(() => {
             @node-click="handleOrgNodeClick"
           />
         </div>
-      </div>
+      </aside>
 
       <div class="execute-location-panel min-w-0 flex-1">
+        <div v-if="currentOrgId" class="mb-2 flex flex-wrap items-center gap-2 text-sm">
+          <span class="text-[var(--el-text-color-regular)]">
+            当前开立科室：
+            <span class="font-semibold text-[var(--el-text-color-primary)]">{{
+              currentOrgName
+            }}</span>
+            ；按诊疗大类/项目配置执行科室。可「复制全部配置」（含所有分页）后切换到其他科室粘贴。
+          </span>
+          <ElTag v-if="hasCopiedRules" type="info">
+            已复制 {{ copiedRuleTemplates.length }} 条{{
+              copiedFromOrgName ? `（${copiedFromOrgName}）` : ''
+            }}
+          </ElTag>
+        </div>
         <TableLayout
           class="execute-location-table"
           :table-data="list"
@@ -571,6 +1009,25 @@ onActivated(() => {
               添加新项目
             </ElButton>
             <ElButton @click="openBatchDialog" :disabled="!currentOrgId"> 批量添加项目 </ElButton>
+            <ElButton
+              type="success"
+              :disabled="!currentOrgId || !list.length"
+              :loading="batchSaving"
+              @click="handleBatchSave"
+            >
+              批量保存{{ list.length ? `（${list.length}）` : '' }}
+            </ElButton>
+            <ElButton plain :disabled="!currentOrgId" :loading="copyLoading" @click="handleCopyAll">
+              复制全部配置
+            </ElButton>
+            <ElButton
+              plain
+              :disabled="!currentOrgId || !hasCopiedRules"
+              :loading="pasteLoading"
+              @click="handlePaste"
+            >
+              粘贴
+            </ElButton>
           </template>
 
           <template #activityCategory="{ row }">
@@ -608,6 +1065,23 @@ onActivated(() => {
             </ElSelect>
           </template>
 
+          <template #executionOrg="{ row }">
+            <ElSelect
+              v-model="row.executionOrgId"
+              filterable
+              clearable
+              placeholder="请选择执行科室"
+              class="cell-control"
+            >
+              <ElOption
+                v-for="item in executionOrgOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </ElSelect>
+          </template>
+
           <template #timeRange="{ row }">
             <div class="execute-time-row">
               <ElTimePicker
@@ -638,8 +1112,9 @@ onActivated(() => {
 
     <BatchAddDialog
       v-model:visible="batchDialogVisible"
-      :execution-org-id="currentOrgId"
+      :organization-id="currentOrgId"
       :activity-category-options="activityCategoryOptions"
+      :execution-org-options="executionOrgOptions"
       :bound-activity-definition-ids="boundActivityDefinitionIds"
       @confirm="handleBatchConfirm"
     />

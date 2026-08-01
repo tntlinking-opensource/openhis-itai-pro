@@ -18,10 +18,28 @@ import {
 } from './access-init-guard';
 
 let accessInitPromise: null | Promise<void> = null;
+/** 递增后丢弃进行中的菜单初始化结果，避免代理切换时旧请求写回上一身份菜单 */
+let accessInitGeneration = 0;
 
-/** 退出登录或会话失效时调用，避免悬挂中的菜单初始化阻塞后续导航 */
+/** 退出登录、代理切换或会话失效时调用，避免悬挂中的菜单初始化阻塞后续导航 */
 function resetAccessInit() {
   accessInitPromise = null;
+  accessInitGeneration += 1;
+}
+
+/**
+ * 移除上一身份注册到 router 的动态路由，防止代理后残留 admin 路由/菜单。
+ */
+function removeRegisteredAccessRoutes(router: Router) {
+  const accessStore = useAccessStore();
+  const previousRoutes = accessStore.accessRoutes ?? [];
+  for (const route of previousRoutes) {
+    if (route.name && router.hasRoute(route.name)) {
+      router.removeRoute(route.name);
+    }
+  }
+  accessStore.setAccessMenus([]);
+  accessStore.setAccessRoutes([]);
 }
 
 /**
@@ -34,18 +52,30 @@ async function ensureAccessRoutes(router: Router) {
   }
 
   if (!accessInitPromise) {
-    accessInitPromise = (async () => {
+    const generation = accessInitGeneration;
+    const initTask = (async () => {
       const authStore = useAuthStore();
       await requireLoginScopeReady();
+      if (generation !== accessInitGeneration) {
+        return;
+      }
       await authStore.refreshApplicationConfiguration();
+      if (generation !== accessInitGeneration) {
+        return;
+      }
       const menuRequestStartAt = Date.now();
       const menus = await getMenuTreeByLoginUserApi();
+      if (generation !== accessInitGeneration) {
+        return;
+      }
       let menuData = Array.isArray(menus) ? menus : [];
       menuData = convertMenuData(menuData);
-      console.warn('[access-init] menu loaded', {
-        count: menuData.length,
-        elapsedMs: Date.now() - menuRequestStartAt,
-      });
+      if (import.meta.env.DEV) {
+        console.debug('[access-init] menu loaded', {
+          count: menuData.length,
+          elapsedMs: Date.now() - menuRequestStartAt,
+        });
+      }
 
       const accessRoutes = await getAccessRoutes();
       const { accessibleMenus, accessibleRoutes } = await generateAccess({
@@ -54,10 +84,15 @@ async function ensureAccessRoutes(router: Router) {
         router,
         routes: accessRoutes,
       });
-      console.warn('[access-init] routes initialized', {
-        menus: accessibleMenus.length,
-        routes: accessibleRoutes.length,
-      });
+      if (generation !== accessInitGeneration) {
+        return;
+      }
+      if (import.meta.env.DEV) {
+        console.debug('[access-init] routes initialized', {
+          menus: accessibleMenus.length,
+          routes: accessibleRoutes.length,
+        });
+      }
 
       accessStore.setAccessMenus(accessibleMenus);
       accessStore.setAccessRoutes(accessibleRoutes);
@@ -69,8 +104,11 @@ async function ensureAccessRoutes(router: Router) {
       // 触发从 localStorage 恢复租户列表（供布局等读取）
       authStore.getTenantList();
     })().finally(() => {
-      accessInitPromise = null;
+      if (accessInitPromise === initTask) {
+        accessInitPromise = null;
+      }
     });
+    accessInitPromise = initTask;
   }
 
   await accessInitPromise;
@@ -115,10 +153,12 @@ async function prefetchAccessRoutes(router: Router) {
 }
 
 /**
- * 菜单变更后重新拉取并注册路由（如系统管理里新增/编辑菜单）。
+ * 菜单变更或身份切换后重新拉取并注册路由（代理登录、退出代理、菜单管理变更）。
  */
 async function resetAndRefreshAccessRoutes(router: Router) {
   const accessStore = useAccessStore();
+  resetAccessInit();
+  removeRegisteredAccessRoutes(router);
   accessStore.setIsAccessChecked(false);
   await ensureAccessRoutes(router);
 }

@@ -88,10 +88,12 @@ export interface MetadataFieldReferenceDto {
 
 export function mapMetadataFieldDtoToEmr(dto: MetadataFieldDto): EmrMetadataField {
   const fieldKey = String(dto.fieldKey ?? '').trim();
+  const valueSource = String(dto.valueSource ?? '').trim();
   return {
     fieldKey,
     label: String(dto.label ?? fieldKey).trim() || fieldKey,
     editable: dto.editableDefault !== false,
+    ...(valueSource ? { valueSource } : {}),
   };
 }
 

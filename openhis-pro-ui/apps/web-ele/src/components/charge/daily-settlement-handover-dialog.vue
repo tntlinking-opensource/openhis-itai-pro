@@ -10,22 +10,16 @@ import { computed, ref, watch } from 'vue';
 import dayjs from 'dayjs';
 import { ElButton, ElCheckbox, ElDialog, ElTable, ElTableColumn } from 'element-plus';
 
+import DailySettlementSummaryPanel from '#/components/charge/daily-settlement-summary-panel.vue';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
 
 defineOptions({ name: 'DailySettlementHandoverDialog' });
-
-interface SummaryDisplayItem {
-  key: string;
-  label: string;
-  unit: string;
-}
 
 interface Props {
   visible?: boolean;
   items?: DailySettlementHandoverPaymentItemDto[];
   handoverRows?: DailySettlementHandoverChannelRowDto[];
   handoverSummary?: DailySettlementHandoverSummaryDto;
-  summaryDisplay?: readonly SummaryDisplayItem[];
   /** 0 元/收支抵净提示（BR-CS-011）。 */
   zeroNetIncomeHint?: boolean;
   loading?: boolean;
@@ -36,7 +30,6 @@ const props = withDefaults(defineProps<Props>(), {
   items: () => [],
   handoverRows: () => [],
   handoverSummary: undefined,
-  summaryDisplay: () => [],
   zeroNetIncomeHint: false,
   loading: false,
 });
@@ -78,24 +71,16 @@ const dialogVisible = computed({
   set: (value: boolean) => emit('update:visible', value),
 });
 
-/** 下半区汇总展示列（按传入 summaryDisplay 顺序）。 */
-const summaryColumns = computed(() => {
+const hasHandoverSummaryPanel = computed(() => {
   const summary = props.handoverSummary;
   if (!summary) {
-    return [];
+    return false;
   }
-  return props.summaryDisplay.map(({ key, label, unit }) => {
-    const raw = summary[key as keyof DailySettlementHandoverSummaryDto];
-    let value = '—';
-    if (raw !== undefined && raw !== null) {
-      value = unit === '人' ? `${raw} ${unit}` : `${formatMoneyDisplay(raw)} ${unit}`;
-    } else if (unit === '人') {
-      value = `0 ${unit}`;
-    } else {
-      value = `0.00 ${unit}`;
-    }
-    return { label, value };
-  });
+  return Boolean(
+    summary.totalIncome !== undefined ||
+      summary.expenseNatureSummaries?.length ||
+      summary.summaryRows?.length,
+  );
 });
 
 /** 弹窗打开时默认全选全部候选 payment。 */
@@ -352,15 +337,8 @@ function handleConfirm() {
             {{ row.category ?? '—' }}：{{ formatMoneyDisplay(row.amount) }} {{ row.unit ?? '元' }}
           </span>
         </div>
-        <div v-if="summaryColumns.length" class="handover-dialog__summary-grid">
-          <div
-            v-for="item in summaryColumns"
-            :key="item.label"
-            class="handover-dialog__summary-item"
-          >
-            <span class="handover-dialog__summary-label">{{ item.label }}</span>
-            <span class="handover-dialog__summary-value">{{ item.value }}</span>
-          </div>
+        <div v-if="hasHandoverSummaryPanel" class="handover-dialog__summary-panel">
+          <DailySettlementSummaryPanel :summary="handoverSummary" />
         </div>
       </div>
     </div>
@@ -454,25 +432,7 @@ function handleConfirm() {
   color: var(--el-text-color-regular);
 }
 
-.handover-dialog__summary-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px 12px;
-}
-
-.handover-dialog__summary-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 13px;
-}
-
-.handover-dialog__summary-label {
-  color: var(--el-text-color-regular);
-}
-
-.handover-dialog__summary-value {
-  font-variant-numeric: tabular-nums;
-  color: var(--el-text-color-primary);
+.handover-dialog__summary-panel {
+  margin-top: 4px;
 }
 </style>

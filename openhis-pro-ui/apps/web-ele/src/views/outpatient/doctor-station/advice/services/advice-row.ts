@@ -44,9 +44,11 @@ export function inferAdviceLineEditorKind(
 }
 
 function validateWesternMedicationLineItem(item: AdviceDrugItem): boolean {
+  const hasDiagnosis =
+    Boolean(String(item.diagnosis ?? '').trim()) || (item.encounterDiagnosisIds?.length ?? 0) > 0;
   return Boolean(
     item.selectedId &&
-      item.diagnosis &&
+      hasDiagnosis &&
       item.contractId &&
       item.usage &&
       item.frequency &&
@@ -108,8 +110,13 @@ export function rowLooksWithdrawable(
   if (row.isEditor) return false;
   if (!resourceKeyFromRow(row)) return false;
   if (isDraftRow(row)) return false;
-  const text = `${row.status} ${row.statusEnum || ''}`;
-  if (/已收费|SETTLED|已结算|计费完成/i.test(text)) return false;
+  // 已结算/待结算不可撤回
+  const chargeCode = String(row.chargeStatusEnum ?? '')
+    .trim()
+    .toUpperCase();
+  if (chargeCode === 'SETTLED' || chargeCode === 'PENDING_SETTLEMENT') {
+    return false;
+  }
   return true;
 }
 

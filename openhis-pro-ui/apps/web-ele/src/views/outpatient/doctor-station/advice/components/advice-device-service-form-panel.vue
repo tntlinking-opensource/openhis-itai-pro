@@ -2,12 +2,15 @@
 import type { AdviceLineEditorKind } from '../services/advice-row';
 import type { AdviceDrugItem } from '../services/advice.types';
 
+import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
+import type { DiagnosisItem } from '#/components/doctor-station/diagnosis';
 import type { PerformOrgOption } from '#/views/doctor-station/advice-shared/perform-org-options.service';
 
 import { computed, ref, watch } from 'vue';
 
 import { ElInput, ElInputNumber, ElOption, ElSelect } from 'element-plus';
 
+import { AdviceDiagnosisBindPanel } from '#/components/doctor-station/diagnosis';
 import { httpListActivityExecutionLocations } from '#/api/doctor-station/advice.http';
 import {
   loadAllDepartmentPerformOrgOptions,
@@ -23,18 +26,45 @@ import {
   parseColonDefinitionId,
   parseProductTableNameFromSelectedId,
 } from '../services/advice-row';
-import { totalAmountUnitDisplayLabel } from '../services/medication-unit-bands';
+import {
+  convertTotalAmountWhenUnitChanges,
+  resolveAdviceLineUnitPrice,
+  totalAmountUnitDisplayLabel,
+  totalUnitSelectOptions,
+} from '../services/medication-unit-bands';
 
 defineOptions({ name: 'AdviceDeviceServiceFormPanel' });
 
-const props = defineProps<{
-  editorKind: Extract<AdviceLineEditorKind, 'DEVICE' | 'SERVICE'>;
-  /** 诊疗可执行科室接口门控：与就诊一致 */
-  encounterId?: string;
-  item: AdviceDrugItem;
-  patientId?: string;
-  setField: <K extends keyof AdviceDrugItem>(key: K, value: AdviceDrugItem[K]) => void;
-}>();
+const props = withDefaults(
+  defineProps<{
+    editorKind: Extract<AdviceLineEditorKind, 'DEVICE' | 'SERVICE'>;
+    /** 诊疗可执行科室接口门控：与就诊一致 */
+    encounterId?: string;
+    item: AdviceDrugItem;
+    /** 打开就诊诊断录入弹窗 */
+    openDiagnosisDialog: () => void;
+    patientDiagnoses?: DiagnosisItem[];
+    patientId?: string;
+    setField: <K extends keyof AdviceDrugItem>(key: K, value: AdviceDrugItem[K]) => void;
+    /** 选择诊断弹窗内删除就诊诊断后回调 */
+    onEncounterDiagnosisDeleted?: (deletedId: string) => void | Promise<void>;
+    /** 选择诊断弹窗内切换主诊后回调 */
+    onEncounterDiagnosisMainSwitched?: () => void | Promise<void>;
+    /** 打开选择诊断弹窗时已拉取最新列表，同步父级候选项 */
+    onEncounterDiagnosisOptionsRefreshed?: (payload: {
+      displayRows: EncounterDiagnosisRowDto[];
+      items: DiagnosisItem[];
+    }) => void;
+  }>(),
+  {
+    encounterId: '',
+    patientDiagnoses: () => [],
+    patientId: '',
+    onEncounterDiagnosisDeleted: undefined,
+    onEncounterDiagnosisMainSwitched: undefined,
+    onEncounterDiagnosisOptionsRefreshed: undefined,
+  },
+);
 
 const productInfoTitle = computed(() => (props.editorKind === 'DEVICE' ? '耗材信息' : '诊疗信息'));
 
@@ -57,14 +87,49 @@ const serviceUnitLabel = computed(() => {
   return label || '—';
 });
 
-/** 耗材：目录带回的计量单位（单选项为主）。 */
+/** 耗材：计量带单位下拉（包装/售卖/拆零）；无带时回落当前单位单选项。 */
 const deviceUnitOptions = computed(() => {
+  const fromBands = totalUnitSelectOptions(props.item);
+  if (fromBands.length > 0) return fromBands;
   const code = String(props.item.totalAmountUnit ?? '').trim();
   if (!code) return [];
   const name =
-    String(props.item.totalUnitSalesName ?? props.item.totalUnitSplitName ?? '').trim() || code;
+    String(
+      props.item.totalUnitSplitName ??
+        props.item.totalUnitSalesName ??
+        props.item.totalUnitPackageName ??
+        '',
+    ).trim() || code;
   return [{ value: code, label: name }];
 });
+
+/** 耗材切换单位：换算数量并按目标单位刷新行单价。 */
+function onDeviceTotalAmountUnitSelect(value: unknown) {
+  const nu = String(value ?? '').trim();
+  const item = props.item;
+  if (!nu || nu === String(item.totalAmountUnit ?? '').trim()) return;
+  const converted = convertTotalAmountWhenUnitChanges({
+    oldUnit: String(item.totalAmountUnit ?? ''),
+    newUnit: nu,
+    bands: item.unitBands,
+    splitCode: String(item.totalUnitSplitCode ?? ''),
+    salesCode: String(item.totalUnitSalesCode ?? ''),
+    splitToSalesK: item.totalAmountSplitToSalesK,
+    currentAmount: Number(item.totalAmount ?? Number.NaN),
+  });
+  if (converted !== undefined) {
+    props.setField('totalAmount', converted as AdviceDrugItem['totalAmount']);
+  }
+  props.setField('totalAmountUnit', nu as AdviceDrugItem['totalAmountUnit']);
+  const linePrice = resolveAdviceLineUnitPrice({
+    bands: item.unitBands,
+    catalogUnitPrice: item.catalogUnitPrice,
+    totalAmountUnit: nu,
+  });
+  if (linePrice !== undefined) {
+    props.setField('selectedDrugPrice', linePrice as AdviceDrugItem['selectedDrugPrice']);
+  }
+}
 
 /** 接口返回的诊疗可执行科室（去重后）；无配置时回落全院科室。 */
 const serviceExecutionOrgOptions = ref<PerformOrgOption[]>([]);
@@ -180,6 +245,31 @@ function onPerformOrgSelect(value: unknown) {
   props.setField('performOrgId', v as AdviceDrugItem['performOrgId']);
   props.setField('performOrgName', (opt?.label ?? '') as AdviceDrugItem['performOrgName']);
 }
+
+/** 绑定诊断：主诊优先排序，并同步展示名。 */
+function patchEncounterDiagnosisIds(value: unknown) {
+  const raw = Array.isArray(value)
+    ? value.map((id) => String(id ?? '').trim()).filter(Boolean)
+    : [];
+  const diagnoses = props.patientDiagnoses ?? [];
+  const mainIdSet = new Set(
+    diagnoses
+      .filter((d) => Number(d.mainDiagnosisFlag) === 1)
+      .map((d) => String(d.encounterDiagnosisId ?? d.id ?? '').trim())
+      .filter(Boolean),
+  );
+  const mains = raw.filter((id) => mainIdSet.has(id));
+  const others = raw.filter((id) => !mainIdSet.has(id));
+  const ordered = [...mains, ...others];
+  const names = ordered
+    .map((id) => {
+      const hit = diagnoses.find((d) => String(d.encounterDiagnosisId ?? d.id ?? '').trim() === id);
+      return String(hit?.name ?? '').trim();
+    })
+    .filter(Boolean);
+  props.setField('encounterDiagnosisIds', ordered);
+  props.setField('diagnosis', names.join('、'));
+}
 </script>
 
 <template>
@@ -189,8 +279,31 @@ function onPerformOrgSelect(value: unknown) {
       <span class="product-text">
         {{ item.selectedDrugName || '-' }}【{{ item.selectedDrugSpec || '-' }}】 单价：
         {{ formatUnitPriceYuan(item.selectedDrugPrice) }}
+        <span v-if="item.chrgitmLvText" class="chrgitm-lv-text"
+          >&nbsp;{{ item.chrgitmLvText }}</span
+        >
       </span>
       <span class="product-total-amount">总金额：{{ formatMoneyStrYuan(calcTotalFee) }}</span>
+    </div>
+
+    <!-- 耗材不绑定诊断；诊疗诊断区限宽，避免占满整行 -->
+    <div v-if="editorKind === 'SERVICE'" class="drug-form-row top-row diagnosis-row">
+      <div class="field-item diagnosis-field-item">
+        <span class="meta-label">诊断</span>
+        <div class="diagnosis-field-wrap">
+          <AdviceDiagnosisBindPanel
+            :selected-ids="item.encounterDiagnosisIds ?? []"
+            :options="patientDiagnoses ?? []"
+            :encounter-id="encounterId"
+            :patient-id="patientId"
+            @update:selected-ids="patchEncounterDiagnosisIds"
+            @add-diagnosis="openDiagnosisDialog()"
+            @deleted="(id) => void props.onEncounterDiagnosisDeleted?.(id)"
+            @main-switched="() => void props.onEncounterDiagnosisMainSwitched?.()"
+            @options-refreshed="(payload) => props.onEncounterDiagnosisOptionsRefreshed?.(payload)"
+          />
+        </div>
+      </div>
     </div>
 
     <div v-if="editorKind === 'DEVICE'" class="drug-form-row simple-row device-qty-form">
@@ -215,9 +328,7 @@ function onPerformOrgSelect(value: unknown) {
             :model-value="item.totalAmountUnit"
             class="unit-select total-unit-select device-qty-form__unit"
             placeholder="单位"
-            @update:model-value="
-              (value: unknown) => setField('totalAmountUnit', String(value ?? ''))
-            "
+            @update:model-value="onDeviceTotalAmountUnitSelect"
           >
             <ElOption
               v-for="opt in deviceUnitOptions"
@@ -346,6 +457,12 @@ function onPerformOrgSelect(value: unknown) {
   min-width: 0;
 }
 
+/* 医保等级：仅展示甲/乙/自费等文案，醒目区分于品名单价 */
+.chrgitm-lv-text {
+  color: var(--el-color-warning);
+  font-weight: 700;
+}
+
 .meta-label {
   color: #4b5563;
   font-size: 12px;
@@ -378,6 +495,33 @@ function onPerformOrgSelect(value: unknown) {
   display: grid;
   align-items: end;
   width: fit-content;
+  max-width: 100%;
+}
+
+.top-row.diagnosis-row {
+  grid-template-columns: minmax(260px, 420px);
+  gap: 10px 14px;
+  margin-bottom: 10px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.diagnosis-field-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.diagnosis-field-item {
+  min-width: 0;
+  max-width: 420px;
+}
+
+.diagnosis-field-wrap :deep(.dx-bind) {
+  flex: 1;
+  min-width: 120px;
   max-width: 100%;
 }
 

@@ -60,7 +60,10 @@ async function loadAssignParticipants(encounterId: string) {
   if (!detail) {
     return undefined;
   }
-  const ids = mapParticipantsToFormIds(detail.participants);
+  // ASSIGN 仅待入科：申请/登记医生按住院医生带回（必填）
+  const ids = mapParticipantsToFormIds(detail.participants, {
+    bringDoctorToInpatientDoctor: true,
+  });
   const rows = buildParticipantSubmitRows(ids);
   return rows.length > 0 ? rows : undefined;
 }

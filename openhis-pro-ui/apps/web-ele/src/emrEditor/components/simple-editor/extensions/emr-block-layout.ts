@@ -77,6 +77,16 @@ export const EmrBlockLayout = Extension.create({
       {
         types: ['paragraph'],
         attributes: {
+          name: {
+            default: null,
+            parseHTML: (element) => (element as HTMLElement).getAttribute('data-name') || null,
+            renderHTML: (attributes) => {
+              if (!attributes.name) {
+                return {};
+              }
+              return { 'data-name': attributes.name };
+            },
+          },
           textIndent: {
             default: null,
             parseHTML: (element) => {

@@ -6,6 +6,7 @@ import type { ApiOptionItem } from '#/types/api-response';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
+import { useUserStore } from '@vben/stores';
 import { formatDateTime } from '@vben/utils';
 
 import {
@@ -18,6 +19,7 @@ import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workst
 import {
   INV_ALL_LOCATIONS_FILTER_ID,
   INV_ITEM_TABLE_TYPE_DEVICE,
+  mapInventoryPractitionerInitOptions,
   normalizeInventoryItemTableTypeOptions,
   normalizeSidebarLocationFilterValue,
   pickWorkbenchOrderAfterSave,
@@ -34,6 +36,7 @@ import DeptIssueMainPane from './dept-issue-main-pane.vue';
 defineOptions({ name: 'InventoryDepartmentDeptIssuePage' });
 
 const route = useRoute();
+const userStore = useUserStore();
 
 function createDefaultMonthRange(): [string, string] {
   const d = new Date();
@@ -60,7 +63,9 @@ const cabinetListOptions = ref<Record<string, unknown>[]>([]);
 const deptPharmacyOptions = ref<
   (ApiOptionItem & { organizationId?: string; organizationName?: string })[]
 >([]);
+const organizationOptions = ref<ApiOptionItem[]>([]);
 const productTableTypeOptions = ref<ApiOptionItem[]>([]);
+const practitionerOptions = ref<ApiOptionItem[]>([]);
 const orderList = ref<Record<string, unknown>[]>([]);
 const selectedOrder = ref<null | Record<string, unknown>>(null);
 const mainPaneResetKey = ref(0);
@@ -96,9 +101,14 @@ async function init() {
     const res = await loadDeptIssueFormInitApi({});
     const data = res.data;
     deptPharmacyOptions.value = mapDeptPharmacyHeadOptions(data?.departmentPharmacyOptions);
+    organizationOptions.value = mapDeptIssueInitOptionsToApiItems(data?.organizationOptions);
     productTableTypeOptions.value = normalizeInventoryItemTableTypeOptions(
       mapDeptIssueInitOptionsToApiItems(data?.productTableOptions),
       INV_ITEM_TABLE_TYPE_DEVICE,
+    );
+    practitionerOptions.value = mapInventoryPractitionerInitOptions(
+      [data?.pharmacistOptions],
+      userStore.userInfo,
     );
     cabinetListOptions.value = mapDeptIssueInitToCabinetRows(data?.departmentPharmacyOptions);
     if (
@@ -113,7 +123,9 @@ async function init() {
     }
   } catch {
     deptPharmacyOptions.value = [];
+    organizationOptions.value = [];
     productTableTypeOptions.value = [];
+    practitionerOptions.value = [];
     cabinetListOptions.value = [];
   }
 }
@@ -193,10 +205,10 @@ watch(
     const busNo = q.busNo;
     if (!busNo || Array.isArray(busNo)) return;
     if (cabinetListOptions.value.length === 0) await init();
-    queryParams.value.keyword = String(busNo);
+    // 外链 busNo 只用于回选单据，勿写入侧栏检索；否则错误/残留单号会把列表滤空
     await getList();
-    const row = orderList.value.find((item) => resolveBusNo(item) === String(busNo));
-    if (row) selectedOrder.value = row;
+    selectedOrder.value = pickWorkbenchOrderAfterSave(orderList.value, String(busNo), resolveBusNo);
+    isAddDisabled.value = false;
   },
   { immediate: true },
 );
@@ -209,7 +221,6 @@ onMounted(async () => {
 
 <template>
   <WarehouseDocWorkstation
-    aside-width="280px"
     queue-title=""
     aside-dense
     :show-aside-filter="false"
@@ -234,7 +245,9 @@ onMounted(async () => {
       class="min-h-0 flex-1"
       :bus-no="selectedBusNo"
       :dept-pharmacy-options="deptPharmacyOptions"
+      :organization-options="organizationOptions"
       :is-draft-order="isDraftOrder"
+      :practitioner-options="practitionerOptions"
       :product-table-type-options="productTableTypeOptions"
       :reset-key="mainPaneResetKey"
       @document-removed="handleDocumentRemoved"

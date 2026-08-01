@@ -14,6 +14,7 @@ import { ElButton, ElMessage, ElMessageBox, ElSpace, ElTag } from 'element-plus'
 import { activeBodyApi, deleteBodyApi, getBodyListApi, inactiveBodyApi } from '#/api/basic/body';
 import { PublicationStatusCode } from '#/constants/domain/publication-status';
 
+import { BASIC_TABLE_MAX_HEIGHT } from '../basic-table-max-height';
 import EditDialog from './edit-dialog.vue';
 
 defineOptions({ name: 'BasicBodyIndex' });
@@ -324,6 +325,7 @@ onMounted(() => {
       :query-params="queryParams"
       :form-items="formItems"
       :table-columns="tableColumns"
+      :max-height="BASIC_TABLE_MAX_HEIGHT"
       :show-top-query="true"
       :show-pagination="false"
       :tree="true"

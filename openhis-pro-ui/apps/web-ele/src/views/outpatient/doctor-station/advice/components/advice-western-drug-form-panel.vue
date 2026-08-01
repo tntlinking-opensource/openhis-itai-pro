@@ -2,15 +2,31 @@
 import type { AdviceDrugItem } from '../services/advice.types';
 
 import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
+import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
 import type { DiagnosisItem } from '#/components/doctor-station/diagnosis';
 
 import { computed } from 'vue';
 
-import { ElButton, ElCheckbox, ElInputNumber, ElOption, ElSelect, ElSwitch } from 'element-plus';
+import {
+  ElCheckbox,
+  ElInputNumber,
+  ElOption,
+  ElRadio,
+  ElRadioGroup,
+  ElSelect,
+  ElSwitch,
+} from 'element-plus';
 
+import { AdviceDiagnosisBindPanel } from '#/components/doctor-station/diagnosis';
+import { formatAdviceDrugInfoStockText } from '#/utils/doctor-station/advice-catalog-stock-display';
+import { formatPackagePerMinUnitText } from '#/utils/doctor-station/medication-package-min-unit-display';
 import { calcMoneyLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
 
-import { parseOptionalNumberInput } from '../services/advice-edit';
+import {
+  buildCatalogDosePresetPatch,
+  parseOptionalNumberInput,
+  resolveCatalogDoseByPresetKind,
+} from '../services/advice-edit';
 import {
   contractSelectionFromValue,
   formatMoneyStrYuan,
@@ -35,6 +51,15 @@ export interface WesternDrugFormHandlers {
   handleTotalAmountUnitManualSelect: (value: unknown) => void;
   handleDiagnosisFocus: () => void;
   openDiagnosisDialog: () => void;
+  /** 选择诊断弹窗内删除就诊诊断后回调 */
+  onEncounterDiagnosisDeleted: (deletedId: string) => void;
+  /** 选择诊断弹窗内切换主诊后回调 */
+  onEncounterDiagnosisMainSwitched: () => void;
+  /** 打开选择诊断弹窗时已拉取最新列表，同步父级候选项 */
+  onEncounterDiagnosisOptionsRefreshed: (payload: {
+    displayRows: EncounterDiagnosisRowDto[];
+    items: DiagnosisItem[];
+  }) => void;
 }
 
 defineOptions({ name: 'AdviceWesternDrugFormPanel' });
@@ -46,12 +71,40 @@ const props = defineProps<{
   medicationRateOptions: TerminologyOptionDto[];
   medicationRouteOptions: TerminologyOptionDto[];
   patientDiagnoses: DiagnosisItem[];
+  encounterId?: string;
+  patientId?: string;
 }>();
 
 function patchContract(contractId: string) {
   const sel = contractSelectionFromValue(contractId, props.feeNatureOptions);
   props.formHandlers.setField('contractId', sel.contractId);
   props.formHandlers.setField('feeNature', sel.feeNature);
+}
+
+/** 绑定诊断：主诊优先排序，并同步展示名。 */
+function patchEncounterDiagnosisIds(value: unknown) {
+  const raw = Array.isArray(value)
+    ? value.map((id) => String(id ?? '').trim()).filter(Boolean)
+    : [];
+  const mainIdSet = new Set(
+    props.patientDiagnoses
+      .filter((d) => Number(d.mainDiagnosisFlag) === 1)
+      .map((d) => String(d.encounterDiagnosisId ?? d.id ?? '').trim())
+      .filter(Boolean),
+  );
+  const mains = raw.filter((id) => mainIdSet.has(id));
+  const others = raw.filter((id) => !mainIdSet.has(id));
+  const ordered = [...mains, ...others];
+  const names = ordered
+    .map((id) => {
+      const hit = props.patientDiagnoses.find(
+        (d) => String(d.encounterDiagnosisId ?? d.id ?? '').trim() === id,
+      );
+      return String(hit?.name ?? '').trim();
+    })
+    .filter(Boolean);
+  props.formHandlers.setField('encounterDiagnosisIds', ordered);
+  props.formHandlers.setField('diagnosis', names.join('、'));
 }
 
 const autoCalcTotalAmount = defineModel<boolean>('autoCalcTotalAmount', { required: true });
@@ -65,6 +118,49 @@ const calcTotalFee = computed(() => {
   }
   return formatMoneyDisplay(calcMoneyLineTotal(price, amount));
 });
+
+/** 包装与最小单位不同时：「每盒30片」类文案 */
+const packagePerMinUnitText = computed(() => formatPackagePerMinUnitText(props.item));
+
+/** 选品库存：「库存：4盒6片」；无库存字段时为空 */
+const stockDisplayText = computed(() => formatAdviceDrugInfoStockText(props.item));
+
+/** 目录是否维护了可切换的默认/最大/最小剂量。 */
+const showDosePresetRadio = computed(() => {
+  const item = props.item;
+  return (
+    resolveCatalogDoseByPresetKind(item, 'default') !== undefined ||
+    resolveCatalogDoseByPresetKind(item, 'max') !== undefined ||
+    resolveCatalogDoseByPresetKind(item, 'min') !== undefined
+  );
+});
+
+/** 按目录预设写入剂量双字段（剂量单位 → 拆零换算），并重算总量。 */
+function applyDosePreset(kind: 'default' | 'max' | 'min') {
+  const doseQty = resolveCatalogDoseByPresetKind(props.item, kind);
+  if (doseQty === undefined) {
+    return;
+  }
+  const patch = buildCatalogDosePresetPatch(props.item, kind, doseQty);
+  if (patch.singleDose !== undefined) {
+    props.formHandlers.setField('singleDose', patch.singleDose);
+  }
+  if (patch.doseConvertRatio !== undefined) {
+    props.formHandlers.setField('doseConvertRatio', patch.doseConvertRatio);
+  }
+  if (patch.doseBandConvertK !== undefined) {
+    props.formHandlers.setField('doseBandConvertK', patch.doseBandConvertK);
+  }
+  props.formHandlers.setField('dosePresetKind', kind);
+  props.formHandlers.debouncedEnsureFrequencyCountAndRecalcTotal();
+}
+
+/** 医生手工改剂量时清除预设选中态，避免与 radio 展示不一致。 */
+function clearDosePresetKind() {
+  if (props.item.dosePresetKind !== undefined) {
+    props.formHandlers.setField('dosePresetKind', undefined);
+  }
+}
 </script>
 
 <template>
@@ -72,8 +168,19 @@ const calcTotalFee = computed(() => {
     <div class="product-info-row">
       <span class="meta-label product-info-label">药品信息:</span>
       <span class="product-text">
-        {{ item.selectedDrugName || '-' }}【{{ item.selectedDrugSpec || '-' }}】 单价：
-        {{ formatUnitPriceYuan(item.selectedDrugPrice) }}
+        {{ item.selectedDrugName || '-' }}【{{ item.selectedDrugSpec || '-' }}】
+        <template v-if="packagePerMinUnitText">
+          <span class="product-info-gap">{{ packagePerMinUnitText }}</span>
+        </template>
+        <template v-if="stockDisplayText">
+          <span class="product-info-gap">{{ stockDisplayText }}</span>
+        </template>
+        <span class="product-info-gap"
+          >单价：{{ formatUnitPriceYuan(item.selectedDrugPrice) }}</span
+        >
+        <span v-if="item.chrgitmLvText" class="chrgitm-lv-text product-info-gap">{{
+          item.chrgitmLvText
+        }}</span>
       </span>
       <div class="product-info-trailing">
         <div class="auto-calc-total-switch flex shrink-0 items-center gap-2 text-sm">
@@ -87,29 +194,20 @@ const calcTotalFee = computed(() => {
       <div class="field-item diagnosis-field-item">
         <span class="meta-label">诊断</span>
         <div class="diagnosis-field-wrap">
-          <ElSelect
-            :model-value="item.diagnosis"
-            filterable
-            clearable
-            placeholder="请选择诊断"
-            @focus="formHandlers.handleDiagnosisFocus()"
-            @update:model-value="
-              (value: unknown) => formHandlers.setField('diagnosis', String(value || ''))
-            "
-          >
-            <ElOption
-              v-for="diagnosis in patientDiagnoses"
-              :key="diagnosis.id"
-              :label="diagnosis.name"
-              :value="diagnosis.name"
-            />
-          </ElSelect>
-          <ElButton link type="primary" @click="formHandlers.openDiagnosisDialog()">
-            添加诊断
-          </ElButton>
+          <AdviceDiagnosisBindPanel
+            :selected-ids="item.encounterDiagnosisIds ?? []"
+            :options="patientDiagnoses"
+            :encounter-id="encounterId"
+            :patient-id="patientId"
+            @update:selected-ids="patchEncounterDiagnosisIds"
+            @add-diagnosis="formHandlers.openDiagnosisDialog()"
+            @deleted="formHandlers.onEncounterDiagnosisDeleted"
+            @main-switched="formHandlers.onEncounterDiagnosisMainSwitched"
+            @options-refreshed="formHandlers.onEncounterDiagnosisOptionsRefreshed"
+          />
         </div>
       </div>
-      <div class="field-item">
+      <div class="field-item fee-nature-field">
         <span class="meta-label">费用性质</span>
         <ElSelect
           :model-value="item.contractId"
@@ -137,54 +235,84 @@ const calcTotalFee = computed(() => {
     <div class="drug-form-row bottom-row">
       <div class="field-item dose-convert-item">
         <span class="meta-label">单次用量</span>
-        <div class="dose-convert-wrap">
-          <div class="dose-num-with-unit">
-            <ElInputNumber
-              class="dose-qty-input"
-              :class="item.selectedId ? 'western-single-dose-primary' : ''"
-              :model-value="item.singleDose ?? undefined"
-              :min="0"
-              :controls="false"
-              @update:model-value="
-                (value: unknown) => {
-                  const v = parseOptionalNumberInput(value);
-                  formHandlers.setField('singleDose', v as AdviceDrugItem['singleDose']);
-                  if (v !== undefined && Number.isFinite(v)) {
-                    formHandlers.applySplitDoseToDoseSide(v);
+        <div class="dose-convert-stack">
+          <div class="dose-convert-wrap">
+            <div class="dose-num-with-unit">
+              <ElInputNumber
+                class="dose-qty-input"
+                :class="item.selectedId ? 'western-single-dose-primary' : ''"
+                :model-value="item.singleDose ?? undefined"
+                :min="0"
+                :controls="false"
+                @update:model-value="
+                  (value: unknown) => {
+                    const v = parseOptionalNumberInput(value);
+                    clearDosePresetKind();
+                    formHandlers.setField('singleDose', v as AdviceDrugItem['singleDose']);
+                    if (v !== undefined && Number.isFinite(v)) {
+                      formHandlers.applySplitDoseToDoseSide(v);
+                    }
+                    formHandlers.debouncedEnsureFrequencyCountAndRecalcTotal();
                   }
-                  formHandlers.debouncedEnsureFrequencyCountAndRecalcTotal();
-                }
-              "
-            />
-            <span class="dose-unit-tail" :title="item.doseMainUnit || ''">{{
-              item.doseMainUnit || '—'
-            }}</span>
-          </div>
-          <span class="equals-sign">=</span>
-          <div class="dose-num-with-unit">
-            <ElInputNumber
-              class="dose-qty-input"
-              :model-value="item.doseConvertRatio ?? undefined"
-              :min="0"
-              :controls="false"
-              @update:model-value="
-                (value: unknown) => {
-                  const v = parseOptionalNumberInput(value);
-                  formHandlers.setField(
-                    'doseConvertRatio',
-                    v as AdviceDrugItem['doseConvertRatio'],
-                  );
-                  if (v !== undefined && Number.isFinite(v)) {
-                    formHandlers.applyDoseQtyToSplitSide(v);
+                "
+              />
+              <span class="dose-unit-tail" :title="item.doseMainUnit || ''">{{
+                item.doseMainUnit || '—'
+              }}</span>
+            </div>
+            <span class="equals-sign">=</span>
+            <div class="dose-num-with-unit">
+              <ElInputNumber
+                class="dose-qty-input"
+                :model-value="item.doseConvertRatio ?? undefined"
+                :min="0"
+                :controls="false"
+                @update:model-value="
+                  (value: unknown) => {
+                    const v = parseOptionalNumberInput(value);
+                    clearDosePresetKind();
+                    formHandlers.setField(
+                      'doseConvertRatio',
+                      v as AdviceDrugItem['doseConvertRatio'],
+                    );
+                    if (v !== undefined && Number.isFinite(v)) {
+                      formHandlers.applyDoseQtyToSplitSide(v);
+                    }
+                    formHandlers.debouncedEnsureFrequencyCountAndRecalcTotal();
                   }
-                  formHandlers.debouncedEnsureFrequencyCountAndRecalcTotal();
-                }
-              "
-            />
-            <span class="dose-unit-tail" :title="item.doseSubUnit || ''">{{
-              item.doseSubUnit || '—'
-            }}</span>
+                "
+              />
+              <span class="dose-unit-tail" :title="item.doseSubUnit || ''">{{
+                item.doseSubUnit || '—'
+              }}</span>
+            </div>
           </div>
+          <ElRadioGroup
+            v-if="showDosePresetRadio"
+            class="dose-preset-radio"
+            :model-value="item.dosePresetKind"
+            @update:model-value="
+              (value: unknown) => {
+                const kind = String(value ?? '').trim();
+                if (kind === 'default' || kind === 'max' || kind === 'min') {
+                  applyDosePreset(kind);
+                }
+              }
+            "
+          >
+            <ElRadio
+              v-if="resolveCatalogDoseByPresetKind(item, 'default') !== undefined"
+              label="default"
+            >
+              默认剂量
+            </ElRadio>
+            <ElRadio v-if="resolveCatalogDoseByPresetKind(item, 'max') !== undefined" label="max">
+              最大剂量
+            </ElRadio>
+            <ElRadio v-if="resolveCatalogDoseByPresetKind(item, 'min') !== undefined" label="min">
+              最小剂量
+            </ElRadio>
+          </ElRadioGroup>
         </div>
       </div>
       <div class="field-item">
@@ -312,6 +440,16 @@ const calcTotalFee = computed(() => {
   min-width: 0;
 }
 
+.product-info-gap {
+  margin-left: 12px;
+}
+
+/* 医保等级：仅展示甲/乙/自费等文案，醒目区分于品名单价 */
+.chrgitm-lv-text {
+  color: var(--el-color-warning);
+  font-weight: 700;
+}
+
 .product-info-trailing {
   display: flex;
   align-items: center;
@@ -354,7 +492,7 @@ const calcTotalFee = computed(() => {
 }
 
 .top-row {
-  grid-template-columns: minmax(260px, 1fr) minmax(220px, 0.9fr) minmax(100px, auto);
+  grid-template-columns: minmax(260px, 1fr) auto auto;
   gap: 10px 14px;
   margin-bottom: 10px;
 }
@@ -362,6 +500,7 @@ const calcTotalFee = computed(() => {
 .bottom-row {
   grid-template-columns: auto 220px 200px 170px auto;
   gap: 10px 10px;
+  align-items: start;
 }
 
 .field-item {
@@ -377,9 +516,13 @@ const calcTotalFee = computed(() => {
   width: 100%;
 }
 
+.fee-nature-field :deep(.el-select) {
+  width: 130px;
+}
+
 .diagnosis-field-wrap {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   min-width: 0;
   flex: 1;
@@ -389,7 +532,7 @@ const calcTotalFee = computed(() => {
   min-width: 0;
 }
 
-.diagnosis-field-wrap :deep(.el-select) {
+.diagnosis-field-wrap :deep(.dx-bind) {
   flex: 1;
   min-width: 120px;
 }
@@ -400,12 +543,50 @@ const calcTotalFee = computed(() => {
   min-height: 32px;
 }
 
+.dose-convert-item {
+  align-items: start;
+}
+
+.dose-convert-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
 .dose-convert-wrap,
 .total-amount-wrap {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+.dose-preset-radio {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  height: 22px;
+  margin: 0;
+  padding: 0 2px;
+  border-radius: 4px;
+  background: var(--el-fill-color-light);
+}
+
+.dose-preset-radio :deep(.el-radio) {
+  margin-right: 8px;
+  height: 22px;
+}
+
+.dose-preset-radio :deep(.el-radio:last-child) {
+  margin-right: 0;
+}
+
+.dose-preset-radio :deep(.el-radio__label) {
+  padding-left: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
 }
 
 .dose-num-with-unit {

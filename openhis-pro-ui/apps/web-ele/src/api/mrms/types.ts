@@ -409,3 +409,29 @@ export interface UnarchiveCaseRecordParams {
   caseRecordId: string;
   unarchiveReason: string;
 }
+
+/** 门诊病历查询列表行 */
+export interface OutpatientRecordListItemDto {
+  documentId?: string;
+  patientId?: string;
+  encounterId?: string;
+  patientName?: string;
+  outpatientNo?: string;
+  deptName?: string;
+  encounterTime?: string;
+  title?: string;
+  documentTypeCode?: string;
+  documentTypeName?: string;
+  statusCode?: string;
+  updatedAt?: string;
+  printable?: boolean;
+}
+
+/** 门诊病历查询分页参数 */
+export interface QueryOutpatientRecordParams extends PageParams {
+  keyword?: string;
+  statusCode?: string;
+  deptName?: string;
+  encounterDateFrom?: string;
+  encounterDateTo?: string;
+}

@@ -1,14 +1,18 @@
 <!--
-  库房单据工作站：单据级底部操作按钮组（占位事件名，由业务页监听）。
-  动账类页面传 require-finance-approval-role：审批/驳回仅在后端 canFinanceApprove 为 true 时展示。
+  库房单据工作站：单据级底部操作按钮组。
+  财务审批族传 require-finance-approval-role：
+  - 普通进入：隐藏审批/驳回，保留制单按钮；
+  - 财务审批深链 + 财务角色：仅展示审批/驳回，隐藏制单按钮。
+  打印按钮在有单据时可用（printDisabled 控制）。
 -->
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import { Check, RefreshLeft } from '@element-plus/icons-vue';
+import { Check, Printer, RefreshLeft } from '@element-plus/icons-vue';
 import { ElButton } from 'element-plus';
 
 import { useFinanceApprovalAccess } from '#/composables/use-finance-approval-access';
+import { useFromFinanceApproval } from '#/composables/use-from-finance-approval';
 
 import InvActionSep from './inv-action-sep.vue';
 
@@ -17,9 +21,13 @@ defineOptions({ name: 'InvDocActions' });
 const props = withDefaults(
   defineProps<{
     approveDisabled?: boolean;
+    printDisabled?: boolean;
     rejectDisabled?: boolean;
     removeDisabled?: boolean;
-    /** 动账类页面为 true：审批按钮跟随后端 canFinanceApprove */
+    /**
+     * 财务审批族单据为 true：原业务页默认隐藏审批/驳回；
+     * 财务审批深链 + 财务审批角色时仅展示审驳。
+     */
     requireFinanceApprovalRole?: boolean;
     saveAndSubmitDisabled?: boolean;
     saveDisabled?: boolean;
@@ -28,6 +36,7 @@ const props = withDefaults(
   }>(),
   {
     approveDisabled: false,
+    printDisabled: true,
     rejectDisabled: false,
     removeDisabled: false,
     requireFinanceApprovalRole: false,
@@ -40,6 +49,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   approve: [];
+  print: [];
   reject: [];
   removeDoc: [];
   save: [];
@@ -48,33 +58,55 @@ const emit = defineEmits<{
   withdraw: [];
 }>();
 
+const { fromFinanceApproval } = useFromFinanceApproval();
 const { canFinanceApprove } = useFinanceApprovalAccess();
 
-const showApproveRejectActions = computed(
-  () => !props.requireFinanceApprovalRole || canFinanceApprove.value,
+/** 财务审批只读审驳入口（深链 + 角色） */
+const financeApprovalReviewMode = computed(
+  () => props.requireFinanceApprovalRole && fromFinanceApproval.value && canFinanceApprove.value,
 );
+
+/** 是否展示审批/驳回 */
+const showApproveRejectActions = computed(() => {
+  if (!props.requireFinanceApprovalRole) {
+    return true;
+  }
+  return financeApprovalReviewMode.value;
+});
+
+/** 是否展示制单类按钮（保存/删除/提交/撤回） */
+const showDocumentManageActions = computed(() => !financeApprovalReviewMode.value);
 </script>
 
 <template>
-  <ElButton type="primary" :disabled="saveDisabled" @click="emit('save')">保存单据</ElButton>
-  <ElButton type="danger" plain :disabled="removeDisabled" @click="emit('removeDoc')">
-    删除单据
-  </ElButton>
-  <InvActionSep />
-  <ElButton type="primary" plain :disabled="submitApprovalDisabled" @click="emit('submitApproval')">
-    提交审批
-  </ElButton>
-  <ElButton type="primary" plain :disabled="saveAndSubmitDisabled" @click="emit('saveAndSubmit')">
-    保存并提交审批
-  </ElButton>
-  <ElButton :icon="RefreshLeft" :disabled="withdrawDisabled" @click="emit('withdraw')">
-    撤回
-  </ElButton>
-  <template v-if="showApproveRejectActions">
+  <template v-if="showDocumentManageActions">
+    <ElButton type="primary" :disabled="saveDisabled" @click="emit('save')">保存单据</ElButton>
+    <ElButton type="danger" plain :disabled="removeDisabled" @click="emit('removeDoc')">
+      删除单据
+    </ElButton>
     <InvActionSep />
+    <ElButton
+      type="primary"
+      plain
+      :disabled="submitApprovalDisabled"
+      @click="emit('submitApproval')"
+    >
+      提交审批
+    </ElButton>
+    <ElButton type="primary" plain :disabled="saveAndSubmitDisabled" @click="emit('saveAndSubmit')">
+      保存并提交审批
+    </ElButton>
+    <ElButton :icon="RefreshLeft" :disabled="withdrawDisabled" @click="emit('withdraw')">
+      撤回
+    </ElButton>
+  </template>
+  <template v-if="showApproveRejectActions">
+    <InvActionSep v-if="showDocumentManageActions" />
     <ElButton type="success" :icon="Check" :disabled="approveDisabled" @click="emit('approve')">
       审批
     </ElButton>
     <ElButton type="warning" :disabled="rejectDisabled" @click="emit('reject')">驳回</ElButton>
   </template>
+  <InvActionSep />
+  <ElButton :icon="Printer" :disabled="printDisabled" @click="emit('print')">打印</ElButton>
 </template>

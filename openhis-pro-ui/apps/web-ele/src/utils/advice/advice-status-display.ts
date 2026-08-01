@@ -2,6 +2,7 @@ import type { TagProps } from 'element-plus';
 
 type AdviceStatusTagType = NonNullable<TagProps['type']>;
 
+/** 医嘱签发/请求态 Tag（含列表历史合并展示中的退费码，兼容住院仍用 displayStatus 的列） */
 const ADVICE_STATUS_TAG_BY_CODE: Record<string, AdviceStatusTagType> = {
   DRAFT: 'primary',
   ACTIVE: 'success',
@@ -14,7 +15,17 @@ const ADVICE_STATUS_TAG_BY_CODE: Record<string, AdviceStatusTagType> = {
   REFUNDED: 'danger',
 };
 
-/** 医嘱展示态 Tag：仅认 statusEnum code，不认展示文案 */
+/** 费用状态 Tag（ChargeItemStatus） */
+const ADVICE_CHARGE_STATUS_TAG_BY_CODE: Record<string, AdviceStatusTagType> = {
+  DRAFT: 'info',
+  PLANNED: 'warning',
+  PENDING_SETTLEMENT: 'warning',
+  SETTLED: 'success',
+  REFUNDING: 'warning',
+  REFUNDED: 'danger',
+};
+
+/** 医嘱签发态 Tag：仅认 statusEnum code，不认展示文案 */
 export function resolveAdviceStatusTagTypeFromCode(
   statusEnum?: null | string,
 ): AdviceStatusTagType {
@@ -24,14 +35,27 @@ export function resolveAdviceStatusTagTypeFromCode(
   return ADVICE_STATUS_TAG_BY_CODE[code] ?? 'info';
 }
 
+/** 费用状态 Tag：仅认 chargeStatusEnum code */
+export function resolveAdviceChargeStatusTagTypeFromCode(
+  chargeStatusEnum?: null | string,
+): AdviceStatusTagType {
+  const code = String(chargeStatusEnum ?? '')
+    .trim()
+    .toUpperCase();
+  return ADVICE_CHARGE_STATUS_TAG_BY_CODE[code] ?? 'info';
+}
+
+/** 与 ClinicalStatus 持久化 code 一致（小写）：active=阳性 / inactive=阴性 */
 const SKIN_TEST_TAG_BY_CODE: Record<string, AdviceStatusTagType> = {
-  ACTIVE: 'danger',
-  INACTIVE: 'success',
-  RESOLVED: 'info',
-  UNKNOWN: 'warning',
+  active: 'danger',
+  positive: 'danger',
+  inactive: 'success',
+  negative: 'success',
+  resolved: 'info',
+  unknown: 'warning',
 };
 
-/** 皮试结果 Tag：仅认 skinTestOutcomeCode */
+/** 皮试结果 Tag：仅认 skinTestOutcomeCode（ClinicalStatus code，如 active） */
 export function resolveSkinTestTagTypeFromCode(
   skinTestOutcomeCode?: null | string,
   skinTestFlag?: boolean | null,

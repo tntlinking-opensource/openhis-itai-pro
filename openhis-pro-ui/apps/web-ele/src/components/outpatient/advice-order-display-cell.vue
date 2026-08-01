@@ -1,11 +1,19 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
+import { ElTag } from 'element-plus';
+
 import DrugOrderGroupCell from '#/components/outpatient/drug-order-group-cell.vue';
+import {
+  formatMedicationDoseDisplay,
+  formatMedicationDoseSummaryLine,
+} from '#/utils/doctor-station/medication-dose-display';
 
 defineOptions({ name: 'AdviceOrderDisplayCell' });
 
 const props = defineProps<{
+  /** 申请单整单号（有值时在部位/扩展行右侧展示 Tag） */
+  applyFormNo?: null | string;
   content?: null | string;
   dosageText?: null | string;
   extension?: null | string;
@@ -27,6 +35,11 @@ interface AdviceDrugLineSource {
   usage?: string;
   frequency?: string;
   medicationDays?: number | string;
+  dosageDisplay?: string;
+  splitDose?: number | string;
+  splitDoseUnitCode?: string;
+  splitDoseUnitName?: string;
+  doseUnitCode?: string;
 }
 
 function str(v: unknown): string {
@@ -49,18 +62,29 @@ function formatDrugTitle(d: AdviceDrugLineSource): string {
   return out;
 }
 
-/** 剂量行；字段不全则只拼有的部分，全无则空串 */
+/**
+ * 剂量行：优先 dosageDisplay / 结构化计量+拆零；总量仍拼「共」。
+ * 住院护士站仅下发整段 dosageDisplay 时走 singleDose 原样回显。
+ */
 function formatDrugDose(d: AdviceDrugLineSource): string {
-  const sd = str(d.singleDose);
-  const su = str(d.doseSubUnit);
-  const ta = str(d.totalAmount);
-  const tu = str(d.totalAmountUnit);
-  const left = sd && su ? `${sd}${su}/次` : '';
-  const right = ta && tu ? `共${ta}${tu}` : '';
-  if (left && right) return `${left}，${right}。`;
-  if (left) return `${left}。`;
-  if (right) return `${right}。`;
-  return '';
+  const readyDisplay = str(d.dosageDisplay);
+  const dosePart = formatMedicationDoseDisplay({
+    dosageDisplay: readyDisplay || undefined,
+    dose: d.singleDose,
+    doseUnitCode: d.doseUnitCode,
+    doseUnitName: d.doseSubUnit,
+    splitDose: d.splitDose,
+    splitDoseUnitCode: d.splitDoseUnitCode,
+    splitDoseUnitName: d.splitDoseUnitName,
+  });
+  // 仅有现成文案且无单位字段时（如住院护士 dosageDisplay 塞进 singleDose）
+  const left = dosePart || (str(d.singleDose) && !str(d.doseSubUnit) ? str(d.singleDose) : '');
+  return formatMedicationDoseSummaryLine({
+    dosageDisplay: left || undefined,
+    quantity: d.totalAmount,
+    unitName: d.totalAmountUnit,
+    includeTotal: true,
+  });
 }
 
 function lineParts(item: unknown) {
@@ -85,9 +109,14 @@ function formatSharedLine(items: readonly unknown[]): string {
 const contentTrim = computed(() => str(props.content));
 const dosageTrim = computed(() => str(props.dosageText));
 const extensionTrim = computed(() => str(props.extension));
+const applyFormNoTrim = computed(() => str(props.applyFormNo));
 
 const showFallbackMain = computed(
   () => contentTrim.value.length > 0 || dosageTrim.value.length > 0,
+);
+
+const showExtensionRow = computed(
+  () => extensionTrim.value.length > 0 || applyFormNoTrim.value.length > 0,
 );
 
 /** 无组或空数组时交给 DrugOrderGroupCell #fallback */
@@ -122,7 +151,18 @@ const shellItems = computed(() => {
         <span v-if="contentTrim" class="drug-main-text">{{ contentTrim }}</span>
         <span v-if="dosageTrim" class="group-drug-dose">{{ dosageTrim }}</span>
       </div>
-      <div v-if="extensionTrim" class="normal-drug-shared">{{ extensionTrim }}</div>
+      <div v-if="showExtensionRow" class="normal-drug-shared advice-order-extension-row">
+        <span v-if="extensionTrim" class="advice-order-extension-text">{{ extensionTrim }}</span>
+        <ElTag
+          v-if="applyFormNoTrim"
+          class="advice-order-apply-form-tag"
+          size="small"
+          effect="plain"
+          type="primary"
+        >
+          申请单 {{ applyFormNoTrim }}
+        </ElTag>
+      </div>
     </template>
   </DrugOrderGroupCell>
 </template>
@@ -148,5 +188,25 @@ const shellItems = computed(() => {
   flex: 0 0 auto;
   text-align: right;
   white-space: nowrap;
+}
+
+/* 部位/样本等扩展文案居左，申请单号 Tag 居右 */
+.advice-order-extension-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.advice-order-extension-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+}
+
+.advice-order-apply-form-tag {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 </style>

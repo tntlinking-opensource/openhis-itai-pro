@@ -17,8 +17,8 @@ import {
   ElCard,
   ElCheckbox,
   ElCol,
-  ElDescriptions,
-  ElDescriptionsItem,
+  ElCollapse,
+  ElCollapseItem,
   ElEmpty,
   ElForm,
   ElFormItem,
@@ -27,9 +27,10 @@ import {
   ElMessageBox,
   ElOption,
   ElProgress,
+  ElRadioButton,
+  ElRadioGroup,
   ElRow,
   ElSelect,
-  ElStatistic,
   ElSteps,
   ElStep,
   ElTable,
@@ -48,6 +49,7 @@ import {
   buildCatalogVersionLoopSteps,
   catalogDownloadHint,
   defaultCatalogStartVer,
+  matches1305Branch,
 } from '#/chs/constants/catalog-download';
 import {
   filterInsuranceChargeTypes,
@@ -66,8 +68,10 @@ const infno = ref<CatalogFileDownloadInfno>('1301');
 const verBranch = ref<Catalog1305VerBranch>('F002');
 /** 仅探测：有值时才传 maxVersions；正式下载不传（无轮次上限） */
 const previewMaxRounds = ref<number | undefined>(undefined);
-const forceStartFromZero = ref(false);
+/** incremental = 沿用游标；full = 全量重拉 */
+const syncMode = ref<'incremental' | 'full'>('incremental');
 const clearZipCache = ref(false);
+const helpOpen = ref<string[]>([]);
 
 const chargeTypeOptions = ref<ChargeType[]>([]);
 const downloadCursors = ref<CatalogDownloadCursor[]>([]);
@@ -90,15 +94,23 @@ const {
   runDownload,
 } = useCatalogDownloadProgress();
 
+const forceStartFromZero = computed(() => syncMode.value === 'full');
+
 const infnoLabel = computed(
   () =>
     CATALOG_FILE_DOWNLOAD_INFNO_OPTIONS.find((item) => item.value === infno.value)?.label ??
     infno.value,
 );
 
-/** 同 infno 最新游标快照 */
+/** 同 infno 最新游标；1305 仅取当前分支（F002/F003） */
 const currentCursor = computed(() => {
-  const rows = downloadCursors.value.filter((row) => row.infno === infno.value);
+  const rows = downloadCursors.value.filter((row) => {
+    if (row.infno !== infno.value) return false;
+    if (infno.value === '1305') {
+      return matches1305Branch(row.localVer, verBranch.value);
+    }
+    return true;
+  });
   if (rows.length === 0) return undefined;
   return rows.reduce((latest, row) => {
     if (!latest) return row;
@@ -107,12 +119,9 @@ const currentCursor = computed(() => {
 });
 
 const downloadHint = computed(() => catalogDownloadHint(infno.value));
-
 const pipelineOverview = computed(() => buildCatalogPipelineOverview(infno.value));
-
 const versionLoopSteps = computed(() => buildCatalogVersionLoopSteps(infno.value));
 
-/** 本次下载/探测实际使用的 data.ver 起点 */
 const effectiveStartVer = computed(() => {
   if (forceStartFromZero.value) {
     return defaultCatalogStartVer(infno.value, verBranch.value);
@@ -129,37 +138,37 @@ const effectiveStartVerShort = computed(() => {
 
 const pendingVersionCount = computed(() => versionPreview.value?.pendingVersionCount ?? 0);
 const previewHasMore = computed(() => Boolean(versionPreview.value?.hasMore));
-
 const previewStartVer = computed(
   () => versionPreview.value?.startLocalVerShort ?? versionPreview.value?.startLocalVer ?? '—',
 );
 
+const mirrorRowCount = computed(() => Number(currentCursor.value?.localCatalogRowCount ?? 0));
+
 const versionPreviewHint = computed(() => {
   if (!versionPreview.value) {
-    return '可选：探测仅预览阶段一 ZIP 数量，不入库；正式同步请点「开始下载」（需已签到）';
+    return '尚未探测。探测只预览 ZIP 数量、不入库；正式同步请点「开始下载」。';
   }
   const n = pendingVersionCount.value;
   if (n === 0) {
     if (!currentCursor.value) {
-      return '探测 0 包且尚无游标：尚未成功入库过。请点「开始下载」全量拉取；若仍为 0，查服务端 [catalog-dl][phase1] 日志或平台是否开通该目录';
+      return '探测 0 包且尚无游标：请「开始下载」全量拉取；若仍为 0，查服务端日志或平台是否开通该目录。';
     }
-    return '探测未拉到新版本包（本地已有游标，平台可能已无增量；增量同步可取消「全量重拉」）';
+    return '探测无新包：本地游标已是最新，一般无需再下（可取消全量重拉后增量同步）。';
   }
-  const more = previewHasMore.value ? '；已达本次探测轮次上限，可加大轮次或无上限重探' : '';
-  return `预计 ${n} 个 ZIP 包，起点 ver=${previewStartVer.value}${more}；探测不入库，请点「开始下载」`;
+  const more = previewHasMore.value ? '；已达探测轮次上限' : '';
+  return `预计 ${n} 个 ZIP，起点 ${previewStartVer.value}${more}。探测不入库，请点「开始下载」。`;
 });
 
 const startVerHint = computed(() => {
   if (forceStartFromZero.value) {
-    const cacheHint = clearZipCache.value
-      ? '；将清空本地 ZIP 缓存并重新 9102 下载'
-      : '；已下载 ZIP 将直接读本地缓存（跳过 9102）';
-    return `将忽略游标，${infno.value} 从 ver=${effectiveStartVer.value} 发起${cacheHint}`;
+    return clearZipCache.value
+      ? '将忽略游标并从规范初始 ver 重拉；同时清空本地 ZIP 后重新 9102。'
+      : '将忽略游标并从规范初始 ver 重拉；已有 ZIP 仍可读本地缓存。';
   }
   if (!currentCursor.value) {
-    return `无历史游标，等同从 ver=${defaultCatalogStartVer(infno.value, verBranch.value)} 开始；已缓存 ZIP 不会重复 9102`;
+    return `当前接口尚无游标，将从 ${defaultCatalogStartVer(infno.value, verBranch.value)} 开始（种子导入后若仍无，请点刷新）。`;
   }
-  return `沿用游标最新 local_ver，仅拉取增量包；已下载 ZIP 读本地缓存`;
+  return '沿用最新游标做增量；已缓存 ZIP 不会重复 9102。';
 });
 
 const show1305Branch = computed(() => infno.value === '1305');
@@ -169,6 +178,13 @@ const filteredCursors = computed(() =>
     .filter((row) => row.infno === infno.value)
     .sort((a, b) => (b.lastSuccessAt ?? '').localeCompare(a.lastSuccessAt ?? '')),
 );
+
+const emptyCursorHint = computed(() => {
+  if (infno.value === '1305') {
+    return `${verBranch.value} 分支暂无游标，将从 ${defaultCatalogStartVer(infno.value, verBranch.value)} 开始`;
+  }
+  return '暂无游标。若刚用种子工具导入，请点「刷新」；仍无则需本接口下载入库。';
+});
 
 const activePipelineStep = computed(() => {
   if (downloadRunning.value) {
@@ -204,6 +220,16 @@ const { run: runSignIn, loading: signInLoading } = useRequest(ensureInsuranceSig
   },
 });
 
+function formatCount(n: number | undefined | null) {
+  return Number(n ?? 0).toLocaleString();
+}
+
+function formatSyncTime(row: CatalogDownloadCursor) {
+  const raw = row.lastSuccessAt?.trim();
+  if (!raw) return '—';
+  return raw.replace('T', ' ').slice(0, 19);
+}
+
 function requireContractBusNo(): string | undefined {
   const busNo = contractBusNo.value;
   if (busNo === undefined || busNo === null || String(busNo).trim() === '') {
@@ -229,6 +255,21 @@ async function refreshCursors() {
   const busNo = requireContractBusNo();
   if (!busNo) return;
   await runListCursors(busNo);
+}
+
+async function refreshOnContextChange() {
+  versionPreview.value = null;
+  if (!downloadRunning.value) {
+    resetProgress();
+  }
+  // 切换接口时默认回到增量，避免误勾全量
+  syncMode.value = 'incremental';
+  clearZipCache.value = false;
+  if (contractBusNo.value) {
+    await refreshCursors();
+  } else {
+    downloadCursors.value = [];
+  }
 }
 
 async function handlePreviewVersions() {
@@ -263,24 +304,40 @@ async function handleStartDownload() {
   const busNo = requireContractBusNo();
   if (!busNo) return;
 
-  const previewHint =
-    pendingVersionCount.value > 0
-      ? `探测约 ${pendingVersionCount.value} 个 ZIP 包。`
-      : '未探测或探测为 0，将按版本链拉取直至平台无新包。';
-
-  try {
-    await ElMessageBox.confirm(
-      [
-        `${infnoLabel.value} 将按三阶段流水线执行（拉取 → 解析 → 入库）。`,
-        `${infnoLabel.value} 起点 ver：${effectiveStartVer.value}`,
-        previewHint,
-        '过程可能数分钟，请勿关闭页面。',
-      ].join('\n'),
-      '确认开始下载',
-      { type: 'warning', confirmButtonText: '开始下载', cancelButtonText: '取消' },
-    );
-  } catch {
-    return;
+  if (forceStartFromZero.value) {
+    try {
+      await ElMessageBox.confirm(
+        [
+          `将全量重拉 ${infnoLabel.value}（忽略现有游标）。`,
+          `起点 ver：${effectiveStartVer.value}`,
+          '种子导入后的院通常应使用「增量同步」，全量重拉可能耗时很长。',
+          '确定继续？',
+        ].join('\n'),
+        '确认全量重拉',
+        { type: 'warning', confirmButtonText: '全量重拉', cancelButtonText: '取消' },
+      );
+    } catch {
+      return;
+    }
+  } else {
+    const previewHint =
+      pendingVersionCount.value > 0
+        ? `探测约 ${pendingVersionCount.value} 个 ZIP 包。`
+        : '未探测或探测为 0，将按版本链拉取直至平台无新包。';
+    try {
+      await ElMessageBox.confirm(
+        [
+          `${infnoLabel.value}：拉取 → 解析 → 入库`,
+          `起点 ver：${effectiveStartVer.value}`,
+          previewHint,
+          '过程可能数分钟，请勿关闭页面。',
+        ].join('\n'),
+        '确认开始下载',
+        { type: 'info', confirmButtonText: '开始下载', cancelButtonText: '取消' },
+      );
+    } catch {
+      return;
+    }
   }
 
   try {
@@ -317,19 +374,25 @@ function isLatestCursor(row: CatalogDownloadCursor) {
   return currentCursor.value?.id != null && row.id === currentCursor.value.id;
 }
 
-watch(contractBusNo, (value) => {
-  versionPreview.value = null;
-  if (value) void refreshCursors();
-  else downloadCursors.value = [];
+watch(contractBusNo, () => {
+  void refreshOnContextChange();
 });
 
 watch(infno, () => {
-  versionPreview.value = null;
-  if (contractBusNo.value) void refreshCursors();
+  void refreshOnContextChange();
+});
+
+watch(verBranch, () => {
+  void refreshOnContextChange();
 });
 
 watch(previewMaxRounds, () => {
   versionPreview.value = null;
+});
+
+watch(syncMode, (mode) => {
+  versionPreview.value = null;
+  if (mode !== 'full') clearZipCache.value = false;
 });
 
 onMounted(async () => {
@@ -344,200 +407,182 @@ onMounted(async () => {
 
 <template>
   <Page auto-content-height>
-    <div class="flex flex-col gap-4 p-2">
-      <!-- 流水线概览 -->
-      <ElCard shadow="never" class="pipeline-overview">
-        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <span class="text-base font-medium">目录下载流水线</span>
-          <ElTag v-if="downloadRunning" type="warning" effect="dark">下载进行中</ElTag>
-          <ElTag v-else-if="downloadStatus === 'success'" type="success" effect="plain">
-            上次下载成功
+    <div class="catalog-dl flex h-full min-h-0 flex-col gap-3 p-2">
+      <!-- 顶栏：契约 + 接口 + 操作 -->
+      <div
+        class="flex shrink-0 flex-col gap-3 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900"
+      >
+        <div class="flex flex-wrap items-end gap-3">
+          <div class="min-w-[200px] flex-1">
+            <div class="mb-1 text-xs text-gray-500">医保契约</div>
+            <ElSelect v-model="contractBusNo" placeholder="请选择契约" filterable class="w-full">
+              <ElOption
+                v-for="item in chargeTypeOptions"
+                :key="item.busNo"
+                :label="item.busNo ? `${item.label}（${item.busNo}）` : item.label"
+                :value="item.busNo!"
+              />
+            </ElSelect>
+          </div>
+          <div class="min-w-[180px] flex-1">
+            <div class="mb-1 text-xs text-gray-500">下载接口</div>
+            <ElSelect v-model="infno" class="w-full">
+              <ElOption
+                v-for="item in CATALOG_FILE_DOWNLOAD_INFNO_OPTIONS"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </ElSelect>
+          </div>
+          <div v-if="show1305Branch" class="min-w-[140px]">
+            <div class="mb-1 text-xs text-gray-500">1305 分支</div>
+            <ElSelect v-model="verBranch" class="w-full">
+              <ElOption
+                v-for="item in CATALOG_1305_VER_BRANCH_OPTIONS"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </ElSelect>
+          </div>
+          <div class="flex flex-wrap gap-2 pb-0.5">
+            <ElButton plain :loading="signInLoading" @click="handleSignIn">签到</ElButton>
+            <ElButton plain :loading="previewLoading" @click="handlePreviewVersions">
+              探测
+            </ElButton>
+            <ElButton plain :loading="cursorLoading" @click="refreshCursors">刷新</ElButton>
+            <ElButton
+              type="primary"
+              :loading="downloadRunning"
+              :disabled="!contractBusNo"
+              @click="handleStartDownload"
+            >
+              开始下载
+            </ElButton>
+          </div>
+        </div>
+
+        <div
+          class="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-gray-100 pt-3 dark:border-gray-800"
+        >
+          <ElRadioGroup v-model="syncMode" size="small">
+            <ElRadioButton value="incremental">增量同步</ElRadioButton>
+            <ElRadioButton value="full">全量重拉</ElRadioButton>
+          </ElRadioGroup>
+          <ElCheckbox v-if="syncMode === 'full'" v-model="clearZipCache" size="small" class="!mr-0">
+            同时清空 ZIP 缓存
+          </ElCheckbox>
+          <div class="flex min-w-0 flex-1 flex-wrap items-baseline gap-2 text-sm">
+            <span class="shrink-0 text-xs text-gray-500">起点</span>
+            <ElTooltip :content="effectiveStartVer" placement="top">
+              <code class="text-primary truncate font-mono text-sm">{{
+                effectiveStartVerShort
+              }}</code>
+            </ElTooltip>
+            <span class="text-xs text-gray-500">{{ startVerHint }}</span>
+          </div>
+          <ElTag v-if="downloadRunning" type="warning" effect="dark" size="small">
+            下载进行中
+          </ElTag>
+          <ElTag
+            v-else-if="downloadStatus === 'success'"
+            type="success"
+            effect="plain"
+            size="small"
+          >
+            上次成功
           </ElTag>
         </div>
-        <ElSteps :active="activePipelineStep" align-center finish-status="success" class="mb-2">
-          <ElStep
-            v-for="(step, idx) in pipelineOverview"
-            :key="idx"
-            :title="step.title"
-            :description="step.desc"
-          />
-        </ElSteps>
-        <p class="m-0 text-xs leading-5 text-gray-500">{{ downloadHint }}</p>
-      </ElCard>
+      </div>
 
-      <ElRow :gutter="16">
-        <!-- 左侧：配置与操作 -->
-        <ElCol :xs="24" :lg="15">
-          <ElCard shadow="never" class="h-full">
-            <template #header>
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <span class="font-medium">下载配置</span>
-                <div class="flex flex-wrap gap-2">
-                  <ElButton size="small" plain :loading="signInLoading" @click="handleSignIn">
-                    签到
-                  </ElButton>
-                  <ElButton
-                    size="small"
-                    plain
-                    :loading="previewLoading"
-                    @click="handlePreviewVersions"
-                  >
-                    探测版本链
-                  </ElButton>
-                  <ElButton size="small" plain :loading="cursorLoading" @click="refreshCursors">
-                    刷新
-                  </ElButton>
-                </div>
-              </div>
-            </template>
+      <ElAlert
+        v-if="syncMode === 'full'"
+        type="warning"
+        :closable="false"
+        show-icon
+        class="shrink-0"
+        title="全量重拉会忽略游标，种子落库后的新院请优先用「增量同步」。"
+      />
 
-            <ElForm label-width="112px" label-position="left">
-              <ElRow :gutter="16">
-                <ElCol :span="24" :md="12">
-                  <ElFormItem label="医保契约" required>
-                    <ElSelect
-                      v-model="contractBusNo"
-                      placeholder="请选择"
-                      filterable
-                      class="w-full"
-                    >
-                      <ElOption
-                        v-for="item in chargeTypeOptions"
-                        :key="item.busNo"
-                        :label="item.busNo ? `${item.label}（${item.busNo}）` : item.label"
-                        :value="item.busNo!"
-                      />
-                    </ElSelect>
-                  </ElFormItem>
-                </ElCol>
-                <ElCol :span="24" :md="12">
-                  <ElFormItem label="下载接口">
-                    <ElSelect v-model="infno" class="w-full">
-                      <ElOption
-                        v-for="item in CATALOG_FILE_DOWNLOAD_INFNO_OPTIONS"
-                        :key="item.value"
-                        :label="item.label"
-                        :value="item.value"
-                      />
-                    </ElSelect>
-                  </ElFormItem>
-                </ElCol>
-              </ElRow>
-
-              <ElFormItem v-if="show1305Branch" label="1305 分支">
-                <ElSelect v-model="verBranch" class="w-full">
-                  <ElOption
-                    v-for="item in CATALOG_1305_VER_BRANCH_OPTIONS"
-                    :key="item.value"
-                    :label="item.label"
-                    :value="item.value"
-                  />
-                </ElSelect>
-              </ElFormItem>
-
-              <ElFormItem label="下载起点">
-                <div class="flex w-full flex-col gap-2">
-                  <ElCheckbox v-model="forceStartFromZero">
-                    全量重拉（忽略游标，使用规范初始 ver）
-                  </ElCheckbox>
-                  <ElCheckbox v-if="forceStartFromZero" v-model="clearZipCache" class="!ml-0">
-                    清空本地 ZIP 缓存后重下（否则已下载包跳过 9102）
-                  </ElCheckbox>
-                  <div class="rounded-md bg-gray-50 px-3 py-2 dark:bg-gray-900">
-                    <div class="flex flex-wrap items-baseline gap-2">
-                      <span class="text-xs text-gray-500">实际起点</span>
-                      <ElTooltip :content="effectiveStartVer" placement="top">
-                        <code class="text-primary font-mono text-sm">{{
-                          effectiveStartVerShort
-                        }}</code>
-                      </ElTooltip>
-                    </div>
-                    <p class="mb-0 mt-1 text-xs text-gray-500">{{ startVerHint }}</p>
-                  </div>
-                </div>
-              </ElFormItem>
-
-              <ElFormItem label="探测轮次">
-                <ElInputNumber
-                  v-model="previewMaxRounds"
-                  :min="1"
-                  :max="9999"
-                  clearable
-                  placeholder="不填=无上限"
-                />
-                <span class="ml-2 text-xs text-gray-500"
-                  >仅探测可选；正式下载无上限，停链看平台</span
-                >
-              </ElFormItem>
-
-              <ElFormItem label="阶段一循环">
-                <ol class="m-0 list-decimal pl-4 text-sm leading-6 text-gray-600">
-                  <li v-for="step in versionLoopSteps" :key="step">{{ step }}</li>
-                </ol>
-              </ElFormItem>
-
-              <ElFormItem>
-                <ElButton
-                  type="primary"
-                  size="large"
-                  :loading="downloadRunning"
-                  @click="handleStartDownload"
-                >
-                  开始下载
-                </ElButton>
-              </ElFormItem>
-            </ElForm>
-          </ElCard>
-        </ElCol>
-
-        <!-- 右侧：状态摘要 -->
-        <ElCol :xs="24" :lg="9">
-          <div class="flex flex-col gap-4">
-            <ElCard shadow="never">
-              <template #header>
-                <span class="font-medium">当前状态</span>
-              </template>
-              <div class="grid grid-cols-2 gap-3">
-                <ElStatistic title="探测 ZIP 包数" :value="pendingVersionCount" />
-                <ElStatistic
-                  title="本地镜像行数"
-                  :value="currentCursor?.localCatalogRowCount ?? 0"
-                />
-              </div>
-              <p class="mb-0 mt-3 text-xs text-gray-500">{{ versionPreviewHint }}</p>
-            </ElCard>
-
-            <ElCard shadow="never">
+      <ElRow :gutter="12" class="min-h-0 flex-1">
+        <ElCol :xs="24" :lg="9" class="mb-3 lg:mb-0">
+          <div class="flex h-full flex-col gap-3">
+            <ElCard shadow="never" class="shrink-0">
               <template #header>
                 <div class="flex items-center justify-between">
-                  <span class="font-medium">最新游标</span>
-                  <ElTag v-if="currentCursor" size="small" type="info">
-                    {{ currentCursor.infnoLabel || infnoLabel }}
-                  </ElTag>
+                  <span class="font-medium">{{ infnoLabel }}</span>
+                  <ElTag v-if="currentCursor" size="small" type="success">已有游标</ElTag>
+                  <ElTag v-else size="small" type="info">无游标</ElTag>
                 </div>
               </template>
-              <template v-if="currentCursor">
-                <ElDescriptions :column="1" border size="small">
-                  <ElDescriptionsItem label="local_ver">
-                    <ElTooltip :content="currentCursor.localVer || '0'" placement="top">
-                      <code class="font-mono text-xs">
-                        {{ currentCursor.localVerShort || currentCursor.localVer || '0' }}
-                      </code>
-                    </ElTooltip>
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="最近同步">
-                    {{ currentCursor.syncStatusText || '—' }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="末次 ZIP">
-                    <ElTag v-if="currentCursor.lastZipCached" type="success" size="small">
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <div class="text-xs text-gray-500">本地镜像行数</div>
+                  <div class="mt-1 text-2xl font-semibold tabular-nums">
+                    {{ formatCount(mirrorRowCount) }}
+                  </div>
+                </div>
+                <div>
+                  <div class="text-xs text-gray-500">探测 ZIP 包数</div>
+                  <div class="mt-1 text-2xl font-semibold tabular-nums">
+                    {{ pendingVersionCount }}
+                  </div>
+                </div>
+              </div>
+
+              <div
+                v-if="currentCursor"
+                class="mt-3 rounded-md bg-gray-50 px-3 py-2 text-sm dark:bg-gray-800/60"
+              >
+                <div class="mb-1 flex flex-wrap items-center gap-2">
+                  <span class="text-xs text-gray-500">最新 local_ver</span>
+                  <ElTooltip :content="currentCursor.localVer || '0'" placement="top">
+                    <code class="font-mono text-xs">{{
+                      currentCursor.localVerShort || currentCursor.localVer || '0'
+                    }}</code>
+                  </ElTooltip>
+                </div>
+                <div class="text-xs text-gray-500">
+                  最近同步：{{ formatSyncTime(currentCursor) }}
+                  <template v-if="currentCursor.lastFileQuryNo">
+                    · ZIP
+                    <ElTag
+                      v-if="currentCursor.lastZipCached"
+                      type="success"
+                      size="small"
+                      class="ml-1"
+                    >
                       已缓存
                     </ElTag>
-                    <ElTag v-else-if="currentCursor.lastFileQuryNo" size="small">未缓存</ElTag>
-                    <span v-else class="text-gray-400">—</span>
-                  </ElDescriptionsItem>
-                </ElDescriptions>
+                    <ElTag v-else size="small" class="ml-1">未缓存</ElTag>
+                  </template>
+                </div>
+              </div>
+              <ElEmpty v-else class="!py-4" :description="emptyCursorHint" :image-size="48" />
+
+              <p class="mb-0 mt-3 text-xs leading-5 text-gray-500">{{ versionPreviewHint }}</p>
+            </ElCard>
+
+            <ElCard shadow="never" class="pipeline-overview min-h-0 flex-1">
+              <template #header>
+                <span class="font-medium">下载流水线</span>
               </template>
-              <ElEmpty v-else description="暂无游标，默认从 0 开始" :image-size="56" />
+              <ElSteps
+                :active="activePipelineStep"
+                direction="vertical"
+                finish-status="success"
+                class="pipeline-steps"
+              >
+                <ElStep
+                  v-for="(step, idx) in pipelineOverview"
+                  :key="idx"
+                  :title="step.title"
+                  :description="step.desc"
+                />
+              </ElSteps>
+              <p class="mb-0 mt-2 text-xs leading-5 text-gray-500">{{ downloadHint }}</p>
             </ElCard>
 
             <ElAlert
@@ -545,118 +590,136 @@ onMounted(async () => {
               type="success"
               :closable="true"
               show-icon
+              class="shrink-0"
             >
               <template #title>
                 上次完成：{{ downloadSummary.totalVersionCount }} 包 /
-                {{ downloadSummary.totalUpsert }} 行入库
+                {{ formatCount(downloadSummary.totalUpsert) }} 行
               </template>
-              <div class="text-xs">
-                游标 ver {{ downloadSummary.localVer ?? '—' }}，快照
-                {{ downloadSummary.cursorSnapshotCount ?? 0 }} 条
-              </div>
             </ElAlert>
           </div>
         </ElCol>
-      </ElRow>
 
-      <!-- 探测：版本链预览 -->
-      <ElCard v-if="versionPreview?.versions?.length" shadow="never">
-        <template #header>
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="font-medium">版本链预览</span>
-            <ElTag size="small">起点 {{ previewStartVer }}</ElTag>
-            <ElTag size="small" type="warning">{{ pendingVersionCount }} 包</ElTag>
-          </div>
-        </template>
-        <ElTable :data="versionPreview.versions" border size="small" max-height="280">
-          <ElTableColumn prop="index" label="#" width="44" align="center" />
-          <ElTableColumn label="请求 ver" min-width="130">
-            <template #default="{ row }">
-              <ElTooltip v-if="row.requestVer" :content="row.requestVer" placement="top">
-                <code class="text-xs">{{ row.requestVerShort || row.requestVer }}</code>
-              </ElTooltip>
-              <span v-else>—</span>
-            </template>
-          </ElTableColumn>
-          <ElTableColumn label="col82 版本号" min-width="130">
-            <template #default="{ row }">
-              <ElTooltip v-if="row.nextDownloadVer" :content="row.nextDownloadVer" placement="top">
-                <code class="text-xs">{{ row.nextDownloadVerShort || row.nextDownloadVer }}</code>
-              </ElTooltip>
-              <span v-else class="text-gray-400">链结束</span>
-            </template>
-          </ElTableColumn>
-          <ElTableColumn label="col83 包名" min-width="120">
-            <template #default="{ row }">
-              <ElTooltip
-                v-if="row.txtVersionName || row.nextVersion"
-                :content="row.txtVersionName || row.nextVersion"
-                placement="top"
+        <ElCol :xs="24" :lg="15">
+          <div class="flex h-full flex-col gap-3">
+            <ElCard shadow="never" class="min-h-0 flex-1">
+              <template #header>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <span class="font-medium">游标历史 · {{ infnoLabel }}</span>
+                  <span class="text-xs text-gray-400">
+                    共 {{ filteredCursors.length }} 条（切换接口自动刷新）
+                  </span>
+                </div>
+              </template>
+              <ElTable
+                v-loading="cursorLoading"
+                :data="filteredCursors"
+                border
+                stripe
+                empty-text="暂无该接口的游标记录"
+                max-height="420"
+                size="small"
               >
-                <span class="text-xs">{{
-                  row.txtVersionNameShort || row.nextVersionShort || '—'
-                }}</span>
-              </ElTooltip>
-              <span v-else>—</span>
-            </template>
-          </ElTableColumn>
-          <ElTableColumn prop="dataCnt" label="平台行数" width="80" align="right" />
-          <ElTableColumn label="ZIP" width="72" align="center">
-            <template #default="{ row }">
-              <ElTag v-if="row.zipFromCache" type="info" size="small">缓存</ElTag>
-              <ElTag v-else type="success" size="small">新下</ElTag>
-            </template>
-          </ElTableColumn>
-        </ElTable>
-      </ElCard>
+                <ElTableColumn label="" width="56" align="center">
+                  <template #default="{ row }">
+                    <ElTag v-if="isLatestCursor(row)" type="primary" size="small">当前</ElTag>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn label="local_ver" min-width="150">
+                  <template #default="{ row }">
+                    <ElTooltip :content="row.localVer || '0'" placement="top">
+                      <code class="font-mono text-xs">{{
+                        row.localVerShort || row.localVer || '0'
+                      }}</code>
+                    </ElTooltip>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn label="镜像行数" width="100" align="right">
+                  <template #default="{ row }">
+                    {{ formatCount(row.localCatalogRowCount) }}
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn label="同步时间" min-width="160">
+                  <template #default="{ row }">{{ formatSyncTime(row) }}</template>
+                </ElTableColumn>
+                <ElTableColumn label="ZIP" width="80" align="center">
+                  <template #default="{ row }">
+                    <ElTag v-if="row.lastZipCached" type="success" size="small">缓存</ElTag>
+                    <ElTag v-else-if="row.lastFileQuryNo" size="small">无</ElTag>
+                    <span v-else>—</span>
+                  </template>
+                </ElTableColumn>
+              </ElTable>
+            </ElCard>
 
-      <!-- 游标历史（当前 infno） -->
-      <ElCard shadow="never">
-        <template #header>
-          <span class="font-medium">游标历史 · {{ infnoLabel }}</span>
-        </template>
-        <ElTable
-          v-loading="cursorLoading"
-          :data="filteredCursors"
-          border
-          stripe
-          empty-text="暂无该接口的游标记录"
-          max-height="320"
-          size="small"
-        >
-          <ElTableColumn label="" width="52" align="center">
-            <template #default="{ row }">
-              <ElTag v-if="isLatestCursor(row)" type="primary" size="small">当前</ElTag>
-            </template>
-          </ElTableColumn>
-          <ElTableColumn prop="id" label="快照 ID" width="88" align="right" />
-          <ElTableColumn label="local_ver" min-width="140">
-            <template #default="{ row }">
-              <ElTooltip :content="row.localVer || '0'" placement="top">
-                <code class="font-mono text-xs">{{
-                  row.localVerShort || row.localVer || '0'
-                }}</code>
-              </ElTooltip>
-            </template>
-          </ElTableColumn>
-          <ElTableColumn label="镜像行数" width="88" align="right">
-            <template #default="{ row }">{{ row.localCatalogRowCount ?? 0 }}</template>
-          </ElTableColumn>
-          <ElTableColumn label="同步时间" min-width="140">
-            <template #default="{ row }">{{ row.syncStatusText || '—' }}</template>
-          </ElTableColumn>
-          <ElTableColumn label="ZIP" width="80" align="center">
-            <template #default="{ row }">
-              <ElTag v-if="row.lastZipCached" type="success" size="small">缓存</ElTag>
-              <ElTag v-else-if="row.lastFileQuryNo" size="small">无</ElTag>
-              <span v-else>—</span>
-            </template>
-          </ElTableColumn>
-        </ElTable>
-      </ElCard>
+            <ElCard v-if="versionPreview?.versions?.length" shadow="never" class="shrink-0">
+              <template #header>
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="font-medium">版本链预览</span>
+                  <ElTag size="small">起点 {{ previewStartVer }}</ElTag>
+                  <ElTag size="small" type="warning">{{ pendingVersionCount }} 包</ElTag>
+                </div>
+              </template>
+              <ElTable :data="versionPreview.versions" border size="small" max-height="220">
+                <ElTableColumn prop="index" label="#" width="44" align="center" />
+                <ElTableColumn label="请求 ver" min-width="130">
+                  <template #default="{ row }">
+                    <ElTooltip v-if="row.requestVer" :content="row.requestVer" placement="top">
+                      <code class="text-xs">{{ row.requestVerShort || row.requestVer }}</code>
+                    </ElTooltip>
+                    <span v-else>—</span>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn label="下一 ver" min-width="130">
+                  <template #default="{ row }">
+                    <ElTooltip
+                      v-if="row.nextDownloadVer"
+                      :content="row.nextDownloadVer"
+                      placement="top"
+                    >
+                      <code class="text-xs">{{
+                        row.nextDownloadVerShort || row.nextDownloadVer
+                      }}</code>
+                    </ElTooltip>
+                    <span v-else class="text-gray-400">链结束</span>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn prop="dataCnt" label="平台行数" width="80" align="right" />
+                <ElTableColumn label="ZIP" width="72" align="center">
+                  <template #default="{ row }">
+                    <ElTag v-if="row.zipFromCache" type="info" size="small">缓存</ElTag>
+                    <ElTag v-else type="success" size="small">新下</ElTag>
+                  </template>
+                </ElTableColumn>
+              </ElTable>
+            </ElCard>
+
+            <ElCollapse v-model="helpOpen" class="advanced-collapse shrink-0">
+              <ElCollapseItem title="高级：探测轮次 / 阶段说明" name="advanced">
+                <ElForm label-width="96px" label-position="left" class="px-1">
+                  <ElFormItem label="探测轮次">
+                    <ElInputNumber
+                      v-model="previewMaxRounds"
+                      :min="1"
+                      :max="9999"
+                      clearable
+                      placeholder="不填=无上限"
+                    />
+                    <span class="ml-2 text-xs text-gray-500">仅影响「探测」，正式下载无上限</span>
+                  </ElFormItem>
+                  <ElFormItem label="阶段一循环">
+                    <ol class="m-0 list-decimal pl-4 text-sm leading-6 text-gray-600">
+                      <li v-for="step in versionLoopSteps" :key="step">{{ step }}</li>
+                    </ol>
+                  </ElFormItem>
+                </ElForm>
+              </ElCollapseItem>
+            </ElCollapse>
+          </div>
+        </ElCol>
+      </ElRow>
     </div>
 
-    <!-- 进度弹窗 -->
     <AppDialog
       v-model="progressDialogVisible"
       title="目录下载进度"
@@ -753,7 +816,7 @@ onMounted(async () => {
           <template #title>下载完成</template>
           <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm md:grid-cols-4">
             <div>ZIP 包：{{ downloadSummary.totalVersionCount }}</div>
-            <div>入库行：{{ downloadSummary.totalUpsert }}</div>
+            <div>入库行：{{ formatCount(downloadSummary.totalUpsert) }}</div>
             <div>游标快照：{{ downloadSummary.cursorSnapshotCount ?? 0 }}</div>
             <div>
               最新 ver：
@@ -807,10 +870,22 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.pipeline-overview :deep(.el-step__title) {
+.pipeline-steps :deep(.el-step__title) {
   font-size: 13px;
+  line-height: 1.3;
 }
-.pipeline-overview :deep(.el-step__description) {
+.pipeline-steps :deep(.el-step__description) {
   font-size: 11px;
+  line-height: 1.4;
+}
+.advanced-collapse {
+  border: none;
+}
+.advanced-collapse :deep(.el-collapse-item__header) {
+  height: 40px;
+  font-size: 13px;
+  color: #6b7280;
+  background: transparent;
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 </style>

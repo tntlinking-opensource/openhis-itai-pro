@@ -79,9 +79,11 @@ export const METADATA_FIELD_FORM_FIELD_HINTS = {
 export const METADATA_VALUE_SOURCE_HELP: Record<string, string> = {
   PATIENT: '需要 patientId。从患者主档解析，如 patient.name、patient.idCard。',
   ENCOUNTER: '需要 encounterId。从当前就诊解析，如流水号、科室（科室名当前可能为组织 ID 占位）。',
-  ADMISSION: '住院入院信息；后端尚未贡献路径，请暂用 ENCOUNTER 或等待扩展。',
-  INSURANCE: '医保/费别，常用 insurance.payorName（来自就诊 ybClassText）。',
-  ORG: '机构/院区；后端尚未贡献 org.* 路径。',
+  ADMISSION:
+    '住院入院信息；分床/清床日期请用 ENCOUNTER 的 encounter.bedAssignedAt / encounter.bedClearedAt。',
+  INSURANCE:
+    '医保/费别，常用 insurance.payorName（优先就诊 ybClassText，空则取优先合同名，与侧栏费用性质同口径）。',
+  ORG: '机构/院区；自就诊科室向上回溯医院节点，写入 org.name（机构名称）。',
   DEPT: '科室展示，可用 dept.name 或 encounter.deptName（与就诊科室同源）。',
   WARD: '病区；后端尚未贡献，待入院读模型对接。',
   PRACTITIONER: '医务人员主档；当前登录用户写入 practitioner.name、practitioner.signatureImage。',
@@ -90,7 +92,8 @@ export const METADATA_VALUE_SOURCE_HELP: Record<string, string> = {
   DOCUMENT: '需要已打开文书 documentId，如 document.title、document.documentTypeName。',
   TEMPLATE: '所用模板名称；后端尚未贡献。',
   VERSION: '版本/留痕号；P2+ 规划。',
-  DIAGNOSIS: '需要 encounterId 且读模型有诊断快照。常用 diagnosis.primaryDisplay（主诊断一行）。',
+  DIAGNOSIS:
+    '需要 encounterId。从 adm_encounter_diagnosis 组装快照：diagnosis.primaryDisplay（主诊）、diagnosis.summary（含[主]标签摘要）、diagnosis.dischargeDisplay（出院诊断书用，去标签、分号拼接）。',
   ALLERGY: '过敏摘要；后端尚未贡献。',
   VITAL_SIGN: '体征摘要；P2+ 规划。',
   LAB_SUMMARY: '检验摘要；P2+ 规划。',
@@ -99,12 +102,12 @@ export const METADATA_VALUE_SOURCE_HELP: Record<string, string> = {
   READ_MODEL: '指定读模型查询；配置写在 source_config。',
   SETTING: '系统/EMR 配置项；配置写在 source_config。',
   SYSTEM: '服务器时间，如 system.now、system.printedAt。',
-  CONST: '固定常量，无需 source_path，填写「默认值」即可。',
+  CONST: '固定常量，无需 source_path，填写「默认值」即可。门诊戒烟页脚 smokeFreeFooter 用此来源。',
   EXPR: '用 source_config.expr 拼接已解析字段，如 {"expr":"{patient.name} {patient.age}岁"}。',
   FIELD_REF: '引用同次解析中另一 fieldKey，source_config 示例：{"refFieldKey":"deptName"}。',
   HTTP_API: '外部 HTTP 适配；配置写在 source_config。',
   REQUEST: '仅当接口请求体 metadataOverrides 含该 fieldKey 时生效，优先级最高。',
-  MANUAL: '不自动取值，依赖默认值或用户在 chip 上手工输入。',
+  MANUAL: '不自动取值，依赖默认值或用户在 chip 上手工输入。门诊病历主诉/病史等临床段用此来源。',
 };
 
 export function getMetadataValueSourceHelp(valueSource: string): string {
@@ -136,27 +139,44 @@ export const METADATA_SOURCE_PATH_BY_VALUE_SOURCE: Record<string, MetadataSource
     { value: 'patient.medicalRecordNo', label: 'patient.medicalRecordNo — 病历号' },
     { value: 'patient.idCard', label: 'patient.idCard — 证件号' },
     { value: 'patient.phone', label: 'patient.phone — 电话' },
+    { value: 'patient.workCompany', label: 'patient.workCompany — 工作单位' },
   ],
   ENCOUNTER: [
     { value: 'encounter.id', label: 'encounter.id — 就诊 ID' },
-    { value: 'encounter.busNo', label: 'encounter.busNo — 就诊流水号' },
+    { value: 'encounter.busNo', label: 'encounter.busNo — 就诊流水号/住院号' },
     { value: 'encounter.organizationId', label: 'encounter.organizationId — 组织 ID' },
     {
       value: 'encounter.deptName',
       label: 'encounter.deptName — 科室（当前为组织 ID 占位）',
     },
-    { value: 'encounter.startTime', label: 'encounter.startTime — 就诊开始时间' },
+    { value: 'encounter.startTime', label: 'encounter.startTime — 就诊开始时间（含时分）' },
+    {
+      value: 'encounter.startDate',
+      label: 'encounter.startDate — 就诊日期（yyyy-MM-dd，门诊病历用）',
+    },
     { value: 'encounter.admissionTime', label: 'encounter.admissionTime — 入院/开始时间' },
+    {
+      value: 'encounter.bedAssignedAt',
+      label: 'encounter.bedAssignedAt — 首次分床日期（yyyy-MM-dd）',
+    },
+    {
+      value: 'encounter.bedClearedAt',
+      label: 'encounter.bedClearedAt — 清床日期（yyyy-MM-dd）',
+    },
+    {
+      value: 'encounter.lengthOfStayDays',
+      label: 'encounter.lengthOfStayDays — 住院天数（分床→清床）',
+    },
     { value: 'encounter.classEnum', label: 'encounter.classEnum — 类别 AMB/IMP' },
   ],
   ADMISSION: [],
   INSURANCE: [{ value: 'insurance.payorName', label: 'insurance.payorName — 医保/费别' }],
-  ORG: [],
+  ORG: [{ value: 'org.name', label: 'org.name — 医院名称（自科室向上回溯 HOSPITAL）' }],
   DEPT: [
-    { value: 'dept.name', label: 'dept.name — 科室（当前为组织 ID 占位）' },
+    { value: 'dept.name', label: 'dept.name — 科室名称' },
     {
       value: 'encounter.deptName',
-      label: 'encounter.deptName — 就诊科室（当前为组织 ID 占位）',
+      label: 'encounter.deptName — 就诊科室名称',
     },
   ],
   WARD: [],
@@ -195,6 +215,18 @@ export const METADATA_SOURCE_PATH_BY_VALUE_SOURCE: Record<string, MetadataSource
   DIAGNOSIS: [
     { value: 'diagnosis.primaryDisplay', label: 'diagnosis.primaryDisplay — 主诊断展示' },
     { value: 'diagnosis.summary', label: 'diagnosis.summary — 诊断摘要' },
+    {
+      value: 'diagnosis.dischargeDisplay',
+      label: 'diagnosis.dischargeDisplay — 出院诊断（全量，分号分隔）',
+    },
+    {
+      value: 'diagnosis.westernDisplay',
+      label: 'diagnosis.westernDisplay — 西医诊断（分号分隔）',
+    },
+    {
+      value: 'diagnosis.tcmDisplay',
+      label: 'diagnosis.tcmDisplay — 中医诊断（病证合并，分号分隔）',
+    },
     {
       value: 'diagnosis.primaryConditionDefinitionId',
       label: 'diagnosis.primaryConditionDefinitionId — 主诊断目录 ID',

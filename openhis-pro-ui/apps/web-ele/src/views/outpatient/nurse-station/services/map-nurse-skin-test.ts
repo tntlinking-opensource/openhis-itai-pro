@@ -8,6 +8,31 @@ import dayjs from 'dayjs';
 
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
+/** 皮试观察时长（分钟）：末次反应时间 = 开始时间 + 该间隔 */
+export const SKIN_TEST_OBSERVE_MINUTES = 20;
+
+/** 隐藏「验证状态」后保存仍需传值时的兜底 code */
+export const SKIN_TEST_DEFAULT_VERIFICATION_STATUS_CODE = 'confirmed';
+
+/** 从初始化枚举解析默认验证状态（优先「已确诊」） */
+export function resolveSkinTestDefaultVerificationStatusCode(
+  options: OutpatientSkinTestEnumOptionDto[] | null | undefined,
+): string {
+  if (!options?.length) {
+    return SKIN_TEST_DEFAULT_VERIFICATION_STATUS_CODE;
+  }
+  const confirmed = options.find((opt) => {
+    const code = String(opt.code ?? '').trim();
+    const label = (opt.displayText ?? '').trim();
+    return label === '已确诊' || code === 'confirmed';
+  });
+  const confirmedCode = String(confirmed?.code ?? '').trim();
+  if (confirmedCode) {
+    return confirmedCode;
+  }
+  return String(options[0]?.code ?? '').trim() || SKIN_TEST_DEFAULT_VERIFICATION_STATUS_CODE;
+}
+
 /** 皮试列表行编辑草稿（表格内登记用） */
 export interface NurseSkinTestRowDraft {
   allergyRecordId?: string;
@@ -22,7 +47,10 @@ export interface NurseSkinTestRowDraft {
   openDoctorName?: string;
   patientId: string;
   practitionerId: string;
+  /** 登记/开始时间（cln_allergy_intolerance.recorded_date） */
   recordedDate?: string;
+  /** 末次反应时间（cln_allergy_intolerance.last_occurrence，结束时间） */
+  lastOccurrence?: string;
   serviceRequestId: string;
   severityCode?: string;
   verificationStatusCode: string;
@@ -55,6 +83,19 @@ export function resolveSkinTestOptionLabel(
   return hit?.label ?? normalized;
 }
 
+/** 按开始时间计算末次反应时间（+20 分钟） */
+export function calcSkinTestLastOccurrence(startDate: string | undefined): string | undefined {
+  const start = (startDate ?? '').trim();
+  if (!start) {
+    return undefined;
+  }
+  const parsed = dayjs(start);
+  if (!parsed.isValid()) {
+    return undefined;
+  }
+  return parsed.add(SKIN_TEST_OBSERVE_MINUTES, 'minute').format('YYYY-MM-DD HH:mm:ss');
+}
+
 /** 新建/未登记行默认记录时间为当前时刻 */
 export function buildSkinTestDefaultRecordedDate(): string {
   return dayjs().format('YYYY-MM-DD HH:mm:ss');
@@ -73,11 +114,15 @@ export function resolveSkinTestLotNumberFromRow(row: OutpatientSkinTestRowDto): 
 export function mapSkinTestRowToDraft(
   row: OutpatientSkinTestRowDto,
   defaultPractitionerId?: string,
+  verificationStatusOptions?: OutpatientSkinTestEnumOptionDto[] | null,
 ): NurseSkinTestRowDraft {
   const practitionerId = preserveApiIdForRequest(row.practitionerId) ?? defaultPractitionerId ?? '';
   const checkPractitionerId =
     preserveApiIdForRequest(row.checkPractitionerId) ?? defaultPractitionerId ?? '';
   const recordedRaw = String(row.recordedDate ?? '').trim();
+  const lastOccurrenceRaw = String(row.lastOccurrence ?? '').trim();
+  const recordedDate = recordedRaw || buildSkinTestDefaultRecordedDate();
+  const verificationFromRow = (row.verificationStatusCode ?? '').trim();
   return {
     serviceRequestId: String(row.serviceRequestId ?? '').trim(),
     medicationRequestId: String(row.medicationRequestId ?? '').trim(),
@@ -87,9 +132,12 @@ export function mapSkinTestRowToDraft(
     patientId: String(row.patientId ?? '').trim(),
     allergyRecordId: preserveApiIdForRequest(row.allergyRecordId) ?? undefined,
     lotNumber: resolveSkinTestLotNumberFromRow(row),
-    recordedDate: recordedRaw || buildSkinTestDefaultRecordedDate(),
+    recordedDate,
+    lastOccurrence: lastOccurrenceRaw || calcSkinTestLastOccurrence(recordedDate),
     clinicalStatusCode: (row.clinicalStatusCode ?? '').trim(),
-    verificationStatusCode: (row.verificationStatusCode ?? '').trim(),
+    verificationStatusCode:
+      verificationFromRow ||
+      resolveSkinTestDefaultVerificationStatusCode(verificationStatusOptions),
     practitionerId,
     checkPractitionerId,
     description: (row.description ?? '').trim() || undefined,
@@ -102,8 +150,9 @@ export function mapSkinTestRowToDraft(
 export function mapSkinTestRowToTableRow(
   row: OutpatientSkinTestRowDto,
   defaultPractitionerId?: string,
+  verificationStatusOptions?: OutpatientSkinTestEnumOptionDto[] | null,
 ): NurseSkinTestTableRow {
-  const draft = mapSkinTestRowToDraft(row, defaultPractitionerId);
+  const draft = mapSkinTestRowToDraft(row, defaultPractitionerId, verificationStatusOptions);
   return {
     ...draft,
     registered: Boolean(draft.allergyRecordId),
@@ -117,6 +166,7 @@ export function mapSkinTestRowToTableRow(
 /** 皮试网格行 → 保存草稿 */
 export function mapSkinTestTableRowToDraft(row: NurseSkinTestTableRow): NurseSkinTestRowDraft {
   const recordedRaw = String(row.recordedDate ?? '').trim();
+  const recordedDate = recordedRaw || buildSkinTestDefaultRecordedDate();
   return {
     serviceRequestId: String(row.serviceRequestId ?? '').trim(),
     medicationRequestId: String(row.medicationRequestId ?? '').trim(),
@@ -126,7 +176,8 @@ export function mapSkinTestTableRowToDraft(row: NurseSkinTestTableRow): NurseSki
     patientId: String(row.patientId ?? '').trim(),
     allergyRecordId: row.allergyRecordId,
     lotNumber: String(row.lotNumber ?? '').trim() || undefined,
-    recordedDate: recordedRaw || buildSkinTestDefaultRecordedDate(),
+    recordedDate,
+    lastOccurrence: row.lastOccurrence ?? calcSkinTestLastOccurrence(recordedDate),
     clinicalStatusCode: String(row.clinicalStatusCode ?? '').trim(),
     verificationStatusCode: String(row.verificationStatusCode ?? '').trim(),
     criticalityCode: row.criticalityCode,
@@ -141,7 +192,11 @@ export function mapSkinTestTableRowToDraft(row: NurseSkinTestTableRow): NurseSki
 export function mapSkinTestDraftToSaveRequest(
   draft: NurseSkinTestRowDraft,
   encounterId: string,
+  verificationStatusOptions?: OutpatientSkinTestEnumOptionDto[] | null,
 ): SaveOutpatientSkinTestRecordRequest {
+  const verificationStatusCode =
+    draft.verificationStatusCode.trim() ||
+    resolveSkinTestDefaultVerificationStatusCode(verificationStatusOptions);
   return {
     encounterId: String(encounterId).trim(),
     patientId: String(draft.patientId).trim(),
@@ -151,8 +206,9 @@ export function mapSkinTestDraftToSaveRequest(
     allergyRecordId: draft.allergyRecordId,
     lotNumber: draft.lotNumber,
     recordedDate: draft.recordedDate ?? buildSkinTestDefaultRecordedDate(),
+    lastOccurrence: draft.lastOccurrence ?? calcSkinTestLastOccurrence(draft.recordedDate),
     clinicalStatusCode: draft.clinicalStatusCode.trim(),
-    verificationStatusCode: draft.verificationStatusCode.trim(),
+    verificationStatusCode,
     criticalityCode: draft.criticalityCode,
     severityCode: draft.severityCode,
     description: draft.description,

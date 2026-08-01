@@ -144,6 +144,7 @@ export function mapTcmDiagnosisGroupToDisplayRow(
     diagnosisSortNo: group.rank ?? undefined,
     medicalTypeCode: group.medicalTypeCode ?? undefined,
     diagnosisDesc: group.diagnosisDesc ?? undefined,
+    ybNo: group.ybNo ?? undefined,
   };
 }
 
@@ -197,6 +198,7 @@ function enrichTcmDisplayRowFromEncounterMembers(
       diseaseMember?.iptDiseaseTypeText ??
       syndromeMember?.iptDiseaseTypeText ??
       displayRow.iptDiseaseTypeText,
+    ybNo: displayRow.ybNo ?? diseaseMember?.ybNo ?? syndromeMember?.ybNo,
   };
 }
 

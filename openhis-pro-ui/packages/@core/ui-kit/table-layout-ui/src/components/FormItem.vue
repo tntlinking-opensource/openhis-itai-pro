@@ -13,6 +13,7 @@ const props = defineProps<FormItemProps>();
 
 const emit = defineEmits<{
   change: [value: any];
+  enter: [];
   'update:modelValue': [value: any];
 }>();
 
@@ -64,6 +65,17 @@ const handleUpdateWithCheck = async (value: any, shouldCheck = false) => {
 const handleChange = (value: any) => {
   emit('change', value);
 };
+
+/** 查询区 Input：回车触发搜索 */
+const handleEnter = () => {
+  props.onEnter?.();
+  emit('enter');
+};
+
+/** 查询区 Input：清空后触发搜索（与 change 同路） */
+const handleClear = () => {
+  emit('change', props.modelValue ?? '');
+};
 </script>
 
 <template>
@@ -76,6 +88,8 @@ const handleChange = (value: any) => {
       :style="item.style || { width: item.width || '200px' }"
       v-bind="item.extraprops || {}"
       @update:model-value="handleUpdate"
+      @keyup.enter="handleEnter"
+      @clear="handleClear"
     />
     <el-select
       v-else-if="item.type === 'select'"

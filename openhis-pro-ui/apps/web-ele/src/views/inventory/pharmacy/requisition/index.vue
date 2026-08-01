@@ -11,9 +11,11 @@ import { useUserStore } from '@vben/stores';
 import {
   loadPharmacyRequisitionFormInitApi,
   mapPharmacyRequisitionInitToCabinetRows,
+  mapPharmacyRequisitionListRowToQueueCard,
   mapPharmacyRequisitionPharmacyOptionsToApiItems,
   mapPharmacyRequisitionWarehouseOptionsToApiItems,
   pagePharmacyRequisitionWorkbenchListApi,
+  type PharmacyRequisitionListRowDto,
 } from '#/api/inventory/pharmacy/requisition';
 import { loadPharmacyGainLossFormInitApi } from '#/api/inventory/pharmacy/gain-loss';
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
@@ -78,10 +80,9 @@ function resolveBusNo(row?: null | Record<string, unknown>): string | undefined 
 const selectedBusNo = computed(() => resolveBusNo(selectedOrder.value) ?? '');
 const isDraftOrder = computed(() => Boolean(selectedOrder.value?._draft));
 
-function toQueueRow(r: Record<string, unknown>): Record<string, unknown> {
+function toQueueRow(r: PharmacyRequisitionListRowDto): Record<string, unknown> {
   return {
-    ...r,
-    supplyBusNo: r.busNo,
+    ...mapPharmacyRequisitionListRowToQueueCard(r),
     statusEnum_enumText: stockOutStatusLabel(r.statusEnum as number | string | undefined),
   };
 }
@@ -135,7 +136,10 @@ async function getList() {
       applyTimeBegin: dr?.[0],
       applyTimeEnd: dr?.[1],
     });
-    orderList.value = [...draftRows, ...records.map((r) => toQueueRow(r))];
+    orderList.value = [
+      ...draftRows,
+      ...records.map((r) => toQueueRow(r as PharmacyRequisitionListRowDto)),
+    ];
   } catch {
     orderList.value = [...draftRows];
   }
@@ -214,7 +218,6 @@ onMounted(async () => {
 
 <template>
   <WarehouseDocWorkstation
-    aside-width="280px"
     queue-title=""
     aside-dense
     :show-aside-filter="false"

@@ -41,12 +41,6 @@ function isInpatientPayload(p: PatientCardPatient): p is InpatientPatientCardPay
   return (p as InpatientPatientCardPayload).patientType === 'inpatient';
 }
 
-function genderEnumToLabel(v: null | number | undefined): string {
-  if (v === 1) return '男';
-  if (v === 2) return '女';
-  return '-';
-}
-
 function formatOutpatientVisitTime(o: OutpatientPatientCardPayload): string {
   const r = o.receptionTime ? formatDateTime(o.receptionTime) : '';
   if (r && r !== '-') return r;
@@ -64,8 +58,17 @@ function ageLineOutpatient(ageText: null | string | undefined): string {
   return `${t}岁`;
 }
 
-/** 顶部标签第三段：就诊类别名称（如普通门诊），与底部费用标签解耦 */
+/** 顶部标签第三段：发药优先科室；护士站用费用性质；其余用就诊类别 */
 function thirdMetaOutpatient(o: OutpatientPatientCardPayload): string {
+  const variant = props.variant ?? 'default';
+  if (variant === 'dispense') {
+    const org = (o.organizationName ?? '').trim();
+    if (org) return org;
+  }
+  if (variant === 'nurse') {
+    const fee = (o.contractDisplay ?? '').trim();
+    return fee || '-';
+  }
   const name = (o.serviceTypeName ?? '').trim();
   return name || '-';
 }
@@ -75,8 +78,9 @@ const variantResolved = computed(() => props.variant ?? 'default');
 const display = computed(() => {
   const v = variantResolved.value;
   return {
-    showPaymentTag: v !== 'dispense',
-    /** 护士站不展示队列/在诊状态胶囊，避免与收费标签抢视觉 */
+    /** 发药队列也展示费用性质胶囊（与医生站底栏同构） */
+    showPaymentTag: true,
+    /** 护士站/发药不展示队列/在诊状态胶囊，避免与收费标签抢视觉 */
     showStatusTag: v !== 'dispense' && v !== 'nurse',
     showNurseAddon: v === 'nurse',
   };
@@ -113,7 +117,9 @@ const feeChipLabel = computed(() => {
   }
   const o = outpatient.value;
   if (!o) return '';
-  // TODO(后端): 费用性质接口字段对齐后改为读模型值；当前写死展示
+  // 有医保账户优先后端回填的合同名；缺失时才回落自费（禁止写死）
+  const fromContract = (o.contractDisplay ?? '').trim();
+  if (fromContract) return fromContract;
   return '自费';
 });
 
@@ -126,11 +132,13 @@ const showPaymentChip = computed(() => {
   if (inpatient.value) {
     // 住院医生站与门诊医生站一致：底栏始终展示费用性质胶囊
     if (variantResolved.value === 'doctor') return true;
+    // 发药/退药队列：始终展示（无合同名时回落「自费」，与门诊发药同构）
+    if (variantResolved.value === 'dispense') return true;
     return !!inpatient.value.paymentType;
   }
   const o = outpatient.value;
   if (!o) return false;
-  // 门诊底部费用标签固定「自费」，在需展示费用区时始终出现
+  // 门诊底部费用标签：有合同展示名或需展示费用区时出现
   return true;
 });
 
@@ -209,9 +217,9 @@ const handleSelect = () => {
             {{ inpatient.gender }}・{{ inpatient.age }}岁・{{ inpatient.priority || '普通' }}
           </template>
           <template v-else-if="outpatient">
-            {{
-              (outpatient.genderEnumText ?? '').trim() || genderEnumToLabel(outpatient.genderEnum)
-            }}・{{ ageLineOutpatient(outpatient.ageText) }}・{{ thirdMetaOutpatient(outpatient) }}
+            {{ (outpatient.genderEnumText ?? '').trim() || '-' }}・{{
+              ageLineOutpatient(outpatient.ageText)
+            }}・{{ thirdMetaOutpatient(outpatient) }}
           </template>
         </span>
       </div>
@@ -272,6 +280,15 @@ const handleSelect = () => {
             <span class="text-gray-600">就诊时间:</span>
             <span class="ml-1.5 font-medium text-gray-800">{{
               formatOutpatientVisitTime(outpatient)
+            }}</span>
+          </div>
+          <div
+            v-if="variantResolved === 'dispense' && (outpatient.phone ?? '').trim()"
+            class="flex items-center"
+          >
+            <span class="text-gray-600">电话:</span>
+            <span class="ml-1.5 font-medium text-gray-800">{{
+              (outpatient.phone ?? '').trim()
             }}</span>
           </div>
         </template>

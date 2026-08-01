@@ -19,6 +19,15 @@ export const INPATIENT_ADVICE_CATALOG_TABLE_NAMES = [
 /** 护理级别诊疗类目（ServiceRequest.category_enum / 活动定义 category_code，AS-IP-DOR-003 BR-IP-ORD-026） */
 export const INPATIENT_NURSING_LEVEL_CATEGORY_CODE = '26';
 
+/** 嘱托诊疗类目（ServiceRequest.category_enum / 活动定义 category_code，AS-IP-DOR-003 BR-IP-ORD-028） */
+export const INPATIENT_ENTRUST_CATEGORY_CODE = '52';
+
+/** 嘱托目录固定项名称（精确匹配，BR-IP-ORD-028①） */
+export const INPATIENT_ENTRUST_ACTIVITY_NAME = '嘱托';
+
+/** 嘱托目录检索：仅 wkf_activity_definition（快捷按钮开立时定位固定项） */
+export const INPATIENT_ENTRUST_CATALOG_TABLE_NAMES = ['wkf_activity_definition'] as const;
+
 /** 护理级别目录检索：仅 wkf_activity_definition + categoryEnum=26 */
 export const INPATIENT_NURSING_LEVEL_CATALOG_TABLE_NAMES = ['wkf_activity_definition'] as const;
 
@@ -36,9 +45,11 @@ export const ADVICE_ESC_OVERLAY_SELECTOR =
 /** 医嘱目录选药表格列（西药编辑卡） */
 export const ADVICE_PRODUCT_COLUMNS: ProductColumn[] = [
   { prop: 'code', label: '项目编码', width: 120 },
-  { prop: 'name', label: '项目名称', width: 200 },
+  { prop: 'name', label: '项目名称', width: 160 },
+  { prop: 'merchandiseName', label: '商品名称', width: 140 },
   { prop: 'category', label: '类别', width: 72 },
   { prop: 'spec', label: '规格', width: 100 },
+  { prop: 'chrgitmLvText', label: '医保等级', width: 80 },
   { prop: 'availableQuantity', label: '库存数量', width: 108 },
   { prop: 'price', label: '单价', width: 72 },
 ];

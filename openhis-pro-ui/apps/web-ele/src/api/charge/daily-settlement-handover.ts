@@ -47,7 +47,7 @@ export interface DailySettlementHandoverChannelRowDto {
   unit?: string;
 }
 
-/** 下半区固定汇总项（handoverSummary 与 summary 同构，字段子集因门诊/住院略有差异）。 */
+/** 下半区汇总（handoverSummary 与 summary 同构）。 */
 export interface DailySettlementHandoverSummaryDto {
   dateRange?: string;
   totalIncome?: string;
@@ -58,23 +58,40 @@ export interface DailySettlementHandoverSummaryDto {
   alipayAmount?: string;
   onlineBankAmount?: string;
   cashAmount?: string;
+  /** 应交现金（与现金渠道同口径） */
+  cashDueAmount?: string;
+  /** 医保补偿合计 */
+  insuranceCompensationAmount?: string;
   depositAmount?: string;
-  selfPayCashTotal?: string;
-  selfPayCount?: number;
-  provincialInsuranceCount?: number;
-  municipalInsuranceCount?: number;
-  provincialInsuranceCash?: string;
-  provincialInsuranceFund?: string;
-  provincialInsuranceAccount?: string;
-  provincialInsuranceFundTotal?: string;
-  provincialInsuranceTotal?: string;
-  municipalInsuranceCash?: string;
-  municipalInsuranceFund?: string;
-  municipalInsuranceAccount?: string;
-  municipalInsuranceFundTotal?: string;
-  municipalInsuranceTotal?: string;
-  totalCashIncome?: string;
   physicalExamCount?: number;
-  insuranceCount?: number;
   refundTotal?: string;
+  expenseNatureSummaries?: Array<{
+    contractNo?: string;
+    contractName?: string;
+    insurance?: boolean;
+    personCount?: number;
+    cashAmount?: string;
+    fundAmount?: string;
+    accountAmount?: string;
+    fundTotalAmount?: string;
+    totalAmount?: string;
+    insuranceTypeSummaries?: Array<{
+      insutype?: string;
+      insutypeName?: string;
+      personCount?: number;
+      cashAmount?: string;
+      fundAmount?: string;
+      accountAmount?: string;
+      fundTotalAmount?: string;
+      totalAmount?: string;
+    }>;
+  }>;
+  /** 下半区扁平行（打印用）；页面优先 expenseNatureSummaries */
+  summaryRows?: Array<{
+    key?: string;
+    label?: string;
+    value?: string;
+    unit?: string;
+    level?: number;
+  }>;
 }

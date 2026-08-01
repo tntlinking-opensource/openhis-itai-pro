@@ -8,6 +8,8 @@ export interface UserListParams extends PageParams {
   isLockedOut?: string;
   keyword?: string;
   isActive?: string;
+  /** 角色主键多选；有值时后端按「拥有任一角色」筛选 */
+  roleIds?: string[];
 }
 
 export interface UserInfo {

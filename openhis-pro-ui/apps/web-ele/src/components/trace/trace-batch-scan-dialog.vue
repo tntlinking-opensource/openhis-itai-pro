@@ -1,16 +1,17 @@
 <script setup lang="ts">
 import type {
+  HospitalWideLotGroup,
   TraceBatchScanLine,
   TraceScanLogItem,
   TraceScanLogStatus,
   TraceScanSceneKey,
 } from '#/utils/trace';
+import type { InventoryItemTraceNumberRowDto } from '#/api/inventory/warehouse/inventory-detail';
 
 import { computed, nextTick, ref, watch } from 'vue';
 
 import {
   ElButton,
-  ElCheckbox,
   ElInput,
   ElInputNumber,
   ElMessage,
@@ -23,9 +24,6 @@ import AppDialog from '#/components/app-dialog.vue';
 import TraceCodeTooltip from '#/components/trace/trace-code-tooltip.vue';
 import {
   TRACE_CODE_LENGTH,
-  TRACE_MOCK_DISPENSE_LINES,
-  TRACE_MOCK_IDENTITY_BY_CODE,
-  TRACE_MOCK_SCAN_LINES,
   TRACE_SCAN_SCENE_PRESETS,
   applyTraceBind,
   batchResolveTraceIdentityByPreset,
@@ -34,17 +32,19 @@ import {
   countBoundTraceCodesOnLine,
   countPendingTraceScan,
   dedupeTraceCodes,
-  expandTraceBoxCodes,
   extractTraceCodes,
+  fetchHospitalWideInHospitalTraceItems,
   fetchInStockTraceCodes,
   filterNewTraceCodes,
   generateRandomTraceCodes,
   findTraceMatchCandidateLines,
+  groupHospitalWideTracesByLot,
+  isRemainingCoverageReached,
   isTraceSlotEmpty,
   pickTraceBindTargetLine,
-  pickTraceFallbackLineForNotFound,
   resolveRequiredTraceCount,
   splitTraceNoCommaString,
+  sumBoundRemainingSplit,
   traceLineScanFullMessage,
   traceNoCommaContains,
 } from '#/utils/trace';
@@ -60,26 +60,34 @@ const props = withDefaults(
     subtitle?: string;
     title?: string;
     showRxNoColumn?: boolean;
-    /** 开发环境强制使用本地演示明细 */
-    useMockLines?: boolean;
     /** 明细行未带 locationId 时的默认库房（查在库追溯码用） */
     defaultLocationId?: string | number;
+    /**
+     * 超应扫个数时是否硬拒绝再绑。
+     * 默认：进货 scene 为 true（BR-TRC-019）；期初须显式传 false。
+     * false 时仍按有码批硬拒 / 无码批软提示（BR-TRC-020）。
+     */
+    hardScanCountGate?: boolean;
   }>(),
   {
     scene: 'dispense',
     subtitle: '',
     title: '批量扫描追溯码',
     showRxNoColumn: false,
-    useMockLines: false,
     defaultLocationId: '',
+    hardScanCountGate: undefined,
   },
 );
+
+/** 进货默认硬控个数；其它场景默认走有码/无码分叉 */
+const enforceScanCountGate = computed(() => props.hardScanCountGate ?? props.scene === 'inbound');
 
 const SCENE_LABELS: Record<TraceScanSceneKey, string> = {
   dispense: '发药',
   inbound: '进货',
   inventoryOut: '库房出库',
-  stocktake: '盘点损益',
+  stocktake: '盘点',
+  gainLoss: '损益',
 };
 
 type LineDisplayStatus = 'bound' | 'error' | 'pending';
@@ -105,26 +113,24 @@ const mockScanCount = ref(1);
 const resolving = ref(false);
 const scanLog = ref<TraceScanLogItem[]>([]);
 const rowAlertById = ref<Record<string, boolean>>({});
+/** 扫码反查得到的主档剩余拆零（消耗侧盖住判定） */
+const remainingByTraceNo = ref<Record<string, number>>({});
+/** 用户锁定的目标行；空表示自动匹配 */
 const currentLineId = ref('');
-/** 各行是否按箱码展开（key = lineId） */
-const boxScanByLineId = ref<Record<string, boolean>>({});
+/** 药品展开：全院在院码缓存（按明细行 id；含全部批号） */
+const hospitalTraceByLineId = ref<Record<string, InventoryItemTraceNumberRowDto[]>>({});
+/** 药品展开是否已加载（区分「未拉」与「拉到空」） */
+const hospitalTraceLoadedByLineId = ref<Record<string, boolean>>({});
+/** 药品展开加载中（按行） */
+const expandLoadingByLineId = ref<Record<string, boolean>>({});
+/** 批号二级展开：`${lineId}::${lotNumber}` → 是否展开 */
+const lotExpandOpenByKey = ref<Record<string, boolean>>({});
 
 const scenePreset = () => TRACE_SCAN_SCENE_PRESETS[props.scene];
 const isCommaMode = computed(() => scenePreset().bindMode === 'comma');
 
-/** 进货/盘点：先选行再录入，不依赖库内反查 */
-const isTargetFirstMode = computed(() => scenePreset().allowNotFound);
-
-/** 开发环境且无传入明细时，使用本地演示数据 */
-const usingMockLines = computed(() => isDev && (props.useMockLines || props.lines.length === 0));
-
 /** 实际参与绑定的明细行 */
-const effectiveLines = computed((): TraceBatchScanLine[] => {
-  if (usingMockLines.value) {
-    return props.showRxNoColumn ? TRACE_MOCK_DISPENSE_LINES : TRACE_MOCK_SCAN_LINES;
-  }
-  return props.lines;
-});
+const effectiveLines = computed((): TraceBatchScanLine[] => props.lines);
 
 /** 某行当前展示的追溯码 */
 function effectiveTrace(row: TraceBatchScanLine): string {
@@ -165,7 +171,7 @@ const currentLine = computed(
   () => effectiveLines.value.find((row) => row.id === currentLineId.value) ?? null,
 );
 
-/** 当前扫入目标展示文案 */
+/** 用户锁定目标行时的展示文案 */
 const currentTargetLabel = computed(() => {
   const row = currentLine.value;
   if (!row) return '';
@@ -177,7 +183,7 @@ const currentTargetLabel = computed(() => {
   return parts.join(' · ');
 });
 
-/** 弹窗打开时拉快照并重置 */
+/** 弹窗打开时拉快照并重置（不预选行，默认自动匹配） */
 watch(visible, (open) => {
   if (!open) return;
   snapshotTrace.value = { ...traceByLineId.value };
@@ -185,60 +191,29 @@ watch(visible, (open) => {
   mockScanCount.value = 1;
   scanLog.value = [];
   rowAlertById.value = {};
+  remainingByTraceNo.value = {};
   currentLineId.value = '';
-  initBoxScanByLine();
+  hospitalTraceByLineId.value = {};
+  hospitalTraceLoadedByLineId.value = {};
+  expandLoadingByLineId.value = {};
+  lotExpandOpenByKey.value = {};
 });
 
-/** 初始化各行箱码开关（默认不勾选） */
-function initBoxScanByLine(): void {
-  const next: Record<string, boolean> = {};
-  for (const row of effectiveLines.value) {
-    next[row.id] = false;
-  }
-  boxScanByLineId.value = next;
-}
-
-function isLineBoxScanEnabled(lineId: string): boolean {
-  return boxScanByLineId.value[lineId] ?? false;
-}
-
-function setLineBoxScan(lineId: string, enabled: boolean): void {
-  boxScanByLineId.value = { ...boxScanByLineId.value, [lineId]: enabled };
-}
-
-function handleLineBoxScanChange(row: TraceBatchScanLine, enabled: boolean): void {
-  setLineBoxScan(row.id, enabled);
-  currentLineId.value = row.id;
-}
-
-/** 当前选中行是否箱码模式 */
-function currentLineBoxScanEnabled(): boolean {
-  if (!currentLineId.value) return false;
-  return isLineBoxScanEnabled(currentLineId.value);
-}
-
-/** 弹窗打开后聚焦扫码框并选中首行待绑 */
+/** 弹窗打开后聚焦扫码框 */
 function handleDialogOpened(): void {
   void nextTick(() => {
-    initCurrentLine();
-    setTimeout(() => scanInputRef.value?.focus?.(), 30);
+    setTimeout(() => focusScanInput(), 30);
   });
 }
 
-/** 选中第一个待绑行，否则首行 */
-function initCurrentLine(): void {
-  const needScan = displayLines.value.find((row) => lineStillNeedsScan(row));
-  if (needScan) {
-    currentLineId.value = needScan.id;
-    return;
-  }
-  currentLineId.value = displayLines.value[0]?.id ?? '';
-}
-
-/** 行是否仍需扫码（comma 看待扫数量，single 看是否未绑） */
+/** 行是否仍需扫码（消耗侧：剩余未盖住；否则按个数待扫） */
 function lineStillNeedsScan(row: TraceBatchScanLine): boolean {
   const preset = scenePreset();
-  if (preset.bindMode === 'comma' && preset.allowNotFound) {
+  if (preset.bindMode === 'comma') {
+    const opts = lineCoverageOpts(row);
+    const covered = isRemainingCoverageReached(row.operationSplitQty, opts?.boundRemainingSum);
+    if (covered === true) return false;
+    if (covered === false) return true;
     const pending = countPendingTraceScan(row, effectiveTrace(row), preset.bindMode);
     if (pending === null) return lineDisplayStatus(row) === 'pending';
     return pending > 0;
@@ -246,47 +221,118 @@ function lineStillNeedsScan(row: TraceBatchScanLine): boolean {
   return lineDisplayStatus(row) === 'pending';
 }
 
-/** 多药品时须先选中目标行 */
-function ensureScanTargetLine(): boolean {
-  if (!isTargetFirstMode.value) return true;
-  if (effectiveLines.value.length <= 1) {
-    if (!currentLineId.value && effectiveLines.value[0]) {
-      currentLineId.value = effectiveLines.value[0]!.id;
-    }
-    return true;
+/**
+ * 消耗侧盖住判定入参：汇总本行已绑码主档剩余。
+ *
+ * @param row 扫码行
+ */
+function lineCoverageOpts(row: TraceBatchScanLine): { boundRemainingSum?: number } | undefined {
+  if (row.operationSplitQty == null) return undefined;
+  const boundRemainingSum = sumBoundRemainingSplit(effectiveTrace(row), remainingByTraceNo.value);
+  if (boundRemainingSum === undefined) return undefined;
+  return { boundRemainingSum };
+}
+
+/** 缓存反查得到的主档剩余拆零 */
+function rememberTraceRemaining(
+  traceNo: string,
+  remaining: number | string | undefined | null,
+): void {
+  const code = String(traceNo ?? '').trim();
+  const rem = Number(remaining);
+  if (!code || !Number.isFinite(rem) || rem < 0) return;
+  remainingByTraceNo.value = { ...remainingByTraceNo.value, [code]: rem };
+}
+
+/** 取 ElInput 内部原生 input，便于可靠 focus */
+function getScanNativeInput(): HTMLInputElement | null {
+  const inst = scanInputRef.value as
+    | { input?: HTMLInputElement; textarea?: HTMLInputElement; $el?: HTMLElement }
+    | null
+    | undefined;
+  if (!inst) return null;
+  if (inst.input instanceof HTMLInputElement) return inst.input;
+  if (inst.textarea instanceof HTMLInputElement) return inst.textarea;
+  const el = inst.$el;
+  if (el instanceof HTMLElement) {
+    return el.querySelector('input');
   }
-  if (currentLine.value) return true;
-  ElMessage.warning('请先在右侧选择要录入的药品');
+  return null;
+}
+
+/**
+ * 允许暂时离开扫码框的目标（开发模拟数量、页脚按钮、关闭）。
+ * 其余操作一律把焦点抢回扫码框，保证扫码枪随时可录入。
+ */
+function isAllowedAwayTarget(el: Element | null): boolean {
+  if (!el || !(el instanceof HTMLElement)) return false;
+  if (el.closest('.scan-dev')) return true;
+  if (el.closest('.scan-dialog-foot__actions')) return true;
+  if (el.closest('.el-dialog__headerbtn')) return true;
   return false;
 }
 
-/** 聚焦扫码框 */
+/** 聚焦扫码框（弹窗打开期间可反复调用） */
 function focusScanInput(): void {
-  void nextTick(() => scanInputRef.value?.focus?.());
+  if (!visible.value) return;
+  void nextTick(() => {
+    if (!visible.value) return;
+    const inst = scanInputRef.value as { focus?: () => void } | null;
+    inst?.focus?.();
+    getScanNativeInput()?.focus?.();
+  });
 }
 
-/** 选中指定明细行 */
+/** 操作后延迟抢回焦点，先让点击/清除等业务逻辑跑完 */
+function scheduleFocusScanInput(): void {
+  if (!visible.value) return;
+  window.setTimeout(() => {
+    if (!visible.value) return;
+    const active = document.activeElement;
+    if (isAllowedAwayTarget(active)) return;
+    const native = getScanNativeInput();
+    if (native && active === native) return;
+    focusScanInput();
+  }, 0);
+}
+
+/** 扫码框失焦时抢回（点表格/按钮/空白都会失焦） */
+function handleScanInputBlur(): void {
+  scheduleFocusScanInput();
+}
+
+/**
+ * 点击明细行：锁定目标；再点同一行取消锁定（回到自动匹配）。
+ */
 function selectLine(row: TraceBatchScanLine): void {
-  currentLineId.value = row.id;
+  if (currentLineId.value === row.id) {
+    currentLineId.value = '';
+  } else {
+    currentLineId.value = row.id;
+  }
+  scheduleFocusScanInput();
 }
 
-/** 按序号选中目标（键盘 1-9） */
+/** 按序号锁定目标（键盘 Alt+1～9；禁止裸数字，避免扫码枪改锁定行） */
 function selectLineByIndex(index: number): void {
   const row = displayLines.value[index];
   if (row) currentLineId.value = row.id;
 }
 
-/** 按展示顺序切换当前行 */
+/** 按展示顺序切换锁定行；无锁定时 ↑↓ 从首行起 */
 function selectAdjacentLine(delta: -1 | 1): void {
   const lines = displayLines.value;
   if (lines.length === 0) return;
   const idx = lines.findIndex((row) => row.id === currentLineId.value);
-  const base = idx >= 0 ? idx : 0;
-  const next = (base + delta + lines.length) % lines.length;
+  if (idx < 0) {
+    currentLineId.value = lines[0]!.id;
+    return;
+  }
+  const next = (idx + delta + lines.length) % lines.length;
   currentLineId.value = lines[next]!.id;
 }
 
-/** 单行绑满后自动跳到下一待绑行 */
+/** 锁定模式下：单行绑满后跳到下一待绑行；无待绑则取消锁定 */
 function advanceToNextPendingLine(): void {
   const lines = displayLines.value;
   const idx = lines.findIndex((row) => row.id === currentLineId.value);
@@ -298,23 +344,39 @@ function advanceToNextPendingLine(): void {
     }
   }
   const next = lines.find((row) => lineStillNeedsScan(row));
-  if (next) currentLineId.value = next.id;
+  if (next) {
+    currentLineId.value = next.id;
+    return;
+  }
+  currentLineId.value = '';
 }
 
-/** 绑定成功后：single 或 comma 扫满则切下一行 */
+/**
+ * 绑定成功后：仅「用户已锁定行」时才推进目标；
+ * 自动匹配模式不写 currentLineId，避免误进锁定。
+ */
 function advanceAfterBind(row: TraceBatchScanLine): void {
+  if (!currentLineId.value) return;
   const preset = scenePreset();
   if (preset.bindMode === 'single') {
     advanceToNextPendingLine();
     return;
   }
-  if (preset.allowNotFound) {
-    const pending = countPendingTraceScan(row, effectiveTrace(row), preset.bindMode);
-    if (pending === 0) advanceToNextPendingLine();
+  const opts = lineCoverageOpts(row);
+  const covered = isRemainingCoverageReached(row.operationSplitQty, opts?.boundRemainingSum);
+  if (covered === true) {
+    advanceToNextPendingLine();
+    return;
   }
+  if (covered === false) return;
+  const pending = countPendingTraceScan(row, effectiveTrace(row), preset.bindMode);
+  if (pending === 0) advanceToNextPendingLine();
 }
 
-/** 扫码框键盘：Enter 提交，↑↓/数字切换目标 */
+/**
+ * 扫码框键盘：Enter 提交，↑↓ 切换锁定行；Alt+1～9 按序锁定。
+ * 裸数字绝不改锁定——扫码枪会连续送 0–9，否则已固定的 A 会被改成 B。
+ */
 function handleScanKeydown(event: KeyboardEvent): void {
   if (event.key === 'ArrowUp') {
     event.preventDefault();
@@ -327,27 +389,32 @@ function handleScanKeydown(event: KeyboardEvent): void {
     return;
   }
   const num = Number(event.key);
-  if (num >= 1 && num <= 9 && !event.ctrlKey && !event.altKey) {
+  if (num >= 1 && num <= 9 && event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+    event.preventDefault();
     selectLineByIndex(num - 1);
   }
 }
 
-/** 未匹配时优先绑到当前选中行 */
+/**
+ * 未建档兜底目标：仅使用用户已锁定的行。
+ * 未锁定时返回 undefined，由调用方提示点选（避免新码误落到首行）。
+ */
 function pickFallbackTargetLine(): TraceBatchScanLine | undefined {
   const preset = scenePreset();
-  if (currentLineId.value) {
-    const row = effectiveLines.value.find((line) => line.id === currentLineId.value);
-    if (row) {
-      const cur = effectiveTrace(row);
-      if (preset.bindMode === 'single' && isTraceSlotEmpty(cur)) return row;
-      if (preset.bindMode === 'comma') return row;
-    }
-  }
-  return pickTraceFallbackLineForNotFound(
-    effectiveLines.value,
-    traceByLineId.value,
-    preset.bindMode,
-  );
+  if (!currentLineId.value) return undefined;
+  const row = effectiveLines.value.find((line) => line.id === currentLineId.value);
+  if (!row) return undefined;
+  const cur = effectiveTrace(row);
+  if (preset.bindMode === 'single' && isTraceSlotEmpty(cur)) return row;
+  if (preset.bindMode === 'comma') return row;
+  return undefined;
+}
+
+/** 当前锁定行为无码批时，允许 NOT_FOUND 软录入 */
+function softFallbackOk(): boolean {
+  const row = currentLine.value;
+  if (!row) return false;
+  return !isHardTraceLine(row);
 }
 
 /** 写入扫码流水 */
@@ -392,6 +459,109 @@ function resolveLineLocationId(row: TraceBatchScanLine): string {
   return String(props.defaultLocationId ?? '').trim();
 }
 
+/**
+ * 单位 code → 展示文案：优先后端 Label，否则回落 code，皆空则「-」。
+ *
+ * @param code 单位编码
+ * @param label 后端术语转译
+ */
+function unitDisplayLabel(code?: string, label?: string): string {
+  const text = String(label ?? '').trim();
+  if (text) return text;
+  const raw = String(code ?? '').trim();
+  return raw || '-';
+}
+
+/** 展开行展示：主档拆零剩余量文案 */
+function remainingSplitDisplay(item: InventoryItemTraceNumberRowDto): string {
+  const qty = item.remainingSplitQuantity;
+  if (qty === null || qty === undefined || String(qty).trim() === '') return '-';
+  return String(qty);
+}
+
+/** 批号二级展开缓存键 */
+function lotExpandKey(lineId: string, lotNumber: string): string {
+  return `${lineId}::${lotNumber}`;
+}
+
+/**
+ * 取某药品明细行已缓存的全院在院码，按批号分组。
+ *
+ * @param lineId 明细行 id
+ */
+function hospitalLotGroupsForLine(lineId: string): HospitalWideLotGroup[] {
+  const items = hospitalTraceByLineId.value[lineId] ?? [];
+  return groupHospitalWideTracesByLot(items);
+}
+
+/**
+ * 懒加载某药品的全院在院码（全部批号；只读浏览，不绑码）。
+ * 不依赖发药行批号/库房；展开与行锁定分离。
+ */
+async function loadHospitalWideTracesForLine(row: TraceBatchScanLine): Promise<void> {
+  const lineId = String(row.id ?? '').trim();
+  if (!lineId) return;
+  if (hospitalTraceLoadedByLineId.value[lineId]) return;
+  if (expandLoadingByLineId.value[lineId]) return;
+
+  const itemId = String(row.itemId ?? '').trim();
+  if (!itemId) {
+    ElMessage.warning('药品信息不完整，无法查询在院追溯码');
+    hospitalTraceByLineId.value = { ...hospitalTraceByLineId.value, [lineId]: [] };
+    hospitalTraceLoadedByLineId.value = {
+      ...hospitalTraceLoadedByLineId.value,
+      [lineId]: true,
+    };
+    return;
+  }
+
+  expandLoadingByLineId.value = { ...expandLoadingByLineId.value, [lineId]: true };
+  try {
+    const items = await fetchHospitalWideInHospitalTraceItems({ itemId });
+    hospitalTraceByLineId.value = { ...hospitalTraceByLineId.value, [lineId]: items };
+    hospitalTraceLoadedByLineId.value = {
+      ...hospitalTraceLoadedByLineId.value,
+      [lineId]: true,
+    };
+  } catch {
+    ElMessage.error('在院追溯码查询失败');
+    hospitalTraceByLineId.value = { ...hospitalTraceByLineId.value, [lineId]: [] };
+    hospitalTraceLoadedByLineId.value = {
+      ...hospitalTraceLoadedByLineId.value,
+      [lineId]: true,
+    };
+  } finally {
+    const next = { ...expandLoadingByLineId.value };
+    delete next[lineId];
+    expandLoadingByLineId.value = next;
+  }
+}
+
+/**
+ * 药品明细表展开/收起：仅展开时拉取该药全院在院码；不改变当前锁定行。
+ */
+function handleLineExpandChange(row: TraceBatchScanLine, expandedRows: TraceBatchScanLine[]): void {
+  const open = expandedRows.some((item) => item.id === row.id);
+  if (open) {
+    void loadHospitalWideTracesForLine(row);
+  }
+  scheduleFocusScanInput();
+}
+
+/** 切换批号二级展开（展示该批下追溯码列表） */
+function toggleLotExpand(lineId: string, lotNumber: string): void {
+  const key = lotExpandKey(lineId, lotNumber);
+  const next = { ...lotExpandOpenByKey.value };
+  next[key] = !next[key];
+  lotExpandOpenByKey.value = next;
+  scheduleFocusScanInput();
+}
+
+/** 批号是否处于二级展开 */
+function isLotExpandOpen(lineId: string, lotNumber: string): boolean {
+  return lotExpandOpenByKey.value[lotExpandKey(lineId, lotNumber)] === true;
+}
+
 /** 明细行样式 */
 function lineRowClass(row: TraceBatchScanLine): string {
   const classes: string[] = ['line-row'];
@@ -426,16 +596,32 @@ function markNotInHospitalLines(itemId: string, lotNumber: string): void {
   if (candidates.length === 1) markLineError(candidates[0]!.id);
 }
 
-/** 行已扫满时拒绝绑码并提示 */
+/**
+ * 行已扫满/已盖住时是否拒绝再绑。
+ *
+ * <p>进货（{@link enforceScanCountGate}）超限一律硬拒，避免新批无码时误走软放行。
+ * 发药/出库等：有码批硬拒；无码批仅提示仍允许绑（BR-TRC-020）。</p>
+ */
 function rejectIfLineScanFull(row: TraceBatchScanLine, code: string): boolean {
   const preset = scenePreset();
   const cur = effectiveTrace(row);
-  if (canAcceptMoreTraceOnLine(row, cur, preset.bindMode)) return false;
-  const msg = traceLineScanFullMessage(row, preset.bindMode);
+  const opts = lineCoverageOpts(row);
+  if (canAcceptMoreTraceOnLine(row, cur, preset.bindMode, opts)) return false;
+  const msg = traceLineScanFullMessage(row, preset.bindMode, opts);
   pushLog(code, 'invalid', msg);
   ElMessage.warning(msg);
-  markLineError(row.id);
-  return true;
+  // 进货硬 Gate，或有码批：拒绝再绑
+  if (enforceScanCountGate.value || isHardTraceLine(row)) {
+    markLineError(row.id);
+    return true;
+  }
+  // 无码批软提示：继续允许录入
+  return false;
+}
+
+/** 有码批才走反查/在院硬校验；无码批（期初未扫）仅软提示 */
+function isHardTraceLine(row: TraceBatchScanLine): boolean {
+  return row.lotHasTraceMaster === true;
 }
 
 /** 直接写入指定行追溯码（手输 / 反查失败兜底） */
@@ -469,12 +655,18 @@ function bindManualCodeToLine(row: TraceBatchScanLine, rawCode: string): boolean
     [row.id]: applyTraceBind(cur, trimmed, preset.bindMode),
   };
   clearLineError(row.id);
+  // 手动绑到指定行时保持/写入锁定，便于连续扫同一药
   currentLineId.value = row.id;
   pushLog(trimmed, 'ok', `已录入 → ${lineDisplayName(row)}`);
   advanceAfterBind(row);
   return true;
 }
 
+/**
+ * 反查成功后选目标行：
+ * - 已锁定行：只认该行；码的品项须与锁定行一致，否则拒绝（不落到其它行）；
+ * - 未锁定：按品+批自动匹配未满行。
+ */
 function bindResolvedItem(
   traceNo: string,
   itemId: string,
@@ -491,10 +683,32 @@ function bindResolvedItem(
   }
 
   const candidates = findTraceMatchCandidateLines(effectiveLines.value, itemId, lotNumber);
-  let target = pickTraceBindTargetLine(candidates, trimmed, preset.bindMode, traceByLineId.value);
+  const pinned = currentLine.value;
+  let target: TraceBatchScanLine | undefined;
 
-  if (!target && preset.allowNotFound) {
-    target = pickFallbackTargetLine();
+  if (pinned) {
+    // 锁定=固定本行：只比品项，避免行上批号空/不一致时误拒同药，更不会绑到其它药
+    const pinnedItem = String(pinned.itemId ?? '').trim();
+    const wantItem = String(itemId ?? '').trim();
+    if (!pinnedItem || !wantItem || pinnedItem !== wantItem) {
+      stats.notFound += 1;
+      pushLog(trimmed, 'not_found', `与选中药品不符（${lineDisplayName(pinned)}）`);
+      ElMessage.warning(`该追溯码与选中药品不符：${lineDisplayName(pinned)}`);
+      markLineError(pinned.id);
+      return 'not_found';
+    }
+    target = pinned;
+  } else {
+    target = pickTraceBindTargetLine(
+      candidates,
+      trimmed,
+      preset.bindMode,
+      traceByLineId.value,
+      remainingByTraceNo.value,
+    );
+    if (!target && preset.allowNotFound) {
+      target = pickFallbackTargetLine();
+    }
   }
 
   if (!target) {
@@ -502,16 +716,26 @@ function bindResolvedItem(
     if (
       candidates.length > 0 &&
       candidates.every(
-        (line) => !canAcceptMoreTraceOnLine(line, effectiveTrace(line), preset.bindMode),
+        (line) =>
+          !canAcceptMoreTraceOnLine(
+            line,
+            effectiveTrace(line),
+            preset.bindMode,
+            lineCoverageOpts(line),
+          ),
       )
     ) {
-      const msg = traceLineScanFullMessage(candidates[0]!, preset.bindMode);
+      const msg = traceLineScanFullMessage(
+        candidates[0]!,
+        preset.bindMode,
+        lineCoverageOpts(candidates[0]!),
+      );
       pushLog(trimmed, 'invalid', msg);
       ElMessage.warning(msg);
       markLineError(candidates[0]!.id);
     } else {
-      pushLog(trimmed, 'not_found', '未找到匹配的明细，请按数字键切换目标');
-      ElMessage.warning('未找到匹配的明细，请先选择绑码目标');
+      pushLog(trimmed, 'not_found', '未找到匹配的明细');
+      ElMessage.warning('未找到匹配的明细');
     }
     return 'not_found';
   }
@@ -550,7 +774,6 @@ function bindResolvedItem(
   };
   boundPool.add(trimmed);
   clearLineError(target.id);
-  currentLineId.value = target.id;
   stats.bound += 1;
   pushLog(trimmed, 'ok', `已绑定 → ${lineDisplayName(target)}`);
   advanceAfterBind(target);
@@ -578,13 +801,13 @@ function bindFailedResolveItem(
     return 'not_in_hospital';
   }
 
-  if (resolveStatus === 'NOT_FOUND' && preset.allowNotFound) {
+  if (resolveStatus === 'NOT_FOUND' && (preset.allowNotFound || softFallbackOk())) {
     if (isTraceBoundInSession(trimmed, boundPool)) {
       stats.duplicate += 1;
       return 'duplicate';
     }
     const fb = pickFallbackTargetLine();
-    if (fb) {
+    if (fb && (preset.allowNotFound || !isHardTraceLine(fb))) {
       if (rejectIfLineScanFull(fb, trimmed)) {
         stats.invalid += 1;
         return 'invalid';
@@ -595,15 +818,14 @@ function bindFailedResolveItem(
       };
       boundPool.add(trimmed);
       clearLineError(fb.id);
-      currentLineId.value = fb.id;
       stats.bound += 1;
       pushLog(trimmed, 'ok', `新码录入 → ${lineDisplayName(fb)}`);
       advanceAfterBind(fb);
       return 'bound';
     }
     stats.notFound += 1;
-    pushLog(trimmed, 'not_found', '未建档，请先选择绑码目标');
-    ElMessage.warning('未建档，请先选择绑码目标');
+    pushLog(trimmed, 'not_found', '未建档，请先点选要录入的药品');
+    ElMessage.warning('未建档，请先点选要录入的药品');
     return 'not_found';
   }
 
@@ -640,8 +862,11 @@ async function processBatchBind(codes: string[]): Promise<BatchBindStats> {
   stats.duplicate += codes.length - toResolve.length;
   if (toResolve.length === 0) return stats;
 
-  /** 进货/盘点：有选中行时直接录入当前行，跳过反查 */
-  if (isTargetFirstMode.value && currentLine.value) {
+  /**
+   * 无码批锁定行 / 进货盘点锁定行：直接录入，跳过反查。
+   * 有码批仍走反查（本库优先、否则全院）。
+   */
+  if (currentLine.value && (preset.allowNotFound || !isHardTraceLine(currentLine.value))) {
     for (const trimmed of toResolve) {
       if (isTraceBoundInSession(trimmed, boundPool)) {
         stats.duplicate += 1;
@@ -657,32 +882,6 @@ async function processBatchBind(codes: string[]): Promise<BatchBindStats> {
 
   resolving.value = true;
   try {
-    if (usingMockLines.value) {
-      for (const trimmed of toResolve) {
-        if (isTraceBoundInSession(trimmed, boundPool)) {
-          stats.duplicate += 1;
-          continue;
-        }
-        const identity = TRACE_MOCK_IDENTITY_BY_CODE[trimmed];
-        if (identity) {
-          bindResolvedItem(trimmed, identity.itemId, identity.lotNumber, boundPool, stats);
-          continue;
-        }
-        if (
-          preset.allowNotFound &&
-          currentLine.value &&
-          bindManualCodeToLine(currentLine.value, trimmed)
-        ) {
-          boundPool.add(trimmed);
-          stats.bound += 1;
-          continue;
-        }
-        stats.notFound += 1;
-        pushLog(trimmed, 'not_found', '演示数据未收录该码，请换演示码或切换目标后重试');
-      }
-      return stats;
-    }
-
     const res = await batchResolveTraceIdentityByPreset(toResolve, preset);
 
     for (const trimmed of toResolve) {
@@ -732,6 +931,7 @@ async function processBatchBind(codes: string[]): Promise<BatchBindStats> {
         continue;
       }
 
+      rememberTraceRemaining(trimmed, item.remainingSplitQuantity);
       bindResolvedItem(trimmed, itemId, lotNumber, boundPool, stats);
     }
   } catch {
@@ -763,11 +963,6 @@ async function handleScanEnter(): Promise<void> {
     return;
   }
 
-  if (!ensureScanTargetLine()) {
-    focusScanInput();
-    return;
-  }
-
   const { bad, ok } = extractTraceCodes(raw);
   if (bad.length > 0) {
     for (const b of bad) {
@@ -777,38 +972,6 @@ async function handleScanEnter(): Promise<void> {
   }
 
   let codes = dedupeTraceCodes(ok);
-  if (currentLineBoxScanEnabled() && codes.length > 0) {
-    resolving.value = true;
-    try {
-      const { expanded, items } = await expandTraceBoxCodes(codes, {
-        useMock: usingMockLines.value,
-      });
-      for (const item of items) {
-        if (!item.ok) {
-          pushLog(item.sourceCode, 'not_found', item.message ?? '箱码展开失败');
-          continue;
-        }
-        if (item.childCodes.length > 1) {
-          pushLog(item.sourceCode, 'ok', `箱码展开 → ${item.childCodes.length} 个小码`);
-        }
-      }
-      if (expanded.length === 0) {
-        ElMessage.warning('箱码展开失败，请改扫小码或确认该箱码已入库');
-        focusScanInput();
-        return;
-      }
-      codes = expanded;
-    } catch {
-      for (const code of codes) {
-        pushLog(code, 'not_found', '箱码展开接口不可用');
-      }
-      ElMessage.warning('箱码展开失败，请改扫小码或稍后重试');
-      focusScanInput();
-      return;
-    } finally {
-      resolving.value = false;
-    }
-  }
 
   await processBatchBind(codes);
   focusScanInput();
@@ -816,11 +979,39 @@ async function handleScanEnter(): Promise<void> {
 
 /** 模拟扫码（仅开发环境）：按数量随机生成追溯码 */
 async function handleSimulateScan(): Promise<void> {
-  if (!ensureScanTargetLine()) return;
-
   const codes = generateRandomTraceCodes(mockScanCount.value);
   await processBatchBind(codes);
   focusScanInput();
+}
+
+/**
+ * 同弹窗其它行「本库有码」的追溯码集合（发药全院回落时不得占用）。
+ * 例：门诊西药房行有码时，门诊药房空库回落不能先抢走西药房码。
+ */
+async function collectSiblingLocationReservedCodes(
+  row: TraceBatchScanLine,
+  itemId: string,
+  lotNumber: string,
+): Promise<Set<string>> {
+  const reserved = new Set<string>();
+  const selfLoc = resolveLineLocationId(row);
+  for (const other of effectiveLines.value) {
+    if (!other || other.id === row.id) continue;
+    if (String(other.itemId ?? '').trim() !== itemId) continue;
+    if (String(other.lotNumber ?? '').trim() !== lotNumber) continue;
+    const otherLoc = resolveLineLocationId(other);
+    if (!otherLoc || otherLoc === selfLoc) continue;
+    const codes = await fetchInStockTraceCodes({
+      locationId: otherLoc,
+      itemId,
+      lotNumber,
+      hospitalWideFallbackWhenEmpty: false,
+    });
+    for (const code of codes) {
+      reserved.add(code);
+    }
+  }
+  return reserved;
 }
 
 /** 从本库在库追溯码中按行数量自动取码填入（开发测试用） */
@@ -830,7 +1021,6 @@ async function handleFetchInStockTraceCodes(): Promise<void> {
     ElMessage.warning('请先在右侧选择药品');
     return;
   }
-  if (!ensureScanTargetLine()) return;
 
   const locationId = resolveLineLocationId(row);
   const itemId = String(row.itemId ?? '').trim();
@@ -839,8 +1029,15 @@ async function handleFetchInStockTraceCodes(): Promise<void> {
     ElMessage.warning(
       props.scene === 'dispense'
         ? '缺少发放库房，请先在发药列表选择发放库房'
-        : '缺少库房信息，请确认单头已选库房',
+        : props.scene === 'inbound'
+          ? '库取需要库房：请先选单头入库库房（进货新码通常库中尚无，建议直接扫码）'
+          : '库取需要库房：请确认单头已选源库房/库位（该按钮只查本库在库码）',
     );
+    return;
+  }
+  // 进货为新码入库：本库通常尚无该批码，库取无意义
+  if (props.scene === 'inbound') {
+    ElMessage.warning('进货请直接扫描或手输追溯码；库取仅用于出库类本库已有码');
     return;
   }
   if (!itemId || !lotNumber) {
@@ -858,14 +1055,34 @@ async function handleFetchInStockTraceCodes(): Promise<void> {
 
   resolving.value = true;
   try {
-    const allCodes = await fetchInStockTraceCodes({
+    // 本库优先：有码只用本库
+    let allCodes = await fetchInStockTraceCodes({
       locationId,
       itemId,
       lotNumber,
-      useMock: usingMockLines.value,
+      hospitalWideFallbackWhenEmpty: false,
     });
+    let usedHospitalFallback = false;
+    // 发药且本库空：全院同批，但排除同弹窗其它发放库房已有的本库码
+    if (allCodes.length === 0 && props.scene === 'dispense') {
+      usedHospitalFallback = true;
+      const hospitalCodes = await fetchInStockTraceCodes({
+        locationId,
+        itemId,
+        lotNumber,
+        hospitalWideFallbackWhenEmpty: true,
+      });
+      const reserved = await collectSiblingLocationReservedCodes(row, itemId, lotNumber);
+      allCodes = hospitalCodes.filter((code) => !reserved.has(code));
+    }
     if (allCodes.length === 0) {
-      ElMessage.warning('本库无在库追溯码');
+      ElMessage.warning(
+        props.scene === 'dispense'
+          ? usedHospitalFallback
+            ? '本库无码，且全院可用在院码已被其它发放库房占用或为空'
+            : '本库无在库追溯码'
+          : '本库无在库追溯码',
+      );
       return;
     }
 
@@ -879,7 +1096,11 @@ async function handleFetchInStockTraceCodes(): Promise<void> {
     });
     const picked = available.slice(0, needCount);
     if (picked.length === 0) {
-      ElMessage.warning('在库追溯码均已被占用或本行已绑满');
+      ElMessage.warning(
+        props.scene === 'dispense'
+          ? '当前发放库房可用追溯码不足或已被其它行占用'
+          : '在库追溯码均已被占用或本行已绑满',
+      );
       return;
     }
 
@@ -887,7 +1108,8 @@ async function handleFetchInStockTraceCodes(): Promise<void> {
     for (const code of picked) {
       nextTrace = applyTraceBind(nextTrace, code, preset.bindMode);
       boundPool.add(code);
-      pushLog(code, 'ok', `库取 → ${lineDisplayName(row)}`);
+      const src = usedHospitalFallback ? '全院库取' : '库取';
+      pushLog(code, 'ok', `${src} → ${lineDisplayName(row)}`);
     }
 
     traceByLineId.value = { ...traceByLineId.value, [row.id]: nextTrace };
@@ -924,6 +1146,7 @@ function clearLineTrace(row: TraceBatchScanLine): void {
   );
   clearLineError(row.id);
   pushLog('—', 'ok', `已清除 ${lineDisplayName(row)}`);
+  scheduleFocusScanInput();
 }
 </script>
 
@@ -945,7 +1168,7 @@ function clearLineTrace(row: TraceBatchScanLine): void {
       </div>
     </template>
 
-    <div class="scan-page">
+    <div class="scan-page" @mouseup="scheduleFocusScanInput">
       <ElInput
         ref="scanInputRef"
         v-model="scanInput"
@@ -955,18 +1178,19 @@ function clearLineTrace(row: TraceBatchScanLine): void {
         placeholder="扫描或输入追溯码"
         @keydown.enter.prevent="handleScanEnter"
         @keydown="handleScanKeydown"
+        @blur="handleScanInputBlur"
       >
         <template v-if="resolving" #suffix>
           <span class="scan-page__spinner" />
         </template>
       </ElInput>
 
-      <div
-        v-if="isTargetFirstMode"
-        class="scan-current-target"
-        :class="{ 'scan-current-target--empty': !currentLine }"
-      >
-        {{ currentLine ? `当前：${currentTargetLabel}` : '请先在右侧选择要录入的药品' }}
+      <div class="scan-current-target" :class="{ 'scan-current-target--empty': !currentLine }">
+        {{
+          currentLine
+            ? `锁定：${currentTargetLabel}（再点该行取消，回到自动匹配）`
+            : '自动匹配 · 点选右侧药品可锁定后专扫该行 · ↑↓ 切换 · Alt+1～9 按序锁定 · 展开可按批号查看全院在院码'
+        }}
       </div>
 
       <div class="scan-split">
@@ -1017,20 +1241,76 @@ function clearLineTrace(row: TraceBatchScanLine): void {
             highlight-current-row
             :row-class-name="({ row }: { row: TraceBatchScanLine }) => lineRowClass(row)"
             @row-click="selectLine"
+            @expand-change="handleLineExpandChange"
           >
+            <ElTableColumn type="expand" width="36">
+              <template #default="{ row }">
+                <div class="line-expand" @click.stop>
+                  <div v-if="expandLoadingByLineId[row.id]" class="line-expand__hint">
+                    加载该药全院在院追溯码…
+                  </div>
+                  <div
+                    v-else-if="hospitalLotGroupsForLine(row.id).length === 0"
+                    class="line-expand__hint"
+                  >
+                    该药无在院追溯码
+                  </div>
+                  <div v-else class="lot-group-list">
+                    <div
+                      v-for="lot in hospitalLotGroupsForLine(row.id)"
+                      :key="lot.lotNumber"
+                      class="lot-group"
+                    >
+                      <button
+                        type="button"
+                        class="lot-group__head"
+                        @click="toggleLotExpand(row.id, lot.lotNumber)"
+                      >
+                        <span class="lot-group__arrow">
+                          {{ isLotExpandOpen(row.id, lot.lotNumber) ? '▼' : '▶' }}
+                        </span>
+                        <span class="lot-group__lot">批号 {{ lot.lotNumber }}</span>
+                        <span class="lot-group__count">{{ lot.codes.length }} 码</span>
+                      </button>
+                      <ElTable
+                        v-if="isLotExpandOpen(row.id, lot.lotNumber)"
+                        :data="lot.codes"
+                        size="small"
+                        border
+                        class="line-expand__table"
+                        empty-text="—"
+                        max-height="200"
+                      >
+                        <ElTableColumn label="追溯码" min-width="200">
+                          <template #default="{ row: item }">
+                            <TraceCodeTooltip :value="item.traceNo" />
+                          </template>
+                        </ElTableColumn>
+                        <ElTableColumn label="剩余拆零量" width="110" align="right">
+                          <template #default="{ row: item }">
+                            {{ remainingSplitDisplay(item) }}
+                          </template>
+                        </ElTableColumn>
+                        <ElTableColumn label="拆零单位" width="96" align="center">
+                          <template #default="{ row: item }">
+                            {{ unitDisplayLabel(item.splitUnitCode, item.splitUnitCodeLabel) }}
+                          </template>
+                        </ElTableColumn>
+                        <ElTableColumn label="追溯码单位" width="110" align="center">
+                          <template #default="{ row: item }">
+                            {{ unitDisplayLabel(item.traceUnitCode, item.traceUnitCodeLabel) }}
+                          </template>
+                        </ElTableColumn>
+                      </ElTable>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </ElTableColumn>
             <ElTableColumn label="药品" min-width="200">
               <template #default="{ row }">
                 <div class="line-drug-cell">
                   <span class="line-drug-cell__name">{{ lineDisplayName(row) }}</span>
-                  <ElCheckbox
-                    :model-value="isLineBoxScanEnabled(row.id)"
-                    size="small"
-                    class="line-drug-cell__box"
-                    @click.stop
-                    @update:model-value="(v: boolean) => handleLineBoxScanChange(row, v)"
-                  >
-                    箱码
-                  </ElCheckbox>
                 </div>
               </template>
             </ElTableColumn>
@@ -1243,6 +1523,63 @@ function clearLineTrace(row: TraceBatchScanLine): void {
   cursor: pointer;
 }
 
+.line-expand {
+  padding: 8px 12px 12px 36px;
+  background: var(--el-fill-color-blank);
+}
+
+.line-expand__hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.line-expand__table {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.line-expand__table :deep(.el-table__row) {
+  cursor: default;
+}
+
+.lot-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lot-group__head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--el-text-color-primary);
+  text-align: left;
+  cursor: pointer;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+}
+
+.lot-group__arrow {
+  width: 14px;
+  font-size: 10px;
+  color: var(--el-text-color-secondary);
+}
+
+.lot-group__lot {
+  font-weight: 600;
+}
+
+.lot-group__count {
+  margin-left: auto;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--el-text-color-secondary);
+}
+
 .scan-split__table :deep(.line-row--active) {
   background-color: var(--el-color-primary-light-9);
 }
@@ -1305,15 +1642,6 @@ function clearLineTrace(row: TraceBatchScanLine): void {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.line-drug-cell__box {
-  flex-shrink: 0;
-}
-
-.line-drug-cell__box :deep(.el-checkbox__label) {
-  padding-left: 4px;
-  font-size: 12px;
 }
 
 .scan-dev {

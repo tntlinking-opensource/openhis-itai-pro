@@ -45,9 +45,12 @@ import {
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
-import { formatMoneyDisplay, sumMoneyThenSettle } from '#/utils/format/money-scale';
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
+import { printPriceAdjustment } from '#/utils/print/print-price-adjustment';
+import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 
 import PriceAdjustmentApproveDialog from './components/price-adjustment-approve-dialog.vue';
+import PriceAdjustmentLineLotExpand from './components/price-adjustment-line-lot-expand.vue';
 import type { PriceAdjustmentHeadForm, PriceAdjustmentLineRow } from './types';
 import {
   isClinicalItemTable,
@@ -97,6 +100,8 @@ const pickItemTable = ref('');
 const approveDialogVisible = ref(false);
 const approveDialogMode = ref<'approve' | 'reject'>('approve');
 const paneFlashActive = ref(false);
+/** 明细行数（与网格同步；避免 getFullData 非响应导致汇总「共 0 行」） */
+const displayLineCount = ref(0);
 let paneFlashTimer: ReturnType<typeof setTimeout> | undefined;
 
 function defaultHeadForm(): PriceAdjustmentHeadForm {
@@ -135,12 +140,6 @@ const resolvedPickItemTable = computed(() => {
   return String(props.itemTableTabOptions[0]?.value ?? '');
 });
 
-const showApprovalSection = computed(() => {
-  if (props.isDraftOrder) return false;
-  const code = String(detailStatusEnum.value ?? '').toLowerCase();
-  return code !== '' && code !== 'draft';
-});
-
 /** 盈亏汇总（进价 + 售价） */
 const impactSummary = computed(() => {
   const purchase = Number(props.auditForm?.totalPurchaseImpact ?? 0);
@@ -148,14 +147,17 @@ const impactSummary = computed(() => {
   return {
     totalPurchaseImpact: purchase,
     totalSellingImpact: selling,
-    combined: sumMoneyThenSettle([purchase, selling]),
   };
 });
 
 const approveSummaryText = computed(() => {
-  const rows = collectGridRows();
-  return `共 ${rows.length} 行 · 进价盈亏 ${formatMoneyDisplay(impactSummary.value.totalPurchaseImpact)} · 售价盈亏 ${formatMoneyDisplay(impactSummary.value.totalSellingImpact)}`;
+  return `进价盈亏合计 ${formatMoneyDisplay(impactSummary.value.totalPurchaseImpact)} 元 · 售价盈亏合计 ${formatMoneyDisplay(impactSummary.value.totalSellingImpact)} 元`;
 });
+
+/** 用网格全量数据刷新底部行数展示 */
+function refreshDisplayLineCount() {
+  displayLineCount.value = collectGridRows().length;
+}
 
 function triggerPaneFlash() {
   if (paneFlashTimer !== undefined) clearTimeout(paneFlashTimer);
@@ -287,6 +289,7 @@ function applyEmptyState() {
   void nextTick(() => {
     gridApi?.grid?.loadData([]);
     patchGridEditConfig();
+    refreshDisplayLineCount();
   });
 }
 
@@ -307,9 +310,12 @@ function syncFromParent() {
     itemPick:
       line.itemPick ?? (line.itemId ? { id: String(line.itemId), name: line.itemName } : undefined),
   }));
+  // 先按父级行数回填，避免网格 nextTick 加载前底部显示「共 0 行」
+  displayLineCount.value = lines.length;
   void nextTick(() => {
     gridApi?.grid?.loadData(lines);
     patchGridEditConfig();
+    refreshDisplayLineCount();
   });
 }
 
@@ -523,6 +529,74 @@ async function handleApproveDialogConfirm(comment: string) {
   }
 }
 
+function resolveOptionLabel(options: ApiOptionItem[] | undefined, value: unknown): string {
+  const code = String(value ?? '').trim();
+  if (!code) return '';
+  const hit = (options ?? []).find((opt) => String(opt.value ?? '').trim() === code);
+  return String(hit?.label ?? code).trim();
+}
+
+/** 打印：按当前页单头/明细/审批区组装 PrintData */
+async function handlePrint() {
+  const busNo = currentPersistedBusNo();
+  if (!busNo) {
+    ElMessage.warning('请先保存单据后再打印');
+    return;
+  }
+  const rows = collectGridRows().filter((row) => Boolean(String(row.itemId ?? '').trim()));
+  if (rows.length === 0) {
+    ElMessage.warning('没有可打印的明细');
+    return;
+  }
+
+  const adjustmentReasonText = resolveOptionLabel(
+    props.adjustmentReasonOptions,
+    headForm.value.adjustmentReason,
+  );
+  const lineTypeTexts = [
+    ...new Set(
+      rows.map((row) => String(row.itemTableText ?? '').trim()).filter((text) => text !== ''),
+    ),
+  ];
+  const itemTypeText =
+    lineTypeTexts.length > 0
+      ? lineTypeTexts.join('/')
+      : resolveOptionLabel(props.itemTableTabOptions, pickItemTable.value);
+  const applyTimeText = String(headForm.value.adjustmentTime ?? '')
+    .trim()
+    .replace('T', ' ');
+  const preparedByName = String(props.auditForm?.submitterName ?? '').trim();
+  const approvedByName = String(props.auditForm?.approverName ?? '').trim();
+
+  await printPriceAdjustment({
+    source: {
+      hospitalName: resolvePrintHospitalName(),
+      documentTitle: '调价单',
+      docNo: busNo,
+      applyTimeText,
+      adjustmentReasonText,
+      itemTypeText,
+      statusText: headerStatusText.value,
+      approvedByName,
+      preparedByName,
+      totalPurchaseImpact: impactSummary.value.totalPurchaseImpact,
+      totalSellingImpact: impactSummary.value.totalSellingImpact,
+      lineRows: rows.map((row) => ({
+        itemName: String(row.itemPick?.name ?? row.itemName ?? '').trim(),
+        specText: String(row.specification ?? '').trim(),
+        categoryText: String(row.categoryCodeDictText ?? '').trim(),
+        oldPurchasePrice: row.currentPurchasePrice,
+        oldSellingPrice: row.currentSellingPrice ?? row.oldSellingAmount,
+        quantity: row.quantity,
+        newPurchasePrice: row.newPurchaseAmount,
+        newSellingPrice: row.newSellingAmount,
+      })),
+    },
+    bizRef: { busNo, docKind: 'price-adjustment' },
+    jobName: `调价单-${busNo}`,
+  });
+}
+
 function handleAddItemClick() {
   void addItem();
 }
@@ -628,6 +702,7 @@ async function addItem() {
     await g.scrollToRow?.(row);
     await g.setEditCell?.(row, 'itemPick');
   }
+  refreshDisplayLineCount();
 }
 
 /** 删除选中行或单行 */
@@ -653,10 +728,18 @@ async function deleteItem(target?: PriceAdjustmentLineRow | 'select') {
     (r) => !removeKeys.has(String(r.id ?? r.itemId ?? '')),
   );
   gridApi?.grid?.loadData(rows);
+  refreshDisplayLineCount();
 }
 
 const columns: VxeGridPropTypes.Columns<PriceAdjustmentLineRow> = [
   { type: 'checkbox', width: 48, fixed: 'left', align: 'center' },
+  {
+    type: 'expand',
+    width: 44,
+    fixed: 'left',
+    align: 'center',
+    slots: { content: 'lotExpand' },
+  },
   { type: 'seq', title: '序号', width: 52, fixed: 'left', align: 'center' },
   {
     field: 'itemPick',
@@ -709,12 +792,13 @@ const columns: VxeGridPropTypes.Columns<PriceAdjustmentLineRow> = [
   {
     field: 'quantity',
     title: '库存数量',
-    width: 96,
-    align: 'right',
+    width: 120,
+    align: 'center',
     headerAlign: 'center',
     formatter: ({ cellValue, row }) => {
       const line = row as PriceAdjustmentLineRow;
       if (!isLogisticsRow(line)) return '—';
+      // 与其它库存单据一致：数量 + 单位拼一列，如「12 盒」
       const qty = formatQuantity(cellValue, '');
       if (!qty) return '—';
       const unit = String(line.unitName ?? '').trim();
@@ -772,6 +856,7 @@ const gridOptions = reactive<VxeGridProps<PriceAdjustmentLineRow>>({
   showFooter: false,
   size: 'medium',
   columnConfig: { resizable: true },
+  expandConfig: { accordion: false, trigger: 'default' },
   data: [],
   editConfig: {
     enabled: true,
@@ -794,6 +879,7 @@ function patchGridEditConfig() {
   gridOptions.editConfig = {
     ...gridOptions.editConfig,
     enabled: props.documentEditable,
+    showIcon: props.documentEditable,
     trigger: 'click',
     mode: 'cell',
     autoClear: true,
@@ -847,8 +933,10 @@ watch(
       <template #actionBar>
         <div class="flex w-full flex-wrap items-center justify-end gap-2">
           <InvDocActions
+            require-finance-approval-role
             v-bind="docActionFlags"
             @approve="openApproveDialog('approve')"
+            @print="handlePrint"
             @reject="openApproveDialog('reject')"
             @remove-doc="handleRemoveDoc"
             @save="handleSaveDoc"
@@ -929,31 +1017,20 @@ watch(
         <div class="price-adjustment-main-pane__grid-wrap flex min-h-0 min-w-0 flex-1 flex-col">
           <Grid>
             <template #toolbar-actions>
-              <ElButton
-                class="mr-2"
-                type="primary"
-                :icon="Plus"
-                :disabled="!documentEditable"
-                @click="handleAddItemClick"
-              >
-                添加行
-              </ElButton>
-              <ElButton
-                type="danger"
-                :icon="Delete"
-                :disabled="!documentEditable"
-                @click="deleteItem('select')"
-              >
-                删除行
-              </ElButton>
+              <template v-if="documentEditable">
+                <ElButton class="mr-2" type="primary" :icon="Plus" @click="handleAddItemClick">
+                  添加行
+                </ElButton>
+                <ElButton type="danger" :icon="Delete" @click="deleteItem('select')">
+                  删除行
+                </ElButton>
+              </template>
+            </template>
+            <template #lotExpand="{ row }">
+              <PriceAdjustmentLineLotExpand :row="row" />
             </template>
             <template #action="{ row }">
-              <ElButton
-                type="danger"
-                text
-                :disabled="!documentEditable"
-                @click="deleteItem(row as PriceAdjustmentLineRow)"
-              >
+              <ElButton v-if="documentEditable" type="danger" text @click="deleteItem(row)">
                 <Trash2 class="size-4" />
                 删除
               </ElButton>
@@ -964,49 +1041,16 @@ watch(
         <div
           class="shrink-0 border-t border-[var(--el-border-color-extra-light)] py-2 text-sm text-[var(--el-text-color-regular)]"
         >
-          共
-          <strong class="text-[var(--el-text-color-primary)]">{{
-            collectGridRows().length
-          }}</strong>
-          行 · 进价盈亏
+          进价盈亏合计
           <strong class="tabular-nums text-[var(--el-text-color-primary)]">{{
             formatMoneyDisplay(impactSummary.totalPurchaseImpact)
           }}</strong>
-          元 · 售价盈亏
+          元 · 售价盈亏合计
           <strong class="tabular-nums text-[var(--el-text-color-primary)]">{{
             formatMoneyDisplay(impactSummary.totalSellingImpact)
           }}</strong>
           元
         </div>
-
-        <template v-if="showApprovalSection">
-          <SectionTitle title="审批信息" />
-          <div
-            class="grid shrink-0 grid-cols-2 gap-x-8 gap-y-2 pb-2 text-sm md:grid-cols-3"
-            style="color: var(--el-text-color-primary)"
-          >
-            <div>
-              <span style="color: var(--el-text-color-regular)">提交人：</span>
-              {{ auditForm?.submitterName || '—' }}
-            </div>
-            <div>
-              <span style="color: var(--el-text-color-regular)">提交时间：</span>
-              {{ auditForm?.submitTime || '—' }}
-            </div>
-            <div>
-              <span style="color: var(--el-text-color-regular)">审批人：</span>
-              {{ auditForm?.approverName || '—' }}
-            </div>
-            <div>
-              <span style="color: var(--el-text-color-regular)">审批时间：</span>
-              {{ auditForm?.approveTime || '—' }}
-            </div>
-            <div class="col-span-2 md:col-span-3">
-              <span style="color: var(--el-text-color-regular)">审批意见：</span>
-              {{ auditForm?.approveComment || '—' }}
-            </div>
-          </div>
-        </template>
       </div>
     </InvMainShell>
 
@@ -1014,7 +1058,7 @@ watch(
       :visible="approveDialogVisible"
       :approve-mode="approveDialogMode"
       :bus-no="headForm.busNo || '（新调价单）'"
-      :line-count="collectGridRows().length"
+      :line-count="displayLineCount"
       :summary-text="approveSummaryText"
       @confirm="handleApproveDialogConfirm"
       @update:visible="approveDialogVisible = $event"

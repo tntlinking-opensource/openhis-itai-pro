@@ -29,6 +29,8 @@ const emit = defineEmits<{
   autofocusProductConsumed: [];
   editEnd: [];
   editStart: [];
+  /** 剂量框上下键：切换到相邻行剂量焦点（禁用数字增减） */
+  navigateDoseFocus: [direction: 'down' | 'up'];
   productSelect: [product: AdviceProductOption];
   remove: [];
   select: [];
@@ -46,6 +48,8 @@ export interface TcmHerbCardItem {
   retailPrice: number;
   dosageInstructionCode?: string;
   dosageInstructionText?: string;
+  /** 医保等级展示名（目录带出） */
+  chrgitmLvText?: string;
 }
 
 interface DosageInstructionOption {
@@ -72,6 +76,7 @@ interface Props {
 }
 
 const cardRef = ref<HTMLElement | null>(null);
+const doseInputRef = ref<{ focus?: () => void; $el?: HTMLElement } | null>(null);
 const expandNonce = ref(0);
 /** 用于区分单击选中与双击编辑 */
 let clickSelectTimer: null | ReturnType<typeof setTimeout> = null;
@@ -83,10 +88,9 @@ const doseUnitDisplay = computed(() => {
   return (props.item.doseUnitCode || 'g').trim() || 'g';
 });
 
-/** 格式化用量数字 */
+/** 格式化用量数字（克数仅整数） */
 function formatDoseQty(value: number): string {
-  if (Number.isInteger(value)) return String(value);
-  return value.toFixed(1);
+  return String(Math.round(value));
 }
 
 const perDoseQtyText = computed(() => {
@@ -159,6 +163,12 @@ const lineTotalDisplayText = computed(() => {
   return `单剂 ¥${formatMoneyDisplay(lineTotalAmount.value)} · ${doseCount}付 ¥${formatMoneyDisplay(linePrescriptionTotalAmount.value)}`;
 });
 
+/** 编辑态剂量：0 显示为空，避免预填默认值 */
+const doseEditValue = computed(() => {
+  const dose = Number(props.item.dose || 0);
+  return dose > 0 ? Math.round(dose) : undefined;
+});
+
 /** 单击：延迟触发选中，避免与双击编辑冲突 */
 function handleCardClick() {
   if (props.readonly || props.editing) return;
@@ -187,15 +197,46 @@ function handleRemove(event: MouseEvent) {
   emit('remove');
 }
 
-/** 下拉选药回写 */
+/** 下拉选药回写后聚焦剂量框 */
 function handleProductSelect(product: AdviceProductOption) {
   emit('productSelect', product);
+  void nextTick(() => {
+    requestAnimationFrame(() => {
+      focusDoseInput();
+    });
+  });
+}
+
+/** 聚焦剂量输入并选中，便于直接改数 */
+function focusDoseInput() {
+  const inst = doseInputRef.value;
+  if (!inst) return;
+  inst.focus?.();
+  const input = inst.$el?.querySelector?.('input') as HTMLInputElement | null | undefined;
+  if (input) {
+    input.focus();
+    input.select();
+  }
+}
+
+/**
+ * 剂量框键盘：禁用上下键增减数值，改为通知父级切换相邻行剂量焦点。
+ * 使用 capture，确保先于 ElInputNumber 内部增减逻辑处理。
+ */
+function handleDoseKeydown(event: KeyboardEvent) {
+  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+  event.preventDefault();
+  event.stopPropagation();
+  emit('navigateDoseFocus', event.key === 'ArrowUp' ? 'up' : 'down');
 }
 
 /** 行内修改单次剂量 */
 function handleDoseChange(value: number | undefined) {
-  emit('updateDose', Number(value ?? 0));
+  // 克数仅整数
+  emit('updateDose', Math.round(Number(value ?? 0)));
 }
+
+defineExpose({ focusDoseInput });
 
 /** 判断节点是否落在卡片或浮层选药/下拉内 */
 function isInsideEditableSurface(target: EventTarget | null) {
@@ -304,12 +345,14 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="tcm-herb-card__row tcm-herb-card__row--meta" @click.stop>
-          <div class="tcm-herb-card__dose-edit">
+          <div class="tcm-herb-card__dose-edit" @keydown.capture="handleDoseKeydown">
             <ElInputNumber
-              :model-value="item.dose"
+              ref="doseInputRef"
+              :model-value="doseEditValue"
               class="tcm-herb-card__dose-input"
               :min="0"
-              :precision="1"
+              :precision="0"
+              :step="1"
               :controls="false"
               @update:model-value="handleDoseChange"
             />
@@ -346,6 +389,9 @@ onBeforeUnmount(() => {
         <div class="tcm-herb-card__row tcm-herb-card__row--footer">
           <div class="tcm-herb-card__price-group">
             <span class="tcm-herb-card__unit-price">{{ unitPriceDisplayText }}</span>
+            <span v-if="item.chrgitmLvText" class="tcm-herb-card__yb-level">
+              医保等级：{{ item.chrgitmLvText }}
+            </span>
             <span class="tcm-herb-card__total-price">{{ lineTotalDisplayText }}</span>
           </div>
         </div>
@@ -382,6 +428,9 @@ onBeforeUnmount(() => {
         <div class="tcm-herb-card__row tcm-herb-card__row--footer">
           <div class="tcm-herb-card__price-group">
             <span class="tcm-herb-card__unit-price">{{ unitPriceDisplayText }}</span>
+            <span v-if="item.chrgitmLvText" class="tcm-herb-card__yb-level">
+              医保等级：{{ item.chrgitmLvText }}
+            </span>
             <span class="tcm-herb-card__total-price">{{ lineTotalDisplayText }}</span>
           </div>
         </div>
@@ -600,6 +649,13 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-secondary);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.tcm-herb-card__yb-level {
+  color: var(--el-text-color-regular);
+  font-size: 12px;
   line-height: 20px;
   white-space: nowrap;
 }

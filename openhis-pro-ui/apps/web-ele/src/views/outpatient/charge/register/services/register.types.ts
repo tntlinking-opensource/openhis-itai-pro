@@ -129,8 +129,8 @@ export interface RegisterFormAreaExpose {
   findBootstrapInsuranceContractIdByInsuplc: (insuplcAdmdvs?: string) => string | undefined;
   /** 费用性质 → chs-contract bus_no（9001 签到） */
   getContractBusNo: (contractId: unknown) => string | undefined;
-  /** 切换费用性质并通知父组件 */
-  applyContractId: (contractId: string) => Promise<void>;
+  /** 切换费用性质；emitChange=false 时仅回填字段，由调用方继续拉待遇（保留 autoApplyRecommend） */
+  applyContractId: (contractId: string, options?: { emitChange?: boolean }) => Promise<void>;
   /** 写入参保地匹配结果 */
   applyContractMatch: (
     match: import('#/api/outpatient-registration').RegisterContractMatchDto | null | undefined,
@@ -151,8 +151,10 @@ export interface RegisterFormAreaExpose {
   getSubmitValues: () => Promise<Record<string, unknown>>;
   /** 清空挂号 + 患者信息，并清空下方待遇确认展示块 */
   resetForClear: () => void;
-  /** 提交成功后重置表单并刷新医生下拉；不预填挂号区首条主数据 */
+  /** 提交成功后重置表单并刷新医生下拉；费用性质回填自费，科室/医生/号源不预填 */
   resetForSubmitSuccess: () => Promise<void>;
   /** 校验患者信息、挂号信息两块表单 */
   validateForSubmit: () => Promise<boolean>;
+  /** 工伤无有效审批时打开备案引导（自动绑定或弹出 2301） */
+  openWorkInjuryApprovalGuide: () => void;
 }

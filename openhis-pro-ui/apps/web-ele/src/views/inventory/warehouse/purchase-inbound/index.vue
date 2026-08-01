@@ -17,6 +17,7 @@ import {
   pagePurchaseInboundListApi,
 } from '#/api/warehouse/purchase-inbound';
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
+import { useFromFinanceApproval } from '#/composables/use-from-finance-approval';
 import { calcWarehouseSplitLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
 import {
   inboundReceiptStatusLabel,
@@ -43,6 +44,7 @@ const INBOUND_RECEIPT_PRACTITIONER_ID_STUB = '1';
 
 const route = useRoute();
 const userStore = useUserStore();
+const { fromFinanceApproval } = useFromFinanceApproval();
 
 function resolveApplicantId(): number | string | undefined {
   const u = userStore.userInfo as null | Record<string, any>;
@@ -131,8 +133,6 @@ function createDraftOrderRow(): Record<string, any> {
 
 const PURCHASE_ORDER_DETAIL_PAGE_SIZE = 2000;
 
-const isAddDisabled = ref(false);
-
 function resolvePurchaseOrderBusNo(row?: null | Record<string, any>): string | undefined {
   if (!row) return undefined;
   const candidates = [row.supplyBusNo, row.busNo, row.orderBusNo, row.purchaseBusNo];
@@ -176,8 +176,9 @@ const activeInboundStatusEnum = computed(() => {
   return undefined;
 });
 
-/** 待审核/驳回/已撤回可改单（本地草稿始终可编辑） */
+/** 待审核/驳回/已撤回可改单；财务审批深链强制只读 */
 const inboundDocumentEditable = computed(() => {
+  if (fromFinanceApproval.value) return false;
   if (selectedOrder.value?._draft) return true;
   return isInboundReceiptDocumentEditableRaw(activeInboundStatusEnum.value);
 });
@@ -235,10 +236,6 @@ async function getList() {
   }
 }
 
-function handleAdd() {
-  mainPaneRef.value?.openUpstreamPicker();
-}
-
 async function handleCreateFromUpstream(row: LinkablePurchaseOrderListRowDto) {
   resetFormAndTableData();
   const draft = createDraftOrderRow();
@@ -252,7 +249,6 @@ async function handleCreateFromUpstream(row: LinkablePurchaseOrderListRowDto) {
     locationId: tableForm.value.locationId,
   };
   await nextTick();
-  isAddDisabled.value = true;
   await mainPaneRef.value?.applyLinkablePurchaseOrderToDraft(row);
 }
 
@@ -265,13 +261,14 @@ async function handleEdit(order?: null | Record<string, any>) {
   const row = order ?? selectedOrder.value;
   if (isDraftOrderRow(row)) return;
 
-  resetFormAndTableData();
   const busNo = resolvePurchaseOrderBusNo(row);
   if (!busNo) {
     ElMessage.error('请选择要编辑的单据');
     return;
   }
 
+  // 勿在拉详情前清空 tableData：提交/撤回后重载会短暂 rows=[]，
+  // 主区会把项目类型重置为默认项，与未清完的明细冲突并误报。
   try {
     const detail = await pagePurchaseInboundDetailApi({
       busNo,
@@ -281,10 +278,8 @@ async function handleEdit(order?: null | Record<string, any>) {
     buildEditForm(detail.records ?? []);
   } catch {
     ElMessage.error('加载进货单详情失败');
-    return;
+    resetFormAndTableData();
   }
-
-  isAddDisabled.value = false;
 }
 
 function buildUnitList(item: Record<string, any>) {
@@ -338,6 +333,8 @@ function buildEditForm(data: Record<string, any>[]) {
   const head = data[0];
   if (!head) return;
 
+  // 侧栏库房仅筛列表：详情回填勿覆盖；保存/驳回/撤回/切单后仍保持用户所选（默认全部）
+  const sidebarLocationId = tableForm.value.locationId;
   tableForm.value = {
     busNo: head.busNo ?? head.supplyBusNo,
     applyTime: head.applyTime,
@@ -345,7 +342,7 @@ function buildEditForm(data: Record<string, any>[]) {
     applicantId: head.applicantId,
     categoryEnum: head.categoryEnum,
     reason: head.reason,
-    locationId: head.purposeLocationId ?? head.locationId,
+    locationId: sidebarLocationId,
   };
   data.forEach((item) => {
     item.isEditing = false;
@@ -371,7 +368,10 @@ function handleOrderClick(order: Record<string, any>) {
 }
 
 function handleLocationChange(locationId?: number | string) {
-  queryParams.value.locationId = locationId;
+  const v = locationId;
+  tableForm.value.locationId =
+    v === undefined || v === null || String(v).trim() === '' ? INV_ALL_LOCATIONS_FILTER_ID : v;
+  queryParams.value.locationId = tableForm.value.locationId;
   void getList();
 }
 
@@ -398,14 +398,12 @@ async function handleInboundDocumentRemoved() {
     selectedOrder.value = null;
     resetFormAndTableData();
     mainPaneResetKey.value += 1;
-    isAddDisabled.value = false;
     return;
   }
   orderList.value = orderList.value.filter((r) => !r._draft);
   resetFormAndTableData();
   selectedOrder.value = null;
   mainPaneResetKey.value += 1;
-  isAddDisabled.value = false;
   await getList();
 }
 
@@ -435,9 +433,9 @@ onMounted(async () => {
 
 <template>
   <WarehouseDocWorkstation
-    aside-width="280px"
     queue-title=""
     aside-dense
+    :show-aside="!fromFinanceApproval"
     :show-aside-filter="false"
     :show-toolbar="false"
   >
@@ -446,13 +444,11 @@ onMounted(async () => {
         v-model:date-range="listDateRange"
         v-model:keyword="listKeywordModel"
         v-model:location-id="tableForm.locationId"
-        :add-disabled="isAddDisabled"
         :cabinet-list-options="cabinetListOptions"
         :orders="orderList"
         :practitioner-option="practitionerOption"
         :selected-order="selectedOrder"
         :show-supplier-in-queue="true"
-        @add="handleAdd"
         @location-change="handleLocationChange"
         @search="getList"
         @select="handleOrderClick"

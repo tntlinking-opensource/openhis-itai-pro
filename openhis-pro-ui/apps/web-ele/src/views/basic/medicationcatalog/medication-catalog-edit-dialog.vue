@@ -1,4 +1,4 @@
-<script lang="ts" setup>
+﻿<script lang="ts" setup>
 import type { MedicationCatalogInitResponse, MedicationCatalogItem } from '#/api';
 
 import type { NationalCatalogItem } from '#/chs/api';
@@ -30,10 +30,16 @@ import { getChargeTypeListApi } from '#/api/core/common';
 import { ensureInsuranceSignIn } from '#/chs/utils/ensure-insurance-sign-in';
 import {
   applyCatalogEditabilityFromDetail,
-  buildCatalogEditabilitySchemaPatches,
   CATALOG_EDITABILITY_OK,
   isCatalogStructureLocked,
+  isMedicationCatalogFieldLocked,
+  MEDICATION_CATALOG_LOCKABLE_FORM_FIELDS,
 } from '#/views/basic/catalog/catalog-editability';
+import CatalogLotPriceDialog from '#/views/basic/catalog/catalog-lot-price-dialog.vue';
+import {
+  resolveCatalogRecordNavState,
+  type CatalogRecordNavDirection,
+} from '#/views/basic/catalog/catalog-record-nav';
 
 interface Props {
   modelValue: boolean;
@@ -41,23 +47,40 @@ interface Props {
   medicationDefId: string;
   /** 列表页已拉取的字典选项，减少重复请求 */
   initOptionsSource: MedicationCatalogInitResponse;
+  /** 当前列表页记录 id */
+  recordIds?: string[];
+  /** 列表当前页码（从 1 起），供跨页上下翻 */
+  pageNo?: number;
+  /** 列表每页条数 */
+  pageSize?: number;
+  /** 当前筛选条件下的总条数 */
+  listTotal?: number;
+  /** 列表正在为上下翻换页 */
+  navigating?: boolean;
 }
 
 defineOptions({
   name: 'MedicationCatalogEditDialog',
 });
 
-const props = defineProps<Props>();
+const props = withDefaults(defineProps<Props>(), {
+  recordIds: () => [],
+  pageNo: 1,
+  pageSize: 10,
+  listTotal: 0,
+  navigating: false,
+});
 
 const emit = defineEmits<{
+  navigate: [direction: CatalogRecordNavDirection];
   success: [];
   'update:modelValue': [value: boolean];
 }>();
-
 const loading = ref(false);
 const upload3301Loading = ref(false);
 const revoke3302Loading = ref(false);
 const pickerVisible = ref(false);
+const lotPriceOpen = ref(false);
 const defaultContractBusNo = ref<string>();
 const formData = ref<Partial<MedicationCatalogItem>>({});
 const initOptions = ref<MedicationCatalogInitResponse>({} as MedicationCatalogInitResponse);
@@ -100,6 +123,10 @@ const statusFlagOptions = createOptionsComputed('statusFlagOptions');
 const domainFlagOptions = createOptionsComputed('domainFlagOptions');
 const medicationCategoryCodeOptions = createOptionsComputed('medicationCategoryCodeOptions');
 const unitCodeOptions = createOptionsComputed('unitCodeOptions');
+const doseUnitCodeOptions = createOptionsComputed('doseUnitCodeOptions');
+const dddUnitCodeOptions = createOptionsComputed('dddUnitCodeOptions');
+
+type UnitSelectOption = { children?: UnitSelectOption[]; label: string; value: string };
 const chrgitmLvOptions = createOptionsComputed('chrgitmLvOptions');
 const mrSettlementTypeCodeOptions = createOptionsComputed('mrSettlementTypeCodeOptions');
 const doseFormCodeOptions = createOptionsComputed('doseFormCodeOptions');
@@ -247,11 +274,57 @@ const dialogTitle = computed(() => {
   return name ? `编辑药品 — ${name}` : '编辑药品';
 });
 
+/** 打开价格弹窗（仅编辑态） */
+function handleViewLotPrices() {
+  if (isNewMedication.value || !props.medicationDefId) {
+    ElMessage.warning('请先保存药品后再查看价格');
+    return;
+  }
+  lotPriceOpen.value = true;
+}
+
+/** 编辑态且列表有多条时展示上下翻（可跨页） */
+const recordNavState = computed(() =>
+  resolveCatalogRecordNavState(props.recordIds, props.medicationDefId, {
+    pageNo: props.pageNo,
+    pageSize: props.pageSize,
+    listTotal: props.listTotal,
+  }),
+);
+
+const showRecordNav = computed(() => {
+  if (isNewMedication.value) {
+    return false;
+  }
+  return recordNavState.value.listTotal > 1;
+});
+
+const canNavigatePrev = computed(() => recordNavState.value.canPrev);
+
+const canNavigateNext = computed(() => recordNavState.value.canNext);
+
+const recordNavBusy = computed(() => loading.value || props.navigating);
+
+/** 切换到上一条药品（必要时由列表翻页） */
+function handleNavigatePrev() {
+  if (!canNavigatePrev.value || recordNavBusy.value) {
+    return;
+  }
+  emit('navigate', -1);
+}
+
+/** 切换到下一条药品（必要时由列表翻页） */
+function handleNavigateNext() {
+  if (!canNavigateNext.value || recordNavBusy.value) {
+    return;
+  }
+  emit('navigate', 1);
+}
+
 /** 关闭弹窗（取消 / 点 X） */
 function closeDialog() {
   emit('update:modelValue', false);
 }
-
 /** 保存成功后通知列表刷新并关闭 */
 function finishSuccess() {
   emit('success');
@@ -267,34 +340,49 @@ async function resetFormState() {
   await formApi.setFieldValue('__checkbox_inline_group', {});
 }
 
-/** 按 editabilityCode 同步表单字段 disabled */
+/**
+ * 按 editabilityCode 同步字段 disabled。
+ * 不可直接 updateSchema({ componentProps: { disabled } })：
+ * merge 会把函数型 componentProps 整段替换成仅含 disabled 的对象，单位下拉 options 被清空。
+ */
 function syncMedicationEditabilitySchema() {
   if (!formApi?.isMounted) {
     return;
   }
-  formApi.updateSchema(buildCatalogEditabilitySchemaPatches('medication', editabilityCode.value));
+  const locked = (fieldName: string) =>
+    isMedicationCatalogFieldLocked(editabilityCode.value, fieldName);
+  const currentSchema = formApi.getState()?.schema ?? [];
+  const patches = MEDICATION_CATALOG_LOCKABLE_FORM_FIELDS.map((fieldName) => {
+    const existing = currentSchema.find((item) => item.fieldName === fieldName);
+    const prevProps = existing?.componentProps;
+    const disabled = locked(fieldName);
+    if (typeof prevProps === 'function') {
+      return {
+        fieldName,
+        componentProps: (...args: unknown[]) => ({
+          ...(prevProps as (...a: unknown[]) => Record<string, unknown>)(...args),
+          disabled,
+        }),
+      };
+    }
+    return {
+      fieldName,
+      componentProps: {
+        ...((prevProps && typeof prevProps === 'object' ? prevProps : {}) as Record<
+          string,
+          unknown
+        >),
+        disabled,
+      },
+    };
+  });
+  formApi.updateSchema(patches);
 }
 
 function handleDialogClosed() {
   void resetFormState();
   lastLoadedDefId.value = null;
 }
-
-const supplierOptions = computed(() => {
-  const list = (initOptions.value?.supplierListOptions ?? []) as OptionItem[];
-  if (!Array.isArray(list) || list.length === 0) {
-    return [];
-  }
-  return list
-    .map((item) => {
-      const label = String(item?.label ?? item?.info ?? item?.text ?? item?.name ?? '');
-      const value = item?.value;
-      return label && value !== undefined && value !== null
-        ? { label, value: String(value) }
-        : null;
-    })
-    .filter((v): v is { label: string; value: string } => !!v);
-});
 
 /** 业务信息内联复选组（不含临床段的皮试/注射） */
 const CHECKBOX_INLINE_GROUP_FIELDS = [
@@ -365,7 +453,6 @@ function normalizeFormSelectValues(data: Record<string, unknown>) {
   // 下拉/树下拉 value 通常是“code”。为了避免 number/string 不一致导致不回显，
   // 统一把这些字段都转成字符串参与回显匹配。
   const selectFieldNames = [
-    'supplyId',
     'chrgitmLv',
     'mrSettlementTypeCode',
     'categoryCode',
@@ -385,6 +472,7 @@ function normalizeFormSelectValues(data: Record<string, unknown>) {
     'thoPartAttributeEnum',
     'statusEnum',
     'domainEnum',
+    'traceUnitCode',
   ];
 
   const next = { ...data };
@@ -399,7 +487,12 @@ function normalizeFormSelectValues(data: Record<string, unknown>) {
 
 /** 金额/数值字段：保证 InputNumber 能正确回显 */
 function normalizeNumericFormValues(data: Record<string, unknown>) {
-  const priceFields = ['purchasePrice', 'retailPrice', 'maximumRetailPrice'] as const;
+  const priceFields = [
+    'purchasePrice',
+    'retailPrice',
+    'maximumRetailPrice',
+    'traceUnitRatio',
+  ] as const;
   priceFields.forEach((field) => {
     const v = data[field];
     if (v === undefined || v === null || v === '') {
@@ -419,7 +512,10 @@ async function applyDetailFormValues(raw: Record<string, unknown>) {
 
   const normalizedData = normalizeFormSelectValues({ ...raw });
   normalizeNumericFormValues(normalizedData);
+  // 独立 Checkbox 与业务组一样做布尔归一，避免 true/1/"true" 回显不勾选
   normalizedData.ybMatchFlag = coerceLegacyBool(normalizedData.ybMatchFlag);
+  normalizedData.skinTestFlag = coerceLegacyBool(normalizedData.skinTestFlag);
+  normalizedData.injectFlag = coerceLegacyBool(normalizedData.injectFlag);
   formData.value = { ...normalizedData };
   await formApi.setValues(normalizedData);
 
@@ -428,6 +524,10 @@ async function applyDetailFormValues(raw: Record<string, unknown>) {
     inlineGroupValue[key] = coerceLegacyBool(normalizedData[key]);
   });
   formApi.setFieldValue('__checkbox_inline_group', inlineGroupValue);
+
+  // 皮试/输液：options 就绪后仍可能丢勾选，再写一次
+  await formApi.setFieldValue('skinTestFlag', coerceLegacyBool(normalizedData.skinTestFlag));
+  await formApi.setFieldValue('injectFlag', coerceLegacyBool(normalizedData.injectFlag));
 
   // 财务类型、金额：下拉/数字组件在 options 未就绪时 setValues 可能丢失，单独再设一次
   const typeCode = normalizedData.typeCode;
@@ -440,8 +540,26 @@ async function applyDetailFormValues(raw: Record<string, unknown>) {
       await formApi.setFieldValue(field, v);
     }
   }
+  // 单位下拉依赖 options；options 就绪后再写一次，避免只回显 code
+  for (const field of [
+    'doseUnitCode',
+    'purchaseUnitCode',
+    'splitUnitCode',
+    'packageUnitCode',
+    'stockUnitCode',
+    'dddUnitCode',
+    'traceUnitCode',
+  ] as const) {
+    const v = normalizedData[field];
+    if (v !== undefined && v !== null && v !== '') {
+      await formApi.setFieldValue(field, String(v));
+    }
+  }
   syncMedicationEditabilitySchema();
 }
+
+/** 避免快速上下翻时旧请求回写覆盖新详情 */
+let medicationDetailLoadSeq = 0;
 
 async function loadDetailData() {
   const id = props.medicationDefId;
@@ -457,9 +575,18 @@ async function loadDetailData() {
     return;
   }
 
+  const loadSeq = ++medicationDetailLoadSeq;
   loading.value = true;
   try {
+    // 切换记录前先清空，避免上一张残留字段混入回显（setValues 不会删旧键）
+    await resetFormState();
+    if (loadSeq !== medicationDetailLoadSeq) {
+      return;
+    }
     const response = await getMedicationCatalogApi(id);
+    if (loadSeq !== medicationDetailLoadSeq) {
+      return;
+    }
     const data = response.data;
     if (data) {
       await applyDetailFormValues(data as Record<string, unknown>);
@@ -468,11 +595,16 @@ async function loadDetailData() {
       closeDialog();
     }
   } catch (error) {
+    if (loadSeq !== medicationDetailLoadSeq) {
+      return;
+    }
     console.error('获取药品详情失败:', error);
     ElMessage.error('获取药品详情失败，请稍后重试');
     closeDialog();
   } finally {
-    loading.value = false;
+    if (loadSeq === medicationDetailLoadSeq) {
+      loading.value = false;
+    }
   }
 }
 
@@ -654,26 +786,36 @@ const updateFormOptions = () => {
       },
       {
         fieldName: 'purchaseUnitCode',
-        componentProps: buildInventoryUnitSelectProps('purchaseUnitCode'),
+        componentProps: () => buildInventoryUnitSelectProps('purchaseUnitCode'),
       },
       {
         fieldName: 'splitUnitCode',
-        componentProps: buildInventoryUnitSelectProps('splitUnitCode'),
+        componentProps: () => buildInventoryUnitSelectProps('splitUnitCode'),
       },
       {
         fieldName: 'stockUnitCode',
-        componentProps: buildInventoryUnitSelectProps('stockUnitCode'),
+        componentProps: () => buildInventoryUnitSelectProps('stockUnitCode'),
       },
       {
         fieldName: 'packageUnitCode',
-        componentProps: buildInventoryUnitSelectProps('packageUnitCode'),
+        componentProps: () => buildInventoryUnitSelectProps('packageUnitCode'),
       },
       {
         fieldName: 'doseUnitCode',
-        componentProps: {
-          options: unitCodeOptions.value,
+        componentProps: () => ({
+          options: doseUnitCodeOptions.value,
           filterable: true,
-        },
+          disabled: isMedicationCatalogFieldLocked(editabilityCode.value, 'doseUnitCode'),
+        }),
+      },
+      {
+        fieldName: 'dddUnitCode',
+        componentProps: () => ({
+          options: dddUnitCodeOptions.value,
+          placeholder: '请选择DDD单位',
+          allowClear: true,
+          filterable: true,
+        }),
       },
       {
         fieldName: 'chrgitmLv',
@@ -749,15 +891,6 @@ const updateFormOptions = () => {
         },
       },
       {
-        fieldName: 'supplyId',
-        componentProps: {
-          options: supplierOptions.value,
-          filterable: true,
-          clearable: true,
-          placeholder: '请选择供应商',
-        },
-      },
-      {
         fieldName: 'statusEnum',
         componentProps: {
           options: statusFlagOptions.value,
@@ -792,6 +925,22 @@ async function handleSubmit() {
       ...restFormValues,
     } as Record<string, unknown>;
 
+    // 药品目录：追溯码单位与倍数必填（游离于五类业务单位）
+    const traceUnitCode = String(mergedData.traceUnitCode ?? '').trim();
+    const traceUnitRatio = Number(mergedData.traceUnitRatio);
+    if (!traceUnitCode) {
+      ElMessage.error('请选择追溯码单位');
+      loading.value = false;
+      return;
+    }
+    if (!Number.isFinite(traceUnitRatio) || traceUnitRatio <= 0) {
+      ElMessage.error('请填写有效的追溯码/拆零倍数');
+      loading.value = false;
+      return;
+    }
+    mergedData.traceUnitCode = traceUnitCode;
+    mergedData.traceUnitRatio = traceUnitRatio;
+
     if (__checkbox_inline_group && typeof __checkbox_inline_group === 'object') {
       const group = __checkbox_inline_group as Record<string, unknown>;
       CHECKBOX_INLINE_GROUP_FIELDS.forEach((key) => {
@@ -813,6 +962,8 @@ async function handleSubmit() {
     delete mergedData.salesUnitCode;
     delete mergedData.salesUnitRatio;
     delete mergedData.finTypeCode;
+    // 药品目录不再维护供应商（详情回显里的历史 supplyId 也不提交）
+    delete mergedData.supplyId;
 
     const submitData: Partial<MedicationCatalogItem> = {};
     Object.keys(mergedData).forEach((key) => {
@@ -922,18 +1073,6 @@ const [Form, formApi] = useVbenForm(
         },
       },
       {
-        component: 'Select',
-        fieldName: 'supplyId',
-        label: '供应商',
-        rules: 'required',
-        componentProps: {
-          options: supplierOptions.value,
-          filterable: true,
-          clearable: true,
-          placeholder: '请选择供应商',
-        },
-      },
-      {
         component: 'Input',
         fieldName: 'approvalNumber',
         label: '批准文号',
@@ -1023,10 +1162,11 @@ const [Form, formApi] = useVbenForm(
         fieldName: 'doseUnitCode',
         label: '剂量单位',
         rules: 'required',
-        componentProps: {
-          options: unitCodeOptions.value,
+        componentProps: () => ({
+          options: doseUnitCodeOptions.value,
           filterable: true,
-        },
+          disabled: isMedicationCatalogFieldLocked(editabilityCode.value, 'doseUnitCode'),
+        }),
       },
       {
         component: 'InputNumber',
@@ -1053,7 +1193,7 @@ const [Form, formApi] = useVbenForm(
       {
         component: 'Checkbox',
         fieldName: 'injectFlag',
-        label: '注射药品',
+        label: '输液标记',
       },
       {
         component: 'Input',
@@ -1081,7 +1221,9 @@ const [Form, formApi] = useVbenForm(
       {
         component: 'InputNumber',
         fieldName: 'dose',
-        label: '单次剂量',
+        label: '默认单次剂量',
+        // 四列网格下强制换行，使默认/最大/最小剂量同一行
+        formItemClass: 'col-start-1',
         componentProps: {
           precision: 2,
           min: 0,
@@ -1093,9 +1235,14 @@ const [Form, formApi] = useVbenForm(
         label: '单次最大剂量',
       },
       {
+        component: 'Input',
+        fieldName: 'minUnit',
+        label: '单次最小剂量',
+      },
+      {
         component: 'Select',
         fieldName: 'dosageInstruction',
-        label: '用法说明',
+        label: '中药特殊煎法',
         componentProps: {
           options: dosageInstructionOptions.value,
           filterable: true,
@@ -1117,9 +1264,15 @@ const [Form, formApi] = useVbenForm(
         label: 'DDD值',
       },
       {
-        component: 'Input',
+        component: 'Select',
         fieldName: 'dddUnitCode',
         label: 'DDD单位',
+        componentProps: () => ({
+          options: dddUnitCodeOptions.value,
+          placeholder: '请选择DDD单位',
+          allowClear: true,
+          filterable: true,
+        }),
       },
       // ========== 库存信息 ==========
       {
@@ -1132,13 +1285,14 @@ const [Form, formApi] = useVbenForm(
           title: '库存与单位信息',
         },
       },
-      // 库存与单位：四列四行 — 列4 第1–2 行：门诊/住院拆分；第4 行第3–4 列：警戒线高/低
+      // 库存与单位：四列 — 列1 单位、列2 倍数聚拢；列3 价格；列4 门诊/住院拆分；
+      // 第4 行第3–4 列：警戒线；第5 行：追溯码单位+倍数（游离单位，仍靠左与其它单位对齐）
       {
         component: 'Select',
         fieldName: 'purchaseUnitCode',
         label: '采购单位',
         rules: 'required',
-        componentProps: buildInventoryUnitSelectProps('purchaseUnitCode'),
+        componentProps: () => buildInventoryUnitSelectProps('purchaseUnitCode'),
       },
       {
         component: 'InputNumber',
@@ -1150,7 +1304,7 @@ const [Form, formApi] = useVbenForm(
       {
         component: 'InputNumber',
         fieldName: 'purchasePrice',
-        label: '购入价（包装单位）',
+        label: '采购参考价（包装单位）',
         rules: isNewMedication.value ? 'required' : undefined,
         componentProps: {
           precision: 2,
@@ -1172,7 +1326,7 @@ const [Form, formApi] = useVbenForm(
         fieldName: 'stockUnitCode',
         label: '库存单位',
         rules: 'required',
-        componentProps: buildInventoryUnitSelectProps('stockUnitCode'),
+        componentProps: () => buildInventoryUnitSelectProps('stockUnitCode'),
       },
       {
         component: 'InputNumber',
@@ -1184,7 +1338,7 @@ const [Form, formApi] = useVbenForm(
       {
         component: 'InputNumber',
         fieldName: 'retailPrice',
-        label: '零售价（包装单位）',
+        label: '销售参考价（包装单位）',
         rules: isNewMedication.value ? 'required' : undefined,
         componentProps: {
           precision: 2,
@@ -1206,7 +1360,7 @@ const [Form, formApi] = useVbenForm(
         fieldName: 'packageUnitCode',
         label: '包装单位',
         rules: 'required',
-        componentProps: buildInventoryUnitSelectProps('packageUnitCode'),
+        componentProps: () => buildInventoryUnitSelectProps('packageUnitCode'),
       },
       {
         component: 'InputNumber',
@@ -1241,7 +1395,7 @@ const [Form, formApi] = useVbenForm(
         fieldName: 'splitUnitCode',
         label: '拆零单位',
         rules: 'required',
-        componentProps: buildInventoryUnitSelectProps('splitUnitCode'),
+        componentProps: () => buildInventoryUnitSelectProps('splitUnitCode'),
       },
       {
         component: 'Input',
@@ -1268,6 +1422,50 @@ const [Form, formApi] = useVbenForm(
         label: '警戒线最低值(库存单位)',
         componentProps: {
           min: 0,
+        },
+      },
+      {
+        component: 'Select',
+        fieldName: 'traceUnitCode',
+        label: '追溯码单位',
+        rules: 'required',
+        componentProps: () => ({
+          options: unitCodeOptions.value as UnitSelectOption[],
+          filterable: true,
+          placeholder: '请选择追溯码单位',
+          clearable: true,
+        }),
+      },
+      {
+        component: 'InputNumber',
+        fieldName: 'traceUnitRatio',
+        label: '追溯码/拆零倍数',
+        rules: 'required',
+        componentProps: () => ({
+          ...UNIT_RATIO_INPUT_PROPS,
+          placeholder: '1 追溯码单位 = 多少拆零',
+        }),
+      },
+      {
+        component: 'Input',
+        fieldName: '__inv_grid_pad_r5c3',
+        hideLabel: true,
+        formItemClass: 'inv-grid-pad !mb-0',
+        componentProps: {
+          disabled: true,
+          class: 'pointer-events-none opacity-0',
+          tabindex: -1,
+        },
+      },
+      {
+        component: 'Input',
+        fieldName: '__inv_grid_pad_r5c4',
+        hideLabel: true,
+        formItemClass: 'inv-grid-pad !mb-0',
+        componentProps: {
+          disabled: true,
+          class: 'pointer-events-none opacity-0',
+          tabindex: -1,
         },
       },
 
@@ -1406,11 +1604,12 @@ function buildUnitRatioInputProps(ratioField: InventoryRatioField) {
   };
 }
 
-/** 构造带 onChange 的单位下拉 props */
+/** 构造带 onChange 的单位下拉 props（采购/拆零/包装/库存统一 unit_code） */
 function buildInventoryUnitSelectProps(unitField: InventoryUnitField) {
   return {
-    options: unitCodeOptions.value,
+    options: unitCodeOptions.value as UnitSelectOption[],
     filterable: true,
+    disabled: isMedicationCatalogFieldLocked(editabilityCode.value, unitField),
     onChange: (value: unknown) => {
       void handleInventoryUnitChange(unitField, value);
     },
@@ -1425,6 +1624,21 @@ watch(
   () => props.modelValue,
   (open) => {
     keydownDisabled.value = !open;
+  },
+);
+
+watch(
+  () =>
+    [
+      props.modelValue,
+      doseUnitCodeOptions.value.length,
+      unitCodeOptions.value.length,
+      dddUnitCodeOptions.value.length,
+    ] as const,
+  ([open]) => {
+    if (open && formApi?.isMounted) {
+      updateFormOptions();
+    }
   },
 );
 
@@ -1445,14 +1659,6 @@ watch(
       initOptions.value = props.initOptionsSource;
     }
 
-    const needRefreshSupplierOptions =
-      sessionStorage.getItem('medicineCatalogRefreshSupplierOptions') === 'true';
-    if (needRefreshSupplierOptions) {
-      sessionStorage.removeItem('medicineCatalogRefreshSupplierOptions');
-      await loadInitOptions();
-      updateFormOptions();
-    }
-
     if (!initOptions.value || Object.keys(initOptions.value).length === 0) {
       const fromSession = tryLoadInitOptionsFromSession();
       if (!fromSession) {
@@ -1467,6 +1673,10 @@ watch(
       }
     } else {
       await loadDetailData();
+      // 快速翻页时以当前 props 为准，丢弃已过期的回写
+      if (props.medicationDefId !== medId) {
+        return;
+      }
       updateFormOptions();
       if (formData.value && Object.keys(formData.value).length > 0) {
         await applyDetailFormValues(formData.value as Record<string, unknown>);
@@ -1497,7 +1707,9 @@ watch(
         type="warning"
         :closable="false"
         show-icon
-        :title="editabilityMessage || '该药品已产生业务引用，分类/单位/拆零倍数/价格等字段不可修改'"
+        :title="
+          editabilityMessage || '该药品已产生业务引用，名称/分类/单位/拆零倍数/价格等字段不可修改'
+        "
       />
       <div
         ref="formAreaRef"
@@ -1511,6 +1723,9 @@ watch(
       <div class="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-5">
         <div class="flex flex-wrap gap-2">
           <ElButton type="success" plain @click="openCatalogPicker">从国家目录选择</ElButton>
+          <ElButton v-if="!isNewMedication" type="primary" plain @click="handleViewLotPrices">
+            价格
+          </ElButton>
           <ElButton
             v-if="canUpload3301"
             type="warning"
@@ -1530,7 +1745,15 @@ watch(
             撤销医保对照(3302)
           </ElButton>
         </div>
-        <div class="flex gap-2">
+        <div class="flex flex-wrap gap-2">
+          <template v-if="showRecordNav">
+            <ElButton :disabled="!canNavigatePrev || recordNavBusy" @click="handleNavigatePrev">
+              上一个
+            </ElButton>
+            <ElButton :disabled="!canNavigateNext || recordNavBusy" @click="handleNavigateNext">
+              下一个
+            </ElButton>
+          </template>
           <ElButton type="primary" :loading="loading" @click="handleSubmit">保存</ElButton>
           <ElButton @click="closeDialog">取消</ElButton>
         </div>
@@ -1541,9 +1764,14 @@ watch(
       :context="pickerContext"
       @confirm="applyCatalogSelection"
     />
+    <CatalogLotPriceDialog
+      v-model="lotPriceOpen"
+      catalog-type="medication"
+      :item-id="medicationDefId"
+      :item-name="String(formData?.name ?? '')"
+    />
   </ElDialog>
 </template>
-
 <style scoped>
 [data-ep-keydown-disabled='true'] * {
   pointer-events: none;

@@ -14,6 +14,8 @@ export interface PatientTraceAssignmentQueueRowDto {
   patientName?: string;
   bedName?: string;
   pendingGroupCount?: number;
+  /** 已分配组数（改码队列用） */
+  assignedGroupCount?: number;
 }
 
 /** 分页查询待追溯分配患者队列响应 */
@@ -98,4 +100,51 @@ export interface SavePatientTraceAssignmentRequest {
 /** 保存患者追溯码分配响应 */
 export interface SavePatientTraceAssignmentResponse {
   savedGroupCount?: number;
+}
+
+/** 分页查询「已分配、可改码」患者队列 */
+export interface PagePatientsAssignedTraceAssignmentRequest extends PageParams {
+  keyword?: string;
+}
+
+/** 已分配可改码患者队列行 */
+export interface PatientAssignedTraceQueueRowDto {
+  encounterId?: string;
+  encounterBusNo?: string;
+  patientId?: string;
+  patientName?: string;
+  bedName?: string;
+  /** 已分配组数（可更正） */
+  assignedGroupCount?: number;
+}
+
+/** 分页查询已分配可改码患者队列响应 */
+export interface PagePatientsAssignedTraceAssignmentResponse {
+  pageNo?: number;
+  pageSize?: number;
+  totalCount?: number;
+  content?: PatientAssignedTraceQueueRowDto[];
+}
+
+/** 单组更正追溯码载荷 */
+export interface RevisePatientTraceAssignmentGroupSubmitDto {
+  groupKey: string;
+  dispenseIds: string[];
+  /** 更正前追溯码（后端对账用） */
+  previousTraceNo?: string;
+  /** 更正后追溯码 */
+  traceNo: string;
+}
+
+/** 更正患者已分配追溯码（分配错误改码） */
+export interface RevisePatientTraceAssignmentRequest {
+  encounterId: string;
+  /** 更正原因（可选） */
+  reviseReason?: string;
+  groups: RevisePatientTraceAssignmentGroupSubmitDto[];
+}
+
+/** 更正患者已分配追溯码响应 */
+export interface RevisePatientTraceAssignmentResponse {
+  revisedGroupCount?: number;
 }

@@ -12,6 +12,7 @@ import { ElButton, ElDatePicker, ElInput } from 'element-plus';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
 import PatientCard from '#/components/outpatient/patient-card.vue';
+import { useSingleDayDatePickerShortcuts } from '#/composables/use-single-day-date-picker-shortcuts';
 
 import { toPatientCardPatient } from './nurse-patient-map';
 
@@ -35,6 +36,14 @@ interface Props {
 
 const keyword = defineModel<string>('keyword', { required: true });
 const queueDate = defineModel<string>('queueDate', { required: true });
+
+const { dateShortcuts, singleDayPopperClass } = useSingleDayDatePickerShortcuts(
+  () => queueDate.value,
+  (ymd) => {
+    queueDate.value = ymd;
+    emit('queueDateChange', ymd);
+  },
+);
 
 /** 通知父级重新拉取队列（由父级控制 loading） */
 const handleRefresh = () => {
@@ -67,6 +76,8 @@ function onPatientCardSelect(card: PatientCardPatient) {
           format="YYYY-MM-DD"
           value-format="YYYY-MM-DD"
           placeholder="请选择日期"
+          :shortcuts="dateShortcuts"
+          :popper-class="singleDayPopperClass"
           @change="emit('queueDateChange', $event as string | undefined)"
         />
         <ElButton type="default" class="!px-2" @click="handleRefresh">

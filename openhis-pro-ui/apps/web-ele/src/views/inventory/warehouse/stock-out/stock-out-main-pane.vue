@@ -69,6 +69,7 @@ import {
   isSpecificInventoryLocationId,
   requireSpecificInventoryLocationId,
   resolveFirstRealLocationIdFromInitOptions,
+  resolveLoginPractitionerLabelFromUserInfo,
   resolveSpecificInventoryLocationId,
   warnInventoryLocationRequired,
 } from '#/utils/inventory/inventory-workbench-list';
@@ -78,6 +79,8 @@ import {
   validateInventoryHeadFormFields,
 } from '#/utils/inventory/inventory-doc-head-form-validation';
 import { withInvDocLinkPickerEnrichedColumns } from '#/utils/inventory/inv-doc-link-picker-display';
+import { buildInvDocumentTitle, printInvDocument } from '#/utils/print/print-inv-document';
+import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import {
   convertInboundQtyBetweenBandKinds,
@@ -103,6 +106,7 @@ import {
   inventoryPickStringField,
 } from '#/utils/inventory/inventory-product-pick-list';
 import {
+  applyInventoryRowCategoryCode,
   isPresentItemId,
   scheduleInventoryProductPickFocus,
   applyHydratedInventoryDetailQtyToRow,
@@ -124,6 +128,8 @@ interface StockOutboundPreviewRow {
   itemId?: number | string;
   /** 选品库存行 id（下拉行唯一键），不落库 */
   inventoryItemId?: number | string;
+  /** 药品分类码；中药=4 时单价三位展示 */
+  categoryCode?: string;
   spec: string;
   manufacturer: string;
   /** 与后端 {@code StockOutLineDto.itemQuantity} 一致 */
@@ -386,12 +392,17 @@ const headerStatusText = computed(() => {
 });
 
 const docActionFlags = computed(() => {
-  return buildStockOutDocActionFlags({
-    hasPersistedBusNo: Boolean(headerBusNo.value),
-    isDraft: isNewDraft.value,
-    status: detailStatusEnum.value,
-    busy: saving.value,
-  });
+  const hasPersistedBusNo = Boolean(headerBusNo.value);
+  return {
+    ...buildStockOutDocActionFlags({
+      hasPersistedBusNo,
+      isDraft: isNewDraft.value,
+      status: detailStatusEnum.value,
+      busy: saving.value,
+    }),
+    // 已落库单据才可打印
+    printDisabled: saving.value || !hasPersistedBusNo,
+  };
 });
 
 const canEditOriginalBusNo = computed(() => documentEditable.value && isNewDraft.value);
@@ -460,6 +471,7 @@ function syncRowFromStockOutboundMedicinePick(
       : (invId as number | string);
   row.spec = inventoryPickStringField(pick, 'specification');
   row.manufacturer = inventoryPickStringField(pick, 'manufacturer');
+  applyInventoryRowCategoryCode(row as unknown as Record<string, unknown>, pick);
   const bands = normalizeInboundProductUnitBands(pick.unitBands);
   row.unitBands = bands.length > 0 ? bands : undefined;
   if (bands.length > 0) {
@@ -530,7 +542,9 @@ function stockOutDetailLineManufacturer(ln: StockOutDetailLineDto): string {
 
 function formatStockOutDetailTotalAmount(total: unknown): string {
   if (total === undefined || total === null || total === '') return '';
-  return formatMoneyDisplay(total);
+  const n = Number(total);
+  if (!Number.isFinite(n)) return String(total).trim();
+  return formatMoneyDisplay(n);
 }
 
 function mapStockOutDetailLineToGrid(
@@ -1146,6 +1160,111 @@ async function handleReject() {
   }
 }
 
+/** 解析下拉选项展示名 */
+function resolvePrintOptionLabel(options: ApiOptionItem[] | undefined, value: unknown): string {
+  const key = String(value ?? '').trim();
+  if (!key) return '';
+  const hit = options?.find((item) => String(item.value ?? '') === key);
+  return String(hit?.label ?? '').trim();
+}
+
+/** 解析源药库展示名 */
+function resolvePrintWarehouseName(value: unknown): string {
+  const key = String(value ?? '').trim();
+  if (!key) return '';
+  const hit = (props.warehouseOptions ?? []).find((row) => String(row.locationId ?? '') === key);
+  return String(hit?.displayName ?? hit?.locationId ?? '').trim();
+}
+
+/** 解析目的药房展示名 */
+function resolvePrintPharmacyName(value: unknown): string {
+  const key = String(value ?? '').trim();
+  if (!key) return '';
+  const hit = (props.pharmacyOptions ?? []).find((row) => String(row.locationId ?? '') === key);
+  return String(hit?.displayName ?? hit?.locationId ?? '').trim();
+}
+
+/** 明细行项目名称（选品单元格） */
+function resolveStockOutPrintProductName(row: StockOutboundPreviewRow): string {
+  const pick = row.medicinePick;
+  if (pick && typeof pick === 'object' && 'name' in pick) {
+    return String((pick as { name?: string }).name ?? '').trim();
+  }
+  return '';
+}
+
+/** 明细行当前计量单位展示文案 */
+function resolveStockOutPrintUnitLabel(row: StockOutboundPreviewRow): string {
+  const kind = String(row.selectedBandKind ?? '').trim();
+  const byKind = row.unitList?.find((item) => String(item.value ?? '') === kind);
+  if (byKind) {
+    return String(byKind.label ?? byKind.value_dictText ?? '').trim();
+  }
+  const code = String(row.unitCode ?? '').trim();
+  const byCode = row.unitList?.find((item) => String(item.value ?? '') === code);
+  return String(byCode?.label ?? byCode?.value_dictText ?? code).trim();
+}
+
+/** 打印出库单（计价流转模版） */
+async function handlePrint() {
+  const busNo = String(headerBusNo.value ?? '').trim();
+  if (!busNo) {
+    ElMessage.warning('请先保存单据后再打印');
+    return;
+  }
+  const productRows = collectGridRows().filter((row) => isPresentItemId(row.itemId));
+  if (productRows.length === 0) {
+    ElMessage.warning('没有可打印的明细');
+    return;
+  }
+
+  const sourceWarehouseName = resolvePrintWarehouseName(detailSourceLocationId.value);
+  const purposePharmacyName = resolvePrintPharmacyName(purposeLocationId.value);
+  const itemTypeText = resolvePrintOptionLabel(props.itemTableTypeOptions, headItemTableType.value);
+  const practitionerName = resolveLoginPractitionerLabelFromUserInfo(
+    userStore.userInfo as null | Record<string, unknown>,
+  );
+  const documentTitle = buildInvDocumentTitle(sourceWarehouseName, '出库单');
+  const applyTimeText = String(headApplyTime.value ?? props.applyTime ?? '')
+    .trim()
+    .replace('T', ' ');
+
+  // 按当前网格展示值组装 PrintData（效期字段出库行无值则留空）
+  const lineRows = productRows.map((row) => ({
+    productName: resolveStockOutPrintProductName(row),
+    specText: String(row.spec ?? '').trim(),
+    manufacturerText: String(row.manufacturer ?? '').trim(),
+    qty: row.itemQuantity,
+    unitLabel: resolveStockOutPrintUnitLabel(row),
+    unitPrice: row.price,
+    amount: row.totalPrice,
+    lotNumber: String(row.lotNumber ?? '').trim(),
+    expiryText: '',
+  }));
+
+  await printInvDocument({
+    family: 'movement',
+    source: {
+      hospitalName: resolvePrintHospitalName(),
+      documentTitle,
+      docNo: busNo,
+      applyTimeText,
+      itemTypeText,
+      sourceLocationText: sourceWarehouseName,
+      supplierText: '',
+      linkDocText: String(originalBusNo.value ?? '').trim(),
+      destLocationText: purposePharmacyName,
+      invoiceNoText: '',
+      practitionerName,
+      lineRows,
+      preparedByName: practitionerName,
+      approvedByName: '',
+    },
+    bizRef: { busNo, docKind: 'stock-out' },
+    jobName: documentTitle,
+  });
+}
+
 const batchDialogVisible = ref(false);
 
 /** 打开批量选品弹窗（与单行选品共用 sourceLocationId / productTableName） */
@@ -1189,11 +1308,8 @@ async function handleBatchConfirm(products: Record<string, unknown>[]) {
   ElMessage.success(`已添加 ${products.length} 条药品，请补充数量等信息`);
 }
 
-async function openLinkQlDialog() {
-  if (!canEditOriginalBusNo.value) {
-    ElMessage.warning('仅新建单据时可关联请领单，或请先点「新增」');
-    return;
-  }
+/** 打开可关联请领单弹窗（无需已在草稿；未在草稿时选用会 emit createFromRequisition） */
+function openUpstreamPicker() {
   linkQlQueryParams.value = {
     pageNo: 1,
     pageSize: 20,
@@ -1203,6 +1319,15 @@ async function openLinkQlDialog() {
   linkQlRecords.value = [];
   linkQlTotal.value = 0;
   linkQlVisible.value = true;
+}
+
+/** 单头「从请领单选择/更换」：仅新建草稿可改关联 */
+function openLinkQlDialog() {
+  if (!canEditOriginalBusNo.value) {
+    ElMessage.warning('仅新建单据时可关联请领单');
+    return;
+  }
+  openUpstreamPicker();
 }
 
 /** 关联请领单弹窗：查询 */
@@ -1307,7 +1432,7 @@ async function applyLinkablePharmacyRequisitionToDraft(row: StockOutListRowDto) 
 
 defineExpose({
   applyLinkablePharmacyRequisitionToDraft,
-  openLinkQlDialog,
+  openUpstreamPicker,
 });
 
 async function addItem() {
@@ -1401,6 +1526,7 @@ watch(
           <InvDocActions
             v-bind="docActionFlags"
             @approve="handleApprove"
+            @print="handlePrint"
             @reject="handleReject"
             @remove-doc="handleRemoveDoc"
             @save="handleSaveDoc"

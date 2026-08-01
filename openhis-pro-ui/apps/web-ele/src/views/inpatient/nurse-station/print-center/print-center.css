@@ -1,0 +1,214 @@
+/**
+ * 住院护士站 · 打印中心样式。
+ * 独立 CSS：避免院点构建下 SFC scoped style 生产丢失。
+ */
+
+.print-center-page {
+  gap: 8px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 6px 8px;
+}
+
+.print-center-page .inpatient-patient-info-header {
+  flex-shrink: 0;
+  margin-bottom: 0;
+}
+
+.print-center-shell {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* —— 单据类型（单层浅色胶囊） —— */
+.print-center-docs {
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px;
+}
+
+.print-center-docs__item {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  color: var(--el-text-color-regular);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 13px;
+  gap: 5px;
+  height: 30px;
+  line-height: 1;
+  padding: 0 12px;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.print-center-docs__item:hover {
+  background: var(--el-color-primary-light-9);
+  border-color: var(--el-color-primary-light-7);
+  color: var(--el-color-primary);
+}
+
+.print-center-docs__item.is-active {
+  background: var(--el-color-primary-light-9);
+  border-color: var(--el-color-primary-light-5);
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
+
+.print-center-docs__label {
+  white-space: nowrap;
+}
+
+.print-center-docs__badge {
+  background: var(--el-color-danger);
+  border-radius: 8px;
+  color: var(--el-color-white);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  min-width: 14px;
+  padding: 1px 4px;
+  text-align: center;
+}
+
+/* —— 条件工具栏 —— */
+.print-center-filters {
+  align-items: center;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  justify-content: space-between;
+  padding: 8px 12px;
+}
+
+.print-center-filters__left {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.print-center-filters__hint {
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+}
+
+.print-center-filters__desc {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.print-center-date {
+  max-width: 260px;
+}
+
+.print-center-date-single {
+  max-width: 150px;
+}
+
+/* —— 主区表格 —— */
+.print-center-body {
+  min-height: 0;
+}
+
+.print-center-body .station-tri-pane-layout {
+  height: 100%;
+  min-height: 0;
+}
+
+/* 去掉 TriPane 额外深底与多余 padding，避免套娃空白 */
+.print-center-body .station-tri-pane-layout > .bg-background-deep {
+  background: transparent;
+}
+
+.print-center-body .station-tri-pane-layout__grid {
+  gap: 0;
+  padding: 0;
+}
+
+.print-center-body .station-tri-pane-layout__grid > section {
+  margin: 0;
+  border-radius: 0;
+}
+
+.print-center-panel {
+  height: 100%;
+  min-height: 0;
+  padding: 10px 12px 6px;
+}
+
+.print-center-panel__head {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.print-center-panel__scope {
+  flex-shrink: 0;
+}
+
+.print-center-panel__count {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.print-center-panel__empty {
+  min-height: 160px;
+}
+
+.print-center-panel__table {
+  min-height: 0;
+}
+
+.print-center-table .el-table__header th {
+  background: var(--el-fill-color-light) !important;
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
+
+.print-center-table .el-table__row td {
+  color: var(--el-text-color-primary);
+}
+
+/* —— 底栏 —— */
+.print-center-footer {
+  height: 100%;
+  min-width: 0;
+  padding: 0 4px;
+}
+
+.print-center-footer__meta {
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+}
+
+.print-center-footer__meta strong {
+  color: var(--el-color-primary);
+  font-weight: 600;
+  margin: 0 2px;
+}
+
+.print-center-footer__sep {
+  color: var(--el-text-color-placeholder);
+}
+
+.print-center-copies {
+  width: 88px;
+}
+
+.print-center-footer__print {
+  min-width: 96px;
+}

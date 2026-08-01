@@ -22,8 +22,6 @@ interface Props {
   itemTableOptions: ApiOptionItem[];
   medicationCategoryOptions: ApiOptionItem[];
   deviceCategoryOptions: ApiOptionItem[];
-  /** 当前科室已绑定的物品 ID，用于去重 */
-  boundItemDefinitionIds: string[];
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -32,7 +30,6 @@ const props = withDefaults(defineProps<Props>(), {
   itemTableOptions: () => [],
   medicationCategoryOptions: () => [],
   deviceCategoryOptions: () => [],
-  boundItemDefinitionIds: () => [],
 });
 
 export interface AddItemRuleConfirmPayload {
@@ -66,10 +63,8 @@ const distributionCategoryOptions = computed(() =>
   ),
 );
 
-/** 可选物品（排除已绑定） */
-const selectableItemOptions = computed(() =>
-  itemOptions.value.filter((item) => !props.boundItemDefinitionIds.includes(String(item.value))),
-);
+/** 目录物品选项（同物品可再配不同药房，不做已绑去重） */
+const selectableItemOptions = computed(() => itemOptions.value);
 
 /** 按类型与类别加载物品目录 */
 async function loadItemOptions() {
@@ -150,7 +145,7 @@ function handleConfirm() {
     selectedItemIds.value.includes(String(item.value)),
   );
   if (!picked.length) {
-    ElMessage.warning('所选物品均已绑定，请重新选择');
+    ElMessage.warning('请至少选择一个具体物品');
     return;
   }
   emit('confirm', {
