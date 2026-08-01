@@ -43,7 +43,8 @@ public class SupplierDomainService {
 
 
     /**
-     * 注册供应商。
+     * 注册供应商：采番生成 busNo，缺省类型为 {@link SupplierType#SUPPLIER}，
+     * 拼音/五笔由名称自动生成；落库前迁移为启用态（ACTIVE），并发布注册与启用事件。
      *
      * @param command 注册命令
      * @return 供应商主键
@@ -88,21 +89,25 @@ public class SupplierDomainService {
         supplier.setEmail(trimToNull(command.getEmail()));
         supplier.setBankName(trimToNull(command.getBankName()));
         supplier.setBankAccount(trimToNull(command.getBankAccount()));
-        if (command.getOrgId() != null) {
-            supplier.setOrgId(command.getOrgId());
-        } else {
-            // 未指定机构时落 0，表示全院/未挂靠机构供应商。
-            supplier.setOrgId(0L);
+        // 所属机构必填：由应用层在缺省时回填登录医院，领域层拒绝 orgId 为空或占位 0
+        if (command.getOrgId() == null || command.getOrgId() == 0L) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLIER_INVALID_ARGUMENT, "供应商所属机构不能为空");
         }
+        supplier.setOrgId(command.getOrgId());
         supplier.setDisplayOrder(command.getDisplayOrder());
         supplier.setNote(trimToNull(command.getNote()));
+        // 先落草稿态以满足状态机前置，再立即启用：新增供应商可直接参与采购等业务，无需再点启用
         supplier.initDraftStatus();
         supplier.assertRequiredFields();
+        supplier.assertActivatable();
+        supplier.activate();
 
         // 持久化
         Supplier saved = repository.save(supplier);
         // 发布事件：供应商已注册
         domainEventPublisher.publish(new SupplierRegisteredEvent(saved.getId(), saved.getBusNo(), saved.getName(), saved.getTypeEnum(), command.getOperatorId()));
+        // 发布事件：注册即启用，与批量启用路径共用 SupplierActivatedEvent
+        domainEventPublisher.publish(new SupplierActivatedEvent(saved.getId(), saved.getBusNo(), command.getOperatorId()));
         return saved.getId();
     }
 

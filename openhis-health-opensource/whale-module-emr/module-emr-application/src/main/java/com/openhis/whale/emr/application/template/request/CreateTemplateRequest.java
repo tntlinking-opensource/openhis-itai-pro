@@ -22,10 +22,10 @@ public class CreateTemplateRequest {
     private String documentTypeCode;
     /** PERSONAL | DEPARTMENT | HOSPITAL */
     private String scopeLevel;
-    /** 适用科室/机构 id */
-    private Long organizationId;
-    /** 个人模板所有者（医师）id */
-    private Long ownerPractitionerId;
+    /** 适用科室/机构 id（雪花，字符串传参） */
+    private String organizationId;
+    /** 个人模板所有者（医师）id（雪花，字符串传参） */
+    private String ownerPractitionerId;
     /** AMB | IMP | OBSENC */
     private String encounterClassCode;
     /** 就诊类型枚举（扩展） */
@@ -35,7 +35,8 @@ public class CreateTemplateRequest {
     /** 是否启用 */
     private Boolean enabled = true;
     /**
-     * 医生站「存为模版」：强制个人模板、所有者取当前登录医务人员。
+     * 医生站「存为模版」：仅允许 PERSONAL / DEPARTMENT；
+     * 所有者与科室取当前登录上下文（避免前端雪花精度问题）。
      */
     private Boolean fromDoctorStation;
 }

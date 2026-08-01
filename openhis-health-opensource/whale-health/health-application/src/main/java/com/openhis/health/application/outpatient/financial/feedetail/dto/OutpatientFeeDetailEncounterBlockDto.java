@@ -37,6 +37,22 @@ public class OutpatientFeeDetailEncounterBlockDto {
     @Schema(description = "挂号科室")
     private String registrationDepartmentName;
 
+    /** 费用性质合同业务号（优先账户 → fin_contract.bus_no）。 */
+    @Schema(description = "费用性质合同业务号")
+    private String feeNatureContractNo;
+
+    /** 费用性质展示名（合同名称）。 */
+    @Schema(description = "费用性质")
+    private String feeNatureDisplay;
+
+    /** 医保医疗类别 code（主诊断优先）。 */
+    @Schema(description = "医疗类别 code")
+    private String medType;
+
+    /** 医保医疗类别展示文案。 */
+    @Schema(description = "医疗类别")
+    private String medTypeDisplay;
+
     /** 就诊日期展示（yyyy-MM-dd）。 */
     @Schema(description = "就诊日期")
     private String encounterDate;

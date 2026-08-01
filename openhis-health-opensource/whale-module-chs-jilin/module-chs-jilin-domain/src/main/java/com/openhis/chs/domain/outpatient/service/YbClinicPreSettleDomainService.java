@@ -4,6 +4,7 @@
  */
 package com.openhis.chs.domain.outpatient.service;
 
+import static com.openhis.whale.core.application.util.StringUtils.isEmpty;
 import static com.openhis.whale.core.application.util.StringUtils.isNotEmpty;
 
 import com.openhis.chs.domain.share.constants.ChsErrorCodes;
@@ -100,9 +101,27 @@ public class YbClinicPreSettleDomainService {
      * @return 预结算快照
      */
     public YbClinicPreSettle requireByChrgBchno(String chrgBchno, Long tenantId) {
+        YbClinicPreSettle row = findByChrgBchno(chrgBchno, tenantId);
+        if (row == null) {
+            throw new BusinessException(ChsErrorCodes.PLATFORM_FAILED, "未找到预结算快照");
+        }
+        return row;
+    }
+
+    /**
+     * 按收费批次号查找预结算快照。
+     *
+     * @param chrgBchno 收费批次号
+     * @param tenantId  租户 ID
+     * @return 预结算快照；不存在时返回 {@code null}
+     */
+    public YbClinicPreSettle findByChrgBchno(String chrgBchno, Long tenantId) {
+        if (isEmpty(chrgBchno) || tenantId == null) {
+            return null;
+        }
         return clinicPreSettleRepository.findFirstByChrgBchnoAndTenantIdAndIsDeletedFalse(
             chrgBchno.trim(), tenantId)
-            .orElseThrow(() -> new BusinessException(ChsErrorCodes.PLATFORM_FAILED, "未找到预结算快照"));
+            .orElse(null);
     }
 
     /**

@@ -19,6 +19,11 @@ import java.util.List;
 public class CreateExecutionRuleCommand {
 
     /**
+     * 开立科室标识。
+     */
+    private Long organizationId;
+
+    /**
      * 活动类别编码。
      */
     private String activityCategoryCode;

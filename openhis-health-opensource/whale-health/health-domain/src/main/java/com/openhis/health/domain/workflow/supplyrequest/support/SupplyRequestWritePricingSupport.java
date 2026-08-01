@@ -9,11 +9,13 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreateDeptIssueCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreateDeptIssueReturnCommand;
+import com.openhis.health.domain.workflow.supplyrequest.command.CreateDeptPurchaseRequestCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreateGainLossCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreateInboundReceiptCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreatePurchaseOrderCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreateRequisitionCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreateReturnCommand;
+import com.openhis.health.domain.workflow.supplyrequest.command.CreateReturnToSupplierCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreateStockOutCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreateStocktakeCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreateTransferCommand;
@@ -55,6 +57,23 @@ public class SupplyRequestWritePricingSupport {
                 continue;
             }
             applyNegotiatedPurchaseOrderLine(item);
+        }
+    }
+
+    /**
+     * 科室采购申请：与订货同构的协商/参考单价刻度与行总额。
+     *
+     * @param command 领域写命令
+     */
+    public void applyDeptPurchaseRequestCommand(CreateDeptPurchaseRequestCommand command) {
+        if (command == null) {
+            return;
+        }
+        for (CreateDeptPurchaseRequestCommand.CreateDeptPurchaseRequestItemCommand item : command.resolveItems()) {
+            if (item == null) {
+                continue;
+            }
+            applyNegotiatedDeptPurchaseRequestLine(item);
         }
     }
 
@@ -236,6 +255,36 @@ public class SupplyRequestWritePricingSupport {
     }
 
     /**
+     * 药库退供应商：优先沿用命令行已带的进货落库单价（BR-PRICE-SRC-001），缺省再解析批号/目录进价。
+     *
+     * @param command 领域写命令
+     */
+    public void applyReturnToSupplierCommand(CreateReturnToSupplierCommand command) {
+        if (command == null) {
+            return;
+        }
+        for (CreateReturnToSupplierCommand.CreateReturnToSupplierItemCommand item : command.resolveItems()) {
+            if (item == null) {
+                continue;
+            }
+            BigDecimal unit = item.getPrice();
+            if (unit == null) {
+                // 应用层未从进货行回填单价时，回落批号/目录权威进价（与退库同构）
+                unit = resolveLotOrCatalogUnitPrice(
+                    item.getItemTable(), item.getItemId(), item.getLotNumber());
+            }
+            applyAuthoritativeUnitAndLineTotal(
+                item.getItemTable(),
+                item.getItemId(),
+                unit,
+                item.getItemQuantity(),
+                item::setPrice,
+                item::setTotalPrice
+            );
+        }
+    }
+
+    /**
      * 损益：同盘点口径。
      *
      * @param command 领域写命令
@@ -277,6 +326,25 @@ public class SupplyRequestWritePricingSupport {
      * @param item 订货明细命令行
      */
     private void applyNegotiatedPurchaseOrderLine(CreatePurchaseOrderCommand.CreatePurchaseOrderItemCommand item) {
+        BigDecimal scaledUnit = MonetaryAmountSupport.scaleCalc(item.getPrice());
+        item.setPrice(scaledUnit);
+        item.setTotalPrice(this.warehouseLineAmountSupport.computeWarehouseSplitLineTotal(
+            item.getItemTable(),
+            item.getItemId(),
+            item.getUnitCode(),
+            item.getItemQuantity(),
+            scaledUnit
+        ));
+    }
+
+    /**
+     * 科室采购申请行：协商/参考单价刻度后重算行总额（拆零数量 + 包装价）。
+     *
+     * @param item 申请命令行
+     */
+    private void applyNegotiatedDeptPurchaseRequestLine(
+        CreateDeptPurchaseRequestCommand.CreateDeptPurchaseRequestItemCommand item) {
+
         BigDecimal scaledUnit = MonetaryAmountSupport.scaleCalc(item.getPrice());
         item.setPrice(scaledUnit);
         item.setTotalPrice(this.warehouseLineAmountSupport.computeWarehouseSplitLineTotal(

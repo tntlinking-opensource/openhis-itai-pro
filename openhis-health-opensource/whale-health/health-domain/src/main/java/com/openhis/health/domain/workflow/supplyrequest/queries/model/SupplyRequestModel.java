@@ -39,6 +39,12 @@ public class SupplyRequestModel {
     private String purposeTypeEnum;
     /** 目标位置标识。 */
     private Long purposeLocationId;
+    /**
+     * 领用科室（行政 Organization 主键；库列 {@code consuming_organization_id}）。
+     *
+     * <p>{@code DEPT_ISSUE}/{@code DEPT_ISSUE_RETURN} 落库；其它类型通常为空。历史单可空。</p>
+     */
+    private Long consumingOrganizationId;
     /** 供应商。 */
     private Long supplierId;
     /** 物品来源表。 */
@@ -85,6 +91,10 @@ public class SupplyRequestModel {
     private String traceNo;
     /** 行备注（库列 remake）。 */
     private String remake;
+    /**
+     * 采购发票号（库列 {@code invoice_no}；同号多行共享，供进销存 {@code purc_invo_no}；未填默认 {@code 0}）。
+     */
+    private String invoiceNo;
     /** 来源业务单号。 */
     private String originalBusNo;
     /** 汇总编号。 */

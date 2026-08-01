@@ -34,7 +34,7 @@ import java.util.Optional;
 /**
  * 【1101】人员信息获取 Invoker：读卡查询参保人基本信息、险种与账户余额。
  *
- * <p>流程：当日缓存命中直接返回 → 否则 gateway 出站 → 结果写入 {@code yb_person_cache}。
+ * <p>流程：当日缓存命中直接返回（除非 forceRefresh）→ 否则 gateway 出站 → 结果写入 {@code yb_person_cache}。
  * 社保卡（凭证类型 03）解密失败时自动回落身份证（02）重试。</p>
  *
  * <p>实现 domain {@link Op1101QueryInvoker}，供挂号读卡、待遇校验等场景共用。</p>
@@ -47,7 +47,10 @@ public class Op1101Invoker implements Op1101QueryInvoker {
     private final YbPersonCacheDomainService personCacheDomainService;
 
     /**
-     * 读卡获取人员信息；当日缓存未过期时直接返回。
+     * 读卡获取人员信息。
+     *
+     * <p>默认命中当日缓存直接返回；{@link YbPersonQueryCommand#isForceRefresh()} 为 true 时跳过缓存出站，
+     * 以保证个账余额等字段与平台一致。</p>
      *
      * @param command contractBusNo、就诊凭证（mdtrtCertType/No）、cardSn、证件号及 operatorId
      * @return 人员编号、险种、参保地、账户余额及参保/身份明细列表
@@ -55,9 +58,11 @@ public class Op1101Invoker implements Op1101QueryInvoker {
     public YbPersonInfoResult invoke(YbPersonQueryCommand command) {
         validatePersonQuery(command);
         Long tenantId = resolveTenantId(command.getTenantId());
-        Optional<YbPersonCache> cached = personCacheDomainService.findValidPersonCache(command, tenantId);
-        if (cached.isPresent()) {
-            return Op1101ResultMapper.fromCache(cached.get());
+        if (!command.isForceRefresh()) {
+            Optional<YbPersonCache> cached = personCacheDomainService.findValidPersonCache(command, tenantId);
+            if (cached.isPresent()) {
+                return Op1101ResultMapper.fromCache(cached.get());
+            }
         }
 
         InvokeContext invokeContext = InvokeContext.builder()

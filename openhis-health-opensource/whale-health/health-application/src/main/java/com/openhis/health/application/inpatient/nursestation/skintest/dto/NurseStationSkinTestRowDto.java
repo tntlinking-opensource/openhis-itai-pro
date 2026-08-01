@@ -44,13 +44,13 @@ public class NurseStationSkinTestRowDto {
     /** 已有过敏记录主键（可空）。 */
     private Long allergyRecordId;
 
-    /** nurse-pricing 皮试检查服务申请主键（可空）。 */
+    /** doctor-prescription 皮试检查服务申请主键（一行一 companion SR）。 */
     private Long skinTestServiceRequestId;
 
-    /** 已选批号（可空）。 */
+    /** 已选批号（可空；保存时必填且须 ∈ 发放候选）。 */
     private String lotNumber;
 
-    /** 批号候选列表。 */
+    /** 批号候选列表（取自 MedicationDispense 去重 lot_number）。 */
     private List<NurseStationSkinTestLotOptionDto> lotNumberOptions;
 
     /** 记录时间（可空）。 */
@@ -95,6 +95,11 @@ public class NurseStationSkinTestRowDto {
     /** 反应描述。 */
     private String description;
 
-    /** 是否已补费划价（存在 nurse-pricing 皮试检查 SR 且费用行）。 */
-    private Boolean pricedFlag;
+    /** 皮试检查是否已执行（净剩 COMPLETED Procedure；可登记结果）。 */
+    private Boolean executedFlag;
+
+    /**
+     * 已登记只读标记（BR-IP-STK-003）：{@code allergyRecordId} 非空时为 true，前端禁改保存。
+     */
+    private Boolean readOnlyFlag;
 }

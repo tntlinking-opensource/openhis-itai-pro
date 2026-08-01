@@ -4,13 +4,18 @@
  */
 package com.openhis.whale.einvoice.boss.bridge.writeoff.context;
 
+import com.openhis.health.domain.administration.invoice.command.CancelInvoiceCommand;
 import com.openhis.health.domain.administration.invoice.command.IssueElectronicInvoiceCommand;
+import com.openhis.health.domain.administration.invoice.entity.Invoice;
 import com.openhis.health.domain.administration.invoice.service.InvoiceDomainService;
+import com.openhis.health.domain.administration.invoice.service.InvoiceQueryService;
+import com.openhis.health.domain.share.enums.InvoiceStatus;
 import com.openhis.whale.einvoice.boss.domain.issue.result.BossInvoiceIssueResult;
 import com.openhis.whale.einvoice.boss.domain.writeoff.loader.EinvoiceInvoiceWritebackLoader;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 /**
  * {@link com.openhis.whale.einvoice.boss.domain.writeoff.loader.EinvoiceInvoiceWritebackLoader} 的 bridge 实现。
@@ -24,6 +29,7 @@ import org.springframework.stereotype.Component;
 public class EinvoiceInvoiceWritebackLoaderImpl implements EinvoiceInvoiceWritebackLoader {
 
     private final InvoiceDomainService invoiceDomainService;
+    private final InvoiceQueryService invoiceQueryService;
 
     /**
      * {@inheritDoc}
@@ -42,5 +48,27 @@ public class EinvoiceInvoiceWritebackLoaderImpl implements EinvoiceInvoiceWriteb
         command.setOperatorId(operatorId);
         // Cmd：经 health 领域服务落库并发布 InvoiceIssuedEvent
         invoiceDomainService.issueElectronicInvoice(command);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void writeoffLocalInvoice(Long invoiceId, String reason, Long operatorId) {
+        if (invoiceId == null) {
+            return;
+        }
+        Invoice invoice = invoiceQueryService.findOptionalInvoiceEntityById(invoiceId).orElse(null);
+        if (invoice == null) {
+            return;
+        }
+        if (InvoiceStatus.CANCELLED.getCode().equals(invoice.getStatusEnum())) {
+            return;
+        }
+        CancelInvoiceCommand command = new CancelInvoiceCommand();
+        command.setInvoiceId(invoiceId);
+        command.setReason(StringUtils.hasText(reason) ? reason.trim() : "手动冲红");
+        command.setOperatorId(operatorId);
+        invoiceDomainService.writeoffInvoiceAndCreateRedRecord(command);
     }
 }

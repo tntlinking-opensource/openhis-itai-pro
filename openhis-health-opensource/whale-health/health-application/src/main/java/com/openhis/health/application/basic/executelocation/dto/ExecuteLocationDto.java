@@ -12,7 +12,7 @@ import lombok.Data;
 import java.time.LocalTime;
 
 /**
- * 执行科室下某诊疗活动定义的执行规则行（WH-EXE001 右侧表格）。
+ * 开立科室下某诊疗活动定义的执行规则行（WH-EXE001 右侧表格）。
  */
 @Data
 @Schema(description = "执行科室规则行")
@@ -23,7 +23,16 @@ public class ExecuteLocationDto {
     /** 规则主键。 */
     private Long id;
 
-    @Schema(description = "诊疗活动定义主键；为空表示该诊疗大类下的默认规则")
+    /** 开立科室标识。 */
+    @Schema(description = "开立科室标识")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long organizationId;
+
+    /** 开立科室名称。 */
+    @Schema(description = "开立科室名称")
+    private String organizationName;
+
+    @Schema(description = "诊疗活动定义主键；为空表示该开立科室下该诊疗大类的默认规则")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long activityDefinitionId;
 

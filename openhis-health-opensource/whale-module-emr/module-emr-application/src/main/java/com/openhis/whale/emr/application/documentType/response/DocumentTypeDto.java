@@ -27,6 +27,8 @@ public class DocumentTypeDto {
     private Boolean isEnabled;
     /** 排序序号 */
     private Integer sortOrder;
+    /** 文书分类：OUTPATIENT / INPATIENT / NOTICE / SURGERY / OTHER */
+    private String categoryCode;
     /** 创建时间 */
     private LocalDateTime createdAt;
     /** 最后更新时间 */

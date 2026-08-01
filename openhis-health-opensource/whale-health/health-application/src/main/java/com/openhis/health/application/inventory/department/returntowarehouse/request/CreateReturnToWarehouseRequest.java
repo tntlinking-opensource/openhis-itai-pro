@@ -31,6 +31,8 @@ public class CreateReturnToWarehouseRequest {
     private Integer categoryEnum;
     /** 供应商主键。 */
     private Long supplierId;
+    /** 经手人主键。 */
+    private Long practitionerId;
     /** 明细行列表。 */
     private List<ReturnToWarehouseLineDto> lines;
 }

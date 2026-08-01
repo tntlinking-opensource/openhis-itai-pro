@@ -59,8 +59,3 @@ ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
     deleted_at = NULL,
     deleted_by = NULL,
     updated_at = EXCLUDED.created_at;
-
--- 银联收单提升为一级目录（系统不支持三级菜单）
-UPDATE whale_menus SET parent_id = NULL, sort_order = 15, is_hidden = FALSE, is_enabled = TRUE,
-    is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL, updated_at = NOW()
-WHERE id = '321000000000000100' AND code = 'UnionPayBpcHub' AND is_deleted = FALSE;

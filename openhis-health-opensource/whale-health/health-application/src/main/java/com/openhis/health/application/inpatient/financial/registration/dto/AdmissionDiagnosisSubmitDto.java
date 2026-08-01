@@ -20,10 +20,10 @@ import lombok.experimental.Accessors;
 public class AdmissionDiagnosisSubmitDto
     implements AdmissionDiagnosisSubmitGate.AdmissionDiagnosisRowView {
 
-    /** 已有诊断事实 ID（业务字段）。 */
-    @Schema(description = "已有诊断事实 ID")
+    /** 已有就诊诊断行主键。 */
+    @Schema(description = "已有就诊诊断行主键")
     @JsonSerialize(using = ToStringSerializer.class)
-    private Long conditionId;
+    private Long encounterDiagnosisId;
 
     /** 诊断定义 ID。 */
     @Schema(description = "诊断定义 ID（新开时必填）")

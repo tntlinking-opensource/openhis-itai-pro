@@ -32,6 +32,9 @@ import java.util.List;
 
 /**
  * BR-IP-TCM-008：住院护士执行中药方时按付数生成/刷新代煎 {@code ORDER_EXECUTE} 待结算费用。
+ *
+ * <p>代煎费 {@code occurrence} 落计划槽位 {@code planTime}（与发药 plannedDispenseTime / 主账单同逻辑锚点）；
+ * 护士改时分只写 Procedure {@code recorded_time}，不改本费用 occurrence。</p>
  */
 @Component
 @RequiredArgsConstructor

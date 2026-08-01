@@ -120,8 +120,3 @@ ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
     deleted_at = NULL,
     deleted_by = NULL,
     updated_at = EXCLUDED.created_at;
-
--- 电子发票提升为一级目录（系统不支持三级菜单）
-UPDATE whale_menus SET parent_id = NULL, sort_order = 14, is_hidden = FALSE, is_enabled = TRUE,
-    is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL, updated_at = NOW()
-WHERE id = '320900000000000100' AND code = 'EinvoiceBossHub' AND is_deleted = FALSE;

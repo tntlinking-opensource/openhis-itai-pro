@@ -9,14 +9,21 @@ import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQuery
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
+import com.openhis.health.domain.administration.product.service.ProductDefinitionQueryService;
 import com.openhis.health.domain.share.constants.OutpatientChargeConstants;
+import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.AccountTypeCode;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
+import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
+import com.openhis.whale.einvoice.boss.bridge.issue.support.BossQuantityUnitDisplayResolver;
 import com.openhis.whale.einvoice.boss.domain.issue.result.BossChargeLineSnapshot;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -31,6 +38,8 @@ public class EinvoiceChargeItemContextLoader {
 
     private final ChargeItemQueryService chargeItemQueryService;
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
+    private final ProductDefinitionQueryService productDefinitionQueryService;
+    private final BossQuantityUnitDisplayResolver quantityUnitDisplayResolver;
 
     /**
      * 按收费项主键列表加载明细行快照。
@@ -52,7 +61,11 @@ public class EinvoiceChargeItemContextLoader {
                 .filter(Objects::nonNull)
                 .distinct()
                 .collect(Collectors.toList());
-        Map<Long, ChargeItemDefinition> definitionMap = chargeItemDefinitionQueryService.findAllDefinitionsByIdIn(definitionIds);
+        Map<Long, ChargeItemDefinition> definitionMap =
+                chargeItemDefinitionQueryService.findAllDefinitionsByIdIn(definitionIds);
+        Map<String, ProductDefinitionDisplayDto> productMap = loadProductMap(rows);
+        // 票面单位须为中文 display；quantity_unit 存术语 code（如 6/branch/bottle）
+        Map<String, String> unitLabelByCode = quantityUnitDisplayResolver.warmLabelMap();
         for (ChargeItem row : rows) {
             BossChargeLineSnapshot snapshot = new BossChargeLineSnapshot();
             snapshot.setChargeItemId(row.getId());
@@ -60,16 +73,104 @@ public class EinvoiceChargeItemContextLoader {
             ChargeItemDefinition definition = row.getDefinitionId() != null
                     ? definitionMap.get(row.getDefinitionId()) : null;
             snapshot.setInternalCode(resolveInternalCode(registrationFee, row, definition));
-            if (definition != null && StringUtils.hasText(definition.getChargeName())) {
-                snapshot.setItemName(definition.getChargeName());
-            }
+            snapshot.setItemName(resolveItemName(row, definition, productMap));
             snapshot.setAmount(row.getTotalPrice());
             snapshot.setQuantity(row.getQuantityValue());
-            snapshot.setUnit(row.getQuantityUnit());
+            snapshot.setUnit(quantityUnitDisplayResolver.toDisplay(row.getQuantityUnit(), unitLabelByCode));
             snapshot.setUnitPrice(row.getUnitPrice());
             lines.add(snapshot);
         }
         return lines;
+    }
+
+    /**
+     * 具体项目名：产品目录名优先，其次价目 {@code chargeName}（对齐 areahis listDetail.name）。
+     */
+    private String resolveItemName(
+            ChargeItem row,
+            ChargeItemDefinition definition,
+            Map<String, ProductDefinitionDisplayDto> productMap) {
+        ProductDefinitionDisplayDto product = resolveProduct(row, productMap);
+        if (product != null) {
+            String productName = firstNonBlank(product.getProductName(), product.getMerchandiseName());
+            if (StringUtils.hasText(productName)) {
+                return productName.trim();
+            }
+        }
+        if (definition != null && StringUtils.hasText(definition.getChargeName())) {
+            return definition.getChargeName().trim();
+        }
+        return null;
+    }
+
+    private static String firstNonBlank(String first, String second) {
+        if (StringUtils.hasText(first)) {
+            return first.trim();
+        }
+        if (StringUtils.hasText(second)) {
+            return second.trim();
+        }
+        return null;
+    }
+
+    private Map<String, ProductDefinitionDisplayDto> loadProductMap(List<ChargeItem> rows) {
+        LinkedHashSet<String> dedupeKeys = new LinkedHashSet<>();
+        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
+        for (ChargeItem row : rows) {
+            ProductDefinitionBatchLookup lookup = buildProductLookup(row);
+            if (lookup == null) {
+                continue;
+            }
+            String key = ProductDefinitionKeyUtil.buildCompositeKey(
+                    lookup.getProductTableName(), lookup.getProductDefinitionId());
+            if (key == null || !dedupeKeys.add(key)) {
+                continue;
+            }
+            lookups.add(lookup);
+        }
+        if (lookups.isEmpty()) {
+            return Map.of();
+        }
+        return productDefinitionQueryService.batchLoadByKeys(lookups);
+    }
+
+    private ProductDefinitionDisplayDto resolveProduct(
+            ChargeItem row, Map<String, ProductDefinitionDisplayDto> productMap) {
+        ProductDefinitionBatchLookup lookup = buildProductLookup(row);
+        if (lookup == null || productMap == null || productMap.isEmpty()) {
+            return null;
+        }
+        String key = ProductDefinitionKeyUtil.buildCompositeKey(
+                lookup.getProductTableName(), lookup.getProductDefinitionId());
+        if (key == null) {
+            return null;
+        }
+        return productMap.get(key);
+    }
+
+    /**
+     * 收费行 → 产品 lookup：优先 product_*；挂号费回落 healthcare_service。
+     */
+    private static ProductDefinitionBatchLookup buildProductLookup(ChargeItem chargeItem) {
+        if (chargeItem == null) {
+            return null;
+        }
+        if (StringUtils.hasText(chargeItem.getProductTable()) && chargeItem.getProductId() != null) {
+            ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+            lookup.setProductTableName(chargeItem.getProductTable().trim());
+            lookup.setProductDefinitionId(chargeItem.getProductId());
+            return lookup;
+        }
+        if (!StringUtils.hasText(chargeItem.getServiceTable()) || chargeItem.getServiceId() == null) {
+            return null;
+        }
+        if (!TableNameConstants.ADM_HEALTHCARE_SERVICE.equals(chargeItem.getServiceTable().trim())) {
+            return null;
+        }
+        ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+        lookup.setProductTableName(TableNameConstants.ADM_HEALTHCARE_SERVICE);
+        lookup.setProductDefinitionId(chargeItem.getServiceId());
+        return lookup;
     }
 
     /**

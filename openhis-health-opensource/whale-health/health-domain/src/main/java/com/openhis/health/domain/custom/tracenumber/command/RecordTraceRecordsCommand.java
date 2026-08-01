@@ -46,6 +46,11 @@ public class RecordTraceRecordsCommand {
         /** 追溯码单位（建主档/进货时）。 */
         private String traceUnitCode;
 
+        /**
+         * 建主档时写入的追溯→拆零倍数快照；须 &gt; 0。
+         */
+        private BigDecimal traceUnitRatio;
+
         /** 记录类别：HOSPITAL_IO / INTERNAL_TRANSFER。 */
         private String recordCategoryEnum;
 

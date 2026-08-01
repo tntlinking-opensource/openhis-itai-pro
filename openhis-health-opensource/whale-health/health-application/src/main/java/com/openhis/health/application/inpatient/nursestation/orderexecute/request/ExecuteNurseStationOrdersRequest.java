@@ -19,8 +19,9 @@ import java.util.List;
 /**
  * 批量执行医嘱计划点请求（IF-IP-EXE-02）。
  *
- * <p>每条 item 须含 orderId、orderType、planTime、actualTime；bindItems 为列表勾选的绑定项子集。
- * 服务端同事务处理，库存 Gate 仅药嘱，绑定耗材不参与 Gate/扣减。</p>
+ * <p>每条 item 须含 orderId、orderType、planTime、accountId；{@code actualTime} 可空（空则服务端默认=planTime，
+ * 仅写入 Procedure {@code recorded_time} 供展示；发药/账单逻辑时刻仍用 planTime，见 BR-IP-EXE-023/030）。
+ * {@code bindItems} 为列表勾选的绑定项子集。服务端同事务处理，库存 Gate 仅药嘱，绑定耗材不参与 Gate/扣减。</p>
  */
 @Data
 @Accessors(chain = true)

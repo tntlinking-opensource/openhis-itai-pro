@@ -35,6 +35,10 @@ public class BossChargeLineSnapshot {
     /** 单价。 */
     private BigDecimal unitPrice;
 
-    /** 收费项目名称（health 定义展示名，对照缺失时用于 chargeName）。 */
+    /**
+     * 具体项目名称（产品目录名优先，其次价目 chargeName）。
+     * <p>写入 {@code einv_boss_line.item_name} → 博思 {@code listDetail.name}；
+     * 对照缺失时也可回落为 {@code chargeName}。</p>
+     */
     private String itemName;
 }

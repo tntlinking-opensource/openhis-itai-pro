@@ -131,6 +131,23 @@ public interface LocationRepository extends JpaRepository<Location, Long>, JpaSp
     List<Location> findAllByBusNoStartingWith(String busNoPrefix);
 
     /**
+     * 判断位置层级编码是否已被占用。
+     *
+     * @param busNo 层级编码
+     * @return 已存在为 true
+     */
+    boolean existsByBusNo(String busNo);
+
+    /**
+     * 判断层级编码是否被其他位置占用（排除自身）。
+     *
+     * @param busNo 层级编码
+     * @param id    排除的位置主键
+     * @return 其他位置已占用为 true
+     */
+    boolean existsByBusNoAndIdNot(String busNo, Long id);
+
+    /**
      * 按主键与床位形态加悲观写锁加载（分床/换床占床防 TOCTOU）。
      *
      * @param id       床位主键

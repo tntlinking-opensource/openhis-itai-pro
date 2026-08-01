@@ -31,11 +31,11 @@ public enum EncounterStatus implements EnumInterface {
     DISCHARGED(0L, "DISCHARGED", "完诊", "", 7L),
 /** 已完成（EncounterStatus，编码 {@code COMPLETED}）。 */
     COMPLETED(0L, "COMPLETED", "已完成", "", 8L),
-/** 已取消（EncounterStatus，编码 {@code CANCELLED}）。 */
+/** 已取消（EncounterStatus，编码 {@code CANCELLED}；门诊退号终态，挂号窗展示「退号」）。 */
     CANCELLED(0L, "CANCELLED", "已取消", "", 9L),
 /** 待出院结算（EncounterStatus，编码 {@code PENDING}）。 */
     PENDING(0L, "PENDING", "待出院结算", "", 10L),
-/** 错误录入（EncounterStatus，编码 {@code ENTERED_IN_ERROR}）。 */
+/** 错误录入（EncounterStatus，编码 {@code ENTERED_IN_ERROR}；门诊未收费取消终态）。 */
     ENTERED_IN_ERROR(0L, "ENTERED_IN_ERROR", "错误录入", "", 11L);
 
     private final Long codeSystemId;

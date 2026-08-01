@@ -18,7 +18,9 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 
 /**
- * 执行科室规则聚合根。
+ * 执行科室规则聚合根：锚定开立科室，描述某诊疗在哪个执行科室（及可选地点）、何时段生效。
+ *
+ * <p>与取药科室（ServiceLocationTemplate）并列：本表回答「诊疗在哪做」，取药表回答「药/材往哪发」。</p>
  */
 @Getter
 @Setter
@@ -27,7 +29,13 @@ import java.time.LocalTime;
 public class ActivityExecutionLocation extends BaseAuditedEntity {
 
     /**
-     * 诊疗定义标识；为空表示该诊疗大类下的默认规则。
+     * 开立科室标识（Organization）；配置页左树与医生站就诊科室同口径。
+     */
+    @Column(name = "organization_id", nullable = false)
+    private Long organizationId;
+
+    /**
+     * 诊疗定义标识；为空表示该开立科室下该诊疗大类的默认规则。
      */
     @Column(name = "activity_definition_id")
     private Long activityDefinitionId;
@@ -39,7 +47,7 @@ public class ActivityExecutionLocation extends BaseAuditedEntity {
     private String activityCategoryCode;
 
     /**
-     * 执行科室标识。
+     * 执行科室标识（承担执行责任的 Organization）。
      */
     @Column(name = "execution_org_id", nullable = false)
     private Long executionOrgId;
@@ -81,9 +89,12 @@ public class ActivityExecutionLocation extends BaseAuditedEntity {
     private String remark;
 
     /**
-     * 断言新增/更新必填字段。
+     * 断言新增/更新必填字段（开立科室、执行科室、活动类别、优先级）。
      */
     public void assertRequiredFields() {
+        if (this.organizationId == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "开立科室标识不能为空");
+        }
         if (StringUtils.isEmpty(this.activityCategoryCode)) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "活动类别编码不能为空");
         }
@@ -96,7 +107,7 @@ public class ActivityExecutionLocation extends BaseAuditedEntity {
     }
 
     /**
-     * 断言规则锚点有效：诊疗大类必填；诊疗项目可选，为空时表示该大类下的默认规则。
+     * 断言规则锚点有效：诊疗大类必填；诊疗项目可选，为空时表示该开立科室下该大类默认规则。
      */
     public void assertAnchorPresent() {
         if (StringUtils.isEmpty(this.activityCategoryCode)) {

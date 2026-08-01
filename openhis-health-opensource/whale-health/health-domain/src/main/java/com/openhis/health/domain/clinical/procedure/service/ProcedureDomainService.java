@@ -130,9 +130,11 @@ public class ProcedureDomainService {
     }
 
     /**
-     * 完成执行记录；当 {@code operatorId} 非空时写入 {@code recorder_id} 与 {@code recorded_time}（DM-CLN-004 §6.1.4）。
+     * 完成执行记录；当 {@code operatorId} 非空时写入 {@code recorder_id}；
+     * {@code recorded_time} 优先取命令入参，否则仅在实体尚未写入时回落当前时刻（DM-CLN-004 §6.1.4）。
      *
-     * @param cmd 完成命令；{@code operatorId} 为 {@code adm_practitioner.id}，供工作量统计闭区间筛选
+     * @param cmd 完成命令；{@code operatorId} 为 {@code adm_practitioner.id}，供工作量统计闭区间筛选；
+     *            {@code recordedTime} 为护士认定实际执行时刻（可空）
      */
     public void completeProcedureRecord(CompleteProcedureRecordCommand cmd) {
         Procedure entity = this.loadProcedure(cmd.getProcedureId());
@@ -142,7 +144,10 @@ public class ProcedureDomainService {
         if (cmd.getOperatorId() != null) {
             entity.setRecorderId(cmd.getOperatorId());
         }
-        if (entity.getRecordedTime() == null) {
+        // 住院执行等调用方可显式传入 recordedTime（actualTime）；未传则保持实体已有值，再回落 now
+        if (cmd.getRecordedTime() != null) {
+            entity.setRecordedTime(cmd.getRecordedTime());
+        } else if (entity.getRecordedTime() == null) {
             entity.setRecordedTime(LocalDateTime.now());
         }
         // Assert：BR-PRO-004 完成动作必须具备结果语义（结果/报告至少一项）。
@@ -159,6 +164,9 @@ public class ProcedureDomainService {
     /**
      * 取消执行记录。
      *
+     * <p>当 {@code operatorId} 非空时写入 {@code recorder_id}（列表终态槽位拼操作人，BR-IP-EXE-031）；
+     * {@code recorded_time} 为空时补写当前时刻。</p>
+     *
      * @param cmd 取消命令
      * @throws BusinessException 执行记录不存在或状态不允许取消时
      */
@@ -167,6 +175,13 @@ public class ProcedureDomainService {
         Procedure entity = this.loadProcedure(cmd.getProcedureId());
         entity.setStatusReasonText(cmd.getStatusReasonText());
         entity.setRefundId(cmd.getRefundId());
+        // 取消操作人写入 recorder，供取消执行 Tab「时刻+姓名」展示
+        if (cmd.getOperatorId() != null) {
+            entity.setRecorderId(cmd.getOperatorId());
+        }
+        if (entity.getRecordedTime() == null) {
+            entity.setRecordedTime(LocalDateTime.now());
+        }
         // Assert：BR-PRO-005 取消动作必须可追溯（状态原因与链路标识）。
         entity.cancel();
         // 持久化

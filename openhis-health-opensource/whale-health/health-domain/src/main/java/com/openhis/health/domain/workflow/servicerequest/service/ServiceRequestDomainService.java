@@ -4,6 +4,7 @@
  */
 package com.openhis.health.domain.workflow.servicerequest.service;
 
+import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
 import com.openhis.health.domain.share.constants.InpatientAutoRollConstants;
 import com.openhis.health.domain.share.constants.ChargeItemDmConstants;
@@ -53,6 +54,7 @@ import com.openhis.health.domain.workflow.servicerequest.command.RemoveFromNurse
 import com.openhis.health.domain.workflow.servicerequest.command.RemoveServiceRequestDraftCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.SignServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.CancelStopServiceRequestCommand;
+import com.openhis.health.domain.workflow.servicerequest.command.ChangeServiceRequestBusinessTimeCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.StopServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.UpsertNursingOrderCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.VerifyServiceRequestCommand;
@@ -95,6 +97,8 @@ public class ServiceRequestDomainService {
     private final IDomainEventPublisher domainEventPublisher;
     /** 服务申请 busNo：业务流水按日递增，前缀 {@link AggregateTypeConstants#SERVICE_REQUEST}。 */
     private final BusinessSequenceService businessSequenceService;
+    /** 加载候选：经 Encounter QS 断言绑定 ids（B.6.4）。 */
+    private final EncounterQueryService encounterQueryService;
 
     /**
      * 创建服务申请草稿：分配 busNo，可选持久化明细行，发布草稿创建事件。
@@ -128,6 +132,10 @@ public class ServiceRequestDomainService {
             request.setRequesterId(command.getOperatorId());
         }
         request.setRemark(item.getNote());
+        // 组装：嘱托正文落库 entrust_content（与 remark/套餐 JSON 分立；BR-IP-ORD-028）
+        if (item.getEntrustContent() != null) {
+            request.setEntrustContent(item.getEntrustContent());
+        }
         // Pre：诊疗草稿须落库生成来源；医生站未传时回落医生开立。
         String generateSourceCode = item.getGenerateSourceEnum();
         if (generateSourceCode == null) {
@@ -137,13 +145,12 @@ public class ServiceRequestDomainService {
         if (item.getSortNumber() != null) {
             request.setSortNumber(item.getSortNumber());
         }
-        // 医生站：可选绑定诊断定义，与药品/耗材医嘱口径一致（单列 condition_definition_id）。
-        if (item.getConditionDefinitionId() != null) {
-            request.setConditionDefinitionId(item.getConditionDefinitionId());
-        }
-        // Pre：绑定就诊诊断行，供收费/医保按 encounter_diagnosis_id 解析医疗类别。
-        if (item.getEncounterDiagnosisId() != null) {
-            request.setEncounterDiagnosisId(item.getEncounterDiagnosisId());
+        // 医生站：可选绑定就诊诊断有序 ids 串，与药品/耗材医嘱口径一致（列 encounter_diagnosis_ids）。
+        if (item.getEncounterDiagnosisIds() != null) {
+            // 前置校验：属本就诊、同族、主诊首位
+            encounterQueryService.assertBindableEncounterDiagnosisIds(
+                item.getEncounterId(), item.getEncounterDiagnosisIds());
+            request.setEncounterDiagnosisIds(item.getEncounterDiagnosisIds());
         }
         if (item.getOrgId() != null) {
             request.setOrgId(item.getOrgId());
@@ -164,6 +171,8 @@ public class ServiceRequestDomainService {
         }
         request.initDraft();
         request.setIsDeleted(Boolean.FALSE);
+        // Pre：开立时间仅首次建草稿写入；签发写 req_authored_time，二者不得混用。
+        request.setReqOpenedTime(LocalDateTime.now());
         request.setBusNo(businessSequenceService.getSeqByDay(AggregateTypeConstants.SERVICE_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
         // 前置：护理级别须长期且同就诊唯一有效（BR-SRQ-020；医生站 BR-IP-ORD-026）
         this.assertNursingLevelOrderRules(request, null, true);
@@ -322,17 +331,14 @@ public class ServiceRequestDomainService {
             }
             request.setOccurrenceEndTime(item.getOccurrenceEndTime());
         }
-        // 诊断定义绑定与药品医嘱一致，仅当命令显式传入且值变化时落库并记入变更摘要。
-        if (item.getConditionDefinitionId() != null
-            && !Objects.equals(item.getConditionDefinitionId(), request.getConditionDefinitionId())) {
-            request.setConditionDefinitionId(item.getConditionDefinitionId());
-            changedFields.add(FieldNameConstants.CONDITION_DEFINITION_ID);
-        }
-        // 就诊诊断绑定与药品医嘱一致，仅当命令显式传入且值变化时落库并记入变更摘要。
-        if (item.getEncounterDiagnosisId() != null
-            && !Objects.equals(item.getEncounterDiagnosisId(), request.getEncounterDiagnosisId())) {
-            request.setEncounterDiagnosisId(item.getEncounterDiagnosisId());
-            changedFields.add(FieldNameConstants.ENCOUNTER_DIAGNOSIS_ID);
+        // 就诊诊断有序 ids 串 绑定与药品医嘱一致，仅当命令显式传入且值变化时落库并记入变更摘要。
+        if (item.getEncounterDiagnosisIds() != null
+            && !Objects.equals(item.getEncounterDiagnosisIds(), request.getEncounterDiagnosisIds())) {
+            // 前置校验：改绑时同口径门禁
+            encounterQueryService.assertBindableEncounterDiagnosisIds(
+                request.getEncounterId(), item.getEncounterDiagnosisIds());
+            request.setEncounterDiagnosisIds(item.getEncounterDiagnosisIds());
+            changedFields.add(FieldNameConstants.ENCOUNTER_DIAGNOSIS_IDS);
         }
 
         // 前置：护理级别须长期（修改自身时不重复校验并发）
@@ -427,11 +433,11 @@ public class ServiceRequestDomainService {
         this.assertNursingLevelOrderRules(request, request.getId(), true);
         request.assertSignable();
 
-        // 签发时间未传则默认为当前系统时间。
+        // 签发时间写 req_authored_time（不覆盖 req_opened_time）；未传则取当前时刻。
         if (item.getSignTime() == null) {
-            request.setAuthoredTime(LocalDateTime.now());
+            request.setReqAuthoredTime(LocalDateTime.now());
         } else {
-            request.setAuthoredTime(item.getSignTime());
+            request.setReqAuthoredTime(item.getSignTime());
         }
         request.draftToActive();
         serviceRequestRepository.save(request);
@@ -445,8 +451,10 @@ public class ServiceRequestDomainService {
     /**
      * 签退：生效申请退回草稿，发布撤回事件。
      *
+     * <p>已是草稿时幂等返回（同批勾选皮试药+companion 时，药联动签退后显式目标再触达不再报错）。</p>
+     *
      * @param command 批次内一条，须含 id
-     * @throws BusinessException 不可撤回时
+     * @throws BusinessException 不可撤回时（非草稿且非已发送）
      */
     public void withdrawSignedServiceRequest(WithdrawSignedServiceRequestCommand command) {
         List<WithdrawSignedServiceRequestCommand.WithdrawSignedServiceRequestItemCommand> items = command.resolveItems();
@@ -461,6 +469,10 @@ public class ServiceRequestDomainService {
         }
 
         ServiceRequest request = this.requireServiceRequest(item.getId());
+        // 幂等：已退回草稿视为签退完成，避免皮试联动+同批显式勾选二次签退
+        if (RequestStatus.DRAFT.getCode().equals(request.getStatusEnum())) {
+            return;
+        }
         request.assertWithdrawable();
 
         request.activeToDraft();
@@ -560,7 +572,7 @@ public class ServiceRequestDomainService {
     }
 
     /**
-     * 停嘱：写入结束时间并置为已停止，发布停止事件。
+     * 停嘱：写入停嘱时间并置为已停止，发布停止事件。
      *
      * @param command 批次内一条，须含 id；stopTime 可空则取当前时间
      * @throws BusinessException 不可停嘱时
@@ -580,21 +592,21 @@ public class ServiceRequestDomainService {
         ServiceRequest request = this.requireServiceRequest(item.getId());
         request.assertStoppable();
 
-        // 停止时间未传则默认为当前系统时间。
+        // 停嘱时间写 stop_time（不占用计划结束 occurrence_end_time）；未传则取当前时刻。
         LocalDateTime stopTime;
         if (item.getStopTime() == null) {
             stopTime = LocalDateTime.now();
         } else {
             stopTime = item.getStopTime();
         }
-        request.setOccurrenceEndTime(stopTime);
-        request.toStopped();
+        // 状态迁移：STOPPED + stop_time + stopper_id（批次命令操作人）。
+        request.toStopped(stopTime, command.getOperatorId());
         serviceRequestRepository.save(request);
         domainEventPublisher.publish(new ServiceRequestStoppedEvent(request.getId(), stopTime, request.getStatusEnum()));
     }
 
     /**
-     * 取消停嘱：恢复长期诊疗申请为已校对或已发送，并清空结束时间（IF-IP-DOR-25 / BR-SRQ-016a）。
+     * 取消停嘱：恢复长期诊疗申请为已校对或已发送，并清空停嘱时间与停嘱人（IF-IP-DOR-25 / BR-SRQ-016a）。
      *
      * @param command 取消停嘱命令，须含 id
      * @throws BusinessException 命令为空、非长期或非 STOPPED 时
@@ -607,11 +619,29 @@ public class ServiceRequestDomainService {
         ServiceRequest request = this.requireServiceRequest(command.getId());
         // 前置校验：须为长期且当前 STOPPED。
         request.assertCancelStopAllowed();
-        // 状态迁移：performer_check_id 非空→VERIFIED，否则→ACTIVE，并清空 occurrence_end_time。
+        // 状态迁移：performer_check_id 非空→VERIFIED，否则→ACTIVE，并清空 stop_time/stopper_id。
         request.fromStopped();
         // 持久化：先落库再发事件，避免投影读到旧态。
         serviceRequestRepository.save(request);
         domainEventPublisher.publish(new ServiceRequestStopCancelledEvent(request.getId(), request.getStatusEnum()));
+    }
+
+    /**
+     * 改服务申请开立或停嘱时间；禁止改签发；不改开立人/停嘱人（IF-IP-DOR-26 / BR-SRQ-016b）。
+     *
+     * @param command 改时命令（id、timeKind、newTime）
+     * @throws BusinessException 种类非法、非已停嘱改停嘱、新时间为空时
+     */
+    public void changeServiceRequestBusinessTime(ChangeServiceRequestBusinessTimeCommand command) {
+        if (command == null || command.getId() == null) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "改业务时间时 id 不能为空");
+        }
+        // 加载：按主键取诊疗申请聚合根。
+        ServiceRequest request = this.requireServiceRequest(command.getId());
+        // 状态迁移：仅写开立或停嘱列。
+        request.changeBusinessTime(command.getTimeKind(), command.getNewTime());
+        // 持久化：列更新后供读侧刷新。
+        serviceRequestRepository.save(request);
     }
 
     /**
@@ -664,8 +694,15 @@ public class ServiceRequestDomainService {
         }
         ServiceRequest source = this.requireServiceRequest(item.getSourceRequestId());
         this.assertServiceRequestRefundableForNegativeOrder(source);
-        // Pre：同一原单仅允许一条未完成负向退诊疗申请。
-        this.assertNoOpenRefundServiceOrder(source.getId());
+        // Pre：原单本身已是负向退诊疗单时拒绝（不可对退单再退，EX-DRA-303）。
+        if (source.getRefundServiceId() != null) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "已申请退费，请勿重复申请");
+        }
+        // Pre：已有未完结负向单则幂等返回；本批多收费行共锚同一诊疗申请时不误拦。
+        Long existingOpenId = this.findOpenRefundServiceOrderId(source.getId());
+        if (existingOpenId != null) {
+            return existingOpenId;
+        }
         ServiceRequest refund = this.buildRefundServiceRequestFromSource(source, item.getRefundQuantity(), item.getReason());
         refund.setBusNo(businessSequenceService.getSeqByDay(
             AggregateTypeConstants.SERVICE_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
@@ -723,6 +760,8 @@ public class ServiceRequestDomainService {
         request.setReasonText(item.getReasonText());
         request.initDraft();
         request.setIsDeleted(Boolean.FALSE);
+        // Pre：转科草稿开立时刻；签发后再写 req_authored_time。
+        request.setReqOpenedTime(LocalDateTime.now());
         request.setBusNo(businessSequenceService.getSeqByDay(AggregateTypeConstants.SERVICE_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
         request.setQuantity(BigDecimal.ONE);
         request.setUnitCode(ChargeItemDmConstants.DEFAULT_QUANTITY_UNIT);
@@ -771,6 +810,8 @@ public class ServiceRequestDomainService {
         request.setOccurrenceStartTime(item.getDischargeTime());
         request.initDraft();
         request.setIsDeleted(Boolean.FALSE);
+        // Pre：出院草稿开立时刻；签发后再写 req_authored_time。
+        request.setReqOpenedTime(LocalDateTime.now());
         request.setBusNo(businessSequenceService.getSeqByDay(AggregateTypeConstants.SERVICE_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
         request.setQuantity(BigDecimal.ONE);
         request.setUnitCode(ChargeItemDmConstants.DEFAULT_QUANTITY_UNIT);
@@ -809,9 +850,9 @@ public class ServiceRequestDomainService {
         List<ServiceRequest> existed = serviceRequestRepository.findByEncounterIdAndCategoryEnumIn(
             item.getEncounterId(), List.of(String.valueOf(item.getCategoryEnum())));
         for (ServiceRequest request : existed) {
-            // 业务条件分支：见相邻判断的业务后果
+            // 换级：旧护理级别停嘱，写入 stop_time/stopper_id 后迁 STOPPED。
             if (request.getStatusEnum() != null && !RequestStatus.STOPPED.getCode().equals(request.getStatusEnum())) {
-                request.toStopped();
+                request.toStopped(LocalDateTime.now(), command.getOperatorId());
             }
         }
         // 持久化：子表/集合非空时须先落库再发事件
@@ -826,6 +867,8 @@ public class ServiceRequestDomainService {
         request.setContentJson(item.getContent());
         request.initDraft();
         request.setIsDeleted(Boolean.FALSE);
+        // Pre：护理换级新建草稿的开立时刻。
+        request.setReqOpenedTime(LocalDateTime.now());
         request.setBusNo(businessSequenceService.getSeqByDay(AggregateTypeConstants.SERVICE_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
         request.setQuantity(BigDecimal.ONE);
         request.setUnitCode("EA");
@@ -878,8 +921,21 @@ public class ServiceRequestDomainService {
             AggregateTypeConstants.SERVICE_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
         request.initCompleted();
         request.setIsDeleted(Boolean.FALSE);
-        request.setQuantity(BigDecimal.ONE);
-        request.setUnitCode("EA");
+        // 执行派生直建完成态：开立与签发同落当前时刻。
+        LocalDateTime executedAt = LocalDateTime.now();
+        request.setReqOpenedTime(executedAt);
+        request.setReqAuthoredTime(executedAt);
+        // 数量/单位：绑定诊疗写路径回传护士手改量；未传时回落 1 / EA（兼容旧调用方）
+        BigDecimal executedQuantity = item.getQuantity();
+        if (executedQuantity == null || executedQuantity.compareTo(BigDecimal.ZERO) <= 0) {
+            executedQuantity = BigDecimal.ONE;
+        }
+        request.setQuantity(executedQuantity);
+        String executedUnitCode = item.getUnitCode();
+        if (StringUtils.isEmpty(executedUnitCode)) {
+            executedUnitCode = "EA";
+        }
+        request.setUnitCode(executedUnitCode);
         request.setCategoryEnum("21");
         request.setTherapyEnum("2");
         request.assertExecutionDerivedCreatable();
@@ -985,10 +1041,14 @@ public class ServiceRequestDomainService {
                 AggregateTypeConstants.SERVICE_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
             request.setCategoryEnum("21");
             request.setTherapyEnum(TherapyType.TEMPORARY.getCode());
+            // 护士划价直建已校对：开立与签发同落当前时刻。
+            LocalDateTime pricedAt = LocalDateTime.now();
+            request.setReqOpenedTime(pricedAt);
+            request.setReqAuthoredTime(pricedAt);
             // 护士划价不经校对 Tab，创建即 VERIFIED，避免计入待校对统计（BR-IP-NUR-004）。
             request.initVerified();
             request.setPerformerCheckId(command.getOperatorId());
-            request.setCheckTime(LocalDateTime.now());
+            request.setCheckTime(pricedAt);
             request.assertDraftCreatable();
             toSave.add(request);
         }
@@ -1080,6 +1140,9 @@ public class ServiceRequestDomainService {
         request.setIsDeleted(Boolean.FALSE);
         request.setBusNo(businessSequenceService.getSeqByDay(
             AggregateTypeConstants.SERVICE_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
+        // 滚费配置直建已校对：开立与签发同落 ensure 时刻。
+        request.setReqOpenedTime(now);
+        request.setReqAuthoredTime(now);
         // 配置保存即 VERIFIED，不经护士校对 Tab；禁止护士站手动执行（BR-IP-ARG-019）
         request.initVerified();
         request.setPerformerCheckId(command.getOperatorId());
@@ -1100,7 +1163,11 @@ public class ServiceRequestDomainService {
     }
 
     /**
-     * 逻辑删除护士划价诊疗服务申请（与 {@link #createFromNursePricing} 对称，AS-IP-NUR-005 IF-IP-PRC-06）。
+     * 逻辑删除护士划价诊疗服务申请（与 {@link #createFromNursePricing} 对称）。
+     *
+     * <p><strong>注意</strong>：自 2026-07-17 起，IF-IP-PRC-06 取消划价改为费用冲销留痕，
+     * {@code NurseStationInpatientBillingAppService#cancelNurseStationPricing} <strong>不再调用</strong>本方法；
+     * Request 保持完成态。本方法仅保留作历史整行还原能力，勿在新编排中默认使用。</p>
      *
      * @param command 批次内多条，每条须为 nurse-pricing + VERIFIED 且未软删
      * @throws BusinessException 来源/状态不允许或不存在时
@@ -1197,6 +1264,10 @@ public class ServiceRequestDomainService {
             request.setCategoryEnum(String.valueOf(item.getCategoryEnum()));
         }
         request.setTherapyEnum("2");
+        // 挂号直建已发送：开立与签发同落当前时刻。
+        LocalDateTime registeredAt = LocalDateTime.now();
+        request.setReqOpenedTime(registeredAt);
+        request.setReqAuthoredTime(registeredAt);
         request.assertDraftCreatable();
 
         ServiceRequest saved = serviceRequestRepository.save(request);
@@ -1336,8 +1407,7 @@ public class ServiceRequestDomainService {
         out.setRelevantHistoryId(source.getRelevantHistoryId());
         out.setContentJson(source.getContentJson());
         out.setYbClassEnum(source.getYbClassEnum());
-        out.setConditionDefinitionId(source.getConditionDefinitionId());
-        out.setEncounterDiagnosisId(source.getEncounterDiagnosisId());
+        out.setEncounterDiagnosisIds(source.getEncounterDiagnosisIds());
         out.setRateCode(source.getRateCode());
         out.setGenerateSourceEnum(source.getGenerateSourceEnum());
         out.setSortNumber(source.getSortNumber());
@@ -1353,7 +1423,12 @@ public class ServiceRequestDomainService {
         out.setBasedOnTable(TableNameConstants.WKF_SERVICE_REQUEST);
         out.setBasedOnId(source.getId());
         out.setRequesterId(operatorId);
-        out.setAuthoredTime(LocalDateTime.now());
+        // 复制新草稿：开立取当前；签发列待正式签发再写；停嘱列清空。
+        out.setReqOpenedTime(LocalDateTime.now());
+        out.setReqAuthoredTime(null);
+        out.setStopTime(null);
+        // 复制/重开新行不得继承源行停嘱人。
+        out.setStopperId(null);
         out.setIsDeleted(Boolean.FALSE);
         out.initDraft();
         return out;
@@ -1524,11 +1599,16 @@ public class ServiceRequestDomainService {
     }
 
     /**
-     * 断言原服务申请不存在未完结的负向退诊疗单。
+     * 查找原服务申请上未完结的负向退诊疗单主键（幂等读）。
+     * <p>
+     * 仅按 {@code refund_service_id = originRequestId} 定位，不按患者/就诊扫全表；
+     * 他支付单、他诊疗申请的既有退费申请不会误拦本原单。
+     * </p>
      *
-     * @param originRequestId 原服务申请主键
+     * @param originRequestId 原正向服务申请主键
+     * @return 已有未完结负向单主键；无则 {@code null}
      */
-    private void assertNoOpenRefundServiceOrder(Long originRequestId) {
+    private Long findOpenRefundServiceOrderId(Long originRequestId) {
         List<ServiceRequest> existing = this.serviceRequestRepository.findByRefundServiceIdIn(
             Collections.singletonList(originRequestId));
         for (ServiceRequest row : existing) {
@@ -1536,9 +1616,10 @@ public class ServiceRequestDomainService {
                 continue;
             }
             if (!RequestStatus.COMPLETED.getCode().equals(row.getStatusEnum())) {
-                throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "已申请退费，请勿重复申请");
+                return row.getId();
             }
         }
+        return null;
     }
 
     /**
@@ -1577,15 +1658,20 @@ public class ServiceRequestDomainService {
         refund.setRelevantHistoryId(source.getRelevantHistoryId());
         refund.setContentJson(source.getContentJson());
         refund.setYbClassEnum(source.getYbClassEnum());
-        refund.setConditionDefinitionId(source.getConditionDefinitionId());
-        refund.setEncounterDiagnosisId(source.getEncounterDiagnosisId());
+        refund.setEncounterDiagnosisIds(source.getEncounterDiagnosisIds());
         refund.setRateCode(source.getRateCode());
         refund.setGenerateSourceEnum(source.getGenerateSourceEnum());
         refund.setSortNumber(source.getSortNumber());
         refund.setRemark(source.getRemark());
         refund.setEntrustContent(source.getEntrustContent());
         refund.setRequesterId(source.getRequesterId());
-        refund.setAuthoredTime(LocalDateTime.now());
+        // 退费负单直建：开立与签发同落当前时刻（无草稿阶段）。
+        LocalDateTime refundAuthored = LocalDateTime.now();
+        refund.setReqOpenedTime(refundAuthored);
+        refund.setReqAuthoredTime(refundAuthored);
+        refund.setStopTime(null);
+        // 负向单无停嘱语义，停嘱人须空。
+        refund.setStopperId(null);
         refund.setRefundServiceId(source.getId());
         refund.setReasonText(reason);
         refund.setIsDeleted(Boolean.FALSE);

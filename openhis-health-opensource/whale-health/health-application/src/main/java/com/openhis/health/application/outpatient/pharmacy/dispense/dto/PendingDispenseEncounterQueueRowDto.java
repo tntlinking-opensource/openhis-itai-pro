@@ -45,6 +45,10 @@ public class PendingDispenseEncounterQueueRowDto {
     @Schema(description = "性别 code")
     private String genderEnum;
 
+    /** 性别展示文案（由 AdministrativeGender code 解析，前端只展示不翻译）。 */
+    @Schema(description = "性别展示文案")
+    private String genderEnumText;
+
     /** 年龄展示文案（如「3岁」）。 */
     @Schema(description = "年龄展示")
     private String ageText;
@@ -73,4 +77,14 @@ public class PendingDispenseEncounterQueueRowDto {
     @Schema(description = "就诊开始时间")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime startTime;
+
+    /** 患者联系电话（门诊上下文 phone）。 */
+    @Schema(description = "患者电话")
+    private String patientPhone;
+
+    /**
+     * 费用性质展示名（就诊优先合同名；与医生站/护士站卡片 {@code contractDisplay} 同口径）。
+     */
+    @Schema(description = "费用性质展示名")
+    private String contractDisplay;
 }

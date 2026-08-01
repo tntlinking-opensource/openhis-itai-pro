@@ -24,6 +24,7 @@ import com.openhis.whale.einvoice.boss.domain.invoke.result.BossInvokeResult;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 开具出站支撑：payload 组装 → {@link EinvIssueInvoker} → {@link IssueOutputParser}。
@@ -40,6 +41,7 @@ public class BossIssueOutboundSupport implements BossIssueOutboundAccess {
     private final EinvIssueInvoker issueInvoker;
     private final IssueOutputParser issueOutputParser;
     private final BossInvokeLogAccess invokeLogWriter;
+    private final BossQuantityUnitDisplayResolver quantityUnitDisplayResolver;
 
     /**
      * 执行一次博思开具出站并映射为领域结果。
@@ -57,6 +59,8 @@ public class BossIssueOutboundSupport implements BossIssueOutboundAccess {
             EinvBossDocument document,
             List<EinvBossLine> lines,
             BossIssueSnapshot snapshot) {
+        // 出站前再兜底：调额保留行或历史落库的英文/数字 code 转为中文
+        normalizeLineUnits(lines);
         String serviceId = payloadBuilder.resolveServiceId(document.getIssueKind());
         String payload = payloadBuilder.build(document, lines, snapshot);
         long started = System.currentTimeMillis();
@@ -75,5 +79,20 @@ public class BossIssueOutboundSupport implements BossIssueOutboundAccess {
         BossInvoiceIssueResult issueResult =
                 issueOutputParser.toIssueResult(invokeResult, document.getBusNo(), document.getTotalAmt());
         return new IssueInvokeOutcome(issueResult, payload);
+    }
+
+    /**
+     * 将明细 unit 术语码就地转为中文 display（不落库；仅影响本次出站报文）。
+     *
+     * @param lines 待开具明细
+     */
+    private void normalizeLineUnits(List<EinvBossLine> lines) {
+        if (lines == null || lines.isEmpty()) {
+            return;
+        }
+        Map<String, String> unitLabelByCode = quantityUnitDisplayResolver.warmLabelMap();
+        for (EinvBossLine line : lines) {
+            line.setUnit(quantityUnitDisplayResolver.toDisplay(line.getUnit(), unitLabelByCode));
+        }
     }
 }

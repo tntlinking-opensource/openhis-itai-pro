@@ -18,6 +18,7 @@ import com.openhis.health.application.inpatient.financial.settle.request.PageInp
 import com.openhis.health.application.inpatient.financial.settle.request.PreSettleInpatientChargesRequest;
 import com.openhis.health.application.inpatient.financial.settle.request.QueryInpatientSettleChargesRequest;
 import com.openhis.health.application.inpatient.financial.settle.response.ReverseInpatientSettleResponse;
+import com.openhis.health.application.inpatient.financial.settle.response.RecallInpatientDischargeResponse;
 import com.openhis.health.application.inpatient.financial.settle.response.ConfirmInpatientSettleResponse;
 import com.openhis.health.application.inpatient.financial.settle.response.LoadInpatientSettlePageInitResponse;
 import com.openhis.health.application.inpatient.financial.settle.response.LoadInpatientSettleSummaryResponse;
@@ -30,6 +31,7 @@ import com.openhis.health.domain.administration.chargeitem.command.BatchChargeIt
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.encounter.command.CompleteInpatientFinancialSettlementCommand;
+import com.openhis.health.domain.administration.encounter.command.RecallInpatientDischargeCommand;
 import com.openhis.health.domain.administration.invoice.command.CancelInvoiceCommand;
 import com.openhis.health.domain.administration.invoice.command.CreateDraftInvoiceCommand;
 import com.openhis.health.domain.administration.invoice.query.InvoiceQueryCommand;
@@ -394,7 +396,8 @@ public class InpatientSettleMapperImpl implements InpatientSettleMapper {
         }
         command.setChargeItemIds(chargeItemIdsJoined);
         command.setKindEnum(PaymentKind.INPATIENT_CLINIC);
-        command.setPaymentEnum(PaymentChannel.CASHIER.getCode());
+        // payment_enum 语义为 PaymentType（PAY/UN_PAY），禁止写入渠道码 CASHIER
+        command.setPaymentEnum(PaymentType.PAY.getCode());
         command.setEntererId(operatorId);
         command.setTenderedAmount(receivableTotal);
         command.setDisplayAmount(receivableTotal);
@@ -447,18 +450,21 @@ public class InpatientSettleMapperImpl implements InpatientSettleMapper {
     /**
      * 支付流水 + 支付 ID → 发票草稿命令。
      *
-     * @param payment   支付流水读模型
-     * @param paymentId 支付主键
+     * @param payment           支付流水读模型
+     * @param paymentId         支付主键
+     * @param invoiceFaceAmount 票面金额（收费项合计结算刻度；含医保已付，非患者现金）
      * @return 发票草稿命令
      */
     @Override
     public CreateDraftInvoiceCommand toCreateDraftInvoiceCommand(
         PaymentReconciliationQueryModel payment,
-        Long paymentId) {
+        Long paymentId,
+        BigDecimal invoiceFaceAmount) {
         CreateDraftInvoiceCommand command = new CreateDraftInvoiceCommand();
         if (payment != null) {
             command.setPatientId(payment.getPatientId());
-            command.setAmount(payment.getDisplayAmount());
+            // 票面按收费项合计；医保全报现金为 0 仍开票（BR-INV-008）
+            command.setAmount(invoiceFaceAmount);
             command.setOperatorId(payment.getEntererId());
         }
         command.setPaymentId(paymentId);
@@ -506,7 +512,9 @@ public class InpatientSettleMapperImpl implements InpatientSettleMapper {
         ConfirmInpatientSettleResponse response = new ConfirmInpatientSettleResponse();
         response.setPaymentId(paymentId);
         response.setInvoiceDraftId(invoiceDraftId);
-        response.setInvoiceStatus(InvoiceStatus.DRAFT.getCode());
+        if (invoiceDraftId != null) {
+            response.setInvoiceStatus(InvoiceStatus.DRAFT.getCode());
+        }
         response.setDischargeFullSettle(dischargeFullSettle);
         response.setAdvanceRefundPaymentId(advanceRefundPaymentId);
         response.setSuccessMessageCode(InpatientSettleConstants.MESSAGE_CODE_SETTLE_SUCCESS);
@@ -679,6 +687,7 @@ public class InpatientSettleMapperImpl implements InpatientSettleMapper {
         command.setKindEnum(originalPayment.getKindEnum());
         // 逆向反结单须 UN_PAY，与门诊退费/预交金退还口径一致（DM-FIN-002 §6.1.7）
         command.setPaymentEnum(PaymentType.UN_PAY.getCode());
+        command.setContractNo(originalPayment.getContractNo());
         command.setPaymentDetails(this.toRefundPaymentDetailItemCommands(paymentDetails));
         return command;
     }
@@ -694,6 +703,53 @@ public class InpatientSettleMapperImpl implements InpatientSettleMapper {
         ReverseInpatientSettleResponse response = new ReverseInpatientSettleResponse();
         response.setRefundPaymentId(refundPaymentId);
         response.setSucceeded(Boolean.TRUE);
+        return response;
+    }
+
+    /**
+     * 召回请求 → 领域出院召回命令。
+     *
+     * @param encounterId    就诊主键
+     * @param operatorId     操作人主键
+     * @param wardLocationId 末次已完成病区位置主键
+     * @return 领域召回命令
+     */
+    @Override
+    public RecallInpatientDischargeCommand toRecallInpatientDischargeCommand(
+        Long encounterId,
+        Long operatorId,
+        Long wardLocationId) {
+        RecallInpatientDischargeCommand command = new RecallInpatientDischargeCommand();
+        command.setOperatorId(operatorId);
+        RecallInpatientDischargeCommand.RecallInpatientDischargeItemCommand item =
+            new RecallInpatientDischargeCommand.RecallInpatientDischargeItemCommand();
+        item.setEncounterId(encounterId);
+        item.setWardLocationId(wardLocationId);
+        command.setItems(List.of(item));
+        return command;
+    }
+
+    /**
+     * 召回成功 → 响应。
+     *
+     * @param encounterId           就诊主键
+     * @param targetStatusEnum      召回后状态 code
+     * @param requiresBedAssignment 是否须二次分床
+     * @param refundPaymentId       内嵌反结逆向支付单 ID
+     * @return 召回响应
+     */
+    @Override
+    public RecallInpatientDischargeResponse toRecallInpatientDischargeResponse(
+        Long encounterId,
+        String targetStatusEnum,
+        boolean requiresBedAssignment,
+        Long refundPaymentId) {
+        RecallInpatientDischargeResponse response = new RecallInpatientDischargeResponse();
+        response.setEncounterId(encounterId);
+        response.setSucceeded(Boolean.TRUE);
+        response.setTargetStatusEnum(targetStatusEnum);
+        response.setRequiresBedAssignment(requiresBedAssignment);
+        response.setRefundPaymentId(refundPaymentId);
         return response;
     }
 

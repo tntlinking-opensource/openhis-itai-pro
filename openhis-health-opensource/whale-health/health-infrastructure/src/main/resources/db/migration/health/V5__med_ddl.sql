@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS "public"."med_medication_definition" (
     "manufacturer_text" varchar(255),
     "supply_id" int8,
     "restricted_flag" bool,
-    "restricted_scope" varchar(255),
+    "restricted_scope" text,
     "active_flag" bool,
     "children_flag" bool,
     "characteristic" int4,
@@ -70,13 +70,14 @@ CREATE TABLE IF NOT EXISTS "public"."med_medication_definition" (
     "method_code" varchar(255),
     "rate_code" varchar(255),
     "dose" numeric(18,2),
+    "min_unit" numeric(18,2),
     "max_unit" numeric(18,2),
     "usage_limit" numeric(18,2),
     "location_id" int8,
     "status_enum" varchar(255) NOT NULL,
     "org_id" int8 NOT NULL,
     "ingredient_item" varchar(255),
-    "medicationdefinition" varchar(255),
+    "definition" text,
     "ddd_code" varchar(255),
     "ddd_unit_code" varchar(255),
     "min_rate_code" varchar(255),
@@ -85,6 +86,8 @@ CREATE TABLE IF NOT EXISTS "public"."med_medication_definition" (
     "purchase_unit_ratio" numeric(18,6),
     "stock_unit_ratio" numeric(18,6),
     "package_unit_ratio" numeric(18,6),
+    "trace_unit_code" varchar(64),
+    "trace_unit_ratio" numeric(18,6),
     CONSTRAINT "med_medication_definition_pkey" PRIMARY KEY ("id")
 );
 COMMENT ON TABLE med_medication_definition IS '药品 medication definition';
@@ -153,13 +156,14 @@ COMMENT ON COLUMN med_medication_definition.stock_unit_code IS '库存单位（5
 COMMENT ON COLUMN med_medication_definition.method_code IS '默认用法编码';
 COMMENT ON COLUMN med_medication_definition.rate_code IS '默认频次编码';
 COMMENT ON COLUMN med_medication_definition.dose IS '单次剂量';
+COMMENT ON COLUMN med_medication_definition.min_unit IS '单次最小剂量';
 COMMENT ON COLUMN med_medication_definition.max_unit IS '单次最大剂量';
 COMMENT ON COLUMN med_medication_definition.usage_limit IS '用量限定';
 COMMENT ON COLUMN med_medication_definition.location_id IS '采购入库位置（他域事实列）';
 COMMENT ON COLUMN med_medication_definition.status_enum IS '生命周期状态编码（DRAFT/ACTIVE/INACTIVE/DISCARDED）';
 COMMENT ON COLUMN med_medication_definition.org_id IS '机构标识';
 COMMENT ON COLUMN med_medication_definition.ingredient_item IS '成分项';
-COMMENT ON COLUMN med_medication_definition.medicationdefinition IS '药品说明';
+COMMENT ON COLUMN med_medication_definition.definition IS '药品说明';
 COMMENT ON COLUMN med_medication_definition.ddd_code IS 'DDD（日限定剂量）编码';
 COMMENT ON COLUMN med_medication_definition.ddd_unit_code IS 'DDD（日限定剂量）单位编码';
 COMMENT ON COLUMN med_medication_definition.min_rate_code IS '最小频次编码';
@@ -168,6 +172,8 @@ COMMENT ON COLUMN med_medication_definition.dose_unit_ratio IS '剂量单位→�
 COMMENT ON COLUMN med_medication_definition.purchase_unit_ratio IS '采购单位→拆零单位换算倍数（拆零单位为1）';
 COMMENT ON COLUMN med_medication_definition.stock_unit_ratio IS '库存单位→拆零单位换算倍数（拆零单位为1）';
 COMMENT ON COLUMN med_medication_definition.package_unit_ratio IS '销售单位→拆零单位换算倍数（拆零单位为1）';
+COMMENT ON COLUMN med_medication_definition.trace_unit_code IS '追溯码所贴包装单位（可游离于采购/包装/库存/拆零/剂量五类之外）';
+COMMENT ON COLUMN med_medication_definition.trace_unit_ratio IS '1 个追溯码单位对应的拆零数量；须 > 0';
 
 -- seed: med_medication_definition
 
@@ -220,6 +226,7 @@ CREATE TABLE IF NOT EXISTS "public"."med_medication_dispense" (
     "support_info" varchar(255),
     "part_type_code" varchar(255),
     "dispense_frequency_code" varchar(255),
+    "cashier_settlement_id" int8,
     CONSTRAINT "med_medication_dispense_pkey" PRIMARY KEY ("id")
 );
 COMMENT ON TABLE med_medication_dispense IS '药品 medication dispense';
@@ -267,6 +274,15 @@ COMMENT ON COLUMN med_medication_dispense.max_unit IS 'max单元';
 COMMENT ON COLUMN med_medication_dispense.support_info IS '辅助信息';
 COMMENT ON COLUMN med_medication_dispense.part_type_code IS 'partType 代码';
 COMMENT ON COLUMN med_medication_dispense.dispense_frequency_code IS 'dispenseFrequency 代码';
+COMMENT ON COLUMN med_medication_dispense.cashier_settlement_id IS '交账批次标识（含待审）；空=未交账';
+
+CREATE INDEX IF NOT EXISTS idx_med_dispense_cashier_settlement
+    ON med_medication_dispense (cashier_settlement_id)
+    WHERE is_deleted = FALSE AND cashier_settlement_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_med_dispense_unsettle_scan
+    ON med_medication_dispense (location_id, dispense_time, cashier_settlement_id)
+    WHERE is_deleted = FALSE;
 
 -- from V49__med_medication_request.sql
 -- med_medication_request（建表）
@@ -306,6 +322,7 @@ CREATE TABLE IF NOT EXISTS "public"."med_medication_request" (
     "performer_id" int8,
     "device_def_id" int8,
     "recorder_id" int8,
+    "req_opened_time" timestamptz(6),
     "req_authored_time" timestamptz(6),
     "report_flag" bool,
     "support_info" varchar(255),
@@ -332,11 +349,12 @@ CREATE TABLE IF NOT EXISTS "public"."med_medication_request" (
     "infusion_flag" bool,
     "speed_code" varchar(255),
     "contract_id" int8,
-    "condition_definition_id" int8,
-    "encounter_diagnosis_id" int8,
+    "encounter_diagnosis_ids" varchar(2000),
     "performer_check_id" int8,
     "check_time" timestamptz(6),
     "effective_dose_end" timestamptz(6),
+    "stop_time" timestamptz(6),
+    "stopper_id" int8,
     "refund_medicine_id" int8,
     "rx_type_code" varchar(255),
     "yb_class_enum" varchar(255),
@@ -386,7 +404,8 @@ COMMENT ON COLUMN med_medication_request.performer_enum IS 'performer枚举值';
 COMMENT ON COLUMN med_medication_request.performer_id IS 'performer标识';
 COMMENT ON COLUMN med_medication_request.device_def_id IS '设备def标识';
 COMMENT ON COLUMN med_medication_request.recorder_id IS '记录人标识';
-COMMENT ON COLUMN med_medication_request.req_authored_time IS 'reqauthored时间';
+COMMENT ON COLUMN med_medication_request.req_opened_time IS '开立时间（首次建草稿）';
+COMMENT ON COLUMN med_medication_request.req_authored_time IS '签发时间';
 COMMENT ON COLUMN med_medication_request.report_flag IS '报表标志位';
 COMMENT ON COLUMN med_medication_request.support_info IS '辅助信息';
 COMMENT ON COLUMN med_medication_request.reason_json IS '原因JSON';
@@ -412,11 +431,12 @@ COMMENT ON COLUMN med_medication_request.skin_test_flag IS 'skintest标志位';
 COMMENT ON COLUMN med_medication_request.infusion_flag IS 'infusion标志位';
 COMMENT ON COLUMN med_medication_request.speed_code IS 'speed编码';
 COMMENT ON COLUMN med_medication_request.contract_id IS '合同标识';
-COMMENT ON COLUMN med_medication_request.condition_definition_id IS '诊断定义主键（列 { condition_definition_id}，即 { cln_condition_definition.id}）';
-COMMENT ON COLUMN med_medication_request.encounter_diagnosis_id IS '就诊诊断标识';
+COMMENT ON COLUMN med_medication_request.encounter_diagnosis_ids IS '绑定就诊诊断主键 CSV（有序，首位为主诊断 adm_encounter_diagnosis.id）';
 COMMENT ON COLUMN med_medication_request.performer_check_id IS 'performercheck标识';
 COMMENT ON COLUMN med_medication_request.check_time IS 'check时间';
-COMMENT ON COLUMN med_medication_request.effective_dose_end IS 'effectivedose结束';
+COMMENT ON COLUMN med_medication_request.effective_dose_end IS '服药计划结束时间';
+COMMENT ON COLUMN med_medication_request.stop_time IS '停嘱时间';
+COMMENT ON COLUMN med_medication_request.stopper_id IS '停嘱人（医务人员主键）';
 COMMENT ON COLUMN med_medication_request.refund_medicine_id IS 'refundmedicine标识';
 COMMENT ON COLUMN med_medication_request.rx_type_code IS 'rx类型编码';
 COMMENT ON COLUMN med_medication_request.yb_class_enum IS '医保class枚举值';

@@ -12,6 +12,7 @@ import com.openhis.health.application.outpatient.doctorstation.advice.support.Se
 import com.openhis.health.application.outpatient.financial.charge.support.OutpatientPaymentDraftLifecycleOrchestrator;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.advice.InpatientEntrustOrderGateSupport;
 import com.openhis.health.application.shared.product.ClinicalCatalogPriceResolver;
 import com.openhis.health.application.outpatient.doctorstation.advice.support.OutpatientMedicationSignChargeOrchestrator;
 import com.openhis.health.application.shared.advice.AdviceSignTargetSpec;
@@ -126,8 +127,10 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -169,6 +172,8 @@ public class DoctorStationAdviceAppService {
     private final OrderRequestFifoSignContextLoader orderRequestFifoSignContextLoader;
     private final OutpatientMedicationSignChargeOrchestrator outpatientMedicationSignChargeOrchestrator;
     private final DoctorStationSkinTestSyncOrchestrator doctorStationSkinTestSyncOrchestrator;
+    /** 门诊禁开嘱托识别（BR-ORD-032；与住院嘱托双锚同源）。 */
+    private final InpatientEntrustOrderGateSupport inpatientEntrustOrderGateSupport;
     private final MedicationRequestQueryService medicationRequestQueryService;
     private final DeviceRequestQueryService deviceRequestQueryService;
     private final MedicationDispenseQueryService medicationDispenseQueryService;
@@ -214,13 +219,16 @@ public class DoctorStationAdviceAppService {
      * @throws BusinessException 就诊不存在或患者与就诊不一致
      */
     public ListActivityExecutionLocationsResponse listActivityExecutionLocations(ListActivityExecutionLocationsRequest request) {
+        // Gate：就诊与患者一致性
         OutpatientEncounterContextQueryModel snapshot =
             EncounterContextReader.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         doctorStationAdviceMapper.validatePatientEncounter(request.getPatientId(), snapshot.getPatientId());
+        // Pre：解析诊疗大类，并按开立科室（就诊科室）拉取项目级 + 大类默认可执行科室规则
         ProductDefinitionDisplayDto activityProduct =
             loadSingleProduct(TableNameConstants.WKF_ACTIVITY_DEFINITION, request.getActivityDefinitionId());
         List<ExecutionRuleListQueryModel> ruleModels =
             activityExecutionLocationQueryService.listExecutionRulesForActivityResolution(
+                snapshot.getOrganizationId(),
                 request.getActivityDefinitionId(),
                 activityProduct.getCategoryCode());
         Set<Long> orgIds = new HashSet<>();
@@ -233,6 +241,7 @@ public class DoctorStationAdviceAppService {
                 locIds.add(row.getExecutionLocationId());
             }
         }
+        // Asm：批量解析执行科室/地点展示名并装配响应
         Map<Long, String> orgNameById = organizationQueryService.mapNamesByIds(orgIds);
         Map<Long, String> locNameById = locationQueryService.mapNamesByIds(locIds);
         List<ActivityExecutionLocationRuleRowDto> rows = new ArrayList<>();
@@ -352,7 +361,7 @@ public class DoctorStationAdviceAppService {
     /**
      * IF-DOR-21：保存检验/检查/治疗申请单（整张）；编辑时删旧 DRAFT 后取新 {@code AR} 号。
      *
-     * @param request 就诊、患者、类别、整单执行科室、整单诊断绑定（可选）与明细行
+     * @param request 就诊、患者、类别、整单执行科室、整单执行次数、整单诊断绑定（可选）与明细行
      * @return 新申请单号与新建 requestId 列表
      * @throws BusinessException 门控失败、旧号校验失败、定价缺失或域校验失败
      */
@@ -380,10 +389,10 @@ public class DoctorStationAdviceAppService {
             request.getPatientId(),
             request.getCategoryEnum(),
             request.getOrgId(),
-            request.getConditionDefinitionId(),
-            request.getEncounterDiagnosisId(),
+            request.getEncounterDiagnosisIds(),
             request.getPreviousPrescriptionNo(),
             serviceApplyFormAssembler.toLineSpecs(request.getLines()),
+            request.getExecutionCount(),
             operatorId,
             (encounterId, patientId, serviceRequestId, activityDefinitionId, quantity, unitCode, productRow) ->
                 createChargeIfPossible(
@@ -541,7 +550,7 @@ public class DoctorStationAdviceAppService {
             // Cmd（BR-ORD-025）：皮试药联动 companion 皮试检查 SR + 操作费草稿。
             doctorStationSkinTestSyncOrchestrator.syncAfterMedicationDraftLine(
                 ChargePolicy.OUTPATIENT, request.getEncounterId(), request.getPatientId(), accountId, orgId, operatorId,
-                newMedicationRequestId, null, this.toSkinTestSpec(line.getMedicationPayload()));
+                newMedicationRequestId, this.toSkinTestSpec(line.getMedicationPayload()));
             newMedIds.add(newMedicationRequestId);
         } else if (ProductTableNameHelper.isDevice(pt)) {
             // 耗材：草稿 + 费用；dispenseLocationId 来自目录 IF-DOR-11，写路径 FIFO 不再 match 模板
@@ -557,6 +566,16 @@ public class DoctorStationAdviceAppService {
             // 诊疗：必须先解析活动定义对应的产品读模型行，再落服务申请草稿（携带展示/计价元数据）
             ProductDefinitionDisplayDto activityProductRow =
                 loadSingleProduct(TableNameConstants.WKF_ACTIVITY_DEFINITION, line.getServicePayload().getActivityDefinitionId());
+            // Gate：门诊禁开嘱托（目录已排除；写路径再拦预选/组套绕过，BR-ORD-032）
+            String activityName = null;
+            if (activityProductRow != null) {
+                activityName = activityProductRow.getProductName();
+            }
+            String categoryCode = null;
+            if (activityProductRow != null) {
+                categoryCode = activityProductRow.getCategoryCode();
+            }
+            inpatientEntrustOrderGateSupport.assertNotEntrustForOutpatient(categoryCode, activityName);
             Long newServiceRequestId = serviceRequestDomainService.createServiceRequestDraft(
                 doctorStationAdviceMapper.toCreateServiceRequestDraftCommand(request, line, activityProductRow, operatorId));
             createChargeIfPossible(request, newServiceRequestId, TableNameConstants.WKF_SERVICE_REQUEST,
@@ -605,7 +624,7 @@ public class DoctorStationAdviceAppService {
             // Cmd（BR-ORD-025）：皮试标志变更时同步 companion 皮试检查 SR。
             doctorStationSkinTestSyncOrchestrator.syncAfterMedicationDraftLine(
                 ChargePolicy.OUTPATIENT, request.getEncounterId(), request.getPatientId(), accountId, orgId, operatorId,
-                line.getRequestId(), null, this.toSkinTestSpec(line.getMedicationPayload()));
+                line.getRequestId(), this.toSkinTestSpec(line.getMedicationPayload()));
         } else if (ProductTableNameHelper.isDevice(pt)) {
             chargeItemDomainService.voidUnbilledDraftChargeItemsByServiceAnchor(
                 doctorStationAdviceMapper.toVoidDraftChargeAnchor(
@@ -623,6 +642,16 @@ public class DoctorStationAdviceAppService {
                     request.getEncounterId(), TableNameConstants.WKF_SERVICE_REQUEST, line.getRequestId(), operatorId));
             ProductDefinitionDisplayDto activityProductRow =
                 loadSingleProduct(TableNameConstants.WKF_ACTIVITY_DEFINITION, line.getServicePayload().getActivityDefinitionId());
+            // Gate：UPDATE 亦禁嘱托（预选/改活动定义绕过目录，BR-ORD-032）
+            String activityName = null;
+            if (activityProductRow != null) {
+                activityName = activityProductRow.getProductName();
+            }
+            String categoryCode = null;
+            if (activityProductRow != null) {
+                categoryCode = activityProductRow.getCategoryCode();
+            }
+            inpatientEntrustOrderGateSupport.assertNotEntrustForOutpatient(categoryCode, activityName);
             serviceRequestDomainService.modifyServiceRequestDraft(doctorStationAdviceMapper.toModifyServiceRequestDraftCommand(line, operatorId));
             createChargeIfPossible(request, line.getRequestId(), TableNameConstants.WKF_SERVICE_REQUEST,
                 TableNameConstants.WKF_ACTIVITY_DEFINITION, line.getServicePayload().getActivityDefinitionId(),
@@ -783,30 +812,64 @@ public class DoctorStationAdviceAppService {
         }
         // 收集药品医嘱与处方号映射，供前端展示
         Map<Long, String> rxMap = new HashMap<>();
-        boolean hasMedicationSignTarget = false;
+        // Pre：本批药品签发目标主键（分方只带这些 DRAFT + 已 ACTIVE 未收费，不写其它未签发草稿）
+        List<Long> signingMedicationRequestIds = new ArrayList<>();
         for (DoctorStationAdviceResourceKeyDto signTarget : request.getSignTargets()) {
             String productTable = ProductTableNameHelper.normalize(signTarget.getProductTableName());
-            if (ProductTableNameHelper.isMedication(productTable)) {
-                hasMedicationSignTarget = true;
-                break;
+            if (ProductTableNameHelper.isMedication(productTable) && signTarget.getRequestId() != null) {
+                signingMedicationRequestIds.add(signTarget.getRequestId());
             }
         }
-        // Pre（BR-ORD-023）：药品签发前先对就诊下全部未收费药品重分方，再逐条 signMedicationOrder
+        // Pre（BR-ORD-023）：药品签发前对本批目标 ∪ 已签发未收费重分方，再逐条 signMedicationOrder
         Map<Long, String> splitPrescriptionNoByRequestId = Map.of();
-        if (hasMedicationSignTarget) {
+        if (!signingMedicationRequestIds.isEmpty()) {
             splitPrescriptionNoByRequestId = outpatientPrescriptionSplitAssembler.splitAndAssignPrescriptions(
-                request.getEncounterId(), orgId, operatorId);
+                request.getEncounterId(), orgId, operatorId, signingMedicationRequestIds);
         }
         // Pre（BR-ORD-025）：签发皮试药时自动扩 companion 皮试检查 SR 至待签发集合。
         List<DoctorStationAdviceResourceKeyDto> signTargets =
             this.fromSignTargetSpecs(doctorStationSkinTestSyncOrchestrator
                 .expandSignTargetsWithLinkedSkinTestServiceRequests(this.toSignTargetSpecs(request.getSignTargets())));
-        // 命令：按目标类型签发；诊疗分支触发外呼网关占位
+        // Pre：批量预取本批药品列表模型（中药门禁）与 FIFO 上下文，减少循环 N+1；写路径仍逐条
+        Map<Long, MedicationRequestListQueryModel> medicationListById =
+            this.mapMedicationListModelsByIds(signingMedicationRequestIds);
+        Map<Long, MedicationRequestFifoSignContext> medicationFifoById =
+            this.orderRequestFifoSignContextLoader.loadMedicationFifoSignContextsOrThrow(signingMedicationRequestIds);
+        // Pre：批内挂费读缓存——同药定价/产品展示只查一次，选价规则不变
+        OutpatientMedicationSignChargeOrchestrator.SignChargeReadCache signChargeReadCache =
+            new OutpatientMedicationSignChargeOrchestrator.SignChargeReadCache();
+        Set<Long> medicationDefinitionIdsForCharge = new LinkedHashSet<>();
+        for (MedicationRequestFifoSignContext fifoCtx : medicationFifoById.values()) {
+            if (fifoCtx == null || fifoCtx.getMedicationId() == null) {
+                continue;
+            }
+            medicationDefinitionIdsForCharge.add(fifoCtx.getMedicationId());
+        }
+        this.outpatientMedicationSignChargeOrchestrator.prefetchMedicationCatalogReads(
+            signChargeReadCache, medicationDefinitionIdsForCharge);
+        // Pre：本批耗材 FIFO 上下文一次装载，供挂费预取与循环复用（避免双查）
+        Map<Long, DeviceRequestFifoSignContext> deviceFifoById = new HashMap<>();
+        Set<Long> deviceDefinitionIdsForCharge = new LinkedHashSet<>();
+        for (DoctorStationAdviceResourceKeyDto signTarget : signTargets) {
+            String productTable = ProductTableNameHelper.normalize(signTarget.getProductTableName());
+            if (!ProductTableNameHelper.isDevice(productTable) || signTarget.getRequestId() == null) {
+                continue;
+            }
+            DeviceRequestFifoSignContext fifoDevCtx =
+                this.orderRequestFifoSignContextLoader.loadDeviceFifoSignContextOrThrow(signTarget.getRequestId());
+            deviceFifoById.put(signTarget.getRequestId(), fifoDevCtx);
+            if (fifoDevCtx.getDeviceDefId() != null) {
+                deviceDefinitionIdsForCharge.add(fifoDevCtx.getDeviceDefId());
+            }
+        }
+        this.outpatientMedicationSignChargeOrchestrator.prefetchDeviceCatalogReads(
+            signChargeReadCache, deviceDefinitionIdsForCharge);
+        // Cmd：按目标类型签发；诊疗分支触发外呼网关占位
         for (DoctorStationAdviceResourceKeyDto t : signTargets) {
             String pt = ProductTableNameHelper.normalize(t.getProductTableName());
             if (ProductTableNameHelper.isMedication(pt)) {
                 // Gate：中药饮片须在中医 Tab 签发（BR-TCM-ISO-001），避免与 IF-DOR-37 双轨冲突
-                MedicationRequestListQueryModel medRow = medicationRequestQueryService.getListModelById(t.getRequestId());
+                MedicationRequestListQueryModel medRow = medicationListById.get(t.getRequestId());
                 if (medRow != null && Boolean.TRUE.equals(medRow.getTcmFlag())) {
                     throw new BusinessException(
                         ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, "请在中医 Tab 签发");
@@ -819,12 +882,14 @@ public class DoctorStationAdviceAppService {
                 medicationRequestDomainService.signMedicationOrder(
                     doctorStationAdviceMapper.toSignMedicationOrderCommand(t.getRequestId(), prescriptionNo, operatorId));
                 rxMap.put(t.getRequestId(), prescriptionNo);
-                MedicationRequestFifoSignContext fifoMedCtx =
-                    this.orderRequestFifoSignContextLoader.loadMedicationFifoSignContextOrThrow(t.getRequestId());
-                // Cmd：FIFO 发放 + 分段挂费 + PLANNED（与 IF-DOR-37 共用 Support）
+                MedicationRequestFifoSignContext fifoMedCtx = medicationFifoById.get(t.getRequestId());
+                if (fifoMedCtx == null) {
+                    throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_NOT_FOUND, "药品申请不存在");
+                }
+                // Cmd：FIFO 发放 + 分段挂费 + PLANNED（与 IF-DOR-37 共用 Support；FIFO 仍逐条以保证库存占用正确）
                 outpatientMedicationSignChargeOrchestrator.replaceFifoDispenseAndPlanChargesAfterMedicationSigned(
                     request.getEncounterId(), request.getPatientId(), accountId, orgId, operatorId,
-                    t.getRequestId(), fifoMedCtx);
+                    t.getRequestId(), fifoMedCtx, signChargeReadCache);
             } else if (ProductTableNameHelper.isActivity(pt)) {
                 // 诊疗：域 sign 后外呼仅占位，真实 LIS/PACS 路由待检查申请类型后替换
                 serviceRequestDomainService.signServiceRequest(
@@ -838,8 +903,10 @@ public class DoctorStationAdviceAppService {
                 deviceRequestDomainService.signDeviceOrder(doctorStationAdviceMapper.toSignDeviceOrderCommand(t.getRequestId(), operatorId));
                 chargeItemDomainService.voidUnbilledDraftChargeItemsByServiceAnchors(
                     request.getEncounterId(), TableNameConstants.WKF_DEVICE_REQUEST, List.of(t.getRequestId()));
-                DeviceRequestFifoSignContext fifoDevCtx =
-                    this.orderRequestFifoSignContextLoader.loadDeviceFifoSignContextOrThrow(t.getRequestId());
+                DeviceRequestFifoSignContext fifoDevCtx = deviceFifoById.get(t.getRequestId());
+                if (fifoDevCtx == null) {
+                    fifoDevCtx = this.orderRequestFifoSignContextLoader.loadDeviceFifoSignContextOrThrow(t.getRequestId());
+                }
                 List<ReplaceFifoDeviceDispenseDraftsCommand.Segment> devSegments = doctorStationAdviceFifoAllocationAssembler.allocateDeviceFifo(
                     orgId, fifoDevCtx.getEncounterId(), fifoDevCtx.getDeviceDefId(), fifoDevCtx.getCatalogCategoryCode(),
                     fifoDevCtx.getUnitCode(), fifoDevCtx.getQuantity());
@@ -853,8 +920,11 @@ public class DoctorStationAdviceAppService {
                 fifoDevCmd.setSegments(devSegments);
                 List<Long> devDispenseIds = deviceDispenseDomainService.replaceFifoDraftDispensesAfterDoctorStationSign(fifoDevCmd);
                 List<BigDecimal> devQtys = new ArrayList<>();
+                List<String> devLotNumbers = new ArrayList<>();
                 for (ReplaceFifoDeviceDispenseDraftsCommand.Segment seg : devSegments) {
+                    // Pre：分段数量与 FIFO 批号等长传入挂费，禁止跨批号 priority 择优
                     devQtys.add(seg.getQuantity());
+                    devLotNumbers.add(seg.getLotNumber());
                 }
                 this.outpatientMedicationSignChargeOrchestrator.createDispenseSegmentChargeDrafts(
                     request.getEncounterId(), request.getPatientId(), accountId, orgId, operatorId,
@@ -865,7 +935,9 @@ public class DoctorStationAdviceAppService {
                     TableNameConstants.WKF_DEVICE_DISPENSE,
                     devDispenseIds,
                     devQtys,
-                    fifoDevCtx.getUnitCode());
+                    devLotNumbers,
+                    fifoDevCtx.getUnitCode(),
+                    signChargeReadCache);
                 chargeItemDomainService.planDraftChargeItemsAfterAdviceSignedByDispenseAnchors(
                     request.getEncounterId(), TableNameConstants.WKF_DEVICE_DISPENSE, devDispenseIds);
             } else {
@@ -894,6 +966,19 @@ public class DoctorStationAdviceAppService {
         OutpatientEncounterContextQueryModel snapshot = EncounterContextReader.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         doctorStationAdviceMapper.validatePatientEncounter(request.getPatientId(), snapshot.getPatientId());
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "未获取到当前操作人");
+        // Pre（BR-ORD-025）：同批勾选皮试药时 companion 将联动签退，显式诊疗目标去重避免二次签退
+        List<Long> medicationRequestIds = new ArrayList<>();
+        for (DoctorStationAdviceResourceKeyDto t : request.getTargets()) {
+            if (t == null || t.getRequestId() == null) {
+                continue;
+            }
+            String pt = ProductTableNameHelper.normalize(t.getProductTableName());
+            if (ProductTableNameHelper.isMedication(pt)) {
+                medicationRequestIds.add(t.getRequestId());
+            }
+        }
+        Set<Long> autoWithdrawCompanionIds =
+            doctorStationSkinTestSyncOrchestrator.collectCompanionSkinTestServiceRequestIds(medicationRequestIds);
         // 命令：按目标类型签退（与签发不对称处以保持域服务既有命令为准）
         for (DoctorStationAdviceResourceKeyDto t : request.getTargets()) {
             String pt = ProductTableNameHelper.normalize(t.getProductTableName());
@@ -917,6 +1002,10 @@ public class DoctorStationAdviceAppService {
                 doctorStationSkinTestSyncOrchestrator.withdrawLinkedSkinTestServiceRequestIfPresent(
                     ChargePolicy.OUTPATIENT, request.getEncounterId(), t.getRequestId(), operatorId);
             } else if (ProductTableNameHelper.isActivity(pt)) {
+                // 已由皮试药联动签退的 companion：本批跳过显式签退
+                if (autoWithdrawCompanionIds.contains(t.getRequestId())) {
+                    continue;
+                }
                 serviceRequestDomainService.withdrawSignedServiceRequest(
                     doctorStationAdviceMapper.toWithdrawServiceRequestCommand(t.getRequestId(), operatorId));
                 // 诊疗签退：检查申请对应的可计费行收回为草稿。
@@ -1037,6 +1126,30 @@ public class DoctorStationAdviceAppService {
     }
 
     /**
+     * 按药品申请主键批量装载列表模型，供签发循环中药门禁复用（与逐条 getListModelById 同口径）。
+     *
+     * @param medicationRequestIds 药品申请主键集合
+     * @return 申请主键 → 列表模型；未命中不进 Map
+     */
+    private Map<Long, MedicationRequestListQueryModel> mapMedicationListModelsByIds(
+        Collection<Long> medicationRequestIds
+    ) {
+        Map<Long, MedicationRequestListQueryModel> byId = new HashMap<>();
+        if (medicationRequestIds == null || medicationRequestIds.isEmpty()) {
+            return byId;
+        }
+        List<MedicationRequestListQueryModel> rows =
+            this.medicationRequestQueryService.listMedicationRequestListModelsByIds(medicationRequestIds);
+        for (MedicationRequestListQueryModel row : rows) {
+            if (row == null || row.getId() == null) {
+                continue;
+            }
+            byId.put(row.getId(), row);
+        }
+        return byId;
+    }
+
+    /**
      * IF-DOR-15：签发诊疗后分别外发 LIS / PACS（BR-REQ-008）。
      */
     private void dispatchLabOrImagingAdvice(Long encounterId, Long patientId, Long requestId) {
@@ -1132,8 +1245,7 @@ public class DoctorStationAdviceAppService {
         return new SkinTestMedicationDraftSpec()
             .setSkinTestFlag(payload.getSkinTestFlag())
             .setContractId(payload.getContractId())
-            .setConditionDefinitionId(payload.getConditionDefinitionId())
-            .setEncounterDiagnosisId(payload.getEncounterDiagnosisId());
+            .setEncounterDiagnosisIds(payload.getEncounterDiagnosisIds());
     }
 
     /**

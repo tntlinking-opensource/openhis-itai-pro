@@ -48,6 +48,7 @@ import com.openhis.health.domain.administration.invoice.entity.Invoice;
 import com.openhis.health.domain.administration.invoice.query.InvoiceQueryCommand;
 import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.patient.command.RegisterPatientCommand;
+import com.openhis.health.domain.administration.patient.command.UpdatePatientPhoneCommand;
 import com.openhis.health.domain.administration.patient.entity.Patient;
 import com.openhis.health.domain.administration.patient.queries.DuplicatePatientCheckQuery;
 import com.openhis.health.domain.administration.patient.queries.model.PatientCoreQueryModel;
@@ -55,6 +56,7 @@ import com.openhis.health.domain.administration.patient.queries.model.PatientPag
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.financial.contract.queries.model.ContractListItemQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.command.*;
+import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentRecDetailQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.ClinicRegisterQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.ClinicRegisterPageQuery;
@@ -63,6 +65,7 @@ import com.openhis.health.domain.share.enums.AdministrativeGender;
 import com.openhis.health.domain.share.enums.PaymentKind;
 import com.openhis.health.domain.share.enums.PaymentStatus;
 import com.openhis.health.domain.share.enums.PaymentType;
+import com.openhis.health.domain.share.utils.AdministrativeGenderDisplayUtil;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.whale.core.application.dto.OptionDto;
 
@@ -403,9 +406,10 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
             // 生日与周岁：主档已有出生日期时回填，年龄按自然周岁推算（与患者分页列表提示口径一致）。
             LocalDate birthDate = patient.getBirthDate();
             Integer ageYears = AgeCalculatorUtil.calculateAge(birthDate);
+            // 性别展示：存量脏码/空码不得 NPE；未命中枚举时回落 code（AdministrativeGenderDisplayUtil）。
             list.add(new PatientItemDto().setPatientId(patient.getId()).setPatientBusNo(patient.getBusNo())
                 .setName(patient.getName()).setGenderCode(patient.getGenderEnum())
-                .setGenderText(EnumUtil.fromCode(AdministrativeGender.class, patient.getGenderEnum()).getDisplay())
+                .setGenderText(AdministrativeGenderDisplayUtil.toDisplayText(patient.getGenderEnum()))
                 .setBirthDate(birthDate).setAge(ageYears).setIdCardNoMasked(patient.getIdCard())
                 .setPhoneMasked(patient.getPhone()));
         }
@@ -418,7 +422,7 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
      * @param page                         挂号分页对象
      * @param registrationFeeTotalByAnchor 挂号费锚点键 → 收费明细总价
      * @param paymentDraftIdByEncounterId  就诊主键 → 支付草稿主键（仅待结算挂号行有值）
-     * @param paymentIdByEncounterId       就诊主键 → 已成功支付流水主键（供补打小票）
+     * @param paymentIdByEncounterId       就诊主键 → 挂号费 SUCCESS 支付流水主键（退号银联退货/补打挂号小票）
      * @return 挂号列表 DTO
      */
     @Override
@@ -578,6 +582,24 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
     }
 
     /**
+     * 将既有患者主键与挂号表单联系电话装配为更新手机号命令（单条 item）。
+     *
+     * @param patientId 既有患者主键
+     * @param phone 挂号表单联系电话
+     * @return 更新手机号命令
+     */
+    @Override
+    public UpdatePatientPhoneCommand toUpdatePatientPhoneCommand(Long patientId, String phone) {
+        UpdatePatientPhoneCommand command = new UpdatePatientPhoneCommand();
+        UpdatePatientPhoneCommand.UpdatePatientPhoneItemCommand item =
+            new UpdatePatientPhoneCommand.UpdatePatientPhoneItemCommand();
+        item.setPatientId(patientId);
+        item.setPhone(phone);
+        command.setItem(item);
+        return command;
+    }
+
+    /**
      * 将预结算请求与挂号费定价行装配为「创建收费项」命令：金额取自已解析的定价行，服务锚定为号源类型（healthcare_service），
      * 并写入就诊、账户、机构等必填外键以满足挂号读模型与 BR-CHG-001 追溯。
      *
@@ -731,7 +753,8 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
             item.setPatientBusNo(null);
         }
         item.setGenderEnum(request.getGender());
-        item.setGenderEnumText(EnumUtil.fromCode(AdministrativeGender.class, request.getGender()).getDisplay());
+        // 性别展示空安全：非法/空 code 回落原文或空串，避免选患者后组装挂号单 NPE。
+        item.setGenderEnumText(AdministrativeGenderDisplayUtil.toDisplayText(request.getGender()));
         String primaryPhone = null;
         if (patientCore != null) {
             primaryPhone = patientCore.getPhone();
@@ -877,17 +900,21 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
     /**
      * 将支付信息转换为开票草稿命令。
      *
-     * @param paymentDraft 支付草稿
-     * @param paymentId 支付 ID
+     * @param paymentDraft      支付草稿
+     * @param paymentId         支付 ID
+     * @param invoiceFaceAmount 票面金额（收费项合计结算刻度；含医保已付，非患者现金）
      * @return 开票草稿命令
      */
     @Override
-    public CreateDraftInvoiceCommand toCreateDraftInvoiceCommand(PaymentReconciliationQueryModel paymentDraft,
-        Long paymentId) {
+    public CreateDraftInvoiceCommand toCreateDraftInvoiceCommand(
+        PaymentReconciliationQueryModel paymentDraft,
+        Long paymentId,
+        BigDecimal invoiceFaceAmount) {
         CreateDraftInvoiceCommand command = new CreateDraftInvoiceCommand();
         command.setPatientId(paymentDraft.getPatientId());
         command.setPaymentId(paymentId);
-        command.setAmount(paymentDraft.getDisplayAmount());
+        // 票面按挂号收费项合计；医保全报现金为 0 仍开票（BR-INV-008）
+        command.setAmount(invoiceFaceAmount);
         command.setTypeCode(AccountTypeCode.REG.getCode());
         return command;
     }
@@ -959,26 +986,83 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
     }
 
     /**
-     * 构建门诊退费申请命令。
+     * 将退号退费请求转换为退费申请命令（原路返回：拷贝合同号与渠道明细）。
      *
-     * @param request 退号退费请求
-     * @param payment 支付记录
+     * @param request        退号退费请求
+     * @param payment        原支付记录
+     * @param paymentDetails 原单渠道明细拷贝；须非空以便日结交账弹窗回显支付方式
      * @return 退费申请命令
      */
     @Override
-    public RequestOutpatientRefundCommand toRequestOutpatientRefundCommand(CancelWithRefundRequest request,
-        PaymentReconciliationQueryModel payment) {
+    public RequestOutpatientRefundCommand toRequestOutpatientRefundCommand(
+        CancelWithRefundRequest request,
+        PaymentReconciliationQueryModel payment,
+        List<PaymentDetailItemCommand> paymentDetails) {
         RequestOutpatientRefundCommand command = new RequestOutpatientRefundCommand();
         command.setRelationId(payment.getId());
         command.setEncounterId(request.getEncounterId());
         command.setPatientId(payment.getPatientId());
+        // 逆向 UN_PAY 经办人继承原收费员，保证日结同收银员窗内正负流水成对
         command.setEntererId(payment.getEntererId());
         command.setKindEnum(payment.getKindEnum());
         command.setPaymentEnum(PaymentType.UN_PAY.getCode());
+        // 费用性质与原单一致，供日结 hasInsurance / 交账弹窗前缀按合同判定
+        command.setContractNo(payment.getContractNo());
         command.setDisplayAmount(payment.getDisplayAmount());
         command.setTenderedAmount(payment.getDisplayAmount());
         command.setChargeItemIds(payment.getChargeItemIds());
+        command.setPaymentDetails(paymentDetails);
         return command;
+    }
+
+    /**
+     * 原挂号支付明细 → 退号逆向单渠道明细（整单原路返回；含统筹/个账/自付）。
+     *
+     * @param originalPaymentDetails 原支付子明细读模型
+     * @return 领域明细命令；入参空或无有效行时返回空列表
+     */
+    @Override
+    public List<PaymentDetailItemCommand> toRegistrationCancelRefundPaymentDetails(
+        List<PaymentRecDetailQueryModel> originalPaymentDetails) {
+        List<PaymentDetailItemCommand> items = new ArrayList<>();
+        if (originalPaymentDetails == null || originalPaymentDetails.isEmpty()) {
+            return items;
+        }
+        for (PaymentRecDetailQueryModel detail : originalPaymentDetails) {
+            if (detail == null) {
+                continue;
+            }
+            // 无渠道码的行无法原路回显，跳过
+            if (StringUtils.isEmpty(detail.getPayEnum())) {
+                continue;
+            }
+            PaymentDetailItemCommand item = new PaymentDetailItemCommand();
+            item.setPredecessorId(detail.getId());
+            item.setTargetEnum(detail.getTargetEnum());
+            item.setAccountId(detail.getAccountId());
+            item.setAccountCode(detail.getAccountCode());
+            item.setPayEnum(detail.getPayEnum());
+            item.setPayLevelEnum(detail.getPayLevelEnum());
+            item.setAmount(detail.getAmount());
+            item.setReturnAmount(detail.getReturnAmount());
+            item.setChargeAmount(detail.getChargeAmount());
+            // 医保行须带原 setl_id（pay_trans_no），供日结行级对齐
+            item.setPayTransNo(detail.getPayTransNo());
+            item.setPayTransText(detail.getPayTransText());
+            item.setPayTransDate(detail.getPayTransDate());
+            item.setBeforeBalance(detail.getBeforeBalance());
+            item.setAfterBalance(detail.getAfterBalance());
+            String resultEnum = detail.getResultEnum();
+            // 领域 replaceDetails 对空 result 默认 DRAFT；退号逆向须落成功态以免日结漏计
+            if (StringUtils.isEmpty(resultEnum)
+                || PaymentStatus.DRAFT.getCode().equalsIgnoreCase(resultEnum.trim())) {
+                item.setResultEnum(PaymentStatus.SUCCESS.getCode());
+            } else {
+                item.setResultEnum(resultEnum.trim());
+            }
+            items.add(item);
+        }
+        return items;
     }
 
     /**

@@ -162,7 +162,10 @@ public class AuditingEntityListener implements ApplicationContextAware {
     }
 
     @PrePersist
-    public void prePersist(AuditedEntityBase entity) {
+    public void prePersist(Object target) {
+        if (!(target instanceof AuditedEntityBase entity)) {
+            return;
+        }
         LocalDateTime now = LocalDateTime.now();
         entity.setCreatedAt(now);
         entity.setUpdatedAt(now);
@@ -183,12 +186,18 @@ public class AuditingEntityListener implements ApplicationContextAware {
     }
 
     @PostPersist
-    public void postPersist(AuditedEntityBase entity) {
+    public void postPersist(Object target) {
+        if (!(target instanceof AuditedEntityBase entity)) {
+            return;
+        }
         saveAuditLog(entity, OperationType.CREATE, null, buildNewState(entity, OperationType.CREATE));
     }
 
     @PreUpdate
-    public void preUpdate(AuditedEntityBase entity) {
+    public void preUpdate(Object target) {
+        if (!(target instanceof AuditedEntityBase entity)) {
+            return;
+        }
         entity.setUpdatedAt(LocalDateTime.now());
 
         ICurrentUser currentUser = getCurrentUser();
@@ -199,12 +208,18 @@ public class AuditingEntityListener implements ApplicationContextAware {
     }
 
     @PostUpdate
-    public void postUpdate(AuditedEntityBase entity) {
+    public void postUpdate(Object target) {
+        if (!(target instanceof AuditedEntityBase entity)) {
+            return;
+        }
         saveAuditLog(entity, OperationType.UPDATE, null, buildNewState(entity, OperationType.UPDATE));
     }
 
     @PreRemove
-    public void preRemove(AuditedEntityBase entity) {
+    public void preRemove(Object target) {
+        if (!(target instanceof AuditedEntityBase entity)) {
+            return;
+        }
         // 软删除：设置删除标记和删除时间
         entity.setIsDeleted(true);
         entity.setDeletedAt(LocalDateTime.now());
@@ -217,7 +232,10 @@ public class AuditingEntityListener implements ApplicationContextAware {
     }
 
     @PostRemove
-    public void postRemove(AuditedEntityBase entity) {
+    public void postRemove(Object target) {
+        if (!(target instanceof AuditedEntityBase entity)) {
+            return;
+        }
         saveAuditLog(entity, OperationType.DELETE, serializeState(entity), null);
     }
 }

@@ -108,9 +108,9 @@ public class CurrentManagedLocationIdsResolver {
     }
 
     /**
-     * 解析启用态药房与科室药房实体；无岗位分配时回落医院级药房列表（含科室药房）。
+     * 解析启用态药房与科室药房实体；无岗位分配时回落医院级药房+科室药房并集。
      *
-     * @return 当前操作者可见的启用态药房；永不为 {@code null}
+     * @return 当前操作者可见的启用态药房/科室药房；永不为 {@code null}
      */
     public List<Location> listManagedActivePharmaciesOrEmpty() {
         List<Long> managedIds = this.listManagedLocationIdsOrEmpty();
@@ -122,7 +122,7 @@ public class CurrentManagedLocationIdsResolver {
             return List.of();
         }
         if (pharmacies.isEmpty()) {
-            return locationQueryService.listAllActivePharmacies();
+            return locationQueryService.listAllActivePharmacyPartyLocations();
         }
         return pharmacies;
     }
@@ -285,19 +285,19 @@ public class CurrentManagedLocationIdsResolver {
     }
 
     /**
-     * 无岗位库房分配时，按回落机构加载启用态药房；机构未知时取全院药房。
+     * 无岗位库房分配时，按回落机构加载启用态药房与科室药房并集；机构未知时取全院并集。
      *
-     * @return 候选药房列表，永不为 {@code null}
+     * @return 候选药房/科室药房列表，永不为 {@code null}
      */
     private List<Location> listFallbackActivePharmaciesWhenNoManagedScope() {
         Long organizationUnitId = managedOrganizationIdsResolver.resolveOrganizationUnitIdForQuery();
         if (organizationUnitId != null) {
-            List<Location> orgPharmacies = locationQueryService.listPharmaciesByOrganization(organizationUnitId);
+            List<Location> orgPharmacies = locationQueryService.listPharmacyPartyByOrganization(organizationUnitId);
             if (!orgPharmacies.isEmpty()) {
                 return orgPharmacies;
             }
         }
-        return locationQueryService.listAllActivePharmacies();
+        return locationQueryService.listAllActivePharmacyPartyLocations();
     }
 
     /**

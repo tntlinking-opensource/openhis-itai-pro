@@ -56,7 +56,9 @@ public class YbNationalCatalogQueryService {
     }
 
     /**
-     * 药品选码推荐候选池；有批准文号/规格时查 1301 明细，否则 1312 摘要去重 */
+     * 选码推荐候选池；药品有批准文号/规格时查 1301 明细，否则先 1312 摘要去重，
+     * 空结果再按 listType 回退明细（101/102→1301，201→1305，301→1306）。
+     */
     public List<YbNationalCatalogItem> listForMedicationMatch(
             Long contractId,
             Long tenantId,
@@ -69,19 +71,23 @@ public class YbNationalCatalogQueryService {
         if (contractId == null || tenantId == null) {
             return List.of();
         }
-        if (prefers1301Detail(aprvno, spec)) {
-            return catalogItemLookup.list1301DetailForMedicationMatch(
+        String detailSource = resolveDetailSourceInfno(listType);
+        int bound = Math.max(1, limit);
+        // 仅药品目录在有批准文号/规格时直查 1301 明细
+        if ("1301".equals(detailSource) && prefers1301Detail(aprvno, spec)) {
+            return catalogItemLookup.listDetailForMedicationMatch(
                 contractId,
                 tenantId,
                 trimToNull(listType),
+                detailSource,
                 trimToNull(keyword),
                 trimToNull(aprvno),
                 trimToNull(spec),
                 trimToNull(hilistCodeExact),
                 ValiFlag.VALID.getCode(),
-                Math.max(1, limit));
+                bound);
         }
-        return catalogItemLookup.listDistinctForMedicationMatch(
+        List<YbNationalCatalogItem> pool1312 = catalogItemLookup.listDistinctForMedicationMatch(
             contractId,
             tenantId,
             trimToNull(listType),
@@ -89,7 +95,36 @@ public class YbNationalCatalogQueryService {
             trimToNull(aprvno),
             trimToNull(spec),
             trimToNull(hilistCodeExact),
-            Math.max(1, limit));
+            bound);
+        if (!pool1312.isEmpty()) {
+            return pool1312;
+        }
+        // 本地仅下载了文件型明细（1301/1305/1306）时，关键词选码也应能命中
+        return catalogItemLookup.listDetailForMedicationMatch(
+            contractId,
+            tenantId,
+            trimToNull(listType),
+            detailSource,
+            trimToNull(keyword),
+            trimToNull(aprvno),
+            trimToNull(spec),
+            trimToNull(hilistCodeExact),
+            ValiFlag.VALID.getCode(),
+            bound);
+    }
+
+    /**
+     * 按目录类别解析明细回退源：医疗服务→1305，耗材→1306，其余（西药等）→1301。
+     */
+    public static String resolveDetailSourceInfno(String listType) {
+        String code = trimToNull(listType);
+        if (ListType.MEDICAL_SERVICE.getCode().equals(code)) {
+            return ChsInfNo.MEDICAL_SERVICE_CATALOG_DOWNLOAD;
+        }
+        if (ListType.MEDICAL_CONSUMABLE.getCode().equals(code)) {
+            return ChsInfNo.MEDICAL_CONSUMABLE_CATALOG_DOWNLOAD;
+        }
+        return ChsInfNo.DRUG_CATALOG_DOWNLOAD;
     }
 
     /** 1301 明细模式分页（含 source_line_no） */
@@ -107,6 +142,7 @@ public class YbNationalCatalogQueryService {
             hilistPrefix,
             trimToNull(query.getAprvno()),
             trimToNull(query.getSpec()),
+            query.isExcludePlatformExpired(),
             pageable);
     }
 
@@ -129,6 +165,7 @@ public class YbNationalCatalogQueryService {
             hilistPrefix,
             trimToNull(query.getAprvno()),
             trimToNull(query.getSpec()),
+            query.isExcludePlatformExpired(),
             pageable);
     }
 
@@ -203,6 +240,15 @@ public class YbNationalCatalogQueryService {
             }
             if (isNotEmpty(query.getValiFlag())) {
                 predicates.add(cb.equal(root.get("valiFlag"), query.getValiFlag().trim()));
+            }
+            if (query.isExcludePlatformExpired()) {
+                LocalDate day = LocalDate.now();
+                // 与 SQL/Composer 一致：enddate 空或≤0001-12-31 视为无结束日
+                predicates.add(cb.or(
+                    cb.isNull(root.get("enddate")),
+                    cb.lessThanOrEqualTo(root.get("enddate"), LocalDate.of(1, 12, 31)),
+                    cb.greaterThanOrEqualTo(root.get("enddate"), day)
+                ));
             }
             if (isNotEmpty(query.getAprvno())) {
                 String pattern = "%" + query.getAprvno().trim().toLowerCase() + "%";

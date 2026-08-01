@@ -42,4 +42,15 @@ public interface ActivityDefinitionChildRepository extends JpaRepository<Activit
      * @return 子项集合
      */
     List<ActivityDefinitionChild> findByActivityIdIn(List<Long> activityIds);
+
+    /**
+     * 按被引用子项主键集合反查未删除子表行。
+     *
+     * <p>用于判断某诊疗是否<strong>已被套餐引用为子项</strong>（父项不能再有父亲）。
+     * 同一 {@code children_id} 可对应多行（子项允许多个父亲），本方法不做唯一性约束。</p>
+     *
+     * @param childrenIds 子项诊疗主键集合
+     * @return 引用行集合
+     */
+    List<ActivityDefinitionChild> findByChildrenIdIn(List<Long> childrenIds);
 }

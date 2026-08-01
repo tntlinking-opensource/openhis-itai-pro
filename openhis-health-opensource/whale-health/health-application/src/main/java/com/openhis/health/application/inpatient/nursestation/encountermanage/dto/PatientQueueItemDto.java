@@ -82,12 +82,17 @@ public class PatientQueueItemDto implements InpatientAccountBalanceDisplayDtoApp
     private String houseName;
 
     /** 床位主键。 */
+    /** 床位主键（活动床；无活动床时可为末次已完成床，仅展示）。 */
     @Schema(description = "床位主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long bedId;
 
-    /** 床号。 */
-    @Schema(description = "床号")
+    /**
+     * 床号展示。
+     *
+     * <p>无活动床（召回未占床）时为「原{床名}（未占床）」。</p>
+     */
+    @Schema(description = "床号；未占床时含「原…（未占床）」")
     private String bedName;
 
     /** 科室主键。 */
@@ -98,6 +103,12 @@ public class PatientQueueItemDto implements InpatientAccountBalanceDisplayDtoApp
     /** 科室名称。 */
     @Schema(description = "科室名称")
     private String organizationName;
+
+    /**
+     * 费用性质/医保类型展示：有医保账户优先其合同名，否则登记个人现金户合同名。
+     */
+    @Schema(description = "费用性质/医保类型展示")
+    private String contractDisplay;
 
     /** 病情/优先级 code。 */
     @Schema(description = "病情/优先级 code")
@@ -193,15 +204,6 @@ public class PatientQueueItemDto implements InpatientAccountBalanceDisplayDtoApp
     /** 五笔码。 */
     @Schema(description = "五笔码")
     private String wubiCode;
-
-    /**
-     * 是否展示「出院召回」行操作（BR-IP-NUR-013）。
-     *
-     * <p>仅 {@code status_enum = DISCHARGED}（已清床离院）时为 {@code true}；未清床 {@code COMPLETED} 须收银台反结。</p>
-     */
-    @Schema(description = "是否可出院召回")
-    /** 是否可出院召回。 */
-    private Boolean recallEnabled;
 
     /** 护理级别医嘱主键。 */
     @JsonSerialize(using = ToStringSerializer.class)

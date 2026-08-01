@@ -5,7 +5,6 @@
 package com.openhis.health.domain.administration.practitioner.service;
 
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
-import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.health.domain.administration.practitioner.repository.PractitionerRepository;
 import com.openhis.health.domain.share.enums.PublicationStatus;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +15,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -83,14 +83,19 @@ public class PractitionerQueryService {
         Pageable pageable,
         boolean requireBoundSystemUser) {
         String status = PublicationStatus.ACTIVE.getCode();
-        String searchPattern = null;
+        String trimmedKeyword = null;
         if (StringUtils.isNotEmpty(searchKey)) {
-            searchPattern = SearchCodeUtil.toCaseInsensitiveLikePattern(searchKey.trim());
+            trimmedKeyword = searchKey.trim();
+        }
+        // 关键字非空时剥掉 Pageable Sort，保留 Spec 精确优先 ORDER BY（B.2.1）
+        Pageable effective = pageable;
+        if (StringUtils.isNotEmpty(trimmedKeyword) && pageable != null && pageable.getSort().isSorted()) {
+            effective = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
         }
         Specification<Practitioner> specification =
             PractitionerPageQuerySupport.activePractitioners(
-                status, searchPattern, requireBoundSystemUser, resolvedPractitionerIdsForRole);
-        return practitionerRepository.findAll(specification, pageable);
+                status, trimmedKeyword, requireBoundSystemUser, resolvedPractitionerIdsForRole);
+        return practitionerRepository.findAll(specification, effective);
     }
 
     /**
@@ -171,5 +176,33 @@ public class PractitionerQueryService {
             return Collections.emptyList();
         }
         return practitionerRepository.findAllById(ids);
+    }
+
+    /**
+     * 按绑定系统用户主键批量加载在职医务人员（财务审批人下拉等）。
+     *
+     * @param userIds 系统用户主键集合
+     * @return 在职且未软删的医务人员；入参为空时返回空列表
+     */
+    public List<Practitioner> listActivePractitionersByBoundUserIds(Collection<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Practitioner> found = practitionerRepository.findAllByUserIdInAndIsDeletedFalse(userIds);
+        if (found == null || found.isEmpty()) {
+            return Collections.emptyList();
+        }
+        String active = PublicationStatus.ACTIVE.getCode();
+        List<Practitioner> result = new ArrayList<>();
+        for (Practitioner practitioner : found) {
+            if (practitioner == null || practitioner.getId() == null) {
+                continue;
+            }
+            if (!active.equals(practitioner.getStatusEnum())) {
+                continue;
+            }
+            result.add(practitioner);
+        }
+        return result;
     }
 }

@@ -40,12 +40,12 @@ public class PagePatientQueueRequest extends AbstractHealthPageRequest {
     private String nurseStationTaskFilter;
 
     /**
-     * 列表状态筛选 code（{@link com.openhis.health.domain.share.constants.InpatientNurseStationConstants} {@code STATUS_FILTER_*}）。
+     * 列表状态筛选（已废止，忽略）。
      *
-     * <p>空=默认在院 {@code REGISTERED}～{@code COMPLETED}；{@code SETTLED_DISCHARGED}=已出院结算召回列表。</p>
+     * <p>空=默认在院；历史 {@code SETTLED_DISCHARGED} 已迁出，服务端非空拒绝。</p>
      */
-    @Schema(description = "列表状态筛选：空=在院；SETTLED_DISCHARGED=已出院结算")
-    /** 列表状态筛选：空=在院；SETTLED_DISCHARGED=已出院结算。 */
+    @Schema(description = "列表状态筛选（已废止，请勿传）")
+    /** 列表状态筛选（已废止）。 */
     private String nurseStationStatusFilter;
 
     /** 待执行计数自然日。 */

@@ -115,10 +115,3 @@ ON CONFLICT (id) DO UPDATE SET
     enabled                   = EXCLUDED.enabled,
     updated_at                = EXCLUDED.updated_at,
     updated_by                = EXCLUDED.updated_by;
-
--- 软删旧版「全周同一日排班」明细（周六日单行，若曾写入）
-UPDATE bkg_week_schedule_template_item
-SET is_deleted = TRUE, deleted_at = TIMESTAMPTZ '2026-07-13 12:00:00+00', deleted_by = 1, updated_at = TIMESTAMPTZ '2026-07-13 12:00:00+00'
-WHERE week_schedule_template_id = 328056809673723904
-  AND weekday IN (6, 7)
-  AND is_deleted = FALSE;

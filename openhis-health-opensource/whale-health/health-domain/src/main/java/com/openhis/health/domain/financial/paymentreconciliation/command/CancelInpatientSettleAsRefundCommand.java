@@ -35,6 +35,8 @@ public class CancelInpatientSettleAsRefundCommand {
     private PaymentKind kindEnum;
     /** 支付渠道枚举编码。 */
     private String paymentEnum;
+    /** 费用性质合同业务号（继承原支付单，日结筛选用）。 */
+    private String contractNo;
     /** 支付明细分录。 */
     private List<PaymentDetailItemCommand> paymentDetails;
 }

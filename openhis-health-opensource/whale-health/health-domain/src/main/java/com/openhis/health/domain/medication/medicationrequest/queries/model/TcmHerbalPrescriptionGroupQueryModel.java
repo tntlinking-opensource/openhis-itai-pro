@@ -42,8 +42,8 @@ public class TcmHerbalPrescriptionGroupQueryModel {
     private String therapyEnum;
     /** 方级展示状态（取组内行最高优先级状态）。 */
     private String statusEnum;
-    /** 方级开立时间（取组内最早 {@code req_authored_time}）。 */
-    private LocalDateTime reqAuthoredTime;
+    /** 方级开立时间（组内最早 req_opened_time，空行回落 req_authored_time）。 */
+    private LocalDateTime reqOpenedTime;
     /** 方内药品申请行（扁平行，供应用层 enrich 目录名与费用态）。 */
     private List<MedicationRequestListQueryModel> lines = new ArrayList<>();
 }

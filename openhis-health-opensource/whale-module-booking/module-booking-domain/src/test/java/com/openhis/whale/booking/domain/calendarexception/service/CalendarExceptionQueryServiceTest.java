@@ -40,7 +40,7 @@ class CalendarExceptionQueryServiceTest {
 
     @Test
     void resolveDayGeneratePlan_closed_skipsNormalGeneration() {
-        when(calendarExceptionRepository.findAll(any(Specification.class), any(Sort.class)))
+        when(calendarExceptionRepository.findAll(anySpec(), any(Sort.class)))
             .thenReturn(List.of(exception(CalendarExceptionTypeConstants.CLOSED, null)));
 
         DayGeneratePlanModel plan = queryService.resolveDayGeneratePlan(ORG_ID, DAY);
@@ -51,7 +51,7 @@ class CalendarExceptionQueryServiceTest {
 
     @Test
     void resolveDayGeneratePlan_extra_generatesAdditionalSchedule() {
-        when(calendarExceptionRepository.findAll(any(Specification.class), any(Sort.class)))
+        when(calendarExceptionRepository.findAll(anySpec(), any(Sort.class)))
             .thenReturn(List.of(exception(CalendarExceptionTypeConstants.EXTRA, 501L)));
 
         DayGeneratePlanModel plan = queryService.resolveDayGeneratePlan(ORG_ID, DAY);
@@ -63,7 +63,7 @@ class CalendarExceptionQueryServiceTest {
 
     @Test
     void resolveDayGeneratePlan_override_replacesTemplate() {
-        when(calendarExceptionRepository.findAll(any(Specification.class), any(Sort.class)))
+        when(calendarExceptionRepository.findAll(anySpec(), any(Sort.class)))
             .thenReturn(List.of(exception(CalendarExceptionTypeConstants.OVERRIDE, 502L)));
 
         DayGeneratePlanModel plan = queryService.resolveDayGeneratePlan(ORG_ID, DAY);
@@ -76,13 +76,17 @@ class CalendarExceptionQueryServiceTest {
     void resolveDayGeneratePlan_autoApplyOff_isIgnored() {
         CalendarException row = exception(CalendarExceptionTypeConstants.CLOSED, null);
         row.setAutoApplyOnGenerate(Boolean.FALSE);
-        when(calendarExceptionRepository.findAll(any(Specification.class), any(Sort.class)))
+        when(calendarExceptionRepository.findAll(anySpec(), any(Sort.class)))
             .thenReturn(List.of(row));
 
         DayGeneratePlanModel plan = queryService.resolveDayGeneratePlan(ORG_ID, DAY);
 
         assertThat(plan.isSkipNormal()).isFalse();
         assertThat(plan.isGenerateExtra()).isFalse();
+    }
+
+    private static Specification<CalendarException> anySpec() {
+        return org.mockito.ArgumentMatchers.any();
     }
 
     private static CalendarException exception(String type, Long overrideTemplateId) {

@@ -16,6 +16,7 @@ import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.PublicationStatus;
+import com.openhis.health.domain.share.enums.ServiceDeviceTemplateRangeCode;
 import com.openhis.health.domain.share.enums.ServiceDeviceTemplateTypeCode;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.EnumUtil;
@@ -111,6 +112,13 @@ public class ServiceDeviceBindingDisplayAssembler {
                 row.setTypeName(type.getDisplay());
             } else {
                 row.setTypeName(row.getTypeCode());
+            }
+            ServiceDeviceTemplateRangeCode range =
+                EnumUtil.fromCode(ServiceDeviceTemplateRangeCode.class, row.getRangeCode());
+            if (range != null) {
+                row.setRangeName(range.getDisplay());
+            } else {
+                row.setRangeName(row.getRangeCode());
             }
             PublicationStatus status = EnumUtil.fromCode(PublicationStatus.class, row.getStatusEnum());
             if (status != null) {

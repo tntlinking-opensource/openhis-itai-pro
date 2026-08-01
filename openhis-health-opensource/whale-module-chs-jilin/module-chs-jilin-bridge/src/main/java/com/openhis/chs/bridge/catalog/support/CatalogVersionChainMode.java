@@ -12,6 +12,6 @@ public enum CatalogVersionChainMode {
     /** 优先「版本名称」列，无则回退 max「版本号」列；用于 1301/1302/1305/1306 */
     VERSION_NAME_THEN_NUMBER,
 
-    /** 仅使用 idxVersionNo 列；用于 1307/1308/1309/1314/1315（对齐 OpenHIS version_number / version） */
+    /** 仅使用 idxVersionNo 列；用于 1307/1308/1309/1310/1311/1313/1314/1315（对齐 OpenHIS version_number / version） */
     VERSION_NUMBER_ONLY
 }

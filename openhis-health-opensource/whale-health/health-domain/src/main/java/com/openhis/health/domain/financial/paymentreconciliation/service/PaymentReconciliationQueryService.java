@@ -27,6 +27,7 @@ import com.openhis.health.domain.share.enums.CashierSettlementType;
 import com.openhis.health.domain.share.enums.PaymentKind;
 import com.openhis.health.domain.share.enums.PaymentStatus;
 import com.openhis.health.domain.share.financial.DailySettlementRefundPaymentRules;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.whale.core.application.exception.BusinessException;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.Predicate;
@@ -278,6 +279,153 @@ public class PaymentReconciliationQueryService {
     }
 
     /**
+     * 按就诊批量查找：正向 SUCCESS 流水中 {@code charge_item_ids} 与给定挂号费收费项有交集的支付主键。
+     *
+     * <p>用于退号/补打挂号小票：锚定「挂载挂号费 chargeItem」的支付单，禁止用最近/最早启发式误绑门诊收费单。</p>
+     *
+     * @param registrationChargeItemIdsByEncounter 就诊 → 挂号费收费项主键集合
+     * @return 就诊主键 → 命中的支付流水主键；无交集时不写入
+     */
+    public Map<Long, Long> findSuccessPaymentIdsOverlappingChargeItemsByEncounter(
+        Map<Long, ? extends Collection<Long>> registrationChargeItemIdsByEncounter) {
+        Map<Long, Long> result = new HashMap<>();
+        if (registrationChargeItemIdsByEncounter == null || registrationChargeItemIdsByEncounter.isEmpty()) {
+            return result;
+        }
+        List<Long> encounterIds = new ArrayList<>();
+        for (Map.Entry<Long, ? extends Collection<Long>> entry : registrationChargeItemIdsByEncounter.entrySet()) {
+            if (entry == null || entry.getKey() == null) {
+                continue;
+            }
+            Collection<Long> chargeItemIds = entry.getValue();
+            if (chargeItemIds == null || chargeItemIds.isEmpty()) {
+                continue;
+            }
+            encounterIds.add(entry.getKey());
+        }
+        if (encounterIds.isEmpty()) {
+            return result;
+        }
+        List<PaymentReconciliation> rows =
+            paymentRepository.findByEncounterIdInAndStatusEnum(encounterIds, PaymentStatus.SUCCESS);
+        for (PaymentReconciliation row : rows) {
+            if (row == null || row.getRelationId() != null || row.getEncounterId() == null || row.getId() == null) {
+                continue;
+            }
+            Collection<Long> wanted = registrationChargeItemIdsByEncounter.get(row.getEncounterId());
+            if (wanted == null || wanted.isEmpty()) {
+                continue;
+            }
+            Set<Long> wantedSet = new HashSet<>();
+            for (Long chargeItemId : wanted) {
+                if (chargeItemId != null) {
+                    wantedSet.add(chargeItemId);
+                }
+            }
+            if (wantedSet.isEmpty()) {
+                continue;
+            }
+            boolean overlaps = false;
+            for (Long boundId : this.parseIds(row.getChargeItemIds())) {
+                if (wantedSet.contains(boundId)) {
+                    overlaps = true;
+                    break;
+                }
+            }
+            if (!overlaps) {
+                continue;
+            }
+            Long existing = result.get(row.getEncounterId());
+            if (existing == null || row.getId() < existing) {
+                result.put(row.getEncounterId(), row.getId());
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 列出就诊下全部 SUCCESS 支付（账单时间倒序，空 bill_date 回落主键倒序）。
+     *
+     * @param encounterId 就诊主键
+     * @return 成功支付读模型列表；无则空列表
+     */
+    public List<PaymentReconciliationQueryModel> listSuccessPaymentsByEncounterId(Long encounterId) {
+        if (encounterId == null) {
+            return List.of();
+        }
+        List<PaymentReconciliation> rows = paymentRepository.findByEncounterIdAndStatusEnumIn(
+            encounterId,
+            List.of(PaymentStatus.SUCCESS));
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        rows.sort((left, right) -> {
+            LocalDateTime leftDate = left.getBillDate();
+            LocalDateTime rightDate = right.getBillDate();
+            if (leftDate != null && rightDate != null) {
+                int byDate = rightDate.compareTo(leftDate);
+                if (byDate != 0) {
+                    return byDate;
+                }
+            } else if (leftDate != null) {
+                return -1;
+            } else if (rightDate != null) {
+                return 1;
+            }
+            Long leftId = left.getId();
+            Long rightId = right.getId();
+            if (leftId == null && rightId == null) {
+                return 0;
+            }
+            if (leftId == null) {
+                return 1;
+            }
+            if (rightId == null) {
+                return -1;
+            }
+            return Long.compare(rightId, leftId);
+        });
+        List<PaymentReconciliationQueryModel> result = new ArrayList<>();
+        for (PaymentReconciliation row : rows) {
+            result.add(this.toQueryModel(row));
+        }
+        this.attachYbSettlements(result);
+        return result;
+    }
+
+    /**
+     * 批量读取支付流水经办人（{@code enterer_id}），供挂号列表回显收费人。
+     *
+     * <p>口径与结算写侧一致：正式收费成功后写入的经办人，与 {@code adm_charge_item.performer_id} 同源（BR-OPC-016）。</p>
+     *
+     * @param paymentIds 支付流水主键集合；空集合时返回空 Map
+     * @return 支付流水主键 → entererId；无经办人或主键为空时不写入该键
+     */
+    public Map<Long, Long> mapEntererIdByPaymentIds(Collection<Long> paymentIds) {
+        Map<Long, Long> result = new HashMap<>();
+        if (paymentIds == null || paymentIds.isEmpty()) {
+            return result;
+        }
+        List<Long> idList = new ArrayList<>();
+        for (Long paymentId : paymentIds) {
+            if (paymentId != null) {
+                idList.add(paymentId);
+            }
+        }
+        if (idList.isEmpty()) {
+            return result;
+        }
+        List<PaymentReconciliation> rows = paymentRepository.findByIdIn(idList);
+        for (PaymentReconciliation row : rows) {
+            if (row == null || row.getId() == null || row.getEntererId() == null) {
+                continue;
+            }
+            result.put(row.getId(), row.getEntererId());
+        }
+        return result;
+    }
+
+    /**
      * 判断关联原单是否已产生退款流水，并回填首条匹配流水的标识与状态。
      *
      * @param relationId 业务关联单标识（与原支付关联字段一致）
@@ -362,18 +510,14 @@ public class PaymentReconciliationQueryService {
     /**
      * 预览收费员交账未挂载候选 payment（BR-CS-001～006；供日结 IF 与写侧复用口径）。
      *
-     * @param query 交账类型、经办人与业务日窗
+     * @param query 交账类型、科室/location 范围、可选 enterer 软筛与业务日窗
      * @return 候选 items 与条数
      * @throws BusinessException 查询条件非法
      */
     public PreviewCashierSettlementQueryModel previewUnsettledPaymentsForCashierSettlement(PreviewCashierSettlementQuery query) {
         List<PaymentReconciliation> rows = this.findUnsettledPaymentsForCashierSettlement(query);
         PreviewCashierSettlementQueryModel model = new PreviewCashierSettlementQueryModel();
-        List<UnsettledPaymentPreviewItemQueryModel> items = new ArrayList<>();
-        // 逐条映射为交账预览行（渠道/病区汇总在应用层）
-        for (PaymentReconciliation row : rows) {
-            items.add(this.toUnsettledPreviewItem(row));
-        }
+        List<UnsettledPaymentPreviewItemQueryModel> items = this.toUnsettledPreviewItems(rows);
         model.setItems(items);
         // paymentCount = 候选流水条数（含 0 元与收支抵净；BR-CS-011），与 items.size 及提交挂载条数一致
         model.setPaymentCount(items.size());
@@ -383,7 +527,7 @@ public class PaymentReconciliationQueryService {
     /**
      * 统计收费员交账未挂载候选 payment 条数。
      *
-     * @param query 交账类型、经办人与业务日窗
+     * @param query 交账类型、科室/location 范围、可选 enterer 软筛与业务日窗
      * @return 条数
      * @throws BusinessException 查询条件非法
      */
@@ -410,7 +554,7 @@ public class PaymentReconciliationQueryService {
     /**
      * 按 BR-CS-001、003～006 查询日结展示用 payment（含已交账与未交账，供 rows/summary 汇总）。
      *
-     * @param query 交账类型、经办人与业务日窗
+     * @param query 交账类型、科室/location 范围、可选 enterer 软筛与业务日窗
      * @return 展示口径 payment 列表，按 billDate 降序
      * @throws BusinessException 查询条件非法
      */
@@ -426,24 +570,20 @@ public class PaymentReconciliationQueryService {
     /**
      * 日结展示用 payment 预览行（含已交账；与 {@link #previewUnsettledPaymentsForCashierSettlement} 共用 BR-CS-001、003～006）。
      *
-     * @param query 交账类型、经办人与业务日窗
+     * @param query 交账类型、科室/location 范围、可选 enterer 软筛与业务日窗
      * @return 展示口径预览行列表
      * @throws BusinessException 查询条件非法
      */
     public List<UnsettledPaymentPreviewItemQueryModel> previewPaymentsForCashierSettlementSummary(
         PreviewCashierSettlementQuery query) {
         List<PaymentReconciliation> rows = this.findPaymentsForCashierSettlementSummary(query);
-        List<UnsettledPaymentPreviewItemQueryModel> items = new ArrayList<>();
-        for (PaymentReconciliation row : rows) {
-            items.add(this.toUnsettledPreviewItem(row));
-        }
-        return items;
+        return this.toUnsettledPreviewItems(rows);
     }
 
     /**
      * 日结展示用 payment 读模型（含医保关联 enrichment）。
      *
-     * @param query 交账类型、经办人与业务日窗
+     * @param query 交账类型、科室/location 范围、可选 enterer 软筛与业务日窗
      * @return 展示口径读模型列表
      * @throws BusinessException 查询条件非法
      */
@@ -456,6 +596,170 @@ public class PaymentReconciliationQueryService {
         }
         this.attachYbSettlements(result);
         return result;
+    }
+
+    /**
+     * 按交账头挂载读取 payment 读模型（历史重打 / 审批详情现算；仅本聚合 Repository）。
+     *
+     * @param cashierSettlementId 交账头主键
+     * @return 已挂载 payment 读模型；主键空时返回空列表
+     */
+    public List<PaymentReconciliationQueryModel> findPaymentQueryModelsByCashierSettlementId(
+        Long cashierSettlementId) {
+        if (cashierSettlementId == null) {
+            return List.of();
+        }
+        List<PaymentReconciliation> rows =
+            this.paymentRepository.findByCashierSettlementIdAndIsDeletedFalse(cashierSettlementId);
+        List<PaymentReconciliationQueryModel> result = new ArrayList<>();
+        for (PaymentReconciliation payment : rows) {
+            // 跳过空行，避免 NPE
+            if (payment == null) {
+                continue;
+            }
+            result.add(this.toQueryModel(payment));
+        }
+        this.attachYbSettlements(result);
+        return result;
+    }
+
+    /**
+     * 按交账头挂载组装日结预览行（与候选预览行字段同构，供 rows/summary 现算）。
+     *
+     * @param cashierSettlementId 交账头主键
+     * @return 预览行；主键空时返回空列表
+     */
+    public List<UnsettledPaymentPreviewItemQueryModel> previewPaymentsByCashierSettlementId(
+        Long cashierSettlementId) {
+        if (cashierSettlementId == null) {
+            return List.of();
+        }
+        List<PaymentReconciliation> rows =
+            this.paymentRepository.findByCashierSettlementIdAndIsDeletedFalse(cashierSettlementId);
+        return this.toUnsettledPreviewItems(rows);
+    }
+
+    /**
+     * 交账业务日窗内出现过流水的 enterer_id 去重列表（不按收款人过滤；用于默认勾选候选）。
+     *
+     * @param query 交账类型、科室/location 范围与业务日窗
+     * @return enterer_id 列表（已去重、去空）
+     * @throws BusinessException 查询条件非法
+     */
+    public List<Long> listDistinctEntererIdsInCashierSettlementWindow(PreviewCashierSettlementQuery query) {
+        this.assertCashierSettlementPreviewQueryValid(query);
+        if (this.isLocationScopeExhausted(query.getLocationIds())) {
+            return List.of();
+        }
+        Specification<PaymentReconciliation> specification =
+            this.buildCashierSettlementScopeSpecificationWithoutEnterer(query, false);
+        List<PaymentReconciliation> rows = this.paymentRepository.findAll(specification);
+        LinkedHashSet<Long> entererIds = new LinkedHashSet<>();
+        for (PaymentReconciliation row : rows) {
+            if (row != null && row.getEntererId() != null) {
+                entererIds.add(row.getEntererId());
+            }
+        }
+        return new ArrayList<>(entererIds);
+    }
+
+    /**
+     * 漏交硬栏：截止前（{@code billDate <= dateTo}）且早于当前窗起点（{@code billDate < dateFrom}）的最早未交账业务时刻。
+     *
+     * <p>口径与候选相同 kind/location 范围，<strong>不含</strong> enterer 软筛（DD §2.6.5）。</p>
+     *
+     * @param query 交账类型、org/location 范围与业务日窗
+     * @return 最早 effective bill 时刻；无漏交时 {@code null}
+     * @throws BusinessException 查询条件非法
+     */
+    public LocalDateTime findEarliestUnsettledPaymentBillTimeBeforeWindow(PreviewCashierSettlementQuery query) {
+        this.assertCashierSettlementPreviewQueryValid(query);
+        if (this.isLocationScopeExhausted(query.getLocationIds())) {
+            return null;
+        }
+        CashierSettlementType settlementType = this.resolveCashierSettlementType(query.getTypeEnum());
+        LocalDateTime dateFrom = query.getDateFrom();
+        LocalDateTime dateTo = query.getDateTo();
+        List<PaymentStatus> allowedStatuses = Arrays.asList(PaymentStatus.SUCCESS, PaymentStatus.REFUNDED);
+        Specification<PaymentReconciliation> specification = (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.isNull(root.get(FieldNameConstants.CASHIER_SETTLEMENT_ID)));
+            this.addCashierSettlementKindPredicate(predicates, cb, root, settlementType);
+            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(allowedStatuses));
+            this.addLocationIdsPredicate(predicates, cb, root, query.getLocationIds());
+            jakarta.persistence.criteria.Expression<LocalDateTime> effectiveBillDate =
+                this.effectiveBillDateExpression(cb, root);
+            predicates.add(cb.lessThan(effectiveBillDate, dateFrom));
+            predicates.add(cb.lessThanOrEqualTo(effectiveBillDate, dateTo));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        List<PaymentReconciliation> rows = this.paymentRepository.findAll(specification);
+        LocalDateTime earliest = null;
+        for (PaymentReconciliation row : rows) {
+            LocalDateTime billTime = this.resolveEffectiveBillDate(row);
+            if (billTime == null) {
+                continue;
+            }
+            if (earliest == null || billTime.isBefore(earliest)) {
+                earliest = billTime;
+            }
+        }
+        return earliest;
+    }
+
+    /**
+     * 漏交提醒：业务时间晚于 {@code dateTo} 的未交账 payment 条数（同 kind/location 范围，不含 enterer 软筛）。
+     *
+     * @param query 交账类型、org/location 范围与业务日窗
+     * @return 条数
+     * @throws BusinessException 查询条件非法
+     */
+    public long countUnsettledPaymentsAfterWindow(PreviewCashierSettlementQuery query) {
+        this.assertCashierSettlementPreviewQueryValid(query);
+        if (this.isLocationScopeExhausted(query.getLocationIds())) {
+            return 0L;
+        }
+        CashierSettlementType settlementType = this.resolveCashierSettlementType(query.getTypeEnum());
+        LocalDateTime dateTo = query.getDateTo();
+        List<PaymentStatus> allowedStatuses = Arrays.asList(PaymentStatus.SUCCESS, PaymentStatus.REFUNDED);
+        Specification<PaymentReconciliation> specification = (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.isNull(root.get(FieldNameConstants.CASHIER_SETTLEMENT_ID)));
+            this.addCashierSettlementKindPredicate(predicates, cb, root, settlementType);
+            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(allowedStatuses));
+            this.addLocationIdsPredicate(predicates, cb, root, query.getLocationIds());
+            jakarta.persistence.criteria.Expression<LocalDateTime> effectiveBillDate =
+                this.effectiveBillDateExpression(cb, root);
+            predicates.add(cb.greaterThan(effectiveBillDate, dateTo));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        return this.paymentRepository.count(specification);
+    }
+
+    /**
+     * 交账日窗筛选（不含收款人 enterer 条件）。
+     */
+    private Specification<PaymentReconciliation> buildCashierSettlementScopeSpecificationWithoutEnterer(
+        PreviewCashierSettlementQuery query,
+        boolean unsettledOnly) {
+        CashierSettlementType settlementType = this.resolveCashierSettlementType(query.getTypeEnum());
+        LocalDateTime windowStart = query.getDateFrom();
+        LocalDateTime windowEndExclusive = query.getDateTo().plusSeconds(1);
+        List<PaymentStatus> allowedStatuses = Arrays.asList(PaymentStatus.SUCCESS, PaymentStatus.REFUNDED);
+        return (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            if (unsettledOnly) {
+                predicates.add(cb.isNull(root.get(FieldNameConstants.CASHIER_SETTLEMENT_ID)));
+            }
+            this.addCashierSettlementKindPredicate(predicates, cb, root, settlementType);
+            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(allowedStatuses));
+            this.addLocationIdsPredicate(predicates, cb, root, query.getLocationIds());
+            this.addBillDateWindowPredicate(predicates, cb, root, windowStart, windowEndExclusive);
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
     }
 
     /**
@@ -579,6 +883,38 @@ public class PaymentReconciliationQueryService {
             item.setAfterBalance(detail.getAfterBalance());
             item.setResultEnum(detail.getResultEnum());
             result.add(item);
+        }
+        return result;
+    }
+
+    /**
+     * 按支付主键批量加载读模型（日结提交头表金额快照等）。
+     *
+     * <p>仅本聚合 {@code PaymentReconciliationRepository}。</p>
+     *
+     * @param paymentIds 支付主键；可空
+     * @return 读模型列表（保序近似按入参去重后的库序）；空入参返回空列表
+     */
+    public List<PaymentReconciliationQueryModel> findPaymentQueryModelsByIds(Collection<Long> paymentIds) {
+        List<PaymentReconciliationQueryModel> result = new ArrayList<>();
+        if (paymentIds == null || paymentIds.isEmpty()) {
+            return result;
+        }
+        LinkedHashSet<Long> idSet = new LinkedHashSet<>();
+        for (Long paymentId : paymentIds) {
+            if (paymentId != null) {
+                idSet.add(paymentId);
+            }
+        }
+        if (idSet.isEmpty()) {
+            return result;
+        }
+        List<PaymentReconciliation> rows = this.paymentRepository.findByIdIn(idSet);
+        for (PaymentReconciliation payment : rows) {
+            if (payment == null || payment.getId() == null) {
+                continue;
+            }
+            result.add(this.toQueryModel(payment));
         }
         return result;
     }
@@ -892,12 +1228,61 @@ public class PaymentReconciliationQueryService {
     }
 
     /**
+     * 未交账支付实体列表 → 日结/交账预览行（批量解析逆向单原单金额，避免 N+1）。
+     *
+     * @param rows 支付实体列表
+     * @return 预览行列表
+     */
+    private List<UnsettledPaymentPreviewItemQueryModel> toUnsettledPreviewItems(List<PaymentReconciliation> rows) {
+        List<UnsettledPaymentPreviewItemQueryModel> items = new ArrayList<>();
+        if (rows == null || rows.isEmpty()) {
+            return items;
+        }
+        Map<Long, PaymentReconciliation> originalById = this.loadOriginalPaymentsForReverseNet(rows);
+        for (PaymentReconciliation row : rows) {
+            items.add(this.toUnsettledPreviewItem(row, originalById));
+        }
+        return items;
+    }
+
+    /**
+     * 批量加载逆向退费单关联的原支付，供净额与原单患者应付对齐（BR-OP-DCL-011）。
+     *
+     * @param rows 候选支付
+     * @return relationId → 原支付实体
+     */
+    private Map<Long, PaymentReconciliation> loadOriginalPaymentsForReverseNet(List<PaymentReconciliation> rows) {
+        Set<Long> relationIds = new LinkedHashSet<>();
+        for (PaymentReconciliation row : rows) {
+            if (row == null || row.getRelationId() == null) {
+                continue;
+            }
+            if (this.isReverseRefundPayment(row)) {
+                relationIds.add(row.getRelationId());
+            }
+        }
+        if (relationIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, PaymentReconciliation> originalById = new HashMap<>();
+        for (PaymentReconciliation original : this.paymentRepository.findByIdIn(relationIds)) {
+            if (original != null && original.getId() != null) {
+                originalById.put(original.getId(), original);
+            }
+        }
+        return originalById;
+    }
+
+    /**
      * 未交账支付实体 → 日结/交账预览行读模型。
      *
      * @param row 支付实体
+     * @param originalById 逆向单 relationId → 原支付（可空 map）
      * @return 预览行
      */
-    private UnsettledPaymentPreviewItemQueryModel toUnsettledPreviewItem(PaymentReconciliation row) {
+    private UnsettledPaymentPreviewItemQueryModel toUnsettledPreviewItem(
+        PaymentReconciliation row,
+        Map<Long, PaymentReconciliation> originalById) {
         UnsettledPaymentPreviewItemQueryModel item = new UnsettledPaymentPreviewItemQueryModel();
         item.setPaymentId(row.getId());
         item.setPaymentNo(row.getPaymentNo());
@@ -913,23 +1298,24 @@ public class PaymentReconciliationQueryService {
         item.setRelationId(row.getRelationId());
         item.setTenderedAmount(row.getTenderedAmount());
         item.setReturnedAmount(row.getReturnedAmount());
-        item.setNetAmount(this.computeUnsettledPreviewNetAmount(row));
+        item.setNetAmount(this.computeUnsettledPreviewNetAmount(row, originalById));
         item.setContractNo(row.getContractNo());
         return item;
     }
 
     /**
-     * 计算未交账预览净额：正向为实收减退回，冲正退费时取展示额绝对值并取负。
+     * 计算未交账预览净额：正向为实收减退回；逆向取负时与原单患者应付（display/tendered）对齐，避免医保全报
+     * 原单 0 元、逆向误写渠道合计导致日结净额成对抵不平（BR-OP-DCL-011）。
      *
      * @param row 支付实体
+     * @param originalById 逆向单 relationId → 原支付（可空）
      * @return 预览净额
      */
-    private BigDecimal computeUnsettledPreviewNetAmount(PaymentReconciliation row) {
+    private BigDecimal computeUnsettledPreviewNetAmount(
+        PaymentReconciliation row,
+        Map<Long, PaymentReconciliation> originalById) {
         if (this.isReverseRefundPayment(row)) {
-            BigDecimal amount = row.getDisplayAmount();
-            if (amount == null) {
-                amount = row.getTenderedAmount();
-            }
+            BigDecimal amount = this.resolveReversePreviewAmountBasis(row, originalById);
             if (amount == null) {
                 amount = BigDecimal.ZERO;
             }
@@ -944,6 +1330,38 @@ public class PaymentReconciliationQueryService {
             returned = BigDecimal.ZERO;
         }
         return tendered.subtract(returned);
+    }
+
+    /**
+     * 逆向退费净额基数：优先原单 display/tendered（与正向日结口径一致），否则回落本单 display/tendered。
+     *
+     * @param reverse 逆向支付
+     * @param originalById relationId → 原支付
+     * @return 金额基数；可能为 null
+     */
+    private BigDecimal resolveReversePreviewAmountBasis(
+        PaymentReconciliation reverse,
+        Map<Long, PaymentReconciliation> originalById) {
+        if (reverse != null && reverse.getRelationId() != null && originalById != null) {
+            PaymentReconciliation original = originalById.get(reverse.getRelationId());
+            if (original != null) {
+                BigDecimal originalAmount = original.getDisplayAmount();
+                if (originalAmount == null) {
+                    originalAmount = original.getTenderedAmount();
+                }
+                if (originalAmount != null) {
+                    return originalAmount;
+                }
+            }
+        }
+        if (reverse == null) {
+            return null;
+        }
+        BigDecimal amount = reverse.getDisplayAmount();
+        if (amount == null) {
+            amount = reverse.getTenderedAmount();
+        }
+        return amount;
     }
 
     /**
@@ -963,7 +1381,7 @@ public class PaymentReconciliationQueryService {
     }
 
     /**
-     * 交账预览入参 Gate：经办人、业务日窗与交账类型合法性。
+     * 交账预览入参 Gate：收款 org、业务日窗与交账类型合法性；enterer 为可选软筛。
      *
      * @param query 交账预览查询
      * @throws BusinessException 参数缺失或不合法时
@@ -972,24 +1390,24 @@ public class PaymentReconciliationQueryService {
         if (query == null) {
             throw new BusinessException(ErrorCodeConstants.CASHIER_SETTLEMENT_INVALID_ARGUMENT, "交账预览条件不能为空");
         }
-        if (query.getCashierId() == null) {
-            throw new BusinessException(ErrorCodeConstants.CASHIER_SETTLEMENT_INVALID_ARGUMENT, "交账经办人不能为空");
+        this.resolveCashierSettlementType(query.getTypeEnum());
+        if (CashierSettlementType.isPaymentType(query.getTypeEnum()) && query.getOrgId() == null) {
+            throw new BusinessException(ErrorCodeConstants.CASHIER_SETTLEMENT_INVALID_ARGUMENT, "收款交账须指定科室");
         }
-        LocalDate dateFrom = query.getDateFrom();
-        LocalDate dateTo = query.getDateTo();
+        LocalDateTime dateFrom = query.getDateFrom();
+        LocalDateTime dateTo = query.getDateTo();
         if (dateFrom == null || dateTo == null) {
             throw new BusinessException(ErrorCodeConstants.CASHIER_SETTLEMENT_INVALID_ARGUMENT, "交账业务日范围不能为空");
         }
         if (dateTo.isBefore(dateFrom)) {
             throw new BusinessException(ErrorCodeConstants.CASHIER_SETTLEMENT_INVALID_ARGUMENT, "交账业务日范围不合法");
         }
-        this.resolveCashierSettlementType(query.getTypeEnum());
     }
 
     /**
      * 交账候选/日结展示共用筛选：BR-CS-001、003～006；{@code unsettledOnly=true} 时追加 BR-CS-002。
      *
-     * @param query         交账类型、经办人与业务日窗
+     * @param query         交账类型、科室/location 范围、可选 enterer 软筛与业务日窗
      * @param unsettledOnly 是否仅未交账（提交挂载与 paymentCount 须为 true）
      * @return JPA Specification
      */
@@ -997,8 +1415,9 @@ public class PaymentReconciliationQueryService {
         PreviewCashierSettlementQuery query,
         boolean unsettledOnly) {
         CashierSettlementType settlementType = this.resolveCashierSettlementType(query.getTypeEnum());
-        LocalDateTime windowStart = query.getDateFrom().atStartOfDay();
-        LocalDateTime windowEndExclusive = query.getDateTo().plusDays(1).atStartOfDay();
+        // 日结时间止按秒闭区间：endExclusive = dateTo + 1s
+        LocalDateTime windowStart = query.getDateFrom();
+        LocalDateTime windowEndExclusive = query.getDateTo().plusSeconds(1);
         List<PaymentStatus> allowedStatuses = Arrays.asList(PaymentStatus.SUCCESS, PaymentStatus.REFUNDED);
         return (root, criteriaQuery, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -1009,7 +1428,8 @@ public class PaymentReconciliationQueryService {
             }
             this.addCashierSettlementKindPredicate(predicates, cb, root, settlementType);
             predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(allowedStatuses));
-            this.addEntererMatchPredicate(predicates, cb, root, query.getEntererMatchIds(), query.getCashierId());
+            this.addLocationIdsPredicate(predicates, cb, root, query.getLocationIds());
+            this.addEntererMatchPredicate(predicates, root, query.getEntererMatchIds());
             this.addBillDateWindowPredicate(predicates, cb, root, windowStart, windowEndExclusive);
             return cb.and(predicates.toArray(new Predicate[0]));
         };
@@ -1054,16 +1474,20 @@ public class PaymentReconciliationQueryService {
         jakarta.persistence.criteria.Root<PaymentReconciliation> root,
         CashierSettlementType settlementType) {
         jakarta.persistence.criteria.Path<PaymentKind> kindPath = root.get(FieldNameConstants.KIND_ENUM);
-        if (CashierSettlementType.OUTPATIENT.equals(settlementType)) {
+        if (CashierSettlementType.OP_PAYMENT.equals(settlementType)) {
             predicates.add(cb.equal(kindPath, PaymentKind.OUTPATIENT_CLINIC));
             return;
         }
-        Predicate inpatientClinic = cb.equal(kindPath, PaymentKind.INPATIENT_CLINIC);
-        Predicate hospitalDeposit = cb.equal(kindPath, PaymentKind.HOSPITAL_DEPOSIT);
-        Predicate legacyPreDeposit = cb.equal(
-            kindPath.as(String.class),
-            LEGACY_PRE_DEPOSIT_KIND_CODE);
-        predicates.add(cb.or(inpatientClinic, hospitalDeposit, legacyPreDeposit));
+        if (CashierSettlementType.IP_PAYMENT.equals(settlementType)) {
+            Predicate inpatientClinic = cb.equal(kindPath, PaymentKind.INPATIENT_CLINIC);
+            Predicate hospitalDeposit = cb.equal(kindPath, PaymentKind.HOSPITAL_DEPOSIT);
+            Predicate legacyPreDeposit = cb.equal(
+                kindPath.as(String.class),
+                LEGACY_PRE_DEPOSIT_KIND_CODE);
+            predicates.add(cb.or(inpatientClinic, hospitalDeposit, legacyPreDeposit));
+            return;
+        }
+        throw new BusinessException(ErrorCodeConstants.CASHIER_SETTLEMENT_INVALID_ARGUMENT, "交账类型不适用于支付流水候选");
     }
 
     /**
@@ -1098,13 +1522,46 @@ public class PaymentReconciliationQueryService {
      * @throws IllegalArgumentException 日期缺失或 {@code billDateFrom > billDateTo}
      */
     public List<Long> listOutpatientFeeDetailChargeItemIdsByPaymentFilter(OutpatientFeeDetailPageQuery query) {
+        // Pre：门诊费用明细仅纳入 OUTPATIENT_CLINIC 收退成功单
+        return this.listFeeDetailChargeItemIdsByPaymentFilter(query, PaymentKind.OUTPATIENT_CLINIC);
+    }
+
+    /**
+     * 住院费用明细：按 payment {@code bill_date}/收费人/收退 Tab 解析候选 chargeItem 主键（AS-RPT-009）。
+     *
+     * <p>与 {@link #listOutpatientFeeDetailChargeItemIdsByPaymentFilter} 同构，kind 收窄为
+     * {@link PaymentKind#INPATIENT_CLINIC}；同步写入 query 内 payment 读上下文供 ChargeItem 报表读侧复用。</p>
+     *
+     * @param query 须含 {@code billDateFrom}/{@code billDateTo}；可选 {@code cashierId}、{@code tradeDirection}
+     * @return 去重后的 chargeItem 主键；无命中时空列表
+     * @throws IllegalArgumentException 日期缺失或 {@code billDateFrom > billDateTo}
+     */
+    public List<Long> listInpatientFeeDetailChargeItemIdsByPaymentFilter(OutpatientFeeDetailPageQuery query) {
+        // Pre：住院费用明细仅纳入 INPATIENT_CLINIC 出院结算收退单（排除预交金）
+        return this.listFeeDetailChargeItemIdsByPaymentFilter(query, PaymentKind.INPATIENT_CLINIC);
+    }
+
+    /**
+     * 门/住院费用明细共用：按 payment kind + bill_date 窗解析 chargeItem 快照并写入读上下文。
+     *
+     * @param query      须含日期窗
+     * @param paymentKind 门诊 {@link PaymentKind#OUTPATIENT_CLINIC} 或住院 {@link PaymentKind#INPATIENT_CLINIC}
+     * @return 去重 chargeItem 主键
+     */
+    private List<Long> listFeeDetailChargeItemIdsByPaymentFilter(
+        OutpatientFeeDetailPageQuery query,
+        PaymentKind paymentKind) {
         if (query == null || query.getBillDateFrom() == null || query.getBillDateTo() == null) {
-            throw new IllegalArgumentException("outpatient fee detail payment filter requires billDateFrom and billDateTo");
+            throw new IllegalArgumentException("fee detail payment filter requires billDateFrom and billDateTo");
         }
         if (query.getBillDateFrom().isAfter(query.getBillDateTo())) {
             throw new IllegalArgumentException("billDateFrom must not be after billDateTo");
         }
-        Specification<PaymentReconciliation> specification = this.buildOutpatientFeeDetailPaymentSpecification(query);
+        if (paymentKind == null) {
+            throw new IllegalArgumentException("paymentKind is required");
+        }
+        Specification<PaymentReconciliation> specification =
+            this.buildFeeDetailPaymentSpecification(query, paymentKind);
         List<PaymentReconciliation> payments = paymentRepository.findAll(specification);
         if (payments.isEmpty()) {
             query.setPaymentContextByChargeItemId(Collections.emptyMap());
@@ -1316,21 +1773,26 @@ public class PaymentReconciliationQueryService {
     }
 
     /**
-     * 组装门诊费用明细 payment 筛选 Specification（bill_date 左闭右开日窗 + 门诊 kind + 收退 Tab）。
+     * 组装费用明细 payment 筛选 Specification（bill_date 左闭右开日窗 + kind + 收退 Tab）。
+     *
+     * @param query       日期/收费人/收退 Tab
+     * @param paymentKind 门诊或住院 clinic kind
+     * @return Specification
      */
-    private Specification<PaymentReconciliation> buildOutpatientFeeDetailPaymentSpecification(
-        OutpatientFeeDetailPageQuery query) {
+    private Specification<PaymentReconciliation> buildFeeDetailPaymentSpecification(
+        OutpatientFeeDetailPageQuery query,
+        PaymentKind paymentKind) {
         LocalDateTime windowStart = query.getBillDateFrom().atStartOfDay();
         LocalDateTime windowEndExclusive = query.getBillDateTo().plusDays(1).atStartOfDay();
         List<PaymentStatus> allowedStatuses = this.resolveOutpatientFeeDetailPaymentStatuses(query.getTradeDirection());
         return (root, criteriaQuery, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
-            predicates.add(cb.equal(root.get(FieldNameConstants.KIND_ENUM), PaymentKind.OUTPATIENT_CLINIC));
+            predicates.add(cb.equal(root.get(FieldNameConstants.KIND_ENUM), paymentKind));
             predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(allowedStatuses));
             predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.BILL_DATE), windowStart));
             predicates.add(cb.lessThan(root.get(FieldNameConstants.BILL_DATE), windowEndExclusive));
-            this.addEntererMatchPredicate(predicates, cb, root, query.getEntererMatchIds(), query.getCashierId());
+            this.addEntererMatchPredicate(predicates, root, query.getEntererMatchIds());
             return cb.and(predicates.toArray(new Predicate[0]));
         };
     }
@@ -1404,20 +1866,163 @@ public class PaymentReconciliationQueryService {
     }
 
     /**
-     * 经办人/收费人筛选：优先 {@code entererMatchIds} 白名单，否则回落单值 {@code cashierId}。
+     * 经办人/收费人软筛：{@code entererMatchIds} 非空时 IN 白名单；空则不加谓词。
+     *
+     * @param predicates       谓词列表
+     * @param root             Payment 根
+     * @param entererMatchIds  enterer_id 白名单；空表示不按人过滤
      */
     private void addEntererMatchPredicate(
         List<Predicate> predicates,
-        CriteriaBuilder cb,
         jakarta.persistence.criteria.Root<PaymentReconciliation> root,
-        List<Long> entererMatchIds,
-        Long cashierId) {
+        List<Long> entererMatchIds) {
         if (entererMatchIds != null && !entererMatchIds.isEmpty()) {
             predicates.add(root.get(FieldNameConstants.ENTERER_ID).in(entererMatchIds));
+        }
+    }
+
+    /**
+     * 可选 location 白名单：{@code null} 不下推（收款日结口径）；空列表表示无地点、谓词恒 false。
+     */
+    private void addLocationIdsPredicate(
+        List<Predicate> predicates,
+        CriteriaBuilder cb,
+        jakarta.persistence.criteria.Root<PaymentReconciliation> root,
+        List<Long> locationIds) {
+        if (locationIds == null) {
             return;
         }
-        if (cashierId != null) {
-            predicates.add(cb.equal(root.get(FieldNameConstants.ENTERER_ID), cashierId));
+        if (locationIds.isEmpty()) {
+            // org 下无 location 时不应命中任何 payment
+            predicates.add(cb.disjunction());
+            return;
         }
+        predicates.add(root.get(FieldNameConstants.LOCATION_ID).in(locationIds));
+    }
+
+    /**
+     * locationIds 已解析但为空列表时，读侧可直接短路为空结果。
+     */
+    private boolean isLocationScopeExhausted(List<Long> locationIds) {
+        return locationIds != null && locationIds.isEmpty();
+    }
+
+    /**
+     * effective bill 时刻：优先 {@code bill_date}，空值回落 {@code created_at}（与窗谓词一致）。
+     */
+    private jakarta.persistence.criteria.Expression<LocalDateTime> effectiveBillDateExpression(
+        CriteriaBuilder cb,
+        jakarta.persistence.criteria.Root<PaymentReconciliation> root) {
+        return cb.coalesce(
+            root.get(FieldNameConstants.BILL_DATE),
+            root.get(FieldNameConstants.CREATED_AT));
+    }
+
+    /**
+     * 实体 effective bill 时刻（内存侧与 {@link #effectiveBillDateExpression} 同口径）。
+     */
+    private LocalDateTime resolveEffectiveBillDate(PaymentReconciliation row) {
+        if (row == null) {
+            return null;
+        }
+        LocalDateTime billDate = row.getBillDate();
+        if (billDate != null) {
+            return billDate;
+        }
+        return row.getCreatedAt();
+    }
+
+    /**
+     * 按就诊批量映射住院出院结算净额（DM-FIN-002 §6.2.20；AS-RPT-010）。
+     *
+     * <p>仅 {@link PaymentKind#INPATIENT_CLINIC}：正向 {@code SUCCESS} 计入实收（tendered−returned）；
+     * 逆向 {@code REFUNDED}（{@code relation_id} 非空）按绝对值取负冲减。净额为 0 的就诊不入 Map
+     * （应用层展示为空，禁止写 0）。待重结判定见 {@link #filterReversedPendingResettleEncounterIds}。</p>
+     *
+     * @param encounterIds 就诊主键集合
+     * @return encounterId → 结算刻度净额；无有效净额则缺省键
+     */
+    public Map<Long, BigDecimal> mapInpatientClinicSettledNetAmountByEncounterIds(
+        Collection<Long> encounterIds) {
+        Map<Long, BigDecimal> result = new LinkedHashMap<>();
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return result;
+        }
+        LinkedHashSet<Long> distinctIds = new LinkedHashSet<>();
+        for (Long id : encounterIds) {
+            if (id != null) {
+                distinctIds.add(id);
+            }
+        }
+        if (distinctIds.isEmpty()) {
+            return result;
+        }
+        // Pre：一次批量拉支付头，按就诊累加净额（B.6.4 仅本聚合仓储）
+        List<PaymentReconciliation> paymentRows = paymentRepository.findByEncounterIdIn(distinctIds);
+        Map<Long, BigDecimal> sumByEncounter = new HashMap<>();
+        for (PaymentReconciliation payment : paymentRows) {
+            if (payment == null || payment.getEncounterId() == null) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(payment.getIsDeleted())) {
+                continue;
+            }
+            if (!PaymentKind.INPATIENT_CLINIC.equals(payment.getKindEnum())) {
+                continue;
+            }
+            BigDecimal delta = this.resolveInpatientClinicSettledNetDelta(payment);
+            if (delta == null) {
+                continue;
+            }
+            BigDecimal previous = sumByEncounter.get(payment.getEncounterId());
+            if (previous == null) {
+                previous = BigDecimal.ZERO;
+            }
+            sumByEncounter.put(payment.getEncounterId(), previous.add(delta));
+        }
+        for (Map.Entry<Long, BigDecimal> entry : sumByEncounter.entrySet()) {
+            BigDecimal scaled = MonetaryAmountSupport.scaleSettle(entry.getValue());
+            // 净 0 不入 Map，供应用层落空字段
+            if (scaled.compareTo(BigDecimal.ZERO) == 0) {
+                continue;
+            }
+            result.put(entry.getKey(), scaled);
+        }
+        return result;
+    }
+
+    /**
+     * 单笔住院出院结算对入出明细净额的增量：正向加、逆向减；其它状态忽略。
+     *
+     * @param payment 支付头
+     * @return 增量；不参与则 null
+     */
+    private BigDecimal resolveInpatientClinicSettledNetDelta(PaymentReconciliation payment) {
+        if (payment.getRelationId() != null) {
+            // 反结/退费逆向单：收口 REFUNDED 后冲减
+            if (!PaymentStatus.REFUNDED.equals(payment.getStatusEnum())) {
+                return null;
+            }
+            BigDecimal amount = payment.getTenderedAmount();
+            if (amount == null) {
+                amount = payment.getDisplayAmount();
+            }
+            if (amount == null) {
+                return BigDecimal.ZERO;
+            }
+            return amount.abs().negate();
+        }
+        if (!PaymentStatus.SUCCESS.equals(payment.getStatusEnum())) {
+            return null;
+        }
+        BigDecimal tendered = payment.getTenderedAmount();
+        if (tendered == null) {
+            tendered = BigDecimal.ZERO;
+        }
+        BigDecimal returned = payment.getReturnedAmount();
+        if (returned == null) {
+            returned = BigDecimal.ZERO;
+        }
+        return tendered.subtract(returned);
     }
 }

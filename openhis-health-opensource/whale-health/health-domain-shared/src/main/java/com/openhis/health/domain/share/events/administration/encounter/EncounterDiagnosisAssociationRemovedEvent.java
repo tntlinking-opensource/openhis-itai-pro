@@ -10,14 +10,14 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 就诊诊断关联移除事件。
+ * 就诊诊断关联移除事件：供读模型覆盖 {@code diagnosis_json}。
  */
 @Getter
 @Setter
 public class EncounterDiagnosisAssociationRemovedEvent extends DomainEvent {
 
-    /** condition主键（EncounterDiagnosisAssociationRemovedEvent）。 */
-    private Long conditionId;
+    /** 被移除的就诊诊断关联行主键 {@code adm_encounter_diagnosis.id}。 */
+    private Long encounterDiagnosisId;
 
     /**
      * 删除后的就诊维度诊断列表快照 JSON（数组），供读模型覆盖 {@code diagnosis_json}。
@@ -29,20 +29,19 @@ public class EncounterDiagnosisAssociationRemovedEvent extends DomainEvent {
      */
     private String conditionDefinitionName;
 
-    /**
-     * 处理逻辑。
-     * @return 返回结果
-     */
+    /** 无参构造，供序列化框架使用。 */
     public EncounterDiagnosisAssociationRemovedEvent() {
         super();
     }
 
     /**
-     * 处理Long encounterId, Long conditionId逻辑。
-     * @return 返回结果
+     * 构造就诊诊断关联移除事件载荷。
+     *
+     * @param encounterId 就诊主键
+     * @param encounterDiagnosisId 被软删的就诊诊断关联行主键
      */
-    public EncounterDiagnosisAssociationRemovedEvent(Long encounterId, Long conditionId) {
+    public EncounterDiagnosisAssociationRemovedEvent(Long encounterId, Long encounterDiagnosisId) {
         super(encounterId, AggregateTypeConstants.ENCOUNTER);
-        this.conditionId = conditionId;
+        this.encounterDiagnosisId = encounterDiagnosisId;
     }
 }

@@ -61,6 +61,8 @@ public class MedicationDefinitionDetailQueryModel {
     private String nationalDrugCode;
     /** dose。 */
     private BigDecimal dose;
+    /** 单次最小剂量。 */
+    private BigDecimal minUnit;
     /** maxunit。 */
     private BigDecimal maxUnit;
     /** rx标志。 */
@@ -111,6 +113,14 @@ public class MedicationDefinitionDetailQueryModel {
     private BigDecimal stockUnitRatio;
     /** salesunitratio。 */
     private BigDecimal packageUnitRatio;
+    /**
+     * 追溯码贴码单位（可游离于五类业务单位；药品必填）。
+     */
+    private String traceUnitCode;
+    /**
+     * 1 个追溯码单位对应的拆零数量；药品必填且须 &gt; 0。
+     */
+    private BigDecimal traceUnitRatio;
     /** 药品说明。 */
     private String definition;
     /** DDD编码。 */

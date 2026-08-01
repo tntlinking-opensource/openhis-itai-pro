@@ -8,6 +8,7 @@ import com.openhis.chs.domain.settlement.entity.YbSettlementRecord;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -39,6 +40,15 @@ public interface YbSettlementRecordRepository extends JpaRepository<YbSettlement
      */
     List<YbSettlementRecord> findAllByPaymentIdAndTenantIdAndIsDeletedFalseOrderByCreatedAtAsc(
         Long paymentId, Long tenantId);
+
+    /**
+     * 按支付单集合批量查询未删除结算回执，按创建时间升序（日结险种回落）。
+     *
+     * @param paymentIds 支付单 ID 集合
+     * @param tenantId   租户 ID
+     */
+    List<YbSettlementRecord> findAllByPaymentIdInAndTenantIdAndIsDeletedFalseOrderByCreatedAtAsc(
+        Collection<Long> paymentIds, Long tenantId);
 
     /**
      * 按平台结算 ID 查询未删除结算回执。
@@ -87,4 +97,12 @@ public interface YbSettlementRecordRepository extends JpaRepository<YbSettlement
      */
     Optional<YbSettlementRecord> findFirstByPreSettleIdAndTenantIdAndIsDeletedFalse(
         Long preSettleId, Long tenantId);
+
+    /**
+     * 按主键集合与租户批量查询未删除结算回执。
+     *
+     * @param ids      结算回执主键集合
+     * @param tenantId 租户 ID
+     */
+    List<YbSettlementRecord> findAllByIdInAndTenantIdAndIsDeletedFalse(Collection<Long> ids, Long tenantId);
 }

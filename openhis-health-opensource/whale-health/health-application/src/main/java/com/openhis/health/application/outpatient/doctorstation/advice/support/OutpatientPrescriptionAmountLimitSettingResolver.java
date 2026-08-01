@@ -30,7 +30,7 @@ public class OutpatientPrescriptionAmountLimitSettingResolver {
     public BigDecimal resolveAmountLimitYuan() {
         String raw = settingManager.getEffectiveValue(
             SettingDefinitionEnum.OUTPATIENT_PRESCRIPTION_AMOUNT_LIMIT_YUAN.getName());
-        // 未配置时回落默认 500 元
+        // 未配置时回落默认 1000 元
         if (StringUtils.isEmpty(raw)) {
             return PrescriptionSplitConstants.DEFAULT_OUTPATIENT_AMOUNT_LIMIT_YUAN;
         }

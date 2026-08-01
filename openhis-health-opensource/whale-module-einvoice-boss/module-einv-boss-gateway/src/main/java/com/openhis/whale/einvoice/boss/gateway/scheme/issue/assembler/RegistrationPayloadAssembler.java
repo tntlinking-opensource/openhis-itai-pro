@@ -43,9 +43,10 @@ public class RegistrationPayloadAssembler {
         body.put("payer", snapshot.getPatientName());
         body.put("busDateTime", formatTime(snapshot.getBillDateTime()));
         body.put("placeCode", properties.getPlatform().getPlaceCode());
-        body.put("payee", String.valueOf(snapshot.getOperatorId()));
-        body.put("author", String.valueOf(snapshot.getOperatorId()));
-        body.put("checker", String.valueOf(snapshot.getOperatorId()));
+        String operator = resolveOperatorDisplay(snapshot);
+        body.put("payee", operator);
+        body.put("author", operator);
+        body.put("checker", operator);
         body.put("totalAmt", scale2(document.getTotalAmt()));
         body.put("payerType", "1");
         body.put("cardType", "1101");

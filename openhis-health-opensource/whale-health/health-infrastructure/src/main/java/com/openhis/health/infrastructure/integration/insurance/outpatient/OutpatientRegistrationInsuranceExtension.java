@@ -13,15 +13,16 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 门诊挂号 ↔ 第三方平台登记扩展点（与收费 Extension 分离，便于挂号阶段独立 2201）。
+ * 门诊挂号 ↔ 第三方平台登记扩展点（2201/2202，与收费 Extension 分离）。
  *
- * <p><b>调用方</b>：{@code OutpatientRegistrationAppService#runInsuranceRegistrationIfNeeded}。</p>
+ * <p><b>目标态</b>：医保挂号确认阶段调用 {@link #ensurePlatformRegistration}（仅 2201，
+ * {@code med_type=11} 写 map）；自费挂号不调。2203 在收费预结算链中按组调用。</p>
+ *
+ * <p><b>调用方</b>：{@code OutpatientRegistrationAppService} 预挂号建档 →
+ * {@link #ensurePlatformRegistration}；作废/已结退号 → {@link #revokePlatformRegistration}。</p>
  *
  * <p><b>吉林实现</b>：{@code OutpatientRegistrationInsuranceExtensionImpl}
- * → {@code ChsOutpatientSettlementClient#ensurePlatformRegistration} → 2201。</p>
- *
- * <p>挂号费医保预结算仍走 {@link OutpatientChargeInsuranceExtension#preSettle}（2204→2206），
- * 本 Extension 仅负责就诊在平台「登记存在」。</p>
+ * → {@code OpPlatformRegistrationOrchestrator}（仅 2201）。</p>
  */
 public interface OutpatientRegistrationInsuranceExtension {
 
@@ -31,19 +32,19 @@ public interface OutpatientRegistrationInsuranceExtension {
     }
 
     /**
-     * 费用性质是否需平台挂号登记。
+     * 费用性质是否需平台挂号登记/撤销。
      *
      * @param contractId {@code fin_contract.id}
-     * @return true 时在 preRegister 阶段调 {@link #ensurePlatformRegistration}
+     * @return true 时允许调用 ensure/revoke
      */
     default boolean supportsThirdPartyContract(Long contractId) {
         return false;
     }
 
     /**
-     * 确保平台就诊已登记（2201）；幂等，重复调用不重复挂号。
+     * 确保平台就诊已登记（2201）；幂等。医保挂号确认主路径调用；自费挂号不调。
      *
-     * @param command 就诊 id、读卡字段、medType（缺省 11）
+     * @param command 就诊 id、读卡字段、medType（挂号建档用 11；缺省实现侧落 11）
      * @return mdtrt_id；未装配时抛异常
      * @throws UnsupportedOperationException 未装配 Module 时
      */
@@ -53,10 +54,10 @@ public interface OutpatientRegistrationInsuranceExtension {
     }
 
     /**
-     * 【2202】撤销平台门诊挂号登记；本地无映射时幂等跳过。
+     * 【2202】撤销平台门诊挂号登记；本地无对应 med_type 映射时幂等跳过。
      *
-     * @param command 就诊 id、费用性质、读卡字段（撤销后软删映射）
-     * @return 撤销结果；未装配时抛异常
+     * @param command 就诊 id、费用性质、medType（挂号侧须传 12）
+     * @return 撤销结果（有撤则带回 mdtrt_id）；未装配时抛异常
      */
     default OutpatientRegistrationPlatformExtensionOut revokePlatformRegistration(
         OutpatientRegistrationPlatformExtensionIn command) {

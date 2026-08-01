@@ -6,8 +6,11 @@ package com.openhis.health.application.inpatient.nursestation.orderaudit.support
 
 import com.openhis.health.application.shared.option.FrequencyOptionLoader;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.advice.SkinTestCompanionDisplaySupport;
+import com.openhis.health.application.shared.advice.InpatientEntrustOrderGateSupport;
 import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler;
 import com.openhis.health.application.shared.advice.OrderRequestCatalogWarmAssembler;
+import com.openhis.health.application.shared.product.MedicationDosageDisplayAssembler;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.application.shared.advice.OrderRequestCatalogWarmContext;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderViewDisplayContext;
@@ -41,6 +44,7 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -74,6 +78,12 @@ public class NurseStationOrderViewListAssembler {
     /** 医务人员姓名解析。 */
     private final PractitionerQueryService practitionerQueryService;
 
+    /** 校对人岗位 → 病区上级科室展示名解析。 */
+    private final PractitionerCheckOrgDisplayResolver practitionerCheckOrgDisplayResolver;
+
+    /** 嘱托医嘱展示名解析（BR-IP-ORD-028④；与住院医生站列表同源）。 */
+    private final InpatientEntrustOrderGateSupport inpatientEntrustOrderGateSupport;
+
     /**
      * 第一遍扫描：建立明细 id 索引并收集批量预热 id 集合。
      *
@@ -101,6 +111,13 @@ public class NurseStationOrderViewListAssembler {
                     }
                     this.collectPractitionerAndLocation(row.getRequesterId(), row.getRecorderId(),
                         row.getPerformLocation(), index.getPractitionerIds(), index.getLocationIds());
+                    if (row.getPerformerCheckId() != null) {
+                        index.getPractitionerIds().add(row.getPerformerCheckId());
+                    }
+                    // 停嘱人：停嘱时间后跟人名（BR-IP-ORD-031）。
+                    if (row.getStopperId() != null) {
+                        index.getPractitionerIds().add(row.getStopperId());
+                    }
                 }
             }
         }
@@ -118,6 +135,12 @@ public class NurseStationOrderViewListAssembler {
                     }
                     this.collectPractitionerAndLocation(row.getRequesterId(), null, row.getLocationId(),
                         index.getPractitionerIds(), index.getLocationIds());
+                    if (row.getPerformerCheckId() != null) {
+                        index.getPractitionerIds().add(row.getPerformerCheckId());
+                    }
+                    if (row.getStopperId() != null) {
+                        index.getPractitionerIds().add(row.getStopperId());
+                    }
                 }
             }
         }
@@ -131,6 +154,9 @@ public class NurseStationOrderViewListAssembler {
                 }
                 if (order.getRequesterId() != null) {
                     index.getPractitionerIds().add(order.getRequesterId());
+                }
+                if (order.getStopperId() != null) {
+                    index.getPractitionerIds().add(order.getStopperId());
                 }
                 if (order.getMedicationId() != null) {
                     index.getMedDefIds().add(order.getMedicationId());
@@ -168,7 +194,69 @@ public class NurseStationOrderViewListAssembler {
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.DOSE_UNIT));
         ctx.setPractitionerNameById(this.loadPractitionerNames(index.getPractitionerIds()));
         ctx.setLocationNameById(locationQueryService.mapNamesByIds(index.getLocationIds()));
+        // Pre：校对人绑定病区 → 上级科室展示名（医嘱执行「执行科室」等消费方使用）
+        ctx.setPerformerCheckOrgDisplayByKey(practitionerCheckOrgDisplayResolver.buildPerformerCheckOrgDisplayByKey(
+            index.getMedDetailById().values(),
+            index.getSvcDetailById().values()));
+        // Pre：皮试检查 companion 关联药名（requestId → 药品定义/产品名）
+        ctx.setMedicationAdviceNameByRequestId(this.buildMedicationAdviceNameByRequestId(
+            index.getMedDetailById(),
+            ctx.getMedicationDefinitionById(),
+            ctx.getProductByKey()));
         return ctx;
+    }
+
+    /**
+     * 药品申请主键 → 关联展示标签（药名 + 规格），供皮试检查追加「（关联：…）」。
+     *
+     * @param medDetailById            药品明细
+     * @param medicationDefinitionById 药品定义
+     * @param productByKey             产品读模型
+     * @return requestId → 标签
+     */
+    private Map<Long, String> buildMedicationAdviceNameByRequestId(
+        Map<Long, MedicationRequestListQueryModel> medDetailById,
+        Map<Long, MedicationDefinition> medicationDefinitionById,
+        Map<String, ProductDefinitionDisplayDto> productByKey
+    ) {
+        Map<Long, String> nameByRequestId = new HashMap<>();
+        if (medDetailById == null || medDetailById.isEmpty()) {
+            return nameByRequestId;
+        }
+        for (MedicationRequestListQueryModel row : medDetailById.values()) {
+            if (row == null || row.getId() == null) {
+                continue;
+            }
+            String name = null;
+            String spec = null;
+            Long medDefId = row.getMedicationId();
+            MedicationDefinition def = null;
+            if (medDefId != null && medicationDefinitionById != null) {
+                def = medicationDefinitionById.get(medDefId);
+            }
+            if (def != null) {
+                name = StringUtils.trimToEmpty(def.getName());
+                // 规格与医嘱列表 specificationText 同源
+                spec = OrderCatalogDisplayAssembler.resolveMedicationSpecText(def);
+            }
+            ProductDefinitionDisplayDto product = null;
+            if (medDefId != null && productByKey != null) {
+                product = productByKey.get(
+                    ProductDefinitionKeyUtil.buildCompositeKey(
+                        TableNameConstants.MED_MEDICATION_DEFINITION, medDefId));
+            }
+            if (StringUtils.isEmpty(name) && product != null) {
+                name = StringUtils.trimToEmpty(product.getProductName());
+            }
+            if (StringUtils.isEmpty(spec) && product != null) {
+                spec = StringUtils.trimToEmpty(product.getTotalVolume());
+            }
+            String label = SkinTestCompanionDisplaySupport.formatLinkedMedicationLabel(name, spec);
+            if (StringUtils.isNotEmpty(label)) {
+                nameByRequestId.put(row.getId(), label);
+            }
+        }
+        return nameByRequestId;
     }
 
     /**
@@ -282,13 +370,30 @@ public class NurseStationOrderViewListAssembler {
                 ctx.getMethodLabelByCode(), medDetail.getMethodCode()));
             core.setFrequencyDisplay(OrderCatalogDisplayAssembler.resolveCategoryDisplay(
                 ctx.getRateLabelByCode(), medDetail.getRateCode()));
-            core.setAuthoredTime(medDetail.getReqAuthoredTime());
-            core.setStopTime(medDetail.getEffectiveDoseEnd());
+            // 开立/签发分列同名字段；开立空时展示回落签发（存量兼容）。
+            LocalDateTime medOpened = medDetail.getReqOpenedTime();
+            if (medOpened == null) {
+                medOpened = medDetail.getReqAuthoredTime();
+            }
+            core.setReqOpenedTime(medOpened);
+            core.setReqAuthoredTime(medDetail.getReqAuthoredTime());
+            core.setStopTime(medDetail.getStopTime());
             Long authorId = medDetail.getRequesterId();
             if (authorId == null) {
                 authorId = medDetail.getRecorderId();
             }
             core.setRequesterName(ctx.getPractitionerNameById().get(authorId));
+            core.setStopperId(medDetail.getStopperId());
+            core.setStopperName(ctx.getPractitionerNameById().get(medDetail.getStopperId()));
+            core.setPerformerCheckName(ctx.getPractitionerNameById().get(medDetail.getPerformerCheckId()));
+            Long medEncounterId = medDetail.getEncounterId();
+            if (medEncounterId == null) {
+                medEncounterId = order.getEncounterId();
+            }
+            core.setPerformerCheckOrgDisplay(practitionerCheckOrgDisplayResolver.resolvePerformerCheckOrgDisplay(
+                ctx.getPerformerCheckOrgDisplayByKey(),
+                medDetail.getPerformerCheckId(),
+                medEncounterId));
             if (medDetail.getPerformLocation() != null) {
                 core.setPerformerLocationDisplay(ctx.getLocationNameById().get(medDetail.getPerformLocation()));
             }
@@ -297,10 +402,18 @@ public class NurseStationOrderViewListAssembler {
                 core.setGroupNo(medDetail.getGroupId().intValue());
             }
             core.setSortNumber(medDetail.getSortNumber());
+            // 皮试药标记：校对列表提示护士需登记皮试（AS-IP-NUR-011）。
+            core.setSkinTestFlag(medDetail.getSkinTestFlag());
+            // 医嘱备注（过滤套餐覆盖 JSON 误入）
+            core.setRemark(this.resolveOrderRemarkForDisplay(medDetail.getRemark()));
         } else {
-            core.setAuthoredTime(order.getMedAuthoredTime());
-            core.setStopTime(order.getEffectiveDoseEnd());
+            // 明细缺失时：开立可用骨架解析（含存量回落）；签发须直读列，禁止把开立回填进签发。
+            core.setReqOpenedTime(order.resolveOrderOpenedTime());
+            core.setReqAuthoredTime(order.getReqAuthoredTime());
+            core.setStopTime(order.getStopTime());
             core.setRequesterName(ctx.getPractitionerNameById().get(order.getMedRequesterId()));
+            core.setStopperId(order.getStopperId());
+            core.setStopperName(ctx.getPractitionerNameById().get(order.getStopperId()));
         }
         return core;
     }
@@ -368,15 +481,62 @@ public class NurseStationOrderViewListAssembler {
                 ctx.getUnitLabelByCode(), svcProduct));
             core.setFrequencyDisplay(OrderCatalogDisplayAssembler.resolveCategoryDisplay(
                 ctx.getRateLabelByCode(), svcDetail.getRateCode()));
-            core.setAuthoredTime(svcDetail.getReqAuthoredTime());
-            core.setStopTime(svcDetail.getOccurrenceEndTime());
+            // 开立/签发分列同名字段；开立空时展示回落签发（存量兼容）。
+            LocalDateTime svcOpened = svcDetail.getReqOpenedTime();
+            if (svcOpened == null) {
+                svcOpened = svcDetail.getReqAuthoredTime();
+            }
+            core.setReqOpenedTime(svcOpened);
+            core.setReqAuthoredTime(svcDetail.getReqAuthoredTime());
+            core.setStopTime(svcDetail.getStopTime());
             core.setRequesterName(ctx.getPractitionerNameById().get(svcDetail.getRequesterId()));
+            core.setStopperId(svcDetail.getStopperId());
+            core.setStopperName(ctx.getPractitionerNameById().get(svcDetail.getStopperId()));
+            core.setPerformerCheckName(ctx.getPractitionerNameById().get(svcDetail.getPerformerCheckId()));
+            Long svcEncounterId = svcDetail.getEncounterId();
+            if (svcEncounterId == null) {
+                svcEncounterId = order.getEncounterId();
+            }
+            core.setPerformerCheckOrgDisplay(practitionerCheckOrgDisplayResolver.resolvePerformerCheckOrgDisplay(
+                ctx.getPerformerCheckOrgDisplayByKey(),
+                svcDetail.getPerformerCheckId(),
+                svcEncounterId));
             if (svcDetail.getLocationId() != null) {
                 core.setPerformerLocationDisplay(ctx.getLocationNameById().get(svcDetail.getLocationId()));
             }
             core.setSortNumber(svcDetail.getSortNumber());
+            // 医嘱备注（过滤套餐覆盖 JSON 误入）
+            core.setRemark(this.resolveOrderRemarkForDisplay(svcDetail.getRemark()));
         } else {
-            core.setAuthoredTime(order.getAuthoredTime());
+            // 明细缺失时：开立可用骨架解析（含存量回落）；签发须直读列，禁止把开立回填进签发。
+            core.setReqOpenedTime(order.resolveOrderOpenedTime());
+            core.setReqAuthoredTime(order.getReqAuthoredTime());
+            core.setStopTime(order.getStopTime());
+            core.setRequesterName(ctx.getPractitionerNameById().get(order.getRequesterId()));
+            core.setStopperId(order.getStopperId());
+            core.setStopperName(ctx.getPractitionerNameById().get(order.getStopperId()));
+        }
+        // Asm：嘱托行展示名优先正文，禁止只显示目录名「嘱托」（BR-IP-ORD-028④）
+        String entrustContent = null;
+        if (svcDetail != null) {
+            entrustContent = svcDetail.getEntrustContent();
+        }
+        core.setAdviceDisplayName(inpatientEntrustOrderGateSupport.resolveServiceAdviceDisplayName(
+            serviceCategory, core.getAdviceDisplayName(), entrustContent));
+        // Asm：皮试检查 companion 挂 based_on 皮试药，展示名追加「（关联：药名 规格）」
+        if (svcDetail != null) {
+            Long basedOnMedReqId = SkinTestCompanionDisplaySupport.resolveBasedOnMedicationRequestId(
+                svcDetail.getBasedOnTable(), svcDetail.getBasedOnId());
+            if (basedOnMedReqId != null) {
+                core.setBasedOnMedicationRequestId(basedOnMedReqId);
+                String linkedName = null;
+                if (ctx.getMedicationAdviceNameByRequestId() != null) {
+                    linkedName = ctx.getMedicationAdviceNameByRequestId().get(basedOnMedReqId);
+                }
+                core.setSkinTestLinkedMedicationName(linkedName);
+                core.setAdviceDisplayName(SkinTestCompanionDisplaySupport.appendLinkedMedicationHint(
+                    core.getAdviceDisplayName(), linkedName));
+            }
         }
         return core;
     }
@@ -592,6 +752,8 @@ public class NurseStationOrderViewListAssembler {
     /**
      * 护士站列表「类型」列展示：按 orderType + 诊疗类目解析，与中西药 Tab 解耦。
      *
+     * <p>嘱托（{@code category_enum=52}）须展示「嘱托」，禁止回落「诊疗」（BR-IP-ORD-028 / BR-IP-AUD-006）。</p>
+     *
      * @param orderType      MED_REQUEST / SERVICE_REQUEST
      * @param categoryEnum   诊疗类目 code；药嘱可 null
      * @return 类型列文案
@@ -611,6 +773,10 @@ public class NurseStationOrderViewListAssembler {
         }
         if (InpatientNurseStationConstants.SERVICE_CATEGORY_NURSING.equals(categoryEnum)) {
             return InpatientNurseStationConstants.ORDER_KIND_DISPLAY_NURSING;
+        }
+        // 嘱托：类型列独立展示，不得归入「诊疗」（BR-IP-ORD-028）
+        if (InpatientNurseStationConstants.SERVICE_CATEGORY_ENTRUST.equals(categoryEnum)) {
+            return InpatientNurseStationConstants.ORDER_KIND_DISPLAY_ENTRUST;
         }
         return InpatientNurseStationConstants.ORDER_KIND_DISPLAY_SERVICE;
     }
@@ -633,7 +799,7 @@ public class NurseStationOrderViewListAssembler {
     }
 
     /**
-     * 药嘱剂量展示：优先 dose+doseUnit，回落 quantity+unit。
+     * 药嘱剂量展示：优先 dose+计量单位（必要时括号附最小单位），回落 quantity+unit。
      */
     private String formatDosageDisplay(
         BigDecimal dose,
@@ -643,14 +809,10 @@ public class NurseStationOrderViewListAssembler {
         String unitCode,
         Map<String, String> unitLabelByCode,
         ProductDefinitionDisplayDto productRow) {
+        // 有单次剂量：走统一「计量（最小单位）」文案；单位相同时不拼括号
         if (dose != null) {
-            String unit = ProductDefinitionCatalogUnitBandsAssembler.resolveDoseUnitDisplayName(
-                doseUnitLabelByCode, doseUnitCode, productRow);
-            String doseText = dose.setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
-            if (StringUtils.isNotEmpty(unit)) {
-                return doseText + unit;
-            }
-            return doseText;
+            return MedicationDosageDisplayAssembler.formatDosageDisplay(
+                dose, doseUnitCode, doseUnitLabelByCode, productRow);
         }
         return this.formatQuantityUnitDisplay(quantity, unitCode, unitLabelByCode, productRow);
     }
@@ -676,5 +838,24 @@ public class NurseStationOrderViewListAssembler {
             return qtyText + unit;
         }
         return qtyText;
+    }
+
+    /**
+     * 护士站展示用医嘱备注：过滤套餐子项覆盖 JSON（历史曾写入 remark 列）。
+     *
+     * @param remark 原始 remark
+     * @return 可展示备注；空或 JSON 覆盖时 null
+     */
+    private String resolveOrderRemarkForDisplay(String remark) {
+        String text = StringUtils.trimToNull(remark);
+        if (text == null) {
+            return null;
+        }
+        char first = text.charAt(0);
+        // 套餐子项覆盖 JSON 不以医嘱备注展示
+        if (first == '{' || first == '[') {
+            return null;
+        }
+        return text;
     }
 }

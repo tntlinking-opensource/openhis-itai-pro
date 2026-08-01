@@ -8,23 +8,32 @@ import com.openhis.health.application.inpatient.nursestation.inpatientbilling.su
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationCostCategoryTotalDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationCostDetailLineDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationCostDetailTotalsDto;
+import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostSummaryActivityLineDto;
 import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostSummaryLineDto;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.InpatientNurseStationCostDetailChargeRow;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
+import com.openhis.health.domain.share.constants.ServiceRequestCategoryConstants;
+import com.openhis.health.domain.share.enums.ChargeItemStatus;
+import com.openhis.health.domain.share.enums.GenerateSource;
 import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 住院护士站费用明细/汇总/合计装配（AS-IP-NUR-006 IF-IP-CDT-02 Asm）。
@@ -86,6 +95,133 @@ public class NurseStationCostDetailAssembler {
     }
 
     /**
+     * 按项目关键字过滤收费候选行（BR-IP-CDT-019）。
+     *
+     * <p>关键字空白则原样返回；否则对展示用产品的 {@code productName}、{@code productBusNo}
+     * 做忽略大小写的包含匹配，命中任一即保留。组套子项按父项产品匹配。</p>
+     *
+     * @param rows             域查询候选行（校验通过后）
+     * @param productByKey     产品读模型复合键索引
+     * @param parentChargeById 组套父 ChargeItem 索引
+     * @param keyword          可选关键字；空白不过滤
+     * @return 过滤后的候选行（保持原顺序）
+     */
+    public List<InpatientNurseStationCostDetailChargeRow> filterChargeRowsByItemKeyword(
+        List<InpatientNurseStationCostDetailChargeRow> rows,
+        Map<String, ProductDefinitionDisplayDto> productByKey,
+        Map<Long, ChargeItem> parentChargeById,
+        String keyword) {
+        if (rows == null || rows.isEmpty()) {
+            return new ArrayList<>();
+        }
+        String normalizedKeyword = StringUtils.trimToEmpty(keyword).toLowerCase(Locale.ROOT);
+        // 未填关键字：不过滤，明细/汇总/合计仍覆盖日期区间内全部合法行
+        if (StringUtils.isEmpty(normalizedKeyword)) {
+            return rows;
+        }
+        List<InpatientNurseStationCostDetailChargeRow> filtered = new ArrayList<>();
+        for (InpatientNurseStationCostDetailChargeRow row : rows) {
+            if (row == null || row.getChargeItem() == null) {
+                continue;
+            }
+            ChargeItem charge = row.getChargeItem();
+            Long displayProductId = this.resolveDisplayProductId(charge, parentChargeById);
+            String displayProductTable = this.resolveDisplayProductTable(charge, parentChargeById);
+            // 缺展示产品键时跳过：上游校验已保证正常行可解析，此处仅防空指针
+            if (displayProductId == null || StringUtils.isEmpty(displayProductTable)) {
+                continue;
+            }
+            String productKey =
+                ProductDefinitionKeyUtil.buildCompositeKey(displayProductTable, displayProductId);
+            ProductDefinitionDisplayDto product = productByKey.get(productKey);
+            if (this.matchesItemKeyword(product, normalizedKeyword)) {
+                filtered.add(row);
+            }
+        }
+        return filtered;
+    }
+
+    /**
+     * 费用明细读侧排除嘱托活动账单行（BR-IP-CDT-020 / BR-IP-ORD-028⑤）。
+     *
+     * <p>识别双锚：展示产品 {@code category_code=52} 或产品名精确「嘱托」。
+     * 防御存量误建 Charge；新执行写路径已禁止建账（BR-IP-EXE-033）。</p>
+     *
+     * @param rows             域查询候选行
+     * @param productByKey     产品读模型复合键索引
+     * @param parentChargeById 组套父 ChargeItem 索引
+     * @return 排除嘱托后的候选行（保持原顺序）
+     */
+    public List<InpatientNurseStationCostDetailChargeRow> filterOutEntrustChargeRows(
+        List<InpatientNurseStationCostDetailChargeRow> rows,
+        Map<String, ProductDefinitionDisplayDto> productByKey,
+        Map<Long, ChargeItem> parentChargeById) {
+        if (rows == null || rows.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<InpatientNurseStationCostDetailChargeRow> filtered = new ArrayList<>();
+        for (InpatientNurseStationCostDetailChargeRow row : rows) {
+            if (row == null || row.getChargeItem() == null) {
+                continue;
+            }
+            ChargeItem charge = row.getChargeItem();
+            Long displayProductId = this.resolveDisplayProductId(charge, parentChargeById);
+            String displayProductTable = this.resolveDisplayProductTable(charge, parentChargeById);
+            if (displayProductId == null || StringUtils.isEmpty(displayProductTable)) {
+                // 缺产品键：保留由上游 validate 拦截，此处不擅自丢弃非嘱托行
+                filtered.add(row);
+                continue;
+            }
+            String productKey =
+                ProductDefinitionKeyUtil.buildCompositeKey(displayProductTable, displayProductId);
+            ProductDefinitionDisplayDto product = productByKey.get(productKey);
+            // 嘱托不计费：费用清单不展示（BR-IP-CDT-020）
+            if (this.isEntrustProduct(product)) {
+                continue;
+            }
+            filtered.add(row);
+        }
+        return filtered;
+    }
+
+    /**
+     * 展示产品是否为嘱托活动（类目 52 或名称「嘱托」）。
+     *
+     * @param product 产品读模型；可 null
+     * @return true 表示嘱托，须从费用清单排除
+     */
+    private boolean isEntrustProduct(ProductDefinitionDisplayDto product) {
+        if (product == null) {
+            return false;
+        }
+        if (ServiceRequestCategoryConstants.SERVICE_CATEGORY_ENTRUST.equals(
+            StringUtils.trimToNull(product.getCategoryCode()))) {
+            return true;
+        }
+        return GeneralSharedConstants.ENTRUST_ACTIVITY_NAME.equals(
+            StringUtils.trimToNull(product.getProductName()));
+    }
+
+    /**
+     * 产品名称或院内编码是否包含已归一化关键字（忽略大小写）。
+     *
+     * @param product           展示用产品读模型
+     * @param normalizedKeyword 已 trim 并转小写的关键字
+     * @return 命中名称或编码任一则为 true
+     */
+    private boolean matchesItemKeyword(ProductDefinitionDisplayDto product, String normalizedKeyword) {
+        if (product == null) {
+            return false;
+        }
+        String productName = StringUtils.defaultString(product.getProductName()).toLowerCase(Locale.ROOT);
+        if (productName.contains(normalizedKeyword)) {
+            return true;
+        }
+        String productBusNo = StringUtils.defaultString(product.getProductBusNo()).toLowerCase(Locale.ROOT);
+        return productBusNo.contains(normalizedKeyword);
+    }
+
+    /**
      * 装配明细行（IF-IP-CDT-02；行单价/行合计原样，BR-IP-CDT-012/013）。
      *
      * @param rows             域查询候选行（已按业务时间倒序）
@@ -97,21 +233,62 @@ public class NurseStationCostDetailAssembler {
         List<InpatientNurseStationCostDetailChargeRow> rows,
         Map<String, ProductDefinitionDisplayDto> productByKey,
         Map<Long, ChargeItem> parentChargeById) {
-        return nurseStationCostDetailReadAssembler.buildDetailLines(rows, productByKey, parentChargeById);
+        return nurseStationCostDetailReadAssembler.buildDetailLines(
+            rows, productByKey, parentChargeById, Collections.emptySet());
+    }
+
+    /**
+     * 装配明细行（IF-IP-CDT-02；行单价/行合计原样，BR-IP-CDT-012/013）。
+     *
+     * @param rows                      域查询候选行（已按业务时间倒序）
+     * @param productByKey              产品读模型索引
+     * @param parentChargeById          组套父行索引
+     * @param autoRollServiceRequestIds 床位自动计费 SR 主键集合（generate_source=auto-roll-fees）
+     * @return 明细行列表
+     */
+    public List<NurseStationCostDetailLineDto> buildDetailLines(
+        List<InpatientNurseStationCostDetailChargeRow> rows,
+        Map<String, ProductDefinitionDisplayDto> productByKey,
+        Map<Long, ChargeItem> parentChargeById,
+        Set<Long> autoRollServiceRequestIds) {
+        return nurseStationCostDetailReadAssembler.buildDetailLines(
+            rows, productByKey, parentChargeById, autoRollServiceRequestIds);
     }
 
     /**
      * 装配汇总行（IF-IP-CDT-02；按父项 product_id 分组，块顺序药→诊→材）。
      *
-     * @param rows             域查询候选行
-     * @param productByKey     产品读模型索引
-     * @param parentChargeById 组套父行索引
+     * @param rows                  域查询候选行
+     * @param productByKey          产品读模型索引
+     * @param parentChargeById      组套父行索引
+     * @param practitionerNameById  操作人 id → 展示名（汇总展开明细用）
      * @return 汇总行列表
      */
     public List<NurseStationCostSummaryLineDto> buildSummaryLines(
         List<InpatientNurseStationCostDetailChargeRow> rows,
         Map<String, ProductDefinitionDisplayDto> productByKey,
-        Map<Long, ChargeItem> parentChargeById) {
+        Map<Long, ChargeItem> parentChargeById,
+        Map<Long, String> practitionerNameById) {
+        return this.buildSummaryLines(
+            rows, productByKey, parentChargeById, practitionerNameById, Collections.emptySet());
+    }
+
+    /**
+     * 装配汇总行（IF-IP-CDT-02；含自动计费活动类型识别）。
+     *
+     * @param rows                      域查询候选行
+     * @param productByKey              产品读模型索引
+     * @param parentChargeById          组套父行索引
+     * @param practitionerNameById      操作人 id → 展示名
+     * @param autoRollServiceRequestIds 床位自动计费 SR 主键集合
+     * @return 汇总行列表
+     */
+    public List<NurseStationCostSummaryLineDto> buildSummaryLines(
+        List<InpatientNurseStationCostDetailChargeRow> rows,
+        Map<String, ProductDefinitionDisplayDto> productByKey,
+        Map<Long, ChargeItem> parentChargeById,
+        Map<Long, String> practitionerNameById,
+        Set<Long> autoRollServiceRequestIds) {
         List<NurseStationCostSummaryLineDto> lines = new ArrayList<>();
         if (rows == null || rows.isEmpty()) {
             return lines;
@@ -177,11 +354,199 @@ public class NurseStationCostDetailAssembler {
             summaryLine.setSplitUnitQuantity(quantityResult.splitUnitQuantity());
             summaryLine.setExpenseBlockCode(expenseBlockCode);
             summaryLine.setExpenseBlockDisplay(this.resolveExpenseBlockDisplay(expenseBlockCode));
+            summaryLine.setActivityLines(this.buildSummaryActivityLines(
+                groupRows, product, practitionerNameById, autoRollServiceRequestIds));
             lines.add(summaryLine);
         }
         // 汇总块顺序：药品 → 诊疗 → 耗材（BR-IP-CDT-008）
         lines.sort(Comparator.comparingInt(line -> this.expenseBlockSortOrder(line.getExpenseBlockCode())));
         return lines;
+    }
+
+    /**
+     * 从候选收费行收集操作人主键（汇总展开明细批量查 Practitioner 用）。
+     *
+     * @param rows 域查询候选行
+     * @return 去重后的操作人 id 集合
+     */
+    public Set<Long> collectOperatorIdsForChargeRows(List<InpatientNurseStationCostDetailChargeRow> rows) {
+        Set<Long> operatorIds = new LinkedHashSet<>();
+        if (rows == null || rows.isEmpty()) {
+            return operatorIds;
+        }
+        for (InpatientNurseStationCostDetailChargeRow row : rows) {
+            if (row == null || row.getChargeItem() == null) {
+                continue;
+            }
+            Long operatorId = this.resolveActivityOperatorId(row.getChargeItem());
+            if (operatorId != null) {
+                operatorIds.add(operatorId);
+            }
+        }
+        return operatorIds;
+    }
+
+    /**
+     * 装配汇总行组内执行/划价/自动计费明细（BR-IP-CDT-018；按业务时间倒序）。
+     *
+     * @param groupRows                 同 product 分组内的候选行
+     * @param product                   展示用产品读模型
+     * @param practitionerNameById      操作人 id → 展示名
+     * @param autoRollServiceRequestIds 床位自动计费 SR 主键集合
+     * @return 展开明细列表
+     */
+    private List<NurseStationCostSummaryActivityLineDto> buildSummaryActivityLines(
+        List<InpatientNurseStationCostDetailChargeRow> groupRows,
+        ProductDefinitionDisplayDto product,
+        Map<Long, String> practitionerNameById,
+        Set<Long> autoRollServiceRequestIds) {
+        List<NurseStationCostSummaryActivityLineDto> activityLines = new ArrayList<>();
+        if (groupRows == null || groupRows.isEmpty()) {
+            return activityLines;
+        }
+        List<InpatientNurseStationCostDetailChargeRow> sortedRows = new ArrayList<>(groupRows);
+        sortedRows.sort(Comparator.comparing(InpatientNurseStationCostDetailChargeRow::getBusinessDateTime).reversed());
+        for (InpatientNurseStationCostDetailChargeRow row : sortedRows) {
+            if (row == null || row.getChargeItem() == null) {
+                continue;
+            }
+            ChargeItem charge = row.getChargeItem();
+            boolean cancelHighlight = this.resolveActivityCancelHighlight(charge);
+            boolean pricingActivity = this.isPricingGenerateSource(charge.getGenerateSourceEnum());
+            boolean autoRollActivity = this.isAutoRollOrderExecuteCharge(charge, autoRollServiceRequestIds);
+            String activityTypeEnum;
+            String activityTypeDisplay;
+            if (pricingActivity) {
+                activityTypeEnum = InpatientNurseStationConstants.COST_DETAIL_ACTIVITY_TYPE_PRICING;
+                if (cancelHighlight) {
+                    activityTypeDisplay =
+                        InpatientNurseStationConstants.COST_DETAIL_ACTIVITY_TYPE_CANCEL_PRICING_DISPLAY;
+                } else {
+                    activityTypeDisplay =
+                        InpatientNurseStationConstants.COST_DETAIL_ACTIVITY_TYPE_PRICING_DISPLAY;
+                }
+            } else if (autoRollActivity) {
+                // 滚费落账为 order-execute，但锚点 SR 为 auto-roll-fees → 展示「自动计费」
+                activityTypeEnum = InpatientNurseStationConstants.COST_DETAIL_ACTIVITY_TYPE_AUTO_ROLL;
+                if (cancelHighlight) {
+                    activityTypeDisplay =
+                        InpatientNurseStationConstants.COST_DETAIL_ACTIVITY_TYPE_CANCEL_AUTO_ROLL_DISPLAY;
+                } else {
+                    activityTypeDisplay =
+                        InpatientNurseStationConstants.COST_DETAIL_ACTIVITY_TYPE_AUTO_ROLL_DISPLAY;
+                }
+            } else {
+                activityTypeEnum = InpatientNurseStationConstants.COST_DETAIL_ACTIVITY_TYPE_EXECUTE;
+                if (cancelHighlight) {
+                    activityTypeDisplay =
+                        InpatientNurseStationConstants.COST_DETAIL_ACTIVITY_TYPE_CANCEL_EXECUTE_DISPLAY;
+                } else {
+                    activityTypeDisplay =
+                        InpatientNurseStationConstants.COST_DETAIL_ACTIVITY_TYPE_EXECUTE_DISPLAY;
+                }
+            }
+            NurseStationCostSummaryActivityLineDto activityLine = new NurseStationCostSummaryActivityLineDto();
+            activityLine.setChargeItemId(charge.getId());
+            // 组内倒序已按逻辑 occurrence；列展示优先 displayDateTime（执行 recorded）
+            activityLine.setActivityDateTime(row.getBusinessDateTime());
+            activityLine.setDisplayDateTime(row.getDisplayDateTime());
+            Long operatorId = this.resolveActivityOperatorId(charge);
+            if (operatorId != null && practitionerNameById != null) {
+                activityLine.setOperatorName(practitionerNameById.get(operatorId));
+            }
+            activityLine.setQuantityValue(charge.getQuantityValue());
+            activityLine.setQuantityUnit(charge.getQuantityUnit());
+            activityLine.setQuantityUnitDisplay(
+                nurseStationCostDetailReadAssembler.resolveQuantityUnitDisplay(charge.getQuantityUnit(), product));
+            activityLine.setActivityTypeEnum(activityTypeEnum);
+            activityLine.setActivityTypeDisplay(activityTypeDisplay);
+            activityLine.setCancelHighlight(cancelHighlight);
+            activityLines.add(activityLine);
+        }
+        return activityLines;
+    }
+
+    /**
+     * 解析汇总展开明细操作人：划价/滚费优先 enterer，医嘱执行优先 performer。
+     *
+     * @param charge 收费明细
+     * @return 操作人 Practitioner 主键；无则 null
+     */
+    private Long resolveActivityOperatorId(ChargeItem charge) {
+        if (charge == null) {
+            return null;
+        }
+        if (this.isPricingGenerateSource(charge.getGenerateSourceEnum())) {
+            if (charge.getEntererId() != null) {
+                return charge.getEntererId();
+            }
+            return charge.getPerformerId();
+        }
+        if (charge.getPerformerId() != null) {
+            return charge.getPerformerId();
+        }
+        return charge.getEntererId();
+    }
+
+    /**
+     * 判定是否为划价/滚费配置来源码（历史 auto-roll-fees Charge；现行滚费 Charge 为 order-execute）。
+     *
+     * @param generateSourceEnum 生成来源 code
+     * @return true 表示划价类活动
+     */
+    private boolean isPricingGenerateSource(String generateSourceEnum) {
+        return GenerateSource.NURSE_PRICING.getCode().equals(generateSourceEnum)
+            || GenerateSource.AUTO_ROLL_FEES.getCode().equals(generateSourceEnum);
+    }
+
+    /**
+     * 判定是否为床位自动计费落账行：Charge {@code order-execute} 且锚点 SR 为 {@code auto-roll-fees}。
+     *
+     * @param charge                    收费明细
+     * @param autoRollServiceRequestIds 床位自动计费 SR 主键集合
+     * @return true 时活动类型展示为「自动计费」
+     */
+    private boolean isAutoRollOrderExecuteCharge(ChargeItem charge, Set<Long> autoRollServiceRequestIds) {
+        if (charge == null || charge.getServiceId() == null) {
+            return false;
+        }
+        if (!GenerateSource.ORDER_EXECUTE.getCode().equals(charge.getGenerateSourceEnum())) {
+            return false;
+        }
+        if (autoRollServiceRequestIds == null || autoRollServiceRequestIds.isEmpty()) {
+            return false;
+        }
+        return autoRollServiceRequestIds.contains(charge.getServiceId());
+    }
+
+    /**
+     * 判定汇总展开明细是否为取消执行/冲销（BR-IP-CDT-018）。
+     *
+     * <p>护士划价负向留痕行活动类型展示为「冲销」；医嘱执行类为「取消执行」。</p>
+     *
+     * @param charge 收费明细
+     * @return true 时前端标红
+     */
+    private boolean resolveActivityCancelHighlight(ChargeItem charge) {
+        if (charge == null) {
+            return false;
+        }
+        if (ChargeItemStatus.REFUNDING.getCode().equals(charge.getStatusEnum())
+            || ChargeItemStatus.REFUNDED.getCode().equals(charge.getStatusEnum())) {
+            return true;
+        }
+        if (charge.getRefundId() != null) {
+            return true;
+        }
+        BigDecimal quantityValue = charge.getQuantityValue();
+        if (quantityValue != null && quantityValue.signum() < 0) {
+            return true;
+        }
+        BigDecimal totalPrice = charge.getTotalPrice();
+        if (totalPrice != null && totalPrice.signum() < 0) {
+            return true;
+        }
+        return false;
     }
 
     /**

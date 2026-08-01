@@ -46,6 +46,11 @@ public class ThirdPartyPaymentExtensionImpl implements ThirdPartyPaymentExtensio
     }
 
     @Override
+    public boolean hasSuccessfulConsumerScanOrder(Long paymentId) {
+        return settleOrchestrator.hasSuccessfulConsumerScanOrder(paymentId);
+    }
+
+    @Override
     public ThirdPartyScanExtensionOut applyClientScanResult(ThirdPartyScanConfirmExtensionIn command) {
         ApplyClientScanResult result = settleOrchestrator.applyClientScanResult(
                 new ApplyClientScanCommand()

@@ -7,7 +7,9 @@ package com.openhis.health.application.shared.financial;
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 import com.openhis.health.domain.financial.contract.entity.Contract;
+import com.openhis.health.domain.financial.contract.queries.model.ContractListItemQueryModel;
 import com.openhis.health.domain.financial.contract.service.ContractQueryService;
+import com.openhis.health.domain.share.constants.OutpatientPharmacyPrescriptionQueryConstants;
 import com.openhis.health.domain.share.enums.ChargeTypeCategory;
 import com.openhis.health.domain.share.enums.ContractCategory;
 import lombok.RequiredArgsConstructor;
@@ -17,21 +19,88 @@ import org.springframework.stereotype.Component;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
- * 费用性质（合同）展示判定：按 {@code fin_contract} 解析 payment {@code contract_no} 是否医保口径。
+ * 费用性质（合同）展示判定与分类文案：按 {@code fin_contract} 解析。
  *
  * <p>日结交账 UI「自费/医保」筛选仅影响展示（BR-OP-DCL-009 / BR-IP-DCL-005），判定以合同主数据为准，
  * 不再依赖 {@code fin_payment_yb_settlement} 是否存在。</p>
+ *
+ * <p>处方笺 / 发药 slip / 医嘱列表「费用性质」分类文案与 AS-OP-PHA-005 口径一致
+ * （{@link ContractCategory} → 自费/公费/省医保/市医保/职工医保）。</p>
  */
 @Component
 @RequiredArgsConstructor
 public class ContractExpenseNatureAssembler {
 
-    /** 合同读侧：按 bus_no 批量解析分类与医保标志。 */
+    /** 合同读侧：按 bus_no / 全量简表解析分类与医保标志。 */
     private final ContractQueryService contractQueryService;
+
+    /**
+     * 按合同主键批量解析费用性质分类展示文案。
+     *
+     * @param contractIds {@code med_medication_request.contract_id} 等；允许含 null
+     * @return 合同主键 → 分类文案；未命中或未知分类时不在 Map 中
+     */
+    public Map<Long, String> mapCategoryTextByContractIdIn(Collection<Long> contractIds) {
+        if (contractIds == null || contractIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Set<Long> unique = new HashSet<>();
+        // Loop：去重有效合同主键，避免全量简表扫描后的空匹配
+        for (Long contractId : contractIds) {
+            if (contractId != null) {
+                unique.add(contractId);
+            }
+        }
+        if (unique.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, String> result = new HashMap<>(unique.size() * 2);
+        // Loop：全量有效合同主数据中裁剪本批 id，解析 category_enum → 展示文案
+        for (ContractListItemQueryModel contract : this.contractQueryService.listAllContracts()) {
+            if (contract == null || contract.getId() == null || !unique.contains(contract.getId())) {
+                continue;
+            }
+            String categoryText = this.resolveCategoryText(contract.getCategoryEnum());
+            if (StringUtils.isNotEmpty(categoryText)) {
+                result.put(contract.getId(), categoryText);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * {@link ContractCategory} code → 费用性质分类中文文案（与门诊处方查询同表）。
+     *
+     * @param categoryCode 合同 {@code category_enum}；空或未知返回 {@code null}
+     * @return 分类文案
+     */
+    public String resolveCategoryText(String categoryCode) {
+        if (StringUtils.isEmpty(categoryCode)) {
+            return null;
+        }
+        if (ContractCategory.SELF_CHARGE.getCode().equals(categoryCode)) {
+            return OutpatientPharmacyPrescriptionQueryConstants.CONTRACT_CATEGORY_SELF_CHARGE_LABEL;
+        }
+        if (ContractCategory.PUBLIC_CHARGE.getCode().equals(categoryCode)) {
+            return OutpatientPharmacyPrescriptionQueryConstants.CONTRACT_CATEGORY_PUBLIC_CHARGE_LABEL;
+        }
+        if (ContractCategory.PROVINCIAL_INSURANCE.getCode().equals(categoryCode)) {
+            return OutpatientPharmacyPrescriptionQueryConstants.CONTRACT_CATEGORY_PROVINCIAL_INSURANCE_LABEL;
+        }
+        if (ContractCategory.MUNICIPAL_INSURANCE.getCode().equals(categoryCode)) {
+            return OutpatientPharmacyPrescriptionQueryConstants.CONTRACT_CATEGORY_MUNICIPAL_INSURANCE_LABEL;
+        }
+        if (ContractCategory.WORKER_INSURANCE.getCode().equals(categoryCode)) {
+            return OutpatientPharmacyPrescriptionQueryConstants.CONTRACT_CATEGORY_WORKER_INSURANCE_LABEL;
+        }
+        return null;
+    }
 
     /**
      * 批量解析合同业务号是否医保费用性质。

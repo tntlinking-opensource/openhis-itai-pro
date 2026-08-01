@@ -4,6 +4,7 @@
  */
 package com.openhis.health.application.inventory.warehouse.returnstockin.mapper;
 
+import com.openhis.health.application.inventory.warehouse.returnstockin.dto.ReturnStockInListRowDto;
 import com.openhis.health.application.inventory.warehouse.returnstockin.dto.SupplierOptionDto;
 import com.openhis.health.application.inventory.warehouse.returnstockin.dto.WarehouseOptionDto;
 import com.openhis.health.application.inventory.warehouse.returnstockin.request.*;
@@ -73,6 +74,32 @@ public interface InventoryWarehouseReturnStockInMapper {
     PageReturnStockInsResponse toPageReturnStockInsResponse(Page<WarehouseDocumentDetailQueryModel> page);
 
     /**
+     * 按 busNo 顺序聚合退库入库供应请求明细为列表行 DTO。
+     *
+     * @param busNoPageOrder 分页单号顺序
+     * @param detailRows     同页全部明细
+     * @return 聚合列表行
+     */
+    List<ReturnStockInListRowDto> toReturnStockInListAggregated(
+        List<String> busNoPageOrder,
+        List<SupplyRequestModel> detailRows);
+
+    /**
+     * 用聚合列表行构建退库入库单分页响应。
+     *
+     * @param mergedTotal 去重后总单数
+     * @param pageNo      页码
+     * @param pageSize    页大小
+     * @param records     列表行
+     * @return 分页响应
+     */
+    PageReturnStockInsResponse toPageReturnStockInsAggregatedResponse(
+        long mergedTotal,
+        int pageNo,
+        int pageSize,
+        List<ReturnStockInListRowDto> records);
+
+    /**
      * 将可关联出库/发放单读模型分页装配为选单响应。
      *
      * @param page 可关联单据分页
@@ -83,13 +110,15 @@ public interface InventoryWarehouseReturnStockInMapper {
     /**
      * 将同号供应请求明细与产品读模型装配为退库入库单详情响应。
      *
-     * @param lines        供应请求明细行
-     * @param productByKey 产品定义读模型映射
+     * @param lines         供应请求明细行
+     * @param productByKey  产品定义读模型映射
+     * @param productHints  行 id → 目录编辑提示（unitBands）
      * @return 详情响应
      */
     GetReturnStockInDetailResponse toGetReturnStockInDetailResponse(
         List<SupplyRequestModel> lines,
-        Map<String, ProductDefinitionDisplayDto> productByKey);
+        Map<String, ProductDefinitionDisplayDto> productByKey,
+        Map<Long, com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto> productHints);
 
     /**
      * 将新建退库入库单请求装配为领域 CreateReturnCommand（历史写路径，当前 AppService 拒绝）。

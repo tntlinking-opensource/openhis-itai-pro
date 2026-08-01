@@ -230,6 +230,56 @@ public interface AggregateTypeConstants {
     String CONDITION_DEFINITION = "CDF";
 
     /**
+     * 临床观察定义（OD）聚合类型名称。
+     */
+    String OBSERVATION_DEFINITION = "ODF";
+
+    /**
+     * 临床观察实例（Observation）聚合类型名称。
+     */
+    String OBSERVATION = "OBS";
+
+    /**
+     * 临床总检 DiagnosticReport 聚合类型名称（DM-CLN-008）。
+     */
+    String DIAGNOSTIC_REPORT = "CDR";
+
+    /**
+     * 报告读侧索引（DiagnosticReportIndex / catalog）聚合类型名称（DM-CLN-006）。
+     */
+    String DIAGNOSTIC_REPORT_INDEX = "DRI";
+
+    /**
+     * 项目↔小项绑定（AOL）聚合类型名称（事件锚点用 activityDefinitionId）。
+     */
+    String ACTIVITY_OBSERVATION_LINK = "AOL";
+
+    /**
+     * PEIS 模块参数（PeisConfig）聚合类型名称。
+     */
+    String PEIS_CONFIG = "PCG";
+
+    /**
+     * PEIS 常见结果模板（PeisCommonResult）聚合类型名称。
+     */
+    String PEIS_COMMON_RESULT = "PCR";
+
+    /**
+     * PEIS 服务申请执行扩展（PeisServiceRequestExt）聚合类型名称。
+     */
+    String PEIS_SERVICE_REQUEST_EXT = "PSE";
+
+    /**
+     * PEIS 就诊扩展（PeisEncounterExt）聚合类型名称。
+     */
+    String PEIS_ENCOUNTER_EXT = "PEE";
+
+    /**
+     * 手术操作定义目录聚合类型名称。
+     */
+    String PROCEDURE_DEFINITION = "PRD";
+
+    /**
      * 诊断记录聚合类型名称。
      */
     String CONDITION = "CD";

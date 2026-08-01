@@ -16,7 +16,7 @@ import lombok.experimental.Accessors;
  * IF-IP-DOR-14：暂存医嘱批次中的单行指令（CREATE / UPDATE / DELETE）。
  *
  * <p>通过 {@link #productTableName} 区分药品与诊疗载荷；住院场景<strong>不含耗材</strong>（BR-IP-ORD-012）。
- * {@link #therapyTypeCode} 驱动长临分轨：长期药品仅写 Request；临时药品/诊疗与门诊一致（暂存费用草稿，签发建发放）。</p>
+ * {@link #therapyTypeCode} 驱动长/临/出院带药分轨：住院三种 therapy 暂存均仅写 Request（BR-IP-ORD-006/029）。</p>
  */
 @Data
 @Accessors(chain = true)
@@ -54,9 +54,14 @@ public class InpatientDoctorStationAdviceDraftLineRequest {
     @Schema(description = "诊疗载荷")
     private SaveInpatientServiceAdviceDraftLinePayload servicePayload;
 
-    /** 长临医嘱类型：{@link com.openhis.health.domain.share.enums.TherapyType#getCode()}。 */
+    /**
+     * 治疗类型：{@link com.openhis.health.domain.share.enums.TherapyType#getCode()}
+     * （{@code LONG_TERM} / {@code TEMPORARY} / {@code DISCHARGE_MEDICATION}）。
+     */
     @NotBlank(message = DoctorStationAdviceConstants.VALIDATION_THERAPY_TYPE_REQUIRED)
-    /** 长临医嘱：LONG_TERM / TEMPORARY。 */
-    @Schema(description = "长临医嘱：LONG_TERM / TEMPORARY", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(
+        description = "治疗类型：LONG_TERM / TEMPORARY / DISCHARGE_MEDICATION",
+        requiredMode = Schema.RequiredMode.REQUIRED
+    )
     private String therapyTypeCode;
 }

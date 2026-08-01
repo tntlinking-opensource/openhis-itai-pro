@@ -38,9 +38,8 @@ public class SearchUtils<T> {
             exampleMatcher =
                 exampleMatcher.withMatcher(where.toString(), ExampleMatcher.GenericPropertyMatcher::contains);
         }
-        t = tJsonobject.toJavaObject((Class<T>)t.getClass());
-        Example<T> example = Example.of(t, exampleMatcher);
-        return example;
+        T entity = tJsonobject.toJavaObject(uncheckedClass(t));
+        return Example.of(entity, exampleMatcher);
     }
 
     /**
@@ -52,7 +51,8 @@ public class SearchUtils<T> {
      * @param <T> 实体类泛型
      * @return JPA分页结果Page<T>
      */
-    public <T> Page<T> generateJpaPageQuery(JSONObject jsonObject, T t, JpaRepository<T, ?> repository) {
+    public <T, R extends JpaRepository<T, ?> & JpaSpecificationExecutor<T>> Page<T> generateJpaPageQuery(
+        JSONObject jsonObject, T t, R repository) {
         // ====================== 1. 解析分页参数 ======================
         int pageNum = jsonObject.getInteger("pageNo") == null ? 0 : jsonObject.getInteger("pageNo");
         int pageSize = jsonObject.getInteger("pageSize") == null ? 10 : jsonObject.getInteger("pageSize");
@@ -103,8 +103,12 @@ public class SearchUtils<T> {
         };
 
         // ====================== 4. 执行JPA分页查询 ======================
-        JpaSpecificationExecutor<T> specExecutor = (JpaSpecificationExecutor<T>)repository;
-        return specExecutor.findAll(spec, pageable);
+        return repository.findAll(spec, pageable);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> Class<T> uncheckedClass(T instance) {
+        return (Class<T>) instance.getClass();
     }
 
 

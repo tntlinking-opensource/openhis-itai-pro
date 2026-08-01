@@ -97,7 +97,7 @@ public interface OutpatientRefundMapper {
      * @param originalPayment 原支付读模型
      * @param operatorId 操作人
      * @param chargeItemIdsJoined 收费项 id 拼接串
-     * @param refundAmount 应退金额
+     * @param refundAmount 渠道应退合计（校验用；主单 display/tendered 取原单患者应付）
      * @param paymentDetails 逆向单明细
      * @return 申请命令
      */

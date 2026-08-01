@@ -10,6 +10,7 @@ import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
+import com.openhis.health.domain.share.utils.EncounterDiagnosisIdsPredicates;
 import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest;
 import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequestDetail;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.InpatientAutoRollNursingLevelQueryModel;
@@ -693,7 +694,7 @@ public class ServiceRequestQueryService {
     /**
      * 解析 billDate 当日最后有效校对护理级别（AS-IP-NUR-013 BR-IP-ARG-009；DM-WKF-004 §6.2.25）。
      *
-     * <p>口径：医生开立 + category {@code 26}；须已校对（{@code check_time} 非空）；停嘱后 {@code occurrence_end_time}
+     * <p>口径：医生开立 + category {@code 26}；须已校对（{@code check_time} 非空）；停嘱后 {@code stop_time}
      * 早于 billDate 自然日则不再参与；同日内换级取 {@code check_time} 最大者。</p>
      *
      * @param encounterId 就诊主键
@@ -737,9 +738,9 @@ public class ServiceRequestQueryService {
             if (verifiedDate.isAfter(billDate)) {
                 continue;
             }
-            // 停嘱止算：结束自然日早于 billDate 则 billDate 不再计费。
+            // 停嘱止算：stop_time 自然日早于 billDate 则 billDate 不再计费。
             if (RequestStatus.STOPPED.getCode().equals(row.getStatusEnum())) {
-                LocalDateTime endTime = row.getOccurrenceEndTime();
+                LocalDateTime endTime = row.getStopTime();
                 if (endTime != null && endTime.toLocalDate().isBefore(billDate)) {
                     continue;
                 }
@@ -881,6 +882,50 @@ public class ServiceRequestQueryService {
             return null;
         }
         return this.toListModel(request);
+    }
+
+    /**
+     * 按主键加载未删诊疗申请（Optional 包装，供跨模块反查）。
+     *
+     * @param id 服务申请主键
+     * @return 列表模型；不存在或已删则 empty
+     */
+    public Optional<ServiceRequestListModel> findActiveListModelById(Long id) {
+        ServiceRequestListModel model = this.getListModelById(id);
+        if (model == null) {
+            return Optional.empty();
+        }
+        return Optional.of(model);
+    }
+
+    /**
+     * 按 prescription_no 精确匹配未删服务申请，取 id 最大的一条（MedSync APPLYNO 反查主路径）。
+     *
+     * @param prescriptionNo 申请单号
+     * @return 最新一条；无命中 empty
+     */
+    public Optional<ServiceRequestListModel> findFirstActiveByPrescriptionNo(String prescriptionNo) {
+        if (StringUtils.isEmpty(prescriptionNo)) {
+            return Optional.empty();
+        }
+        List<ServiceRequest> rows =
+            serviceRequestRepository.findByPrescriptionNoAndIsDeletedFalse(prescriptionNo.trim());
+        if (rows == null || rows.isEmpty()) {
+            return Optional.empty();
+        }
+        ServiceRequest latest = null;
+        for (ServiceRequest row : rows) {
+            if (row == null || row.getId() == null) {
+                continue;
+            }
+            if (latest == null || row.getId() > latest.getId()) {
+                latest = row;
+            }
+        }
+        if (latest == null) {
+            return Optional.empty();
+        }
+        return Optional.of(this.toListModel(latest));
     }
 
     /**
@@ -1149,7 +1194,9 @@ public class ServiceRequestQueryService {
         model.setReasonText(request.getReasonText());
         model.setOccurrenceStartTime(request.getOccurrenceStartTime());
         model.setRequesterId(request.getRequesterId());
-        model.setReqAuthoredTime(request.getAuthoredTime());
+        model.setPerformerCheckId(request.getPerformerCheckId());
+        model.setReqOpenedTime(request.getReqOpenedTime());
+        model.setReqAuthoredTime(request.getReqAuthoredTime());
         model.setSortNumber(request.getSortNumber());
         model.setQuantity(request.getQuantity());
         model.setUnitCode(request.getUnitCode());
@@ -1165,14 +1212,15 @@ public class ServiceRequestQueryService {
         model.setBasedOnId(request.getBasedOnId());
         model.setParentId(request.getParentId());
         model.setOccurrenceEndTime(request.getOccurrenceEndTime());
-        model.setConditionDefinitionId(request.getConditionDefinitionId());
-        model.setEncounterDiagnosisId(request.getEncounterDiagnosisId());
+        model.setStopTime(request.getStopTime());
+        model.setStopperId(request.getStopperId());
+        model.setEncounterDiagnosisIds(request.getEncounterDiagnosisIds());
         model.setPrescriptionNo(request.getPrescriptionNo());
         return model;
     }
 
     /**
-     * 定时诊疗是否落在指定发生日：优先 occurrence_start_time，回落 authored_time、created_at。
+     * 定时诊疗是否落在指定发生日：优先 occurrence_start_time，回落开立/签发时刻、created_at。
      *
      * @param request    诊疗申请实体
      * @param filterDate 筛选日期
@@ -1181,7 +1229,10 @@ public class ServiceRequestQueryService {
     private boolean matchesTimedServiceOccurrenceDate(ServiceRequest request, LocalDate filterDate) {
         LocalDateTime anchor = request.getOccurrenceStartTime();
         if (anchor == null) {
-            anchor = request.getAuthoredTime();
+            anchor = request.getReqOpenedTime();
+        }
+        if (anchor == null) {
+            anchor = request.getReqAuthoredTime();
         }
         if (anchor == null) {
             anchor = request.getCreatedAt();
@@ -1217,7 +1268,7 @@ public class ServiceRequestQueryService {
                 continue;
             }
             if (RequestStatus.STOPPED.getCode().equals(row.getStatusEnum())) {
-                LocalDateTime endTime = row.getOccurrenceEndTime();
+                LocalDateTime endTime = row.getStopTime();
                 if (endTime != null && endTime.toLocalDate().isBefore(referenceDate)) {
                     continue;
                 }
@@ -1252,5 +1303,27 @@ public class ServiceRequestQueryService {
         model.setCheckTime(request.getCheckTime());
         model.setStatusEnum(request.getStatusEnum());
         return model;
+    }
+
+    /**
+     * 统计未软删诊疗请求中 {@code encounter_diagnosis_ids} 引用指定就诊诊断行的条数。
+     *
+     * @param encounterDiagnosisId 就诊诊断行主键
+     * @return 引用条数
+     */
+    public int countReferencingEncounterDiagnosisId(Long encounterDiagnosisId) {
+        if (encounterDiagnosisId == null) {
+            return 0;
+        }
+        Specification<ServiceRequest> specification = (root, query, cb) -> cb.and(
+            cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+            EncounterDiagnosisIdsPredicates.containsEncounterDiagnosisId(
+                cb, root.get(FieldNameConstants.ENCOUNTER_DIAGNOSIS_IDS), encounterDiagnosisId)
+        );
+        long count = serviceRequestRepository.count(specification);
+        if (count > Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
+        }
+        return (int) count;
     }
 }

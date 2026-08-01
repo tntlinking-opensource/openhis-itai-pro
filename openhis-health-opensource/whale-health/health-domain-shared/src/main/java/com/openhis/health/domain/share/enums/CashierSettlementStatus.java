@@ -5,15 +5,23 @@
 package com.openhis.health.domain.share.enums;
 
 /**
- * 收费员交账头状态（DM-FIN-003 {@code status_enum}）。
+ * 交账批次审批状态（DM-FIN-003 {@code status_enum}）。
+ *
+ * <p>仅四态：待审 / 已通过 / 驳回 / 撤回。库内旧码由 Flyway 一次性迁完，运行时不兼容。</p>
  */
 public enum CashierSettlementStatus implements EnumInterface {
 
-    /** 已交账归档，挂载 payment 不可再纳入其它交账。 */
-    HANDED_OVER(0L, "HANDED_OVER", "已交账", "有效交账记录", 0L),
+    /** 已提交待审；源行已挂载。 */
+    SUBMITTED(0L, "SUBMITTED", "待审批", "可撤回、驳回、审批通过", 0L),
 
-    /** 取消交账（预留，本期不写侧不实现）。 */
-    CANCELLED(0L, "CANCELLED", "取消交账", "预留", 1L);
+    /** 财务已通过（终态）。 */
+    APPROVED(0L, "APPROVED", "已通过", "本轮无写", 1L),
+
+    /** 待审驳回；已清挂载。 */
+    REJECTED(0L, "REJECTED", "已驳回", "只读审计", 2L),
+
+    /** 提交人撤回；已清挂载。 */
+    WITHDRAWN(0L, "WITHDRAWN", "已撤回", "只读审计", 3L);
 
     private final Long codeSystemId;
     private final String code;
@@ -47,5 +55,15 @@ public enum CashierSettlementStatus implements EnumInterface {
 
     public Long getSortOrder() {
         return sortOrder;
+    }
+
+    /**
+     * 是否为待审（可撤回/驳回/通过）。
+     *
+     * @param statusEnum 状态 code
+     * @return true=待审
+     */
+    public static boolean isSubmitted(String statusEnum) {
+        return SUBMITTED.getCode().equals(statusEnum);
     }
 }

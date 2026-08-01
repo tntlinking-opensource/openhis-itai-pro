@@ -47,8 +47,6 @@ public class ImportDeviceDefinitionCatalogCommand extends BatchCommand<ImportDev
         private Boolean ybFlag;
         /** 医保编码。 */
         private String ybNo;
-        /** 医药机构目录编码。 */
-        private String ybOrgNo;
         /** 医保对码标记。 */
         private Boolean ybMatchFlag;
         /** 医保等级。 */

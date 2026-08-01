@@ -34,10 +34,10 @@ public class EditDiseaseCommand {
     /** 医保号。 */
     private String ybNo;
 
-    /** 国家/地方疾病编码（医保对照用）。 */
-    private String diseaseCode;
     /** 医保匹配标志。 */
     private Boolean ybMatchFlag;
+    /** 国家临床版诊断编码（国临码）。 */
+    private String clinicCode;
     /** 状态枚举编码（启用/停用）。 */
     private String statusEnum;
 }

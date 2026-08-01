@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS "public"."cus_activity_execution_location" (
     "deleted_at" timestamptz(6),
     "deleted_by" int8,
     "version" int4 NOT NULL DEFAULT 0,
+    "organization_id" int8 NOT NULL,
     "activity_definition_id" int8,
     "activity_category_code" varchar(255) NOT NULL,
     "execution_org_id" int8 NOT NULL,
@@ -26,7 +27,7 @@ CREATE TABLE IF NOT EXISTS "public"."cus_activity_execution_location" (
     "remark" varchar(255),
     CONSTRAINT "cus_activity_execution_location_pkey" PRIMARY KEY ("id")
 );
-COMMENT ON TABLE cus_activity_execution_location IS '自定义 activity execution location';
+COMMENT ON TABLE cus_activity_execution_location IS '自定义 activity execution location（开立科室→执行科室规则）';
 COMMENT ON COLUMN cus_activity_execution_location.id IS '主键';
 COMMENT ON COLUMN cus_activity_execution_location.tenant_id IS '租户标识';
 COMMENT ON COLUMN cus_activity_execution_location.created_at IS '创建时间';
@@ -37,7 +38,8 @@ COMMENT ON COLUMN cus_activity_execution_location.is_deleted IS '软删标记';
 COMMENT ON COLUMN cus_activity_execution_location.deleted_at IS '删除时间';
 COMMENT ON COLUMN cus_activity_execution_location.deleted_by IS '删除人';
 COMMENT ON COLUMN cus_activity_execution_location.version IS '乐观锁版本号';
-COMMENT ON COLUMN cus_activity_execution_location.activity_definition_id IS '执行科室规则聚合根';
+COMMENT ON COLUMN cus_activity_execution_location.organization_id IS '开立科室标识（与取药科室 organization_id 同口径）';
+COMMENT ON COLUMN cus_activity_execution_location.activity_definition_id IS '诊疗定义标识；空表示该开立科室下该诊疗大类默认规则';
 COMMENT ON COLUMN cus_activity_execution_location.activity_category_code IS '活动类别编码';
 COMMENT ON COLUMN cus_activity_execution_location.execution_org_id IS '执行科室标识';
 COMMENT ON COLUMN cus_activity_execution_location.execution_location_id IS '执行位置标识';
@@ -46,6 +48,10 @@ COMMENT ON COLUMN cus_activity_execution_location.end_time IS '生效结束时�
 COMMENT ON COLUMN cus_activity_execution_location.priority IS '优先级（数值越小越优先，1 最优先；与取药科室一致）';
 COMMENT ON COLUMN cus_activity_execution_location.display_order IS '展示顺序';
 COMMENT ON COLUMN cus_activity_execution_location.remark IS '备注';
+
+CREATE INDEX IF NOT EXISTS idx_cus_act_exec_loc_org_id
+    ON cus_activity_execution_location (organization_id)
+    WHERE is_deleted = false;
 
 -- seed: cus_activity_execution_location
 
@@ -245,7 +251,7 @@ COMMENT ON COLUMN cus_frequency.allow_cross_day IS '允许跨日（{ com.openhis
 COMMENT ON COLUMN cus_frequency.active_flag IS '启用标记';
 COMMENT ON COLUMN cus_frequency.sort_no IS '排序号';
 
--- seed: cus_frequency
+-- seed: cus_frequency → 出厂数据在 V10__seed_platform.sql（勿在 DDL 脚本内嵌种子）
 
 -- from V34__cus_order_template.sql
 -- cus_order_template（建表）
@@ -817,10 +823,14 @@ CREATE TABLE IF NOT EXISTS cus_price_adjustment_detail (
     old_selling_amount numeric(19, 6),
     purchase_impact numeric(19, 6),
     selling_impact numeric(19, 6),
+    location_id int8,
     CONSTRAINT cus_price_adjustment_detail_pkey PRIMARY KEY (id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_cus_price_adjustment_detail_adjustment_id ON cus_price_adjustment_detail (adjustment_id);
+CREATE INDEX IF NOT EXISTS idx_cus_price_adjustment_detail_location_id
+    ON cus_price_adjustment_detail (location_id)
+    WHERE location_id IS NOT NULL AND is_deleted = false;
 
 COMMENT ON TABLE cus_price_adjustment_detail IS '调价批号明细（提交时快照盈亏）';
 COMMENT ON COLUMN cus_price_adjustment_detail.id IS '主键';
@@ -840,6 +850,7 @@ COMMENT ON COLUMN cus_price_adjustment_detail.old_purchase_amount IS '调前进�
 COMMENT ON COLUMN cus_price_adjustment_detail.old_selling_amount IS '调前售价';
 COMMENT ON COLUMN cus_price_adjustment_detail.purchase_impact IS '进价盈亏';
 COMMENT ON COLUMN cus_price_adjustment_detail.selling_impact IS '售价盈亏';
+COMMENT ON COLUMN cus_price_adjustment_detail.location_id IS '库位 Location.id；物流有库存时落库；诊疗/未入库/无库位可空；仅查询与日结按库过滤，不参与写价公式';
 
 -- from V100__doc_inventory_item_snapshot.sql
 -- V100：库存明细快照静表（DM-DOC-001 · doc_inventory_item_snapshot）
@@ -968,6 +979,7 @@ CREATE TABLE IF NOT EXISTS "public"."cus_trace_number" (
     "item_id" int8 NOT NULL,
     "lot_number" varchar(255) NOT NULL,
     "trace_unit_code" varchar(64) NOT NULL,
+    "trace_unit_ratio" numeric(18, 6),
     "remaining_split_quantity" numeric(18, 4) NOT NULL DEFAULT 0,
     "in_hospital_status_enum" varchar(32) NOT NULL,
     CONSTRAINT "cus_trace_number_pkey" PRIMARY KEY ("id")
@@ -978,7 +990,8 @@ COMMENT ON COLUMN cus_trace_number.trace_no IS '单码；租户内业务唯一';
 COMMENT ON COLUMN cus_trace_number.item_table IS '品项物理表名（本期仅 med_medication_definition）';
 COMMENT ON COLUMN cus_trace_number.item_id IS '药品定义标识';
 COMMENT ON COLUMN cus_trace_number.lot_number IS '批号';
-COMMENT ON COLUMN cus_trace_number.trace_unit_code IS '追溯码所贴包装单位';
+COMMENT ON COLUMN cus_trace_number.trace_unit_code IS '追溯码所贴包装单位（建码快照；发退换算优先 ratio）';
+COMMENT ON COLUMN cus_trace_number.trace_unit_ratio IS '建码时 1 个追溯码单位对应的拆零数量快照；发退优先本列';
 COMMENT ON COLUMN cus_trace_number.remaining_split_quantity IS '拆零剩余量（最小单位）';
 COMMENT ON COLUMN cus_trace_number.in_hospital_status_enum IS 'IN_HOSPITAL / NOT_IN_HOSPITAL';
 

@@ -4,6 +4,7 @@
  */
 package com.openhis.health.domain.workflow.devicerequest.service;
 
+import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
 import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
@@ -66,6 +67,8 @@ public class DeviceRequestDomainService {
     private final IDomainEventPublisher domainEventPublisher;
     /** 耗材请求 busNo：业务流水按日递增，前缀 {@link AggregateTypeConstants#DEVICE_REQUEST}。 */
     private final BusinessSequenceService businessSequenceService;
+    /** 加载候选：经 Encounter QS 断言绑定 ids（B.6.4）。 */
+    private final EncounterQueryService encounterQueryService;
 
     /**
      * 创建耗材草稿。
@@ -96,17 +99,33 @@ public class DeviceRequestDomainService {
         if (item.getSortNumber() != null) {
             request.setSortNumber(item.getSortNumber());
         }
-        // 医生站：可选绑定诊断定义，与药品医嘱口径一致（单列 condition_definition_id）。
-        if (item.getConditionDefinitionId() != null) {
-            request.setConditionDefinitionId(item.getConditionDefinitionId());
+        // 医生站：可选绑定就诊诊断有序 ids 串，与药品医嘱口径一致（列 encounter_diagnosis_ids）。
+        if (item.getEncounterDiagnosisIds() != null) {
+            // 前置校验：属本就诊、同族、主诊首位
+            encounterQueryService.assertBindableEncounterDiagnosisIds(
+                item.getEncounterId(), item.getEncounterDiagnosisIds());
+            request.setEncounterDiagnosisIds(item.getEncounterDiagnosisIds());
         }
-        // Pre：绑定就诊诊断行，供收费/医保按 encounter_diagnosis_id 解析医疗类别。
-        if (item.getEncounterDiagnosisId() != null) {
-            request.setEncounterDiagnosisId(item.getEncounterDiagnosisId());
+        // Pre：用法/诊疗绑定派生须成对落 based_on，供列表反查与成组共用追溯（对齐住院执行绑定）。
+        boolean hasBasedOnTable = StringUtils.isNotEmpty(item.getBasedOnTable());
+        boolean hasBasedOnId = item.getBasedOnId() != null;
+        if (hasBasedOnTable != hasBasedOnId) {
+            throw new BusinessException(
+                ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT,
+                "创建耗材草稿时 basedOnTable 与 basedOnId 须同时为空或同时有值");
+        }
+        if (hasBasedOnTable) {
+            request.setBasedOnTable(item.getBasedOnTable().trim());
+            request.setBasedOnId(item.getBasedOnId());
+        }
+        // Pre：成组绑定耗材可与主药嘱 package_id 对齐（可空）。
+        if (item.getPackageId() != null) {
+            request.setPackageId(item.getPackageId());
         }
         request.initDraft();
         request.setIsDeleted(Boolean.FALSE);
-        request.setReqAuthoredTime(LocalDateTime.now());
+        // Pre：开立时间仅首次暂存写入；签发时刻由 sign 写 req_authored_time。
+        request.setReqOpenedTime(LocalDateTime.now());
         request.setBusNo(businessSequenceService.getSeqByDay(AggregateTypeConstants.DEVICE_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
         request.assertRequiredForCreate();
 
@@ -214,17 +233,14 @@ public class DeviceRequestDomainService {
             }
             request.setUseTiming(item.getUseTiming());
         }
-        // 诊断定义绑定与药品医嘱一致，仅当命令显式传入且值变化时落库并记入变更摘要。
-        if (item.getConditionDefinitionId() != null
-            && !Objects.equals(item.getConditionDefinitionId(), request.getConditionDefinitionId())) {
-            request.setConditionDefinitionId(item.getConditionDefinitionId());
-            changedFields.add(FieldNameConstants.CONDITION_DEFINITION_ID);
-        }
-        // 就诊诊断绑定与药品医嘱一致，仅当命令显式传入且值变化时落库并记入变更摘要。
-        if (item.getEncounterDiagnosisId() != null
-            && !Objects.equals(item.getEncounterDiagnosisId(), request.getEncounterDiagnosisId())) {
-            request.setEncounterDiagnosisId(item.getEncounterDiagnosisId());
-            changedFields.add(FieldNameConstants.ENCOUNTER_DIAGNOSIS_ID);
+        // 就诊诊断有序 ids 串 绑定与药品医嘱一致，仅当命令显式传入且值变化时落库并记入变更摘要。
+        if (item.getEncounterDiagnosisIds() != null
+            && !Objects.equals(item.getEncounterDiagnosisIds(), request.getEncounterDiagnosisIds())) {
+            // 前置校验：改绑时同口径门禁
+            encounterQueryService.assertBindableEncounterDiagnosisIds(
+                request.getEncounterId(), item.getEncounterDiagnosisIds());
+            request.setEncounterDiagnosisIds(item.getEncounterDiagnosisIds());
+            changedFields.add(FieldNameConstants.ENCOUNTER_DIAGNOSIS_IDS);
         }
 
         request.assertRequiredForCreate();
@@ -281,7 +297,7 @@ public class DeviceRequestDomainService {
 
         // DOC-CONFLICT: 库存与费用门控由应用服务编排完成，领域层不跨域读取。
 
-        // 与诊疗服务申请签发写入 authored_time 对齐：正式开立时刻在签发时落库，覆盖草稿首次保存时间。
+        // 与诊疗/药品签发对齐：签发时间写 req_authored_time，不覆盖 req_opened_time。
         request.setReqAuthoredTime(LocalDateTime.now());
         request.draftToActive();
         deviceRequestRepository.save(request);
@@ -416,8 +432,15 @@ public class DeviceRequestDomainService {
 
         DeviceRequest source = this.requireDeviceRequest(item.getSourceRequestId());
 
-        // Pre：同一原单仅允许一条未完成负向退耗申请（BR-DR-008 幂等）。
-        this.assertNoOpenRefundDeviceOrder(source.getId());
+        // Pre：原单本身已是负向退耗单时拒绝（不可对退耗单再退，EX-DRA-302）。
+        if (source.getRefundDeviceId() != null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_RULE_CONFLICT, "已申请退耗材，请勿重复申请");
+        }
+        // Pre：已有未完结负向单则幂等返回（BR-DR-008）；本批多收费行共锚同一耗嘱时不误拦。
+        Long existingOpenId = this.findOpenRefundDeviceOrderId(source.getId());
+        if (existingOpenId != null) {
+            return existingOpenId;
+        }
 
         // 冲销校验（BR-DR-011）：严格使用 refundDeviceId + quantity<0 汇总口径。
         BigDecimal remaining = this.offsetVerification(source.getId(), item.getRefundQuantity());
@@ -498,10 +521,15 @@ public class DeviceRequestDomainService {
                 request.setBasedOnTable(item.getBasedOnTable());
                 request.setBasedOnId(item.getBasedOnId());
             }
+            // 组套标识：执行绑定耗材可与主药嘱 package_id 对齐（可空）
+            if (item.getPackageId() != null) {
+                request.setPackageId(item.getPackageId());
+            }
             request.setIsDeleted(Boolean.FALSE);
             request.setBusNo(businessSequenceService.getSeqByDay(
                 AggregateTypeConstants.DEVICE_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
-            // 执行侧直建完成单无草稿阶段，开立时间与列表展示锚定为创建时刻。
+            // 执行侧直建完成单无草稿阶段：开立与签发同落创建时刻。
+            request.setReqOpenedTime(authoredTime);
             request.setReqAuthoredTime(authoredTime);
             request.assertSourceAllowedForCompletedCreate();
             request.assertRequiredForCreate();
@@ -539,7 +567,11 @@ public class DeviceRequestDomainService {
     }
 
     /**
-     * 撤销已完成请求（对执行侧直写完成态进行撤销/软删收口；支持批量，AS-IP-NUR-005 IF-IP-PRC-06）。
+     * 撤销已完成请求（对执行侧直写完成态进行撤销/软删收口；支持批量）。
+     *
+     * <p><strong>注意</strong>：自 2026-07-17 起，IF-IP-PRC-06 取消划价改为费用冲销留痕，
+     * {@code NurseStationInpatientBillingAppService#cancelNurseStationPricing} <strong>不再调用</strong>本方法；
+     * DeviceRequest 保持完成态。本方法仅保留作历史整行还原/其他撤销场景。</p>
      *
      * @param command 批量撤销项；护士划价路径须 {@code generate_source=nurse-pricing}
      * @throws BusinessException 状态不允许、不存在或入参非法时
@@ -683,8 +715,7 @@ public class DeviceRequestDomainService {
         out.setContractCode(source.getContractCode());
         out.setYbClassEnum(source.getYbClassEnum());
         out.setTraceNo(source.getTraceNo());
-        out.setConditionDefinitionId(source.getConditionDefinitionId());
-        out.setEncounterDiagnosisId(source.getEncounterDiagnosisId());
+        out.setEncounterDiagnosisIds(source.getEncounterDiagnosisIds());
         out.setObservationIdJson(source.getObservationIdJson());
         out.setSupportInfo(source.getSupportInfo());
         out.setGenerateSourceEnum(source.getGenerateSourceEnum());
@@ -695,10 +726,51 @@ public class DeviceRequestDomainService {
         out.setBasedOnTable(TableNameConstants.WKF_DEVICE_REQUEST);
         out.setBasedOnId(source.getId());
         out.setRequesterId(operatorId);
-        out.setReqAuthoredTime(LocalDateTime.now());
+        // 复制新草稿：开立取当前；签发列待正式签发再写；停嘱列清空。
+        out.setReqOpenedTime(LocalDateTime.now());
+        out.setReqAuthoredTime(null);
+        out.setStopTime(null);
+        // 复制/重开新行不得继承源行停嘱人。
+        out.setStopperId(null);
         out.setIsDeleted(Boolean.FALSE);
         out.initDraft();
         return out;
+    }
+
+    /**
+     * 门诊护士指定耗材房执行时回写请求发放库房与批号。
+     *
+     * <p>写入 {@code perform_location} 与 {@code lot_number}（取 FIFO 首段批号作请求侧展示/追溯；
+     * 多段拆批时权威批号仍在各 {@code DeviceDispense.lot_number}，DM-WKF-003/007）。
+     * 不变更请求状态与数量；仅注入本聚合 {@link DeviceRequestRepository}（B.6.4）。</p>
+     *
+     * @param deviceRequestId   耗材请求主键
+     * @param performLocationId 护士选定的发放库房位置主键
+     * @param lotNumber         FIFO 首段批号；可空（空则不覆盖原批号）
+     * @throws BusinessException 主键为空或请求不存在时
+     */
+    public void rebindPerformLocationAndLotForOutpatientNurseExecute(
+        Long deviceRequestId,
+        Long performLocationId,
+        String lotNumber) {
+        // Gate：请求主键必填，防止空锚点写库
+        if (deviceRequestId == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "deviceRequestId 不能为空");
+        }
+        // Gate：发放库房必填，避免把 perform_location 写空
+        if (performLocationId == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "performLocationId 不能为空");
+        }
+        // Pre：加载本聚合请求行
+        DeviceRequest request = this.requireDeviceRequest(deviceRequestId);
+        // Cmd：回写发放耗材房；权威扣库库位在发放行
+        request.setPerformLocation(performLocationId);
+        // Cmd：回写请求侧批号（与 FIFO 首段对齐；多段拆批以发放行为准）
+        if (lotNumber != null && !lotNumber.trim().isEmpty()) {
+            request.setLotNumber(lotNumber.trim());
+        }
+        // 持久化：本路径无领域事件，仅落库 perform_location / lot_number
+        deviceRequestRepository.save(request);
     }
 
     /**
@@ -739,11 +811,16 @@ public class DeviceRequestDomainService {
     }
 
     /**
-     * 断言原耗材申请不存在未完结的负向退耗单（BR-DR-008 幂等）。
+     * 查找原耗材申请上未完结的负向退耗单主键（BR-DR-008 幂等读）。
+     * <p>
+     * 仅按 {@code refund_device_id = originRequestId} 定位，不按患者/就诊扫全表；
+     * 他支付单、他耗嘱的既有退耗申请不会误拦本原单。
+     * </p>
      *
-     * @param originRequestId 原耗材申请主键
+     * @param originRequestId 原正向耗材申请主键
+     * @return 已有未完结负向单主键；无则 {@code null}
      */
-    private void assertNoOpenRefundDeviceOrder(Long originRequestId) {
+    private Long findOpenRefundDeviceOrderId(Long originRequestId) {
         List<DeviceRequest> existing = this.deviceRequestRepository.findByRefundDeviceIdIn(
             Collections.singletonList(originRequestId));
         for (DeviceRequest row : existing) {
@@ -751,8 +828,9 @@ public class DeviceRequestDomainService {
                 continue;
             }
             if (!RequestStatus.COMPLETED.getCode().equals(row.getStatusEnum())) {
-                throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_RULE_CONFLICT, "已申请退耗材，请勿重复申请");
+                return row.getId();
             }
         }
+        return null;
     }
 }

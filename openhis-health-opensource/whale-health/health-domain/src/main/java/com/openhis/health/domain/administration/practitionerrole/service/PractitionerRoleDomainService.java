@@ -30,7 +30,8 @@ import lombok.RequiredArgsConstructor;
  * <p>管理岗位分配、编辑、激活/停用、注销、服务范围更新和排班更新全流程。
  * 所有写操作均遵循「先落库后发事件」时序（通用规范 B.14 硬门禁），确保事件与数据一致性。</p>
  *
- * <p>对应 DM-ADM-006 §6.1 写侧方法集。</p>
+ * <p>对应 DM-ADM-006 §6.1 写侧方法集。挂平台角色即可落 {@code adm_pr_assign}，
+ * {@code org_id}/{@code location_id} 可双空（仅表示角色挂靠，尚未配置管辖科室/库位）。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -99,12 +100,8 @@ public class PractitionerRoleDomainService {
             // 校验当前角色状态允许编辑（委托聚合根方法，避免服务层直接比较枚举值）。
             role.assertEditable();
             Long locationId = parseSingleEditLocationId(item.getLocationId());
-            // 校验组织/位置至少一项非空（BR-PRL-007）。
-            if (item.getOrgId() == null && locationId == null) {
-                throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_RULE_CONFLICT, "科室与位置不可同时为空");
-            }
-            // 唯一性校验：编辑后仍需满足人员+角色+科室+位置唯一（BR-PRL-001，不含已软删行）。
-            if (repository.existsByPractitionerIdAndRoleIdAndOrgIdAndLocationIdAndIdNotAndIsDeletedFalse(
+            // 唯一性校验：编辑后仍需满足人员+角色+科室+位置唯一（BR-PRL-001，不含已软删行；org/loc 可双空）。
+            if (existsActiveDuplicateExcludingId(
                 role.getPractitionerId(), role.getRoleId(), item.getOrgId(), locationId, role.getId())) {
                 throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_CONFLICT, "岗位分配重复");
             }
@@ -435,6 +432,103 @@ public class PractitionerRoleDomainService {
     }
 
     /**
+     * 确保医务人员在指定平台角色下至少有一条激活岗位行。
+     *
+     * <p>用户管理仅勾选登录角色、尚未配置科室/库位时，补一条 {@code org_id}/{@code location_id} 皆空的挂靠行；
+     * 已有任意激活行（含带范围）则跳过，避免重复插入。</p>
+     *
+     * @param practitionerId 医务人员主键
+     * @param roleId         平台角色主键（{@code whale_roles.id}）
+     * @param displayName    岗位展示名；可空
+     * @return 新建或复用后的岗位主键；入参不全时 {@code null}
+     */
+    public Long ensureActiveRoleAssignmentIfAbsent(Long practitionerId, Long roleId, String displayName) {
+        // Gate：角色挂靠至少需要人员与平台角色
+        if (practitionerId == null || roleId == null) {
+            return null;
+        }
+        // Pre：已有任意激活行则无需补空范围挂靠
+        if (repository.countByPractitionerIdAndRoleIdAndActiveFlagTrueAndIsDeletedFalse(practitionerId, roleId) > 0) {
+            return null;
+        }
+        // Cmd：补一条双空范围的角色挂靠行（可复用历史软删同键行）
+        AssignPractitionerRoleCommand cmd = new AssignPractitionerRoleCommand();
+        AssignPractitionerRoleCommand.AssignPractitionerRoleItemCommand item =
+            new AssignPractitionerRoleCommand.AssignPractitionerRoleItemCommand();
+        item.setPractitionerId(practitionerId);
+        item.setRoleId(roleId);
+        item.setName(displayName);
+        item.setOrgId(null);
+        item.setLocationId(null);
+        cmd.setItem(item);
+        return this.assignRole(cmd);
+    }
+
+    /**
+     * 废弃医务人员在「未保留角色集合」之外的全部未删岗位行。
+     *
+     * <p>供用户维护按 {@code roleIds} 全量对齐：勾掉的平台角色对应 {@code adm_pr_assign} 一律软删。</p>
+     *
+     * @param practitionerId 医务人员主键
+     * @param operatorId     操作人主键；可空
+     * @param keepRoleIds    须保留的平台角色主键；空集合表示废弃该人全部未删岗位
+     * @return 本次废弃的岗位主键列表（去重保序）
+     */
+    public List<Long> retireAssignmentsOutsideRoleIds(
+        Long practitionerId, Long operatorId, Collection<Long> keepRoleIds) {
+        // Gate：人员主键必填
+        if (practitionerId == null) {
+            return List.of();
+        }
+        LinkedHashSet<Long> keep = new LinkedHashSet<>();
+        if (keepRoleIds != null) {
+            for (Long roleId : keepRoleIds) {
+                if (roleId != null) {
+                    keep.add(roleId);
+                }
+            }
+        }
+        // Pre：加载该人全部岗位（含已软删），仅处理未删行
+        List<PractitionerRole> allExisting = repository.findAllByPractitionerId(practitionerId);
+        List<PractitionerRole> toRetire = new ArrayList<>();
+        for (PractitionerRole row : allExisting) {
+            if (row == null || Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            // 业务分支：角色仍在保留集合内则不动
+            if (row.getRoleId() != null && keep.contains(row.getRoleId())) {
+                continue;
+            }
+            row.assertRetirable();
+            row.transitToDeleted(operatorId);
+            toRetire.add(row);
+        }
+        if (toRetire.isEmpty()) {
+            return List.of();
+        }
+        // Cmd：批量软删后发废弃事件（B.14）
+        repository.saveAll(toRetire);
+        List<Long> retiredIds = new ArrayList<>();
+        for (PractitionerRole role : toRetire) {
+            retiredIds.add(role.getId());
+            domainEventPublisher.publish(new PractitionerRoleAbolishedEvent(role.getId(), role.getPractitionerId()));
+        }
+        return retiredIds;
+    }
+
+    /**
+     * 废弃指定医务人员下全部未删岗位（用户/医务人员注销联动）。
+     *
+     * @param practitionerId 医务人员主键
+     * @param operatorId     操作人主键；可空
+     * @return 本次废弃的岗位主键列表
+     */
+    public List<Long> retireAllAssignmentsByPractitioner(Long practitionerId, Long operatorId) {
+        // Cmd：保留集合为空 → 废弃该人全部未删岗位
+        return this.retireAssignmentsOutsideRoleIds(practitionerId, operatorId, List.of());
+    }
+
+    /**
      * 批量加载执业角色，构建以主键为键的内存映射供后续 O(1) 查找。
      *
      * <p>过滤已逻辑删除的角色，保证候选操作集中只含有效记录。</p>
@@ -534,11 +628,13 @@ public class PractitionerRoleDomainService {
     /**
      * 解析待落库岗位行：有效行冲突抛错；软删行复用；否则新建。
      *
+     * <p>{@code org_id}/{@code location_id} 双空时不用派生查询（SQL {@code = null} 无法命中），改按人员+角色内存过滤同键行。</p>
+     *
      * @param item 分配项
      * @return 可持久化的岗位实体
      */
     private PractitionerRole resolveAssignableRoleRow(AssignPractitionerRoleCommand.AssignPractitionerRoleItemCommand item) {
-        List<PractitionerRole> history = repository.findAllByPractitionerIdAndRoleIdAndOrgIdAndLocationId(
+        List<PractitionerRole> history = this.loadHistoryByBusinessKey(
             item.getPractitionerId(), item.getRoleId(), item.getOrgId(), item.getLocationId());
         PractitionerRole reusable = pickReusableRoleRow(history);
         if (reusable != null) {
@@ -550,6 +646,65 @@ public class PractitionerRoleDomainService {
             return reusable;
         }
         return newAssignableRoleFromItem(item);
+    }
+
+    /**
+     * 按业务键加载历史岗位行；双空范围走内存过滤，避免 JPA 派生查询对 null 生成 {@code =}。
+     *
+     * @param practitionerId 医务人员主键
+     * @param roleId         平台角色主键
+     * @param orgId          科室主键，可空
+     * @param locationId     位置主键，可空
+     * @return 同键历史行（可能含软删）
+     */
+    private List<PractitionerRole> loadHistoryByBusinessKey(
+        Long practitionerId, Long roleId, Long orgId, Long locationId) {
+        // 业务分支：双空挂靠行不能依赖 orgId/locationId 等值派生查询
+        if (orgId == null && locationId == null) {
+            List<PractitionerRole> all = repository.findAllByPractitionerIdAndRoleId(practitionerId, roleId);
+            List<PractitionerRole> bareRows = new ArrayList<>();
+            for (PractitionerRole row : all) {
+                if (row != null && row.getOrgId() == null && row.getLocationId() == null) {
+                    bareRows.add(row);
+                }
+            }
+            return bareRows;
+        }
+        return repository.findAllByPractitionerIdAndRoleIdAndOrgIdAndLocationId(
+            practitionerId, roleId, orgId, locationId);
+    }
+
+    /**
+     * 编辑唯一性：除当前行外是否仍存在同业务键有效行（双空范围同样内存比对）。
+     *
+     * @param practitionerId 医务人员主键
+     * @param roleId         平台角色主键
+     * @param orgId          科室主键，可空
+     * @param locationId     位置主键，可空
+     * @param excludeId      当前编辑行主键
+     * @return 存在冲突为 {@code true}
+     */
+    private boolean existsActiveDuplicateExcludingId(
+        Long practitionerId, Long roleId, Long orgId, Long locationId, Long excludeId) {
+        // 业务分支：双空挂靠不能用派生 exists（null 等值失效）
+        if (orgId == null && locationId == null) {
+            List<PractitionerRole> all = repository.findAllByPractitionerIdAndRoleId(practitionerId, roleId);
+            for (PractitionerRole row : all) {
+                if (row == null || Boolean.TRUE.equals(row.getIsDeleted())) {
+                    continue;
+                }
+                if (row.getOrgId() != null || row.getLocationId() != null) {
+                    continue;
+                }
+                if (excludeId != null && excludeId.equals(row.getId())) {
+                    continue;
+                }
+                return true;
+            }
+            return false;
+        }
+        return repository.existsByPractitionerIdAndRoleIdAndOrgIdAndLocationIdAndIdNotAndIsDeletedFalse(
+            practitionerId, roleId, orgId, locationId, excludeId);
     }
 
     /**

@@ -4,7 +4,9 @@
  */
 package com.openhis.health.application.inventory.warehouse.purchaseorder.mapper;
 
+import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.LinkableDeptPurchaseRequestListRowDto;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.PurchaseOrderListRowDto;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.PurchaseWarningProductRowDto;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.AgreePurchaseOrderRequest;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.CreatePurchaseOrderRequest;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.RejectPurchaseOrderRequest;
@@ -16,8 +18,11 @@ import com.openhis.health.application.inventory.warehouse.purchaseorder.response
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.CreatePurchaseOrderResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.GetPurchaseOrderDetailResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.LoadPurchaseOrderFormInitResponse;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.response.GetLinkableDeptPurchaseRequestDetailResponse;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.response.PageLinkableDeptPurchaseRequestsResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.PageProductsForPurchaseResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.PagePurchaseOrdersResponse;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.response.PagePurchaseWarningProductsResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.RejectPurchaseOrderResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.RemovePurchaseOrderResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.SubmitPurchaseOrderApprovalResponse;
@@ -69,15 +74,17 @@ public interface InventoryWarehousePurchaseOrderMapper {
     /**
      * 装配订货页初始化响应。
      *
-     * @param warehouseLocationOptions     药库选项（含「全部」由 AppService 前置）
-     * @param supplierOptions              供应商选项
-     * @param warehouseKeeperOptions       库管员选项
-     * @param statusOptions                单据状态选项
-     * @param purchaseItemTableTypeOptions 物品来源表选项
+     * @param warehouseLocationOptions           药库选项（含「全部」由 AppService 前置）
+     * @param departmentPharmacyLocationOptions  科室药房选项（关联申请弹窗，含「全部」）
+     * @param supplierOptions                    供应商选项
+     * @param warehouseKeeperOptions             库管员选项
+     * @param statusOptions                      单据状态选项
+     * @param purchaseItemTableTypeOptions       物品来源表选项
      * @return 页初始化响应
      */
     LoadPurchaseOrderFormInitResponse toLoadPurchaseOrderFormInitResponse(
         List<OptionDto> warehouseLocationOptions,
+        List<OptionDto> departmentPharmacyLocationOptions,
         List<OptionDto> supplierOptions,
         List<OptionDto> warehouseKeeperOptions,
         List<OptionDto> statusOptions,
@@ -281,4 +288,71 @@ public interface InventoryWarehousePurchaseOrderMapper {
      * @return 选品分页响应；进价/unitBands 由 AppService enrich
      */
     PageProductsForPurchaseResponse toPageProductsForPurchaseResponse(Page<ProductDefinitionDisplayDto> page);
+
+    /**
+     * 将产品定义列表装配为订货选品分页响应（预警 ids 快捷路径；B.10.11）。
+     *
+     * @param products 已过滤的产品定义列表（当前页切片前的全量或已切片）
+     * @param total    总条数
+     * @param pageNo   1-based 页码
+     * @param pageSize 每页条数
+     * @return 选品分页响应
+     */
+    PageProductsForPurchaseResponse toPageProductsForPurchaseResponse(
+        List<ProductDefinitionDisplayDto> products,
+        long total,
+        int pageNo,
+        int pageSize);
+
+    /**
+     * 装配订货预警快捷选品分页响应（IF-WHS-PO-14）。
+     *
+     * @param rows     当前页行
+     * @param total    总条数
+     * @param pageNo   1-based 页码
+     * @param pageSize 每页条数
+     * @return 预警分页响应
+     */
+    PagePurchaseWarningProductsResponse toPagePurchaseWarningProductsResponse(
+        List<PurchaseWarningProductRowDto> rows,
+        long total,
+        int pageNo,
+        int pageSize);
+
+    /**
+     * 按 busNo 顺序聚合科室采购申请明细为可关联列表行（IF-WHS-PO-12）。
+     *
+     * @param busNoPageOrder 分页单号顺序
+     * @param detailRows     同页明细行
+     * @return 聚合列表行
+     */
+    List<LinkableDeptPurchaseRequestListRowDto> toLinkableDeptPurchaseRequestListAggregated(
+        List<String> busNoPageOrder,
+        List<SupplyRequestModel> detailRows);
+
+    /**
+     * 用可关联申请聚合行构建分页响应（B.10.11）。
+     *
+     * @param mergedTotal 不重复 busNo 总数
+     * @param pageNo      1-based 页码
+     * @param pageSize    页大小
+     * @param records     当前页聚合行
+     * @return 分页响应
+     */
+    PageLinkableDeptPurchaseRequestsResponse toPageLinkableDeptPurchaseRequestsAggregatedResponse(
+        long mergedTotal,
+        int pageNo,
+        int pageSize,
+        List<LinkableDeptPurchaseRequestListRowDto> records);
+
+    /**
+     * 将已同意科室采购申请写模型行映射为订货新建预填响应（IF-WHS-PO-13；只读）。
+     *
+     * @param deptRequestLines 科室采购申请供应请求行，非空
+     * @param productByKey     产品读模型 compositeKey 映射，可空
+     * @return 订货表单预填 DTO
+     */
+    GetLinkableDeptPurchaseRequestDetailResponse toGetLinkableDeptPurchaseRequestDetailResponse(
+        List<SupplyRequestModel> deptRequestLines,
+        Map<String, ProductDefinitionDisplayDto> productByKey);
 }

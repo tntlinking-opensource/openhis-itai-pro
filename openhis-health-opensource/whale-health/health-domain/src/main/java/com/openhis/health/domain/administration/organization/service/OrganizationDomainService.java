@@ -66,7 +66,10 @@ public class OrganizationDomainService {
             entity.initAsActive();
             entity.assertCreateAllowed();
             // 级联机构编码由父节点与子段序列拼接，禁止命令行注入（B.10.9）。
-            entity.setBusNo(this.buildBusNo(item.getParentId(), parentMap));
+            String busNo = this.buildBusNo(item.getParentId(), parentMap);
+            // Gate：BR-ORG-001 全局唯一（序号抬升由数据导入/迁移负责，此处只拒绝撞号）。
+            this.assertBusNoUnique(busNo, null);
+            entity.setBusNo(busNo);
             toSave.add(entity);
         }
         // 持久化
@@ -169,6 +172,8 @@ public class OrganizationDomainService {
                 localSegment = oldBusNo.substring(lastDotIndex + 1);
             }
             String newBusNo = this.buildRelocatedBusNo(item.getNewParentId(), localSegment, parentMap);
+            // Gate：迁移后的完整编码不得与树中其他节点冲突（BR-ORG-001）。
+            this.assertBusNoUnique(newBusNo, entity.getId());
             entity.setParentId(item.getNewParentId());
             entity.setBusNo(newBusNo);
             toSaveById.put(entity.getId(), entity);
@@ -178,7 +183,9 @@ public class OrganizationDomainService {
             for (Organization descendant : descendants) {
                 String descendantBusNo = descendant.getBusNo();
                 String suffix = descendantBusNo.substring(oldBusNo.length());
-                descendant.setBusNo(newBusNo + suffix);
+                String relocatedDescendantBusNo = newBusNo + suffix;
+                this.assertBusNoUnique(relocatedDescendantBusNo, descendant.getId());
+                descendant.setBusNo(relocatedDescendantBusNo);
                 toSaveById.put(descendant.getId(), descendant);
             }
             hierarchyEvents.add(new OrganizationHierarchyChangedEvent(
@@ -327,6 +334,30 @@ public class OrganizationDomainService {
         // 同级名称冲突时拒绝，防止挂号/排班引用歧义。
         if (exists) {
             throw new BusinessException(ErrorCodeConstants.ORGANIZATION_NAME_CONFLICT, "同级机构名称不可重复");
+        }
+    }
+
+    /**
+     * 断言机构层级编码全局唯一（BR-ORG-001；与 Whale OU code 同源）。
+     *
+     * @param busNo     待校验层级编码
+     * @param excludeId 排除自身主键；新建传 null
+     * @throws BusinessException 编码已被其他机构占用时
+     */
+    private void assertBusNoUnique(String busNo, Long excludeId) {
+        if (busNo == null || busNo.isBlank()) {
+            throw new BusinessException(ErrorCodeConstants.ORGANIZATION_INVALID_ARGUMENT, "机构编码不能为空");
+        }
+        boolean exists;
+        if (excludeId == null) {
+            exists = organizationRepository.existsByBusNo(busNo);
+        } else {
+            exists = organizationRepository.existsByBusNoAndIdNot(busNo, excludeId);
+        }
+        if (exists) {
+            throw new BusinessException(
+                ErrorCodeConstants.ORGANIZATION_BUS_NO_CONFLICT,
+                "机构编码不可重复：" + busNo);
         }
     }
 

@@ -31,8 +31,10 @@ public class PageDocumentDetailsRequest extends AbstractHealthPageRequest {
     @Schema(description = "业务域 domainScope", requiredMode = Schema.RequiredMode.REQUIRED)
     private String domainScope;
 
-    /** 单据类型 typeEnum。 */
-    @Schema(description = "单据类型 typeEnum")
+    /**
+     * 单据类型 {@code SupplyType#getCode()}；空或未传 = 查本域白名单全部类型。
+     */
+    @Schema(description = "单据类型 typeEnum；空则查本域全部")
     private String typeEnum;
 
     /** 源库位 sourceLocationId。 */
@@ -63,7 +65,7 @@ public class PageDocumentDetailsRequest extends AbstractHealthPageRequest {
     @Schema(description = "批号关键字 lotNumberKeyword")
     private String lotNumberKeyword;
 
-    /** 单据号 busNo。 */
-    @Schema(description = "单据号 busNo")
+    /** 单据号 busNo（模糊 LIKE）。 */
+    @Schema(description = "单据号 busNo（模糊）")
     private String busNo;
 }

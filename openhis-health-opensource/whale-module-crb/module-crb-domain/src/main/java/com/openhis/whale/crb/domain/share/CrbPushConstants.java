@@ -20,4 +20,10 @@ public final class CrbPushConstants {
 
     /** request/response 摘要写入 log 的最大字符数。 */
     public static final int LOG_SUMMARY_MAX_LENGTH = 2000;
+
+    /** 监控分页默认每页条数。 */
+    public static final int DEFAULT_PAGE_SIZE = 20;
+
+    /** 监控分页每页上限。 */
+    public static final int MAX_PAGE_SIZE = 100;
 }

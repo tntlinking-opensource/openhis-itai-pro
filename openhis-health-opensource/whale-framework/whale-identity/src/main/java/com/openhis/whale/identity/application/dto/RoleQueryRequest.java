@@ -6,12 +6,14 @@ package com.openhis.whale.identity.application.dto;
 
 import com.openhis.whale.core.application.dto.BaseQueryRequest;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 /**
  * 角色查询请求
  */
 @Data
-public class RoleQueryRequest  extends BaseQueryRequest {
+@EqualsAndHashCode(callSuper = true)
+public class RoleQueryRequest extends BaseQueryRequest {
 
     private String keyword;
     private Boolean isDefault;

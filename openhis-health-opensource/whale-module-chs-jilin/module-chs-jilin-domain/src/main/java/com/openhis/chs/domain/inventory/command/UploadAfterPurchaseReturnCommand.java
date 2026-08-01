@@ -10,7 +10,7 @@ import lombok.experimental.Accessors;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 采购退货审核通过后触发 3504 退货上报（不调 3502） */
+/** 采购退货审核通过后触发 3504 退货上报（成功后伴生 3502/109，批次=退供单号） */
 @Data
 @Accessors(chain = true)
 public class UploadAfterPurchaseReturnCommand {

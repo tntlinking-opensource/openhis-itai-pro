@@ -37,6 +37,11 @@ public class InventoryCatalogAvailabilityRowModel {
     /** 效期截止时刻；空表示未维护效期约束。 */
     private LocalDateTime expirationDate;
 
+    /**
+     * 库存行创建时间；与效期一并构成 FIFO 次序（效期升序、创建时间升序）。
+     */
+    private LocalDateTime createdAt;
+
     /** 当前批次可用数量。 */
     private BigDecimal quantity;
 }

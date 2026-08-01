@@ -14,6 +14,7 @@ import com.openhis.health.infrastructure.integration.insurance.inventory.Invento
 import com.openhis.health.infrastructure.integration.insurance.outpatient.OutpatientChargeInsuranceExtension;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.OutpatientRegistrationInsuranceExtension;
 import com.openhis.health.infrastructure.integration.insurance.settlement.InsurancePaymentSettlementExtension;
+import com.openhis.health.infrastructure.integration.insurance.settlement.InsuranceSettlementRecordLookupExtension;
 import com.openhis.health.infrastructure.integration.workinjury.WorkInjuryApprovalUploadExtension;
 import com.openhis.health.infrastructure.integration.workinjury.WorkInjuryEncounterContextExtension;
 import com.openhis.health.infrastructure.integration.workinjury.WorkInjuryInvokeExtension;
@@ -25,6 +26,8 @@ import com.openhis.health.infrastructure.integration.insurance.platformdict.Insu
 import com.openhis.health.infrastructure.integration.emr.EmrAdmissionDiagnosisSyncExtension;
 import com.openhis.health.infrastructure.integration.einvoice.BossElectronicInvoiceExtension;
 import com.openhis.health.infrastructure.integration.elep.ElepPrescriptionExtension;
+import com.openhis.health.infrastructure.integration.insurance.catalog.InsuranceDiseaseCatalogSourceExtension;
+import com.openhis.health.infrastructure.integration.insurance.catalog.InsuranceSurgeryCatalogSourceExtension;
 import com.openhis.health.infrastructure.integration.insurance.medcas.MedcasHomepageUploadExtension;
 import com.openhis.health.infrastructure.integration.lis.LisAdviceApplyExtension;
 import com.openhis.health.infrastructure.integration.pacs.PacsAdviceApplyExtension;
@@ -37,6 +40,8 @@ import com.openhis.health.infrastructure.integration.noop.booking.NoOpInpatientB
 import com.openhis.health.infrastructure.integration.noop.booking.NoOpOutpatientBookingQueryExtension;
 import com.openhis.health.infrastructure.integration.noop.booking.NoOpOutpatientBookingRegistrationExtension;
 import com.openhis.health.infrastructure.integration.noop.emr.NoOpEmrAdmissionDiagnosisSyncExtension;
+import com.openhis.health.infrastructure.integration.noop.insurance.catalog.NoOpInsuranceDiseaseCatalogSourceExtension;
+import com.openhis.health.infrastructure.integration.noop.insurance.catalog.NoOpInsuranceSurgeryCatalogSourceExtension;
 import com.openhis.health.infrastructure.integration.noop.insurance.medcas.NoOpMedcasHomepageUploadExtension;
 import com.openhis.health.infrastructure.integration.noop.lis.NoOpLisAdviceApplyExtension;
 import com.openhis.health.infrastructure.integration.noop.pacs.NoOpPacsAdviceApplyExtension;
@@ -51,6 +56,7 @@ import com.openhis.health.infrastructure.integration.noop.insurance.inventory.No
 import com.openhis.health.infrastructure.integration.noop.insurance.outpatient.NoOpOutpatientChargeInsuranceExtension;
 import com.openhis.health.infrastructure.integration.noop.insurance.outpatient.NoOpOutpatientRegistrationInsuranceExtension;
 import com.openhis.health.infrastructure.integration.noop.insurance.settlement.NoOpInsurancePaymentSettlementExtension;
+import com.openhis.health.infrastructure.integration.noop.insurance.settlement.NoOpInsuranceSettlementRecordLookupExtension;
 import com.openhis.health.infrastructure.integration.noop.insurance.workinjury.NoOpWorkInjuryApprovalUploadExtension;
 import com.openhis.health.infrastructure.integration.noop.insurance.workinjury.NoOpWorkInjuryEncounterContextExtension;
 import com.openhis.health.infrastructure.integration.noop.insurance.workinjury.NoOpWorkInjuryInvokeExtension;
@@ -82,6 +88,17 @@ public class IntegrationSpiAutoConfiguration {
     @ConditionalOnMissingBean(InsurancePlatformDictDisplayExtension.class)
     InsurancePlatformDictDisplayExtension noOpInsurancePlatformDictDisplayExtension() {
         return new NoOpInsurancePlatformDictDisplayExtension();
+    }
+
+    /**
+     * 结算回执 insutype lookup 占位（吉林覆盖为 {@code InsuranceSettlementRecordLookupExtensionImpl}）。
+     *
+     * @return {@link InsuranceSettlementRecordLookupExtension} 默认实现，{@code isEnabled()=false}
+     */
+    @Bean
+    @ConditionalOnMissingBean(InsuranceSettlementRecordLookupExtension.class)
+    InsuranceSettlementRecordLookupExtension noOpInsuranceSettlementRecordLookupExtension() {
+        return new NoOpInsuranceSettlementRecordLookupExtension();
     }
 
     /**
@@ -330,6 +347,28 @@ public class IntegrationSpiAutoConfiguration {
     @ConditionalOnMissingBean(MedcasHomepageUploadExtension.class)
     MedcasHomepageUploadExtension noOpMedcasHomepageUploadExtension() {
         return new NoOpMedcasHomepageUploadExtension();
+    }
+
+    /**
+     * 医保手术目录源 Extension 占位（chs-jilin 覆盖为 {@code InsuranceSurgeryCatalogSourceExtensionImpl}）。
+     *
+     * @return {@link InsuranceSurgeryCatalogSourceExtension} 默认实现，{@code isEnabled()=false}
+     */
+    @Bean
+    @ConditionalOnMissingBean(InsuranceSurgeryCatalogSourceExtension.class)
+    InsuranceSurgeryCatalogSourceExtension noOpInsuranceSurgeryCatalogSourceExtension() {
+        return new NoOpInsuranceSurgeryCatalogSourceExtension();
+    }
+
+    /**
+     * 医保疾病/诊断目录源 Extension 占位（chs-jilin 覆盖为 {@code InsuranceDiseaseCatalogSourceExtensionImpl}）。
+     *
+     * @return {@link InsuranceDiseaseCatalogSourceExtension} 默认实现，{@code isEnabled()=false}
+     */
+    @Bean
+    @ConditionalOnMissingBean(InsuranceDiseaseCatalogSourceExtension.class)
+    InsuranceDiseaseCatalogSourceExtension noOpInsuranceDiseaseCatalogSourceExtension() {
+        return new NoOpInsuranceDiseaseCatalogSourceExtension();
     }
 
     /**

@@ -20,7 +20,9 @@ import java.math.BigDecimal;
  *
  * <p><strong>例外（不在本类覆盖范围）</strong>：① 盘点类单据（{@link com.openhis.health.domain.share.enums.SupplyType#isStocktakeTypeCode(String)}）
  * 行上 {@code item_quantity} 为盈亏数量，可正可负可零，审批入账须直接使用该字段，不得调用本类正数校验；
- * ② 门诊发药等场景若发放行数量仍为业务单位语义，应继续使用
+ * ② 损益类单据（{@link com.openhis.health.domain.share.enums.SupplyType#isGainLossTypeCode(String)}）
+ * 行上 {@code item_quantity} 为有符号盈亏（正报溢、负报损，禁止 0），审批入账按符号加减库存，不得调用本类正数校验；
+ * ③ 门诊发药等场景若发放行数量仍为业务单位语义，应继续使用
  * {@link com.openhis.health.domain.workflow.inventoryitem.support.MedicationProductQuantityToSplitUnitConverter} 与
  * {@link com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService#assertSufficientForMedicationDispense} 既有契约。</p>
  */

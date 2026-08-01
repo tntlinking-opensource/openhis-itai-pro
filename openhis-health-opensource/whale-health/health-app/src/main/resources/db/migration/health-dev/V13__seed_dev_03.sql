@@ -1,32 +1,6 @@
 -- Dev seed part 3
-
-INSERT INTO "cus_frequency" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "rate_code", "name", "cycle_type", "day_count", "day_interval", "day_times", "week_cycle_flag", "total_execution_count", "execution_period", "execution_period_unit", "applicable_scenes", "allow_cross_day", "active_flag", "sort_no")
-VALUES
-('320010001000000001', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'QD', '每日一次', 'daily', NULL, NULL, '08:00', NULL, NULL, NULL, NULL, 'all', 'same-day', true, 10),
-('320010001000000002', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'BID', '每日两次', 'daily', NULL, NULL, '08:00,18:00', NULL, NULL, NULL, NULL, 'all', 'same-day', true, 20),
-('320010001000000003', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'TID', '每日三次', 'daily', NULL, NULL, '08:00,12:00,18:00', NULL, NULL, NULL, NULL, 'all', 'same-day', true, 30),
-('320010001000000004', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'QID', '每日四次', 'daily', NULL, NULL, '06:00,12:00,18:00,22:00', NULL, NULL, NULL, NULL, 'all', 'same-day', true, 40),
-('320010001000000005', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'QAM', '每晨一次', 'daily', NULL, NULL, '08:00', NULL, NULL, NULL, NULL, 'all', 'same-day', true, 50),
-('320010001000000006', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'QN', '每晚一次', 'daily', NULL, NULL, '22:00', NULL, NULL, NULL, NULL, 'all', 'same-day', true, 60),
-('320010001000000007', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'HS', '临睡时', 'daily', NULL, NULL, '22:00', NULL, NULL, NULL, NULL, 'all', 'same-day', true, 70),
-('320010001000000008', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'AC', '饭前', 'daily', NULL, NULL, '07:30,11:30,17:30', NULL, NULL, NULL, NULL, 'outpatient,inpatient', 'same-day', true, 80),
-('320010001000000009', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'PC', '饭后', 'daily', NULL, NULL, '08:30,12:30,18:30', NULL, NULL, NULL, NULL, 'outpatient,inpatient', 'same-day', true, 90),
-('320010001000000010', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'QOD', '隔日一次', 'daily', NULL, 2, '08:00', NULL, NULL, NULL, NULL, 'all', 'same-day', true, 100),
-('320010001000000011', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'QW', '每周一次', 'weekly', NULL, NULL, '08:00', true, NULL, NULL, NULL, 'all', 'same-day', true, 110),
-('320010001000000012', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'BIW', '每周两次', 'weekly', NULL, NULL, '08:00,18:00', true, NULL, NULL, NULL, 'inpatient', 'same-day', true, 120),
-('320010001000000013', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'TIW', '每周三次', 'weekly', NULL, NULL, '08:00,12:00,18:00', true, NULL, NULL, NULL, 'inpatient', 'same-day', true, 130),
-('320010001000000014', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'Q12H', '每12小时一次', 'interval', NULL, NULL, NULL, NULL, NULL, 12, 'h', 'all', 'cross-day', true, 140),
-('320010001000000015', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'Q8H', '每8小时一次', 'interval', NULL, NULL, NULL, NULL, NULL, 8, 'h', 'all', 'cross-day', true, 150),
-('320010001000000016', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'Q6H', '每6小时一次', 'interval', NULL, NULL, NULL, NULL, NULL, 6, 'h', 'inpatient,nursing', 'cross-day', true, 160),
-('320010001000000017', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'Q4H', '每4小时一次', 'interval', NULL, NULL, NULL, NULL, NULL, 4, 'h', 'inpatient,nursing', 'cross-day', true, 170),
-('320010001000000018', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'Q3H', '每3小时一次', 'interval', NULL, NULL, NULL, NULL, NULL, 3, 'h', 'inpatient,nursing', 'cross-day', true, 180),
-('320010001000000019', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'Q2H', '每2小时一次', 'interval', NULL, NULL, NULL, NULL, NULL, 2, 'h', 'inpatient,nursing', 'cross-day', true, 190),
-('320010001000000020', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'Q1H', '每小时一次', 'interval', NULL, NULL, NULL, NULL, NULL, 1, 'h', 'inpatient,nursing', 'cross-day', true, 200),
-('320010001000000021', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:38:48.435+00', '1', '1', false, NULL, NULL, 0, 'PRN', '必要时', 'as-needed', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'all', 'same-day', true, 9),
-('320010001000000022', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'SOS', '需要时', 'as-needed', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'all', NULL, true, 220),
-('320010001000000023', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:39:05.116+00', '1', '1', false, NULL, NULL, 0, 'ST', '立即', 'fixed-count', NULL, NULL, NULL, NULL, 1, NULL, NULL, 'all', 'same-day', true, 8),
-('320010001000000024', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'STAT', '立即执行', 'fixed-count', NULL, NULL, NULL, NULL, 1, NULL, NULL, 'inpatient', NULL, true, 240)
-ON CONFLICT ("id") DO NOTHING;
+-- cus_frequency 已迁至 platform：health-infrastructure/.../V10__seed_platform.sql
+-- 本文件仅保留演示组套模板（依赖本地 org/药品等）
 
 INSERT INTO "cus_order_template" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "object_id", "binding_enum", "scene_enum", "template_code", "name", "description", "sort_weight", "status_enum", "remark", "template_kind_enum", "default_chinese_herbs_dose_quantity", "default_suffering_flag", "template_source_enum") VALUES ('327719620186214400', '1', '2026-06-23 08:00:46.188+00', '2026-06-23 08:00:46.237+00', '1', '1', false, NULL, NULL, 0, '322663105141149696', 'HOSPITAL', 'OUTPATIENT', NULL, '感冒组套', NULL, 0, 'ACTIVE', NULL, 'GENERAL', NULL, NULL, 'MAINTAINED') ON CONFLICT ("id") DO NOTHING;
 

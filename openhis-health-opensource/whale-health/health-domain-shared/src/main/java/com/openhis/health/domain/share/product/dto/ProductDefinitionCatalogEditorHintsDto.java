@@ -62,4 +62,16 @@ public class ProductDefinitionCatalogEditorHintsDto {
 
     /** 读模型 {@code total_volume}（规格/装量描述）。 */
     private String totalVolume;
+
+    /**
+     * 追溯码贴码单位（可游离于五类业务单位；药品必填）。
+     *
+     * <p>进货/期初扫码应扫数取本字段；建码写入主档后发退只认 {@code cus_trace_number}。</p>
+     */
+    private String traceUnitCode;
+
+    /**
+     * 1 个追溯码单位对应的拆零数量；有 {@link #traceUnitCode} 时须 &gt; 0。
+     */
+    private BigDecimal traceUnitRatio;
 }

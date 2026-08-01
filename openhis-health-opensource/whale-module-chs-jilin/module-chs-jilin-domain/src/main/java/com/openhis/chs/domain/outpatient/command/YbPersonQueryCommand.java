@@ -27,4 +27,10 @@ public class YbPersonQueryCommand {
     private String insuplcAdmdvs;
     private Long operatorId;
     private Long tenantId;
+
+    /**
+     * 为 true 时跳过当日 {@code yb_person_cache}，强制出站 1101 并回写缓存。
+     * <p>用于读卡收银等需最新个账余额（{@code balc}）的场景。</p>
+     */
+    private boolean forceRefresh;
 }

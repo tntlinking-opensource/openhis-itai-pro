@@ -15,7 +15,9 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 平台用户生命周期与医务人员主档联动：用户软删时同步注销 {@code adm_practitioner}。
  *
- * <p>监听 identity {@link UserDeletedEvent}，写路径委托 {@code PractitionerDomainService}（B.6.4：不经 AppService 直写）。</p>
+ * <p>监听 identity {@link UserDeletedEvent}，写路径委托 {@code PractitionerDomainService}（B.6.4：不经 AppService 直写）。
+ * 岗位行 {@code adm_pr_assign} 由后续 {@code PractitionerRetiredEvent} →
+ * {@link PractitionerRoleLifecycleSyncListener} 级联废弃。</p>
  */
 @Component
 @RequiredArgsConstructor

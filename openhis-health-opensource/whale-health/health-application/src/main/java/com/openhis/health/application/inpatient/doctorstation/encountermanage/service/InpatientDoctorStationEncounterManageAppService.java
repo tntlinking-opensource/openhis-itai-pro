@@ -119,12 +119,9 @@ public class InpatientDoctorStationEncounterManageAppService {
             }
             Map<Long, Account> accountByEncounterId =
                 accountQueryService.mapRegistrationAccountsByEncounterIds(pageEncounterIds);
-            Map<Long, String> contractNoByEncounterId = new HashMap<>();
-            for (Map.Entry<Long, Account> entry : accountByEncounterId.entrySet()) {
-                if (entry.getValue() != null && entry.getValue().getContractNo() != null) {
-                    contractNoByEncounterId.put(entry.getKey(), entry.getValue().getContractNo());
-                }
-            }
+            // Pre：费用性质展示优先医保账户 contract_no，否则登记个人现金户（与门诊医生站同口径）
+            Map<Long, String> contractNoByEncounterId =
+                accountQueryService.mapPreferredContractNoByEncounterIds(pageEncounterIds);
             Map<Long, String> priorityEnumByEncounterId =
                 encounterQueryService.mapPriorityEnumByEncounterIds(pageEncounterIds);
             Map<Long, InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay> displayOverlay =

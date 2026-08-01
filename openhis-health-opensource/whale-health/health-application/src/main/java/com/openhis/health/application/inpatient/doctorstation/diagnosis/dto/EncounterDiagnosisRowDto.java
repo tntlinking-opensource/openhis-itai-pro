@@ -23,21 +23,14 @@ import lombok.experimental.Accessors;
 public class EncounterDiagnosisRowDto {
 
     /**
-     * 诊断事实（Condition）主键：已保存行必有；新建草稿场景可能由前端暂存为 null 直至落库。
+     * 就诊诊断行主键 {@code adm_encounter_diagnosis.id}：已保存行必有；新建草稿场景可能为 null 直至落库。
      */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "诊断事实标识")
-    private Long conditionId;
-
-    /**
-     * 就诊与诊断的关联行主键（EncounterDiagnosis）：用于调整排序、主诊标记或删除关联。
-     */
-    @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "就诊诊断关联标识")
+    @Schema(description = "就诊诊断行主键")
     private Long encounterDiagnosisId;
 
     /**
-     * 诊断定义（目录）主键：关联标准编码与名称；事实脱离目录时仍可有 conditionId 而无 conditionDefinitionId。
+     * 诊断定义（目录）主键：关联标准编码与名称。
      */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "诊断定义标识")
@@ -98,7 +91,7 @@ public class EncounterDiagnosisRowDto {
     private String medicalTypeCode;
 
     /**
-     * 诊断补充说明：优先就诊诊断关联描述，可回落到病情事实描述（见领域快照物化逻辑）。
+     * 诊断补充说明：来自就诊诊断关联 {@code description}。
      */
     @Schema(description = "诊断描述")
     private String diagnosisDesc;
@@ -116,8 +109,20 @@ public class EncounterDiagnosisRowDto {
     private String iptDiseaseTypeText;
 
     /**
-     * 医保目录诊断编码或院内对码结果，来自病情事实。
+     * 医保目录诊断编码，来自诊断目录 {@code yb_no}。
      */
     @Schema(description = "医保诊断编码")
     private String ybNo;
+
+    /**
+     * 中医病证组号：同组病名与证候事实共用，用于列表合并展示与中医 Tab 绑定。
+     */
+    @Schema(description = "中医病证组号")
+    private String tcmSyndromeGroup;
+
+    /**
+     * 诊断定义目录来源码（如 {@code tcm_dx}/{@code tcm_syndrome}），用于前端区分病名/证候行。
+     */
+    @Schema(description = "诊断定义来源分类码")
+    private String sourceEnum;
 }

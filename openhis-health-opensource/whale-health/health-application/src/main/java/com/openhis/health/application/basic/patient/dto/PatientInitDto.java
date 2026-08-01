@@ -41,7 +41,4 @@ public class PatientInitDto {
     private List<OptionDto> studentStatusOptions;
     /** 学籍-体检结果（PhysicalExamResult） */
     private List<OptionDto> physicalExamResultOptions;
-
-    /** 学生开关配置值（1=显示学籍信息按钮，其他=隐藏） */
-    private String studentSwitchValue;
 }

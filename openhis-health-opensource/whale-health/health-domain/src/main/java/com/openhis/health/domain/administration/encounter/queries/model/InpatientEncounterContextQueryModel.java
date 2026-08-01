@@ -59,10 +59,14 @@ public class InpatientEncounterContextQueryModel {
     /** 当前病区名称。 */
     private String wardName;
 
-    /** 当前床位 ID。 */
+    /** 当前床位 ID（活动床；无活动床时可为末次已完成床，仅展示）。 */
     private Long bedId;
 
-    /** 当前床位名称。 */
+    /**
+     * 当前床位名称。
+     *
+     * <p>无活动床（召回未占床轨）时为「原{床名}（未占床）」文案。</p>
+     */
     private String bedName;
 
     /** 主治医生 ID。 */

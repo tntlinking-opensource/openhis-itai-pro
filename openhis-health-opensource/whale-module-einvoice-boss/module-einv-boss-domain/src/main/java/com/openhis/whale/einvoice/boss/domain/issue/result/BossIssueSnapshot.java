@@ -69,6 +69,9 @@ public class BossIssueSnapshot {
     /** 就诊业务号。 */
     private String encounterBusNo;
 
+    /** 病历号（取 encounter.bus_no；博思 v4 院点必填）。 */
+    private String caseNumber;
+
     /** 患者住院号（I 线必填，默认同 encounterBusNo）。 */
     private String hospitalNo;
 
@@ -86,6 +89,9 @@ public class BossIssueSnapshot {
 
     /** 收费员/操作人主键。 */
     private Long operatorId;
+
+    /** 收费员/操作人姓名（报文 payee/author/checker）。 */
+    private String operatorName;
 
     /** 博思医保类型名称（如全自费）。 */
     private String medicalCareType;

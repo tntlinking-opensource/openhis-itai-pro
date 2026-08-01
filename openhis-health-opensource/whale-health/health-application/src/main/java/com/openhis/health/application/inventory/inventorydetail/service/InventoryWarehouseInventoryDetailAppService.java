@@ -20,6 +20,7 @@ import com.openhis.health.application.inventory.inventorydetail.dto.InventoryDet
 import com.openhis.health.application.inventory.inventorydetail.dto.InventoryDetailListRowDto;
 import com.openhis.health.application.inventory.inventorydetail.dto.InventoryItemTraceNumberRowDto;
 import com.openhis.health.application.inventory.inventorydetail.mapper.InventoryWarehouseInventoryDetailMapper;
+import com.openhis.health.application.inventory.inventorydetail.request.BatchExistsTraceMasterByItemLotRequest;
 import com.openhis.health.application.inventory.inventorydetail.request.ExportInventoryDetailBackupRequest;
 import com.openhis.health.application.inventory.inventorydetail.request.ExportInventoryDetailCurrentRequest;
 import com.openhis.health.application.inventory.inventorydetail.request.ListInStockTraceNumbersByInventoryItemRequest;
@@ -32,6 +33,7 @@ import com.openhis.health.application.inventory.inventorydetail.request.ResumeIn
 import com.openhis.health.application.inventory.inventorydetail.request.RetireInventoryItemsRequest;
 import com.openhis.health.application.inventory.inventorydetail.request.SumInventoryDetailBackupRequest;
 import com.openhis.health.application.inventory.inventorydetail.request.SumInventoryDetailCurrentRequest;
+import com.openhis.health.application.inventory.inventorydetail.response.BatchExistsTraceMasterByItemLotResponse;
 import com.openhis.health.application.inventory.inventorydetail.response.ExportInventoryDetailBackupResponse;
 import com.openhis.health.application.inventory.inventorydetail.response.ExportInventoryDetailCurrentResponse;
 import com.openhis.health.application.inventory.inventorydetail.response.ListInStockTraceNumbersByInventoryItemResponse;
@@ -282,7 +284,7 @@ public class InventoryWarehouseInventoryDetailAppService {
         } catch (RuntimeException ex) {
             log.warn("工作台效期预警计数失败，按无预警处理", ex);
         }
-        // Cmd：全院品种汇总低库存计数（BR-INV-DTL-024 口径）；同上降级
+        // Cmd：全院品种库存预警计数（BR-INV-DTL-024：目录警戒线优先，未维护回落全局）；同上降级
         int lowStockCount = 0;
         try {
             lowStockCount = this.inventoryLowStockWarningFilter.countLowStockWarningProducts(minPackageQty);
@@ -311,8 +313,9 @@ public class InventoryWarehouseInventoryDetailAppService {
     public PageInventoryDetailCurrentResponse pageInventoryDetailCurrent(@Valid PageInventoryDetailCurrentRequest request) {
         // Gate：登录上下文
         this.assertGateUserPresent();
-        // Pre：管辖库房收窄并组装分页查询
-        List<Long> effectiveWarehouseIds = this.resolveEffectiveWarehouseIds(request.getWarehouseIds());
+        // Pre：库存预警=全院品种采购视角不按库房收窄；效期/普通列表仍走管辖库房 Gate
+        List<Long> effectiveWarehouseIds =
+            this.resolveEffectiveWarehouseIdsForCurrentList(request.getWarehouseIds(), request.getWarningMode());
         WarehouseInventoryDetailPageQuery query =
             this.inventoryWarehouseInventoryDetailMapper.toWarehouseDetailPageQuery(request, effectiveWarehouseIds);
         this.inventoryCatalogFilter.enrichResolvedDefinitionIds(query);
@@ -355,8 +358,9 @@ public class InventoryWarehouseInventoryDetailAppService {
     public SumInventoryDetailCurrentResponse sumInventoryDetailCurrent(@Valid SumInventoryDetailCurrentRequest request) {
         // Gate：登录上下文
         this.assertGateUserPresent();
-        // Pre：管辖库房收窄并组装汇总查询
-        List<Long> effectiveWarehouseIds = this.resolveEffectiveWarehouseIds(request.getWarehouseIds());
+        // Pre：库存预警不按库房收窄；其余同列表筛选
+        List<Long> effectiveWarehouseIds =
+            this.resolveEffectiveWarehouseIdsForCurrentList(request.getWarehouseIds(), request.getWarningMode());
         WarehouseInventoryDetailPageQuery query =
             this.inventoryWarehouseInventoryDetailMapper.toWarehouseDetailPageQuery(request, effectiveWarehouseIds);
         this.inventoryCatalogFilter.enrichResolvedDefinitionIds(query);
@@ -408,8 +412,9 @@ public class InventoryWarehouseInventoryDetailAppService {
     public ExportInventoryDetailCurrentResponse exportInventoryDetailCurrent(@Valid ExportInventoryDetailCurrentRequest request) {
         // Gate：登录上下文
         this.assertGateUserPresent();
-        // Pre：管辖库房收窄并组装导出查询
-        List<Long> effectiveWarehouseIds = this.resolveEffectiveWarehouseIds(request.getWarehouseIds());
+        // Pre：库存预警不按库房收窄；其余同列表筛选
+        List<Long> effectiveWarehouseIds =
+            this.resolveEffectiveWarehouseIdsForCurrentList(request.getWarehouseIds(), request.getWarningMode());
         WarehouseInventoryDetailPageQuery query =
             this.inventoryWarehouseInventoryDetailMapper.toWarehouseDetailPageQuery(request, effectiveWarehouseIds);
         this.inventoryCatalogFilter.enrichResolvedDefinitionIds(query);
@@ -738,8 +743,14 @@ public class InventoryWarehouseInventoryDetailAppService {
     /**
      * 现库行本库仍在库追溯码（IF-INV-DTL-13 · IF-TRC-22）。
      *
-     * @param request 库存行四元组（locationId、itemId、lotNumber、itemTable）
-     * @return 本库净拆零量大于 0 的追溯码列表
+     * <p>默认仅本库净量 &gt; 0 的码。发药库取传 {@code hospitalWideFallbackWhenEmpty=true} 时：
+     * 本库有码则只用本库；本库一个都没有才回落全院同品同批在院码（禁止本库与全院混取）。</p>
+     *
+     * <p>{@code hospitalWide=true} 时按药品查全院在院码（含全部批号，扫码弹窗「药品→批号→码」），
+     * 优先于回落开关；库房/批号可空；出参带 {@code lotNumber}/{@code remainingSplitQuantity}/药典拆零单位。</p>
+     *
+     * @param request 库存行键及可选全院开关
+     * @return 本库净拆零量大于 0 的追溯码列表；或全院在院码（含批号）
      * @throws BusinessException {@code WHS_DTL_101} Gate 失败；{@code WHS_DTL_213} 查询失败
      */
     public ListInStockTraceNumbersByInventoryItemResponse listInStockTraceNumbersByInventoryItem(
@@ -748,15 +759,19 @@ public class InventoryWarehouseInventoryDetailAppService {
         // Gate：登录上下文与租户
         this.assertGateUserPresent();
         this.requireTenantId();
-        if (request.getLocationId() == null) {
-            throw new BusinessException(ErrorCodeConstants.WHS_DTL_101, "库房不能为空");
-        }
         if (request.getItemId() == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_DTL_101, "药品不能为空");
         }
+        boolean hospitalWide = Boolean.TRUE.equals(request.getHospitalWide());
         String lotNumber = trimToNull(request.getLotNumber());
-        if (lotNumber == null) {
-            throw new BusinessException(ErrorCodeConstants.WHS_DTL_101, "批号不能为空");
+        if (!hospitalWide) {
+            // Gate：本库/库取路径仍要求库房与批号
+            if (request.getLocationId() == null) {
+                throw new BusinessException(ErrorCodeConstants.WHS_DTL_101, "库房不能为空");
+            }
+            if (lotNumber == null) {
+                throw new BusinessException(ErrorCodeConstants.WHS_DTL_101, "批号不能为空");
+            }
         }
         String itemTable = trimToNull(request.getItemTable());
         if (itemTable == null) {
@@ -767,32 +782,42 @@ public class InventoryWarehouseInventoryDetailAppService {
         }
         List<InventoryItemTraceNumberQueryModel> models;
         try {
-            // Pre：IF-TRC-22 子表聚合净量 > 0；禁止读 InventoryItem.trace_no
-            models = this.traceNumberQueryService.listInStockTraceNumbersByInventoryItemKey(
-                request.getLocationId(),
-                itemTable,
-                request.getItemId(),
-                lotNumber
-            );
+            if (hospitalWide) {
+                // Pre：药品展开 — 主档全院在院且剩余 > 0（全部批号，不读本库子表）
+                models = this.traceNumberQueryService.listInHospitalTraceNumbersByItem(
+                    itemTable,
+                    request.getItemId()
+                );
+            } else {
+                // Pre：IF-TRC-22 子表聚合净量 > 0；禁止读 InventoryItem.trace_no
+                models = this.traceNumberQueryService.listInStockTraceNumbersByInventoryItemKey(
+                    request.getLocationId(),
+                    itemTable,
+                    request.getItemId(),
+                    lotNumber
+                );
+                // 发药库取：本库有码只用本库；本库一个都没有才回落全院同品同批在院码
+                if ((models == null || models.isEmpty())
+                    && Boolean.TRUE.equals(request.getHospitalWideFallbackWhenEmpty())) {
+                    models = this.traceNumberQueryService.listInHospitalTraceNumbersByItemLot(
+                        itemTable,
+                        request.getItemId(),
+                        lotNumber
+                    );
+                }
+            }
         } catch (BusinessException businessException) {
             throw businessException;
         } catch (RuntimeException ex) {
-            log.warn("现库行本库仍在库追溯码查询失败 locationId={} itemId={} lotNumber={}",
-                request.getLocationId(), request.getItemId(), lotNumber, ex);
+            log.warn("现库行本库仍在库追溯码查询失败 locationId={} itemId={} lotNumber={} hospitalWide={}",
+                request.getLocationId(), request.getItemId(), lotNumber, hospitalWide, ex);
             throw new BusinessException(ErrorCodeConstants.WHS_DTL_213, "追溯码查询失败", ex);
         }
+        // Asm：领域读模型 → 弹窗行 DTO
         List<InventoryItemTraceNumberRowDto> items =
             this.inventoryWarehouseInventoryDetailMapper.toTraceNumberRowDtoList(models);
-        for (InventoryItemTraceNumberRowDto item : items) {
-            if (item == null) {
-                continue;
-            }
-            InHospitalStatus inHospitalStatus =
-                EnumUtil.fromCode(InHospitalStatus.class, item.getInHospitalStatusEnum());
-            if (inHospitalStatus != null) {
-                item.setInHospitalStatusLabel(inHospitalStatus.getDisplay());
-            }
-        }
+        // Asm：在院态 Label + 药典拆零单位 / 术语单位文案
+        this.enrichTraceNumberRowUnitsAndStatus(items, itemTable, request.getItemId());
         ListInStockTraceNumbersByInventoryItemResponse response = new ListInStockTraceNumbersByInventoryItemResponse();
         response.setLocationId(request.getLocationId());
         response.setItemId(request.getItemId());
@@ -803,10 +828,146 @@ public class InventoryWarehouseInventoryDetailAppService {
     }
 
     /**
+     * 为追溯码弹窗行回填在院态 Label、药典拆零单位及单位术语文案。
+     *
+     * <p>拆零单位取自药品目录（跨聚合读走应用层 ProductDefinition 装配，不进 TraceNumberQueryService）。
+     * 追溯码单位文案按主档 code 查 unit_code 术语表。</p>
+     *
+     * @param items     已映射的弹窗行
+     * @param itemTable 品项表
+     * @param itemId    药品定义主键
+     */
+    private void enrichTraceNumberRowUnitsAndStatus(
+        List<InventoryItemTraceNumberRowDto> items,
+        String itemTable,
+        Long itemId
+    ) {
+        if (items == null || items.isEmpty()) {
+            // 无码行无需 enrich
+            return;
+        }
+        String splitUnitCode = null;
+        String splitUnitCodeLabel = null;
+        Map<String, String> unitLabels = Collections.emptyMap();
+        // Pre：单品药典 + 单位术语（批量接口同构，本 IF 仅一行品项）
+        if (itemId != null && StringUtils.isNotEmpty(itemTable)) {
+            ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+            lookup.setProductTableName(itemTable);
+            lookup.setProductDefinitionId(itemId);
+            List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
+            lookups.add(lookup);
+            Map<String, ProductDefinitionDisplayDto> products =
+                this.productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
+            String productKey = ProductDefinitionKeyUtil.buildCompositeKey(itemTable, itemId);
+            ProductDefinitionDisplayDto product = products.get(productKey);
+            if (product != null) {
+                // 拆零单位真源：药典目录，非主档
+                splitUnitCode = trimToNull(product.getSplitUnitCode());
+                splitUnitCodeLabel = trimToNull(product.getSplitUnitCodeDictText());
+            }
+            ProductDefinitionSelectionTerminologyMaps terminologyMaps =
+                this.productDefinitionDisplayTerminologyAssembler.loadSelectionTerminologyMaps();
+            if (terminologyMaps != null && terminologyMaps.getUnitLabelByCode() != null) {
+                // unit_code 术语表供追溯码单位 Label 转译
+                unitLabels = terminologyMaps.getUnitLabelByCode();
+            }
+            // 药典拆零码有值但展示名为空时，回落术语表
+            if (splitUnitCode != null && splitUnitCodeLabel == null) {
+                splitUnitCodeLabel = trimToNull(unitLabels.get(splitUnitCode));
+            }
+        }
+        for (InventoryItemTraceNumberRowDto item : items) {
+            if (item == null) {
+                continue;
+            }
+            InHospitalStatus inHospitalStatus =
+                EnumUtil.fromCode(InHospitalStatus.class, item.getInHospitalStatusEnum());
+            if (inHospitalStatus != null) {
+                // 枚举 display 作在院态 Label
+                item.setInHospitalStatusLabel(inHospitalStatus.getDisplay());
+            }
+            // 同一品批共享药典拆零单位
+            item.setSplitUnitCode(splitUnitCode);
+            item.setSplitUnitCodeLabel(splitUnitCodeLabel);
+            String traceUnitCode = trimToNull(item.getTraceUnitCode());
+            if (traceUnitCode != null) {
+                String traceUnitLabel = trimToNull(unitLabels.get(traceUnitCode));
+                if (traceUnitLabel != null) {
+                    // 术语命中才写 Label，否则前端回落 code
+                    item.setTraceUnitCodeLabel(traceUnitLabel);
+                }
+            }
+        }
+    }
+
+    /**
+     * 批量判定主表品批是否已有追溯码（BR-TRC-020 · 有码批/无码批）。
+     *
+     * <p>供库存单据扫码弹窗打开时回填 {@code lotHasTraceMaster}；与在院态、剩余量无关。</p>
+     *
+     * @param request 品批键列表
+     * @return 各键是否有主档
+     */
+    public BatchExistsTraceMasterByItemLotResponse batchExistsTraceMasterByItemLot(
+        BatchExistsTraceMasterByItemLotRequest request
+    ) {
+        // Gate：登录上下文
+        this.assertGateUserPresent();
+        this.requireTenantId();
+        BatchExistsTraceMasterByItemLotResponse response = new BatchExistsTraceMasterByItemLotResponse();
+        if (request == null || request.getKeys() == null || request.getKeys().isEmpty()) {
+            return response;
+        }
+        // Pre：组装领域批量查询键
+        List<TraceNumberQueryService.ItemLotMasterExistsLookupKey> lookupKeys = new ArrayList<>();
+        for (BatchExistsTraceMasterByItemLotRequest.ItemLotKey key : request.getKeys()) {
+            if (key == null || key.getItemId() == null) {
+                continue;
+            }
+            String lot = trimToNull(key.getLotNumber());
+            if (lot == null) {
+                continue;
+            }
+            String itemTable = trimToNull(key.getItemTable());
+            if (itemTable == null) {
+                itemTable = TableNameConstants.MED_MEDICATION_DEFINITION;
+            }
+            lookupKeys.add(new TraceNumberQueryService.ItemLotMasterExistsLookupKey(
+                itemTable, key.getItemId(), lot));
+        }
+        Map<String, Boolean> existsByKey =
+            this.traceNumberQueryService.batchExistsMasterByItemLot(lookupKeys);
+        // Asm：按请求键写回布尔结果
+        for (BatchExistsTraceMasterByItemLotRequest.ItemLotKey key : request.getKeys()) {
+            if (key == null || key.getItemId() == null) {
+                continue;
+            }
+            String lot = trimToNull(key.getLotNumber());
+            if (lot == null) {
+                continue;
+            }
+            String itemTable = trimToNull(key.getItemTable());
+            if (itemTable == null) {
+                itemTable = TableNameConstants.MED_MEDICATION_DEFINITION;
+            }
+            String mapKey = this.traceNumberQueryService.buildItemLotMasterExistsMapKey(
+                itemTable, key.getItemId(), lot);
+            BatchExistsTraceMasterByItemLotResponse.ItemLotExistsRow row =
+                new BatchExistsTraceMasterByItemLotResponse.ItemLotExistsRow();
+            row.setItemId(key.getItemId());
+            row.setLotNumber(lot);
+            row.setItemTable(itemTable);
+            row.setLotHasTraceMaster(Boolean.TRUE.equals(existsByKey.get(mapKey)));
+            response.getItems().add(row);
+        }
+        return response;
+    }
+
+    /**
      * 定时库存快照（IF-INV-DTL-10）：全量现库装配后批量写入静表。
      *
      * <p>处理器 key {@code inventoryWarehouseInventoryDetail/executeInventoryDetailSnapshot}；
-     * cron 建议每日 {@code 0 5 0 * * ?}（00:05，**BR-INV-DTL-028**），与库房日结零点备份口径一致；
+     * cron 建议每日 {@code 0 5 0 * * ?}（00:05，**BR-INV-DTL-028**），与库房期初期末明细零点备份口径一致；
      * 启停由 whale-job 管理界面配置，并发策略建议 {@code DISALLOW}（BR-INV-DTL-021）。</p>
      *
      * <p>单号自然日 {@code D} 表示 {@code D} 日抓拍时刻库存，日结语义为 {@code (D-1)} 自然日日终（**BR-INV-SET-004**）。</p>
@@ -899,7 +1060,7 @@ public class InventoryWarehouseInventoryDetailAppService {
     }
 
     /**
-     * 按预警模式写入领域筛选：效期取系统设置天数；库存取全院汇总后低于包装阈值的品种键。
+     * 按预警模式写入领域筛选：效期取系统设置天数；库存预警取全院汇总后命中目录警戒线或全局包装阈值的品种键。
      *
      * @param query                 领域查询（将被修改）
      * @param warningMode           {@code expire} / {@code lowStock} / 空
@@ -925,13 +1086,31 @@ public class InventoryWarehouseInventoryDetailAppService {
         if (!InventoryWarningConstants.WARNING_MODE_LOW_STOCK.equals(mode)) {
             return;
         }
-        if (query.getZeroStockOnly() == null) {
-            query.setZeroStockOnly(Boolean.FALSE);
-        }
+        // 库存预警含全院断货：不强制 quantity>0，避免命中品种却无零库存批号行可看
+        // 库存预警：Filter 内按品种目录警戒线优先，未维护回落全局包装阈值
         List<InventoryProductAggregateKey> keys =
             this.inventoryLowStockWarningFilter.resolveLowStockProductKeys(
                 this.inventoryWarningSettingResolver.resolveMinPackageQuantityWarning());
         query.setLowStockWarningAggregateKeys(keys);
+    }
+
+    /**
+     * 现库列表/汇总/导出的库房范围：库存预警为全院品种采购视角，不套管辖库房 Gate；
+     * 效期预警与普通查询仍按 {@link #resolveEffectiveWarehouseIds} 收窄。
+     *
+     * @param requestedWarehouseIds 请求库房多选，可空
+     * @param warningMode           {@code expire} / {@code lowStock} / 空
+     * @return empty 表示不按库房收窄
+     */
+    private List<Long> resolveEffectiveWarehouseIdsForCurrentList(
+        List<Long> requestedWarehouseIds,
+        String warningMode) {
+        // 库存预警：与库房无关，仅按全院品种键筛；用户显式选了库房时仍尊重显式多选（不与管辖白名单求交）
+        if (StringUtils.isNotEmpty(warningMode)
+            && InventoryWarningConstants.WARNING_MODE_LOW_STOCK.equals(warningMode.trim())) {
+            return this.dedupeIds(requestedWarehouseIds);
+        }
+        return this.resolveEffectiveWarehouseIds(requestedWarehouseIds);
     }
 
     /**

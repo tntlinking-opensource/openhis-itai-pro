@@ -19,6 +19,7 @@ import com.openhis.chs.domain.inventory.command.InvUpload3503Command;
 import com.openhis.chs.domain.inventory.command.InvUpload3504Command;
 import com.openhis.chs.domain.inventory.command.InvUpload3505Command;
 import com.openhis.chs.domain.inventory.command.InvUpload3506Command;
+import com.openhis.chs.domain.inventory.command.RetryInvUploadWithRequestCommand;
 import com.openhis.chs.domain.inventory.command.RetryPendingInvUploadsCommand;
 import com.openhis.chs.domain.inventory.entity.YbInvUpload;
 import com.openhis.chs.domain.inventory.queries.CompareLocalVsPlatformQuery;
@@ -36,6 +37,7 @@ import com.openhis.chs.domain.inventory.result.InvUpload3505Result;
 import com.openhis.chs.domain.inventory.result.InvUpload3506Result;
 import com.openhis.chs.domain.inventory.result.LocalInvUploadResult;
 import com.openhis.chs.domain.inventory.result.PlatformInvQueryResult;
+import com.openhis.chs.domain.inventory.result.RetryInvUploadWithRequestResult;
 import com.openhis.chs.domain.inventory.result.RetryPendingInvUploadsResult;
 import com.openhis.chs.domain.inventory.service.YbInvUploadDomainService;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
@@ -47,7 +49,7 @@ import java.util.List;
 
 /**
  * 进销存运维台 UI（{@code POST /api/app/insuranceInventory/*}）。
- * <p>Tab 分组：上报写 3501–3507 / 批初始化 / 平台查询 3508–3513 / 差异比对与失败重试；本地流水只读。</p>
+ * <p>Tab 分组：本地流水 / 3501–3502 手工与批初始化 / 失败重试与单条补传；3507/3508–3513/差异比对 API 保留、UI 本期隐藏。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -105,11 +107,23 @@ public class InsuranceInventoryAppService {
         return inv3507Invoker.invoke(command);
     }
 
-    /** 本地查询：筛选 yb_inv_upload 上报流水。 */
+    /**
+     * 本地查询：筛选 yb_inv_upload 上报流水（含 request/response 报文，供运维补传）。
+     *
+     * @param query 筛选条件；null 时按租户取最近流水
+     * @return 本地上报流水列表
+     */
     public List<LocalInvUploadResult> listLocalUploadRecords(ListLocalInvUploadRecordsQuery query) {
+        // Gate：租户上下文必有，否则流水隔离失效
         Long tenantId = TenantUtils.getCurrentTenantId();
-        ListLocalInvUploadRecordsQuery safeQuery = query == null ? new ListLocalInvUploadRecordsQuery() : query;
+        // Pre：空查询条件时回落为空对象，避免 NPE
+        ListLocalInvUploadRecordsQuery safeQuery = new ListLocalInvUploadRecordsQuery();
+        if (query != null) {
+            safeQuery = query;
+        }
+        // Cmd：按条件读本地流水
         List<YbInvUpload> rows = uploadDomainService.listUploadRecords(safeQuery, tenantId);
+        // Asm：实体转运维 DTO（含可编辑 request_json）
         List<LocalInvUploadResult> dtos = new ArrayList<>(rows.size());
         for (YbInvUpload row : rows) {
             dtos.add(uploadDomainService.toLocalDto(row));
@@ -117,9 +131,34 @@ public class InsuranceInventoryAppService {
         return dtos;
     }
 
+    /**
+     * 按流水主键取本地上报详情（含完整 request/response，供补传弹窗回显）。
+     *
+     * @param uploadId 上报流水主键
+     * @return 单行详情；不存在或不属于当前租户时 null
+     */
+    public LocalInvUploadResult getLocalUploadRecord(Long uploadId) {
+        // Gate：租户隔离
+        Long tenantId = TenantUtils.getCurrentTenantId();
+        // Cmd：按 id + 租户加载
+        return uploadDomainService.findByIdForTenant(uploadId, tenantId)
+            .map(uploadDomainService::toLocalDto)
+            .orElse(null);
+    }
+
     /** 【3501–3506】失败/待报记录重试。 */
     public RetryPendingInvUploadsResult retryPendingUploads(RetryPendingInvUploadsCommand command) {
         return retryWorkflow.retry(command);
+    }
+
+    /**
+     * 单条补传：可选编辑 request_json 后重放（不从业务表重建）。
+     *
+     * @param command 含 uploadId 与可选 requestJson
+     * @return 补传结果
+     */
+    public RetryInvUploadWithRequestResult retryUploadWithRequest(RetryInvUploadWithRequestCommand command) {
+        return retryWorkflow.retryOne(command);
     }
 
     /** 【3508】平台库存信息查询。 */

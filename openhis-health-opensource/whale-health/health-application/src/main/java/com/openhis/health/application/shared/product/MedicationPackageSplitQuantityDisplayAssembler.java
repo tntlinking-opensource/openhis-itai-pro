@@ -16,7 +16,8 @@ import java.math.RoundingMode;
 /**
  * 药品汇总明细数量展示：拆零持久量 → 满包整数 + 不足一包拆零余量（BR-IP-SUM-015 同族）。
  *
- * <p>供护士站汇总详情（IF-IP-SUM-03）与药房汇总核发合并行（IF-IPS-02）共用。</p>
+ * <p>供护士站汇总详情（IF-IP-SUM-03）、药房汇总核发合并行（IF-IPS-02）、库存明细
+ * {@code packageStockText}，以及医生站目录可开量 {@code availableQuantityText} 共用。</p>
  */
 public final class MedicationPackageSplitQuantityDisplayAssembler {
 

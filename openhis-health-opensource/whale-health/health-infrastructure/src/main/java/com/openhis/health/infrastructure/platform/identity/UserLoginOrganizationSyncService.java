@@ -17,7 +17,10 @@ import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
- * 将岗位派生科室同步至 {@code whale_user_organization_units}，供登录选科室使用。
+ * 将用户表单维护的出诊科室（及默认登录科室）同步至 {@code whale_user_organization_units}，供登录选科。
+ *
+ * <p>口径：能登哪些科以用户里配置的出诊科室为准；不维护则登录不出现选科（医院级）。
+ * 默认登录科室只决定登录后落到哪一科，不单独灌满/清空绑定。无账号级特例。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -41,18 +44,13 @@ public class UserLoginOrganizationSyncService {
         if (practitioner == null || practitioner.getUserId() == null) {
             return;
         }
-        LinkedHashSet<Long> orgIds = new LinkedHashSet<>(
-            practitionerRoleQueryService.collectLoginOrganizationUnitIds(practitionerId));
-        if (practitioner.getOrgId() != null) {
-            orgIds.add(practitioner.getOrgId());
-        }
-        List<Long> whaleIds = organizationUnitLinkSyncService.resolveWhaleOrganizationUnitIds(
-            new ArrayList<>(orgIds));
-        organizationUnitAppService.syncOrganizationUnitsForUser(practitioner.getUserId(), whaleIds);
+        this.syncLoginOrganizationsForUser(practitioner.getUserId(), practitioner);
     }
 
     /**
      * 按平台用户反查医务人员并刷新可登录科室。
+     *
+     * <p>无医务人员主档时不改绑定表（避免把已有配置清空）。</p>
      *
      * @param userId Whale 用户主键
      */
@@ -64,6 +62,26 @@ public class UserLoginOrganizationSyncService {
         if (practitioner == null) {
             return;
         }
-        syncForPractitioner(practitioner.getId());
+        this.syncLoginOrganizationsForUser(userId, practitioner);
+    }
+
+    /**
+     * 将用户可登录科室与出诊岗位 + 默认登录科室对齐并写入 Whale OU 绑定。
+     *
+     * @param userId       平台用户主键
+     * @param practitioner 医务人员主档
+     */
+    private void syncLoginOrganizationsForUser(Long userId, Practitioner practitioner) {
+        LinkedHashSet<Long> orgIds = new LinkedHashSet<>();
+        // 出诊科室（岗位 org_id）= 登录可选/可切换科室来源
+        orgIds.addAll(practitionerRoleQueryService.collectLoginOrganizationUnitIds(practitioner.getId()));
+        // 默认登录科室：有则并入可选列表，供登录后落到该科
+        if (practitioner.getOrgId() != null) {
+            orgIds.add(practitioner.getOrgId());
+        }
+        // 二者皆空 → 同步为空列表（医院级，不出现选科）
+        List<Long> whaleIds = organizationUnitLinkSyncService.resolveWhaleOrganizationUnitIds(
+            new ArrayList<>(orgIds));
+        organizationUnitAppService.syncOrganizationUnitsForUser(userId, whaleIds);
     }
 }

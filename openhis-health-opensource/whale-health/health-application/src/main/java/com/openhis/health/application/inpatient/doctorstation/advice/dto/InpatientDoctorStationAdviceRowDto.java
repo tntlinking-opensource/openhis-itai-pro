@@ -100,6 +100,39 @@ public class InpatientDoctorStationAdviceRowDto {
     @Schema(description = "剂量单位展示名")
     private String doseUnitName;
 
+    /**
+     * 单次剂量展示串：最小单位为主，必要时括号内附计量单位（如 {@code 1支(2ml)/次}）；
+     * 计量与最小单位相同时无括号（如 {@code 1片/次}）。
+     */
+    @Schema(description = "单次剂量展示串（最小单位为主，括号附计量；单位相同时无括号）")
+    private String dosageDisplay;
+
+    /** 单次剂量对应的最小（拆零）单位数量；单位相同或无法换算时为 null。 */
+    @Schema(description = "单次剂量对应的最小单位数量")
+    private BigDecimal splitDose;
+
+    /** 最小单位编码。 */
+    @Schema(description = "最小单位编码")
+    private String splitDoseUnitCode;
+
+    /** 最小单位展示名。 */
+    @Schema(description = "最小单位展示名")
+    private String splitDoseUnitName;
+
+    /**
+     * 首日/首次用量（仅长期药品；可空；BR-IP-ORD-030）。
+     */
+    @Schema(description = "首日/首次用量（仅长期）")
+    private BigDecimal firstDose;
+
+    /** 首日用量单位编码。 */
+    @Schema(description = "首日用量单位编码")
+    private String firstDoseUnitCode;
+
+    /** 首日用量单位展示名。 */
+    @Schema(description = "首日用量单位展示名")
+    private String firstDoseUnitName;
+
     /** 给药途径/用法编码。 */
     @Schema(description = "给药途径/用法编码")
     private String methodCode;
@@ -152,17 +185,12 @@ public class InpatientDoctorStationAdviceRowDto {
     @Schema(description = "诊断定义名称")
     private String conditionDefinitionName;
 
-    /** 诊断定义主键（药品/诊疗/耗材请求均映射各自表的 {@code condition_definition_id}）。 */
+    /**
+     * 绑定就诊诊断主键有序串（药品/诊疗请求均映射各自表的 {@code encounter_diagnosis_ids}；有序，首位为主诊断）。
+     */
     @JsonSerialize(using = ToStringSerializer.class)
-    /** 诊断定义主键。 */
-    @Schema(description = "诊断定义主键")
-    private Long conditionDefinitionId;
-
-    /** 就诊诊断主键（药品/诊疗请求均映射各自表的 {@code encounter_diagnosis_id}）。 */
-    @JsonSerialize(using = ToStringSerializer.class)
-    /** 就诊诊断主键。 */
-    @Schema(description = "就诊诊断主键")
-    private Long encounterDiagnosisId;
+    @Schema(description = "绑定就诊诊断主键有序串")
+    private String encounterDiagnosisIds;
 
     /** 是否皮试。 */
     @Schema(description = "是否皮试")
@@ -187,6 +215,27 @@ public class InpatientDoctorStationAdviceRowDto {
     /** 皮试结果展示文案。 */
     @Schema(description = "皮试结果展示文案")
     private String skinTestOutcomeText;
+
+    /**
+     * 是否建议换批追加皮试检查（长嘱皮试药：发放批号 ≠ 最新皮试登记批号）。
+     * 仅软提示，不强制 IF-IP-DOR-27。
+     */
+    @Schema(description = "是否建议换批追加皮试检查")
+    private Boolean needAppendSkinTestFlag;
+
+    /**
+     * companion「皮试检查」锚定的皮试药主键（{@code based_on → med_medication_request}）；
+     * 药品行与非皮试诊疗行为 null。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "皮试检查关联的皮试药 requestId")
+    private Long basedOnMedicationRequestId;
+
+    /**
+     * companion「皮试检查」关联皮试药展示标签（药名 + 规格，便于列表一眼看出给哪味药）；药品行为 null。
+     */
+    @Schema(description = "皮试检查关联的皮试药名称（可含规格）")
+    private String skinTestLinkedMedicationName;
 
     /** 处方号。 */
     @Schema(description = "处方号")
@@ -232,8 +281,11 @@ public class InpatientDoctorStationAdviceRowDto {
     @Schema(description = "备注")
     private String remark;
 
-    /** 嘱托内容。 */
-    @Schema(description = "嘱托内容")
+    /**
+     * 嘱托医嘱正文（{@code wkf_service_request.entrust_content}）。
+     * 嘱托行必填回显；前端医嘱内容列优先本字段（AS-IP-DOR-003 · BR-IP-ORD-028④）。
+     */
+    @Schema(description = "嘱托正文（嘱托行内容列优先）")
     private String entrustContent;
 
     /** 诊疗套餐子项列表。 */
@@ -301,17 +353,26 @@ public class InpatientDoctorStationAdviceRowDto {
     @Schema(description = "开立者姓名")
     private String authoredByName;
 
+    /** 停嘱人主键（{@code stopper_id}；未停嘱为 null）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "停嘱人主键")
+    private Long stopperId;
+
+    /** 停嘱人姓名（列表展示：停嘱时间后跟人名）。 */
+    @Schema(description = "停嘱人姓名")
+    private String stopperName;
+
     /** 是否当前登录医师开立。 */
     @Schema(description = "是否当前登录医师开立")
     private Boolean isAuthoredByCurrentUser;
 
-    /** 开立时间 ISO-8601 local。 */
-    @Schema(description = "开立时间 ISO-8601 local")
-    private String authoredAt;
+    /** 开立时间 ISO-8601 local（{@code req_opened_time}）。 */
+    @Schema(description = "开立时间 ISO-8601 local（req_opened_time）")
+    private String reqOpenedTime;
 
-    /** 停嘱或结束时间 ISO-8601 local。 */
-    @Schema(description = "停嘱或结束时间 ISO-8601 local")
-    private String endTime;
+    /** 停嘱时间 ISO-8601 local（{@code stop_time}）。 */
+    @Schema(description = "停嘱时间 ISO-8601 local（stop_time）")
+    private String stopTime;
 
     /** 签署人主键（已签发且域投影时；未签发为 null）。 */
     @JsonSerialize(using = ToStringSerializer.class)
@@ -319,19 +380,20 @@ public class InpatientDoctorStationAdviceRowDto {
     @Schema(description = "签署人主键")
     private Long signedById;
 
-    /** 签署时间 ISO-8601 local。 */
-    @Schema(description = "签署时间 ISO-8601 local")
-    private String signedAt;
+    /** 签发时间 ISO-8601 local（{@code req_authored_time}）。 */
+    @Schema(description = "签发时间 ISO-8601 local（req_authored_time）")
+    private String reqAuthoredTime;
 
     /**
-     * 长临医嘱类型 code（{@link com.openhis.health.domain.share.enums.TherapyType}：LONG_TERM / TEMPORARY）。
-     * 写路径长临均仅 Request；费用与发放由护士执行落库（BR-IP-ORD-005）。
+     * 治疗类型 code（{@link com.openhis.health.domain.share.enums.TherapyType}：
+     * LONG_TERM / TEMPORARY / DISCHARGE_MEDICATION）。
+     * 写路径三种 therapy 均仅 Request；费用与发放由护士执行落库（BR-IP-ORD-005/006/029）。
      */
-    @Schema(description = "长临医嘱类型 code")
+    @Schema(description = "治疗类型 code：LONG_TERM / TEMPORARY / DISCHARGE_MEDICATION")
     private String therapyTypeCode;
 
-    @Schema(description = "长临医嘱类型展示名")
-    /** 医生站主表展示排序号。 */
+    /** 治疗类型展示名（如「长期医嘱」「临时医嘱」「出院带药」）。 */
+    @Schema(description = "治疗类型展示名")
     private String therapyTypeText;
 
     @Schema(description = "医生站主表展示排序号")
@@ -348,6 +410,16 @@ public class InpatientDoctorStationAdviceRowDto {
     /** 目录分类展示名。 */
     @Schema(description = "目录分类展示名")
     private String catalogCategoryName;
+
+    /**
+     * 医保项目等级码（目录 {@code chrgitm_lv} / 术语 {@code CHRGITM_LV}；与 yb_type 一致：1自费/2甲/3乙/4丙）。
+     */
+    @Schema(description = "医保项目等级码（CHRGITM_LV，与 yb_type 一致）")
+    private Integer chrgitmLv;
+
+    /** 医保项目等级展示（自费/甲类/乙类/丙类）。 */
+    @Schema(description = "医保项目等级展示（自费/甲类/乙类/丙类）")
+    private String chrgitmLvText;
 
     /** 诊疗活动类型编码（检验/检查/…，仅 productTableName=wkf_activity_definition 时有值）。 */
     @Schema(description = "诊疗活动类型编码（检验/检查/…，仅 productTableName=wkf_activity_definition 时有值）")

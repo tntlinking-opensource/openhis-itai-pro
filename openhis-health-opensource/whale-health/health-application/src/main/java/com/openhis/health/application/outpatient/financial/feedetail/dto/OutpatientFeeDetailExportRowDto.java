@@ -31,87 +31,79 @@ public class OutpatientFeeDetailExportRowDto {
     @Excel(name = "挂号科室", sort = 3)
     private String registrationDepartmentName;
 
+    /** 费用性质（优先账户 → fin_contract）。 */
+    @Excel(name = "费用性质", sort = 4)
+    private String feeNatureDisplay;
+
+    /** 医疗类别（主诊断 med_type）。 */
+    @Excel(name = "医疗类别", sort = 5)
+    private String medTypeDisplay;
+
     /** 费用大类。 */
-    @Excel(name = "费用大类", sort = 4)
+    @Excel(name = "费用大类", sort = 6)
     private String feeCategoryDisplay;
 
     /** 细分类。 */
-    @Excel(name = "细分类", sort = 5)
+    @Excel(name = "细分类", sort = 7)
     private String subCategoryDisplay;
 
     /** 项目名称。 */
-    @Excel(name = "项目名称", sort = 6)
+    @Excel(name = "项目名称", sort = 8)
     private String productName;
 
     /** 项目编码。 */
-    @Excel(name = "项目编码", sort = 7)
+    @Excel(name = "项目编码", sort = 9)
     private String productCode;
 
     /** 规格。 */
-    @Excel(name = "规格", sort = 8)
+    @Excel(name = "规格", sort = 10)
     private String specification;
 
     /** 数量。 */
-    @Excel(name = "数量", sort = 9)
+    @Excel(name = "数量", sort = 11)
     private BigDecimal quantityValue;
 
     /** 单位。 */
-    @Excel(name = "单位", sort = 10)
+    @Excel(name = "单位", sort = 12)
     private String quantityUnitDisplay;
 
     /** 开单医生。 */
-    @Excel(name = "开单医生", sort = 11)
+    @Excel(name = "开单医生", sort = 13)
     private String orderingDoctorName;
 
     /** 收费人。 */
-    @Excel(name = "收费人", sort = 12)
+    @Excel(name = "收费人", sort = 14)
     private String cashierName;
 
     /** 结算时间。 */
-    @Excel(name = "结算时间", sort = 13)
+    @Excel(name = "结算时间", sort = 15)
     private String billDate;
 
     /** 医保等级。 */
-    @Excel(name = "医保等级", sort = 14)
+    @Excel(name = "医保等级", sort = 16)
     private String insuranceLevelDisplay;
 
     /** 医保类型。 */
-    @Excel(name = "医保类型", sort = 15)
+    @Excel(name = "医保类型", sort = 17)
     private String insuranceTypeDisplay;
 
-    /** 原价。 */
-    @Excel(name = "原价", sort = 16)
-    private BigDecimal baseAmount;
+    /** 进价单价。 */
+    @Excel(name = "进价单价", sort = 18)
+    private BigDecimal purchaseUnitPrice;
 
-    /** 优惠金额。 */
-    @Excel(name = "优惠金额", sort = 17)
-    private BigDecimal discountAmount;
+    /** 进价总价。 */
+    @Excel(name = "进价总价", sort = 19)
+    private BigDecimal purchaseAmount;
 
-    /** 应收金额。 */
-    @Excel(name = "应收金额", sort = 18)
-    private BigDecimal receivableAmount;
+    /** 售价单价。 */
+    @Excel(name = "售价单价", sort = 20)
+    private BigDecimal saleUnitPrice;
 
-    /** 折后金额。 */
-    @Excel(name = "折后金额", sort = 19)
-    private BigDecimal discountedAmount;
-
-    /** 单价。 */
-    @Excel(name = "单价", sort = 20)
-    private BigDecimal unitPrice;
-
-    /** 行金额。 */
-    @Excel(name = "行金额", sort = 21)
-    private BigDecimal lineAmount;
+    /** 售价总价。 */
+    @Excel(name = "售价总价", sort = 21)
+    private BigDecimal saleAmount;
 
     /** 实收金额。 */
     @Excel(name = "实收金额", sort = 22)
     private BigDecimal actualReceivedAmount;
-
-    /** 医保金额。 */
-    @Excel(name = "医保金额", sort = 23)
-    private BigDecimal insuranceAmount;
-
-    /** 自费金额。 */
-    @Excel(name = "自费金额", sort = 24)
-    private BigDecimal selfPayAmount;
 }

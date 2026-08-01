@@ -5,11 +5,13 @@
 package com.openhis.health.application.inpatient.pharmacy.dispense.service;
 
 import com.openhis.health.application.shared.advice.InpatientMedicationRequestExecutionMeasureHelper;
+import com.openhis.health.application.shared.financial.EncounterContractDisplayAssembler;
 import com.openhis.health.application.shared.option.OptionDtoAssembler;
 import com.openhis.health.application.shared.option.FrequencyOptionLoader;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.application.shared.validator.CurrentManagedLocationIdsResolver;
+import com.openhis.health.application.inpatient.pharmacy.dispense.dto.PendingDispenseInpatientEncounterQueueRowDto;
 import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.application.shared.validator.PageWindowGate;
@@ -108,7 +110,7 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li>Gate：登录/分页/岗位管辖、发药行状态与数量、追溯码与库存门禁。</li>
  *   <li>Pre：待发队列、发药单读模型、收费定价与产品定义加载。</li>
- *   <li>Cmd：配药保存、核发发药、作废与库存扣减、3505 进销存上传。</li>
+ *   <li>Cmd：配药保存、核发发药、作废与库存扣减、3505 进销存上传（按患者直发；汇总核发见 AS-IP-PHA-002，不上报）。</li>
  *   <li>Asm：经 {@link InpatientPharmacyDispenseMapper} 装配响应。</li>
  * </ul>
  */
@@ -150,6 +152,8 @@ public class InpatientPharmacyDispenseAppService {
     private final InpatientEncounterMedicationDispenseSlipPageLoader inpatientEncounterMedicationDispenseSlipPageLoader;
     private final ChargeItemQueryService chargeItemQueryService;
     private final ProcedureQueryService procedureQueryService;
+    /** 就诊费用性质（优先合同名）批量回填队列卡片，与门诊发药同口径。 */
+    private final EncounterContractDisplayAssembler encounterContractDisplayAssembler;
 
     /**
      * 加载住院发药页初始化元数据、调配药师与领药人（护士）分页候选。
@@ -182,28 +186,8 @@ public class InpatientPharmacyDispenseAppService {
             int pageSize = request.getBoundedPageSize();
             Pageable pageable = PageRequest.of(pageIndex, pageSize);
 
-            // 调配药师：须为药师岗且 adm_pr_assign.location_id 落在目标药房（请求指定或管辖内启用药房）。
-            List<Long> preparerPharmacyLocationIds = new ArrayList<>();
-            Long requestedPharmacyLocationId = request.getPharmacyLocationId();
-            if (requestedPharmacyLocationId != null) {
-                Set<Long> managedLocationIds = managedLocationIdsResolver.managedLocationIdSetOrEmpty();
-                if (managedLocationIds.isEmpty() || managedLocationIds.contains(requestedPharmacyLocationId)) {
-                    preparerPharmacyLocationIds.add(requestedPharmacyLocationId);
-                }
-            } else {
-                for (Location pharmacy : pharmacies) {
-                    if (pharmacy != null && pharmacy.getId() != null) {
-                        preparerPharmacyLocationIds.add(pharmacy.getId());
-                    }
-                }
-            }
-
-            Page<Practitioner> preparerPage = practitionerRoleScopeLoader.pageActivePractitionersForPlatformRoleInLocations(
-                WhalePlatformRoleCodeConstants.ROLE_PHARMACIST,
-                preparerPharmacyLocationIds,
-                StringUtils.EMPTY,
-                pageable,
-                false);
+            // 调配药师：adm_pr_assign 激活药师岗（ROLE_PHARMACIST），排除系统管理员岗。
+            Page<Practitioner> preparerPage = this.pagePreparerCandidatesExcludingAdmin(pageable);
             // 领药人：住院护士岗挂在病区 location；无命中时回落全机构护士。
             List<Long> wardLocationIds = new ArrayList<>();
             for (Location ward : wards) {
@@ -271,7 +255,42 @@ public class InpatientPharmacyDispenseAppService {
             this.pharmacyEncounterQueueLoader.pageEncounterIdsForInpatientPharmacyPending(pendingQuery);
         List<InpatientEncounterContextQueryModel> infos =
             EncounterContextReader.listInpatientContextsByEncounterIdsOrdered(encounterPage.getContent());
-        return inpatientPharmacyDispenseMapper.toInpatientQueuePage(encounterPage, infos);
+        // Asm：队列分页映射后回填费用性质（与门诊发药/医生站卡片同口径）。
+        PagePendingDispenseInpatientEncounterQueueResponse response =
+            inpatientPharmacyDispenseMapper.toInpatientQueuePage(encounterPage, infos);
+        this.applyQueueContractDisplayLabels(response);
+        return response;
+    }
+
+    /**
+     * 住院发药队列行批量回填 {@code contractDisplay}（与门诊发药/医生站患者卡片费用性质同口径）。
+     *
+     * @param response 队列分页响应；空或无就诊主键时直接返回
+     */
+    private void applyQueueContractDisplayLabels(PagePendingDispenseInpatientEncounterQueueResponse response) {
+        if (response == null || response.getContent() == null || response.getContent().isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
+        // Loop：收集本页就诊主键，供合同展示一次批量解析
+        for (PendingDispenseInpatientEncounterQueueRowDto row : response.getContent()) {
+            if (row != null && row.getEncounterId() != null) {
+                encounterIds.add(row.getEncounterId());
+            }
+        }
+        // 本页无有效就诊时跳过合同装配
+        if (encounterIds.isEmpty()) {
+            return;
+        }
+        Map<Long, String> contractDisplayByEncounterId =
+            this.encounterContractDisplayAssembler.mapContractDisplayByEncounterIds(encounterIds);
+        // Loop：逐行写回费用性质展示名；无合同时留空，前端回落「自费」
+        for (PendingDispenseInpatientEncounterQueueRowDto row : response.getContent()) {
+            if (row == null || row.getEncounterId() == null) {
+                continue;
+            }
+            row.setContractDisplay(contractDisplayByEncounterId.get(row.getEncounterId()));
+        }
     }
 
     /**
@@ -358,6 +377,10 @@ public class InpatientPharmacyDispenseAppService {
         if (preparerPractitioner == null) {
             throw new BusinessException(ErrorCodeConstants.EX_OPP_202_PREPARER_INVALID, "调配药师不存在或已停用");
         }
+        // 系统管理员即使挂了药师岗，也不得作为住院配药人。
+        if (this.isActivePlatformAdmin(request.getPreparerPractitionerId())) {
+            throw new BusinessException(ErrorCodeConstants.EX_OPP_202_PREPARER_INVALID, "系统管理员不能作为调配药师");
+        }
         // BR-IPP-004：调配药师（配药人）不得与当前登录药师（发药人）同人。
         if (Objects.equals(operatorPractitionerId, request.getPreparerPractitionerId())) {
             throw new BusinessException(ErrorCodeConstants.EX_OPP_202_PREPARER_INVALID, "调配药师不能与当前登录用户为同一人");
@@ -379,6 +402,7 @@ public class InpatientPharmacyDispenseAppService {
             }
         }
         List<String> traceCodeInputs = new ArrayList<>();
+        List<String> hardHospitalCodes = new ArrayList<>();
         // Pre：逐行 Gate（就诊一致、可配药态、追溯/库存/长临数量）
         for (SavePrepareInpatientDispenseLineSubmitDto submitLine : request.getLines()) {
             MedicationDispense dispense = dispenseById.get(submitLine.getDispenseId());
@@ -400,13 +424,21 @@ public class InpatientPharmacyDispenseAppService {
             }
             List<String> lineTraceCodes = splitTraceCodes(submitLine.getTraceNo());
             traceCodeInputs.addAll(lineTraceCodes);
-            if (!lineTraceCodes.isEmpty()) {
-                traceNumberQueryService.assertCodesInNetStockForDispenseLine(
-                    TableNameConstants.MED_MEDICATION_DEFINITION,
-                    dispense.getMedicationId(),
-                    dispense.getLotNumber(),
-                    dispense.getLocationId(),
-                    lineTraceCodes);
+            // 有码批硬校验；无码批仅业务行
+            boolean lotHasMaster = traceNumberQueryService.existsMasterByItemLot(
+                TableNameConstants.MED_MEDICATION_DEFINITION,
+                dispense.getMedicationId(),
+                dispense.getLotNumber());
+            if (lotHasMaster) {
+                hardHospitalCodes.addAll(lineTraceCodes);
+                if (!lineTraceCodes.isEmpty()) {
+                    traceNumberQueryService.assertCodesInNetStockForDispenseLine(
+                        TableNameConstants.MED_MEDICATION_DEFINITION,
+                        dispense.getMedicationId(),
+                        dispense.getLotNumber(),
+                        dispense.getLocationId(),
+                        lineTraceCodes);
+                }
             }
             ProductDefinitionDisplayDto productRow = loadProductForMedication(dispense.getMedicationId());
             if (productRow == null) {
@@ -427,12 +459,14 @@ public class InpatientPharmacyDispenseAppService {
                 dispense.getLotNumber(),
                 dispenseQty,
                 dispense.getUnitCode(),
-                ProductDefinitionDisplaySupport.toUnitConversionSource(productRow),
+                productRow,
                 dispense.getId());
         }
-        traceNumberQueryService.assertNoDuplicateTraceCodes(traceCodeInputs);
-        traceNumberQueryService.assertCodesInHospitalForDispense(traceCodeInputs);
+        // 长临合计门控
         assertTemporaryTherapyQuantitiesForInpatient(dispenseById);
+        traceNumberQueryService.assertNoDuplicateTraceCodes(traceCodeInputs);
+        // 仅有码批参与在院硬校验
+        traceNumberQueryService.assertCodesInHospitalForDispense(hardHospitalCodes);
         // Cmd：领域推进 PREPARATION → IN_PROGRESS，写入调配药师与追溯码
         PrepareMedicationDispenseCommand prepareCommand = inpatientPharmacyDispenseMapper.toPrepareMedicationDispenseCommand(
             operatorPractitionerId, request.getPreparerPractitionerId(), request.getLines(), dispenseById);
@@ -520,7 +554,7 @@ public class InpatientPharmacyDispenseAppService {
                 dispense.getLotNumber(),
                 requiredQuantity,
                 dispense.getUnitCode(),
-                ProductDefinitionDisplaySupport.toUnitConversionSource(productRowForStockAssert),
+                productRowForStockAssert,
                 dispense.getId());
             dispensersInSubmitOrder.add(dispense);
         }
@@ -546,19 +580,14 @@ public class InpatientPharmacyDispenseAppService {
             dispensersInSubmitOrder, operatorPractitionerId, productByMedicationIdForDispense);
         DispenseInpatientMedicationsResponse response =
             inpatientPharmacyDispenseMapper.toDispenseBatchResponse(submittedDispenseIds, "发药成功", true);
-        // Asm：可选医保 3505 上传（失败不 rollback 本地发药）
-        try {
-            if (inventoryUploadExtension.isEnabled()) {
-                InventoryUploadAfterDispenseExtensionIn uploadCommand = new InventoryUploadAfterDispenseExtensionIn()
-                    .setEncounterId(request.getEncounterId())
-                    .setDispenseIds(submittedDispenseIds)
-                    .setContractBusNo(request.getContractBusNo());
-                inventoryUploadExtension.uploadAfterDispense(uploadCommand);
-            }
-        } catch (RuntimeException ex) {
-            log.warn("医保进销存3505上传失败（本地住院发药已成功）", ex);
-            response.setMessage("发药成功；" + ErrorCodeConstants.EX_OPP_207_MEDICARE_PARTIAL_FAILURE + "：" + ex.getMessage());
-        }
+        // Asm：可选医保 3505 上传（afterCommit + 异步；失败不回滚本地发药）
+        inventoryUploadExtension.runUploadIfEnabled(() -> {
+            InventoryUploadAfterDispenseExtensionIn uploadCommand = new InventoryUploadAfterDispenseExtensionIn()
+                .setEncounterId(request.getEncounterId())
+                .setDispenseIds(submittedDispenseIds)
+                .setContractBusNo(request.getContractBusNo());
+            inventoryUploadExtension.uploadAfterDispense(uploadCommand);
+        });
         return response;
     }
 
@@ -894,5 +923,49 @@ public class InpatientPharmacyDispenseAppService {
                 unitPriceOut.put(dispenseKey, chargeRow.getUnitPrice());
             }
         }
+    }
+
+    /**
+     * 分页加载调配药师候选：{@code adm_pr_assign} 激活药师岗，并排除系统管理员岗。
+     *
+     * @param pageable 分页
+     * @return 调配药师分页；无命中时 empty
+     */
+    private Page<Practitioner> pagePreparerCandidatesExcludingAdmin(Pageable pageable) {
+        Set<Long> preparerIds = new LinkedHashSet<>(
+            this.practitionerRoleScopeLoader.resolvePractitionerIdsForActivePlatformRole(
+                WhalePlatformRoleCodeConstants.ROLE_PHARMACIST,
+                null));
+        if (preparerIds.isEmpty()) {
+            return Page.empty(pageable);
+        }
+        Set<Long> adminIds = this.practitionerRoleScopeLoader.resolvePractitionerIdsForActivePlatformRole(
+            WhalePlatformRoleCodeConstants.ROLE_ADMIN,
+            null);
+        preparerIds.removeAll(adminIds);
+        if (preparerIds.isEmpty()) {
+            return Page.empty(pageable);
+        }
+        return this.practitionerQueryService.pageActivePractitionersForPosition(
+            preparerIds,
+            StringUtils.EMPTY,
+            pageable,
+            false);
+    }
+
+    /**
+     * 是否拥有激活的系统管理员岗位（{@code adm_pr_assign}）。
+     *
+     * @param practitionerId 医务人员主键
+     * @return 有管理员岗时 true
+     */
+    private boolean isActivePlatformAdmin(Long practitionerId) {
+        if (practitionerId == null) {
+            return false;
+        }
+        Set<Long> adminIds = this.practitionerRoleScopeLoader.resolvePractitionerIdsForActivePlatformRole(
+            WhalePlatformRoleCodeConstants.ROLE_ADMIN,
+            null);
+        return adminIds.contains(practitionerId);
     }
 }

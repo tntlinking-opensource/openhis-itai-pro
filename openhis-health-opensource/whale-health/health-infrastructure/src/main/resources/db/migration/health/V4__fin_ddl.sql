@@ -345,32 +345,42 @@ COMMENT ON COLUMN fin_payment_yb_settlement.deleted_at IS '删除时间';
 COMMENT ON COLUMN fin_payment_yb_settlement.deleted_by IS '删除人';
 COMMENT ON COLUMN fin_payment_yb_settlement.tenant_id IS '租户标识';
 
--- from V72__fin_cashier_settlement.sql
+-- fin_cashier_settlement：交账头终态（审批流列）
 CREATE TABLE IF NOT EXISTS fin_cashier_settlement (
-    id              BIGINT          NOT NULL,
-    tenant_id       BIGINT,
-    created_at      TIMESTAMPTZ(6)  NOT NULL,
-    updated_at      TIMESTAMPTZ(6),
-    created_by      BIGINT,
-    updated_by      BIGINT,
-    is_deleted      BOOLEAN         NOT NULL DEFAULT FALSE,
-    deleted_at      TIMESTAMPTZ(6),
-    deleted_by      BIGINT,
-    version         INT4            NOT NULL DEFAULT 0,
-    bus_no          VARCHAR(64)     NOT NULL,
-    type_enum       VARCHAR(32)     NOT NULL,
-    status_enum     VARCHAR(32)     NOT NULL,
-    settled_at      TIMESTAMPTZ(6)  NOT NULL,
-    org_id          BIGINT          NOT NULL,
-    location_id     BIGINT,
-    cashier_id      BIGINT          NOT NULL,
+    id                  BIGINT          NOT NULL,
+    tenant_id           BIGINT,
+    created_at          TIMESTAMPTZ(6)  NOT NULL,
+    updated_at          TIMESTAMPTZ(6),
+    created_by          BIGINT,
+    updated_by          BIGINT,
+    is_deleted          BOOLEAN         NOT NULL DEFAULT FALSE,
+    deleted_at          TIMESTAMPTZ(6),
+    deleted_by          BIGINT,
+    version             INT4            NOT NULL DEFAULT 0,
+    bus_no              VARCHAR(64)     NOT NULL,
+    type_enum           VARCHAR(32)     NOT NULL,
+    status_enum         VARCHAR(32)     NOT NULL,
+    org_id              BIGINT,
+    location_id         BIGINT,
+    date_from           TIMESTAMPTZ(6),
+    date_to             TIMESTAMPTZ(6),
+    payment_count       INT4,
+    total_income        NUMERIC(19, 6),
+    practitioner_ids    TEXT,
+    submitter_id        INT8            NOT NULL,
+    submitted_at        TIMESTAMPTZ(6)  NOT NULL,
+    approver_id         INT8,
+    approved_at         TIMESTAMPTZ(6),
     CONSTRAINT fin_cashier_settlement_pkey PRIMARY KEY (id)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uk_fin_cashier_settlement_bus_no
     ON fin_cashier_settlement (tenant_id, bus_no)
     WHERE is_deleted = FALSE;
-COMMENT ON TABLE fin_cashier_settlement IS '收费员交账头表（只增不改）';
+CREATE INDEX IF NOT EXISTS idx_fin_cashier_settlement_type_submitted
+    ON fin_cashier_settlement (tenant_id, type_enum, submitted_at DESC)
+    WHERE is_deleted = FALSE;
+COMMENT ON TABLE fin_cashier_settlement IS '收费员交账头表（交账批次；审批流）';
 COMMENT ON COLUMN fin_cashier_settlement.id IS '主键';
 COMMENT ON COLUMN fin_cashier_settlement.tenant_id IS '租户标识';
 COMMENT ON COLUMN fin_cashier_settlement.created_at IS '创建时间';
@@ -382,9 +392,16 @@ COMMENT ON COLUMN fin_cashier_settlement.deleted_at IS '删除时间';
 COMMENT ON COLUMN fin_cashier_settlement.deleted_by IS '删除人';
 COMMENT ON COLUMN fin_cashier_settlement.version IS '乐观锁版本号';
 COMMENT ON COLUMN fin_cashier_settlement.bus_no IS '交账单号';
-COMMENT ON COLUMN fin_cashier_settlement.type_enum IS '类型枚举值';
-COMMENT ON COLUMN fin_cashier_settlement.status_enum IS 'HANDED_OVER（已交账）';
-COMMENT ON COLUMN fin_cashier_settlement.settled_at IS '交账提交时刻';
-COMMENT ON COLUMN fin_cashier_settlement.org_id IS '交账所属科室';
-COMMENT ON COLUMN fin_cashier_settlement.location_id IS '收费窗口（可选）';
-COMMENT ON COLUMN fin_cashier_settlement.cashier_id IS '交账经办人';
+COMMENT ON COLUMN fin_cashier_settlement.type_enum IS '交账类型：OP_PAYMENT/IP_PAYMENT/OP_PHARMACY/IP_PHARMACY';
+COMMENT ON COLUMN fin_cashier_settlement.status_enum IS '审批状态：SUBMITTED/APPROVED/REJECTED/WITHDRAWN';
+COMMENT ON COLUMN fin_cashier_settlement.org_id IS '交账所属科室（收款必填，药房可空）';
+COMMENT ON COLUMN fin_cashier_settlement.location_id IS '交账药房/窗口（药房必填，收款侧可选）';
+COMMENT ON COLUMN fin_cashier_settlement.date_from IS '交账业务日窗起';
+COMMENT ON COLUMN fin_cashier_settlement.date_to IS '交账业务日窗止';
+COMMENT ON COLUMN fin_cashier_settlement.payment_count IS '本次挂载笔数快照（费用=payment；药房=dispense 行数）';
+COMMENT ON COLUMN fin_cashier_settlement.total_income IS '本次交账总收入净额快照';
+COMMENT ON COLUMN fin_cashier_settlement.practitioner_ids IS '窗内收费人/发药人快照，逗号分隔 Long';
+COMMENT ON COLUMN fin_cashier_settlement.submitter_id IS '交账提交人';
+COMMENT ON COLUMN fin_cashier_settlement.submitted_at IS '交账提交时间';
+COMMENT ON COLUMN fin_cashier_settlement.approver_id IS '审批人';
+COMMENT ON COLUMN fin_cashier_settlement.approved_at IS '审批时间';

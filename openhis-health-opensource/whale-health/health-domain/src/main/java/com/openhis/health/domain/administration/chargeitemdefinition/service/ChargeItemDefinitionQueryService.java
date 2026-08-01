@@ -211,6 +211,28 @@ public class ChargeItemDefinitionQueryService {
     }
 
     /**
+     * 解析实例+批号维 {@link PriceType#LOT_NUMBER_PRICE} 当前有效择优单价（每<strong>包装单位</strong>）。
+     *
+     * <p>用于进销存 3502 等需报「批号售价」的场景；<strong>不</strong>替代库房选品/详情槽价读路径
+     * （库房单据读路径有批号时用 {@link #resolveFirstLotNumberCostPriceValue}）。</p>
+     *
+     * @param instanceTable 物品物理表名
+     * @param instanceId    物品定义主键
+     * @param lotNumber     批号
+     * @return 首个非空批号售价；参数不全、批号空白或无命中时为 {@code null}
+     */
+    public BigDecimal resolveFirstLotNumberPriceValue(String instanceTable, Long instanceId, String lotNumber) {
+        if (StringUtils.isEmpty(instanceTable) || instanceId == null || StringUtils.isEmpty(lotNumber)) {
+            return null;
+        }
+        ChargeItemDefinitionQueryCommand priceCmd = new ChargeItemDefinitionQueryCommand();
+        priceCmd.setInstanceTable(instanceTable.trim());
+        priceCmd.setInstanceId(instanceId);
+        priceCmd.setLotNo(lotNumber.trim());
+        return selectFirstNonNullPriceValueStable(this.findLotNumberPriceByInstanceIdAndLot(priceCmd));
+    }
+
+    /**
      * 批量加载批号售价定价行并按复合键分组（价类为 {@link PriceType#LOT_NUMBER_PRICE}，其余同 {@link #findLotNumberCostLinesGroupedByLotBatchKey}）。
      *
      * @param keys 键集合
@@ -241,12 +263,22 @@ public class ChargeItemDefinitionQueryService {
     /**
      * 批量按实例主键集合加载定价行（用于组套/多项目一次取价）。
      *
+     * <p>若 {@link ChargeItemDefinitionQueryCommand#getPriceTypeCodes()} 非空，则仓储侧按价类 IN 收窄，
+     * 避免把进价/限价等无关行拉进目录选品内存。</p>
+     *
      * @param cmd 查询命令（{@code instanceIds} 必填）
-     * @return 定价行列表
+     * @return 定价行列表（已滤当前 ACTIVE）
      */
     public List<ChargeItemDefinition> findPriceLinesByProjects(ChargeItemDefinitionQueryCommand cmd) {
         // 批量取价：有表维度时用 IN 查询限定在同表多实例，防止跨业务表 id 碰撞。
         if (cmd.getInstanceTable() != null) {
+            Collection<String> priceTypeCodes = cmd.getPriceTypeCodes();
+            // 目录等场景显式价类收窄：少扫批号进价/限价等无关行
+            if (priceTypeCodes != null && !priceTypeCodes.isEmpty()) {
+                return filterCurrentActivePriceLines(
+                    repository.findAllByInstanceTableAndInstanceIdInAndPriceTypeCodeIn(
+                        cmd.getInstanceTable(), cmd.getInstanceIds(), priceTypeCodes));
+            }
             return filterCurrentActivePriceLines(
                 repository.findAllByInstanceTableAndInstanceIdIn(cmd.getInstanceTable(), cmd.getInstanceIds()));
         }
@@ -293,7 +325,11 @@ public class ChargeItemDefinitionQueryService {
     }
 
     /**
-     * 按实例加载全部历史定价行（含 INACTIVE；供工作量/日结 sibling 成本与 fin_type 回落）。
+     * 按实例加载全部历史定价行（含 INACTIVE；遗留 API）。
+     *
+     * <p><strong>禁止</strong>在报表/费用明细/日结进价路径调用本方法做「无脑全量兄弟扫描」。
+     * 进价/成本回放统一走 {@code HistoricalChargeItemPurchasePriceSupport}
+     *（无调价直读批号价；有调价才查调价历史）。</p>
      *
      * @param instanceTable 实例表名，可空
      * @param instanceId    实例主键

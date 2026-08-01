@@ -32,8 +32,14 @@ public class DeviceRequestListModel {
     private String busNo;
     /** 生成来源持久化码。 */
     private String generateSourceEnum;
-    /** 开立时间。 */
+    /** 开立时间（{@code req_opened_time}）。 */
+    private LocalDateTime reqOpenedTime;
+    /** 签发时间（{@code req_authored_time}）。 */
     private LocalDateTime reqAuthoredTime;
+    /** 停嘱时间（{@code stop_time}）。 */
+    private LocalDateTime stopTime;
+    /** 停嘱人主键（{@code stopper_id}；未停 null）。 */
+    private Long stopperId;
     /** 医生站列表展示排序号。 */
     private Integer sortNumber;
     /** 请求人主键。 */
@@ -58,8 +64,10 @@ public class DeviceRequestListModel {
     private String basedOnTable;
     /** 前置业务主键。 */
     private Long basedOnId;
-    /** 诊断定义主键（持久化 {@code wkf_device_request.condition_definition_id}）。 */
-    private Long conditionDefinitionId;
-    /** 就诊诊断主键（持久化 {@code wkf_device_request.encounter_diagnosis_id}）。 */
-    private Long encounterDiagnosisId;
+    /**
+     * 组套标识（{@code wkf_device_request.package_id}；成组用法绑定可与主药嘱对齐）。
+     */
+    private Long packageId;
+    /** 绑定就诊诊断主键有序串（持久化 {@code wkf_device_request.encounter_diagnosis_ids}；有序，首位为主诊断）。 */
+    private String encounterDiagnosisIds;
 }

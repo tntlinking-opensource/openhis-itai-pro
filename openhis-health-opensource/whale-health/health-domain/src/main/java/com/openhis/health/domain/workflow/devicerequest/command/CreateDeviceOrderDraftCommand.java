@@ -44,12 +44,20 @@ public class CreateDeviceOrderDraftCommand extends BatchCommand<CreateDeviceOrde
         /** 医生站列表展示排序号（可选）。 */
         private Integer sortNumber;
         /**
-         * 诊断定义主键（门诊医生站绑定诊断；持久化 {@code wkf_device_request.condition_definition_id}）。
+         * 绑定就诊诊断主键有序串（门诊医生站绑定诊断；持久化 {@code wkf_device_request.encounter_diagnosis_ids}；有序，首位为主诊断）。
          */
-        private Long conditionDefinitionId;
+        private String encounterDiagnosisIds;
         /**
-         * 就诊诊断主键（医生站绑定诊断；持久化 {@code wkf_device_request.encounter_diagnosis_id}）。
+         * 来源锚点表名（用法绑定派生耗材锚定 {@code med_medication_request} 等；与 {@link #basedOnId} 成对）。
          */
-        private Long encounterDiagnosisId;
+        private String basedOnTable;
+        /**
+         * 来源锚点主键（与 {@link #basedOnTable} 成对；成组可任取组内一条药嘱 id）。
+         */
+        private Long basedOnId;
+        /**
+         * 组套标识（成组绑定可与主药嘱 {@code package_id} 对齐；可空）。
+         */
+        private Long packageId;
     }
 }

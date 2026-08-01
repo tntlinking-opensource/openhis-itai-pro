@@ -55,6 +55,10 @@ public class GlobalExceptionHandler {
             logger.warn("业务异常: {} | rootType={} | rootMsg={}", e.getMessage(), root.getClass().getName(), root.getMessage());
         }
         Result<Object> result = Result.error(e.getErrorCode(), e.getMessage());
+        Map<String, Object> details = e.getDetails();
+        if (details != null && !details.isEmpty()) {
+            result.setErrors(details);
+        }
         if ("SERVICE_UNAVAILABLE".equals(e.getErrorCode())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(result);
         }

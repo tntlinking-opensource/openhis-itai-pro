@@ -691,10 +691,29 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         } else {
             shellTypeCode = shellTypeCode.trim();
         }
-        // 壳单须带非空 apply_time：列表 IF-PHA-IN-02 / IF-DEPT-IN-02 对 apply_time 做时刻窗比较，NULL 恒不满足谓词。
+        // 壳单头字段沿用出库：制单人/申请时刻/审批人/审批时刻；缺省时 apply_time 回落 now（列表时刻窗谓词）。
         LocalDateTime shellApplyTime = LocalDateTime.now();
+        Long shellApproverId = null;
+        LocalDateTime shellApprovalTime = null;
         if (agreedOutLines != null) {
-            // —— 壳单：行类型由目的库位形态决定；original_bus_no 绑定出库单号，便于对侧追溯；业务单号由领域重新取号故行 busNo 置空。——
+            for (SupplyRequestModel headLine : agreedOutLines) {
+                if (headLine == null) {
+                    continue;
+                }
+                if (headLine.getApplyTime() != null) {
+                    shellApplyTime = headLine.getApplyTime();
+                }
+                if (headLine.getApproverId() != null) {
+                    shellApproverId = headLine.getApproverId();
+                }
+                if (headLine.getApprovalTime() != null) {
+                    shellApprovalTime = headLine.getApprovalTime();
+                }
+                break;
+            }
+        }
+        if (agreedOutLines != null) {
+            // —— 壳单：行类型由目的库位形态决定；original_bus_no 绑定出库单号；制单/审批人与出库头一致。——
             for (SupplyRequestModel line : agreedOutLines) {
                 if (line == null) {
                     continue;
@@ -718,8 +737,16 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
                 item.setPrice(line.getPrice());
                 item.setTotalPrice(line.getTotalPrice());
                 item.setOccurrenceTime(line.getOccurrenceTime());
-                item.setApplicantId(applicantId);
+                // 制单人：优先出库行申请人，缺省用调用方回落的医务人员主键
+                Long lineApplicantId = line.getApplicantId();
+                if (lineApplicantId != null) {
+                    item.setApplicantId(lineApplicantId);
+                } else {
+                    item.setApplicantId(applicantId);
+                }
                 item.setApplyTime(shellApplyTime);
+                item.setApproverId(shellApproverId);
+                item.setApprovalTime(shellApprovalTime);
                 item.setReason(null);
                 items.add(item);
             }

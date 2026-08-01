@@ -22,9 +22,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * 药品定义写侧领域服务。
@@ -37,6 +35,9 @@ public class MedicationDefinitionDomainService {
     private final IDomainEventPublisher domainEventPublisher;
     /** 药品定义 busNo：主数据全局递增，前缀 {@link AggregateTypeConstants#MEDICATION_DEFINITION}。 */
     private final BusinessSequenceService businessSequenceService;
+
+    /** 采番撞号时单条最大重试次数（序号落后或并发占用）。 */
+    private static final int BUS_NO_ALLOCATE_MAX_ATTEMPTS = 32;
 
     /**
      * 新建药品定义。
@@ -122,7 +123,7 @@ public class MedicationDefinitionDomainService {
     /**
      * 废弃药品定义。
      *
-     * <p>Pre：应用层须先断言药品未被医嘱/发放引用（{@code MedicationDefinitionExternalReferenceGuard}）。</p>
+     * <p>Pre：应用层须先按编辑业务码 {@code CatalogEditabilityConstants#isLocked} 断言无业务引用。</p>
      */
     public void discardMedicationDefinition(DiscardMedicationDefinitionCommand command) {
         List<DiscardMedicationDefinitionCommand.DiscardMedicationDefinitionItemCommand> items = command.resolveItems();
@@ -153,8 +154,7 @@ public class MedicationDefinitionDomainService {
             }
             MedicationDefinition definition = new MedicationDefinition();
             // 业务分支：空值校验失败则跳过该行计入失败。
-            definition.setBusNo(businessSequenceService.getSeq(
-                AggregateTypeConstants.MEDICATION_DEFINITION, BusinessSequenceConstants.MASTER_DATA_2_PREFIX_SEQ_LENGTH));
+            definition.setBusNo(this.allocateUniqueBusNo());
             definition.setName(row.getName());
             definition.setCategoryCode(row.getCategoryCode());
             definition.setPurchaseUnitCode(row.getPurchaseUnitCode());
@@ -199,32 +199,22 @@ public class MedicationDefinitionDomainService {
     }
 
     /**
-     * 私有方法：assertBusNoUniqueInBatch。
+     * 私有方法：assertBusNoUniqueInBatch（同租户唯一）。
      */
     private void assertBusNoUniqueInBatch(List<MedicationDefinition> definitions) {
-        Map<Long, Set<String>> inputBusNoIndex = definitions.stream()
-            .collect(Collectors.groupingBy(
-                MedicationDefinition::getOrgId,
-                Collectors.mapping(MedicationDefinition::getBusNo, Collectors.toSet())));
-        int inputBusNoCount = definitions.size();
-        int deduplicatedInputBusNoCount = inputBusNoIndex.values().stream().mapToInt(Set::size).sum();
-        // 业务分支：空值校验失败则跳过该行计入失败。
-        if (inputBusNoCount != deduplicatedInputBusNoCount) {
-            throw new BusinessException(ErrorCodeConstants.MEDICATION_DEFINITION_RULE_CONFLICT, "导入批次内存在重复业务编码");
-        }
-        List<Long> orgIds = new ArrayList<>(inputBusNoIndex.keySet());
-        Set<String> allBusNos = new HashSet<>();
-        for (Set<String> busNoSet : inputBusNoIndex.values()) {
-            allBusNos.addAll(busNoSet);
-        }
-        List<MedicationDefinition> existed = medicationDefinitionRepository.findByOrgIdInAndBusNoIn(
-            orgIds, new ArrayList<>(allBusNos));
-        for (MedicationDefinition existedDefinition : existed) {
-            Set<String> currentOrgBusNos = inputBusNoIndex.get(existedDefinition.getOrgId());
-            // 业务分支：空值校验失败则跳过该行计入失败。
-            if (currentOrgBusNos != null && currentOrgBusNos.contains(existedDefinition.getBusNo())) {
-                throw new BusinessException(ErrorCodeConstants.MEDICATION_DEFINITION_RULE_CONFLICT, "药品业务编码冲突");
+        Set<String> inputBusNos = new HashSet<>();
+        for (MedicationDefinition definition : definitions) {
+            String busNo = definition.getBusNo();
+            if (StringUtils.isEmpty(busNo)) {
+                throw new BusinessException(ErrorCodeConstants.MEDICATION_DEFINITION_RULE_CONFLICT, "药品业务编码不能为空");
             }
+            if (!inputBusNos.add(busNo)) {
+                throw new BusinessException(ErrorCodeConstants.MEDICATION_DEFINITION_RULE_CONFLICT, "导入批次内存在重复业务编码");
+            }
+        }
+        List<MedicationDefinition> existed = medicationDefinitionRepository.findByBusNoIn(new ArrayList<>(inputBusNos));
+        if (existed != null && !existed.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_DEFINITION_RULE_CONFLICT, "药品业务编码冲突");
         }
     }
 
@@ -248,8 +238,7 @@ public class MedicationDefinitionDomainService {
     private void fillDefinitionFromCreateItem(
         MedicationDefinition definition,
         CreateMedicationDefinitionCommand.CreateMedicationDefinitionItemCommand item) {
-        definition.setBusNo(businessSequenceService.getSeq(
-            AggregateTypeConstants.MEDICATION_DEFINITION, BusinessSequenceConstants.MASTER_DATA_2_PREFIX_SEQ_LENGTH));
+        definition.setBusNo(this.allocateUniqueBusNo());
         definition.setVersion(StringUtils.defaultIfBlank(item.getVersion(), "1"));
         definition.setName(item.getName());
         definition.setMerchandiseName(item.getMerchandiseName());
@@ -269,6 +258,8 @@ public class MedicationDefinitionDomainService {
         definition.setPurchaseUnitRatio(item.getPurchaseUnitRatio());
         definition.setStockUnitRatio(item.getStockUnitRatio());
         definition.setPackageUnitRatio(item.getPackageUnitRatio());
+        definition.setTraceUnitCode(item.getTraceUnitCode());
+        definition.setTraceUnitRatio(item.getTraceUnitRatio());
         definition.setOrgId(item.getOrgId());
         definition.setLocationId(item.getLocationId());
         definition.setDoseFormCode(item.getDoseFormCode());
@@ -281,12 +272,14 @@ public class MedicationDefinitionDomainService {
         definition.setPharmacologyCategoryCode(item.getPharmacologyCategoryCode());
         definition.setManufacturerId(item.getManufacturerId());
         definition.setManufacturerText(item.getManufacturerText());
+        // 目录维护不再采集供应商；应用层写入的 Command.supplyId 恒为 null
         definition.setSupplyId(item.getSupplyId());
         definition.setApprovalNumber(item.getApprovalNumber());
         definition.setNationalDrugCode(item.getNationalDrugCode());
         definition.setTotalVolume(item.getTotalVolume());
         definition.setUsageLimit(item.getUsageLimit());
         definition.setDose(item.getDose());
+        definition.setMinUnit(item.getMinUnit());
         definition.setMaxUnit(item.getMaxUnit());
         definition.setDosageInstruction(item.getDosageInstruction());
         definition.setRestrictedScope(item.getRestrictedScope());
@@ -340,6 +333,8 @@ public class MedicationDefinitionDomainService {
         definition.setPurchaseUnitRatio(item.getPurchaseUnitRatio());
         definition.setStockUnitRatio(item.getStockUnitRatio());
         definition.setPackageUnitRatio(item.getPackageUnitRatio());
+        definition.setTraceUnitCode(item.getTraceUnitCode());
+        definition.setTraceUnitRatio(item.getTraceUnitRatio());
         definition.setLocationId(item.getLocationId());
         definition.setDoseFormCode(item.getDoseFormCode());
         definition.setMethodCode(item.getMethodCode());
@@ -351,12 +346,14 @@ public class MedicationDefinitionDomainService {
         definition.setPharmacologyCategoryCode(item.getPharmacologyCategoryCode());
         definition.setManufacturerId(item.getManufacturerId());
         definition.setManufacturerText(item.getManufacturerText());
+        // 目录维护不再采集供应商；应用层写入的 Command.supplyId 恒为 null
         definition.setSupplyId(item.getSupplyId());
         definition.setApprovalNumber(item.getApprovalNumber());
         definition.setNationalDrugCode(item.getNationalDrugCode());
         definition.setTotalVolume(item.getTotalVolume());
         definition.setUsageLimit(item.getUsageLimit());
         definition.setDose(item.getDose());
+        definition.setMinUnit(item.getMinUnit());
         definition.setMaxUnit(item.getMaxUnit());
         definition.setDosageInstruction(item.getDosageInstruction());
         definition.setRestrictedScope(item.getRestrictedScope());
@@ -409,6 +406,24 @@ public class MedicationDefinitionDomainService {
             return inputCode.trim().toUpperCase();
         }
         return SearchCodeUtil.toWbStr(StringUtils.defaultString(sourceName));
+    }
+
+    /**
+     * 采番一条同租户未被占用的药品业务编码；冲突则继续取下一号。
+     *
+     * @return 未占用的业务编码
+     */
+    private String allocateUniqueBusNo() {
+        for (int attempt = 0; attempt < BUS_NO_ALLOCATE_MAX_ATTEMPTS; attempt++) {
+            String busNo = businessSequenceService.getSeq(
+                AggregateTypeConstants.MEDICATION_DEFINITION,
+                BusinessSequenceConstants.MASTER_DATA_2_PREFIX_SEQ_LENGTH);
+            if (!medicationDefinitionRepository.existsByBusNo(busNo)) {
+                return busNo;
+            }
+        }
+        throw new BusinessException(
+            ErrorCodeConstants.MEDICATION_DEFINITION_RULE_CONFLICT, "药品业务编码采番冲突，请稍后重试");
     }
 
     /**

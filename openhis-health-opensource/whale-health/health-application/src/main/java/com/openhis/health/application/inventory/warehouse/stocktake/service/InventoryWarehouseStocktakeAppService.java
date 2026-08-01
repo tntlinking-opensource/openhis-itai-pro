@@ -139,9 +139,9 @@ public class InventoryWarehouseStocktakeAppService {
             // Asm：Mapper 映射页初始化响应
             List<Location> warehouses = locationQueryService.listAllActiveWarehouses();
             List<Location> gatedWarehouses = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(warehouses);
-            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
                 WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
-            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
                 WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE, resolvedOrg);
             return stocktakeMapper.toLoadStocktakeFormInitResponse(
                 stocktakeMapper.toOptionDtoListFromLocations(gatedWarehouses),
@@ -701,6 +701,8 @@ public class InventoryWarehouseStocktakeAppService {
         InventoryItemPageQuery invQuery = new InventoryItemPageQuery();
         invQuery.setLocationId(request.getPurposeLocationId());
         invQuery.setItemTable(request.getProductTableName().trim());
+        // —— 前台可选：true 仅返回选品库位账面量>0 的批号行；false/未传不过滤数量。——
+        invQuery.setPositiveQuantityOnly(request.getPositiveQuantityOnly());
         PageQueryBinder.bind(request, invQuery);
         Pageable pageable = PageRequest.of(
             request.springPageIndex(), request.getBoundedPageSize(), Sort.by(Sort.Direction.ASC, FieldNameConstants.ID));

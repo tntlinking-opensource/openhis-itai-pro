@@ -31,6 +31,37 @@ public final class PaymentYbSettlementSupport {
         return List.of(item);
     }
 
+    /**
+     * 退费/反结逆向单：按原单桥表拷贝同 setl 行，状态统一为 {@link PaymentYbSettlementStatus#REVOKED}。
+     *
+     * <p>供日结按 payment 行级过滤医保个账/统筹，避免逆向无桥表时被「空桥表兼容」虚计入负值。</p>
+     */
+    public static List<PaymentYbSettlementItemCommand> copyAsRevoked(List<PaymentYbSettlementQueryModel> rows) {
+        List<PaymentYbSettlementItemCommand> result = new ArrayList<>();
+        if (rows == null || rows.isEmpty()) {
+            return result;
+        }
+        LinkedHashSet<String> seenSetlIds = new LinkedHashSet<>();
+        for (PaymentYbSettlementQueryModel row : rows) {
+            if (row == null || StringUtils.isEmpty(row.getSetlId())) {
+                continue;
+            }
+            String setlId = row.getSetlId().trim();
+            if (!seenSetlIds.add(setlId)) {
+                continue;
+            }
+            PaymentYbSettlementItemCommand item = new PaymentYbSettlementItemCommand();
+            item.setSetlId(setlId);
+            item.setChrgBchno(StringUtils.trimToNull(row.getChrgBchno()));
+            item.setMdtrtId(StringUtils.trimToNull(row.getMdtrtId()));
+            item.setSettlementRecordId(row.getSettlementRecordId());
+            item.setAccountId(row.getAccountId());
+            item.setStatus(PaymentYbSettlementStatus.REVOKED);
+            result.add(item);
+        }
+        return result;
+    }
+
     public static boolean hasConfirmed(List<PaymentYbSettlementQueryModel> rows) {
         return !confirmedSetlIds(rows).isEmpty();
     }

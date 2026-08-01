@@ -5,18 +5,19 @@
 package com.openhis.chs.domain.invoke.entity;
 
 import com.openhis.whale.core.domain.BaseAuditedEntity;
+import com.openhis.whale.core.domain.IExcludeFromAudit;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 
-/** 医保平台网关调用日志（全 infno request/response；V12 增 infname、err_msg） */
+/** 医保平台网关调用日志；本表即调用轨迹，排除框架审计。 */
 @Getter
 @Setter
 @Entity
 @Table(name = "yb_invoke_log")
-public class YbInvokeLog extends BaseAuditedEntity {
+public class YbInvokeLog extends BaseAuditedEntity implements IExcludeFromAudit {
 
     @Column(name = "contract_id")
     private Long contractId;

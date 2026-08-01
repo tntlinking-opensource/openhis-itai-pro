@@ -19,6 +19,8 @@ import java.util.List;
 
 /**
  * 财务审批鉴权：仅当登录用户在 {@code whale_user_roles} 中持有 {@link WhalePlatformRoleCodeConstants#ROLE_FINANCE_APPROVER} 时放行。
+ *
+ * <p>供应单白名单见 {@link SupplyType#requiresFinanceApproval(String)}（进货/退供应商/损益/盘点）；调价走 {@link #assertFinanceApprovalRole()}。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -61,10 +63,11 @@ public class FinanceApprovalRoleGate implements FinanceApprovalAuthorizer {
     }
 
     /**
-     * 断言当前用户具备财务审批权限（调价等独立域审批入口）。
+     * 断言当前用户具备财务审批权限（调价及财务审批页同意/驳回入口）。
      *
      * @throws BusinessException 无权限时
      */
+    @Override
     public void assertFinanceApprovalRole() {
         if (this.hasFinanceApprovalRole()) {
             return;

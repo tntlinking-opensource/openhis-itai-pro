@@ -13,32 +13,26 @@ import lombok.experimental.Accessors;
 
 /**
  * IF-IP-DOR-06：删除住院就诊诊断请求（AS-IP-DOR-002）。
- *
- * <p>先解除就诊诊断关联，再软删诊断事实；写路径须通过 IMP 就诊类别与可写状态 Gate。</p>
  */
 @Data
 @Accessors(chain = true)
 @Schema(description = "医生站-删除就诊诊断请求")
 public class DeleteEncounterDiagnosisRequest {
 
-    /**
-     * 待删除的诊断事实（Condition）主键。
-     */
+    /** 就诊诊断行主键（adm_encounter_diagnosis.id）。 */
     @NotNull(message = "诊断标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "诊断事实标识", requiredMode = Schema.RequiredMode.REQUIRED)
-    private Long conditionId;
+    @Schema(description = "就诊诊断行主键", requiredMode = Schema.RequiredMode.REQUIRED)
+    private Long encounterDiagnosisId;
 
-    /**
-     * 当前住院就诊主键：用于解除关联与就诊上下文校验。
-     */
+    /** 当前就诊主键（用于解除关联与上下文校验）。 */
     @NotNull(message = "就诊标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long encounterId;
 
     /**
-     * 患者主键：删除时用于就诊一致性校验；住院删除接口可不传。
+     * 患者主键（门控必填；住院删除接口可不传）。
      */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "患者标识；删除时用于就诊一致性校验")

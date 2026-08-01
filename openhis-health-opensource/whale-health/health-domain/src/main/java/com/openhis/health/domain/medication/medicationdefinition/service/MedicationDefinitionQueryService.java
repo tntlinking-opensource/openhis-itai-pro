@@ -10,20 +10,25 @@ import com.openhis.health.domain.medication.medicationdefinition.queries.model.*
 import com.openhis.health.domain.medication.medicationdefinition.repository.MedicationDefinitionRepository;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
+import com.openhis.health.domain.share.constants.MedicationCatalogImportConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.query.ProductDefinitionCatalogPageQuery;
 import com.openhis.health.domain.share.query.ProductDefinitionPurchasePageQuery;
+import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.Order;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -31,8 +36,10 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 药品定义主数据读侧查询服务。
@@ -81,14 +88,20 @@ public class MedicationDefinitionQueryService {
     public Page<MedicationDefinitionPageQueryModel> pageMedicationCatalog(
         MedicationDefinitionCatalogPageQuery query, Pageable pageable) {
         Specification<MedicationDefinition> specification = this.buildCatalogPageSpecification(query);
-        return medicationDefinitionRepository.findAll(specification, pageable).map(this::toPageModel);
+        // 关键字非空时剥掉 Pageable Sort，保留 Spec 内「精确优先」ORDER BY（B.2.1）
+        Pageable effective = this.unsortPageableIfKeyword(
+            query != null && StringUtils.isNotEmpty(query.getKeyword()), pageable);
+        return medicationDefinitionRepository.findAll(specification, effective).map(this::toPageModel);
     }
 
     /**
      * 采购/进货选品分页（读 {@code med_medication_definition}，谓词对齐原产品读模型采购分支）。
      */
     public Page<MedicationDefinition> pageForPurchase(ProductDefinitionPurchasePageQuery query, Pageable pageable) {
-        return medicationDefinitionRepository.findAll(this.buildPurchasePageSpecification(query), pageable);
+        // 关键字非空时剥掉 Pageable Sort，保留 Spec 内「精确优先」ORDER BY（B.2.1）
+        Pageable effective = this.unsortPageableIfKeyword(
+            query != null && StringUtils.isNotEmpty(query.getKeyword()), pageable);
+        return medicationDefinitionRepository.findAll(this.buildPurchasePageSpecification(query), effective);
     }
 
     /**
@@ -196,22 +209,56 @@ public class MedicationDefinitionQueryService {
     }
 
     /**
-     * 导出当前租户下全部药品简行（全量加载，规模受主数据量约束）。
+     * 导出当前租户下药品简行（兼容旧调用；内部按导出上限截断）。
      *
-     * @return 导出行列表
+     * <p>完整模板列导出由应用层 {@code exportMedicationCatalog} 基于
+     * {@link #listMedicationCatalogForExport} 编排；本方法仅保留窄字段投影。</p>
+     *
+     * @return 导出行列表（最多 {@link MedicationCatalogImportConstants#EXPORT_MAX_ROWS} 条）
      */
     public List<MedicationDefinitionExportRowQueryModel> exportMedicationCatalog() {
-        List<MedicationDefinition> definitions = medicationDefinitionRepository.findAllBy();
+        List<MedicationDefinitionDetailQueryModel> details =
+            this.listMedicationCatalogForExport(null, MedicationCatalogImportConstants.EXPORT_MAX_ROWS);
         List<MedicationDefinitionExportRowQueryModel> rows = new ArrayList<>();
-        // Loop：逐行扁平化导出字段，避免暴露完整聚合图
-        for (MedicationDefinition definition : definitions) {
+        // Loop：窄投影，避免旧调用方依赖完整详情图
+        for (MedicationDefinitionDetailQueryModel detail : details) {
             MedicationDefinitionExportRowQueryModel row = new MedicationDefinitionExportRowQueryModel();
-            row.setBusNo(definition.getBusNo());
-            row.setName(definition.getName());
-            row.setCategoryCode(definition.getCategoryCode());
-            row.setStatusEnum(definition.getStatusEnum());
-            row.setManufacturerText(definition.getManufacturerText());
+            row.setBusNo(detail.getBusNo());
+            row.setName(detail.getName());
+            row.setCategoryCode(detail.getCategoryCode());
+            row.setStatusEnum(detail.getStatusEnum());
+            row.setManufacturerText(detail.getManufacturerText());
             rows.add(row);
+        }
+        return rows;
+    }
+
+    /**
+     * 按维护列表同口径筛选加载药品详情行，供应用层按导入模板列导出（只读；本聚合 Repository）。
+     *
+     * @param query   分类/关键字；{@code null} 表示仅未删除
+     * @param maxRows 导出行上限（含）；小于 1 时按 1 保护
+     * @return 详情模型列表（关键字非空时精确优先排序，否则按 busNo 倒序）
+     */
+    public List<MedicationDefinitionDetailQueryModel> listMedicationCatalogForExport(
+        MedicationDefinitionCatalogPageQuery query,
+        int maxRows
+    ) {
+        // Gate：导出行上限至少为 1，避免 PageRequest 非法
+        int limit = maxRows;
+        if (limit < 1) {
+            limit = 1;
+        }
+        Sort sort = Sort.by(Sort.Direction.DESC, FieldNameConstants.BUS_NO);
+        Pageable pageable = PageRequest.of(0, limit, sort);
+        Specification<MedicationDefinition> specification = this.buildCatalogPageSpecification(query);
+        // 关键字非空时剥掉 Pageable Sort，保留 Spec 内「精确优先」ORDER BY（B.2.1）
+        Pageable effective = this.unsortPageableIfKeyword(
+            query != null && StringUtils.isNotEmpty(query.getKeyword()), pageable);
+        Page<MedicationDefinition> page = medicationDefinitionRepository.findAll(specification, effective);
+        List<MedicationDefinitionDetailQueryModel> rows = new ArrayList<>();
+        for (MedicationDefinition definition : page.getContent()) {
+            rows.add(this.toDetailModel(definition));
         }
         return rows;
     }
@@ -233,6 +280,7 @@ public class MedicationDefinitionQueryService {
         model.setYbMatchFlag(definition.getYbMatchFlag());
         model.setYbNo(definition.getYbNo());
         model.setTotalVolume(definition.getTotalVolume());
+        model.setMinUnit(definition.getMinUnit());
         model.setMaxUnit(definition.getMaxUnit());
         model.setLocationId(definition.getLocationId());
         model.setSupplyId(definition.getSupplyId());
@@ -247,6 +295,8 @@ public class MedicationDefinitionQueryService {
         model.setStockUnitRatio(definition.getStockUnitRatio());
         model.setPackageUnitRatio(definition.getPackageUnitRatio());
         model.setDoseUnitRatio(definition.getDoseUnitRatio());
+        model.setTraceUnitCode(definition.getTraceUnitCode());
+        model.setTraceUnitRatio(definition.getTraceUnitRatio());
         return model;
     }
 
@@ -265,7 +315,8 @@ public class MedicationDefinitionQueryService {
                     predicates.add(cb.equal(root.get(FieldNameConstants.CATEGORY_CODE), query.getCategoryCode().trim()));
                 }
                 if (StringUtils.isNotEmpty(query.getKeyword())) {
-                    String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getKeyword().trim());
+                    String trimmed = query.getKeyword().trim();
+                    String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
                     predicates.add(cb.or(
                         cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc),
                         cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_NAME)), likeIc),
@@ -275,6 +326,20 @@ public class MedicationDefinitionQueryService {
                         cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_WB_STR)), likeIc),
                         cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), likeIc)
                     ));
+                    // B.2.1：精确全等（名称/商品名/助记/业务号）置顶，其后模糊；次级按创建时间倒序
+                    List<Order> secondary = List.of(cb.desc(root.get(FieldNameConstants.CREATED_AT)));
+                    KeywordExactFirstOrderSupport.applyExactFirstOrder(
+                        cq,
+                        cb,
+                        trimmed,
+                        secondary,
+                        root.get(FieldNameConstants.NAME),
+                        root.get(FieldNameConstants.MERCHANDISE_NAME),
+                        root.get(FieldNameConstants.PY_STR),
+                        root.get(FieldNameConstants.WB_STR),
+                        root.get(FieldNameConstants.MERCHANDISE_PY_STR),
+                        root.get(FieldNameConstants.MERCHANDISE_WB_STR),
+                        root.get(FieldNameConstants.BUS_NO));
                 }
             }
             return cb.and(predicates.toArray(Predicate[]::new));
@@ -318,6 +383,8 @@ public class MedicationDefinitionQueryService {
                 Predicate keywordPred = this.buildPurchaseKeywordPredicate(root, cb, query.getKeyword());
                 Predicate prepPred = this.buildMedicationPrepickedPredicate(root, cb, query.getPrepickedProductKeys());
                 this.appendKeywordOrPrepicked(predicates, cb, keywordPred, prepPred);
+                // B.2.1：有关键字时精确命中置顶（与 LIKE 列同集合）；次级创建时间倒序
+                this.applyPurchaseKeywordExactFirstOrder(root, cq, cb, query.getKeyword());
             }
             return cb.and(predicates.toArray(Predicate[]::new));
         };
@@ -335,7 +402,17 @@ public class MedicationDefinitionQueryService {
         if (StringUtils.isEmpty(keyword)) {
             return null;
         }
-        String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(keyword.trim());
+        String trimmed = keyword.trim();
+        String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
+        // 纯拼音/五笔字母输入：只扫检索码列，减轻名称/商品名宽 OR LIKE（数据量大时更明显）
+        if (SearchCodeUtil.isAsciiLetterKeyword(trimmed)) {
+            return cb.or(
+                cb.like(cb.lower(root.get(FieldNameConstants.PY_STR)), likeIc),
+                cb.like(cb.lower(root.get(FieldNameConstants.WB_STR)), likeIc),
+                cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_PY_STR)), likeIc),
+                cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_WB_STR)), likeIc)
+            );
+        }
         return cb.or(
             cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc),
             cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_NAME)), likeIc),
@@ -345,6 +422,70 @@ public class MedicationDefinitionQueryService {
             cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_WB_STR)), likeIc),
             cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), likeIc)
         );
+    }
+
+    /**
+     * 采购/开立选品关键字：SQL 层「精确全等在前、模糊在后」（B.2.1）。
+     *
+     * <p>纯字母关键字仅对助记码列做精确判定，与 {@link #buildPurchaseKeywordPredicate} 扫列一致。</p>
+     *
+     * @param root    药品定义根
+     * @param cq      CriteriaQuery（count 查询由工具内部跳过 orderBy）
+     * @param cb      CriteriaBuilder
+     * @param keyword 用户关键字；空则不写排序
+     */
+    private void applyPurchaseKeywordExactFirstOrder(
+        Root<MedicationDefinition> root,
+        jakarta.persistence.criteria.CriteriaQuery<?> cq,
+        CriteriaBuilder cb,
+        String keyword) {
+        if (StringUtils.isEmpty(keyword)) {
+            return;
+        }
+        String trimmed = keyword.trim();
+        List<Order> secondary = List.of(cb.desc(root.get(FieldNameConstants.CREATED_AT)));
+        // 纯拼音/五笔：精确列与 LIKE 列对齐，避免对未参与检索的名称列误判精确
+        if (SearchCodeUtil.isAsciiLetterKeyword(trimmed)) {
+            KeywordExactFirstOrderSupport.applyExactFirstOrder(
+                cq,
+                cb,
+                trimmed,
+                secondary,
+                root.get(FieldNameConstants.PY_STR),
+                root.get(FieldNameConstants.WB_STR),
+                root.get(FieldNameConstants.MERCHANDISE_PY_STR),
+                root.get(FieldNameConstants.MERCHANDISE_WB_STR));
+            return;
+        }
+        KeywordExactFirstOrderSupport.applyExactFirstOrder(
+            cq,
+            cb,
+            trimmed,
+            secondary,
+            root.get(FieldNameConstants.NAME),
+            root.get(FieldNameConstants.MERCHANDISE_NAME),
+            root.get(FieldNameConstants.PY_STR),
+            root.get(FieldNameConstants.WB_STR),
+            root.get(FieldNameConstants.MERCHANDISE_PY_STR),
+            root.get(FieldNameConstants.MERCHANDISE_WB_STR),
+            root.get(FieldNameConstants.BUS_NO));
+    }
+
+    /**
+     * 关键字非空且 Pageable 带 Sort 时剥掉 Sort，避免覆盖 Specification 精确优先 ORDER BY。
+     *
+     * @param keywordPresent 是否带非空关键字
+     * @param pageable       原始分页
+     * @return 关键字场景下的无 Sort Pageable；否则原 pageable
+     */
+    private Pageable unsortPageableIfKeyword(boolean keywordPresent, Pageable pageable) {
+        if (!keywordPresent || pageable == null) {
+            return pageable;
+        }
+        if (!pageable.getSort().isSorted()) {
+            return pageable;
+        }
+        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
     }
 
     /**
@@ -439,6 +580,7 @@ public class MedicationDefinitionQueryService {
         model.setYbMatchFlag(definition.getYbMatchFlag());
         model.setNationalDrugCode(definition.getNationalDrugCode());
         model.setDose(definition.getDose());
+        model.setMinUnit(definition.getMinUnit());
         model.setMaxUnit(definition.getMaxUnit());
         model.setRxFlag(definition.getRxFlag());
         model.setTotalVolume(definition.getTotalVolume());
@@ -464,6 +606,8 @@ public class MedicationDefinitionQueryService {
         model.setPurchaseUnitRatio(definition.getPurchaseUnitRatio());
         model.setStockUnitRatio(definition.getStockUnitRatio());
         model.setPackageUnitRatio(definition.getPackageUnitRatio());
+        model.setTraceUnitCode(definition.getTraceUnitCode());
+        model.setTraceUnitRatio(definition.getTraceUnitRatio());
         model.setDefinition(definition.getDefinition());
         model.setDddCode(definition.getDddCode());
         model.setDddUnitCode(definition.getDddUnitCode());
@@ -508,6 +652,21 @@ public class MedicationDefinitionQueryService {
             return Collections.emptyList();
         }
         return medicationDefinitionRepository.findByOrgIdInAndBusNoIn(List.of(orgId), busNos);
+    }
+
+    /**
+     * 按业务编码批量加载药品定义（库存期初 Excel 等场景；与器材 {@code findByBusNos} 对称）。
+     *
+     * <p>不按机构过滤；同一编码多条时由调用方判歧义。</p>
+     *
+     * @param busNos 业务编码列表
+     * @return 命中实体列表；入参为空时返回空列表
+     */
+    public List<MedicationDefinition> findByBusNos(List<String> busNos) {
+        if (busNos == null || busNos.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return medicationDefinitionRepository.findByBusNoIn(busNos);
     }
 
     /**
@@ -577,6 +736,148 @@ public class MedicationDefinitionQueryService {
         };
         List<MedicationDefinition> rows = this.medicationDefinitionRepository.findAll(specification);
         List<Long> ids = new ArrayList<>();
+        for (MedicationDefinition row : rows) {
+            if (row != null && row.getId() != null) {
+                ids.add(row.getId());
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * 批量查询库内已存在的药品唯一键 token（同租户、未删除、未废弃）。
+     *
+     * <p>token 口径：有院内旧编码时为 {@code name + \\u0001 + manufacturer + \\u0001 + L:legacy}；
+     * 否则为 {@code name + \\u0001 + manufacturer + \\u0001 + V:normalizedVolume}。</p>
+     *
+     * @param tokens 待比对 token 集合
+     * @return 库内已存在的 token 子集；入参无效时返回空集
+     */
+    public Set<String> findExistingDuplicateKeyTokens(Collection<String> tokens) {
+        if (tokens == null || tokens.isEmpty()) {
+            return Collections.emptySet();
+        }
+        Set<String> tokenSet = new HashSet<>();
+        Set<String> names = new HashSet<>();
+        for (String token : tokens) {
+            if (StringUtils.isEmpty(token)) {
+                continue;
+            }
+            tokenSet.add(token.trim());
+            String[] parts = token.split("\u0001", -1);
+            if (parts.length > 0 && StringUtils.isNotEmpty(parts[0])) {
+                names.add(parts[0].trim());
+            }
+        }
+        if (tokenSet.isEmpty() || names.isEmpty()) {
+            return Collections.emptySet();
+        }
+        Specification<MedicationDefinition> specification = (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.notEqual(
+                root.get(FieldNameConstants.STATUS_ENUM),
+                PublicationStatus.DISCARDED.getCode()));
+            predicates.add(root.get(FieldNameConstants.NAME).in(names));
+            return cb.and(predicates.toArray(Predicate[]::new));
+        };
+        List<MedicationDefinition> candidates = medicationDefinitionRepository.findAll(specification);
+        Set<String> existing = new HashSet<>();
+        for (MedicationDefinition row : candidates) {
+            if (row == null) {
+                continue;
+            }
+            String candidateToken = this.buildDuplicateKeyToken(
+                row.getName(),
+                row.getTotalVolume(),
+                row.getManufacturerText(),
+                this.extractLegacyCode(row.getDefinition()));
+            if (tokenSet.contains(candidateToken)) {
+                existing.add(candidateToken);
+            }
+        }
+        return existing;
+    }
+
+    /**
+     * 兼容旧签名：忽略 orgId，按同租户口径比对。
+     *
+     * @param orgId  已废弃，保留仅为兼容调用方
+     * @param tokens 待比对 token
+     * @return 库内已存在的 token 子集
+     */
+    public Set<String> findExistingDuplicateKeyTokens(Long orgId, Collection<String> tokens) {
+        return this.findExistingDuplicateKeyTokens(tokens);
+    }
+
+    /**
+     * 构造与导入校验一致的唯一键 token。
+     */
+    private String buildDuplicateKeyToken(
+        String name,
+        String totalVolume,
+        String manufacturerText,
+        String legacyCode
+    ) {
+        String n = this.trimToEmpty(name);
+        String m = this.trimToEmpty(manufacturerText);
+        String legacy = this.trimToEmpty(legacyCode);
+        if (!legacy.isEmpty()) {
+            return n + '\u0001' + m + '\u0001' + "L:" + legacy;
+        }
+        return n + '\u0001' + m + '\u0001' + "V:" + this.normalizeVolume(this.trimToEmpty(totalVolume));
+    }
+
+    private String extractLegacyCode(String definition) {
+        if (StringUtils.isEmpty(definition)) {
+            return null;
+        }
+        String prefix = MedicationCatalogImportConstants.LEGACY_CODE_DEFINITION_PREFIX;
+        for (String line : definition.split("\\R")) {
+            if (line == null) {
+                continue;
+            }
+            String trimmed = line.trim();
+            if (trimmed.startsWith(prefix)) {
+                String value = trimmed.substring(prefix.length()).trim();
+                if (!value.isEmpty()) {
+                    return value;
+                }
+            }
+        }
+        return null;
+    }
+
+    private String trimToEmpty(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.trim();
+    }
+
+    private String normalizeVolume(String totalVolume) {
+        if (totalVolume == null || totalVolume.isEmpty()) {
+            return "";
+        }
+        return totalVolume.replace('：', ':').replace('．', '.');
+    }
+
+    /**
+     * 按注射/输液目录标志解析药品定义主键（AS-OP-PHA-005 方级含输液筛预解析）。
+     *
+     * @param injectFlag {@code true}/{@code false}；{@code null} 时返回空列表
+     * @return 未删除且 {@code inject_flag} 等于入参的目录主键列表
+     */
+    public List<Long> listIdsByInjectFlag(Boolean injectFlag) {
+        if (injectFlag == null) {
+            return Collections.emptyList();
+        }
+        Specification<MedicationDefinition> specification = (root, criteriaQuery, cb) -> cb.and(
+            cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(root.get(FieldNameConstants.INJECT_FLAG), injectFlag));
+        List<MedicationDefinition> rows = this.medicationDefinitionRepository.findAll(specification);
+        List<Long> ids = new ArrayList<>();
+        // Loop：收集命中注射标志的目录主键，供应用层写入处方查询 resolved 字段
         for (MedicationDefinition row : rows) {
             if (row != null && row.getId() != null) {
                 ids.add(row.getId());

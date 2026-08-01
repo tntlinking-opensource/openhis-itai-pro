@@ -8,12 +8,14 @@ import static com.openhis.whale.core.application.util.StringUtils.isEmpty;
 import static com.openhis.whale.core.application.util.StringUtils.isNotEmpty;
 
 import cn.hutool.core.date.DateUtil;
+import com.openhis.chs.domain.outpatient.command.OpPreSettleCommand;
+import com.openhis.chs.domain.share.constants.ChsErrorCodes;
 import com.openhis.chs.domain.share.enums.AcctUsedFlag;
 import com.openhis.chs.domain.share.enums.MedType;
 import com.openhis.chs.domain.share.enums.PsnSetlway;
-import com.openhis.chs.domain.outpatient.command.OpPreSettleCommand;
 import com.openhis.chs.gateway.config.ContractConfig;
 import com.openhis.chs.gateway.scheme.common.model.ChsSettleData;
+import com.openhis.whale.core.application.exception.BusinessException;
 
 import java.math.BigDecimal;
 import java.time.format.DateTimeFormatter;
@@ -87,11 +89,37 @@ public final class OpOutpatientSettleInputAssembler {
         return time.format(FEE_TIME);
     }
 
+    /**
+     * 非诊断字段空白归一为 {@code "-"}（科室医师等平台仍常见占位写法）。
+     * <p><b>禁止</b>用于 {@code diag_code}/{@code diag_name}——须用 {@link #requireDiagText}。</p>
+     */
     static String blankToDash(String value) {
         if (isEmpty(value)) {
             return "-";
         }
         return value.trim();
+    }
+
+    /**
+     * 诊断文本闸门：空或字面量 {@code "-"} 拒绝上传，避免平台类型化空值违规。
+     *
+     * @param value     诊断编码或名称
+     * @param fieldHint 报错字段名（如 diag_code）
+     * @return trim 后的非空文本
+     */
+    public static String requireDiagText(String value, String fieldHint) {
+        if (isEmpty(value)) {
+            throw new BusinessException(
+                ChsErrorCodes.PLATFORM_FAILED,
+                "2203 " + fieldHint + " 不能为空；挂号费须配置默认诊断，诊疗费须先下诊断");
+        }
+        String trimmed = value.trim();
+        if ("-".equals(trimmed)) {
+            throw new BusinessException(
+                ChsErrorCodes.PLATFORM_FAILED,
+                "2203 " + fieldHint + " 禁止传 \"-\" 占位");
+        }
+        return trimmed;
     }
 
     static int resolveTraceCount(Integer count) {

@@ -6,6 +6,7 @@ package com.openhis.whale.booking.domain.appointment.service;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
+import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.whale.booking.domain.appointment.entity.Appointment;
 import com.openhis.whale.booking.domain.appointment.queries.AppointmentPageQuery;
@@ -23,7 +24,7 @@ import com.openhis.whale.booking.domain.share.AppointmentKindConstants;
 import com.openhis.whale.booking.domain.slot.entity.Slot;
 import com.openhis.whale.booking.domain.slot.repository.SlotRepository;
 import com.openhis.whale.core.application.exception.BusinessException;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -78,6 +79,12 @@ public class AppointmentQueryService {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "pageSize 非法");
         }
 
+        // 预约单号关键字：空白时不做模糊；非空时 Spec 内精确优先（B.2.1）
+        String trimmedKeyword = null;
+        if (StringUtils.isNotEmpty(query.getKeyword())) {
+            trimmedKeyword = query.getKeyword().trim();
+        }
+        String keywordForSpec = trimmedKeyword;
         Specification<Appointment> specification = (root, cq, cb) -> {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
@@ -94,15 +101,28 @@ public class AppointmentQueryService {
                 LocalDateTime toExclusive = query.getDateTo().plusDays(1).atStartOfDay();
                 predicates.add(cb.lessThan(root.get("startInstant"), toExclusive));
             }
-            if (StringUtils.isNotBlank(query.getKeyword())) {
-                String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getKeyword().trim());
+            // 按预约业务单号模糊；全等单号须排在仅子串命中之前
+            if (StringUtils.isNotEmpty(keywordForSpec)) {
+                String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(keywordForSpec);
                 predicates.add(cb.like(cb.lower(root.get("busNo")), likeIc));
+                KeywordExactFirstOrderSupport.applyExactFirstOrder(
+                    cq,
+                    cb,
+                    keywordForSpec,
+                    List.of(cb.desc(root.get("startInstant"))),
+                    root.get("busNo"));
             }
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
         };
 
-        Pageable pageable = PageRequest.of(query.getPageNo() - 1, query.getPageSize(),
-            Sort.by(Sort.Direction.DESC, "startInstant"));
+        // 关键字非空时勿带 Sort，保留 Spec 内精确优先 ORDER BY（B.2.1）
+        Pageable pageable;
+        if (StringUtils.isNotEmpty(trimmedKeyword)) {
+            pageable = PageRequest.of(query.getPageNo() - 1, query.getPageSize());
+        } else {
+            pageable = PageRequest.of(query.getPageNo() - 1, query.getPageSize(),
+                Sort.by(Sort.Direction.DESC, "startInstant"));
+        }
         return appointmentRepository.findAll(specification, pageable).map(this::toBookingListModel);
     }
 

@@ -94,4 +94,12 @@ public interface PaymentReconciliationRepository extends JpaRepository<PaymentRe
      * @return 命中流水列表
      */
     List<PaymentReconciliation> findByEncounterIdIn(Collection<Long> encounterIds);
+
+    /**
+     * 按交账头加载已挂载 payment（撤回/驳回清挂载）。
+     *
+     * @param cashierSettlementId 交账头主键
+     * @return 挂载流水列表
+     */
+    List<PaymentReconciliation> findByCashierSettlementIdAndIsDeletedFalse(Long cashierSettlementId);
 }

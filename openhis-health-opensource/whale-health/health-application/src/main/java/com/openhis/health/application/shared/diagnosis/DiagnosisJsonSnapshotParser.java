@@ -97,11 +97,11 @@ public class DiagnosisJsonSnapshotParser {
      */
     private static ParsedDiagnosisRow parseNode(JsonNode node) {
         ParsedDiagnosisRow row = new ParsedDiagnosisRow();
-        if (node.hasNonNull(FieldNameConstants.CONDITION_ID)) {
-            row.setConditionId(node.get(FieldNameConstants.CONDITION_ID).asLong());
-        }
         if (node.hasNonNull(FieldNameConstants.ENCOUNTER_DIAGNOSIS_ID)) {
             row.setEncounterDiagnosisId(node.get(FieldNameConstants.ENCOUNTER_DIAGNOSIS_ID).asLong());
+        } else if (node.hasNonNull(FieldNameConstants.CONDITION_ID)) {
+            // 历史快照：conditionId 字段实际存的是就诊诊断行主键
+            row.setEncounterDiagnosisId(node.get(FieldNameConstants.CONDITION_ID).asLong());
         }
         if (node.hasNonNull(FieldNameConstants.CONDITION_DEFINITION_ID)) {
             row.setConditionDefinitionId(node.get(FieldNameConstants.CONDITION_DEFINITION_ID).asLong());
@@ -210,9 +210,6 @@ public class DiagnosisJsonSnapshotParser {
      */
     public static final class ParsedDiagnosisRow {
 
-        /** 病情事实主键 {@code cln_condition.id}。 */
-        private Long conditionId;
-
         /** 就诊诊断关联主键 {@code adm_encounter_diagnosis.id}。 */
         private Long encounterDiagnosisId;
 
@@ -263,16 +260,6 @@ public class DiagnosisJsonSnapshotParser {
 
         /** 诊断定义目录来源码（如 {@code tcm_dx}/{@code tcm_syndrome}）。 */
         private String sourceEnum;
-
-        /** 获取病情事实主键。 */
-        public Long getConditionId() {
-            return conditionId;
-        }
-
-        /** 设置病情事实主键。 */
-        public void setConditionId(Long conditionId) {
-            this.conditionId = conditionId;
-        }
 
         /** 获取就诊诊断关联主键。 */
         public Long getEncounterDiagnosisId() {

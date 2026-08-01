@@ -14,7 +14,6 @@ import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.re
 import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.response.*;
 import com.openhis.health.domain.administration.encounter.command.BatchUpsertEncounterDiagnosisAssociationCommand;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
-import com.openhis.health.domain.clinical.condition.command.SaveDoctorDiagnosisTcmCommand;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.DoctorStationConditionDefinitionRowModel;
 import com.openhis.health.domain.medication.medicationrequest.command.*;
 import com.openhis.health.domain.share.constants.DoctorStationDiagnosisConstants;
@@ -122,114 +121,47 @@ public class InpatientDoctorStationTcmMapperImpl implements InpatientDoctorStati
     }
 
     /**
-     * 将全量病证组保存请求转为 {@link SaveDoctorDiagnosisTcmCommand}。
+     * 将全量病证组保存请求转为中医就诊关联 batchUpsert 命令。
      *
-     * @param request         保存请求
-     * @param groupKeyByItem  病名:证候 → 稳定组号映射
-     * @param operatorId      操作人主键
-     * @return 领域保存命令
-     */
-    @Override
-    public SaveDoctorDiagnosisTcmCommand toSaveDoctorDiagnosisTcmCommand(
-        SaveTcmDiagnosisGroupsBatchRequest request,
-        Map<String, String> groupKeyByItem,
-        Long operatorId) {
-        SaveDoctorDiagnosisTcmCommand cmd = new SaveDoctorDiagnosisTcmCommand();
-        cmd.setEncounterId(request.getEncounterId());
-        cmd.setPatientId(request.getPatientId());
-        cmd.setOperatorId(operatorId);
-        List<SaveDoctorDiagnosisTcmCommand.DoctorDiagnosisTcmItemCommand> items = new ArrayList<>();
-        for (TcmDiagnosisGroupItemRequest group : request.getGroups()) {
-            items.add(toTcmItem(group.getDiseaseConditionId(), group.getDiseaseDefinitionId(), group.getDiagnosisDesc(), operatorId));
-            items.add(toTcmItem(group.getSyndromeConditionId(), group.getSyndromeDefinitionId(), group.getDiagnosisDesc(), operatorId));
-        }
-        cmd.setItems(items);
-        return cmd;
-    }
-
-    /**
-     * 组装单条中医诊断项命令（病名或证候）。
-     *
-     * @param conditionId  已有 condition id，新建时为 null
-     * @param definitionId 目录 definition id
-     * @param desc         诊断描述
-     * @param operatorId   操作人
-     * @return 诊断项命令
-     */
-    private SaveDoctorDiagnosisTcmCommand.DoctorDiagnosisTcmItemCommand toTcmItem(
-        Long conditionId, Long definitionId, String desc, Long operatorId) {
-        SaveDoctorDiagnosisTcmCommand.DoctorDiagnosisTcmItemCommand item =
-            new SaveDoctorDiagnosisTcmCommand.DoctorDiagnosisTcmItemCommand();
-        item.setId(conditionId);
-        item.setDefinitionId(definitionId);
-        item.setDescription(desc);
-        item.setTcmFlag(Boolean.TRUE);
-        item.setClinicalStatusEnum("ACTIVE");
-        item.setVerificationStatusEnum(DoctorStationDiagnosisConstants.ConditionVerificationStatusCode.CONFIRMED);
-        item.setRecordedDatetime(LocalDateTime.now());
-        item.setRecorderId(operatorId);
-        return item;
-    }
-
-    /**
-     * 将保存结果转为中医就诊关联 batchUpsert 命令。
-     *
-     * @param request           保存请求
-     * @param savedConditionIds 领域返回的 condition id 列表（每组 2 条）
-     * @param groupKeyByItem    病名:证候 → 稳定组号映射
-     * @param operatorId        操作人主键
-     * @return 就诊诊断关联批量 upsert 命令
-     * @throws BusinessException 保存 id 数量与组数不匹配时
+     * @param request        全量批次请求
+     * @param groupKeyByItem 稳定键 → 组号
+     * @param operatorId     操作人
+     * @return 中医批次 upsert 命令
      */
     @Override
     public BatchUpsertEncounterDiagnosisAssociationCommand toBatchUpsertTcmEncounterDiagnosisAssociationCommand(
         SaveTcmDiagnosisGroupsBatchRequest request,
-        List<Long> savedConditionIds,
         Map<String, String> groupKeyByItem,
         Long operatorId) {
-        if (savedConditionIds.size() != request.getGroups().size() * 2) {
-            throw new BusinessException(ErrorCodeConstants.CONDITION_RULE_CONFLICT, InpatientDoctorStationTcmConstants.MSG_PERSISTENCE_FAILED);
-        }
         BatchUpsertEncounterDiagnosisAssociationCommand cmd = new BatchUpsertEncounterDiagnosisAssociationCommand();
         cmd.setOperatorId(operatorId);
         BatchUpsertEncounterDiagnosisAssociationCommand.BatchUpsertEncounterDiagnosisAssociationItemCommand batchItem =
             new BatchUpsertEncounterDiagnosisAssociationCommand.BatchUpsertEncounterDiagnosisAssociationItemCommand();
         batchItem.setEncounterId(request.getEncounterId());
         List<BatchUpsertEncounterDiagnosisAssociationCommand.DiagnosisItemCommand> diagnosisItems = new ArrayList<>();
-        int idx = 0;
         for (TcmDiagnosisGroupItemRequest group : request.getGroups()) {
-            String groupKey = groupKeyByItem.get(stableGroupKey(group));
-            diagnosisItems.add(toAssocItem(savedConditionIds.get(idx++), group, groupKey));
-            diagnosisItems.add(toAssocItem(savedConditionIds.get(idx++), group, groupKey));
+            String groupKey = groupKeyByItem.get(resolveTcmGroupStableKey(group));
+            // 仅写入已选侧目录，支持院点单侧成组
+            if (group.getDiseaseDefinitionId() != null) {
+                diagnosisItems.add(toAssocItem(
+                    group.getDiseaseEncounterDiagnosisId(), group.getDiseaseDefinitionId(), group, groupKey));
+            }
+            if (group.getSyndromeDefinitionId() != null) {
+                diagnosisItems.add(toAssocItem(
+                    group.getSyndromeEncounterDiagnosisId(), group.getSyndromeDefinitionId(), group, groupKey));
+            }
         }
         batchItem.setDiagnosisItems(diagnosisItems);
         cmd.setItem(batchItem);
         return cmd;
     }
 
-    /**
-     * 由病名 definitionId 与证候 definitionId 生成稳定 map 键。
-     *
-     * @param group 病证组项
-     * @return 格式为 diseaseId:syndromeId 的键
-     */
-    private String stableGroupKey(TcmDiagnosisGroupItemRequest group) {
-        return String.valueOf(group.getDiseaseDefinitionId()) + ":" + String.valueOf(group.getSyndromeDefinitionId());
-    }
-
-    /**
-     * 组装单条就诊诊断关联项。
-     *
-     * @param conditionId condition 主键
-     * @param group       病证组项
-     * @param groupKey    中医组号
-     * @return 关联项命令
-     */
     private BatchUpsertEncounterDiagnosisAssociationCommand.DiagnosisItemCommand toAssocItem(
-        Long conditionId, TcmDiagnosisGroupItemRequest group, String groupKey) {
+        Long encounterDiagnosisId, Long conditionDefinitionId, TcmDiagnosisGroupItemRequest group, String groupKey) {
         BatchUpsertEncounterDiagnosisAssociationCommand.DiagnosisItemCommand d =
             new BatchUpsertEncounterDiagnosisAssociationCommand.DiagnosisItemCommand();
-        d.setConditionId(conditionId);
+        d.setEncounterDiagnosisId(encounterDiagnosisId);
+        d.setConditionDefinitionId(conditionDefinitionId);
         if (group.getPrimaryFlag() != null
             && group.getPrimaryFlag() == DoctorStationDiagnosisConstants.MAIN_DIAGNOSIS_FLAG_YES) {
             d.setPrimaryFlag(Boolean.TRUE);
@@ -249,6 +181,28 @@ public class InpatientDoctorStationTcmMapperImpl implements InpatientDoctorStati
         d.setTcmSyndromeGroup(groupKey);
         d.setTcmFlag(Boolean.TRUE);
         return d;
+    }
+
+    /**
+     * 病证组稳定键：双侧 diseaseId:syndromeId；仅病 d:{id}；仅证 s:{id}。
+     *
+     * @param group 组项请求
+     * @return 稳定键字符串
+     */
+    @Override
+    public String resolveTcmGroupStableKey(TcmDiagnosisGroupItemRequest group) {
+        Long diseaseId = group.getDiseaseDefinitionId();
+        Long syndromeId = group.getSyndromeDefinitionId();
+        if (diseaseId != null && syndromeId != null) {
+            return String.valueOf(diseaseId) + ":" + String.valueOf(syndromeId);
+        }
+        if (diseaseId != null) {
+            return "d:" + String.valueOf(diseaseId);
+        }
+        if (syndromeId != null) {
+            return "s:" + String.valueOf(syndromeId);
+        }
+        return "empty";
     }
 
     /**

@@ -162,6 +162,70 @@ public class BpcSettleDomainService {
                     ? command.getRespMsg() : "银联退货失败");
         }
 
+        // Gate：退货金额须等于原消费单分（混合支付禁止把医保个账打进银联退货）
+        long refundFen = toFen(command.getRefundAmount());
+        Long originalFen = original.getTxnAmtFen();
+        if (originalFen != null && originalFen > 0 && refundFen != originalFen.longValue()) {
+            throw new BusinessException(
+                    "BPC_REFUND_AMOUNT_MISMATCH",
+                    "银联退货金额须等于原扫码实付（"
+                            + originalFen
+                            + " 分），当前为 "
+                            + refundFen
+                            + " 分");
+        }
+
+        // 幂等：原单已 REFUNDED 时不再重复插单；若尚无 R 行则补一笔便于对账
+        if (BpcOrderStatus.REFUNDED.getCode().equals(original.getStatus())) {
+            String existingRefundMerTradeNo = null;
+            Long existingRefundOrderId = null;
+            for (BpcOrder row : bpcOrderRepository.findByTenantIdAndPaymentIdAndIsDeletedFalseOrderByCreatedAtDesc(
+                    tenantId, original.getPaymentId())) {
+                if (row != null && BpcTranType.REFUND.getCode().equals(row.getTranType())) {
+                    existingRefundMerTradeNo = row.getMerTradeNo();
+                    existingRefundOrderId = row.getId();
+                    break;
+                }
+            }
+            if (existingRefundOrderId != null) {
+                return new ApplyClientRefundResult()
+                        .setSuccess(true)
+                        .setOrderId(existingRefundOrderId)
+                        .setMerTradeNo(original.getMerTradeNo())
+                        .setRefundMerTradeNo(existingRefundMerTradeNo)
+                        .setRespMsg(StringUtils.hasText(command.getRespMsg())
+                                ? command.getRespMsg()
+                                : "BPC 已退货，幂等成功");
+            }
+            String refundMerTradeNo = StringUtils.hasText(command.getRefundMerTradeNo())
+                    ? command.getRefundMerTradeNo()
+                    : MerTradeNoGenerator.generateRefundMerTradeNo(original.getMerTradeNo());
+            BpcOrder refundOrder = new BpcOrder();
+            refundOrder.setTenantId(tenantId);
+            refundOrder.setPaymentId(original.getPaymentId());
+            refundOrder.setDetailIndex(original.getDetailIndex());
+            refundOrder.setMerTradeNo(refundMerTradeNo);
+            refundOrder.setTradeNo(command.getTradeNo());
+            refundOrder.setTranType(BpcTranType.REFUND.getCode());
+            refundOrder.setTxnAmtFen(refundFen > 0 ? refundFen : original.getTxnAmtFen());
+            refundOrder.setStatus(BpcOrderStatus.REFUNDED.getCode());
+            refundOrder.setRespCode(command.getRespCode());
+            refundOrder.setRespMsg(StringUtils.hasText(command.getRespMsg())
+                    ? command.getRespMsg()
+                    : "BPC 已退货，补记退货单");
+            refundOrder.setProfileId(original.getProfileId());
+            refundOrder.setPosNo(original.getPosNo());
+            refundOrder.setCreatedAt(LocalDateTime.now());
+            refundOrder.setIsDeleted(false);
+            bpcOrderRepository.save(refundOrder);
+            return new ApplyClientRefundResult()
+                    .setSuccess(true)
+                    .setOrderId(refundOrder.getId())
+                    .setMerTradeNo(original.getMerTradeNo())
+                    .setRefundMerTradeNo(refundMerTradeNo)
+                    .setRespMsg(refundOrder.getRespMsg());
+        }
+
         String refundMerTradeNo = StringUtils.hasText(command.getRefundMerTradeNo())
                 ? command.getRefundMerTradeNo()
                 : MerTradeNoGenerator.generateRefundMerTradeNo(original.getMerTradeNo());
@@ -173,7 +237,7 @@ public class BpcSettleDomainService {
         refundOrder.setMerTradeNo(refundMerTradeNo);
         refundOrder.setTradeNo(command.getTradeNo());
         refundOrder.setTranType(BpcTranType.REFUND.getCode());
-        refundOrder.setTxnAmtFen(toFen(command.getRefundAmount()));
+        refundOrder.setTxnAmtFen(refundFen);
         refundOrder.setStatus(BpcOrderStatus.REFUNDED.getCode());
         refundOrder.setRespCode(command.getRespCode());
         refundOrder.setRespMsg(command.getRespMsg());

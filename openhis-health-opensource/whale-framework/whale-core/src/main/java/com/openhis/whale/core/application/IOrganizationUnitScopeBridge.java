@@ -4,6 +4,8 @@
  */
 package com.openhis.whale.core.application;
 
+import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -25,4 +27,20 @@ public interface IOrganizationUnitScopeBridge {
      * @return 对应 HIS 组织主键；无法解析时为空
      */
     Optional<Long> findBusinessOrganizationIdByWhaleOrganizationUnitId(Long whaleOrganizationUnitId);
+
+    /**
+     * 由已加载的 Whale OU {@code code} 反查 HIS 组织主键（登录科室列表批量装配，避免再按 OU id 查库）。
+     *
+     * @param organizationUnitCode Whale OU code；空白时 empty
+     * @return {@code adm_organization.id}；无法解析时 empty
+     */
+    Optional<Long> findBusinessOrganizationIdByOrganizationUnitCode(String organizationUnitCode);
+
+    /**
+     * 批量：OU code → HIS 组织主键（{@code org-} 前缀内存解析 + busNo 一次批量查）。
+     *
+     * @param organizationUnitCodes OU code 集合；{@code null}/空返回空映射
+     * @return code → {@code adm_organization.id}
+     */
+    Map<String, Long> mapBusinessOrganizationIdsByOrganizationUnitCodes(Collection<String> organizationUnitCodes);
 }

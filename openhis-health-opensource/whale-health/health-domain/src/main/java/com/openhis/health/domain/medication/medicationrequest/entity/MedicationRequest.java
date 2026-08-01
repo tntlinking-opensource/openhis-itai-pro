@@ -5,6 +5,7 @@
 package com.openhis.health.domain.medication.medicationrequest.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.enums.RequestBusinessTimeKind;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.TherapyType;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -102,6 +103,15 @@ public class MedicationRequest extends BaseAuditedEntity {
     @Column(name = "recorder_id")
     private Long recorderId;
 
+    /**
+     * 开立时间：首次建草稿/直建落库写一次；签发、改草稿、签退不覆盖。
+     */
+    @Column(name = "req_opened_time")
+    private LocalDateTime reqOpenedTime;
+
+    /**
+     * 签发时间：仅签发（及无草稿直建完成态）写入；草稿暂存不写本列。
+     */
     @Column(name = "req_authored_time")
     private LocalDateTime reqAuthoredTime;
 
@@ -180,12 +190,11 @@ public class MedicationRequest extends BaseAuditedEntity {
     @Column(name = "contract_id")
     private Long contractId;
 
-    /** 诊断定义主键（列 {@code condition_definition_id}，即 {@code cln_condition_definition.id}）。 */
-    @Column(name = "condition_definition_id")
-    private Long conditionDefinitionId;
-
-    @Column(name = "encounter_diagnosis_id")
-    private Long encounterDiagnosisId;
+    /**
+     * 绑定就诊诊断主键有序串（有序；首位为主诊断 {@code adm_encounter_diagnosis.id}）。
+     */
+    @Column(name = "encounter_diagnosis_ids", length = 2000)
+    private String encounterDiagnosisIds;
 
     @Column(name = "performer_check_id")
     private Long performerCheckId;
@@ -193,8 +202,23 @@ public class MedicationRequest extends BaseAuditedEntity {
     @Column(name = "check_time")
     private LocalDateTime checkTime;
 
+    /**
+     * 服药计划结束时间（临床计划窗；停嘱不再写入本列）。
+     */
     @Column(name = "effective_dose_end")
     private LocalDateTime effectiveDoseEnd;
+
+    /**
+     * 停嘱时间：长期停嘱写入；取消停嘱清空；执行 Gate / 频次右界读本列；改停嘱时间可覆盖（不改停嘱人）。
+     */
+    @Column(name = "stop_time")
+    private LocalDateTime stopTime;
+
+    /**
+     * 停嘱人：停嘱操作写入；取消停嘱清空；改停嘱时间不改本列。
+     */
+    @Column(name = "stopper_id")
+    private Long stopperId;
 
     @Column(name = "refund_medicine_id")
     private Long refundMedicineId;
@@ -360,12 +384,14 @@ public class MedicationRequest extends BaseAuditedEntity {
     public void activeToDraft() {
         this.statusEnum = RequestStatus.DRAFT.getCode();
         this.statusChangedTime = LocalDateTime.now();
+        // 签退/驳回回草稿：草稿态不得保留签发列（与 unify 脚本 DRAFT 口径一致）。
+        this.reqAuthoredTime = null;
     }
 
     /**
      * 已发送转至已核对：校对人写入 {@code performer_check_id}，校对时刻写入 {@code check_time}（BR-MRQ-007）。
      *
-     * <p>住院（病区核对）路径：状态落 {@link RequestStatus#VERIFIED}；不写 {@code effective_dose_end}
+     * <p>住院（病区核对）路径：状态落 {@link RequestStatus#VERIFIED}；不写 {@code stop_time}
      *（停嘱专用）。门诊收费「医嘱完成」请使用 {@link #activeToCompletedAfterOutpatientCharge()}。</p>
      *
      * @param checkerId 校对人主键（performer_check_id）
@@ -396,18 +422,22 @@ public class MedicationRequest extends BaseAuditedEntity {
     }
 
     /**
-     * 停止用药请求：写入有效结束时间并迁至已停止。
+     * 停止用药请求：写入停嘱时间与停嘱人并迁至已停止。
      *
-     * @param stopTime 停止时间（写入有效剂量结束）
+     * @param stopTime  停嘱时间（写入 {@code stop_time}）
+     * @param stopperId 停嘱人（写入 {@code stopper_id}；通常为操作医生）
      */
-    public void toStopped(LocalDateTime stopTime) {
-        this.effectiveDoseEnd = stopTime;
+    public void toStopped(LocalDateTime stopTime, Long stopperId) {
+        // 停嘱时间轴统一落 stop_time，不再占用服药计划结束列。
+        this.stopTime = stopTime;
+        // 停嘱人随停嘱操作落库，改停嘱时间不覆盖本列。
+        this.stopperId = stopperId;
         this.statusEnum = RequestStatus.STOPPED.getCode();
         this.statusChangedTime = LocalDateTime.now();
     }
 
     /**
-     * 取消停嘱：按校对痕迹恢复为已校对或已发送，并清空服药结束时间（BR-IP-ORD-025 / BR-MRQ-006a）。
+     * 取消停嘱：按校对痕迹恢复为已校对或已发送，并清空停嘱时间与停嘱人（BR-IP-ORD-025 / BR-MRQ-006a）。
      */
     public void fromStopped() {
         // 护士已校对过则恢复 VERIFIED，否则恢复 ACTIVE（BR-IP-ORD-025 / BR-MRQ-006a）。
@@ -416,8 +446,51 @@ public class MedicationRequest extends BaseAuditedEntity {
         } else {
             this.statusEnum = RequestStatus.ACTIVE.getCode();
         }
-        this.effectiveDoseEnd = null;
+        // 取消停嘱清 stop_time 与 stopper_id，不改动服药计划结束列。
+        this.stopTime = null;
+        this.stopperId = null;
         this.statusChangedTime = LocalDateTime.now();
+    }
+
+    /**
+     * 断言可改业务时间：开立任意存在行；停嘱须长期且已 STOPPED（BR-MRQ-006b）。
+     *
+     * @param timeKind 时间种类 code（{@link com.openhis.health.domain.share.enums.RequestBusinessTimeKind}）
+     */
+    public void ensureBusinessTimeChangeAllowed(String timeKind) {
+        RequestBusinessTimeKind kind = RequestBusinessTimeKind.fromCodeOrNull(timeKind);
+        // 种类非法或试图改签发：拒绝，签发列仅追溯。
+        if (kind == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, "不可修改该时间");
+        }
+        // 改停嘱时间仅已停嘱长期行可执行。
+        if (RequestBusinessTimeKind.STOP.equals(kind)) {
+            ensureLongTermStoppedForCancelStop();
+        }
+    }
+
+    /**
+     * 改开立或停嘱时间；不改开立人/停嘱人/签发时间（BR-MRQ-006b）。
+     *
+     * @param timeKind 时间种类 code
+     * @param newTime  新业务时间
+     */
+    public void changeBusinessTime(String timeKind, LocalDateTime newTime) {
+        ensureBusinessTimeChangeAllowed(timeKind);
+        // 新时间必填，避免把业务时间误清成空。
+        if (newTime == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, "新业务时间不能为空");
+        }
+        RequestBusinessTimeKind kind = RequestBusinessTimeKind.fromCodeOrNull(timeKind);
+        // OPENED：仅覆盖开立列，开立人不变。
+        if (RequestBusinessTimeKind.OPENED.equals(kind)) {
+            this.reqOpenedTime = newTime;
+            return;
+        }
+        // STOP：仅覆盖停嘱列，停嘱人不变。
+        this.stopTime = newTime;
     }
 
     /**

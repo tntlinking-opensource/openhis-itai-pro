@@ -72,7 +72,8 @@ public class ServiceLocationTemplateQueryService {
 
     /**
      * 列出在指定时刻、开立科室与物品表 + 类别维度下**全部生效模板行**对应的候选发药库位（不做具体项/用法 calcScore 过滤）：
-     * 先按 {@code display_order}（空视为最大）、{@code priority}、{@code id} 排序模板行，再对 {@code def_location_id} 去重保持首次出现顺序。
+     * 按 {@code priority}（数值越小越优先）、{@code id} 排序后对 {@code def_location_id} 去重；
+     * <strong>不</strong>使用 {@code display_order}（仅配置页展示序，不参与发药路由）。
      * 供运维降级、护士执行等仅需「科室内该类别全部库位」的场景（AS {@code DM-CUS-006}）。
      *
      * @param organizationId 开立或接诊科室（与 {@code cus_service_location_template.organization_id} 一致）
@@ -98,9 +99,27 @@ public class ServiceLocationTemplateQueryService {
     }
 
     /**
+     * 一次加载机构下全部取药科室模板行（含软删标记行，过滤由后续生效/适用逻辑完成）。
+     *
+     * <p>供医生站目录等同请求内对多产品反复解析候选/默认库位时复用，避免 N 次 {@code findAllByOrganizationId}。</p>
+     *
+     * @param organizationId 开立或接诊科室标识
+     * @return 机构下模板实体列表；机构为空时返回空列表
+     */
+    public List<ServiceLocationTemplate> listAllByOrganizationId(Long organizationId) {
+        if (organizationId == null) {
+            return List.of();
+        }
+        return repository.findAllByOrganizationId(organizationId);
+    }
+
+    /**
      * 列出在指定时刻、开立科室与物品表 + 类别维度下、对<strong>具体物品定义与用法</strong>适用（{@link #calcScore}≥0）
-     * 的候选发药库位有序列表；排序键与 {@link #listCandidateDistributionLocationIds} 一致。
-     * 供医生站 IF-DOR-11 目录、签发 FIFO 与定价 FIFO 与物理库存求交（AS {@code BR-ORD-011} / {@code DM-CUS-006} §4.3）。
+     * 的候选发药库位有序列表。
+     *
+     * <p>排序口径与 {@link #pickBest} 一致：匹配粒度（指定物品优先于类别默认）→ {@code priority} → {@code id}；
+     * <strong>不</strong>使用 {@code display_order}。供医生站 IF-DOR-11 目录、签发 FIFO 与定价 FIFO 与物理库存求交
+     *（AS {@code BR-ORD-011} / {@code DM-CUS-006}）。</p>
      *
      * @param organizationId 开立或接诊科室标识
      * @param itemTable 物品主表名
@@ -125,18 +144,40 @@ public class ServiceLocationTemplateQueryService {
         LocalTime effectiveTime = this.resolveTemplateEffectiveTime(atTime);
         List<ServiceLocationTemplate> effective = this.collectEffectiveTemplateRows(
             organizationId, itemTable, distributionCategoryCode, effectiveTime);
-        List<ServiceLocationTemplate> applicable = new ArrayList<>();
-        for (ServiceLocationTemplate row : effective) {
-            int score = this.calcScore(row, itemDefinitionId, methodCode);
-            if (score >= 0) {
-                applicable.add(row);
-            }
-        }
-        return this.extractOrderedDefLocationIds(applicable);
+        return this.extractApplicableLocationIds(effective, itemDefinitionId, methodCode);
     }
 
     /**
-     * 与 {@link #listCandidateDistributionLocationIds} 同源过滤与排序，返回完整模板读模型行（含 {@code displayOrder} 等），供装配器降级逻辑使用。
+     * 基于已加载的机构模板行解析适用候选库位（与 {@link #listApplicableDistributionLocationIds} 同口径，不再打库）。
+     *
+     * @param organizationRows         同机构一次加载的模板行（可含软删，本方法再滤）
+     * @param itemTable                物品主表名
+     * @param distributionCategoryCode 模板类别 code
+     * @param itemDefinitionId         具体定义主键
+     * @param methodCode               用法编码
+     * @param atTime                   判定时段；空则当前时刻
+     * @return 适用库位标识列表
+     */
+    public List<Long> listApplicableDistributionLocationIdsFromLoaded(
+        List<ServiceLocationTemplate> organizationRows,
+        String itemTable,
+        String distributionCategoryCode,
+        Long itemDefinitionId,
+        String methodCode,
+        LocalTime atTime
+    ) {
+        if (StringUtils.isEmpty(itemTable) || StringUtils.isEmpty(distributionCategoryCode)) {
+            return List.of();
+        }
+        LocalTime effectiveTime = this.resolveTemplateEffectiveTime(atTime);
+        List<ServiceLocationTemplate> effective = this.filterEffectiveTemplateRows(
+            organizationRows, itemTable, distributionCategoryCode, effectiveTime);
+        return this.extractApplicableLocationIds(effective, itemDefinitionId, methodCode);
+    }
+
+    /**
+     * 与 {@link #listCandidateDistributionLocationIds} 同源过滤，按 {@code priority} → {@code id} 排序后返回完整模板读模型行
+     *（读模型仍携带 {@code displayOrder} 供配置展示，但本列表顺序不按展示序排）。
      *
      * @param organizationId 开立或接诊科室标识
      * @param itemTable 物品主表名
@@ -200,6 +241,43 @@ public class ServiceLocationTemplateQueryService {
             organizationId, itemTable, distributionCategoryCode, effectiveTime);
         ServiceLocationTemplate best = this.pickBest(candidates, itemDefinitionId, methodCode);
         // 无任何候选命中时调用方需自行降级（如提示人工选库位）
+        if (best == null) {
+            return null;
+        }
+        return best.getDefLocationId();
+    }
+
+    /**
+     * 基于已加载的机构模板行解析默认发药库位（与 {@link #matchDefaultDistributionLocation} 同口径，不再打库）。
+     *
+     * @param organizationRows         同机构一次加载的模板行
+     * @param itemTable                物品主表名
+     * @param distributionCategoryCode 模板类别 code
+     * @param itemDefinitionId         具体定义主键
+     * @param methodCode               用法编码
+     * @param atTime                   判定时段；空则当前时刻
+     * @return 默认发药库位；无命中为 null
+     */
+    public Long matchDefaultDistributionLocationFromLoaded(
+        List<ServiceLocationTemplate> organizationRows,
+        String itemTable,
+        String distributionCategoryCode,
+        Long itemDefinitionId,
+        String methodCode,
+        LocalTime atTime
+    ) {
+        // 物品主表缺失则无法与模板行对齐
+        if (itemTable == null || itemTable.trim().isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT, "物品表名不能为空");
+        }
+        // 类别编码缺失则无法与模板行过滤
+        if (distributionCategoryCode == null || distributionCategoryCode.trim().isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT, "药品/耗材类别编码不能为空");
+        }
+        LocalTime effectiveTime = this.resolveTemplateEffectiveTime(atTime);
+        List<ServiceLocationTemplate> candidates = this.filterEffectiveTemplateRows(
+            organizationRows, itemTable, distributionCategoryCode, effectiveTime);
+        ServiceLocationTemplate best = this.pickBest(candidates, itemDefinitionId, methodCode);
         if (best == null) {
             return null;
         }
@@ -303,13 +381,13 @@ public class ServiceLocationTemplateQueryService {
     }
 
     /**
-     * 按开立科室、物品表、类别与生效时段过滤模板行，并按 display_order → priority → id 排序。
+     * 按开立科室、物品表、类别与生效时段过滤模板行，并按 priority → id 排序（不按展示序）。
      *
      * @param organizationId 开立科室标识
      * @param itemTable 物品主表名
      * @param distributionCategoryCode 模板 distribution_category_code（= 目录 categoryCode）
      * @param effectiveTime 非空判定时刻
-     * @return 生效模板行列表（已排序，可写）
+     * @return 生效模板行列表（已按业务优先级排序，可写）
      */
     private List<ServiceLocationTemplate> collectEffectiveTemplateRows(
         Long organizationId,
@@ -318,33 +396,121 @@ public class ServiceLocationTemplateQueryService {
         LocalTime effectiveTime
     ) {
         List<ServiceLocationTemplate> rows = repository.findAllByOrganizationId(organizationId);
+        return this.filterEffectiveTemplateRows(rows, itemTable, distributionCategoryCode, effectiveTime);
+    }
+
+    /**
+     * 对已加载的机构模板行做生效过滤，并按 priority → id 排序（不打库、不使用展示序）。
+     *
+     * @param organizationRows         机构模板行；null 视为空
+     * @param itemTable                物品主表名
+     * @param distributionCategoryCode 模板类别 code
+     * @param effectiveTime            非空判定时刻
+     * @return 生效模板行列表（已按业务优先级排序）
+     */
+    private List<ServiceLocationTemplate> filterEffectiveTemplateRows(
+        List<ServiceLocationTemplate> organizationRows,
+        String itemTable,
+        String distributionCategoryCode,
+        LocalTime effectiveTime
+    ) {
         List<ServiceLocationTemplate> effective = new ArrayList<>();
-        for (ServiceLocationTemplate row : rows) {
+        if (organizationRows == null || organizationRows.isEmpty()) {
+            return effective;
+        }
+        for (ServiceLocationTemplate row : organizationRows) {
+            if (row == null) {
+                continue;
+            }
+            // 软删行不参与发药路由
             if (Boolean.TRUE.equals(row.getIsDeleted())) {
                 continue;
             }
+            // 当前时刻不在生效时段内则跳过
             if (!row.isEffectiveAt(effectiveTime)) {
                 continue;
             }
+            // 物品主表须与请求一致（药品/耗材分表）
             if (!itemTable.equals(row.getItemTable())) {
                 continue;
             }
+            // 发放类别须与目录 categoryCode 对齐
             if (!distributionCategoryCode.equals(row.getDistributionCategoryCode())) {
                 continue;
             }
             effective.add(row);
         }
+        // 业务序：优先级数值越小越先；同优先级用主键保证稳定。展示序不参与。
         effective.sort(Comparator
-            .comparing(ServiceLocationTemplateQueryService::displayOrderSortKey)
-            .thenComparing(ServiceLocationTemplate::getPriority)
+            .comparing(ServiceLocationTemplate::getPriority)
             .thenComparing(ServiceLocationTemplate::getId));
         return effective;
     }
 
     /**
-     * 从已排序模板行提取 def_location_id 有序去重列表。
+     * 对已生效模板行做 calcScore≥0 过滤，再按「匹配粒度 → 优先级 → 主键」排序后提取库位 id。
      *
-     * @param orderedRows 已按 display_order → priority → id 排序的模板行
+     * <p>保证指定物品规则排在类别默认之前，与配置页「指定物品优先于类别默认」及 {@link #pickBest} 一致；
+     * 库存不足时仍可落到后续类别默认库位做 FIFO 拆分。</p>
+     *
+     * @param effective          已按 priority → id 排过序的生效行（本方法会按匹配粒度重排）
+     * @param itemDefinitionId   具体定义主键
+     * @param methodCode         用法编码
+     * @return 适用库位标识列表（指定药房在前）
+     */
+    private List<Long> extractApplicableLocationIds(
+        List<ServiceLocationTemplate> effective,
+        Long itemDefinitionId,
+        String methodCode
+    ) {
+        List<ServiceLocationTemplate> applicable = new ArrayList<>();
+        for (ServiceLocationTemplate row : effective) {
+            int score = this.calcScore(row, itemDefinitionId, methodCode);
+            // 物品或途径与模板约束冲突时该行不进候选
+            if (score < 0) {
+                continue;
+            }
+            applicable.add(row);
+        }
+        // 先指定物品（分数高），再类别通配；同分看 priority，再看 id
+        applicable.sort((left, right) -> this.compareApplicableRouteOrder(left, right, itemDefinitionId, methodCode));
+        return this.extractOrderedDefLocationIds(applicable);
+    }
+
+    /**
+     * 适用规则业务排序：匹配粒度降序 → priority 升序 → id 升序（与 {@link #pickBest} 同口径，不含展示序）。
+     *
+     * @param left             左侧模板行
+     * @param right            右侧模板行
+     * @param itemDefinitionId 请求物品定义
+     * @param methodCode       请求用法
+     * @return 负值表示 left 应排在 right 前
+     */
+    private int compareApplicableRouteOrder(
+        ServiceLocationTemplate left,
+        ServiceLocationTemplate right,
+        Long itemDefinitionId,
+        String methodCode
+    ) {
+        int scoreLeft = this.calcScore(left, itemDefinitionId, methodCode);
+        int scoreRight = this.calcScore(right, itemDefinitionId, methodCode);
+        // 分数高者（更贴脸，如指定物品）排前
+        if (scoreLeft != scoreRight) {
+            return Integer.compare(scoreRight, scoreLeft);
+        }
+        int priorityLeft = left.getPriority();
+        int priorityRight = right.getPriority();
+        // 同粒度时 priority 数值小者优先
+        if (priorityLeft != priorityRight) {
+            return Integer.compare(priorityLeft, priorityRight);
+        }
+        return Long.compare(left.getId(), right.getId());
+    }
+
+    /**
+     * 从已按业务序排好的模板行提取 {@code def_location_id} 有序去重列表（首次出现顺序即路由先后）。
+     *
+     * @param orderedRows 已按业务路由序排序的模板行
      * @return 库位 id 列表
      */
     private List<Long> extractOrderedDefLocationIds(List<ServiceLocationTemplate> orderedRows) {
@@ -368,18 +534,5 @@ public class ServiceLocationTemplateQueryService {
             return LocalTime.now();
         }
         return atTime;
-    }
-
-    /**
-     * {@code display_order} 列用于排序的整型键；未配置时使用 {@link Integer#MAX_VALUE}，使未配行在升序比较中稳定靠后。
-     *
-     * @param row 模板行
-     * @return 排序键
-     */
-    private static int displayOrderSortKey(ServiceLocationTemplate row) {
-        if (row.getDisplayOrder() == null) {
-            return Integer.MAX_VALUE;
-        }
-        return row.getDisplayOrder();
     }
 }

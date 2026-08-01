@@ -20,7 +20,9 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 @ConditionalOnProperty(name = "openhis.modules.chs.enabled", havingValue = "true")
 @ComponentScan(basePackages = "com.openhis.chs.domain")
 @EntityScan(basePackages = {
+    "com.openhis.chs.domain.audit",
     "com.openhis.chs.domain.catalog",
+    "com.openhis.chs.domain.notice",
     "com.openhis.chs.domain.inpatient",
     "com.openhis.chs.domain.inventory",
     "com.openhis.chs.domain.outpatient",
@@ -31,7 +33,9 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
     "com.openhis.chs.domain.invoke.entity"
 })
 @EnableJpaRepositories(basePackages = {
+    "com.openhis.chs.domain.audit.repository",
     "com.openhis.chs.domain.catalog.repository",
+    "com.openhis.chs.domain.notice.repository",
     "com.openhis.chs.domain.inpatient.repository",
     "com.openhis.chs.domain.inventory.repository",
     "com.openhis.chs.domain.outpatient.repository",

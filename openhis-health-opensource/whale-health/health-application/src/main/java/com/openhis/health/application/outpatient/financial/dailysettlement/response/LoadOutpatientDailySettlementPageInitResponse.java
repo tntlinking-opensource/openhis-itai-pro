@@ -21,12 +21,12 @@ import java.util.List;
 @Schema(description = "门诊日结页初始化响应")
 public class LoadOutpatientDailySettlementPageInitResponse {
 
-    /** 默认结账日起（yyyy-MM-dd）。 */
-    @Schema(description = "默认结账日起")
+    /** 默认日结时间起（yyyy-MM-dd HH:mm:ss）。 */
+    @Schema(description = "默认日结时间起")
     private String defaultDateFrom;
 
-    /** 默认结账日止（yyyy-MM-dd）。 */
-    @Schema(description = "默认结账日止")
+    /** 默认日结时间止（yyyy-MM-dd HH:mm:ss）。 */
+    @Schema(description = "默认日结时间止")
     private String defaultDateTo;
 
     /** 自费/医保筛选项。 */
@@ -37,8 +37,8 @@ public class LoadOutpatientDailySettlementPageInitResponse {
     @Schema(description = "是否允许财务代交账")
     private Boolean financialDelegateEnabled;
 
-    /** 经办人下拉；非财务仅含本人。 */
-    @Schema(description = "经办人下拉")
+    /** 收款人下拉岗池：仅 ROLE_ACCOUNTANT；查询后再合并窗内收费人。 */
+    @Schema(description = "收款人下拉")
     private List<OptionDto> cashierOptions;
 
     /** 当前操作员对应 Practitioner 主键。 */

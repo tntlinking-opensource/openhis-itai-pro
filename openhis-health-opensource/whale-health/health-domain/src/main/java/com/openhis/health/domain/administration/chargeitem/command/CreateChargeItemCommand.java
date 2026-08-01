@@ -78,5 +78,9 @@ public class CreateChargeItemCommand extends BatchCommand<CreateChargeItemComman
         private String prescriptionNo;
         /** 执行记录主键，对应 adm_charge_item.procedure_id。 */
         private Long procedureId;
+        /**
+         * 绑定就诊诊断主键有序串（与上游请求同口径；挂费时可显式传入，缺省时由写侧按 service 锚点回查请求拷贝）。
+         */
+        private String encounterDiagnosisIds;
     }
 }

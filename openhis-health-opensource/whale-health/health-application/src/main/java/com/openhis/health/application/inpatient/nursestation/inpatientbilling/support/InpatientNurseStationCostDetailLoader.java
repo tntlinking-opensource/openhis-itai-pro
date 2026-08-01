@@ -26,6 +26,9 @@ import java.util.Optional;
 
 /**
  * 住院护士站费用明细读组装：收费明细 + 执行记录业务时间（B.6.1 跨 clinical 编排）。
+ *
+ * <p>双轨：过滤/倒序锚定 Procedure/账单 {@code occurrence_time}；页面展示优先
+ * {@code recorded_time}（AS-IP-NUR-006 / BR-IP-ORD-030⑥）。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -61,6 +64,8 @@ public class InpatientNurseStationCostDetailLoader {
         List<ChargeItem> candidates = this.chargeItemQueryService.listChargeItemsByEncounterId(cmd);
         Map<Long, LocalDateTime> netProcedureOccurrenceById =
             this.procedureQueryService.mapNetCompletedOccurrenceTimeByEncounterId(cmd.getEncounterId());
+        Map<Long, LocalDateTime> netProcedureRecordedById =
+            this.procedureQueryService.mapNetCompletedRecordedTimeByEncounterId(cmd.getEncounterId());
         List<InpatientNurseStationCostDetailChargeRow> rows = new ArrayList<>();
         for (ChargeItem chargeItem : candidates) {
             if (chargeItem == null) {
@@ -75,6 +80,7 @@ public class InpatientNurseStationCostDetailLoader {
             if (businessDateTimeOpt.isEmpty()) {
                 continue;
             }
+            // 过滤/倒序：逻辑轴 = occurrence（计划点）
             LocalDateTime businessDateTime = businessDateTimeOpt.get();
             LocalDate businessDate = businessDateTime.toLocalDate();
             if (businessDate.isBefore(cmd.getBusinessDateFrom())) {
@@ -83,7 +89,11 @@ public class InpatientNurseStationCostDetailLoader {
             if (businessDate.isAfter(cmd.getBusinessDateTo())) {
                 continue;
             }
-            rows.add(new InpatientNurseStationCostDetailChargeRow(chargeItem, businessDateTime));
+            // 展示轴：医嘱执行优先 recorded；划价/滚费与逻辑轴相同
+            LocalDateTime displayDateTime = this.resolveDisplayDateTime(
+                chargeItem, businessDateTime, netProcedureRecordedById);
+            rows.add(new InpatientNurseStationCostDetailChargeRow(
+                chargeItem, businessDateTime, displayDateTime));
         }
         rows.sort(Comparator.comparing(InpatientNurseStationCostDetailChargeRow::getBusinessDateTime).reversed());
         return rows;
@@ -91,6 +101,8 @@ public class InpatientNurseStationCostDetailLoader {
 
     /**
      * 护士站费用明细默认状态子集（待结算/已结算/拟退/已退）。
+     *
+     * @return 状态 code 列表
      */
     private List<String> inpatientNurseStationCostDetailStatusCodes() {
         return List.of(
@@ -101,13 +113,41 @@ public class InpatientNurseStationCostDetailLoader {
     }
 
     /**
-     * 按 AS-IP-NUR-006 规则解析单行业务发生时刻（护士划价/自动滚费取 occurrence_time，医嘱取净完成执行时刻）。
+     * 解析页面展示时刻：医嘱执行路径取净剩 Procedure.recorded_time，否则回落逻辑业务时间。
+     *
+     * @param chargeItem              收费明细
+     * @param businessDateTime        逻辑业务时间（occurrence）
+     * @param netProcedureRecordedById 就诊下净完成 Procedure 登记时刻
+     * @return 展示时刻（非空）
+     */
+    private LocalDateTime resolveDisplayDateTime(
+        ChargeItem chargeItem,
+        LocalDateTime businessDateTime,
+        Map<Long, LocalDateTime> netProcedureRecordedById) {
+        // 划价/滚费无 Procedure 双轨，展示与逻辑同源
+        if (GenerateSource.NURSE_PRICING.getCode().equals(chargeItem.getGenerateSourceEnum())
+            || GenerateSource.AUTO_ROLL_FEES.getCode().equals(chargeItem.getGenerateSourceEnum())) {
+            return businessDateTime;
+        }
+        Long procedureId = chargeItem.getProcedureId();
+        if (procedureId == null || netProcedureRecordedById == null) {
+            return businessDateTime;
+        }
+        LocalDateTime recordedTime = netProcedureRecordedById.get(procedureId);
+        if (recordedTime != null) {
+            return recordedTime;
+        }
+        return businessDateTime;
+    }
+
+    /**
+     * 按 AS-IP-NUR-006 规则解析单行<strong>逻辑</strong>业务发生时刻（过滤轴：划价/滚费 occurrence；医嘱净完成 occurrence）。
      *
      * @param chargeItem                 收费明细
      * @param netProcedureOccurrenceById 就诊下净完成 Procedure 发生时刻
      * @param businessDateFrom           业务日下限（含）
      * @param businessDateTo             业务日上限（含）
-     * @return 命中区间内的业务时刻；区间外或无法解析时 empty
+     * @return 命中区间内的逻辑业务时刻；区间外或无法解析时 empty
      */
     private Optional<LocalDateTime> resolveInpatientNurseStationCostDetailBusinessDateTimeForDateRange(
         ChargeItem chargeItem,

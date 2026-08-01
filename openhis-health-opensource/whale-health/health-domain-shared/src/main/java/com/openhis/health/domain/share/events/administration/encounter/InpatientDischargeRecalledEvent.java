@@ -10,9 +10,10 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 住院出院召回领域事件（DM-ADM-002 §6.1.25，AS-IP-NUR-002 IF-IP-NUR-ATD-07）。
+ * 住院出院召回领域事件（DM-ADM-002 §6.1.25，AS-IP-FIN-004 召回写）。
  *
- * <p>载荷含召回后目标状态；{@code requiresBedAssignment=true} 表示须护士二次分床（已清床轨）。</p>
+ * <p>载荷含召回后目标状态；已清床轨召回后 {@code requiresBedAssignment} 恒为 {@code false}
+ * （不占床、不二次分床）。</p>
  */
 @Getter
 @Setter
@@ -21,20 +22,20 @@ public class InpatientDischargeRecalledEvent extends DomainEvent {
     /** 患者主键。 */
     private Long patientId;
 
-    /** 召回前就诊状态码（典型 {@code COMPLETED} 或 {@code DISCHARGED}）。 */
+    /** 召回前就诊状态码（典型 {@code DISCHARGED}）。 */
     private String previousStatusEnum;
 
-    /** 召回后就诊状态码（{@code IN_PROGRESS} 或 {@code REGISTERED}）。 */
+    /** 召回后就诊状态码（{@code IN_PROGRESS}）。 */
     private String statusEnum;
 
     /**
      * 是否须二次分床。
      *
-     * <p>原态为 {@code DISCHARGED} 时为 {@code true}；原态为 {@code COMPLETED} 时为 {@code false}。</p>
+     * <p>已清床召回未占床轨恒为 {@code false}。</p>
      */
     private Boolean requiresBedAssignment;
 
-    /** 已清床轨写入的活动病区位置主键；未清床轨为空。 */
+    /** 召回时 INSERT 的活动病区位置主键。 */
     private Long wardLocationId;
 
     /** 无参构造器（反序列化用）。 */

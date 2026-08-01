@@ -62,6 +62,9 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         item.setPurchaseUnitRatio(request.getPurchaseUnitRatio());
         item.setStockUnitRatio(request.getStockUnitRatio());
         item.setPackageUnitRatio(request.getPackageUnitRatio());
+        // 追溯码贴码单位与倍数：药品目录必填，由 AppService Gate 校验后写入
+        item.setTraceUnitCode(request.getTraceUnitCode());
+        item.setTraceUnitRatio(request.getTraceUnitRatio());
         item.setOrgId(request.getOrgId());
         item.setLocationId(request.getLocationId());
         item.setDoseFormCode(request.getDoseFormCode());
@@ -74,12 +77,14 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         item.setPharmacologyCategoryCode(request.getPharmacologyCategoryCode());
         item.setManufacturerId(request.getManufacturerId());
         item.setManufacturerText(request.getManufacturerText());
-        item.setSupplyId(request.getSupplyId());
+        // 药品目录不再维护供应商：写命令强制 supplyId=null
+        item.setSupplyId(null);
         item.setApprovalNumber(request.getApprovalNumber());
         item.setNationalDrugCode(request.getNationalDrugCode());
         item.setTotalVolume(request.getTotalVolume());
         item.setUsageLimit(request.getUsageLimit());
         item.setDose(request.getDose());
+        item.setMinUnit(request.getMinUnit());
         item.setMaxUnit(request.getMaxUnit());
         item.setDosageInstruction(request.getDosageInstruction());
         item.setRestrictedScope(request.getRestrictedScope());
@@ -137,6 +142,9 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         item.setPurchaseUnitRatio(request.getPurchaseUnitRatio());
         item.setStockUnitRatio(request.getStockUnitRatio());
         item.setPackageUnitRatio(request.getPackageUnitRatio());
+        // 追溯码贴码单位与倍数：编辑与新建同口径必填
+        item.setTraceUnitCode(request.getTraceUnitCode());
+        item.setTraceUnitRatio(request.getTraceUnitRatio());
         item.setLocationId(request.getLocationId());
         item.setDoseFormCode(request.getDoseFormCode());
         item.setMethodCode(request.getMethodCode());
@@ -149,12 +157,14 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         item.setPharmacologyCategoryCode(request.getPharmacologyCategoryCode());
         item.setManufacturerId(request.getManufacturerId());
         item.setManufacturerText(request.getManufacturerText());
-        item.setSupplyId(request.getSupplyId());
+        // 药品目录不再维护供应商：写命令强制 supplyId=null
+        item.setSupplyId(null);
         item.setApprovalNumber(request.getApprovalNumber());
         item.setNationalDrugCode(request.getNationalDrugCode());
         item.setTotalVolume(request.getTotalVolume());
         item.setUsageLimit(request.getUsageLimit());
         item.setDose(request.getDose());
+        item.setMinUnit(request.getMinUnit());
         item.setMaxUnit(request.getMaxUnit());
         item.setRestrictedScope(request.getRestrictedScope());
         item.setPartAttributeEnum(request.getPartAttributeEnum());
@@ -316,6 +326,9 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         dto.setPurchaseUnitRatio(model.getPurchaseUnitRatio());
         dto.setStockUnitRatio(model.getStockUnitRatio());
         dto.setPackageUnitRatio(model.getPackageUnitRatio());
+        dto.setTraceUnitCode(model.getTraceUnitCode());
+        dto.setTraceUnitRatio(model.getTraceUnitRatio());
+        dto.setMinUnit(model.getMinUnit());
         dto.setMaxUnit(model.getMaxUnit());
         if (model.getActiveFlag() != null) {
             CatalogPresentationUtil.fillEnableDisableLabels(
@@ -368,6 +381,7 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         dto.setYbMatchFlag(model.getYbMatchFlag());
         dto.setNationalDrugCode(model.getNationalDrugCode());
         dto.setDose(model.getDose());
+        dto.setMinUnit(model.getMinUnit());
         dto.setMaxUnit(model.getMaxUnit());
         dto.setRxFlag(model.getRxFlag());
         dto.setTotalVolume(model.getTotalVolume());
@@ -394,6 +408,8 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         dto.setPurchaseUnitRatio(model.getPurchaseUnitRatio());
         dto.setStockUnitRatio(model.getStockUnitRatio());
         dto.setPackageUnitRatio(model.getPackageUnitRatio());
+        dto.setTraceUnitCode(model.getTraceUnitCode());
+        dto.setTraceUnitRatio(model.getTraceUnitRatio());
         dto.setDefinition(model.getDefinition());
         dto.setDddCode(model.getDddCode());
         dto.setDddUnitCode(model.getDddUnitCode());

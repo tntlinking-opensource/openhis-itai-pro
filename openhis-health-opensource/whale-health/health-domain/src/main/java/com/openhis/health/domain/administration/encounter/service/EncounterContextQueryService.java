@@ -22,6 +22,7 @@ import com.openhis.health.domain.custom.encounterhistory.entity.EncounterHistory
 import com.openhis.health.domain.custom.encounterhistory.service.EncounterHistoryQueryService;
 import com.openhis.health.domain.share.constants.CustomConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.EncounterParticipantRole;
 import com.openhis.health.domain.share.enums.EncounterStatus;
@@ -439,6 +440,8 @@ public class EncounterContextQueryService {
             models.add(model);
         }
         applyLastCompletedWardForDischarged(models);
+        // Asm：无活动床时用末次已完成床回填展示「原 x 床（未占床）」（召回未占床轨）。
+        applyLastCompletedBedWhenNoActiveBed(models);
         applyInpatientHoldRoutingFields(models, encounters);
         for (InpatientEncounterContextQueryModel model : models) {
             model.setStatusEnumText(InpatientEncounterStatusDisplayUtil.resolveDisplayText(
@@ -578,6 +581,63 @@ public class EncounterContextQueryService {
             if (ward != null && StringUtils.isNotEmpty(ward.getName())) {
                 model.setWardName(ward.getName());
             }
+        }
+    }
+
+    /**
+     * 无活动床时回填末次已完成床，展示名格式「原{床名}（未占床）」。
+     *
+     * <p>召回后仅有活动病区、不占物理床；列表/结算/医生站共用本投影，避免床位列空白。</p>
+     *
+     * @param models 住院上下文行
+     */
+    private void applyLastCompletedBedWhenNoActiveBed(List<InpatientEncounterContextQueryModel> models) {
+        if (models == null || models.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Long> encounterIdsWithoutActiveBed = new LinkedHashSet<>();
+        for (InpatientEncounterContextQueryModel model : models) {
+            if (model == null || model.getEncounterId() == null) {
+                continue;
+            }
+            // 已有活动床则保持原展示，不覆盖。
+            if (model.getBedId() != null) {
+                continue;
+            }
+            encounterIdsWithoutActiveBed.add(model.getEncounterId());
+        }
+        if (encounterIdsWithoutActiveBed.isEmpty()) {
+            return;
+        }
+        Map<Long, Long> bedIdByEncounterId =
+            encounterQueryService.mapLastCompletedBedLocationIdByEncounterIds(encounterIdsWithoutActiveBed);
+        if (bedIdByEncounterId.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Long> bedLocationIds = new LinkedHashSet<>(bedIdByEncounterId.values());
+        Map<Long, Location> bedById = locationQueryService.loadLocationEntityMapByIds(bedLocationIds);
+        for (InpatientEncounterContextQueryModel model : models) {
+            if (model == null || model.getEncounterId() == null || model.getBedId() != null) {
+                continue;
+            }
+            Long bedId = bedIdByEncounterId.get(model.getEncounterId());
+            if (bedId == null) {
+                continue;
+            }
+            model.setBedId(bedId);
+            Location bed = bedById.get(bedId);
+            String bedName = null;
+            if (bed != null) {
+                bedName = bed.getName();
+            }
+            if (StringUtils.isEmpty(bedName)) {
+                bedName = String.valueOf(bedId);
+            }
+            // 展示：原 3 床（未占床）——非物理占床，仅归属信息。
+            model.setBedName(
+                InpatientNurseStationConstants.UNOCCUPIED_LAST_BED_DISPLAY_PREFIX
+                    + bedName
+                    + InpatientNurseStationConstants.UNOCCUPIED_LAST_BED_DISPLAY_SUFFIX);
         }
     }
 

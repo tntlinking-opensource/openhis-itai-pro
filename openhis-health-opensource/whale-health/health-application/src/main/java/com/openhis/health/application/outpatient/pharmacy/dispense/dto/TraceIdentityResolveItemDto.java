@@ -41,9 +41,13 @@ public class TraceIdentityResolveItemDto {
     @Schema(description = "批号")
     private String lotNumber;
 
-    /** 追溯码单位。 */
+    /** 追溯码单位（主档）。 */
     @Schema(description = "追溯码单位")
     private String traceUnitCode;
+
+    /** 主档贴码比例快照（1 码对应拆零量）。 */
+    @Schema(description = "主档贴码比例快照")
+    private BigDecimal traceUnitRatio;
 
     /** 拆零剩余量。 */
     @Schema(description = "拆零剩余量")

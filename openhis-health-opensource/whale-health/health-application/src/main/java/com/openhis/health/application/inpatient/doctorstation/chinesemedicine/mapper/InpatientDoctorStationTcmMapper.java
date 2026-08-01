@@ -10,7 +10,6 @@ import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.re
 import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.response.*;
 import com.openhis.health.domain.administration.encounter.command.BatchUpsertEncounterDiagnosisAssociationCommand;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
-import com.openhis.health.domain.clinical.condition.command.SaveDoctorDiagnosisTcmCommand;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.DoctorStationConditionDefinitionRowModel;
 import com.openhis.health.domain.medication.medicationrequest.command.*;
 import com.openhis.whale.core.application.dto.OptionDto;
@@ -66,29 +65,23 @@ public interface InpatientDoctorStationTcmMapper {
         Page<DoctorStationConditionDefinitionRowModel> page, List<TcmDiagnosisCatalogRowDto> rows);
 
     /**
-     * 将全量病证组保存请求转为 {@link SaveDoctorDiagnosisTcmCommand}。
+     * 将全量病证组保存请求转为中医就诊关联 batchUpsert 命令（直挂 conditionDefinitionId）。
      *
-     * @param request         保存请求
-     * @param groupKeyByItem  病名:证候 → 稳定组号映射
-     * @param operatorId      操作人主键
-     * @return 领域保存命令
+     * @param request        全量批次请求
+     * @param groupKeyByItem 稳定键 → 组号
+     * @param operatorId     操作人
+     * @return 中医批次 upsert 命令
      */
-    SaveDoctorDiagnosisTcmCommand toSaveDoctorDiagnosisTcmCommand(
+    BatchUpsertEncounterDiagnosisAssociationCommand toBatchUpsertTcmEncounterDiagnosisAssociationCommand(
         SaveTcmDiagnosisGroupsBatchRequest request, Map<String, String> groupKeyByItem, Long operatorId);
 
     /**
-     * 将保存结果转为中医就诊关联 batchUpsert 命令。
+     * 病证组稳定键：双侧为 {@code diseaseId:syndromeId}；单侧为 {@code d:{id}} / {@code s:{id}}。
      *
-     * @param request           保存请求
-     * @param savedConditionIds 领域返回的 condition id 列表（每组 2 条）
-     * @param groupKeyByItem    病名:证候 → 稳定组号映射
-     * @param operatorId        操作人主键
-     * @return 就诊诊断关联批量 upsert 命令
-     * @throws com.openhis.whale.core.application.exception.BusinessException 保存 id 数量与组数不匹配时
+     * @param group 组项请求
+     * @return 稳定键
      */
-    BatchUpsertEncounterDiagnosisAssociationCommand toBatchUpsertTcmEncounterDiagnosisAssociationCommand(
-        SaveTcmDiagnosisGroupsBatchRequest request, List<Long> savedConditionIds,
-        Map<String, String> groupKeyByItem, Long operatorId);
+    String resolveTcmGroupStableKey(TcmDiagnosisGroupItemRequest group);
 
     /**
      * 对比快照与入参，找出需删除的历史中医组号。

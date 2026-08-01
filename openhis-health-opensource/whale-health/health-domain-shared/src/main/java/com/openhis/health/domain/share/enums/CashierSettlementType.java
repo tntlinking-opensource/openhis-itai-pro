@@ -5,15 +5,23 @@
 package com.openhis.health.domain.share.enums;
 
 /**
- * 收费员交账业务范围（DM-FIN-003 {@code type_enum}）。
+ * 交账批次业务类型（DM-FIN-003 {@code type_enum}）。
+ *
+ * <p>仅四码：收款门/住 + 药房门/住。库内旧码由 Flyway 一次性迁完，运行时不兼容。</p>
  */
 public enum CashierSettlementType implements EnumInterface {
 
-    /** 门诊交账（含挂号与门诊收费 payment）。 */
-    OUTPATIENT(0L, "OUTPATIENT", "门诊交账", "纳入 kind=OUTPATIENT_CLINIC 的 payment", 0L),
+    /** 门诊收款日结。 */
+    OP_PAYMENT(0L, "OP_PAYMENT", "门诊收款日结", "挂载 outpatient payment", 0L),
 
-    /** 住院交账（出院/中途结算与预交金收退 payment）。 */
-    INPATIENT(0L, "INPATIENT", "住院交账", "纳入 kind=INPATIENT_CLINIC、HOSPITAL_DEPOSIT 的 payment", 1L);
+    /** 住院收款日结。 */
+    IP_PAYMENT(0L, "IP_PAYMENT", "住院收款日结", "挂载 inpatient payment", 1L),
+
+    /** 门诊药房日结。 */
+    OP_PHARMACY(0L, "OP_PHARMACY", "门诊药房日结", "挂载 outpatient medication_dispense", 2L),
+
+    /** 住院药房日结。 */
+    IP_PHARMACY(0L, "IP_PHARMACY", "住院药房日结", "挂载 inpatient medication_dispense", 3L);
 
     private final Long codeSystemId;
     private final String code;
@@ -47,5 +55,31 @@ public enum CashierSettlementType implements EnumInterface {
 
     public Long getSortOrder() {
         return sortOrder;
+    }
+
+    /**
+     * 是否为收款日结类型（挂载 payment）。
+     *
+     * @param typeEnum 类型 code
+     * @return true=收款
+     */
+    public static boolean isPaymentType(String typeEnum) {
+        if (typeEnum == null) {
+            return false;
+        }
+        return OP_PAYMENT.getCode().equals(typeEnum) || IP_PAYMENT.getCode().equals(typeEnum);
+    }
+
+    /**
+     * 是否为药房日结类型（挂载 dispense）。
+     *
+     * @param typeEnum 类型 code
+     * @return true=药房
+     */
+    public static boolean isPharmacyType(String typeEnum) {
+        if (typeEnum == null) {
+            return false;
+        }
+        return OP_PHARMACY.getCode().equals(typeEnum) || IP_PHARMACY.getCode().equals(typeEnum);
     }
 }

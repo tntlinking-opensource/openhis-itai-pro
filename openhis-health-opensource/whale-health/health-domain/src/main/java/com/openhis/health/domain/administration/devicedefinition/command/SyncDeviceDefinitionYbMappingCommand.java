@@ -27,8 +27,6 @@ public class SyncDeviceDefinitionYbMappingCommand extends BatchCommand<SyncDevic
         private Boolean ybFlag;
         /** 医保编码。 */
         private String ybNo;
-        /** 医药机构目录编码。 */
-        private String ybOrgNo;
         /** 对码标记。 */
         private Boolean ybMatchFlag;
         /** 医保等级。 */

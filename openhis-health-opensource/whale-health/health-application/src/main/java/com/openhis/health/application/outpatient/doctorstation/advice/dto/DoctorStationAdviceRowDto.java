@@ -96,6 +96,25 @@ public class DoctorStationAdviceRowDto {
     @Schema(description = "剂量单位展示名")
     private String doseUnitName;
 
+    /**
+     * 单次剂量展示串：最小单位为主，必要时括号内附计量单位（如 {@code 1支(2ml)/次}）；
+     * 计量与最小单位相同时无括号（如 {@code 1片/次}）。
+     */
+    @Schema(description = "单次剂量展示串（最小单位为主，括号附计量；单位相同时无括号）")
+    private String dosageDisplay;
+
+    /** 单次剂量对应的最小（拆零）单位数量；单位相同或无法换算时为 null。 */
+    @Schema(description = "单次剂量对应的最小单位数量")
+    private BigDecimal splitDose;
+
+    /** 最小单位编码。 */
+    @Schema(description = "最小单位编码")
+    private String splitDoseUnitCode;
+
+    /** 最小单位展示名。 */
+    @Schema(description = "最小单位展示名")
+    private String splitDoseUnitName;
+
     /** 给药途径/用法编码。 */
     @Schema(description = "给药途径/用法编码")
     private String methodCode;
@@ -148,17 +167,11 @@ public class DoctorStationAdviceRowDto {
     @Schema(description = "诊断定义名称")
     private String conditionDefinitionName;
 
-    /** 诊断定义主键（药品/诊疗/耗材请求均映射各自表的 {@code condition_definition_id}）。 */
-    @JsonSerialize(using = ToStringSerializer.class)
-    /** 诊断定义主键。 */
-    @Schema(description = "诊断定义主键")
-    private Long conditionDefinitionId;
-
-    /** 就诊诊断主键（药品/诊疗/耗材请求均映射各自表的 {@code encounter_diagnosis_id}）。 */
-    @JsonSerialize(using = ToStringSerializer.class)
-    /** 就诊诊断主键。 */
-    @Schema(description = "就诊诊断主键")
-    private Long encounterDiagnosisId;
+    /**
+     * 绑定就诊诊断主键有序串（药品/诊疗/耗材请求均映射各自表的 {@code encounter_diagnosis_ids}；有序，首位为主诊断）。
+     */
+    @Schema(description = "绑定就诊诊断主键有序串")
+    private String encounterDiagnosisIds;
 
     /** 是否皮试。 */
     @Schema(description = "是否皮试")
@@ -193,6 +206,13 @@ public class DoctorStationAdviceRowDto {
     /** 药品成组号。 */
     @Schema(description = "药品成组号")
     private Long groupId;
+
+    /**
+     * 组套标识（成组药嘱与 {@code groupId} 同源；绑定耗材可对齐本字段）。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "组套标识；成组药嘱与 groupId 同源")
+    private Long packageId;
 
     /** 中药付数。 */
     @Schema(description = "中药付数")
@@ -309,13 +329,13 @@ public class DoctorStationAdviceRowDto {
     @Schema(description = "是否当前登录医师开立")
     private Boolean isAuthoredByCurrentUser;
 
-    /** 开立时间 ISO-8601 local。 */
-    @Schema(description = "开立时间 ISO-8601 local")
-    private String authoredAt;
+    /** 开立时间 ISO-8601 local（{@code req_opened_time}）。 */
+    @Schema(description = "开立时间 ISO-8601 local（req_opened_time）")
+    private String reqOpenedTime;
 
-    /** 停嘱或结束时间 ISO-8601 local。 */
-    @Schema(description = "停嘱或结束时间 ISO-8601 local")
-    private String endTime;
+    /** 停嘱时间 ISO-8601 local（{@code stop_time}）。 */
+    @Schema(description = "停嘱时间 ISO-8601 local（stop_time）")
+    private String stopTime;
 
     /** 签署人（若已签发且可解析）。 */
     @JsonSerialize(using = ToStringSerializer.class)
@@ -323,9 +343,21 @@ public class DoctorStationAdviceRowDto {
     @Schema(description = "签署人主键")
     private Long signedById;
 
-    /** 签署时间 ISO-8601 local。 */
-    @Schema(description = "签署时间 ISO-8601 local")
-    private String signedAt;
+    /** 签发时间 ISO-8601 local（{@code req_authored_time}）。 */
+    @Schema(description = "签发时间 ISO-8601 local（req_authored_time）")
+    private String reqAuthoredTime;
+
+    /** 费用性质主键（药品：{@code med_medication_request.contract_id}）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "费用性质主键")
+    private Long contractId;
+
+    /**
+     * 费用性质分类展示文案（ContractCategory：自费/公费/省医保/市医保/职工医保）。
+     * <p>处方笺「费用性质」展示用；无合同时为空，前端回落「自费」。</p>
+     */
+    @Schema(description = "费用性质分类展示文案")
+    private String feeNatureText;
 
     /** 医生站主表展示排序号。 */
     @Schema(description = "医生站主表展示排序号")

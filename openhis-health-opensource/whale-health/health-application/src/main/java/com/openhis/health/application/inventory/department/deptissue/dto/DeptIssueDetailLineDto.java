@@ -12,12 +12,17 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.fasterxml.jackson.annotation.JsonFormat;
+
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 /**
  * 科室领用单详情明细行（IF-DEP-IS-03）。
  *
- * <p>与科室调出详情列族同构；数量字段为领用量；单价遵循 BR-PRICE-SRC-001 仅展示落库槽价。</p>
+ * <p>与科室调出/请领明细列族同构；数量字段为领用量；单价遵循 BR-PRICE-SRC-001 仅展示落库槽价。
+ * 前端明细网格列：项目名称、规格、厂家、数量、金额、批号、有效期、追溯码、备注。</p>
  */
 @Getter
 @Setter
@@ -73,6 +78,17 @@ public class DeptIssueDetailLineDto {
     /** 行总价 totalPrice。 */
     @Schema(description = "行总价 totalPrice")
     private BigDecimal totalPrice;
+
+    /**
+     * 批号效期止点（落库 {@code end_time}；前端「有效期」列回显）。
+     */
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    @Schema(description = "批号效期止点 endTime")
+    private LocalDateTime endTime;
+
+    /** 行备注 remake（库列 remake；前端「备注」列）。 */
+    @Schema(description = "行备注 remake")
+    private String remake;
 
     /** 产品目录 productCatalog。 */
     @Schema(description = "产品目录 productCatalog")

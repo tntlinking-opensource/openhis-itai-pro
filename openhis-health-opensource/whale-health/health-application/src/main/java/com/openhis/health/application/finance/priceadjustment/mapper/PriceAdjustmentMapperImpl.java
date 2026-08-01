@@ -69,6 +69,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -766,6 +767,8 @@ public class PriceAdjustmentMapperImpl implements PriceAdjustmentMapper {
     /**
      * 项目行读模型转 DTO。
      *
+     * <p>目录 enrich：名称/编码/规格/厂家，以及与选品同口径的项目种类、单位；子表批号明细一并映射。</p>
+     *
      * @param line         行读模型；null 时返回 null
      * @param productByKey 产品展示映射；可 null
      * @return 行 DTO
@@ -794,6 +797,7 @@ public class PriceAdjustmentMapperImpl implements PriceAdjustmentMapper {
         dto.setOrgId(line.getOrgId());
         dto.setAdjustmentStyle(line.getAdjustmentStyle());
         dto.setAdjustmentStyleText(this.resolveAdjustmentStyleText(line.getAdjustmentStyle()));
+        // 目录 enrich：名称/编码/规格/厂家 + 种类/单位（与 IF-PRC-04 选品同口径，供详情回显）
         if (productByKey != null && line.getItemTable() != null && line.getItemId() != null) {
             String key = ProductDefinitionKeyUtil.buildCompositeKey(line.getItemTable(), line.getItemId());
             ProductDefinitionDisplayDto product = productByKey.get(key);
@@ -802,11 +806,16 @@ public class PriceAdjustmentMapperImpl implements PriceAdjustmentMapper {
                 dto.setItemCode(product.getProductBusNo());
                 dto.setSpecification(product.getTotalVolume());
                 dto.setManufacturer(product.getManufacturer());
+                dto.setCategoryCodeDictText(product.getCategoryCodeDictText());
+                dto.setUnitName(this.resolveUnitNameFromDisplay(product));
             }
         }
         List<PriceAdjustmentDetailDto> detailDtos = new ArrayList<>();
         if (line.getDetails() != null) {
-            for (PriceAdjustmentDetailQueryModel detail : line.getDetails()) {
+            // 调价单回显：同批号多库房行合并为全院一条（数量/盈亏相加）
+            List<PriceAdjustmentDetailQueryModel> mergedDetails =
+                this.mergeDetailModelsByLotForDisplay(line.getDetails());
+            for (PriceAdjustmentDetailQueryModel detail : mergedDetails) {
                 PriceAdjustmentDetailDto detailDto = this.toDetailDto(detail);
                 if (detailDto != null) {
                     detailDtos.add(detailDto);
@@ -815,6 +824,84 @@ public class PriceAdjustmentMapperImpl implements PriceAdjustmentMapper {
         }
         dto.setDetails(detailDtos);
         return dto;
+    }
+
+    /**
+     * 按批号合并子表读模型（调价单全院展示口径；不暴露 locationId）。
+     *
+     * @param details 库房+批号细行；可空
+     * @return 按批号合并后的展示行；入参空时为空列表
+     */
+    private List<PriceAdjustmentDetailQueryModel> mergeDetailModelsByLotForDisplay(
+        List<PriceAdjustmentDetailQueryModel> details
+    ) {
+        List<PriceAdjustmentDetailQueryModel> merged = new ArrayList<>();
+        if (details == null || details.isEmpty()) {
+            return merged;
+        }
+        Map<String, PriceAdjustmentDetailQueryModel> byLot = new LinkedHashMap<>();
+        for (PriceAdjustmentDetailQueryModel detail : details) {
+            // 空子表行不参与合并
+            if (detail == null) {
+                continue;
+            }
+            String lotKey = detail.getLotNumber();
+            // 空批号并入同一桶，避免拆成多条空白批号
+            if (lotKey == null) {
+                lotKey = "";
+            } else {
+                lotKey = lotKey.trim();
+            }
+            PriceAdjustmentDetailQueryModel existing = byLot.get(lotKey);
+            // 同批号首行：作为合并载体（展示不带 loc）
+            if (existing == null) {
+                PriceAdjustmentDetailQueryModel row = new PriceAdjustmentDetailQueryModel();
+                row.setId(detail.getId());
+                row.setLocationId(null);
+                row.setLotNumber(detail.getLotNumber());
+                row.setQuantity(detail.getQuantity());
+                row.setOldPurchaseAmount(detail.getOldPurchaseAmount());
+                row.setOldSellingAmount(detail.getOldSellingAmount());
+                row.setPurchaseImpact(detail.getPurchaseImpact());
+                row.setSellingImpact(detail.getSellingImpact());
+                byLot.put(lotKey, row);
+                continue;
+            }
+            // 同批号后续行：数量与盈亏累加；调前价保留首行非空值
+            if (detail.getQuantity() != null) {
+                BigDecimal qty = existing.getQuantity();
+                if (qty == null) {
+                    existing.setQuantity(detail.getQuantity());
+                } else {
+                    existing.setQuantity(qty.add(detail.getQuantity()));
+                }
+            }
+            if (detail.getPurchaseImpact() != null) {
+                BigDecimal impact = existing.getPurchaseImpact();
+                if (impact == null) {
+                    existing.setPurchaseImpact(detail.getPurchaseImpact());
+                } else {
+                    existing.setPurchaseImpact(impact.add(detail.getPurchaseImpact()));
+                }
+            }
+            if (detail.getSellingImpact() != null) {
+                BigDecimal impact = existing.getSellingImpact();
+                if (impact == null) {
+                    existing.setSellingImpact(detail.getSellingImpact());
+                } else {
+                    existing.setSellingImpact(impact.add(detail.getSellingImpact()));
+                }
+            }
+            // 首行缺调前价时用后续行补齐（同批同价）
+            if (existing.getOldPurchaseAmount() == null && detail.getOldPurchaseAmount() != null) {
+                existing.setOldPurchaseAmount(detail.getOldPurchaseAmount());
+            }
+            if (existing.getOldSellingAmount() == null && detail.getOldSellingAmount() != null) {
+                existing.setOldSellingAmount(detail.getOldSellingAmount());
+            }
+        }
+        merged.addAll(byLot.values());
+        return merged;
     }
 
     /**
@@ -835,17 +922,31 @@ public class PriceAdjustmentMapperImpl implements PriceAdjustmentMapper {
         row.setSpecification(display.getTotalVolume());
         row.setManufacturer(display.getManufacturer());
         row.setCategoryCodeDictText(display.getCategoryCodeDictText());
-        String tableName = display.getProductTableName();
-        if (PriceAdjustmentItemTableSupport.isLogisticsItemTable(tableName)) {
-            row.setUnitName(display.getPackageUnitCodeDictText());
-        } else {
-            String unitName = display.getDefEncounterUnitCodeDictText();
-            if (StringUtils.isEmpty(unitName)) {
-                unitName = display.getPackageUnitCodeDictText();
-            }
-            row.setUnitName(unitName);
-        }
+        row.setUnitName(this.resolveUnitNameFromDisplay(display));
         return row;
+    }
+
+    /**
+     * 从产品展示 DTO 解析单位展示名（物流包装单位；诊疗开立单位回落包装）。
+     *
+     * @param display 产品展示 DTO；可 null
+     * @return 单位展示名；无法解析时 null
+     */
+    private String resolveUnitNameFromDisplay(ProductDefinitionDisplayDto display) {
+        if (display == null) {
+            return null;
+        }
+        String tableName = display.getProductTableName();
+        // 物流：固定包装单位（与选品/库存数量同单位）
+        if (PriceAdjustmentItemTableSupport.isLogisticsItemTable(tableName)) {
+            return display.getPackageUnitCodeDictText();
+        }
+        // 诊疗/服务：优先开立单位，缺省回落包装单位
+        String unitName = display.getDefEncounterUnitCodeDictText();
+        if (StringUtils.isEmpty(unitName)) {
+            unitName = display.getPackageUnitCodeDictText();
+        }
+        return unitName;
     }
 
     /**

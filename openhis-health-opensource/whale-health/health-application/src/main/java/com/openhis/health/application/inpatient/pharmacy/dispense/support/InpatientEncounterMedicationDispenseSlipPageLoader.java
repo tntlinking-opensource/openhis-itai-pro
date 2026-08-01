@@ -4,6 +4,7 @@
  */
 package com.openhis.health.application.inpatient.pharmacy.dispense.support;
 
+import com.openhis.health.application.shared.diagnosis.EncounterDiagnosisSnapshotAssembler;
 import com.openhis.health.application.shared.option.FrequencyOptionLoader;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
@@ -31,6 +32,7 @@ import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConsta
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
+import com.openhis.health.application.shared.tracenumber.DispenseTraceUnitSnapshotEnricher;
 import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
@@ -39,6 +41,7 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -64,6 +67,10 @@ public class InpatientEncounterMedicationDispenseSlipPageLoader {
     private final EncounterMedicationDispenseSlipReadAssembler encounterMedicationDispenseSlipReadAssembler;
     private final FrequencyOptionLoader frequencyOptionLoader;
     private final TerminologyOptionLoader terminologyOptionLoader;
+    /** 方头诊断并集：同处方号各药行 encounter_diagnosis_ids → 顿号展示名。 */
+    private final EncounterDiagnosisSnapshotAssembler encounterDiagnosisSnapshotAssembler;
+    /** 发药行主档贴码快照回填（与门诊/汇总同口径）。 */
+    private final DispenseTraceUnitSnapshotEnricher dispenseTraceUnitSnapshotEnricher;
 
     /**
      * 住院就诊药品发药单 slip 分页（IF-IPP-03）。
@@ -170,7 +177,105 @@ public class InpatientEncounterMedicationDispenseSlipPageLoader {
         if (patientHistoryScope) {
             applyEncounterBusNoPerRow(result.getContent());
         }
+        // Asm：西药方头诊断 = 同处方号绑定诊断并集（与门诊发药 slip 口径一致）
+        this.applyWesternPrescriptionDiagnosisUnion(result.getContent(), medicationRequestByMedReqId);
+        // Asm：主档贴码单位/比例（cus_trace_number）回填，供前端待扫个数换算
+        this.enrichTraceUnitSnapshotFromMaster(result.getContent());
         return result;
+    }
+
+    /**
+     * 按发放库房+药品+批号回填主档贴码单位/比例（本库优先，否则全院同批）。
+     *
+     * @param rows 已装配的发药 slip 行
+     */
+    private void enrichTraceUnitSnapshotFromMaster(List<EncounterMedicationDispenseSlipRowDto> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        List<DispenseTraceUnitSnapshotEnricher.Request> requests = new ArrayList<>();
+        for (EncounterMedicationDispenseSlipRowDto row : rows) {
+            if (row == null || row.getMedicationId() == null) {
+                continue;
+            }
+            EncounterMedicationDispenseSlipRowDto target = row;
+            requests.add(new DispenseTraceUnitSnapshotEnricher.Request(
+                row.getDispenseLocationId(),
+                row.getMedicationId(),
+                row.getLotNumber(),
+                (code, ratio) -> {
+                    target.setTraceUnitCode(code);
+                    target.setTraceUnitRatio(ratio);
+                },
+                target::setLotHasTraceMaster
+            ));
+        }
+        this.dispenseTraceUnitSnapshotEnricher.enrich(requests);
+    }
+
+    /**
+     * 为住院西药 slip 行写入同处方号诊断并集展示文案（强制覆盖行级摘要）。
+     *
+     * @param rows                        已装配 slip 行
+     * @param medicationRequestByMedReqId 药嘱索引（取 encounter_diagnosis_ids）
+     */
+    private void applyWesternPrescriptionDiagnosisUnion(
+        List<EncounterMedicationDispenseSlipRowDto> rows,
+        Map<Long, MedicationRequestListQueryModel> medicationRequestByMedReqId) {
+        // Gate：无行或无药嘱则跳过
+        if (rows == null || rows.isEmpty() || medicationRequestByMedReqId == null || medicationRequestByMedReqId.isEmpty()) {
+            return;
+        }
+        Map<String, List<String>> idsTextsByKey = new LinkedHashMap<>();
+        // Loop：按处方号收集西药行绑定 ids
+        for (EncounterMedicationDispenseSlipRowDto row : rows) {
+            if (row == null || Boolean.TRUE.equals(row.getTcmFlag())) {
+                continue;
+            }
+            Long medReqId = row.getMedReqId();
+            if (medReqId == null) {
+                continue;
+            }
+            MedicationRequestListQueryModel requestRow = medicationRequestByMedReqId.get(medReqId);
+            if (requestRow == null) {
+                continue;
+            }
+            String key = inpatientPrescriptionGroupKey(row);
+            List<String> bucket = idsTextsByKey.get(key);
+            if (bucket == null) {
+                bucket = new ArrayList<>();
+                idsTextsByKey.put(key, bucket);
+            }
+            bucket.add(requestRow.getEncounterDiagnosisIds());
+        }
+        Map<String, String> unionByKey =
+            this.encounterDiagnosisSnapshotAssembler.mapUnionDisplayNameByGroupKey(idsTextsByKey);
+        // Loop：强制写回方头诊断全集
+        for (EncounterMedicationDispenseSlipRowDto row : rows) {
+            if (row == null || Boolean.TRUE.equals(row.getTcmFlag())) {
+                continue;
+            }
+            String unionSummary = unionByKey.get(inpatientPrescriptionGroupKey(row));
+            if (StringUtils.isNotEmpty(unionSummary)) {
+                row.setConditionSummaryText(unionSummary);
+            }
+        }
+    }
+
+    /**
+     * 住院 slip 处方分组键：优先处方号，否则发放单 id。
+     *
+     * @param row slip 行
+     * @return 分组键
+     */
+    private static String inpatientPrescriptionGroupKey(EncounterMedicationDispenseSlipRowDto row) {
+        if (StringUtils.isNotEmpty(row.getPrescriptionNo())) {
+            return row.getPrescriptionNo().trim();
+        }
+        if (row.getDispenseId() != null) {
+            return "dispense:" + row.getDispenseId();
+        }
+        return "row:" + row.getMedReqId();
     }
 
     /**
@@ -379,10 +484,15 @@ public class InpatientEncounterMedicationDispenseSlipPageLoader {
             if (slipRow.getDispenserId() != null) {
                 dispenserPractitionerIds.add(slipRow.getDispenserId());
             }
-            if (slipRow.getMedRequesterId() != null) {
-                orderingPractitionerIds.add(slipRow.getMedRequesterId());
-            }
             MedicationRequestListQueryModel mr = medicationRequestByMedReqId.get(slipRow.getMedReqId());
+            // 开单医生 id：优先 slip 投影，缺省回落药嘱 requester_id（与 slip 行装配一致）
+            Long orderingPractitionerId = slipRow.getMedRequesterId();
+            if (orderingPractitionerId == null && mr != null) {
+                orderingPractitionerId = mr.getRequesterId();
+            }
+            if (orderingPractitionerId != null) {
+                orderingPractitionerIds.add(orderingPractitionerId);
+            }
             if (mr != null && mr.getOrgId() != null) {
                 orderingDepartmentOrganizationIds.add(mr.getOrgId());
             }

@@ -7,17 +7,21 @@ package com.openhis.health.application.outpatient.doctorstation.diagnosis.mapper
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.support.PatientHistoryCommonDiagnosisRow;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.dto.CommonDiagnosisRowDto;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.dto.EncounterDiagnosisRowDto;
+import com.openhis.health.application.outpatient.doctorstation.diagnosis.dto.OpspFilingDiagnosisRowDto;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.request.SaveEncounterDiagnosisRequest;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.response.CommonDiagnosesResponse;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.response.ConditionDefinitionPageResponse;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.response.ConditionDefinitionRowResponse;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.response.DeleteEncounterDiagnosisResponse;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.response.EncounterDiagnosisResponse;
+import com.openhis.health.application.outpatient.doctorstation.diagnosis.response.PatientOpspFilingDiagnosisResponse;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.response.SaveEncounterDiagnosisResponse;
+import com.openhis.health.application.outpatient.doctorstation.diagnosis.request.DeleteEncounterDiagnosisRequest;
 import com.openhis.health.domain.administration.encounter.command.BatchUpsertEncounterDiagnosisAssociationCommand;
-import com.openhis.health.domain.clinical.condition.command.SaveDoctorDiagnosisCommand;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.DoctorStationConditionDefinitionRowModel;
+import com.openhis.health.domain.clinical.conditiondefinition.queries.model.OpspDiseCodeDefinitionMatchQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
+import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsuranceOpspFilingLineSnapshot;
 import org.springframework.data.domain.Page;
 
 import java.util.List;
@@ -109,43 +113,40 @@ public interface DoctorStationDiagnosisMapper {
     void validateSaveEncounterDiagnosisRequest(SaveEncounterDiagnosisRequest request);
 
     /**
-     * Request → 保存诊断事实命令。
+     * 组装就诊诊断关联批量 upsert 命令（直挂 conditionDefinitionId + encounterDiagnosisId）。
      *
-     * @param request    请求
+     * @param request    原始请求
      * @param operatorId 操作人
-     * @return 领域命令
-     */
-    SaveDoctorDiagnosisCommand toSaveDoctorDiagnosisCommand(SaveEncounterDiagnosisRequest request, Long operatorId);
-
-    /**
-     * 保存事实后组装就诊诊断关联批量命令（与请求行顺序一致）。
-     *
-     * @param request            原始请求
-     * @param savedConditionIds  与请求子项顺序一致的诊断事实 id 列表
-     * @param operatorId         操作人
      * @return 关联批量命令
      */
     BatchUpsertEncounterDiagnosisAssociationCommand toBatchUpsertEncounterDiagnosisAssociationCommand(
         SaveEncounterDiagnosisRequest request,
-        List<Long> savedConditionIds,
         Long operatorId);
 
     /**
      * 装配保存响应。
      *
-     * @param savedCount        成功条数
-     * @param savedConditionIds 诊断事实 id
+     * @param savedCount               成功条数
+     * @param savedEncounterDiagnosisIds 就诊诊断行 id
      * @return 响应
      */
-    SaveEncounterDiagnosisResponse toSaveEncounterDiagnosisResponse(int savedCount, List<Long> savedConditionIds);
+    SaveEncounterDiagnosisResponse toSaveEncounterDiagnosisResponse(int savedCount, List<Long> savedEncounterDiagnosisIds);
+
+    /**
+     * 解析删除请求中的就诊诊断行主键。
+     *
+     * @param request 删除请求
+     * @return 就诊诊断行主键
+     */
+    Long resolveDeleteEncounterDiagnosisId(DeleteEncounterDiagnosisRequest request);
 
     /**
      * Gate：删除请求参数校验。
      *
-     * @param conditionId 诊断事实 id
-     * @param encounterId 就诊 id
+     * @param encounterDiagnosisId 就诊诊断行 id
+     * @param encounterId          就诊 id
      */
-    void validateDeleteEncounterDiagnosisRequest(Long conditionId, Long encounterId);
+    void validateDeleteEncounterDiagnosisRequest(Long encounterDiagnosisId, Long encounterId);
 
     /**
      * 装配删除响应。
@@ -177,4 +178,32 @@ public interface DoctorStationDiagnosisMapper {
     CommonDiagnosisRowDto toCommonDiagnosisRowDto(
         PatientHistoryCommonDiagnosisRow model,
         Map<String, String> sourceDisplayByCode);
+
+    /**
+     * 装配 IF-DOR-06B 响应。
+     *
+     * @param opspFilingImportEnabled CHS 门控
+     * @param filingList              备案行
+     * @return 响应
+     */
+    PatientOpspFilingDiagnosisResponse toPatientOpspFilingDiagnosisResponse(
+        boolean opspFilingImportEnabled,
+        List<OpspFilingDiagnosisRowDto> filingList);
+
+    /**
+     * 将平台备案行与目录匹配结果装配为医生站候选行。
+     *
+     * @param filingLine  5301 备案行
+     * @param match       目录匹配；未命中可空
+     * @param matchStatus 映射状态码
+     * @param matchHint   提示文案
+     * @param valid       是否有效期内
+     * @return 候选行
+     */
+    OpspFilingDiagnosisRowDto toOpspFilingDiagnosisRowDto(
+        InsuranceOpspFilingLineSnapshot filingLine,
+        OpspDiseCodeDefinitionMatchQueryModel match,
+        String matchStatus,
+        String matchHint,
+        boolean valid);
 }

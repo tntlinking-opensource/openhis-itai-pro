@@ -15,9 +15,10 @@ import com.openhis.health.application.shared.validator.CurrentManagedWardLocatio
 import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.BedBoardItemDto;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.BedBoardLocationBlockDto;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.BedBoardOccupantDto;
-import com.openhis.health.application.inpatient.nursestation.ATDManager.support.RecallReverseSettleOrchestrator;
 import com.openhis.health.application.shared.inpatient.AdmissionVitalSignSaveContext;
 import com.openhis.health.application.shared.inpatient.AdmissionVitalSignOrchestrator;
+import com.openhis.health.application.shared.advice.InpatientEntrustOrderGateSupport;
+import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.MissingDispenseTraceTipDto;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.mapper.NurseStationATDManagerMapper;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.DischargePendingExecutionItemDto;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.DischargePendingMedicationItemDto;
@@ -27,18 +28,20 @@ import com.openhis.health.application.inpatient.nursestation.ATDManager.request.
 import com.openhis.health.application.inpatient.nursestation.ATDManager.request.ListBedBoardRequest;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.request.ListDischargePendingExecutionsRequest;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.request.ListDischargePendingMedicationsRequest;
-import com.openhis.health.application.inpatient.nursestation.ATDManager.request.RecallInpatientDischargeRequest;
+import com.openhis.health.application.inpatient.nursestation.ATDManager.request.ListMissingDispenseTraceTipsRequest;
 import com.openhis.health.domain.administration.account.entity.Account;
 import com.openhis.health.infrastructure.integration.booking.inpatient.InpatientBedBookingConsumeExtension;
 import com.openhis.health.infrastructure.integration.booking.inpatient.InpatientBedBookingQueryExtension;
 import com.openhis.health.infrastructure.integration.booking.ExtensionIn.InpatientBedBookingByBedExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
+import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterDischargeSummarySalesExtensionIn;
+import com.openhis.health.infrastructure.integration.noop.IntegrationAfterCommitSupport;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.command.AssignInpatientBedCommand;
 import com.openhis.health.domain.administration.encounter.command.ClearDischargedBedCommand;
 import com.openhis.health.domain.administration.encounter.command.ConfirmBedTransferCommand;
 import com.openhis.health.domain.administration.encounter.command.ExecuteInpatientNurseDischargeCommand;
-import com.openhis.health.domain.administration.encounter.command.RecallInpatientDischargeCommand;
 import com.openhis.health.domain.administration.encounter.command.SwapInpatientBedsCommand;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
@@ -52,10 +55,13 @@ import com.openhis.health.domain.administration.location.service.LocationDomainS
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
+import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseListQueryModel;
+import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
@@ -91,14 +97,16 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * 住院护士站入出转管理应用服务（AS-IP-NUR-002，IF-IP-NUR-ATD-01～07）。
+ * 住院护士站入出转管理应用服务（AS-IP-NUR-002，IF-IP-NUR-ATD-01～06）。
  *
  * <p>职责边界：</p>
  * <ul>
  *   <li>Gate/Pre：床位列表范围解析、出 Tab 占床过滤、床态与就诊状态门禁。</li>
- *   <li>Cmd：分床/换床/互换、办理出院、清床领域写 + 床位资源 occupy/release 编排。</li>
- *   <li>Asm：床位图、出院前待办列表与占床患者展示，与 001 列表同源装配器。</li>
+ *   <li>Cmd：分床/换床/互换、办理出院、清床领域写 + 床位资源 occupy/release 编排；清床后 afterCommit 异步触发汇总径 3505。</li>
+ *   <li>Asm：床位图、出院前待办列表与占床患者展示，与 001 列表同源装配器；缺追溯码 tip 供前端软提示。</li>
  * </ul>
+ *
+ * <p>出院召回已迁至收银台 {@code InpatientSettleAppService#recallInpatientDischarge}（IF-IP-RCL-01）。</p>
  *
  * <p>接入：{@code AppServiceControllerRegistrar} →
  * {@code POST /api/app/nurseStationATDManager/{methodName}}；不另写 RestController。</p>
@@ -146,14 +154,14 @@ public class NurseStationATDManagerAppService {
     /** 诊疗请求读侧（出院时刻解析）。 */
     private final ServiceRequestQueryService serviceRequestQueryService;
 
-    /** 出院召回内嵌反结（ATD-07 步骤 6，护士站应用层独享）。 */
-    private final RecallReverseSettleOrchestrator recallReverseSettleOrchestrator;
-
     /** 出院临床门禁（ATD-03/04/05 与 FIN-003 出院全结 Pre 共用）。 */
     private final InpatientDischargeClinicalGate inpatientDischargeClinicalGate;
 
     /** 药品定义读侧（待办展示名）。 */
     private final MedicationDefinitionQueryService medicationDefinitionQueryService;
+
+    /** 发放读侧（缺追溯码 tip 列表）。 */
+    private final MedicationDispenseQueryService medicationDispenseQueryService;
 
     /** 诊疗定义读侧（待办展示名）。 */
     private final ActivityDefinitionQueryService activityDefinitionQueryService;
@@ -164,11 +172,17 @@ public class NurseStationATDManagerAppService {
     /** 入科入院体征写编排（ASSIGN 成功后同事务写入）。 */
     private final AdmissionVitalSignOrchestrator admissionVitalSignOrchestrator;
 
+    /** 嘱托医嘱展示名解析（BR-IP-ORD-028④；与住院医生站列表同源）。 */
+    private final InpatientEntrustOrderGateSupport inpatientEntrustOrderGateSupport;
+
     /** 床位预约读 Extension（GAP-ATD-007）。 */
     private final InpatientBedBookingQueryExtension inpatientBedBookingQueryExtension;
 
     /** 分床消费预约 Extension（GAP-ATD-007）。 */
     private final InpatientBedBookingConsumeExtension inpatientBedBookingConsumeExtension;
+
+    /** 医保进销存上报（清床汇总径 3505 / 未冲销轻门禁）。 */
+    private final InventoryThirdPartyUploadExtension inventoryUploadExtension;
 
     /**
      * IF-IP-NUR-ATD-01：床位列表查询（位置块 + 占床患者块）。
@@ -796,6 +810,9 @@ public class NurseStationATDManagerAppService {
                     continue;
                 }
                 String activityName = activityNameById.get(row.getActivityId());
+                // Asm：嘱托行展示名优先正文（BR-IP-ORD-028④）
+                activityName = inpatientEntrustOrderGateSupport.resolveServiceAdviceDisplayName(
+                    row.getCategoryEnum(), activityName, row.getEntrustContent());
                 String doseText = this.formatDoseText(
                     null,
                     null,
@@ -881,7 +898,7 @@ public class NurseStationATDManagerAppService {
      *
      * @param request 就诊主键
      * @return 办理结果
-     * @throws BusinessException 门禁失败 EX-IP-ATD-301～305；持久化失败 EX-IP-ATD-306
+     * @throws BusinessException 门禁失败 EX-IP-ATD-301～305/308；持久化失败 EX-IP-ATD-306
      */
     public ExecuteInpatientDischargeResponse executeInpatientDischarge(ExecuteInpatientDischargeRequest request) {
         if (request == null || request.getEncounterId() == null) {
@@ -928,12 +945,14 @@ public class NurseStationATDManagerAppService {
                 nurseStationATDManagerMapper.toExecuteInpatientNurseDischargeCommand(
                     request, operatorId, dischargedAt);
             encounterDomainService.executeInpatientNurseDischarge(command);
+            // Asm：办理出院不触发汇总径 3505（须待结算完成后再清床上报）
             return nurseStationATDManagerMapper.toExecuteInpatientDischargeResponse(encounterId);
         } catch (BusinessException ex) {
             if (InpatientNurseStationConstants.EX_IP_ATD_301.equals(ex.getErrorCode())
                 || InpatientNurseStationConstants.EX_IP_ATD_307.equals(ex.getErrorCode())
                 || InpatientNurseStationConstants.EX_IP_ATD_302.equals(ex.getErrorCode())
                 || InpatientNurseStationConstants.EX_IP_ATD_303.equals(ex.getErrorCode())
+                || InpatientNurseStationConstants.EX_IP_ATD_308.equals(ex.getErrorCode())
                 || InpatientNurseStationConstants.EX_IP_ATD_304.equals(ex.getErrorCode())
                 || InpatientNurseStationConstants.EX_IP_ATD_305.equals(ex.getErrorCode())) {
                 throw ex;
@@ -962,7 +981,8 @@ public class NurseStationATDManagerAppService {
      *
      * @param request 就诊主键
      * @return 清床结果
-     * @throws BusinessException 非 COMPLETED 时 EX-IP-ATD-401；展示余额非零 EX-IP-ATD-403；床态异常 EX-IP-ATD-402
+     * @throws BusinessException 非 COMPLETED 时 EX-IP-ATD-401；展示余额非零 EX-IP-ATD-403；
+     *                           未冲销清床汇总销售 EX-IP-ATD-404；床态异常 EX-IP-ATD-402
      */
     public ClearDischargedBedResponse clearDischargedBed(ClearDischargedBedRequest request) {
         if (request == null || request.getEncounterId() == null) {
@@ -986,6 +1006,13 @@ public class NurseStationATDManagerAppService {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_ATD_401,
                     "请等待出院结算完成后再清床");
+            }
+            // Gate：召回后再清床须先冲销上次成功清床汇总 3505，否则平台可能双报
+            if (inventoryUploadExtension.isEnabled()
+                && inventoryUploadExtension.hasUnreversedClearBedSummarySales(encounterId)) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_ATD_404,
+                    "上次清床汇总销售尚未冲销成功，请完成冲销或联系运维后再清床");
             }
             // Pre 步骤 4b：展示账户余额须为零（BR-IP-ATD-016 → EX-IP-ATD-403）。
             Account account = accountQueryService.getRegistrationAccount(
@@ -1018,10 +1045,13 @@ public class NurseStationATDManagerAppService {
             ReleaseBedCommand releaseCommand =
                 nurseStationATDManagerMapper.toReleaseBedCommand(bedId, encounterId, operatorId);
             locationDomainService.releaseBed(releaseCommand);
+            // Asm：事务提交后异步上报汇总径净销售 3505（结算已完成；失败不回滚清床）
+            this.scheduleClearBedSummarySalesUploadAfterCommit(encounterId);
             return nurseStationATDManagerMapper.toClearDischargedBedResponse(encounterId);
         } catch (BusinessException ex) {
             if (InpatientNurseStationConstants.EX_IP_ATD_401.equals(ex.getErrorCode())
-                || InpatientNurseStationConstants.EX_IP_ATD_403.equals(ex.getErrorCode())) {
+                || InpatientNurseStationConstants.EX_IP_ATD_403.equals(ex.getErrorCode())
+                || InpatientNurseStationConstants.EX_IP_ATD_404.equals(ex.getErrorCode())) {
                 throw ex;
             }
             if (ErrorCodeConstants.ENCOUNTER_INVALID_STATUS.equals(ex.getErrorCode())) {
@@ -1044,94 +1074,93 @@ public class NurseStationATDManagerAppService {
     }
 
     /**
-     * IF-IP-NUR-ATD-07：出院召回（001 列表仅 {@code DISCHARGED} 行操作）。
+     * IF-IP-NUR-ATD-06a：清床前缺追溯码软提示列表（读；不拦清床）。
      *
-     * <p>同事务：内嵌 FIN-004 反结 + 就诊 {@code DISCHARGED→REGISTERED} 与活动 {@code WARD} 恢复。
-     * 未清床（{@code COMPLETED}）须收银台反结（AS-IP-FIN-004），禁止本接口。</p>
+     * <p>前端清床前调用：有 tip 则弹确认（含发药日+药名），用户仍确认则调 {@link #clearDischargedBed}。</p>
      *
      * @param request 就诊主键
-     * @return 召回结果（{@code targetStatusEnum=REGISTERED}、{@code requiresBedAssignment=true}）
-     * @throws BusinessException EX-IP-ATD-501～504
+     * @return 缺追溯码提示行；无缺码时 tips 为空
      */
-    public RecallInpatientDischargeResponse recallInpatientDischarge(RecallInpatientDischargeRequest request) {
-        // Gate：encounterId 必填，防止空参误调召回写路径。
+    public ListMissingDispenseTraceTipsResponse listMissingDispenseTraceTips(
+        ListMissingDispenseTraceTipsRequest request) {
+        // Gate：就诊主键必填
         if (request == null || request.getEncounterId() == null) {
             throw new BusinessException(
                 ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
                 "就诊标识不能为空");
         }
         Long encounterId = request.getEncounterId();
-        // Gate：写路径须已登录操作人。
-        Long operatorId = currentPractitionerResolver.requireOperatorId(
-            InpatientNurseStationConstants.EX_IP_ATD_504,
-            "出院召回失败，请刷新后重试");
-        try {
-            // Pre：住院 IMP；仅 DISCHARGED 可召回，COMPLETED 须收银台反结（BR-IP-ATD-017）。
-            EncounterDetailQueryModel encounter = encounterQueryService.mustGetEncounterOfClass(
-                encounterId,
-                EncounterClass.IMP.getCode(),
-                InpatientNurseStationConstants.EX_IP_ATD_501,
-                "当前状态不允许出院召回，请刷新");
-            String statusCode = encounter.getStatusEnum();
-            if (EncounterStatus.COMPLETED.getCode().equals(statusCode)) {
-                // Pre：未清床须收银台反结，禁止护士站召回（BR-IP-ATD-017）。
-                throw new BusinessException(
-                    InpatientNurseStationConstants.EX_IP_ATD_501,
-                    "仅已清床离院患者可召回；未清床请至收银台反结");
-            }
-            if (!EncounterStatus.DISCHARGED.getCode().equals(statusCode)) {
-                // Pre：非 DISCHARGED 终止态不允许召回。
-                throw new BusinessException(
-                    InpatientNurseStationConstants.EX_IP_ATD_501,
-                    "当前状态不允许出院召回，请刷新");
-            }
-            // Pre：解析末次已完成病区，供 INSERT 活动 WARD（BR-IP-ATD-019）。
-            Optional<Long> lastWard = encounterQueryService.findLastCompletedWardLocationIdByEncounterId(encounterId);
-            if (lastWard.isEmpty()) {
-                // Pre：无末次 COMPLETED WARD 无法恢复活动病区轨迹。
-                throw new BusinessException(
-                    InpatientNurseStationConstants.EX_IP_ATD_504,
-                    "出院召回失败，请刷新后重试");
-            }
-            Long wardLocationId = lastWard.get();
-            // Cmd：内嵌反结（RecallReverseSettleOrchestrator；对称 FIN-004），失败 EX-IP-ATD-502/503。
-            recallReverseSettleOrchestrator.execute(
-                encounterId,
-                encounter.getPatientId());
-            // Cmd：DISCHARGED→REGISTERED + INSERT 活动 WARD（领域 §6.1.25）。
-            RecallInpatientDischargeCommand recallCommand =
-                nurseStationATDManagerMapper.toRecallInpatientDischargeCommand(
-                    request, operatorId, wardLocationId);
-            encounterDomainService.recallInpatientDischarge(recallCommand);
-            // Asm：返回 REGISTERED 态与二次分床提示（须 ATD-02 重新分床）。
-            return nurseStationATDManagerMapper.toRecallInpatientDischargeResponse(
-                encounterId,
-                EncounterStatus.REGISTERED.getCode(),
-                true);
-        } catch (BusinessException ex) {
-            if (InpatientNurseStationConstants.EX_IP_ATD_501.equals(ex.getErrorCode())
-                || InpatientNurseStationConstants.EX_IP_ATD_502.equals(ex.getErrorCode())
-                || InpatientNurseStationConstants.EX_IP_ATD_503.equals(ex.getErrorCode())) {
-                throw ex;
-            }
-            if (ErrorCodeConstants.ENCOUNTER_INVALID_STATUS.equals(ex.getErrorCode())) {
-                throw new BusinessException(
-                    InpatientNurseStationConstants.EX_IP_ATD_501,
-                    "当前状态不允许出院召回，请刷新");
-            }
-            throw new BusinessException(
-                InpatientNurseStationConstants.EX_IP_ATD_504,
-                "出院召回失败，请刷新后重试");
-        } catch (OptimisticLockingFailureException ex) {
-            throw new BusinessException(
-                InpatientNurseStationConstants.EX_IP_ATD_504,
-                "出院召回失败，请刷新后重试");
-        } catch (RuntimeException ex) {
-            // 运行时异常收口为 EX-IP-ATD-504，同事务整单回滚。
-            throw new BusinessException(
-                InpatientNurseStationConstants.EX_IP_ATD_504,
-                "出院召回失败，请刷新后重试");
+        // Pre：装载缺追溯码的已核发正向行
+        List<MedicationDispense> missingRows =
+            medicationDispenseQueryService.listCompletedForwardDispensesMissingTraceNo(encounterId);
+        ListMissingDispenseTraceTipsResponse response = new ListMissingDispenseTraceTipsResponse();
+        if (missingRows.isEmpty()) {
+            response.setHasMissingTrace(Boolean.FALSE);
+            response.setTips(new ArrayList<>());
+            return response;
         }
+        Set<Long> medicationIds = new LinkedHashSet<>();
+        for (MedicationDispense row : missingRows) {
+            if (row != null && row.getMedicationId() != null) {
+                medicationIds.add(row.getMedicationId());
+            }
+        }
+        Map<Long, String> medicationNameById = this.mapMedicationNamesByIds(medicationIds);
+        List<MissingDispenseTraceTipDto> tips = new ArrayList<>();
+        for (MedicationDispense row : missingRows) {
+            if (row == null) {
+                continue;
+            }
+            // Asm：组装「某日某药」提示文案供前端确认框展示
+            tips.add(this.toMissingDispenseTraceTip(row, medicationNameById));
+        }
+        response.setHasMissingTrace(Boolean.TRUE);
+        response.setTips(tips);
+        return response;
+    }
+
+    /**
+     * 单行缺追溯码 tip：发药日 + 药名 + 批号。
+     *
+     * @param row                 发放行
+     * @param medicationNameById  药品名索引
+     * @return tip DTO
+     */
+    private MissingDispenseTraceTipDto toMissingDispenseTraceTip(
+        MedicationDispense row,
+        Map<Long, String> medicationNameById
+    ) {
+        MissingDispenseTraceTipDto tip = new MissingDispenseTraceTipDto();
+        tip.setDispenseId(row.getId());
+        tip.setLotNumber(row.getLotNumber());
+        LocalDateTime time = row.getDispenseTime();
+        if (time == null) {
+            time = row.getStatusChangedTime();
+        }
+        String dateText = "";
+        if (time != null) {
+            dateText = time.toLocalDate().format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
+            tip.setDispenseDate(dateText);
+        }
+        String medicationName = "未知药品";
+        if (row.getMedicationId() != null && medicationNameById != null) {
+            String resolved = medicationNameById.get(row.getMedicationId());
+            if (StringUtils.isNotBlank(resolved)) {
+                medicationName = resolved;
+            }
+        }
+        tip.setMedicationName(medicationName);
+        StringBuilder tipText = new StringBuilder();
+        if (StringUtils.isNotBlank(dateText)) {
+            tipText.append(dateText).append(' ');
+        }
+        tipText.append(medicationName);
+        if (StringUtils.isNotBlank(row.getLotNumber())) {
+            tipText.append("（批号 ").append(row.getLotNumber().trim()).append('）');
+        }
+        tipText.append("未分配追溯码");
+        tip.setTipText(tipText.toString());
+        return tip;
     }
 
     /**
@@ -1278,13 +1307,36 @@ public class NurseStationATDManagerAppService {
     }
 
     /**
-     * 出院门禁：与 ATD-03/04 待办列表同数据源——列表为空则医嘱/发药侧可通过。
+     * 出院门禁：与 ATD-03/04 待办列表同数据源——列表为空则医嘱/发药侧可通过；并校验已发药追溯码。
      *
      * @param encounterId 就诊主键
-     * @throws BusinessException EX-IP-ATD-301/302/303/307
+     * @throws BusinessException EX-IP-ATD-301/302/303/307/308
      */
     private void assertDischargeGatePassed(Long encounterId) {
         inpatientDischargeClinicalGate.assertDischargeClinicalGatePassed(encounterId);
+    }
+
+    /**
+     * 清床成功后：事务提交再异步触发汇总径净销售 3505。
+     *
+     * <p>扩展未启用时跳过；失败由 CHS 侧记日志，不回滚清床事实。
+     * 办理出院不挂本上报（彼时尚未结算，缺 setl 上下文）。</p>
+     *
+     * @param encounterId 就诊主键
+     */
+    private void scheduleClearBedSummarySalesUploadAfterCommit(Long encounterId) {
+        if (encounterId == null) {
+            return;
+        }
+        // Gate：CHS 进销存未启用则不上报
+        if (!inventoryUploadExtension.isEnabled()) {
+            return;
+        }
+        InventoryUploadAfterDischargeSummarySalesExtensionIn uploadCommand =
+            new InventoryUploadAfterDischargeSummarySalesExtensionIn().setEncounterId(encounterId);
+        // Asm：afterCommit 后再异步出站，避免读到未提交的离院态或回滚后误报
+        IntegrationAfterCommitSupport.runAfterCommit(
+            () -> inventoryUploadExtension.uploadAfterDischargeSummarySales(uploadCommand));
     }
 
     /**

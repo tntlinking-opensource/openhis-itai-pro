@@ -63,16 +63,21 @@ public class SavePriceAdjustmentDraftCommand {
     }
 
     /**
-     * 批号明细入参（对应子表一行）。
+     * 批号明细入参（对应子表一行；物流可按库房+批号多行）。
      */
     @Getter
     @Setter
     public static class DetailLine {
 
+        /**
+         * 库位主键 {@code location_id}；可空（诊疗/未入库/应用层未能解析库位时）。
+         */
+        private Long locationId;
+
         /** 批号 {@code lot_number}。 */
         private String lotNumber;
 
-        /** 快照数量 {@code quantity}。 */
+        /** 快照数量 {@code quantity}（有 loc 时为本库数量）。 */
         private BigDecimal quantity;
 
         /** 调前进价 {@code old_purchase_amount}。 */

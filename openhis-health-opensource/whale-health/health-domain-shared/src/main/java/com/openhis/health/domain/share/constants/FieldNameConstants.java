@@ -77,6 +77,10 @@ public interface FieldNameConstants {
      */
     String CHILDREN_FLAG = "childrenFlag";
     /**
+     * 套餐子项引用的诊疗定义主键（{@code wkf_activity_definition_children.children_id}）。
+     */
+    String CHILDREN_ID = "childrenId";
+    /**
      * 子节点或子项 JSON。
      */
     String CHILDREN_JSON = "childrenJson";
@@ -106,14 +110,30 @@ public interface FieldNameConstants {
      * 终末消毒关联病区。
      */
     String CLEANED_WARD_ID = "cleanedWardId";
+/**
+     * 通用业务编码字段（如观察定义 {@code code}）。
+     */
+    String CODE = "code";
+    /**
+     * 通用展示名字段（如观察定义 {@code display}）。
+     */
+    String DISPLAY = "display";
 /** FieldName 共享常量：code，值 {@code conditionCode}。 */
     String CONDITION_CODE = "conditionCode";
+    /**
+     * 国家临床版诊断编码（国临码，持久化列 {@code clinic_code}）。
+     */
+    String CLINIC_CODE = "clinicCode";
+    /**
+     * 手术操作目录编码（持久化列 {@code procedure_code}）。
+     */
+    String PROCEDURE_CODE = "procedureCode";
     /**
      * 诊断事实主键（医生站快照 JSON、就诊诊断关联）。
      */
     String CONDITION_ID = "conditionId";
     /**
-     * 医嘱请求（药品/诊疗/耗材）：诊断定义主键（持久化列 {@code condition_definition_id}，指向 {@code cln_condition_definition.id}）。
+     * 就诊诊断行或快照：诊断定义主键（持久化列 {@code condition_definition_id}，指向 {@code cln_condition_definition.id}）。
      */
     String CONDITION_DEFINITION_ID = "conditionDefinitionId";
     /**
@@ -173,9 +193,13 @@ public interface FieldNameConstants {
      */
     String DIAGNOSIS_SORT_NO = "diagnosisSortNo";
     /**
-     * 就诊诊断关联主键（快照元素级锚点）。
+     * 就诊诊断关联主键（快照元素级锚点；单值，非医嘱绑定 有序 ids 串）。
      */
     String ENCOUNTER_DIAGNOSIS_ID = "encounterDiagnosisId";
+    /**
+     * 医嘱/账单绑定就诊诊断主键有序串（有序；首位为主诊断 {@code adm_encounter_diagnosis.id}）。
+     */
+    String ENCOUNTER_DIAGNOSIS_IDS = "encounterDiagnosisIds";
     /**
      * 医生站诊断快照：在院患者疾病诊断类型编码（与 {@code IptPatientDiseaseDiagType} 对齐）。
      */
@@ -237,6 +261,9 @@ public interface FieldNameConstants {
 
     /** 核发发药时刻（{@code med_medication_dispense.dispense_time}）。 */
     String DISPENSE_TIME = "dispenseTime";
+
+    /** 计划发药时刻（{@code med_medication_dispense.planned_dispense_time}）。 */
+    String PLANNED_DISPENSE_TIME = "plannedDispenseTime";
     /**
      * 药品成组号（药品申请 {@code groupId}）。
      */
@@ -537,6 +564,9 @@ public interface FieldNameConstants {
     String PURCHASE_UNIT_RATIO = "purchaseUnitRatio";
 /** FieldName 共享常量：location id，值 {@code purposeLocationId}。 */
     String PURPOSE_LOCATION_ID = "purposeLocationId";
+
+    /** 领用科室（行政 Organization 主键，JPA 属性名）。 */
+    String CONSUMING_ORGANIZATION_ID = "consumingOrganizationId";
 /** FieldName 共享常量：type enum，值 {@code purposeTypeEnum}。 */
     String PURPOSE_TYPE_ENUM = "purposeTypeEnum";
 /** FieldName 共享常量：str，值 {@code pyStr}。 */
@@ -778,9 +808,17 @@ public interface FieldNameConstants {
      */
     String DEV_BASED_ON_ID = "devBasedOnId";
     /**
-     * 医嘱开立时间（OrderInfo {@code authored_time}）。
+     * 签发时间（三 Request 统一 Java 属性 {@code reqAuthoredTime} / 列 {@code req_authored_time}；仅系统追溯，不作业务排序/展示主轴）。
      */
-    String AUTHORED_TIME = "authoredTime";
+    String AUTHORED_TIME = "reqAuthoredTime";
+    /**
+     * 开立时间（三 Request 统一 {@code reqOpenedTime} / 列 {@code req_opened_time}；业务排序/展示/频次主轴）。
+     */
+    String REQ_OPENED_TIME = "reqOpenedTime";
+    /**
+     * 停嘱时间（三 Request 统一 {@code stopTime} / 列 {@code stop_time}；住院业务右界）。
+     */
+    String STOP_TIME = "stopTime";
     /**
      * 医嘱来源类型（SERVICE_REQUEST / MED_REQUEST / DEVICE_REQUEST）。
      */
@@ -873,6 +911,7 @@ public interface FieldNameConstants {
     String YB_MATCH_FLAG = "ybMatchFlag";
 /** FieldName 共享常量：no，值 {@code ybNo}。 */
     String YB_NO = "ybNo";
+
 /** FieldName 共享常量：org no，值 {@code ybOrgNo}。 */
     String YB_ORG_NO = "ybOrgNo";
     /**
@@ -934,4 +973,19 @@ public interface FieldNameConstants {
 
 /** FieldName 共享常量：no，值 {@code babyNo}。 */
     String BABY_NO = "babyNo";
+
+    /**
+     * 处方号（{@code med_medication_request.prescription_no}）。
+     */
+    String PRESCRIPTION_NO = "prescriptionNo";
+
+    /**
+     * 药品/耗材/诊疗签发时刻（{@code req_authored_time}）。
+     */
+    String REQ_AUTHORED_TIME = "reqAuthoredTime";
+
+    /**
+     * 处方类别编码（术语 355，{@code med_medication_request.rx_type_code}）。
+     */
+    String RX_TYPE_CODE = "rxTypeCode";
 }

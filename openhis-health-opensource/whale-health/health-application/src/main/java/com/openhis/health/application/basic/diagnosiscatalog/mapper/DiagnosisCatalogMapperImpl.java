@@ -51,7 +51,6 @@ public class DiagnosisCatalogMapperImpl implements DiagnosisCatalogMapper {
         dto.setSourceEnum(entity.getSourceEnum());
         dto.setSourceEnum_enumText(resolveSourceText(entity.getSourceEnum()));
         dto.setConditionCode(entity.getConditionCode());
-        dto.setDiseaseCode(entity.getDiseaseCode());
         dto.setName(entity.getName());
         dto.setTypeCode(entity.getTypeCode());
         dto.setTypeCode_dictText(resolveDiagTypeText(entity.getTypeCode()));
@@ -60,6 +59,7 @@ public class DiagnosisCatalogMapperImpl implements DiagnosisCatalogMapper {
         dto.setWbStr(entity.getWbStr());
         dto.setYbFlag(toIntFlag(entity.getYbFlag()));
         dto.setYbNo(entity.getYbNo());
+        dto.setClinicCode(entity.getClinicCode());
         dto.setYbMatchFlag(toIntFlag(entity.getYbMatchFlag()));
         dto.setStatusEnum(entity.getStatusEnum());
         dto.setStatusEnum_enumText(codeSystemQueryService.getDisplayByCode(PublicationStatus.class, entity.getStatusEnum()));
@@ -87,6 +87,7 @@ public class DiagnosisCatalogMapperImpl implements DiagnosisCatalogMapper {
         dto.setStatusEnum_enumText(codeSystemQueryService.getDisplayByCode(PublicationStatus.class, model.getStatusEnum()));
         dto.setYbFlag(toIntFlag(model.getYbFlag()));
         dto.setYbNo(model.getYbNo());
+        dto.setClinicCode(model.getClinicCode());
         dto.setDescription(model.getDescription());
         return dto;
     }
@@ -107,7 +108,6 @@ public class DiagnosisCatalogMapperImpl implements DiagnosisCatalogMapper {
         dto.setSourceEnum(model.getSourceEnum());
         dto.setSourceEnum_enumText(resolveSourceText(model.getSourceEnum()));
         dto.setConditionCode(model.getConditionCode());
-        dto.setDiseaseCode(model.getDiseaseCode());
         dto.setName(model.getName());
         dto.setPyStr(model.getPyStr());
         dto.setWbStr(model.getWbStr());
@@ -116,6 +116,7 @@ public class DiagnosisCatalogMapperImpl implements DiagnosisCatalogMapper {
         dto.setDescription(model.getDescription());
         dto.setYbFlag(toIntFlag(model.getYbFlag()));
         dto.setYbNo(model.getYbNo());
+        dto.setClinicCode(model.getClinicCode());
         dto.setYbMatchFlag(toIntFlag(model.getYbMatchFlag()));
         dto.setStatusEnum(model.getStatusEnum());
         dto.setStatusEnum_enumText(codeSystemQueryService.getDisplayByCode(PublicationStatus.class, model.getStatusEnum()));
@@ -143,8 +144,8 @@ public class DiagnosisCatalogMapperImpl implements DiagnosisCatalogMapper {
         command.setTypeCode(request.getTypeCode());
         command.setDescription(request.getDescription());
         command.setYbFlag(toBoolFlag(request.getYbFlag()));
-        command.setDiseaseCode(request.getDiseaseCode());
         command.setYbNo(request.getYbNo());
+        command.setClinicCode(request.getClinicCode());
         command.setYbMatchFlag(toBoolFlag(request.getYbMatchFlag()));
         command.setStatusEnum(request.getStatusEnum());
         return command;
@@ -172,8 +173,8 @@ public class DiagnosisCatalogMapperImpl implements DiagnosisCatalogMapper {
         command.setTypeCode(request.getTypeCode());
         command.setDescription(request.getDescription());
         command.setYbFlag(toBoolFlag(request.getYbFlag()));
-        command.setDiseaseCode(request.getDiseaseCode());
         command.setYbNo(request.getYbNo());
+        command.setClinicCode(request.getClinicCode());
         command.setYbMatchFlag(toBoolFlag(request.getYbMatchFlag()));
         command.setStatusEnum(request.getStatusEnum());
         return command;

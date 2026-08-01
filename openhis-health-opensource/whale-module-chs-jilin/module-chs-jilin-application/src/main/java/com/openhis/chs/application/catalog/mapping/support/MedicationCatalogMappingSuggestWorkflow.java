@@ -17,18 +17,23 @@ import com.openhis.chs.domain.catalog.entity.YbNationalCatalogItem;
 import com.openhis.chs.domain.catalog.result.CatalogMatchCandidateResult;
 import com.openhis.chs.domain.catalog.result.MedicationCatalogMappingSuggestResult;
 import com.openhis.chs.domain.catalog.service.YbNationalCatalogQueryService;
+import com.openhis.chs.domain.catalog.support.NationalCatalogSelectableComposer;
 import com.openhis.chs.domain.contract.ChsContractSnapshot;
+import com.openhis.chs.domain.notice.queryservice.NationalCatalogOverlayQueryService;
 import com.openhis.chs.domain.share.constants.ChsErrorCodes;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 药品医保目录智能推荐编排（本地镜像打分，可触发 1312 补库）。
- * <p>本地候选池不足且允许补库时，调用 {@link Cat1312Invoker} 拉取平台数据后重新打分。</p>
+ * 药品医保目录智能推荐编排（默认仅本地镜像打分）。
+ * <p>仅当 {@code queryPlatformIfMiss=true} 且本地候选池为空时，才调用 {@link Cat1312Invoker}
+ * 拉取平台数据后重新打分；选码弹窗应传 false。出参再经局文 overlay 合成为可选性。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -36,6 +41,7 @@ public class MedicationCatalogMappingSuggestWorkflow {
 
     private final ChsInsuranceContractReader contractReader;
     private final YbNationalCatalogQueryService catalogQueryService;
+    private final NationalCatalogOverlayQueryService overlayQueryService;
     private final Cat1312Invoker cat1312Invoker;
 
     /**
@@ -62,11 +68,56 @@ public class MedicationCatalogMappingSuggestWorkflow {
         List<YbNationalCatalogItem> pool = loadMatchPool(
             command, contractId, tenantId, contractBusNo, listType);
         List<CatalogMatchCandidateResult> candidates = CatalogMedicationMatchScorer.scoreAndSort(pool, command, max);
-        String level = CatalogMedicationMatchScorer.resolveRecommendLevel(candidates);
+        overlayQueryService.decorateSelectable(
+            tenantId, contractId, listType, candidates, LocalDate.now());
+        candidates = dropPlatformUnusable(candidates);
+        String level = resolveLevelAfterSelectable(candidates);
         return new MedicationCatalogMappingSuggestResult()
             .setRecommendLevel(level)
             .setHint(CatalogMedicationMatchScorer.buildHint(level, candidates))
             .setCandidates(candidates);
+    }
+
+    /**
+     * 选码推荐不展示平台停用/已过期行（局文停用仍保留为不可选提示）。
+     */
+    private static List<CatalogMatchCandidateResult> dropPlatformUnusable(
+            List<CatalogMatchCandidateResult> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return candidates == null ? List.of() : candidates;
+        }
+        List<CatalogMatchCandidateResult> kept = new ArrayList<>(candidates.size());
+        for (CatalogMatchCandidateResult row : candidates) {
+            if (row == null) {
+                continue;
+            }
+            String reason = row.getUnselectableReason();
+            if (NationalCatalogSelectableComposer.REASON_PLATFORM_EXPIRED.equals(reason)
+                || NationalCatalogSelectableComposer.REASON_PLATFORM_INVALID.equals(reason)) {
+                continue;
+            }
+            kept.add(row);
+        }
+        return kept;
+    }
+
+    /**
+     * 推荐级别仅看可选候选，避免高置信自动落到局文已停用码。
+     */
+    private static String resolveLevelAfterSelectable(List<CatalogMatchCandidateResult> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return "NO_MATCH";
+        }
+        List<CatalogMatchCandidateResult> selectable = new ArrayList<>();
+        for (CatalogMatchCandidateResult row : candidates) {
+            if (row != null && !Boolean.FALSE.equals(row.getIsSelectable())) {
+                selectable.add(row);
+            }
+        }
+        if (selectable.isEmpty()) {
+            return "NO_MATCH";
+        }
+        return CatalogMedicationMatchScorer.resolveRecommendLevel(selectable);
     }
 
     /**

@@ -27,6 +27,14 @@ public interface ServiceRequestCategoryConstants {
     /** 诊疗类目：床位服务（枚举名 {@code BED_SERVICE}；住院滚费床位费/采暖费/空调费等）。 */
     String SERVICE_CATEGORY_BED_SERVICE = "51";
 
+    /**
+     * 诊疗类目：嘱托（枚举名 {@code ENTRUST}；住院嘱托医嘱）。
+     *
+     * <p>目录固定项名称「嘱托」；{@code ActivityDefinition.category_code=52} →
+     * {@code ServiceRequest.category_enum=52}；正文 {@code entrust_content}；见 AS-IP-DOR-003 · BR-IP-ORD-028。</p>
+     */
+    String SERVICE_CATEGORY_ENTRUST = "52";
+
     /** 诊疗类目：护理级别（枚举名 {@code NURSING}；住院滚费护理级别医嘱）。 */
     String SERVICE_CATEGORY_NURSING = "26";
 

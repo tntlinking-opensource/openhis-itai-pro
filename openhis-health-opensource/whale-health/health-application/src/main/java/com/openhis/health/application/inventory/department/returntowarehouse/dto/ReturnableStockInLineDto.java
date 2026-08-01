@@ -4,6 +4,8 @@
  */
 package com.openhis.health.application.inventory.department.returntowarehouse.dto;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
@@ -22,7 +24,10 @@ public class ReturnableStockInLineDto {
     @Schema(description = "物品表 itemTable")
     private String itemTable;
 
-    /** 物品 itemId。 */
+    /**
+     * 物品主键 itemId（JSON 字符串，防前端 Number 精度丢失导致退库行键对不上）。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "物品 itemId")
     private Long itemId;
 

@@ -67,6 +67,12 @@ public class UpdateReturnToSupplierRequest {
     @Schema(description = "经手人 practitionerId", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long practitionerId;
 
+    /**
+     * 采购发票号（可空；空时 3504 上报可回落进货单或占位 {@code 0}）。
+     */
+    @Schema(description = "采购发票号 invoiceNo")
+    private String invoiceNo;
+
     /** 明细行 lines。 */
     @NotEmpty(message = "明细不能为空")
     @Schema(description = "明细行 lines", requiredMode = Schema.RequiredMode.REQUIRED)

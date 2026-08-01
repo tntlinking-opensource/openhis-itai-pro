@@ -22,8 +22,25 @@ public interface ChargeItemDefinitionRepository extends JpaRepository<ChargeItem
 
     /**
      * 批量实例下的全部价行（注意结果规模，调用方宜限制集合大小）。
+     *
+     * <p>规模风险：单实例可含多价类多批号行；目录选品宜改用
+     * {@link #findAllByInstanceTableAndInstanceIdInAndPriceTypeCodeIn} 收窄价类。</p>
      */
     List<ChargeItemDefinition> findAllByInstanceTableAndInstanceIdIn(String instanceTable, Collection<Long> instanceIds);
+
+    /**
+     * 批量实例下按价类集合收窄的价行（目录选品：仅 {@code SALE}/{@code LOT_NUMBER_PRICE} 时显著减负）。
+     *
+     * @param instanceTable   实例物理表
+     * @param instanceIds     实例主键集合
+     * @param priceTypeCodes  价类 code 集合
+     * @return 命中价行；调用方须再滤 ACTIVE/软删
+     */
+    List<ChargeItemDefinition> findAllByInstanceTableAndInstanceIdInAndPriceTypeCodeIn(
+        String instanceTable,
+        Collection<Long> instanceIds,
+        Collection<String> priceTypeCodes
+    );
 
     /**
      * 按实例与价格类型过滤。

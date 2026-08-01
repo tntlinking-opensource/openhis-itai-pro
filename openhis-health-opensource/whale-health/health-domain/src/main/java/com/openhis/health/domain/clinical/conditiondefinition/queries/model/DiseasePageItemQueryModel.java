@@ -27,6 +27,8 @@ public class DiseasePageItemQueryModel {
     private Boolean ybFlag;
     /** 医保编码。 */
     private String ybNo;
+    /** 国家临床版诊断编码（国临码）。 */
+    private String clinicCode;
     /** 说明。 */
     private String description;
 }

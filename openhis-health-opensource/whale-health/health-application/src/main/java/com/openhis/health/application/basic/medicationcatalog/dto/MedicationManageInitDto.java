@@ -29,17 +29,23 @@ public class MedicationManageInitDto {
     @Schema(description = "适用范围选项列表")
     private List<OptionDto> domainFlagOptions;
 
-    /** 供应商下拉选项（value=id, label=名称）。 */
-    @Schema(description = "供应商下拉选项（value=id, label=名称）")
+    /**
+     * 供应商下拉选项（兼容字段；药品目录维护已不再下发，恒为 null/空）。
+     */
+    @Schema(description = "供应商下拉选项（已废弃，不再下发）")
     private List<OptionDto> supplierListOptions;
 
     /** 页面药品分类树（value/label/children）。 */
     @Schema(description = "页面药品分类树（value/label/children）")
     private List<OptionDto> medicationCategoryCodeOptions;
 
-    /** 单位编码选项（value/label）。 */
-    @Schema(description = "单位编码选项（value/label）")
+    /** 计量单位选项（术语 {@code unit_code}；采购/拆零/包装/库存共用）。 */
+    @Schema(description = "计量单位字典选项（unit_code）")
     private List<OptionDto> unitCodeOptions;
+
+    /** 剂量单位（术语 {@code dose_unit}）。 */
+    @Schema(description = "剂量单位字典选项")
+    private List<OptionDto> doseUnitCodeOptions;
 
     /** 是/否状态选项。 */
     @Schema(description = "是/否状态选项")
@@ -117,6 +123,12 @@ public class MedicationManageInitDto {
      */
     @Schema(description = "DDD（定义日剂量）代码字典选项")
     private List<OptionDto> dddCodeOptions;
+
+    /**
+     * DDD（限定日剂量）单位选项：术语 {@code ddd_unit}，与计量 {@code unit_code}、剂量 {@code dose_unit} 分离。
+     */
+    @Schema(description = "DDD（限定日剂量）单位字典选项")
+    private List<OptionDto> dddUnitCodeOptions;
 
     /**
      * 给药途径/剂量来源选项：剂量来源或剂量单位相关的字典列表

@@ -16,6 +16,8 @@ public final class ChsCatalogConstants {
 
     /** 1312 增量查询：无历史游标时的默认起始 updt_time */
     public static final String DEFAULT_CATALOG_UPDT_TIME = "2020-01-01";
+    /** 1317 机构目录匹配全量：默认起始 updt_time（对齐老插件 2001-01-01） */
+    public static final String DEFAULT_1317_UPDT_TIME = "2001-01-01";
     /** 目录 updt_time 日期格式（平台要求 yyyy-MM-dd） */
     public static final String UPDT_TIME_DATE_PATTERN = "yyyy-MM-dd";
     /** 目录 updt_time 格式化器 */
@@ -23,6 +25,8 @@ public final class ChsCatalogConstants {
             DateTimeFormatter.ofPattern(UPDT_TIME_DATE_PATTERN);
     /** 调用 1312/1301 等平台接口时的默认 pageSize */
     public static final int DEFAULT_PLATFORM_PAGE_SIZE = 50;
+    /** 1317 单次同步自动翻页上限（防止异常死循环） */
+    public static final int MAX_1317_REFRESH_PAGES = 200;
     /** 院内目录镜像分页默认 pageSize */
     public static final int DEFAULT_LOCAL_PAGE_SIZE = 20;
     /** 13xx 首包下载：版本号为空时的占位（表示从首版开始） */
@@ -59,7 +63,10 @@ public final class ChsCatalogConstants {
     /** 13xx ZIP 解析入库：Jdbc batch 每批 flush 行数 */
     public static final int CATALOG_UPSERT_BATCH_SIZE = 500;
 
-    /** 下载游标历史 API：单次最多返回条数（防 UI 拉全表） */
+    /** 下载游标历史 API：每个 infno 最多返回条数（避免全局 LIMIT 截掉较早同步的接口如 1301） */
+    public static final int CATALOG_DOWNLOAD_CURSOR_HISTORY_PER_INFNO = 50;
+
+    /** @deprecated 请用 {@link #CATALOG_DOWNLOAD_CURSOR_HISTORY_PER_INFNO}；保留兼容旧引用 */
     public static final int CATALOG_DOWNLOAD_CURSOR_HISTORY_LIMIT = 200;
 
     private ChsCatalogConstants() {

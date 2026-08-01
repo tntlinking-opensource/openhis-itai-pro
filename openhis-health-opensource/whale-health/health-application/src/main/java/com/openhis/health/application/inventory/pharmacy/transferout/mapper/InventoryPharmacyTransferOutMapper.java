@@ -224,11 +224,14 @@ public interface InventoryPharmacyTransferOutMapper {
     /**
      * 将已同意药房调出行装配为对侧调入壳单命令（初态 {@code AGREE}，只读台账）。
      *
+     * <p>壳单须完整沿用调出头：制单人（行 applicant 优先）、申请时刻、审批人、审批时刻；
+     * bootstrap AGREE 不走 {@code approvalToAgree}，故审批字段必须在此写入。</p>
+     *
      * @param agreedOutLines   已同意的调出明细行
      * @param outboundBusNo    调出业务单号
      * @param counterpartyType 对侧调入 type 持久化码（如 {@code PHARMACY_TRANSFER_IN} / {@code CABINET_TRANSFER_IN}）
      * @param operatorId       操作人
-     * @param applicantId      制单人员
+     * @param applicantId      制单人员（调出行 applicant 缺省时回落）
      * @return 调拨创建命令
      */
     CreateTransferCommand toCreateTransferCommandForShellCounterpartyTransferIn(

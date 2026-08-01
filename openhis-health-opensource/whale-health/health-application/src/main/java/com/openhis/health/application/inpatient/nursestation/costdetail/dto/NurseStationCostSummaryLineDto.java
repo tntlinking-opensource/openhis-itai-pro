@@ -11,6 +11,7 @@ import lombok.Data;
 import lombok.experimental.Accessors;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * 费用汇总行 DTO（IF-IP-CDT-02，presentationMode=SUMMARY）。
@@ -84,4 +85,8 @@ public class NurseStationCostSummaryLineDto {
     /** 费用大类块展示名。 */
     @Schema(description = "费用大类块展示名")
     private String expenseBlockDisplay;
+
+    /** 组内执行/划价明细（按业务时间倒序，供汇总行展开；BR-IP-CDT-018）。 */
+    @Schema(description = "组内执行/划价明细")
+    private List<NurseStationCostSummaryActivityLineDto> activityLines;
 }

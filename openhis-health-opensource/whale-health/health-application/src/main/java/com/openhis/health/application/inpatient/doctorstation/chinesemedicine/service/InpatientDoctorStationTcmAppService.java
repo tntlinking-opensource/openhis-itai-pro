@@ -20,14 +20,15 @@ import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.re
 import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.support.InpatientTcmPrescriptionExpandAssembler;
 import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.support.InpatientTcmRxHeaderGate;
 import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.support.InpatientTcmRxRevokeGate;
+import com.openhis.health.application.outpatient.doctorstation.chinesemedicine.policy.TcmDiagnosisGroupPairingPolicy;
 import com.openhis.health.domain.administration.encounter.command.RemoveEncounterDiagnosisAssociationCommand;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
-import com.openhis.health.domain.clinical.condition.command.DelEncounterDiagnosisCommand;
-import com.openhis.health.domain.clinical.condition.service.ConditionDomainService;
-import com.openhis.health.domain.clinical.condition.service.ConditionQueryService;
+import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.DoctorStationConditionDefinitionRowModel;
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
+import com.openhis.health.domain.medication.medicationrequest.command.ChangeHerbalMedicationOrderDraftCommand;
+import com.openhis.health.domain.medication.medicationrequest.command.CreateHerbalMedicationOrderDraftCommand;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.TcmHerbalPrescriptionGroupQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.TcmHerbalPrescriptionHistoryGroupQueryModel;
@@ -49,6 +50,7 @@ import com.openhis.health.application.shared.product.ProductDefinitionDisplayTer
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogPageLoader;
 import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.diagnosis.EncounterDiagnosisReferenceSupport;
 import com.openhis.health.application.shared.diagnosis.EncounterDiagnosisSnapshotAssembler;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
@@ -93,6 +95,9 @@ public class InpatientDoctorStationTcmAppService {
     /** 中医病证组聚合装配。 */
     private final InpatientTcmDiagnosisAssembler diagnosisAssembler;
 
+    /** 病证组成组完整性策略（默认一病一证；院点可 @Primary 放宽）。 */
+    private final TcmDiagnosisGroupPairingPolicy tcmDiagnosisGroupPairingPolicy;
+
     /** 中药处方列表 enrich 装配。 */
     private final InpatientTcmRxListAssembler prescriptionListAssembler;
 
@@ -114,14 +119,12 @@ public class InpatientDoctorStationTcmAppService {
     /** 病名/证候目录读侧。 */
     private final ConditionDefinitionQueryService conditionDefinitionQueryService;
 
-    /** 诊断事实写侧。 */
-    private final ConditionDomainService conditionDomainService;
-
-    /** 就诊诊断关联写侧。 */
+    /** 就诊诊断关联写。 */
     private final EncounterDomainService encounterDomainService;
 
-    /** 诊断事实读侧。 */
-    private final ConditionQueryService conditionQueryService;
+    /** 就诊诊断读（引用门禁）。 */
+    private final EncounterQueryService encounterQueryService;
+    private final EncounterDiagnosisReferenceSupport encounterDiagnosisReferenceSupport;
 
     /** 药品申请读侧。 */
     private final MedicationRequestQueryService medicationRequestQueryService;
@@ -135,7 +138,7 @@ public class InpatientDoctorStationTcmAppService {
     /** 业务单号序列。 */
     private final BusinessSequenceService businessSequenceService;
 
-    /** 医嘱目录行装配（定价，无库存）。 */
+    /** 医嘱目录行装配（库存预减 + 定价）。 */
     private final InpatientDoctorStationAdviceCatalogAssembler adviceCatalogAssembler;
 
     /** 产品目录分页加载。 */
@@ -217,6 +220,7 @@ public class InpatientDoctorStationTcmAppService {
         // Pre：ACTIVE 目录分页
         Page<DoctorStationConditionDefinitionRowModel> page = conditionDefinitionQueryService.pageActiveDoctorStationDefinitions(
             request.getKeyword(), sourceIn, request.getPageNo(), request.getPageSize());
+        // Asm：领域行转展示 DTO（含医保对码，供开诊弹窗列表展示）
         List<TcmDiagnosisCatalogRowDto> rows = new ArrayList<>();
         for (DoctorStationConditionDefinitionRowModel model : page.getContent()) {
             TcmDiagnosisCatalogRowDto row = new TcmDiagnosisCatalogRowDto();
@@ -225,6 +229,8 @@ public class InpatientDoctorStationTcmAppService {
             row.setConditionName(model.getName());
             row.setSourceCode(model.getSourceEnum());
             row.setSourceText(model.getSourceEnum());
+            // 透传目录医保编码；空值由前端显示「-」
+            row.setYbNo(model.getYbNo());
             rows.add(row);
         }
         return tcmMapper.toPageTcmConditionDefinitionResponse(page, rows);
@@ -251,12 +257,11 @@ public class InpatientDoctorStationTcmAppService {
         for (String removed : removedGroups) {
             deleteTcmGroupInternal(request.getEncounterId(), removed, existing, operatorId);
         }
+        // Gate：保留组若改病/证目录定义且仍被医嘱/账单引用则拒绝（DD §8.1）
+        this.assertTcmRetainedGroupsContentChangeAllowed(existing, request);
         Map<String, String> groupKeyByItem = assignTcmGroupKeys(request);
-        // Cmd：保存诊断事实与关联
-        List<Long> savedIds = conditionDomainService.saveDoctorDiagnosisTcm(
-            tcmMapper.toSaveDoctorDiagnosisTcmCommand(request, groupKeyByItem, operatorId));
         encounterDomainService.batchUpsertTcmEncounterDiagnosisAssociation(
-            tcmMapper.toBatchUpsertTcmEncounterDiagnosisAssociationCommand(request, savedIds, groupKeyByItem, operatorId));
+            tcmMapper.toBatchUpsertTcmEncounterDiagnosisAssociationCommand(request, groupKeyByItem, operatorId));
         return tcmMapper.toSaveTcmDiagnosisGroupsBatchResponse(new ArrayList<>(new LinkedHashSet<>(groupKeyByItem.values())));
     }
 
@@ -302,10 +307,13 @@ public class InpatientDoctorStationTcmAppService {
     }
 
     /**
-     * IF-IP-TCM-35：分页检索中药饮片目录。
+     * IF-IP-TCM-35：分页检索中药饮片目录（强制中草药；库存预减与 IF-IP-DOR-11 同构）。
      *
-     * @param request 含 encounterId、patientId、keyword、分页参数
-     * @return 饮片目录分页（定价 only，无库存 Gate）
+     * <p>选品下拉与西药一致：同名多厂家/多目录各行展示，不做同名折叠。
+     * 暂存身份仍绑所选目录；签发写路径仍按库存 FIFO 跨批分段。</p>
+     *
+     * @param request 含 encounterId、patientId、keyword、分页
+     * @return 饮片目录分页（行契约与 IF-IP-DOR-11 同构）
      * @throws BusinessException 分页非法或 Gate 失败时
      */
     public PageTcmHerbalMedicationCatalogResponse pageTcmHerbalMedicationCatalog(PageTcmHerbalMedicationCatalogRequest request) {
@@ -319,9 +327,9 @@ public class InpatientDoctorStationTcmAppService {
         // Pre：强制中草药分类
         pageQuery.setCategoryCode(DoctorStationTcmConstants.HERBAL_CATEGORY_CODE);
         Page<ProductDefinitionDisplayDto> page = productDefinitionCatalogPageLoader.pageProductDefinition(pageQuery);
-        // Asm：定价-only，无库存
+        // Asm：与西药住院目录同构下发库存预减与定价，不做同名折叠
         List<InpatientDoctorStationAdviceCatalogRowDto> rows =
-            adviceCatalogAssembler.assemblePageContentWithoutInventoryGate(catalogRequest, page, snapshot);
+            adviceCatalogAssembler.assemblePageContent(catalogRequest, page, snapshot);
         return PagedResultBuilder.build(new PageTcmHerbalMedicationCatalogResponse(), rows, page);
     }
 
@@ -352,15 +360,32 @@ public class InpatientDoctorStationTcmAppService {
                     ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
                     InpatientDoctorStationTcmConstants.MSG_SYNDROME_GROUP_REQUIRED);
             }
+            // 住院开立本期不绑诊断：不写 encounter_diagnosis_ids（与西医住院开立一致）
             String contentJson = tcmMapper.buildHerbalContentJson(header);
             for (TcmRxDraftLineRequest line : header.getLines()) {
                 String op = trimToEmpty(line.getLineOp()).toUpperCase(java.util.Locale.ROOT);
+                // DELETE 仅需 medicationRequestId，不要求 dose / 付数
+                if (DoctorStationAdviceConstants.LINE_OP_DELETE.equals(op)) {
+                    medicationRequestDomainService.removeMedicationOrderDraft(
+                        tcmMapper.toRemoveMedicationOrderDraftCommand(line.getMedicationRequestId(), operatorId));
+                    continue;
+                }
+                // Gate：CREATE/UPDATE 缺单剂用量则无法按 BR-TCM-RX-005 计算请求数量
+                if (line.getDose() == null) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, "单剂用量不能为空");
+                }
+                // Gate：CREATE/UPDATE 缺付数则无法按 BR-TCM-RX-005 计算请求数量
+                if (header.getChineseHerbsDoseQuantity() == null) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, "付数不能为空");
+                }
                 BigDecimal quantity = line.getDose().multiply(header.getChineseHerbsDoseQuantity());
-                // Cmd：按 lineOp 三选一
+                // Cmd：按 lineOp 执行 CREATE / UPDATE
                 if (DoctorStationAdviceConstants.LINE_OP_CREATE.equals(op)) {
-                    Long newId = medicationRequestDomainService.createHerbalMedicationOrderDraft(
-                        tcmMapper.toCreateHerbalMedicationOrderDraftCommand(
-                            request, header, line, operatorId, orgId, contentJson, quantity));
+                    CreateHerbalMedicationOrderDraftCommand createCmd = tcmMapper.toCreateHerbalMedicationOrderDraftCommand(
+                        request, header, line, operatorId, orgId, contentJson, quantity);
+                    Long newId = medicationRequestDomainService.createHerbalMedicationOrderDraft(createCmd);
                     // 非临嘱创建后补写 therapy_enum
                     if (!TherapyType.TEMPORARY.getCode().equals(header.getTherapyEnum())) {
                         medicationRequestDomainService.changeMedicationOrderDraft(
@@ -368,15 +393,13 @@ public class InpatientDoctorStationTcmAppService {
                     }
                     newIds.add(newId);
                 } else if (DoctorStationAdviceConstants.LINE_OP_UPDATE.equals(op)) {
-                    medicationRequestDomainService.changeHerbalMedicationOrderDraft(
-                        tcmMapper.toChangeHerbalMedicationOrderDraftCommand(
-                            header, line, operatorId, contentJson, quantity, null, null));
+                    ChangeHerbalMedicationOrderDraftCommand changeCmd = tcmMapper.toChangeHerbalMedicationOrderDraftCommand(
+                        header, line, operatorId, contentJson, quantity, null, null);
+                    medicationRequestDomainService.changeHerbalMedicationOrderDraft(changeCmd);
                     medicationRequestDomainService.changeMedicationOrderDraft(
                         tcmMapper.toChangeMedicationOrderDraftForTherapy(line.getMedicationRequestId(), header.getTherapyEnum(), operatorId));
-                } else if (DoctorStationAdviceConstants.LINE_OP_DELETE.equals(op)) {
-                    medicationRequestDomainService.removeMedicationOrderDraft(
-                        tcmMapper.toRemoveMedicationOrderDraftCommand(line.getMedicationRequestId(), operatorId));
                 } else {
+                    // 未知 lineOp：拒绝写入，避免静默跳过导致草稿与请求不一致
                     throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "不支持的行操作: " + line.getLineOp());
                 }
             }
@@ -589,7 +612,7 @@ public class InpatientDoctorStationTcmAppService {
     }
 
     /**
-     * 校验病证组批次：病名/证候必填、主诊断组不超过 1 个。
+     * 校验病证组批次：成组完整性委托策略，主诊断组不超过 1 个。
      *
      * @param request 保存批次请求
      * @throws BusinessException 组不完整或主诊断超限时
@@ -597,10 +620,9 @@ public class InpatientDoctorStationTcmAppService {
     private void validateTcmDiagnosisBatch(SaveTcmDiagnosisGroupsBatchRequest request) {
         int primaryCount = 0;
         for (TcmDiagnosisGroupItemRequest group : request.getGroups()) {
-            // 每组须同时有病名与证候 definition
-            if (group.getDiseaseDefinitionId() == null || group.getSyndromeDefinitionId() == null) {
-                throw new BusinessException(ErrorCodeConstants.CONDITION_INVALID_ARGUMENT, InpatientDoctorStationTcmConstants.MSG_DIAGNOSIS_GROUP_INCOMPLETE);
-            }
+            // Gate：默认一病一证；院点定制可通过 @Primary 策略允许单侧
+            tcmDiagnosisGroupPairingPolicy.assertGroupAcceptable(
+                group.getDiseaseDefinitionId(), group.getSyndromeDefinitionId());
             if (group.getPrimaryFlag() != null
                 && group.getPrimaryFlag() == DoctorStationDiagnosisConstants.MAIN_DIAGNOSIS_FLAG_YES) {
                 primaryCount++;
@@ -616,7 +638,7 @@ public class InpatientDoctorStationTcmAppService {
      * 为无组号的病证组分配稳定 tcmSyndromeGroup（新建组取序列号）。
      *
      * @param request 保存批次请求（会回写 group.tcmSyndromeGroup）
-     * @return 病名:证候 → 组号映射
+     * @return 稳定键 → 组号映射
      */
     private Map<String, String> assignTcmGroupKeys(SaveTcmDiagnosisGroupsBatchRequest request) {
         Map<String, String> map = new LinkedHashMap<>();
@@ -635,7 +657,8 @@ public class InpatientDoctorStationTcmAppService {
         }
         int idx = 0;
         for (TcmDiagnosisGroupItemRequest group : request.getGroups()) {
-            String stableKey = String.valueOf(group.getDiseaseDefinitionId()) + ":" + String.valueOf(group.getSyndromeDefinitionId());
+            // 单侧组用 d:{id} / s:{id}，双侧仍为 diseaseId:syndromeId
+            String stableKey = tcmMapper.resolveTcmGroupStableKey(group);
             String key;
             // 已有组号沿用，否则分配新序列
             if (StringUtils.isNotEmpty(group.getTcmSyndromeGroup())) {
@@ -650,7 +673,52 @@ public class InpatientDoctorStationTcmAppService {
     }
 
     /**
-     * 删除单个中医病证组：校验无医嘱引用后移除关联与诊断事实。
+     * 保留中的病证组若改病/证目录定义，且对应就诊诊断行仍被医嘱或账单引用，则拒绝保存。
+     * 与西医诊断保存门禁同源：共用 {@link EncounterDiagnosisReferenceSupport}。
+     *
+     * @param existing 当前就诊已有病证组
+     * @param request  本批全量保存请求
+     */
+    private void assertTcmRetainedGroupsContentChangeAllowed(
+        List<TcmDiagnosisGroupRowDto> existing,
+        SaveTcmDiagnosisGroupsBatchRequest request
+    ) {
+        Map<String, TcmDiagnosisGroupItemRequest> incomingByKey = new HashMap<>();
+        if (request.getGroups() != null) {
+            for (TcmDiagnosisGroupItemRequest item : request.getGroups()) {
+                if (item == null) {
+                    continue;
+                }
+                String key = trimToEmpty(item.getTcmSyndromeGroup());
+                if (key.isEmpty()) {
+                    continue;
+                }
+                incomingByKey.put(key, item);
+            }
+        }
+        for (TcmDiagnosisGroupRowDto old : existing) {
+            if (old == null) {
+                continue;
+            }
+            String key = trimToEmpty(old.getTcmSyndromeGroup());
+            TcmDiagnosisGroupItemRequest incoming = incomingByKey.get(key);
+            if (incoming == null) {
+                continue;
+            }
+            boolean diseaseDefChanged =
+                !Objects.equals(old.getDiseaseDefinitionId(), incoming.getDiseaseDefinitionId());
+            boolean syndromeDefChanged =
+                !Objects.equals(old.getSyndromeDefinitionId(), incoming.getSyndromeDefinitionId());
+            if (!diseaseDefChanged && !syndromeDefChanged) {
+                continue;
+            }
+            encounterDiagnosisReferenceSupport.assertNotReferenced(old.getDiseaseEncounterDiagnosisId());
+            encounterDiagnosisReferenceSupport.assertNotReferenced(old.getSyndromeEncounterDiagnosisId());
+        }
+    }
+
+    /**
+     * 删除单个中医病证组：校验无医嘱引用后移除就诊关联。
      *
      * @param encounterId 就诊主键
      * @param groupKey    中医组号
@@ -667,38 +735,30 @@ public class InpatientDoctorStationTcmAppService {
                 break;
             }
         }
-        // 组号在快照中不存在
         if (target == null) {
             throw new BusinessException(ErrorCodeConstants.CONDITION_NOT_FOUND, "病证组不存在，请刷新后重试");
         }
-        Long[] conditionIds = new Long[] {target.getDiseaseConditionId(), target.getSyndromeConditionId()};
-        for (Long conditionId : conditionIds) {
-            if (conditionId == null) {
+        Long[] encounterDiagnosisIds = new Long[] {
+            target.getDiseaseEncounterDiagnosisId(), target.getSyndromeEncounterDiagnosisId()};
+        for (Long encounterDiagnosisId : encounterDiagnosisIds) {
+            if (encounterDiagnosisId == null) {
                 continue;
             }
-            // 病名/证候被医嘱引用则禁止删除
-            if (conditionQueryService.countAdviceRefByConditionId(conditionId) > 0) {
-                throw new BusinessException(ErrorCodeConstants.CONDITION_RULE_CONFLICT, InpatientDoctorStationTcmConstants.MSG_CONDITION_REFERENCED);
-            }
+            encounterDiagnosisReferenceSupport.assertNotReferenced(encounterDiagnosisId);
         }
-        for (Long conditionId : conditionIds) {
-            if (conditionId == null) {
+        for (Long encounterDiagnosisId : encounterDiagnosisIds) {
+            if (encounterDiagnosisId == null) {
                 continue;
             }
             RemoveEncounterDiagnosisAssociationCommand rm = new RemoveEncounterDiagnosisAssociationCommand();
             RemoveEncounterDiagnosisAssociationCommand.RemoveEncounterDiagnosisAssociationItemCommand item =
                 new RemoveEncounterDiagnosisAssociationCommand.RemoveEncounterDiagnosisAssociationItemCommand();
             item.setEncounterId(encounterId);
-            item.setConditionId(conditionId);
+            item.setEncounterDiagnosisId(encounterDiagnosisId);
             item.setRemoveReason("TCM_GROUP_DELETE");
             rm.setItem(item);
             rm.setOperatorId(operatorId);
             encounterDomainService.removeEncounterDiagnosisAssociation(rm);
-            DelEncounterDiagnosisCommand del = new DelEncounterDiagnosisCommand();
-            del.setConditionId(conditionId);
-            del.setOperatorId(operatorId);
-            del.setReason("TCM_GROUP_DELETE");
-            conditionDomainService.delEncounterDiagnosis(del);
         }
     }
 

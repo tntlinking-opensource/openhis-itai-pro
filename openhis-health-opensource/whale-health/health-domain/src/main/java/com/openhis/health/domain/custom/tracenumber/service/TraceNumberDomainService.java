@@ -189,6 +189,7 @@ public class TraceNumberDomainService {
                 recordLine.setItemId(item.getItemId());
                 recordLine.setLotNumber(item.getLotNumber());
                 recordLine.setTraceUnitCode(item.getTraceUnitCode());
+                recordLine.setTraceUnitRatio(item.getTraceUnitRatio());
                 recordLine.setRecordCategoryEnum(item.getRecordCategoryEnum());
                 recordLine.setRecordDirectionEnum(item.getRecordDirectionEnum());
                 recordLine.setQuantity(item.getQuantity());
@@ -207,6 +208,109 @@ public class TraceNumberDomainService {
         }
         delegate.setLines(recordLines);
         return this.recordTraceRecords(delegate);
+    }
+
+    /**
+     * 期初作废 T1：按 {@code bus_no} 对当初 {@code HOSPITAL_IO} IN 补对称 OUT，回退主档剩余（不删历史流水）。
+     *
+     * <p>拆零量直接取原 IN 流水 {@code split_quantity}，避免作废路径再依赖药品换算源。</p>
+     *
+     * @param busNo         原期初单号
+     * @param operatorId    操作人
+     * @param operationType 作废操作类型（通常仍用原 OPENING type code）
+     * @return 新插入 OUT 流水主键列表；无 IN 可冲时为空列表
+     */
+    public List<Long> reverseHospitalIoInByBusNo(String busNo, Long operatorId, String operationType) {
+        if (StringUtils.isEmpty(busNo)) {
+            throw new BusinessException(ErrorCodeConstants.TRACE_NUMBER_INVALID_ARGUMENT, "busNo 不能为空");
+        }
+        String trimmedBusNo = busNo.trim();
+        List<TraceNumberRecord> flows = traceNumberRecordRepository.findAllByBusNoAndIsDeletedFalse(trimmedBusNo);
+        if (flows == null || flows.isEmpty()) {
+            return new ArrayList<>();
+        }
+        String voidOpType = operationType;
+        if (StringUtils.isEmpty(voidOpType)) {
+            voidOpType = "OPENING_VOID";
+        }
+        Set<String> traceNos = new HashSet<>();
+        List<TraceNumberRecord> inFlows = new ArrayList<>();
+        for (TraceNumberRecord flow : flows) {
+            if (flow == null) {
+                continue;
+            }
+            if (!TraceRecordCategory.HOSPITAL_IO.getCode().equals(flow.getRecordCategoryEnum())) {
+                continue;
+            }
+            if (!TraceDirection.IN.getCode().equals(flow.getRecordDirectionEnum())) {
+                continue;
+            }
+            inFlows.add(flow);
+            traceNos.add(flow.getTraceNo());
+        }
+        if (inFlows.isEmpty()) {
+            return new ArrayList<>();
+        }
+        Map<String, TraceNumber> masterByTraceNo = this.loadMastersByTraceNo(traceNos);
+        List<TraceNumber> mastersToPersist = new ArrayList<>();
+        List<TraceNumberRecord> outsToSave = new ArrayList<>();
+        for (TraceNumberRecord inFlow : inFlows) {
+            TraceNumber master = masterByTraceNo.get(inFlow.getTraceNo());
+            if (master == null) {
+                throw new BusinessException(ErrorCodeConstants.TRACE_NUMBER_NOT_FOUND,
+                    "作废冲销时追溯码主档不存在：" + inFlow.getTraceNo());
+            }
+            BigDecimal splitDelta = inFlow.getSplitQuantity();
+            if (splitDelta == null || splitDelta.compareTo(BigDecimal.ZERO) <= 0) {
+                splitDelta = inFlow.getQuantity();
+            }
+            if (splitDelta == null || splitDelta.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            // 主档剩余按原 IN 拆零量回退
+            master.applyHospitalIoDelta(
+                TraceRecordCategory.HOSPITAL_IO.getCode(),
+                TraceDirection.OUT.getCode(),
+                splitDelta);
+            mastersToPersist.add(master);
+
+            TraceNumberRecord out = new TraceNumberRecord();
+            out.setTraceNumberId(master.getId());
+            out.setTraceNo(inFlow.getTraceNo());
+            out.setRecordCategoryEnum(TraceRecordCategory.HOSPITAL_IO.getCode());
+            out.setRecordDirectionEnum(TraceDirection.OUT.getCode());
+            out.setLocationTypeEnum(inFlow.getLocationTypeEnum());
+            out.setLocationId(inFlow.getLocationId());
+            out.setLocationStoreId(inFlow.getLocationStoreId());
+            out.setLotNumber(inFlow.getLotNumber());
+            out.setQuantity(inFlow.getQuantity());
+            out.setUnitCode(inFlow.getUnitCode());
+            out.setSplitQuantity(splitDelta);
+            out.setOperationType(voidOpType);
+            out.setBusNo(trimmedBusNo);
+            outsToSave.add(out);
+        }
+        if (outsToSave.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<TraceNumber> savedMasters = traceNumberRepository.saveAll(mastersToPersist);
+        Map<String, TraceNumber> savedByTraceNo = new HashMap<>();
+        for (TraceNumber m : savedMasters) {
+            savedByTraceNo.put(m.getTraceNo(), m);
+        }
+        for (TraceNumberRecord out : outsToSave) {
+            TraceNumber m = savedByTraceNo.get(out.getTraceNo());
+            if (m != null && m.getId() != null) {
+                out.setTraceNumberId(m.getId());
+            }
+            out.assertRequiredFields();
+        }
+        List<TraceNumberRecord> savedOuts = traceNumberRecordRepository.saveAll(outsToSave);
+        List<Long> ids = new ArrayList<>();
+        for (TraceNumberRecord saved : savedOuts) {
+            ids.add(saved.getId());
+        }
+        return ids;
     }
 
     /**
@@ -339,6 +443,11 @@ public class TraceNumberDomainService {
         master.setItemId(line.getItemId());
         master.setLotNumber(line.getLotNumber().trim());
         master.setTraceUnitCode(line.getTraceUnitCode().trim());
+        // 建码快照：发退只认主档比，不随药典变更漂移
+        if (line.getTraceUnitRatio() == null || line.getTraceUnitRatio().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ErrorCodeConstants.TRACE_NUMBER_INVALID_ARGUMENT, "新建主档须指定追溯码单位换算比");
+        }
+        master.setTraceUnitRatio(line.getTraceUnitRatio());
         master.setRemainingSplitQuantity(BigDecimal.ZERO);
         master.setInHospitalStatusEnum(InHospitalStatus.NOT_IN_HOSPITAL.getCode());
         master.assertRequiredFields();

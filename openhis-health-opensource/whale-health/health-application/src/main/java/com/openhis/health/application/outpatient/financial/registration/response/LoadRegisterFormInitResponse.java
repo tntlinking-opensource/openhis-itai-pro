@@ -62,4 +62,11 @@ public class LoadRegisterFormInitResponse {
     /** 工伤模块 capability（enabled=false 时为 null）。 */
     @Schema(description = "工伤模块 capability")
     private WorkInjuryCapabilityExtensionOut workInjuryCapability;
+
+    /**
+     * 挂号时医生是否必选（全局开关 {@code registrationDoctorRequired}；{@code true}=必选，
+     * {@code false}/缺省=可只挂科室）。
+     */
+    @Schema(description = "挂号时医生是否必选")
+    private Boolean registrationDoctorRequired;
 }

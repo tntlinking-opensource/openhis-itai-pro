@@ -122,32 +122,36 @@ public interface InventoryDepartmentDeptIssueReturnMapper {
     /**
      * 将新建科室退领请求装配为领域 CreateDeptIssueReturnCommand。
      *
-     * @param request     新建请求
-     * @param operatorId  操作人
-     * @param applicantId 制单人员
-     * @param busNo       预分配业务单号；新建时为 null
+     * @param request                   新建请求
+     * @param operatorId                操作人
+     * @param applicantId               制单人员
+     * @param busNo                     预分配业务单号；新建时为 null
+     * @param consumingOrganizationId   领用科室（自源领用单继承，禁止客户端覆盖）
      * @return 领域写命令
      */
     CreateDeptIssueReturnCommand toCreateDeptIssueReturnCommand(
         CreateDeptIssueReturnRequest request,
         Long operatorId,
         Long applicantId,
-        String busNo);
+        String busNo,
+        Long consumingOrganizationId);
 
     /**
      * 将修订科室退领请求装配为领域 CreateDeptIssueReturnCommand（首行 busNo 表示同号全量对齐）。
      *
-     * @param request               修订请求
-     * @param operatorId            操作人
-     * @param applicantId           制单人员
-     * @param originalBusNoSnapshot 源领用单号快照（自既有退领单头读取）
+     * @param request                   修订请求
+     * @param operatorId                操作人
+     * @param applicantId               制单人员
+     * @param originalBusNoSnapshot     源领用单号快照（自既有退领单头读取）
+     * @param consumingOrganizationId   领用科室（自源领用单继承，禁止客户端覆盖）
      * @return 领域写命令
      */
     CreateDeptIssueReturnCommand toCreateDeptIssueReturnCommand(
         UpdateDeptIssueReturnRequest request,
         Long operatorId,
         Long applicantId,
-        String originalBusNoSnapshot);
+        String originalBusNoSnapshot,
+        Long consumingOrganizationId);
 
     /**
      * 装配新建科室退领成功响应。

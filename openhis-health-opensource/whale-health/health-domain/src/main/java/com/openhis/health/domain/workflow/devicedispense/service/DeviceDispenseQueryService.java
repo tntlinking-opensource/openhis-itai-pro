@@ -5,13 +5,16 @@
 package com.openhis.health.domain.workflow.devicedispense.service;
 
 import com.openhis.health.domain.clinical.procedure.queries.NurseWorkloadPageQuery;
+import com.openhis.health.domain.share.constants.ConsumableUsageReportConstants;
 import com.openhis.health.domain.share.constants.DoctorStationOrderCatalogConstants;
 import com.openhis.health.domain.share.constants.NurseWorkloadConstants;
+import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.workflow.devicedispense.entity.DeviceDispense;
+import com.openhis.health.domain.workflow.devicedispense.query.ConsumableUsageReportPageQuery;
 import com.openhis.health.domain.workflow.devicedispense.queries.DeviceDispenseSettlementWindowQuery;
 import com.openhis.health.domain.workflow.devicedispense.queries.DeviceDispensePageQuery;
 import com.openhis.health.domain.workflow.devicedispense.queries.EncounterInfoPageQuery;
@@ -54,7 +57,7 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>与 {@code AS-OP-DOR-003} IF-DOR-11 对齐：提供同就诊候选库位上的耗材发放预占行批量加载（状态列为字符串码）。</p>
  *
- * <p>库房日结耗材发退药批量读见 {@link #listDeviceDispensesByLocationAndDispenseWindow}（**AS-INV-RPT-001**）。</p>
+ * <p>库房期初期末明细耗材发退药批量读见 {@link #listDeviceDispensesByLocationAndDispenseWindow}（**AS-INV-RPT-001**）。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -178,7 +181,9 @@ public class DeviceDispenseQueryService {
     }
 
     /**
-     * 退号门禁读侧（BR-REG-015）：加载就诊下未软删的耗材发放摘要。
+     * 加载就诊下未软删的耗材发放摘要（仅本聚合 Repository）。
+     *
+     * <p>供按就诊批量读发放事实；退号收费门禁不再依赖本方法（药耗收口见门诊退费 IF-REF-04）。</p>
      *
      * @param encounterId 就诊主键
      * @return 列表模型；无记录时返回空表
@@ -457,17 +462,31 @@ public class DeviceDispenseQueryService {
                     predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), query.getStatusEnum()));
                 }
                 if (StringUtils.isNotEmpty(query.getBusNoKeyword())) {
-                    String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getBusNoKeyword().trim());
+                    String trimmed = query.getBusNoKeyword().trim();
+                    String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
                     predicates.add(cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), likeIc));
+                    // B.2.1：发放单号精确全等置顶
+                    KeywordExactFirstOrderSupport.applyExactFirstOrder(
+                        cq,
+                        cb,
+                        trimmed,
+                        List.of(cb.desc(root.get(FieldNameConstants.ID))),
+                        root.get(FieldNameConstants.BUS_NO));
                 }
             }
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
         };
-        return deviceDispenseRepository.findAll(specification, pageable).map(this::toListModel);
+        // 关键字非空时剥掉 Pageable Sort，保留 Spec 精确优先 ORDER BY
+        Pageable effective = pageable;
+        if (query != null && StringUtils.isNotEmpty(query.getBusNoKeyword())
+            && pageable != null && pageable.getSort().isSorted()) {
+            effective = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
+        }
+        return deviceDispenseRepository.findAll(specification, effective).map(this::toListModel);
     }
 
     /**
-     * 库房日结耗材发退药批量读（**AS-INV-RPT-001** · **DM-WKF-007 §6.2.19**）。
+     * 库房期初期末明细耗材发退药批量读（**AS-INV-RPT-001** · **DM-WKF-007 §6.2.19**）。
      *
      * <p>默认状态为 {@link DispenseStatus#COMPLETED} 与 {@link DispenseStatus#REFUNDED}；发/退列拆分由应用层完成。</p>
      *
@@ -520,7 +539,7 @@ public class DeviceDispenseQueryService {
     }
 
     /**
-     * 发放实体列表映射为库房日结行读模型。
+     * 发放实体列表映射为库房期初期末明细行读模型。
      *
      * @param rows 持久化行
      * @return 日结行列表
@@ -700,6 +719,26 @@ public class DeviceDispenseQueryService {
             }
         }
         return map;
+    }
+
+    /**
+     * 批量按主键加载耗材发放聚合行（报表进价批号解析；单次 IN 查询）。
+     *
+     * @param ids 发放单主键集合
+     * @return 未软删实体列表；空入参返回空表
+     */
+    public List<DeviceDispense> listDeviceDispensesByIds(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        List<DeviceDispense> rows = this.deviceDispenseRepository.findByIdIn(new ArrayList<>(ids));
+        List<DeviceDispense> result = new ArrayList<>();
+        for (DeviceDispense row : rows) {
+            if (row != null && !Boolean.TRUE.equals(row.getIsDeleted())) {
+                result.add(row);
+            }
+        }
+        return result;
     }
 
     /**
@@ -982,11 +1021,277 @@ public class DeviceDispenseQueryService {
     }
 
     /**
-     * 将聚合根断言包装为「允许/拒绝 + 原因」供应用层统一展示。
+     * 耗材使用报表患者侧明细分页（AS-RPT-005/006；DM-WKF-007 §6.2.23）。
      *
-     * @param assertion 无参断言（内部抛 {@link BusinessException} 表示不允许）
-     * @return 校验模型
+     * <p>纳入已完成发药与已退药；时间轴 {@code dispense_time}。仅本聚合 Repository。
+     * 科室领用并集见 SupplyRequest；门诊/住院域由应用层预写 {@code resolvedEncounterScope}。</p>
+     *
+     * @param query 分页与筛选；就诊 scope 空列表拒查
+     * @return 明细分页；发放时间倒序
      */
+    public Page<ConsumableUsageDispenseLineQueryModel> pageConsumableUsageDispenseLines(
+        ConsumableUsageReportPageQuery query) {
+        if (query == null) {
+            query = new ConsumableUsageReportPageQuery();
+        }
+        int pageNo = query.springPageIndex();
+        int pageSize = query.getBoundedPageSize();
+        // Gate：空就诊 scope 表示门诊/住院域无命中，直接空页
+        if (query.getResolvedEncounterScope() != null && query.getResolvedEncounterScope().isEmpty()) {
+            Pageable emptyPageable = PageRequest.of(pageNo, pageSize);
+            return new PageImpl<>(Collections.emptyList(), emptyPageable, 0L);
+        }
+        // Pre：规约过滤后仓储分页
+        Specification<DeviceDispense> specification = this.buildConsumableUsageReportSpecification(query);
+        Sort sort = Sort.by(
+            Sort.Order.desc(FieldNameConstants.DISPENSE_TIME),
+            Sort.Order.desc(FieldNameConstants.ID));
+        Pageable pageable = PageRequest.of(pageNo, pageSize, sort);
+        Page<DeviceDispense> page = deviceDispenseRepository.findAll(specification, pageable);
+        // Asm：本聚合字段直映；金额由应用层 ChargeItem enrich
+        List<ConsumableUsageDispenseLineQueryModel> models = new ArrayList<>();
+        for (DeviceDispense row : page.getContent()) {
+            models.add(this.toConsumableUsageDispenseLineModel(row));
+        }
+        return new PageImpl<>(models, pageable, page.getTotalElements());
+    }
+
+    /**
+     * 耗材使用报表患者侧全量列表（导出；行数受 bounded pageSize 约束）。
+     *
+     * @param query 与分页同筛选
+     * @return 明细行
+     */
+    public List<ConsumableUsageDispenseLineQueryModel> listConsumableUsageDispenseLines(
+        ConsumableUsageReportPageQuery query) {
+        if (query == null) {
+            query = new ConsumableUsageReportPageQuery();
+        }
+        // Gate：空就诊 scope 拒查
+        if (query.getResolvedEncounterScope() != null && query.getResolvedEncounterScope().isEmpty()) {
+            return Collections.emptyList();
+        }
+        // Pre：同明细分页规约，取 bounded 上限作导出窗
+        int maxRows = query.getBoundedPageSize();
+        Specification<DeviceDispense> specification = this.buildConsumableUsageReportSpecification(query);
+        Sort sort = Sort.by(
+            Sort.Order.desc(FieldNameConstants.DISPENSE_TIME),
+            Sort.Order.desc(FieldNameConstants.ID));
+        Pageable pageable = PageRequest.of(0, maxRows, sort);
+        Page<DeviceDispense> page = deviceDispenseRepository.findAll(specification, pageable);
+        List<ConsumableUsageDispenseLineQueryModel> models = new ArrayList<>();
+        for (DeviceDispense row : page.getContent()) {
+            models.add(this.toConsumableUsageDispenseLineModel(row));
+        }
+        return models;
+    }
+
+    /**
+     * 耗材使用报表患者侧净汇总（按患者/科室/库位/品规；DM-WKF-007 §6.2.24）。
+     *
+     * <p>不做药品类型式主汇总（AS-RPT-005/006）。科室维须预写 {@code organizationIdByEncounterId}。</p>
+     *
+     * @param query 筛选 + summaryDimension
+     * @return 净汇总行
+     */
+    public List<ConsumableUsageDispenseSummaryRow> summarizeConsumableUsageDispense(
+        ConsumableUsageReportPageQuery query) {
+        if (query == null) {
+            query = new ConsumableUsageReportPageQuery();
+        }
+        // Gate：空就诊 scope 拒查
+        if (query.getResolvedEncounterScope() != null && query.getResolvedEncounterScope().isEmpty()) {
+            return Collections.emptyList();
+        }
+        // Pre：全量命中行（忽略分页键）后按维分桶
+        Specification<DeviceDispense> specification = this.buildConsumableUsageReportSpecification(query);
+        Sort sort = Sort.by(Sort.Order.desc(FieldNameConstants.DISPENSE_TIME));
+        List<DeviceDispense> rows = deviceDispenseRepository.findAll(specification, sort);
+        String dimension = StringUtils.trimToNull(query.getSummaryDimension());
+        if (dimension == null) {
+            dimension = ConsumableUsageReportConstants.SUMMARY_DIMENSION_PATIENT;
+        }
+        Map<Long, Long> orgByEncounter = query.getOrganizationIdByEncounterId();
+        if (orgByEncounter == null) {
+            orgByEncounter = Map.of();
+        }
+        // Asm：退药数量取负，累加净量
+        Map<String, ConsumableUsageDispenseSummaryRow> bucketByKey = new LinkedHashMap<>();
+        for (DeviceDispense row : rows) {
+            if (row == null) {
+                continue;
+            }
+            String bucketKey = this.resolveConsumableUsageBucketKey(row, dimension, orgByEncounter);
+            ConsumableUsageDispenseSummaryRow summary = bucketByKey.get(bucketKey);
+            if (summary == null) {
+                summary = new ConsumableUsageDispenseSummaryRow();
+                summary.setDimensionKey(bucketKey);
+                summary.setSummaryDimension(dimension);
+                summary.setNetQuantity(BigDecimal.ZERO);
+                summary.setLineCount(0L);
+                this.fillConsumableUsageSummaryIds(summary, row, dimension, orgByEncounter);
+                bucketByKey.put(bucketKey, summary);
+            }
+            BigDecimal signedQty = this.resolveConsumableUsageSignedQuantity(row);
+            summary.setNetQuantity(summary.getNetQuantity().add(signedQty));
+            summary.setLineCount(summary.getLineCount() + 1L);
+        }
+        return new ArrayList<>(bucketByKey.values());
+    }
+
+    /**
+     * 构建耗材使用报表规约：已发/已退 + 时间窗 + 库位/品规/就诊 scope。
+     *
+     * @param query 筛选
+     * @return JPA 规约
+     */
+    private Specification<DeviceDispense> buildConsumableUsageReportSpecification(
+        ConsumableUsageReportPageQuery query) {
+        return (root, cq, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            // 报表事实：已完成发药 ∪ 已退药（与库房期初期末明细耗材列同精神）
+            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(
+                DispenseStatus.COMPLETED.getCode(),
+                DispenseStatus.PART_COMPLETED.getCode(),
+                DispenseStatus.REFUNDED.getCode()));
+            if (query.getBusinessTimeFrom() != null || query.getBusinessTimeTo() != null) {
+                // 有时间窗时 dispense_time 必非空
+                predicates.add(cb.isNotNull(root.get(FieldNameConstants.DISPENSE_TIME)));
+            }
+            if (query.getBusinessTimeFrom() != null) {
+                predicates.add(cb.greaterThanOrEqualTo(
+                    root.get(FieldNameConstants.DISPENSE_TIME), query.getBusinessTimeFrom()));
+            }
+            if (query.getBusinessTimeTo() != null) {
+                predicates.add(cb.lessThanOrEqualTo(
+                    root.get(FieldNameConstants.DISPENSE_TIME), query.getBusinessTimeTo()));
+            }
+            if (query.getLocationId() != null) {
+                predicates.add(cb.equal(root.get(FieldNameConstants.LOCATION_ID), query.getLocationId()));
+            } else if (query.getResolvedLocationIds() != null) {
+                // 空列表 = 关键字无命中，强制无结果
+                if (query.getResolvedLocationIds().isEmpty()) {
+                    predicates.add(cb.disjunction());
+                } else {
+                    predicates.add(root.get(FieldNameConstants.LOCATION_ID).in(query.getResolvedLocationIds()));
+                }
+            }
+            if (query.getResolvedDeviceDefIds() != null) {
+                if (query.getResolvedDeviceDefIds().isEmpty()) {
+                    predicates.add(cb.disjunction());
+                } else {
+                    predicates.add(
+                        root.get(FieldNameConstants.DEVICE_DEF_ID).in(query.getResolvedDeviceDefIds()));
+                }
+            }
+            if (query.getResolvedEncounterScope() != null) {
+                if (query.getResolvedEncounterScope().isEmpty()) {
+                    predicates.add(cb.disjunction());
+                } else {
+                    predicates.add(
+                        root.get(FieldNameConstants.ENCOUNTER_ID).in(query.getResolvedEncounterScope()));
+                }
+            }
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+    }
+
+    /**
+     * 映射耗材使用明细行。
+     */
+    private ConsumableUsageDispenseLineQueryModel toConsumableUsageDispenseLineModel(DeviceDispense row) {
+        ConsumableUsageDispenseLineQueryModel model = new ConsumableUsageDispenseLineQueryModel();
+        model.setDispenseId(row.getId());
+        model.setDeviceReqId(row.getDeviceReqId());
+        model.setDeviceDefId(row.getDeviceDefId());
+        model.setEncounterId(row.getEncounterId());
+        model.setPatientId(row.getPatientId());
+        model.setLocationId(row.getLocationId());
+        model.setStatusEnum(row.getStatusEnum());
+        model.setUnitCode(row.getUnitCode());
+        model.setQuantity(this.resolveNurseConsumableQuantity(row));
+        model.setDispenseTime(row.getDispenseTime());
+        model.setLotNumber(row.getLotNumber());
+        model.setPerformerId(row.getPerformerId());
+        return model;
+    }
+
+    /**
+     * 解析耗材使用汇总分桶键。
+     */
+    private String resolveConsumableUsageBucketKey(
+        DeviceDispense row,
+        String dimension,
+        Map<Long, Long> orgByEncounter) {
+        if (ConsumableUsageReportConstants.SUMMARY_DIMENSION_DEPARTMENT.equals(dimension)) {
+            Long orgId = null;
+            if (row.getEncounterId() != null) {
+                orgId = orgByEncounter.get(row.getEncounterId());
+            }
+            if (orgId == null) {
+                return "DEPARTMENT:";
+            }
+            return "DEPARTMENT:" + orgId;
+        }
+        if (ConsumableUsageReportConstants.SUMMARY_DIMENSION_LOCATION.equals(dimension)) {
+            if (row.getLocationId() == null) {
+                return "LOCATION:";
+            }
+            return "LOCATION:" + row.getLocationId();
+        }
+        if (ConsumableUsageReportConstants.SUMMARY_DIMENSION_ITEM.equals(dimension)) {
+            if (row.getDeviceDefId() == null) {
+                return "ITEM:";
+            }
+            return "ITEM:" + row.getDeviceDefId();
+        }
+        if (row.getPatientId() == null) {
+            return "PATIENT:";
+        }
+        return "PATIENT:" + row.getPatientId();
+    }
+
+    /**
+     * 回填耗材使用汇总维度主键。
+     */
+    private void fillConsumableUsageSummaryIds(
+        ConsumableUsageDispenseSummaryRow summary,
+        DeviceDispense row,
+        String dimension,
+        Map<Long, Long> orgByEncounter) {
+        if (ConsumableUsageReportConstants.SUMMARY_DIMENSION_DEPARTMENT.equals(dimension)) {
+            if (row.getEncounterId() != null) {
+                summary.setOrganizationId(orgByEncounter.get(row.getEncounterId()));
+            }
+            return;
+        }
+        if (ConsumableUsageReportConstants.SUMMARY_DIMENSION_LOCATION.equals(dimension)) {
+            summary.setLocationId(row.getLocationId());
+            return;
+        }
+        if (ConsumableUsageReportConstants.SUMMARY_DIMENSION_ITEM.equals(dimension)) {
+            summary.setDeviceDefId(row.getDeviceDefId());
+            return;
+        }
+        summary.setPatientId(row.getPatientId());
+    }
+
+    /**
+     * 耗材使用行符号数量：退药取负，其余取实发量。
+     *
+     * @param row 发放行
+     * @return 带符号数量
+     */
+    private BigDecimal resolveConsumableUsageSignedQuantity(DeviceDispense row) {
+        BigDecimal quantity = this.resolveNurseConsumableQuantity(row);
+        // 已退药冲减净用量
+        if (DispenseStatus.REFUNDED.getCode().equals(row.getStatusEnum())) {
+            return quantity.negate();
+        }
+        return quantity;
+    }
+
     /**
      * 将聚合根断言包装为「允许/拒绝 + 原因」供应用层统一展示。
      *

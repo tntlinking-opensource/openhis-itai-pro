@@ -38,11 +38,15 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -120,6 +124,59 @@ public class PriceAdjustmentQueryService {
     }
 
     /**
+     * 判断单品是否存在已审批调价（报表进价是否需回放调价记录）。
+     *
+     * @param itemTable 项目物理表
+     * @param itemId    项目定义主键
+     * @return 存在已审批调价时为 true
+     */
+    public boolean existsApprovedByItem(String itemTable, Long itemId) {
+        if (StringUtils.isEmpty(itemTable) || itemId == null) {
+            return false;
+        }
+        return this.repository.existsByItemTableAndItemIdAndStatusEnumAndIsDeletedFalse(
+            itemTable.trim(),
+            itemId,
+            PriceAdjustmentStatus.APPROVED.getCode());
+    }
+
+    /**
+     * 批量筛出存在已审批调价的项目主键（一次 IN，避免报表逐品规 exists）。
+     *
+     * @param itemTable 项目物理表
+     * @param itemIds   项目主键集合
+     * @return 有已审批调价的 itemId；空入参返回空集
+     */
+    public LinkedHashSet<Long> listApprovedItemIds(String itemTable, Collection<Long> itemIds) {
+        LinkedHashSet<Long> result = new LinkedHashSet<>();
+        if (StringUtils.isEmpty(itemTable) || itemIds == null || itemIds.isEmpty()) {
+            return result;
+        }
+        LinkedHashSet<Long> distinct = new LinkedHashSet<>();
+        for (Long itemId : itemIds) {
+            if (itemId != null) {
+                distinct.add(itemId);
+            }
+        }
+        if (distinct.isEmpty()) {
+            return result;
+        }
+        List<PriceAdjustment> rows = this.repository.findByItemTableAndItemIdInAndStatusEnumAndIsDeletedFalse(
+            itemTable.trim(),
+            new ArrayList<>(distinct),
+            PriceAdjustmentStatus.APPROVED.getCode());
+        if (rows == null) {
+            return result;
+        }
+        for (PriceAdjustment row : rows) {
+            if (row != null && row.getItemId() != null) {
+                result.add(row.getItemId());
+            }
+        }
+        return result;
+    }
+
+    /**
      * 调价单列表：统计不重复 {@code bus_no}（与 {@link #listDistinctBusNoPage} 过滤一致，对齐进货单列表）。
      *
      * @param query 列表收窄；允许为 null（仅软删基线）
@@ -163,7 +220,17 @@ public class PriceAdjustmentQueryService {
         cq.groupBy(root.get(FieldNameConstants.BUS_NO));
         jakarta.persistence.criteria.Expression<Date> listTime =
             cb.coalesce(root.get(FieldNameConstants.SUBMIT_TIME), root.get(FieldNameConstants.ADJUSTMENT_TIME));
-        cq.orderBy(cb.desc(cb.greatest(listTime)));
+        List<jakarta.persistence.criteria.Order> secondary =
+            List.of(cb.desc(cb.greatest(listTime)));
+        // B.2.1：有 keyword/busNoLike 时精确全等单号置顶，次级仍按列表时刻降序
+        boolean hasFuzzyBusNo = StringUtils.isNotEmpty(query.getKeyword())
+            || StringUtils.isNotEmpty(query.getBusNoLike());
+        if (hasFuzzyBusNo) {
+            PriceAdjustmentDocumentListPredicateSupport.applyKeywordExactFirstOrder(
+                cq, root, cb, query, secondary);
+        } else {
+            cq.orderBy(secondary);
+        }
         TypedQuery<String> tq = this.entityManager.createQuery(cq);
         tq.setFirstResult(firstResult);
         tq.setMaxResults(pageSize);
@@ -252,6 +319,9 @@ public class PriceAdjustmentQueryService {
     /**
      * 按项目查询已生效调价历史（审批时间倒序）。
      *
+     * <p>单品入口；批量报表须用 {@link #findApprovedHistoryByItems}，且须先
+     * {@link #listApprovedItemIds} 收窄——<strong>禁止</strong>对无调价品规拉历史。</p>
+     *
      * @param itemTable 项目物理表
      * @param itemId    项目定义主键
      * @return 主行读模型列表（含子表）；参数非法时空列表
@@ -260,12 +330,200 @@ public class PriceAdjustmentQueryService {
         if (StringUtils.isEmpty(itemTable) || itemId == null) {
             return List.of();
         }
-        List<PriceAdjustment> rows = repository.findByItemTableAndItemIdAndStatusEnumAndIsDeletedFalseOrderByApproveTimeDesc(
+        Map<Long, List<PriceAdjustmentLineQueryModel>> byItem =
+            this.findApprovedHistoryByItems(itemTable, List.of(itemId));
+        List<PriceAdjustmentLineQueryModel> history = byItem.get(itemId);
+        if (history == null) {
+            return List.of();
+        }
+        return history;
+    }
+
+    /**
+     * 批量按项目加载已生效调价历史（一次主表 IN + 子表批量；审批时刻倒序）。
+     *
+     * <p>调用方须先 {@link #listApprovedItemIds} 仅传入<strong>有调价</strong>的 itemId；
+     * 无调价品规不得调用本方法（直接用 ACTIVE 批号进/售价）。</p>
+     *
+     * @param itemTable 项目物理表
+     * @param itemIds   已确认有调价的项目主键；空则返回空 Map
+     * @return itemId → 调价主行读模型列表（含子表）；无命中品规不出现在 Map
+     */
+    public Map<Long, List<PriceAdjustmentLineQueryModel>> findApprovedHistoryByItems(
+        String itemTable,
+        Collection<Long> itemIds) {
+        Map<Long, List<PriceAdjustmentLineQueryModel>> result = new LinkedHashMap<>();
+        if (StringUtils.isEmpty(itemTable) || itemIds == null || itemIds.isEmpty()) {
+            return result;
+        }
+        LinkedHashSet<Long> distinct = new LinkedHashSet<>();
+        for (Long itemId : itemIds) {
+            if (itemId != null) {
+                distinct.add(itemId);
+            }
+        }
+        if (distinct.isEmpty()) {
+            return result;
+        }
+        List<PriceAdjustment> rows = this.repository.findByItemTableAndItemIdInAndStatusEnumAndIsDeletedFalse(
             itemTable.trim(),
-            itemId,
-            PriceAdjustmentStatus.APPROVED.getCode()
-        );
-        return this.toLineModels(rows);
+            new ArrayList<>(distinct),
+            PriceAdjustmentStatus.APPROVED.getCode());
+        if (rows == null || rows.isEmpty()) {
+            return result;
+        }
+        // 审批时刻倒序（与单品 OrderByApproveTimeDesc 同口径）
+        rows.sort((left, right) -> {
+            Date leftTime = null;
+            Date rightTime = null;
+            if (left != null) {
+                leftTime = left.getApproveTime();
+            }
+            if (right != null) {
+                rightTime = right.getApproveTime();
+            }
+            if (leftTime == null && rightTime == null) {
+                return 0;
+            }
+            if (leftTime == null) {
+                return 1;
+            }
+            if (rightTime == null) {
+                return -1;
+            }
+            return rightTime.compareTo(leftTime);
+        });
+        List<PriceAdjustmentLineQueryModel> models = this.toLineModels(rows);
+        for (PriceAdjustmentLineQueryModel model : models) {
+            if (model == null || model.getItemId() == null) {
+                continue;
+            }
+            result.computeIfAbsent(model.getItemId(), ignored -> new ArrayList<>()).add(model);
+        }
+        return result;
+    }
+
+    /**
+     * 按库位汇总期间已审批调价进价盈亏（库房期初期末明细平账，BR-INV-SET-012 调价项）。
+     *
+     * <p>仅合计子表 {@code location_id} 与入参库位相等且非空的行；loc 空（诊疗/历史无库位）不计入本库。</p>
+     * <p>本方法仅读本聚合 Repository，禁止跨聚合。</p>
+     *
+     * @param itemTable              物品主表
+     * @param itemIds                品种主键集合；空或 null 表示不按品种收窄（同表同库期间全量）
+     * @param locationId             库位主键；空则返回空 Map
+     * @param approveTimeFromInclusive 审批时刻下界（含）；可空表示不限下界
+     * @param approveTimeToInclusive   审批时刻上界（含）；可空表示不限上界
+     * @return itemId → 进价盈亏合计；无命中时为空 Map
+     */
+    public Map<Long, BigDecimal> sumApprovedPurchaseImpactByLocation(
+        String itemTable,
+        Collection<Long> itemIds,
+        Long locationId,
+        LocalDateTime approveTimeFromInclusive,
+        LocalDateTime approveTimeToInclusive
+    ) {
+        Map<Long, BigDecimal> result = new HashMap<>();
+        // Gate：缺库位或物品表时无法按库平账
+        if (locationId == null || StringUtils.isEmpty(itemTable)) {
+            return result;
+        }
+        LinkedHashSet<Long> distinctItemIds = new LinkedHashSet<>();
+        if (itemIds != null) {
+            for (Long itemId : itemIds) {
+                // 空主键不入过滤集
+                if (itemId != null) {
+                    distinctItemIds.add(itemId);
+                }
+            }
+        }
+        Date fromDate = null;
+        // 审批窗下界：LocalDateTime → Date，供 JPA 与实体 approveTime 比较
+        if (approveTimeFromInclusive != null) {
+            fromDate = Timestamp.valueOf(approveTimeFromInclusive);
+        }
+        Date toDate = null;
+        // 审批窗上界：同上
+        if (approveTimeToInclusive != null) {
+            toDate = Timestamp.valueOf(approveTimeToInclusive);
+        }
+        final Date fromBound = fromDate;
+        final Date toBound = toDate;
+        final boolean filterByItemIds = !distinctItemIds.isEmpty();
+        String table = itemTable.trim();
+        Specification<PriceAdjustment> specification = (root, cq, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_TABLE), table));
+            // 有品种集时收窄；空集表示同表期间全量（日结装载）
+            if (filterByItemIds) {
+                predicates.add(root.get(FieldNameConstants.ITEM_ID).in(distinctItemIds));
+            }
+            predicates.add(
+                cb.equal(root.get(FieldNameConstants.STATUS_ENUM), PriceAdjustmentStatus.APPROVED.getCode()));
+            // 审批窗下界：approve_time >= from
+            if (fromBound != null) {
+                predicates.add(
+                    cb.greaterThanOrEqualTo(root.get(FieldNameConstants.APPROVE_TIME), fromBound));
+            }
+            // 审批窗上界：approve_time <= to
+            if (toBound != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get(FieldNameConstants.APPROVE_TIME), toBound));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        List<PriceAdjustment> lines = this.repository.findAll(specification);
+        // 期间无已审批调价主行：本库盈亏为 0
+        if (lines.isEmpty()) {
+            return result;
+        }
+        Map<Long, Long> adjustmentIdToItemId = new HashMap<>();
+        List<Long> adjustmentIds = new ArrayList<>();
+        for (PriceAdjustment line : lines) {
+            // 主行缺主键或品种：无法挂接子表盈亏
+            if (line == null || line.getId() == null || line.getItemId() == null) {
+                continue;
+            }
+            adjustmentIds.add(line.getId());
+            adjustmentIdToItemId.put(line.getId(), line.getItemId());
+        }
+        // 无有效主行：结束
+        if (adjustmentIds.isEmpty()) {
+            return result;
+        }
+        List<PriceAdjustmentDetail> details =
+            this.detailRepository.findByAdjustmentIdInAndIsDeletedFalse(adjustmentIds);
+        for (PriceAdjustmentDetail detail : details) {
+            // 空子表行跳过
+            if (detail == null) {
+                continue;
+            }
+            // loc 空：不计入任一库房期初期末明细（历史单/诊疗/未解析库位）
+            if (detail.getLocationId() == null) {
+                continue;
+            }
+            // 非本库：跳过
+            if (!locationId.equals(detail.getLocationId())) {
+                continue;
+            }
+            // 未算进价盈亏（仅调售价等）：不计入进价账平
+            if (detail.getPurchaseImpact() == null) {
+                continue;
+            }
+            Long itemId = adjustmentIdToItemId.get(detail.getAdjustmentId());
+            // 子表外键挂不上主行：丢弃，避免脏汇总
+            if (itemId == null) {
+                continue;
+            }
+            BigDecimal current = result.get(itemId);
+            // 同品种多行累加本库进价盈亏
+            if (current == null) {
+                result.put(itemId, detail.getPurchaseImpact());
+            } else {
+                result.put(itemId, current.add(detail.getPurchaseImpact()));
+            }
+        }
+        return result;
     }
 
     /**
@@ -314,10 +572,16 @@ public class PriceAdjustmentQueryService {
         Root<PriceAdjustment> root = cq.from(PriceAdjustment.class);
         cq.where(PriceAdjustmentApprovedLineListPredicateSupport.collectPredicates(root, cb, query)
             .toArray(new Predicate[0]));
-        cq.orderBy(
+        List<jakarta.persistence.criteria.Order> secondary = List.of(
             cb.desc(root.get(FieldNameConstants.APPROVE_TIME)),
-            cb.desc(root.get(FieldNameConstants.ID))
-        );
+            cb.desc(root.get(FieldNameConstants.ID)));
+        // B.2.1：单号关键字精确全等置顶，次级生效时间/主键倒序
+        if (StringUtils.isNotEmpty(query.getBusNo())) {
+            PriceAdjustmentApprovedLineListPredicateSupport.applyBusNoExactFirstOrder(
+                cq, root, cb, query, secondary);
+        } else {
+            cq.orderBy(secondary);
+        }
         TypedQuery<PriceAdjustment> tq = this.entityManager.createQuery(cq);
         tq.setFirstResult(firstResult);
         tq.setMaxResults(pageSize);
@@ -510,6 +774,7 @@ public class PriceAdjustmentQueryService {
                 for (PriceAdjustmentDetail detail : details) {
                     PriceAdjustmentDetailQueryModel detailModel = new PriceAdjustmentDetailQueryModel();
                     detailModel.setId(detail.getId());
+                    detailModel.setLocationId(detail.getLocationId());
                     detailModel.setLotNumber(detail.getLotNumber());
                     detailModel.setQuantity(detail.getQuantity());
                     detailModel.setOldPurchaseAmount(detail.getOldPurchaseAmount());

@@ -19,9 +19,11 @@ import java.util.List;
 @Component
 public class WorkInjurySettleStepPlanner {
 
-    /** REG_QUERY 单步链（9102）。 */
-    private static final List<String> REG_QUERY_STEPS =
-            Collections.unmodifiableList(List.of(WiInfnoConstants.QUALIFICATION_QUERY));
+    /** REG_QUERY：工伤 1101 写 psn_no → 9102。 */
+    private static final List<String> REG_QUERY_STEPS = Collections.unmodifiableList(List.of(
+            WiInfnoConstants.PERSON_INFO,
+            WiInfnoConstants.QUALIFICATION_QUERY
+    ));
 
     /** 2301 → 9102 登记审批链。 */
     private static final List<String> REG_APPROVAL_STEPS = Collections.unmodifiableList(List.of(

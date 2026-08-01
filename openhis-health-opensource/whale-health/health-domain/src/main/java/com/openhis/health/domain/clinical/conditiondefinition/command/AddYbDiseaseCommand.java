@@ -25,8 +25,8 @@ public class AddYbDiseaseCommand {
     private String ybNo;
     /** 医保匹配标志。 */
     private Boolean ybMatchFlag;
-    /** 疾病编码。 */
-    private String diseaseCode;
+    /** 国家临床版诊断编码（国临码）。 */
+    private String clinicCode;
     /** 状态枚举编码。 */
     private String statusEnum;
 }

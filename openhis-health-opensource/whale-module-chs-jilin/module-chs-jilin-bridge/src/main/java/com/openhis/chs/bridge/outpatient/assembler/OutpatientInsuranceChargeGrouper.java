@@ -15,7 +15,6 @@ import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQuery
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.entity.EncounterDiagnosis;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.domain.clinical.condition.service.ConditionQueryService;
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
 import com.openhis.health.domain.financial.contract.entity.Contract;
 import com.openhis.health.domain.financial.contract.service.ContractQueryService;
@@ -56,7 +55,6 @@ public class OutpatientInsuranceChargeGrouper {
     private final AccountQueryService accountQueryService;
     private final ContractQueryService contractQueryService;
     private final EncounterQueryService encounterQueryService;
-    private final ConditionQueryService conditionQueryService;
     private final ConditionDefinitionQueryService conditionDefinitionQueryService;
 
     /** 按就诊与收费项 ID 拆分为医保结算组与自费组。 */
@@ -78,9 +76,7 @@ public class OutpatientInsuranceChargeGrouper {
             if (item.getAccountId() != null) {
                 accountIds.add(item.getAccountId());
             }
-            if (item.getEncounterDiagnosisId() != null) {
-                encounterDxIds.add(item.getEncounterDiagnosisId());
-            }
+            collectEncounterDiagnosisIdsFromIds(item.getEncounterDiagnosisIds(), encounterDxIds);
         }
         Map<Long, Account> accountById = accountQueryService.mapAccountsByIds(accountIds);
         Map<Long, String> medTypeByDxId = encounterQueryService.mapMedTypeByEncounterDiagnosisIds(encounterDxIds);
@@ -99,8 +95,9 @@ public class OutpatientInsuranceChargeGrouper {
                 selfPayItems.add(item);
                 continue;
             }
-            String medType = this.resolveMedType(item.getEncounterDiagnosisId(), medTypeByDxId);
-            DiagnosisYbContext dxCtx = diagnosisContextByDxId.get(item.getEncounterDiagnosisId());
+            Long primaryEncounterDiagnosisId = firstEncounterDiagnosisIdFromIds(item.getEncounterDiagnosisIds());
+            String medType = this.resolveMedType(primaryEncounterDiagnosisId, medTypeByDxId);
+            DiagnosisYbContext dxCtx = diagnosisContextByDxId.get(primaryEncounterDiagnosisId);
             String diseCodg = null;
             String diseName = null;
             if (dxCtx != null) {
@@ -218,7 +215,7 @@ public class OutpatientInsuranceChargeGrouper {
             if (isNotEmpty(row.getDescription())) {
                 descriptionByDxId.put(row.getId(), row.getDescription().trim());
             }
-            Long definitionId = conditionQueryService.findDefinitionIdByConditionId(row.getConditionId());
+            Long definitionId = row.getConditionDefinitionId();
             if (definitionId != null) {
                 definitionIdByDxId.put(row.getId(), definitionId);
             }
@@ -267,6 +264,61 @@ public class OutpatientInsuranceChargeGrouper {
         }
         if (isNotEmpty(conditionCode)) {
             return conditionCode.trim();
+        }
+        return null;
+    }
+
+    /**
+     * 从收费项绑定 ids 串 收集就诊诊断主键。
+     *
+     * @param idsText    有序 ids 串（首位为主诊断）
+     * @param target 写入集合
+     */
+    private static void collectEncounterDiagnosisIdsFromIds(String idsText, Set<Long> target) {
+        if (target == null || isEmpty(idsText)) {
+            return;
+        }
+        String[] parts = idsText.split(",");
+        for (String part : parts) {
+            if (isEmpty(part)) {
+                continue;
+            }
+            String trimmed = part.trim();
+            if (isEmpty(trimmed)) {
+                continue;
+            }
+            try {
+                target.add(Long.parseLong(trimmed));
+            } catch (NumberFormatException ignored) {
+                // 跳过非法段
+            }
+        }
+    }
+
+    /**
+     * 取 ids 串中首个合法就诊诊断主键（有序；首位为主诊断）。
+     *
+     * @param idsText 有序 ids 串
+     * @return 主诊断就诊诊断 ID；无合法值时返回 {@code null}
+     */
+    private static Long firstEncounterDiagnosisIdFromIds(String idsText) {
+        if (isEmpty(idsText)) {
+            return null;
+        }
+        String[] parts = idsText.split(",");
+        for (String part : parts) {
+            if (isEmpty(part)) {
+                continue;
+            }
+            String trimmed = part.trim();
+            if (isEmpty(trimmed)) {
+                continue;
+            }
+            try {
+                return Long.parseLong(trimmed);
+            } catch (NumberFormatException ignored) {
+                // 跳过非法段
+            }
         }
         return null;
     }

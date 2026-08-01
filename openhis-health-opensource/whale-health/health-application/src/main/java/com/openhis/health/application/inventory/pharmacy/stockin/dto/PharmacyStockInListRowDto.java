@@ -11,6 +11,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -75,6 +76,18 @@ public class PharmacyStockInListRowDto {
     /** 审批人主键。 */
     @Schema(description = "审批人主键")
     private Long approverId;
+
+    /** 制单人展示名。 */
+    @Schema(description = "制单人展示名")
+    private String creatorName;
+
+    /** 审批人展示名。 */
+    @Schema(description = "审批人展示名")
+    private String approverName;
+
+    /** 单据总金额（同号各行 total_price 之和）。 */
+    @Schema(description = "单据总金额（同号各行 total_price 之和）")
+    private BigDecimal totalAmount;
 
     /** 关联上游业务单号（系统生成时展示出库单号）。 */
     @Schema(description = "关联上游业务单号（系统生成时展示出库单号）")

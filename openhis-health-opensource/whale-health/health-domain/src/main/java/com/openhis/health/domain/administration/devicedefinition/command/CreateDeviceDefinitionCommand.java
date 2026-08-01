@@ -55,6 +55,14 @@ public class CreateDeviceDefinitionCommand extends BatchCommand<CreateDeviceDefi
         private java.math.BigDecimal stockUnitRatio;
         /** 销售单位→拆零单位换算倍数。 */
         private java.math.BigDecimal packageUnitRatio;
+        /**
+         * 追溯码贴码单位（可空；有码时须与 ratio 同时维护）。
+         */
+        private String traceUnitCode;
+        /**
+         * 1 个追溯码单位对应的拆零数量；可空；有值时须 &gt; 0。
+         */
+        private java.math.BigDecimal traceUnitRatio;
         /** 所属科室标识。 */
         private Long orgId;
         /** 所在位置标识。 */
@@ -73,8 +81,6 @@ public class CreateDeviceDefinitionCommand extends BatchCommand<CreateDeviceDefi
         private Integer ybFlag;
         /** 医保编码。 */
         private String ybNo;
-        /** 医药机构目录编码。 */
-        private String ybOrgNo;
         /** 医保对码标记（0/1）。 */
         private Integer ybMatchFlag;
         /** 医保等级。 */

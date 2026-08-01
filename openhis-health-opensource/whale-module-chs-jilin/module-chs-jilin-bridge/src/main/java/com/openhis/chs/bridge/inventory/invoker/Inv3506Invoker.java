@@ -18,7 +18,8 @@ import org.springframework.stereotype.Component;
  *
  * <p>对应平台交易 {@link ChsInfNo#INVENTORY_SALE_RETURN}（销售退货）；
  * 由 {@link com.openhis.chs.bridge.inventory.workflow.InventoryThirdPartyUploadOrchestrator} 逐行编排调用，
- * 并校验平台 result.retRslt 业务结果码。</p>
+ * 并校验平台协议成功；业务结果见
+ * {@link com.openhis.chs.gateway.scheme.inventory.parser.InvPlatformOutputParser#resolveSaleUploadBizResult}。</p>
  */
 @Component
 @RequiredArgsConstructor

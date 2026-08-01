@@ -5,10 +5,13 @@
 package com.openhis.whale.crb.domain.push;
 
 import com.openhis.whale.crb.domain.push.command.EmrPushEnqueueCommand;
+import com.openhis.whale.crb.domain.push.command.MarkManualRetryCommand;
 import com.openhis.whale.crb.domain.enums.EmrPushSlaTier;
 import com.openhis.whale.crb.domain.enums.PushStatus;
 import com.openhis.whale.crb.domain.push.result.PushResult;
+import com.openhis.whale.crb.domain.share.events.push.CrbEmrPushTaskRetryQueuedEvent;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +32,7 @@ public class CrbEmrPushDomainService {
 
     private final CrbEmrPushTaskRepository taskRepository;
     private final CrbEmrPushLogRepository logRepository;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     /**
      * 入队或合并 UPSERT 任务（同一 resource+businessKey+operation 仅保留最新）。
@@ -135,6 +139,50 @@ public class CrbEmrPushDomainService {
 
         logRepository.save(log);
         taskRepository.save(task);
+    }
+
+    /**
+     * 监控页人工重试：将任务回 PENDING 并清空最近错误（保留 attemptCount）。
+     *
+     * @param command 重试命令
+     * @return 更新后的任务
+     */
+    @Transactional
+    public CrbEmrPushTask markManualRetry(MarkManualRetryCommand command) {
+        // 必填项缺失则无法定位任务
+        if (command == null || command.getTenantId() == null || command.getTaskId() == null) {
+            throw new IllegalArgumentException("人工重试命令缺少 tenantId/taskId");
+        }
+        CrbEmrPushTask task = taskRepository
+                .findByIdAndTenantIdAndIsDeletedFalse(command.getTaskId(), command.getTenantId())
+                .orElseThrow(() -> new IllegalArgumentException("推送任务不存在或已删除"));
+        // 已成功送达的任务不应再次重试
+        if (PushStatus.SENT.getCode().equals(task.getStatus())) {
+            throw new IllegalStateException("已成功送达的任务不可重试");
+        }
+        task.setStatus(PushStatus.PENDING.getCode());
+        // 立即到期，避免仅依赖 drain 租户配置时重试长期空转
+        task.setDueAt(LocalDateTime.now());
+        task.setLastError(null);
+        task.setUpdatedAt(LocalDateTime.now());
+        CrbEmrPushTask saved = taskRepository.save(task);
+        applicationEventPublisher.publishEvent(new CrbEmrPushTaskRetryQueuedEvent(saved.getId()));
+        return saved;
+    }
+
+    /**
+     * 监控页人工重试便捷入口。
+     *
+     * @param taskId 任务 id
+     * @param tenantId 租户 id
+     * @return 更新后的任务
+     */
+    @Transactional
+    public CrbEmrPushTask markManualRetry(Long taskId, Long tenantId) {
+        MarkManualRetryCommand command = new MarkManualRetryCommand();
+        command.setTaskId(taskId);
+        command.setTenantId(tenantId);
+        return markManualRetry(command);
     }
 
     private static LocalDateTime resolveDueAt(EmrPushSlaTier tier, Instant operationTime) {

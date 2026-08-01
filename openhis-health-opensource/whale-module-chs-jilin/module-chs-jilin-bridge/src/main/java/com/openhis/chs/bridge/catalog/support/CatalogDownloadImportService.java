@@ -15,10 +15,12 @@ import com.openhis.chs.domain.catalog.entity.YbCatalogDownloadCursor;
 import com.openhis.chs.domain.catalog.service.YbCatalogDownloadCursorDomainService;
 import com.openhis.chs.domain.catalog.service.YbNationalCatalogDomainService;
 import com.openhis.chs.domain.catalog.support.CatalogDownloadVersionSupport;
+import com.openhis.chs.domain.notice.port.CatalogNoticePostImportHookPort;
 import static com.openhis.whale.core.application.util.StringUtils.exceptionMessageOr;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
@@ -31,7 +33,7 @@ import java.util.concurrent.Executors;
 /**
  * 目录 ZIP 异步入库：按版本顺序从本地缓存解压 → 流式解析 → 批量 upsert + 游标快照。
  *
- * <p>适用于全部已注册 13xx 文件型目录（1301/1302/1305/1306/1307/1308/1309/1314/1315）。<。</p> */
+ * <p>适用于全部已注册 13xx 文件型目录（1301/1302/1305/1306/1307/1308/1309/1310/1311/1313/1314/1315）。</p> */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -43,6 +45,7 @@ public class CatalogDownloadImportService {
     private final YbNationalCatalogDomainService catalogDomainService;
     private final YbCatalogDownloadCursorDomainService downloadCursorDomainService;
     private final TenantContext tenantContext;
+    private final ObjectProvider<CatalogNoticePostImportHookPort> noticePostImportHookPort;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "catalog-dl-import");
@@ -99,6 +102,7 @@ public class CatalogDownloadImportService {
             List<CatalogDownloadVersionManifest> manifests = request.manifests();
             if (manifests == null || manifests.isEmpty()) {
                 jobRegistry.complete(jobId, emptyResult(request.infno(), request.startVer()));
+                fireNoticeComplianceHook(request);
                 return;
             }
 
@@ -232,12 +236,31 @@ public class CatalogDownloadImportService {
             jobRegistry.complete(jobId, result);
             log.info("[catalog-dl][import-done] jobId={} versions={} totalUpsert={}",
                 jobId, manifests.size(), totalUpsert);
+            fireNoticeComplianceHook(request);
         } catch (Exception ex) {
             log.error("[catalog-dl][import-failed] jobId={}", jobId, ex);
             jobRegistry.fail(jobId, exceptionMessageOr(ex, ex.getClass().getSimpleName()));
         } finally {
             tenantContext.clear();
         }
+    }
+
+    private void fireNoticeComplianceHook(ImportJobRequest request) {
+        CatalogNoticePostImportHookPort hook = noticePostImportHookPort.getIfAvailable();
+        if (hook == null) {
+            return;
+        }
+        String listType;
+        try {
+            listType = CatalogFileParserRegistry.require(request.infno()).listType();
+        } catch (RuntimeException ex) {
+            listType = null;
+        }
+        hook.onCatalogImportSuccess(
+            request.tenantId(),
+            request.contractId(),
+            listType,
+            request.operatorId());
     }
 
     private static CatalogDownloadResult emptyResult(String infno, String startVer) {

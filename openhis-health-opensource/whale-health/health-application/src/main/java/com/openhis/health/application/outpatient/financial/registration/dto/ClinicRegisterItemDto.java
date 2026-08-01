@@ -98,11 +98,18 @@ public class ClinicRegisterItemDto {
     private Long paymentDraftId;
 
     /**
-     * 已成功挂号/缴费后的支付流水主键，供补打挂号小票；待挂号或无支付记录时为 null。
+     * 已成功挂号/缴费后的挂号费支付流水主键，供退号银联退货与补打挂号小票；待挂号或无支付记录时为 null。
      */
-    /** 支付流水ID（已结算挂号时返回，供补打小票）（业务字段）。 */
-    @Schema(description = "支付流水ID（已结算挂号时返回，供补打小票）")
+    /** 支付流水ID（挂号费对应 SUCCESS 支付单，供退号/补打小票）（业务字段）。 */
+    @Schema(description = "支付流水ID（挂号费对应支付单，供退号/补打小票）")
     private Long paymentId;
+
+    /**
+     * 收费人姓名（已成功缴费时由支付流水 {@code enterer_id} 解析医务人员姓名回显；未收费为空）。
+     */
+    /** 收费人姓名（业务字段）。 */
+    @Schema(description = "收费人姓名")
+    private String cashierName;
 
     /** 费用性质名称。 */
     @Schema(description = "费用性质名称")

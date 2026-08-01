@@ -25,6 +25,7 @@ import com.openhis.health.domain.administration.encounter.queries.model.Encounte
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.application.shared.encounter.EncounterContextReader;
+import com.openhis.health.application.shared.financial.EncounterContractDisplayAssembler;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.administration.encounter.queries.OutpatientEncounterPageQuery;
@@ -72,6 +73,8 @@ public class DoctorStationEncounterManageAppService {
 
     /** 工伤就诊上下文（队列角标）。 */
     private final WorkInjuryEncounterContextExtension workInjuryEncounterContextExtension;
+    /** 费用性质展示：有医保账户优先合同名，供患者卡片胶囊。 */
+    private final EncounterContractDisplayAssembler encounterContractDisplayAssembler;
 
     /**
      * 分页查询本科室门诊患者列表（读模型）。
@@ -80,7 +83,7 @@ public class DoctorStationEncounterManageAppService {
      * 须 {@code staffPractitionerId}，读侧按 BR-DOR-009 做状态×参与者可见性过滤。</p>
      *
      * @param request 列表查询条件
-     * @return 分页结果（{@code feeNatureOptions} 为空，医嘱开立 init 按就诊加载）
+     * @return 分页结果（{@code feeNatureOptions} 为空，医嘱开立 init 按就诊加载；行内带 {@code contractDisplay}）
      * @throws BusinessException 参数非法时（分页/在诊队列缺医师键等）
      */
     public PageOutpatientInfoForDoctorStationResponse pageOutpatientInfoForDoctorStation(
@@ -100,9 +103,39 @@ public class DoctorStationEncounterManageAppService {
         PageOutpatientInfoForDoctorStationResponse resp =
             this.doctorStationEncounterManageMapper.toPageOutpatientInfoForDoctorStationResponse(page, chargeTotals);
         this.applyWorkInjuryContextLabels(resp);
+        // Asm：本页就诊批量回填费用性质展示（有医保账户优先，禁止写死自费）
+        this.applyContractDisplayLabels(resp);
         // 费用性质下拉随就诊挂号分类变化，患者列表页不附带（由医嘱 init 按 encounterId 加载）。
         resp.setFeeNatureOptions(Collections.emptyList());
         return resp;
+    }
+
+    /**
+     * 门诊医生站列表：按就诊优先合同批量回填 {@code contractDisplay}。
+     *
+     * @param resp 分页响应
+     */
+    private void applyContractDisplayLabels(PageOutpatientInfoForDoctorStationResponse resp) {
+        if (resp == null || resp.getContent() == null || resp.getContent().isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
+        for (OutpatientInfoItemDto row : resp.getContent()) {
+            if (row != null && row.getEncounterId() != null) {
+                encounterIds.add(row.getEncounterId());
+            }
+        }
+        if (encounterIds.isEmpty()) {
+            return;
+        }
+        Map<Long, String> contractDisplayByEncounterId =
+            encounterContractDisplayAssembler.mapContractDisplayByEncounterIds(encounterIds);
+        for (OutpatientInfoItemDto row : resp.getContent()) {
+            if (row == null || row.getEncounterId() == null) {
+                continue;
+            }
+            row.setContractDisplay(contractDisplayByEncounterId.get(row.getEncounterId()));
+        }
     }
 
     /**

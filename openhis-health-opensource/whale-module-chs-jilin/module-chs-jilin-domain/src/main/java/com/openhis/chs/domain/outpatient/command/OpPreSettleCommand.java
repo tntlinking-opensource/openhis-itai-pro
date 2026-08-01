@@ -37,10 +37,29 @@ public class OpPreSettleCommand {
     private String psnNo;
     private String insuplcAdmdvs;
     private String insutype;
+    /**
+     * 出生日期（yyyy-MM-dd），供 3101 {@code patient_dtos.brdy}；
+     * 由 ContextLoader 从 Encounter 患者上下文写入。
+     */
+    private String brdy;
     private String medType;
 
+    /**
+     * 是否挂号费预结算批次（默认诊断 / 失败自动 2202）。
+     * <p>由 ContextLoader 按收费项生成来源或国标 med_type=12 判定；与实际上报 med_type（可与普通门诊同为 11）解耦。</p>
+     */
+    private Boolean registerFeePath;
+
+    /** 主诊编码（兼容旧链路；与 {@link #clinicDiagnoses} 中主诊行一致）。 */
     private String mainDiagCode;
+    /** 主诊名称（同时作 2203 mdtrtinfo.main_cond_dscr）。 */
     private String mainDiagName;
+
+    /**
+     * 本诊次全部有效临床诊断（Wave B：2203 diseinfo 多行来源）。
+     * 挂号费无临床诊断时可为单行默认码；诊疗结算须非空且主诊优先。
+     */
+    private List<OpClinicDiagnosisLine> clinicDiagnoses;
 
     /** 本批次待结算收费 id（调用方传入，enrich 后转 chargeLines） */
     private List<Long> chargeItemIds;

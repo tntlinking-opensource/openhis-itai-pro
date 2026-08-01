@@ -4,10 +4,10 @@
  */
 package com.openhis.chs.application.reconciliation.service;
 
-import com.openhis.chs.application.reconciliation.response.ListLocalClearAppliesResponse;
-import com.openhis.chs.application.reconciliation.response.ListLocalReconDailyResponse;
 import com.openhis.chs.application.reconciliation.request.ListLocalReconRecordsRequest;
-import com.openhis.chs.application.reconciliation.response.ListLocalReconRecordsResponse;
+import com.openhis.chs.application.reconciliation.response.LocalClearApplyResponse;
+import com.openhis.chs.application.reconciliation.response.LocalReconDailyResponse;
+import com.openhis.chs.application.reconciliation.response.LocalReconDetailResponse;
 import com.openhis.chs.application.reconciliation.mapper.InsuranceReconciliationAppMapper;
 import com.openhis.chs.domain.reconciliation.access.Recon3201Invoker;
 import com.openhis.chs.domain.reconciliation.access.Recon3202DetailInvoker;
@@ -67,9 +67,33 @@ public class InsuranceReconciliationAppService {
         return recon3206AInvoker.invoke(request);
     }
 
-    /** 本地查询：汇总清算相关金额。 */
-    public ClearAmountSummaryResult summarizeClearAmounts(SummarizeClearAmountCommand request) {
-        return reconciliationQueryService.summarizeClearAmounts(request, TenantUtils.getCurrentTenantId());
+    /**
+     * 本地查询：按险种 + 清算类别汇总 HIS 结算金额列表（IF-CHS-REC-R-02）。
+     * <p><b>仅读本院 HIS 结算快照</b>（门诊正式结算 + 住院已结算预结算），
+     * <b>不调用医保平台对账接口</b>。用于日对账表格展示「待对账本地金额」；
+     * 真正对总账时走 {@link #reconcileDailyLedger}（3201）。</p>
+     * <p>月清算/总额场景由调用方对列表再合计。</p>
+     *
+     * @param request 日期区间及可选 {@code insutype}/{@code clrType} 过滤
+     * @return 分组汇总行；无结算时为空列表
+     */
+    public List<ClearAmountSummaryResult> summarizeClearAmounts(SummarizeClearAmountCommand request) {
+        // Gate：租户取当前会话，防止跨租户汇总
+        Long tenantId = TenantUtils.getCurrentTenantId();
+        // Cmd：只读 HIS 本地快照分组汇总；此处不出站医保
+        return reconciliationQueryService.summarizeClearAmounts(request, tenantId);
+    }
+
+    /**
+     * 【3201】日对账：携带本地金额出站医保平台对总账，并落本地日账结果。
+     * <p>与 {@link #summarizeClearAmounts} 分工：前者只取 HIS 金额预览；本方法才调用平台 3201。</p>
+     *
+     * @param request 险种、清算类别、经办机构、对账日期及可选金额/笔数
+     * @return 平台对账结果与本地流水 id
+     */
+    public ReconDaily3201Result reconcileDailyLedger(ReconDaily3201Command request) {
+        // Cmd：出站 3201 + 落本地日账（金额缺省时由 Invoker 再读 HIS 补齐）
+        return recon3201Invoker.invoke(request);
     }
 
     /** 【3203A】吉林清算申请提交。 */
@@ -87,11 +111,6 @@ public class InsuranceReconciliationAppService {
         recon3204AInvoker.invoke(request);
     }
 
-    /** 【3201】日对账。 */
-    public ReconDaily3201Result reconcileDailyLedger(ReconDaily3201Command request) {
-        return recon3201Invoker.invoke(request);
-    }
-
     /** 本地查询：预览明细对账行（本地汇总）。 */
     public List<ReconDetailRowResult> previewReconDetailRows(SummarizeClearAmountCommand request) {
         return reconciliationQueryService.loadDetailRows(request, TenantUtils.getCurrentTenantId());
@@ -103,15 +122,15 @@ public class InsuranceReconciliationAppService {
     }
 
     /** 本地查询：明细对账流水列表。 */
-    public ListLocalReconRecordsResponse listLocalReconDetail(ListLocalReconRecordsRequest request) {
+    public List<LocalReconDetailResponse> listLocalReconDetailRecords(ListLocalReconRecordsRequest request) {
         ListLocalReconRecordsCommand command = InsuranceReconciliationAppMapper.toCommand(request);
         List<LocalReconDetailResult> rows = reconciliationDomainService.listLocalReconDetailRecords(
             command, TenantUtils.getCurrentTenantId());
-        return InsuranceReconciliationAppMapper.toResponse(rows);
+        return InsuranceReconciliationAppMapper.toDetailResponse(rows);
     }
 
     /** 本地查询：清算申请流水列表。 */
-    public ListLocalClearAppliesResponse listLocalClearApplies(ListLocalReconRecordsRequest request) {
+    public List<LocalClearApplyResponse> listLocalClearApplies(ListLocalReconRecordsRequest request) {
         ListLocalReconRecordsCommand command = InsuranceReconciliationAppMapper.toCommand(request);
         List<LocalClearApplyResult> rows = reconciliationDomainService.listLocalClearApplies(
             command, TenantUtils.getCurrentTenantId());
@@ -119,7 +138,7 @@ public class InsuranceReconciliationAppService {
     }
 
     /** 本地查询：日对账流水列表。 */
-    public ListLocalReconDailyResponse listLocalReconDaily(ListLocalReconRecordsRequest request) {
+    public List<LocalReconDailyResponse> listLocalReconDailyRecords(ListLocalReconRecordsRequest request) {
         ListLocalReconRecordsCommand command = InsuranceReconciliationAppMapper.toCommand(request);
         List<LocalReconDailyResult> rows = reconciliationDomainService.listLocalReconDailyRecords(
             command, TenantUtils.getCurrentTenantId());

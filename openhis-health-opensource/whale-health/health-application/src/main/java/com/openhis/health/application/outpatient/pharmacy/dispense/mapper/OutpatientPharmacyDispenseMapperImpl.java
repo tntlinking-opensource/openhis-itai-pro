@@ -30,6 +30,7 @@ import com.openhis.health.domain.medication.medicationdispense.queries.model.Med
 import com.openhis.health.application.outpatient.pharmacy.dispense.support.EncounterMedicationDispenseSlipReadAssembler;
 import com.openhis.health.application.outpatient.pharmacy.dispense.dto.MedicationDispenseSlipPageResult;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.utils.AdministrativeGenderDisplayUtil;
 import com.openhis.whale.core.application.dto.OptionDto;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.domain.Page;
@@ -158,12 +159,22 @@ public class OutpatientPharmacyDispenseMapperImpl implements OutpatientPharmacyD
                     row.setPatientId(info.getPatientId());
                     row.setPatientName(info.getPatientName());
                     row.setGenderEnum(info.getGenderEnum());
+                    // 性别展示文案由领域枚举解析，前端只渲染 genderEnumText
+                    row.setGenderEnumText(AdministrativeGenderDisplayUtil.toDisplayText(info.getGenderEnum()));
                     row.setAgeText(info.getAgeText());
                     row.setOrganizationName(info.getOrganizationName());
                     row.setDoctorName(info.getDoctorName());
                     row.setStatusEnum(info.getStatusEnum());
                     row.setStatusEnumText(info.getStatusEnumText());
                     row.setStartTime(info.getStartTime());
+                    // 卡片电话：门诊上下文 phone；空串当未填
+                    String phone = info.getPhone();
+                    if (phone != null) {
+                        phone = phone.trim();
+                    }
+                    if (phone != null && !phone.isEmpty()) {
+                        row.setPatientPhone(phone);
+                    }
                 }
                 content.add(row);
             }

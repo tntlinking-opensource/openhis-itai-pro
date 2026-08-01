@@ -34,11 +34,11 @@ public class InpatientTcmDiagnosisAssembler {
         for (com.openhis.health.application.outpatient.doctorstation.chinesemedicine.dto.TcmDiagnosisGroupRowDto row : rows) {
             TcmDiagnosisGroupRowDto dto = new TcmDiagnosisGroupRowDto();
             dto.setTcmSyndromeGroup(row.getTcmSyndromeGroup());
-            dto.setDiseaseConditionId(row.getDiseaseConditionId());
+            dto.setDiseaseEncounterDiagnosisId(row.getDiseaseEncounterDiagnosisId());
             dto.setDiseaseDefinitionId(row.getDiseaseDefinitionId());
             dto.setDiseaseCode(row.getDiseaseCode());
             dto.setDiseaseName(row.getDiseaseName());
-            dto.setSyndromeConditionId(row.getSyndromeConditionId());
+            dto.setSyndromeEncounterDiagnosisId(row.getSyndromeEncounterDiagnosisId());
             dto.setSyndromeDefinitionId(row.getSyndromeDefinitionId());
             dto.setSyndromeCode(row.getSyndromeCode());
             dto.setSyndromeName(row.getSyndromeName());
@@ -46,6 +46,8 @@ public class InpatientTcmDiagnosisAssembler {
             dto.setRank(row.getRank());
             dto.setMedicalTypeCode(row.getMedicalTypeCode());
             dto.setDiagnosisDesc(row.getDiagnosisDesc());
+            // 透传病名医保编码，供住院外侧诊断列表展示。
+            dto.setYbNo(row.getYbNo());
             result.add(dto);
         }
         return result;

@@ -14,39 +14,45 @@ import com.openhis.chs.domain.catalog.queries.NationalCatalogPageQuery;
 import com.openhis.chs.domain.catalog.result.NationalCatalogItemResult;
 import com.openhis.chs.domain.catalog.service.YbNationalCatalogQueryService;
 import com.openhis.chs.domain.contract.ChsContractSnapshot;
+import com.openhis.chs.domain.notice.queryservice.NationalCatalogOverlayQueryService;
 import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * 国家目录管理页 UI 应用服务（POST /api/app/insuranceNationalCatalog/*）。
- * <p>职责：本地镜像分页查询、1312 实时刷新。</p>
+ * <p>职责：本地镜像分页查询（合成局文 overlay 选码可用）、1312 实时刷新。</p>
  */
 @Service
 @RequiredArgsConstructor
 public class InsuranceNationalCatalogAppService {
 
     private final YbNationalCatalogQueryService nationalCatalogQueryService;
+    private final NationalCatalogOverlayQueryService overlayQueryService;
     private final ChsInsuranceContractReader contractReader;
     private final Cat1312Invoker cat1312Invoker;
 
     /**
-     * 分页查询本地国家医保目录镜像。
+     * 分页查询本地国家医保目录镜像（镜像 ⋈ overlay）。
      */
     public PagedResult<NationalCatalogItemResult> queryNationalCatalogPage(QueryNationalCatalogRequest request) {
         QueryNationalCatalogRequest safe = request == null ? new QueryNationalCatalogRequest() : request;
         ChsContractSnapshot contract = contractReader.requireContract(safe.getContractBusNo(), safe.getContractId());
+        Long tenantId = TenantUtils.getCurrentTenantId();
         NationalCatalogPageQuery query = InsuranceNationalCatalogMapper.toPageQuery(
-            safe, contract.id(), TenantUtils.getCurrentTenantId());
+            safe, contract.id(), tenantId);
         var page = nationalCatalogQueryService.page(query);
         List<NationalCatalogItemResult> rows = new ArrayList<>(page.getContent().size());
         for (YbNationalCatalogItem item : page.getContent()) {
             rows.add(InsuranceNationalCatalogMapper.toItemResult(item));
         }
+        overlayQueryService.decorateSelectable(
+            tenantId, contract.id(), safe.getListType(), rows, LocalDate.now());
         return PagedResult.of(rows, page.getTotalElements(), query.springPageIndex() + 1, query.getBoundedPageSize());
     }
 

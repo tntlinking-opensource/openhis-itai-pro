@@ -45,4 +45,10 @@ public class ChsDiseInfoRow {
 
     @JSONField(name = "diag_time")
     private String diagTime;
+
+    /**
+     * 有效标志（平台 vali_flag；挂号/门诊上传有效诊断时填 {@code 1}）。
+     */
+    @JSONField(name = "vali_flag")
+    private String valiFlag;
 }

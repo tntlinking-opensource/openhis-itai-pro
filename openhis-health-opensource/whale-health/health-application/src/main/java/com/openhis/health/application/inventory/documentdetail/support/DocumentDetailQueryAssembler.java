@@ -7,6 +7,7 @@ package com.openhis.health.application.inventory.documentdetail.support;
 import com.openhis.health.application.inventory.documentdetail.request.DocumentDetailFilterRequest;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.SupplyStatus;
+import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.workflow.supplyrequest.queries.WarehouseDocumentDetailPageQuery;
 import com.openhis.health.application.inventory.inventorydetail.support.InventoryCatalogFilter;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -28,7 +29,7 @@ public class DocumentDetailQueryAssembler {
 
     /** 品名关键字 → resolved 定义 id（B.6.4 跨聚合预解析）。 */
     private final InventoryCatalogFilter inventoryCatalogFilter;
-    /** 各域 typeEnum 白名单与默认值。 */
+    /** 各域 typeEnum 白名单（未传类型时 IN 本域全部）。 */
     private final DocumentDetailTypeWhitelistHelper typeWhitelistSupport;
 
     /**
@@ -108,7 +109,11 @@ public class DocumentDetailQueryAssembler {
     }
 
     /**
-     * 将筛选请求装配为领域分页 Query（固定 {@code AGREE}、审批时间、批号 LIKE、品名 resolved 字段）。
+     * 将筛选请求装配为领域分页 Query（批号 LIKE、品名 resolved；状态/时间窗见下）。
+     *
+     * <p><strong>BR-INV-DDC-003</strong>：非期初固定 {@code AGREE} + {@code approval_time} 窗；
+     * 期初 {@code *_OPENING}（须显式传 {@code typeEnum}）为 {@code AGREE}+{@code APPROVAL}，
+     * 时间窗走 {@code apply_time}（审核中尚无审批时刻，供人工核对导出）。其它类型不受影响。</p>
      *
      * @param scope    业务域
      * @param request  筛选入参
@@ -134,19 +139,33 @@ public class DocumentDetailQueryAssembler {
         if (pageSize != null) {
             query.setPageSize(pageSize);
         }
-        String typeEnum = this.typeWhitelistSupport.resolveTypeEnumOrDefault(scope, request.getTypeEnum());
-        query.setTypeEnum(typeEnum);
-        query.setStatusEnum(SupplyStatus.AGREE.getCode());
+        // Asm：已传 typeEnum → 单类型等值；未传 → 本域白名单 IN（查全部，不强制域默认单类型）
+        String typeEnum = this.typeWhitelistSupport.normalizeOptionalTypeEnum(request.getTypeEnum());
+        if (StringUtils.isNotEmpty(typeEnum)) {
+            query.setTypeEnum(typeEnum);
+        } else {
+            query.setTypeEnums(this.typeWhitelistSupport.whitelistTypeCodes(scope));
+        }
+        LocalDateTime[] window = this.resolveApprovalTimeWindow(
+            request.getApprovalTimeStart(), request.getApprovalTimeEnd());
+        // BR-INV-DDC-003：期初含审核中（人工核对）；非期初仅 AGREE + 审批时间
+        if (SupplyType.isOpeningTypeCode(typeEnum)) {
+            query.setStatusEnums(List.of(
+                SupplyStatus.AGREE.getCode(),
+                SupplyStatus.APPROVAL.getCode()));
+            query.setApplyTimeStart(window[0]);
+            query.setApplyTimeEnd(window[1]);
+        } else {
+            query.setStatusEnum(SupplyStatus.AGREE.getCode());
+            query.setApprovalTimeStart(window[0]);
+            query.setApprovalTimeEnd(window[1]);
+        }
         query.setTenantId(tenantId);
         query.setSourceLocationId(request.getSourceLocationId());
         query.setPurposeLocationId(request.getPurposeLocationId());
         query.setBusNo(StringUtils.trimToNull(request.getBusNo()));
         query.setLotNumberKeyword(StringUtils.trimToNull(request.getLotNumberKeyword()));
         query.setProductKeyword(StringUtils.trimToNull(request.getProductKeyword()));
-        LocalDateTime[] window = this.resolveApprovalTimeWindow(
-            request.getApprovalTimeStart(), request.getApprovalTimeEnd());
-        query.setApprovalTimeStart(window[0]);
-        query.setApprovalTimeEnd(window[1]);
         this.inventoryCatalogFilter.enrichDocumentDetailKeywordDefinitionIds(query);
         return query;
     }

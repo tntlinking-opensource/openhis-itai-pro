@@ -27,6 +27,7 @@ import com.openhis.health.domain.share.enums.PaymentChannel;
 import com.openhis.health.domain.share.constants.OutpatientChargeQueueTab;
 import com.openhis.health.domain.share.enums.AdministrativeGender;
 import com.openhis.health.domain.share.enums.PaymentKind;
+import com.openhis.health.domain.share.enums.PaymentType;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.whale.core.application.dto.OptionDto;
 import org.springframework.data.domain.Page;
@@ -182,7 +183,8 @@ public class OutpatientChargeMapperImpl implements OutpatientChargeMapper {
         command.setPatientId(patientId);
         command.setChargeItemIds(chargeItemIds);
         command.setKindEnum(PaymentKind.OUTPATIENT_CLINIC);
-        command.setPaymentEnum(PaymentChannel.CASHIER.getCode());
+        // payment_enum 语义为 PaymentType（PAY/UN_PAY），禁止写入渠道码 CASHIER
+        command.setPaymentEnum(PaymentType.PAY.getCode());
         command.setEntererId(operatorId);
         command.setTenderedAmount(amount);
         command.setDisplayAmount(amount);
@@ -230,18 +232,24 @@ public class OutpatientChargeMapperImpl implements OutpatientChargeMapper {
     /**
      * 装配创建票据草稿命令。
      *
-     * @param payment 支付流水
-     * @param paymentId 支付主键
-     * @param operatorId 操作人
+     * @param payment           支付流水
+     * @param paymentId         支付主键
+     * @param operatorId        操作人
+     * @param invoiceFaceAmount 票面金额（收费项合计结算刻度；含医保已付，非患者现金）
      * @return 票据草稿命令
      */
     @Override
-    public CreateDraftInvoiceCommand toCreateDraftInvoiceCommand(PaymentReconciliationQueryModel payment, Long paymentId, Long operatorId) {
+    public CreateDraftInvoiceCommand toCreateDraftInvoiceCommand(
+        PaymentReconciliationQueryModel payment,
+        Long paymentId,
+        Long operatorId,
+        BigDecimal invoiceFaceAmount) {
         CreateDraftInvoiceCommand command = new CreateDraftInvoiceCommand();
         command.setPatientId(payment.getPatientId());
         command.setPaymentId(paymentId);
         command.setTypeCode(OutpatientChargeConstants.INVOICE_TYPE_OUTPATIENT);
-        command.setAmount(payment.getDisplayAmount());
+        // 票面按收费项合计开具；医保全报时 displayAmount=0 仍须开票（BR-INV-008）
+        command.setAmount(invoiceFaceAmount);
         command.setOperatorId(operatorId);
         return command;
     }

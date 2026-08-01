@@ -4,10 +4,7 @@
  */
 package com.openhis.chs.application.reconciliation.mapper;
 
-import com.openhis.chs.application.reconciliation.response.ListLocalClearAppliesResponse;
-import com.openhis.chs.application.reconciliation.response.ListLocalReconDailyResponse;
 import com.openhis.chs.application.reconciliation.request.ListLocalReconRecordsRequest;
-import com.openhis.chs.application.reconciliation.response.ListLocalReconRecordsResponse;
 import com.openhis.chs.application.reconciliation.response.LocalClearApplyResponse;
 import com.openhis.chs.application.reconciliation.response.LocalReconDailyResponse;
 import com.openhis.chs.application.reconciliation.response.LocalReconDetailResponse;
@@ -16,6 +13,7 @@ import com.openhis.chs.domain.reconciliation.result.LocalClearApplyResult;
 import com.openhis.chs.domain.reconciliation.result.LocalReconDailyResult;
 import com.openhis.chs.domain.reconciliation.result.LocalReconDetailResult;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -35,37 +33,42 @@ public final class InsuranceReconciliationAppMapper {
     }
 
     /** 将明细对账领域结果列表映射为 UI 出参。 */
-    public static ListLocalReconRecordsResponse toResponse(List<LocalReconDetailResult> rows) {
-        ListLocalReconRecordsResponse response = new ListLocalReconRecordsResponse();
+    public static List<LocalReconDetailResponse> toDetailResponse(List<LocalReconDetailResult> rows) {
+        List<LocalReconDetailResponse> result = new ArrayList<>();
         if (rows == null) {
-            return response;
+            return result;
         }
         for (LocalReconDetailResult row : rows) {
             if (row == null) {
                 continue;
             }
-            response.getDetails().add(new LocalReconDetailResponse()
+            result.add(new LocalReconDetailResponse()
+                .setId(row.getId())
                 .setContractBusNo(row.getContractBusNo())
+                .setSetlOptins(row.getSetlOptins())
+                .setClrType(row.getClrType())
                 .setStmtBegndate(row.getStmtBegndate())
                 .setStmtEnddate(row.getStmtEnddate())
-                .setUploadFilename(row.getUploadFileQuryNo())
                 .setRowCount(row.getRowCount())
-                .setMismatchCount(row.getMismatchCount()));
+                .setMismatchCount(row.getMismatchCount())
+                .setUploadFileQuryNo(row.getUploadFileQuryNo())
+                .setResultFileQuryNo(row.getResultFileQuryNo())
+                .setCreatedAt(row.getCreatedAt()));
         }
-        return response;
+        return result;
     }
 
     /** 将清算申请领域结果列表映射为 UI 出参。 */
-    public static ListLocalClearAppliesResponse toClearApplyResponse(List<LocalClearApplyResult> rows) {
-        ListLocalClearAppliesResponse response = new ListLocalClearAppliesResponse();
+    public static List<LocalClearApplyResponse> toClearApplyResponse(List<LocalClearApplyResult> rows) {
+        List<LocalClearApplyResponse> result = new ArrayList<>();
         if (rows == null) {
-            return response;
+            return result;
         }
         for (LocalClearApplyResult row : rows) {
             if (row == null) {
                 continue;
             }
-            response.getRows().add(new LocalClearApplyResponse()
+            result.add(new LocalClearApplyResponse()
                 .setId(row.getId())
                 .setContractBusNo(row.getContractBusNo())
                 .setClrType(row.getClrType())
@@ -81,20 +84,20 @@ public final class InsuranceReconciliationAppMapper {
                 .setStatus(row.getStatus())
                 .setCreatedAt(row.getCreatedAt()));
         }
-        return response;
+        return result;
     }
 
     /** 将日对账领域结果列表映射为 UI 出参。 */
-    public static ListLocalReconDailyResponse toReconDailyResponse(List<LocalReconDailyResult> rows) {
-        ListLocalReconDailyResponse response = new ListLocalReconDailyResponse();
+    public static List<LocalReconDailyResponse> toReconDailyResponse(List<LocalReconDailyResult> rows) {
+        List<LocalReconDailyResponse> result = new ArrayList<>();
         if (rows == null) {
-            return response;
+            return result;
         }
         for (LocalReconDailyResult row : rows) {
             if (row == null) {
                 continue;
             }
-            response.getRows().add(new LocalReconDailyResponse()
+            result.add(new LocalReconDailyResponse()
                 .setId(row.getId())
                 .setContractBusNo(row.getContractBusNo())
                 .setInsutype(row.getInsutype())
@@ -110,6 +113,6 @@ public final class InsuranceReconciliationAppMapper {
                 .setStmtRsltDscr(row.getStmtRsltDscr())
                 .setCreatedAt(row.getCreatedAt()));
         }
-        return response;
+        return result;
     }
 }

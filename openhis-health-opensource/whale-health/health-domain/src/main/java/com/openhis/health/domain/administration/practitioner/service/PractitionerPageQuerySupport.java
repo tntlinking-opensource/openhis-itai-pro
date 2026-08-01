@@ -6,6 +6,10 @@ package com.openhis.health.domain.administration.practitioner.service;
 
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
+import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
+import com.openhis.health.domain.share.utils.SearchCodeUtil;
+import com.openhis.whale.core.application.util.StringUtils;
+import jakarta.persistence.criteria.Order;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import org.springframework.data.jpa.domain.Specification;
@@ -25,9 +29,18 @@ final class PractitionerPageQuerySupport {
     private PractitionerPageQuerySupport() {
     }
 
+    /**
+     * 在职医务人员分页 Spec；{@code trimmedKeyword} 非空时追加 LIKE 与精确优先 ORDER BY（B.2.1）。
+     *
+     * @param status                         发布状态 code
+     * @param trimmedKeyword                 已 trim 关键字；空白则不追加关键字谓词/排序
+     * @param requireBoundSystemUser         是否要求已绑定系统用户
+     * @param resolvedPractitionerIdsForRole 角色过滤后的 id；null 表示不追加
+     * @return Specification
+     */
     static Specification<Practitioner> activePractitioners(
         String status,
-        String searchPattern,
+        String trimmedKeyword,
         boolean requireBoundSystemUser,
         Collection<Long> resolvedPractitionerIdsForRole) {
         return (root, query, cb) -> {
@@ -40,8 +53,23 @@ final class PractitionerPageQuerySupport {
             if (requireBoundSystemUser) {
                 predicates.add(cb.isNotNull(root.get("userId")));
             }
-            if (searchPattern != null) {
+            if (StringUtils.isNotEmpty(trimmedKeyword)) {
+                String searchPattern = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmedKeyword);
                 predicates.add(keywordPredicate(root, cb, searchPattern));
+                // B.2.1：精确全等置顶，次级主键倒序
+                List<Order> secondary = List.of(cb.desc(root.get(FieldNameConstants.ID)));
+                KeywordExactFirstOrderSupport.applyExactFirstOrder(
+                    query,
+                    cb,
+                    trimmedKeyword,
+                    secondary,
+                    root.get(FieldNameConstants.NAME),
+                    root.get(FieldNameConstants.BUS_NO),
+                    root.get("phone"),
+                    root.get("addressStreet"),
+                    root.get(FieldNameConstants.PY_STR),
+                    root.get(FieldNameConstants.WB_STR),
+                    root.get("ybNo"));
             }
             applyResolvedPractitionerIdsPredicate(predicates, root, cb, resolvedPractitionerIdsForRole);
             return cb.and(predicates.toArray(new Predicate[0]));

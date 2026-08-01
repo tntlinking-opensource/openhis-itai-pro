@@ -459,7 +459,12 @@ public final class CatalogFileParser {
         if (value == null || value.isBlank()) {
             return null;
         }
-        return value.trim();
+        String trimmed = value.trim();
+        // 国家局 TXT 空字段常写作字面量 "null"，不能当有效编码/名称入库
+        if ("null".equalsIgnoreCase(trimmed)) {
+            return null;
+        }
+        return trimmed;
     }
 
     private static LocalDate parseDate(String value) {

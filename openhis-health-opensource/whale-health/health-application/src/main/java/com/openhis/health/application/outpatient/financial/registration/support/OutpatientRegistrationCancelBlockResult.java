@@ -8,7 +8,9 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 门诊退号临床/收费门禁判定结果（IF-REG-09 · BR-REG-015）。
+ * 门诊退号收费门禁判定结果（IF-REG-09 · BR-REG-015）。
+ *
+ * <p>仅表达非挂号锚点账单三态阻断；药耗发放不在本结果语义内。</p>
  */
 @Getter
 @Setter

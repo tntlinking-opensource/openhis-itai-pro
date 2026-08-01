@@ -23,6 +23,11 @@ public class PagePendingCatalogMappingResult {
     private int pageNo;
     private int pageSize;
     private long pendingUploadCount;
-    private long matchedCount;
+    /** 平台镜像无对照的院内启用品项数（待处理总数） */
+    private long notOnPlatformCount;
     private long noYbNoCount;
+
+    /** @deprecated 请用 {@link #notOnPlatformCount}；保留兼容旧前端 */
+    @Deprecated
+    private long matchedCount;
 }

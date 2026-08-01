@@ -99,16 +99,7 @@ public class ContractQueryService {
      */
     public Page<ContractListItemQueryModel> listContracts(Long orgId, Pageable pageable) {
         return contractRepository.findAllByOrgIdOrderByDisplayOrderAsc(orgId, pageable)
-            .map(item -> {
-                ContractListItemQueryModel model = new ContractListItemQueryModel();
-                model.setId(item.getId());
-                model.setBusNo(item.getBusNo());
-                model.setName(item.getName());
-                model.setCategoryEnum(item.getCategoryEnum());
-                model.setActiveFlag(item.getActiveFlag());
-                model.setDisplayOrder(item.getDisplayOrder());
-                return model;
-            });
+            .map(this::toListItem);
     }
 
     /**
@@ -124,14 +115,7 @@ public class ContractQueryService {
             if (item == null) {
                 continue;
             }
-            ContractListItemQueryModel model = new ContractListItemQueryModel();
-            model.setId(item.getId());
-            model.setBusNo(item.getBusNo());
-            model.setName(item.getName());
-            model.setCategoryEnum(item.getCategoryEnum());
-            model.setActiveFlag(item.getActiveFlag());
-            model.setDisplayOrder(item.getDisplayOrder());
-            out.add(model);
+            out.add(this.toListItem(item));
         }
         return out;
     }
@@ -152,16 +136,28 @@ public class ContractQueryService {
                 // 软删合同不参与下拉与展示判定
                 continue;
             }
-            ContractListItemQueryModel model = new ContractListItemQueryModel();
-            model.setId(item.getId());
-            model.setBusNo(item.getBusNo());
-            model.setName(item.getName());
-            model.setCategoryEnum(item.getCategoryEnum());
-            model.setActiveFlag(item.getActiveFlag());
-            model.setDisplayOrder(item.getDisplayOrder());
-            out.add(model);
+            out.add(this.toListItem(item));
         }
         return out;
+    }
+
+    /**
+     * 实体 → 列表项：含通道区划与医保标记，供挂号 init 一次装配，避免按 id 回表。
+     *
+     * @param item 费用性质实体
+     * @return 列表读模型
+     */
+    private ContractListItemQueryModel toListItem(Contract item) {
+        ContractListItemQueryModel model = new ContractListItemQueryModel();
+        model.setId(item.getId());
+        model.setBusNo(item.getBusNo());
+        model.setName(item.getName());
+        model.setCategoryEnum(item.getCategoryEnum());
+        model.setActiveFlag(item.getActiveFlag());
+        model.setDisplayOrder(item.getDisplayOrder());
+        model.setAdmVs(item.getAdmVs());
+        model.setYbFlag(item.getYbFlag());
+        return model;
     }
 
     /**
@@ -254,5 +250,30 @@ public class ContractQueryService {
             out.put(contract.getBusNo(), contract.getId());
         }
         return out;
+    }
+
+    /**
+     * 按费用性质分类码解析合同主键集合（AS-OP-PHA-005 费用性质筛预解析，B.6.4）。
+     *
+     * @param categoryEnum {@link com.openhis.health.domain.share.enums.ContractCategory} 持久化 code；空则返回空列表
+     * @return 未软删且分类命中的合同主键列表
+     */
+    public List<Long> listIdsByCategoryEnum(String categoryEnum) {
+        String normalized = StringUtils.trimToNull(categoryEnum);
+        if (normalized == null) {
+            return Collections.emptyList();
+        }
+        List<Contract> all = contractRepository.findAll();
+        List<Long> ids = new ArrayList<>();
+        // Loop：全表未删合同中筛分类码；规模可控的主数据
+        for (Contract contract : all) {
+            if (contract == null || Boolean.TRUE.equals(contract.getIsDeleted())) {
+                continue;
+            }
+            if (normalized.equals(contract.getCategoryEnum()) && contract.getId() != null) {
+                ids.add(contract.getId());
+            }
+        }
+        return ids;
     }
 }

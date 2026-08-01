@@ -4,7 +4,9 @@
  */
 package com.openhis.health.application.shared.option;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.utils.OptionDtoLegacyRowUtil;
+import com.openhis.health.domain.terminology.entity.CodeSystem;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.whale.core.application.dto.OptionDto;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +17,7 @@ import com.openhis.whale.core.application.util.StringUtils;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 术语下拉与列表行展示映射的统一入口（B.6.1 {@code common.assembler.option}）。
@@ -30,6 +33,8 @@ import java.util.Map;
  * </ul>
  *
  * <p>业务枚举展示名仍走 {@code EnumUtil}（B.10.8.1）；本类仅负责术语编码体系（字典）侧。</p>
+ *
+ * <p>进程内按 codeSystemName 短窗缓存选项列表，避免发药 slip / 选品连点反复全量打术语库。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -37,6 +42,9 @@ public class TerminologyOptionLoader {
 
     /** 术语编码体系读侧。 */
     private final CodeSystemQueryService codeSystemQueryService;
+
+    /** codeSystemName → 选项列表软缓存。 */
+    private final ConcurrentHashMap<String, CachedOptions> optionsCache = new ConcurrentHashMap<>();
 
     /**
      * 按 codeSystemName 获取标准 {@link OptionDto} 列表。
@@ -47,7 +55,7 @@ public class TerminologyOptionLoader {
      * @return 下拉选项
      */
     public List<OptionDto> loadOptions(String codeSystemName) {
-        return codeSystemQueryService.getOptionListByCodeSystemName(codeSystemName);
+        return this.loadOptionsCached(codeSystemName);
     }
 
     /**
@@ -72,15 +80,89 @@ public class TerminologyOptionLoader {
      */
     public Map<String, String> buildLabelMap(String codeSystemName) {
         Map<String, String> labelByCode = new HashMap<>();
+        // Gate：空体系名无法映射
         if (StringUtils.isEmpty(codeSystemName)) {
             return labelByCode;
         }
-        List<OptionDto> options = loadOptions(codeSystemName.trim());
+        List<OptionDto> options = this.loadOptionsCached(codeSystemName.trim());
         for (OptionDto option : options) {
             if (option.getValue() != null) {
                 labelByCode.put(option.getValue(), option.getLabel());
             }
         }
         return labelByCode;
+    }
+
+    /**
+     * 带短窗缓存地加载术语选项（命中则不再打 {@code CodeSystemQueryService}）。
+     *
+     * @param codeSystemName 编码体系名称
+     * @return 选项列表；名称为空时返回空列表
+     */
+    private List<OptionDto> loadOptionsCached(String codeSystemName) {
+        // Gate：空白名称无字典可查
+        if (StringUtils.isEmpty(codeSystemName)) {
+            return List.of();
+        }
+        String cacheKey = codeSystemName.trim();
+        long nowMs = System.currentTimeMillis();
+        CachedOptions cached = this.optionsCache.get(cacheKey);
+        // 短窗命中：字典变更不频繁，复用避免发药点患者连打 7～8 张码表
+        if (cached != null
+            && nowMs - cached.loadedAtMs()
+                < GeneralSharedConstants.PRODUCT_DEFINITION_SELECTION_TERMINOLOGY_CACHE_TTL_MS) {
+            return cached.options();
+        }
+        List<OptionDto> options = codeSystemQueryService.getOptionListByCodeSystemName(cacheKey);
+        List<OptionDto> snapshot;
+        if (options == null || options.isEmpty()) {
+            snapshot = List.of();
+        } else {
+            snapshot = List.copyOf(options);
+        }
+        this.optionsCache.put(cacheKey, new CachedOptions(snapshot, System.currentTimeMillis()));
+        return snapshot;
+    }
+
+    /**
+     * 按编码体系名失效选项软缓存（概念增删改后须调用，否则导入补字典后仍读到旧列表）。
+     *
+     * @param codeSystemName 编码体系名称
+     */
+    public void evict(String codeSystemName) {
+        if (StringUtils.isEmpty(codeSystemName)) {
+            return;
+        }
+        this.optionsCache.remove(codeSystemName.trim());
+    }
+
+    /**
+     * 按编码体系主键失效选项软缓存。
+     *
+     * @param codeSystemId 编码体系主键
+     */
+    public void evictByCodeSystemId(Long codeSystemId) {
+        if (codeSystemId == null) {
+            return;
+        }
+        codeSystemQueryService.findById(codeSystemId)
+            .map(CodeSystem::getName)
+            .ifPresent(this::evict);
+    }
+
+    /**
+     * 清空全部选项软缓存。
+     */
+    public void evictAll() {
+        this.optionsCache.clear();
+    }
+
+    /**
+     * 术语选项软缓存条目。
+     *
+     * @param options    不可变选项快照
+     * @param loadedAtMs 加载时刻（epoch ms）
+     */
+    private record CachedOptions(List<OptionDto> options, long loadedAtMs) {
     }
 }

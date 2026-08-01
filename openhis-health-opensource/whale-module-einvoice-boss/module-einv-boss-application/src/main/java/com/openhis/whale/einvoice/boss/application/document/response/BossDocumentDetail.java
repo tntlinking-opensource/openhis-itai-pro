@@ -61,6 +61,8 @@ public class BossDocumentDetail {
     private String writeOffBillNo;
     private LocalDateTime writeOffAt;
     private String writeOffMessage;
+    /** 红票批次号。 */
+    private String writeOffBatchCode;
 
     private BossTaskSummary task;
     private List<BossLineResult> lines = new ArrayList<>();

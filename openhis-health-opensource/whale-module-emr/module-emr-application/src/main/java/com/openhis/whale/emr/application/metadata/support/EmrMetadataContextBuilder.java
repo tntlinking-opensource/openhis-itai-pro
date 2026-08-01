@@ -86,8 +86,12 @@ public class EmrMetadataContextBuilder {
         }
         put(ctx, "user.displayName", currentUser.getCurrentUserName());
         if (currentUser.getCurrentOrganizationUnitId() != null) {
-            put(ctx, "user.deptId", String.valueOf(currentUser.getCurrentOrganizationUnitId()));
-            put(ctx, "user.deptName", String.valueOf(currentUser.getCurrentOrganizationUnitId()));
+            Long orgUnitId = currentUser.getCurrentOrganizationUnitId();
+            put(ctx, "user.deptId", String.valueOf(orgUnitId));
+            put(ctx, "user.deptName", String.valueOf(orgUnitId));
+            if (healthMetadataReader != null) {
+                healthMetadataReader.contributeOrganization(ctx, orgUnitId);
+            }
         }
         if (currentUser.getCurrentPractitionerId() != null) {
             Long practitionerId = currentUser.getCurrentPractitionerId();

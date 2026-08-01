@@ -18,6 +18,7 @@ import com.openhis.health.domain.financial.paymentreconciliation.queries.model.P
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
 import com.openhis.whale.core.application.dto.OptionDto;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -49,15 +50,15 @@ public interface OutpatientDailySettlementMapper {
     /**
      * 预览请求转领域查询条件。
      *
-     * @param request   HTTP 请求
-     * @param typeEnum  交账类型 code
-     * @param cashierId 已解析经办人 Practitioner 主键
+     * @param request      HTTP 请求（含 orgId）
+     * @param typeEnum     交账类型 code
+     * @param locationIds  科室下 location 白名单（应用层解析）
      * @return 领域预览查询
      */
     PreviewCashierSettlementQuery toPreviewCashierSettlementQuery(
         PreviewOutpatientDailySettlementRequest request,
         String typeEnum,
-        Long cashierId);
+        List<Long> locationIds);
 
     /**
      * 预览结果与 enrichment 数据装配查询响应。
@@ -85,18 +86,40 @@ public interface OutpatientDailySettlementMapper {
     /**
      * 提交请求转领域命令。
      *
-     * @param request    HTTP 请求
-     * @param typeEnum   交账类型 code
-     * @param cashierId  已解析经办人
-     * @param operatorId           当前操作员用户主键
-     * @param selectedPaymentIds   勾选挂载 payment 主键
+     * @param request            HTTP 请求
+     * @param typeEnum           交账类型 code
+     * @param submitterId        提交人 Practitioner 主键
+     * @param operatorId         当前操作员用户主键（审计）
+     * @param selectedPaymentIds 勾选挂载 payment 主键
+     * @param locationIds        科室下 location 白名单
+     * @param practitionerIds    窗内 enterer 快照（逗号分隔）
+     * @param paymentCount       挂载笔数
+     * @param totalIncome        勾选集合日结「总收入」（与预览 handoverSummary 同管线）
      * @return 提交命令
      */
     SubmitCashierSettlementCommand toSubmitCashierSettlementCommand(
         SubmitOutpatientDailySettlementRequest request,
         String typeEnum,
-        Long cashierId,
+        Long submitterId,
         Long operatorId,
+        List<Long> selectedPaymentIds,
+        List<Long> locationIds,
+        String practitionerIds,
+        Integer paymentCount,
+        BigDecimal totalIncome);
+
+    /**
+     * 按勾选 payment 现算日结「总收入」（与 IF-OP-DCL-02 {@code handoverSummary.totalIncome} 同管线）。
+     *
+     * <p>复用预览 {@code buildDisplayBundle}：fin_type 快照代数和优先，否则回落 payment 净额代数和
+     *（**BR-OP-DCL-011**）。提交头表 {@code total_income} 必须调用本方法，禁止另写口径。</p>
+     *
+     * @param lockedItems        提交前锁定的未交账预览行
+     * @param selectedPaymentIds 本次勾选挂载 payment 主键
+     * @return 结算刻度总收入；空选为 0
+     */
+    BigDecimal resolveSelectedSettlementTotalIncome(
+        List<UnsettledPaymentPreviewItemQueryModel> lockedItems,
         List<Long> selectedPaymentIds);
 
     /**

@@ -63,6 +63,12 @@ public class CreateInboundReceiptRequest {
     @Schema(description = "经手人 practitionerId")
     private Long practitionerId;
 
+    /**
+     * 采购发票号（同单共享，落库 {@code wkf_supply_request.invoice_no}；进销存 {@code purc_invo_no}）。
+     */
+    @Schema(description = "采购发票号 invoiceNo")
+    private String invoiceNo;
+
     /** 明细行 lines。 */
     @Schema(description = "明细行 lines")
     private List<InboundReceiptLineDto> lines;

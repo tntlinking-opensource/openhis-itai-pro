@@ -13,7 +13,9 @@ import com.openhis.health.domain.diagnosis.bodystructure.queries.model.BodyStruc
 import com.openhis.health.domain.diagnosis.bodystructure.repository.BodyStructureRepository;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.enums.PublicationStatus;
+import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
+import jakarta.persistence.criteria.Order;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -122,21 +124,34 @@ public class BodyStructureQueryService {
             keywordForTrim = keyword;
         }
         String qTrim = trimToEmpty(keywordForTrim);
-        String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(qTrim);
         Specification<BodyStructure> spec = (root, cq, cb) -> {
             List<Predicate> preds = new ArrayList<>();
             preds.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
             if (onlyActive) {
                 preds.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), PublicationStatus.ACTIVE.getCode()));
             }
-            preds.add(cb.or(
-                cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc),
-                cb.like(cb.lower(root.get(FieldNameConstants.PY_STR)), likeIc),
-                cb.like(cb.lower(root.get(FieldNameConstants.WB_STR)), likeIc)
-            ));
+            if (!qTrim.isEmpty()) {
+                String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(qTrim);
+                preds.add(cb.or(
+                    cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc),
+                    cb.like(cb.lower(root.get(FieldNameConstants.PY_STR)), likeIc),
+                    cb.like(cb.lower(root.get(FieldNameConstants.WB_STR)), likeIc)
+                ));
+                // B.2.1：精确全等置顶，次级主键升序
+                List<Order> secondary = List.of(cb.asc(root.get(FieldNameConstants.ID)));
+                KeywordExactFirstOrderSupport.applyExactFirstOrder(
+                    cq,
+                    cb,
+                    qTrim,
+                    secondary,
+                    root.get(FieldNameConstants.NAME),
+                    root.get(FieldNameConstants.PY_STR),
+                    root.get(FieldNameConstants.WB_STR));
+            }
             return cb.and(preds.toArray(Predicate[]::new));
         };
-        Page<BodyStructure> page = repository.findAll(spec, applyDefaultListSort(pageable));
+        Pageable effective = this.resolveListPageable(qTrim, pageable);
+        Page<BodyStructure> page = repository.findAll(spec, effective);
         return page.map(item -> {
             BodyStructureListItemQueryModel model = new BodyStructureListItemQueryModel();
             model.setId(item.getId());
@@ -176,6 +191,29 @@ public class BodyStructureQueryService {
             result.put(row.getId(), row.getName());
         }
         return result;
+    }
+
+    /**
+     * 列表分页：无关键字时默认主键升序；有关键字时剥掉 Sort，保留 Spec 精确优先 ORDER BY。
+     *
+     * @param keywordTrim 已 trim 关键字
+     * @param pageable    原始分页
+     * @return 生效 Pageable
+     */
+    private Pageable resolveListPageable(String keywordTrim, Pageable pageable) {
+        if (keywordTrim != null && !keywordTrim.isEmpty()) {
+            if (pageable == null) {
+                return PageRequest.of(0, Integer.MAX_VALUE);
+            }
+            if (pageable.getSort().isSorted()) {
+                if (!pageable.isPaged()) {
+                    return PageRequest.of(0, Integer.MAX_VALUE);
+                }
+                return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
+            }
+            return pageable;
+        }
+        return applyDefaultListSort(pageable);
     }
 
     /** 列表未指定排序时默认按主键升序，供医生站 init 下拉稳定次序。 */

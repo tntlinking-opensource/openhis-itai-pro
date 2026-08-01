@@ -27,6 +27,6 @@ public interface WhalePlatformRoleCodeConstants {
 /** WhalePlatformRoleCodeConstants：ROLE_ACCOUNTANT，值 {@code ROLE_ACCOUNTANT}。 */
     String ROLE_ACCOUNTANT = "ROLE_ACCOUNTANT";
 
-    /** 财务审批：动账类供应单与调价单的审批/驳回岗位。 */
+    /** 财务审批：财务审批族供应单（进货/退供应商/损益/盘点）与调价单的审批/驳回岗位。 */
     String ROLE_FINANCE_APPROVER = "ROLE_FINANCE_APPROVER";
 }

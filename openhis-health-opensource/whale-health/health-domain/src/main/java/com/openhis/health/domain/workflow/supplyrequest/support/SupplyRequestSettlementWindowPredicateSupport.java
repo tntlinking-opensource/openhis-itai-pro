@@ -17,7 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * {@link SupplyRequest} 库房日结期间动账批量读的动态 WHERE 片段（**DM-WKF-006 §6.2.12**）。
+ * {@link SupplyRequest} 库房期初期末明细期间动账批量读的动态 WHERE 片段（**DM-WKF-006 §6.2.12**）。
  */
 public final class SupplyRequestSettlementWindowPredicateSupport {
 

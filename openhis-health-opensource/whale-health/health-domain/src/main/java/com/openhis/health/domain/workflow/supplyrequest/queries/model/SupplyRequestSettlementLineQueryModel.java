@@ -12,7 +12,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * 库房日结供应动账明细行读模型（**AS-INV-RPT-001** · **DM-WKF-006 §6.2.12**）。
+ * 库房期初期末明细供应动账明细行读模型（**AS-INV-RPT-001** · **DM-WKF-006 §6.2.12**）。
  *
  * <p>仅承载日结汇总所需字段；品种级 SUM 与源/目的 ± 方向在应用层完成。</p>
  */

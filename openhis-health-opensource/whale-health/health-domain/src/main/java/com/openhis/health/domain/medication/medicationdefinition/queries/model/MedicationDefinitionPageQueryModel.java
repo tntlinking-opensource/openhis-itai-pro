@@ -33,6 +33,8 @@ public class MedicationDefinitionPageQueryModel {
     private String ybNo;
     /** totalvolume。 */
     private String totalVolume;
+    /** 单次最小剂量。 */
+    private BigDecimal minUnit;
     /** maxunit。 */
     private BigDecimal maxUnit;
     /** 默认库房点位。 */
@@ -61,4 +63,12 @@ public class MedicationDefinitionPageQueryModel {
     private BigDecimal packageUnitRatio;
     /** 剂量→拆零倍数。 */
     private BigDecimal doseUnitRatio;
+    /**
+     * 追溯码所贴单位编码（可游离于五类业务单位之外；药品目录必填）。
+     */
+    private String traceUnitCode;
+    /**
+     * 1 个追溯码单位对应的拆零数量；有值时须 &gt; 0。
+     */
+    private BigDecimal traceUnitRatio;
 }

@@ -33,7 +33,13 @@ public class GetLinkableIssueDetailResponse {
     @Schema(description = "科室药房名称 purposeLocationName")
     private String purposeLocationName;
 
-    /** 领用科室名称 consumingOrganizationName。 */
+    /**
+     * 领用科室行政 Organization 主键（库列 {@code consuming_organization_id}；自源领用单继承，只读展示）。
+     */
+    @Schema(description = "领用科室 consumingOrganizationId")
+    private String consumingOrganizationId;
+
+    /** 领用科室展示名（由 organization 主数据解析）。 */
     @Schema(description = "领用科室名称 consumingOrganizationName")
     private String consumingOrganizationName;
 

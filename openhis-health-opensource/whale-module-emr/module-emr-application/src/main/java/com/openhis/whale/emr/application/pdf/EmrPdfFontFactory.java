@@ -12,7 +12,9 @@ import org.springframework.stereotype.Component;
 import java.io.InputStream;
 
 /**
- * 加载中文 PDF 字体；优先 classpath TTF，回退内置 Helvetica。
+ * 加载中文 PDF 字体；优先 classpath 宋体 TTF，其次 Noto，再回退 Adobe 内置中文字体。
+ * 正式打印应对齐 PrintConfig.font.family=SimSun：将 SimSun.ttf 放入
+ * {@code module-emr-application/src/main/resources/emr/fonts/SimSun.ttf}。
  */
 @Slf4j
 @Component

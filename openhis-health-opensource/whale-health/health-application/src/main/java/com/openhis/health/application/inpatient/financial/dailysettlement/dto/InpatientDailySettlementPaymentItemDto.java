@@ -65,8 +65,8 @@ public class InpatientDailySettlementPaymentItemDto {
     @Schema(description = "退还金额")
     private BigDecimal returnedAmount;
 
-    /** 净额。 */
-    @Schema(description = "净额")
+    /** 净额：有收费明细时为带符号 Σ charge 行额（收费正/退费负）；无明细（预交金等）回落 tendered−returned。 */
+    @Schema(description = "净额（带符号账单额；医保全个账头表 0 元时仍展示正负）")
     private BigDecimal netAmount;
 
     /** payment 关联费用性质合同业务号（fin_contract.bus_no）。 */

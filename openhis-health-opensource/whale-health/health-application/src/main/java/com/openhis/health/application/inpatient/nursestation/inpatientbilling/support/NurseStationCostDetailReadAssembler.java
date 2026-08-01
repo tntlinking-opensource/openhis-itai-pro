@@ -20,7 +20,9 @@ import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -83,6 +85,23 @@ public class NurseStationCostDetailReadAssembler {
         List<InpatientNurseStationCostDetailChargeRow> rows,
         Map<String, ProductDefinitionDisplayDto> productByKey,
         Map<Long, ChargeItem> parentChargeById) {
+        return this.buildDetailLines(rows, productByKey, parentChargeById, Collections.emptySet());
+    }
+
+    /**
+     * 装配护士站费用明细 DTO 列表（含自动计费 / 护士冲销来源展示覆盖）。
+     *
+     * @param rows                      读侧 charge 行
+     * @param productByKey              产品读模型 Map
+     * @param parentChargeById          父 charge 映射
+     * @param autoRollServiceRequestIds 床位自动计费 SR 主键集合
+     * @return 明细 DTO 列表
+     */
+    public List<NurseStationCostDetailLineDto> buildDetailLines(
+        List<InpatientNurseStationCostDetailChargeRow> rows,
+        Map<String, ProductDefinitionDisplayDto> productByKey,
+        Map<Long, ChargeItem> parentChargeById,
+        Set<Long> autoRollServiceRequestIds) {
         List<NurseStationCostDetailLineDto> lines = new ArrayList<>();
         if (rows == null || rows.isEmpty()) {
             return lines;
@@ -110,16 +129,28 @@ public class NurseStationCostDetailReadAssembler {
             line.setQuantityUnitDisplay(resolveQuantityUnitDisplay(charge.getQuantityUnit(), product));
             line.setUnitPrice(charge.getUnitPrice());
             line.setTotalPrice(charge.getTotalPrice());
+            // 逻辑轴 occurrence；展示轴 recorded（无则同逻辑轴）
             line.setBusinessDateTime(row.getBusinessDateTime());
+            line.setDisplayDateTime(row.getDisplayDateTime());
             line.setStatusEnum(charge.getStatusEnum());
             ChargeItemStatus status = EnumUtil.fromCode(ChargeItemStatus.class, charge.getStatusEnum());
             if (status != null) {
                 line.setStatusDisplay(status.getDisplay());
             }
             line.setGenerateSourceEnum(charge.getGenerateSourceEnum());
-            GenerateSource source = EnumUtil.fromCode(GenerateSource.class, charge.getGenerateSourceEnum());
-            if (source != null) {
-                line.setGenerateSourceDisplay(source.getDisplay());
+            // 床位滚费：落账源仍为 order-execute，来源列覆盖为「自动计费」
+            if (this.isAutoRollOrderExecuteCharge(charge, autoRollServiceRequestIds)) {
+                line.setGenerateSourceDisplay(
+                    InpatientNurseStationConstants.COST_DETAIL_ACTIVITY_TYPE_AUTO_ROLL_DISPLAY);
+            } else if (this.isNursePricingOffsetCharge(charge)) {
+                // 护士划价冲销行：generate_source 仍为 nurse-pricing，来源列覆盖为「护士冲销」
+                line.setGenerateSourceDisplay(
+                    InpatientNurseStationConstants.COST_DETAIL_GENERATE_SOURCE_NURSE_OFFSET_DISPLAY);
+            } else {
+                GenerateSource source = EnumUtil.fromCode(GenerateSource.class, charge.getGenerateSourceEnum());
+                if (source != null) {
+                    line.setGenerateSourceDisplay(source.getDisplay());
+                }
             }
             if (ChargeItemStatus.REFUNDING.getCode().equals(charge.getStatusEnum())
                 || ChargeItemStatus.REFUNDED.getCode().equals(charge.getStatusEnum())) {
@@ -133,6 +164,62 @@ public class NurseStationCostDetailReadAssembler {
             lines.add(line);
         }
         return lines;
+    }
+
+    /**
+     * 判定床位自动计费落账行（order-execute + auto-roll-fees SR）。
+     *
+     * @param charge                    收费明细
+     * @param autoRollServiceRequestIds 床位自动计费 SR 主键集合
+     * @return true 时来源展示覆盖为自动计费
+     */
+    private boolean isAutoRollOrderExecuteCharge(ChargeItem charge, Set<Long> autoRollServiceRequestIds) {
+        if (charge == null || charge.getServiceId() == null) {
+            return false;
+        }
+        if (!GenerateSource.ORDER_EXECUTE.getCode().equals(charge.getGenerateSourceEnum())) {
+            return false;
+        }
+        if (autoRollServiceRequestIds == null || autoRollServiceRequestIds.isEmpty()) {
+            return false;
+        }
+        return autoRollServiceRequestIds.contains(charge.getServiceId());
+    }
+
+    /**
+     * 判定护士划价冲销留痕行（IF-IP-PRC-06 / BR-IP-CDT-018）。
+     *
+     * <p>{@code generate_source} 仍为 {@code nurse-pricing}；以退费态、{@code refund_id}
+     * 或数量/金额为负识别负向冲销行，供来源列展示「护士冲销」。</p>
+     *
+     * @param charge 收费明细
+     * @return true 时来源展示覆盖为护士冲销
+     */
+    private boolean isNursePricingOffsetCharge(ChargeItem charge) {
+        if (charge == null) {
+            return false;
+        }
+        // 仅护士划价来源才覆盖为「护士冲销」，医嘱执行退费等走原枚举文案
+        if (!GenerateSource.NURSE_PRICING.getCode().equals(charge.getGenerateSourceEnum())) {
+            return false;
+        }
+        if (ChargeItemStatus.REFUNDING.getCode().equals(charge.getStatusEnum())
+            || ChargeItemStatus.REFUNDED.getCode().equals(charge.getStatusEnum())) {
+            return true;
+        }
+        // 冲销行 refund_id 链回原正向行（BR-IP-PRC-024）
+        if (charge.getRefundId() != null) {
+            return true;
+        }
+        BigDecimal quantityValue = charge.getQuantityValue();
+        if (quantityValue != null && quantityValue.signum() < 0) {
+            return true;
+        }
+        BigDecimal totalPrice = charge.getTotalPrice();
+        if (totalPrice != null && totalPrice.signum() < 0) {
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -197,28 +284,43 @@ public class NurseStationCostDetailReadAssembler {
     /**
      * 费用明细数量单位展示：在 catalog 单位带中匹配 unitCode 的展示名。
      *
+     * <p>账单单位为空、或诊疗项目账单单位未命中目录槽（如皮试误落药品单位）时，
+     * 回落目录主单位展示名，避免数量列只剩裸数字。</p>
+     *
      * @param quantityUnit 持久化单位码
      * @param product      产品展示 DTO
-     * @return 展示单位；无匹配回落原码
+     * @return 展示单位；无匹配时诊疗回落主单位，其余回落原码
      */
-    private String resolveQuantityUnitDisplay(String quantityUnit, ProductDefinitionDisplayDto product) {
-        if (StringUtils.isEmpty(quantityUnit)) {
-            return quantityUnit;
-        }
+    public String resolveQuantityUnitDisplay(String quantityUnit, ProductDefinitionDisplayDto product) {
         if (product == null) {
             return quantityUnit;
         }
-        List<ProductDefinitionCatalogUnitBandDto> bands =
-            ProductDefinitionCatalogUnitBandsAssembler.buildInboundSelectionBands(product);
-        String normalized = quantityUnit.trim();
-        for (ProductDefinitionCatalogUnitBandDto band : bands) {
-            if (band == null || StringUtils.isEmpty(band.getUnitCode())) {
-                continue;
-            }
-            if (normalized.equalsIgnoreCase(band.getUnitCode().trim())) {
-                if (StringUtils.isNotEmpty(band.getUnitName())) {
-                    return band.getUnitName();
+        if (StringUtils.isNotEmpty(quantityUnit)) {
+            List<ProductDefinitionCatalogUnitBandDto> bands =
+                ProductDefinitionCatalogUnitBandsAssembler.buildInboundSelectionBands(product);
+            String normalized = quantityUnit.trim();
+            for (ProductDefinitionCatalogUnitBandDto band : bands) {
+                if (band == null || StringUtils.isEmpty(band.getUnitCode())) {
+                    continue;
                 }
+                if (normalized.equalsIgnoreCase(band.getUnitCode().trim())) {
+                    if (StringUtils.isNotEmpty(band.getUnitName())) {
+                        return band.getUnitName();
+                    }
+                }
+            }
+            String fromProductSlots =
+                ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayNameFromProduct(product, normalized);
+            if (StringUtils.isNotEmpty(fromProductSlots)) {
+                return fromProductSlots;
+            }
+        }
+        // 诊疗：无匹配时回落包装单位展示名（皮试检查等单单位项目）
+        if (TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(product.getProductTableName())) {
+            String primaryName =
+                ProductDefinitionCatalogUnitBandsAssembler.resolveCatalogPrimaryUnitName(product);
+            if (StringUtils.isNotEmpty(primaryName)) {
+                return primaryName;
             }
         }
         return quantityUnit;

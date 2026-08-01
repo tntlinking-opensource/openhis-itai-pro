@@ -33,10 +33,19 @@ public class NurseStationDispenseSummaryTimePointDto {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long procedureId;
 
-    /** 计划发药时刻。 */
-    @Schema(description = "计划发药时刻")
+    /**
+     * 计划发药时刻（逻辑锚 = 执行 planTime / occurrence；勾选、截止、归组用）。
+     */
+    @Schema(description = "计划发药时刻（逻辑锚）")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime plannedDispenseTime;
+
+    /**
+     * 实际执行时刻（Procedure.recorded_time；「领药时间」列展示优先本字段，无则回落 plannedDispenseTime）。
+     */
+    @Schema(description = "实际执行时刻（展示优先）")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    private LocalDateTime recordedTime;
 
     /** 原单位数量。 */
     @Schema(description = "原单位数量")

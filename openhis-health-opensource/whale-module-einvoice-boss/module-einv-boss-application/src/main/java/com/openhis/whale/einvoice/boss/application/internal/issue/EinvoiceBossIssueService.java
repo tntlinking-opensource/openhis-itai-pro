@@ -37,13 +37,14 @@ public class EinvoiceBossIssueService {
     private final EinvBossIssueTaskRepository taskRepository;
     private final EinvoiceBossDocumentInitializerService documentInitializer;
     private final BossIssueWorkerService issueWorker;
+    private final BossIssueWorkerWakeBridge wakeBridge;
     private final BossRecoverService recoverService;
     private final BossWriteOffService writeOffService;
     private final EinvoiceInvoiceWritebackLoader invoiceWritebackLoader;
     private final EinvBossDocumentRepository documentRepository;
 
     /**
-     * 支付完成后异步入队：创建 document/line/task。
+     * 支付完成后异步入队：创建 document/line/task，并立即唤醒 Worker。
      *
      * @param invoiceId health 票据主键
      */
@@ -54,9 +55,16 @@ public class EinvoiceBossIssueService {
         Optional<EinvBossIssueTask> existing = taskRepository.findByInvoiceIdAndIsDeletedFalse(invoiceId);
         if (existing.isPresent()) {
             log.debug("Issue task already exists for invoiceId={}", invoiceId);
+            wakeIfPending(existing.get());
             return;
         }
-        enqueueService.enqueue(invoiceId, TaskTriggerSource.EVENT.getCode());
+        Optional<Long> taskId = enqueueService.enqueue(invoiceId, TaskTriggerSource.EVENT.getCode());
+        if (taskId.isPresent()) {
+            wakeBridge.wakeProcessTaskAfterCommit(taskId.get());
+            return;
+        }
+        // 并发入队撞唯一约束：再查一次，PENDING 则补唤醒
+        taskRepository.findByInvoiceIdAndIsDeletedFalse(invoiceId).ifPresent(this::wakeIfPending);
     }
 
     /**
@@ -67,7 +75,8 @@ public class EinvoiceBossIssueService {
     public void requeue(Long invoiceId) {
         EinvBossIssueTask task = taskRepository.findByInvoiceIdAndIsDeletedFalse(invoiceId)
                 .orElseThrow(() -> new BusinessException(EinvBossErrorCodes.EINV_TASK_NOT_FOUND, "无活跃开票任务"));
-        documentInitializer.refreshForIssue(invoiceId);
+        // initialize：非 ADJUSTED 时重建明细（修正 std/数量），ADJUSTED 仍保留人工调额
+        documentInitializer.initialize(invoiceId);
         // Cmd：重置为待消费并标记人工触发
         task.setStatus(TaskStatus.PENDING.getCode());
         task.setTriggerSource(TaskTriggerSource.MANUAL.getCode());
@@ -75,6 +84,18 @@ public class EinvoiceBossIssueService {
         task.setLastErrorMsg(null);
         task.setNextRetryAt(null);
         taskRepository.save(task);
+        wakeBridge.wakeProcessTaskAfterCommit(task.getId());
+    }
+
+    /**
+     * PENDING 任务补唤醒（幂等；PROCESSING/SUCCESS 跳过）。
+     *
+     * @param task 活跃任务
+     */
+    private void wakeIfPending(EinvBossIssueTask task) {
+        if (task != null && TaskStatus.PENDING.getCode().equals(task.getStatus())) {
+            wakeBridge.wakeProcessTaskAfterCommit(task.getId());
+        }
     }
 
     /**

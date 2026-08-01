@@ -17,11 +17,13 @@ import com.openhis.health.domain.financial.paymentreconciliation.queries.model.O
 import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationQueryService;
 import com.openhis.health.domain.share.constants.OutpatientFeeDetailConstants;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
+import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.application.shared.financial.DailySettlementFinTypeAmountLoader;
 import com.openhis.health.application.shared.product.ChargeItemProductLookupHelper;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.application.shared.report.ReportPatientSettlementContextAssembler;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
@@ -54,6 +56,9 @@ public class OutpatientFeeDetailLoader {
     private final PatientQueryService patientQueryService;
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final DailySettlementFinTypeAmountLoader dailySettlementFinTypeAmountLoader;
+
+    /** 费用性质 + medType 报表上下文（优先账户 / 主诊断）。 */
+    private final ReportPatientSettlementContextAssembler reportPatientSettlementContextAssembler;
 
     /**
      * 按 AS-OP-FDT 筛选条件预解析 {@code resolvedChargeItemScope}、{@code resolvedEncounterScope} 与 payment 上下文。
@@ -110,10 +115,36 @@ public class OutpatientFeeDetailLoader {
             }
         }
         Set<Long> allowedEncounterIds = this.resolveAllowedEncounterIds(query, encounterIds);
-        Map<String, ProductDefinitionDisplayDto> productMap =
-            this.loadProductMapForChargeItems(chargeItems);
-        Map<Long, String> finTypeByChargeItemId =
-            this.dailySettlementFinTypeAmountLoader.mapFinTypeCodeByChargeItemId(chargeItems);
+        List<Long> feeNatureEncounterIds =
+            this.reportPatientSettlementContextAssembler.resolveEncounterIdsByFeeNatureContractNo(
+                query.getFeeNatureContractNo());
+        List<Long> intersectedEncounterIds =
+            this.reportPatientSettlementContextAssembler.intersectEncounterScopes(
+                new ArrayList<>(allowedEncounterIds),
+                feeNatureEncounterIds);
+        // 费用性质筛选无命中时短路，避免 ChargeItem 全表扫描
+        if (intersectedEncounterIds != null && intersectedEncounterIds.isEmpty()) {
+            query.setResolvedChargeItemScope(List.of());
+            query.setResolvedEncounterScope(List.of());
+            query.setResolvedPaymentChargeItemLinks(List.of());
+            return;
+        }
+        Set<Long> allowedEncounterIdSet = new HashSet<>(intersectedEncounterIds);
+        boolean filterByProductKeyword = StringUtils.isNotEmpty(query.getProductNameKeyword())
+            || StringUtils.isNotEmpty(query.getProductCodeKeyword());
+        boolean filterBySubCategory = query.getSubCategoryCodes() != null
+            && !query.getSubCategoryCodes().isEmpty();
+        // Pre：无项目关键字时跳过全量产品 Map，避免无谓词仍扫目录
+        Map<String, ProductDefinitionDisplayDto> productMap = Map.of();
+        if (filterByProductKeyword) {
+            productMap = this.loadProductMapForChargeItems(chargeItems);
+        }
+        // Pre：无细分类多选时跳过全量 fin_type 解析
+        Map<Long, String> finTypeByChargeItemId = Map.of();
+        if (filterBySubCategory) {
+            finTypeByChargeItemId =
+                this.dailySettlementFinTypeAmountLoader.mapFinTypeCodeByChargeItemId(chargeItems);
+        }
         LinkedHashSet<Long> filteredChargeItemIds = new LinkedHashSet<>();
         List<OutpatientFeeDetailChargePaymentLinkQueryModel> filteredLinks = new ArrayList<>();
         // 逐条 payment 快照关联套用 BR-OP-FDT-002/007/008：状态、就诊、项目名 AND 编码、细分类
@@ -129,49 +160,77 @@ public class OutpatientFeeDetailLoader {
                 // 排除待结算/过程态，仅保留已结/已退
                 continue;
             }
-            if (chargeItem.getEncounterId() == null || !allowedEncounterIds.contains(chargeItem.getEncounterId())) {
-                // 挂号科室或患者关键字未命中时剔除
+            if (chargeItem.getEncounterId() == null || !allowedEncounterIdSet.contains(chargeItem.getEncounterId())) {
+                // 挂号科室、患者或费用性质未命中时剔除
                 continue;
             }
-            if (!this.matchesProductKeywords(chargeItem, productMap, query)) {
+            if (filterByProductKeyword && !this.matchesProductKeywords(chargeItem, productMap, query)) {
                 continue;
             }
-            if (!this.matchesSubCategoryCodes(chargeItem, finTypeByChargeItemId, query.getSubCategoryCodes())) {
+            if (filterBySubCategory
+                && !this.matchesSubCategoryCodes(chargeItem, finTypeByChargeItemId, query.getSubCategoryCodes())) {
                 continue;
             }
             filteredChargeItemIds.add(chargeItem.getId());
             filteredLinks.add(link);
         }
         query.setResolvedChargeItemScope(new ArrayList<>(filteredChargeItemIds));
-        query.setResolvedEncounterScope(new ArrayList<>(allowedEncounterIds));
+        query.setResolvedEncounterScope(new ArrayList<>(allowedEncounterIdSet));
         query.setResolvedPaymentChargeItemLinks(filteredLinks);
+        // Pre：把本轮已加载的 ChargeItem 交给域层复用，避免 page/summary 再 IN 一遍
+        query.setPreloadedChargeItemsById(chargeItemById);
+        // Pre：清空旧缓存，强制下次 list 基于最新 scope 物化
+        query.setCachedChargeRows(null);
     }
 
     /**
      * 在 payment 候选就诊集合上叠加挂号科室与患者关键字收窄（BR-OP-FDT-004、005）。
+     *
+     * <p>科室筛选仅在 payment 已命中的候选就诊上过滤 organization_id，禁止拉取该科室历史全部 AMB 就诊。</p>
      */
     private Set<Long> resolveAllowedEncounterIds(OutpatientFeeDetailPageQuery query, Set<Long> candidateEncounterIds) {
         if (candidateEncounterIds == null || candidateEncounterIds.isEmpty()) {
             return Set.of();
         }
         Set<Long> allowed = new HashSet<>(candidateEncounterIds);
-        if (query.getRegistrationDepartmentId() != null) {
-            // 科室筛选 = 就诊挂号科室，非 ChargeItem 开单科室
-            List<Long> deptEncounterIds =
-                this.encounterQueryService.listOutpatientAmbEncounterIdsByOrganization(query.getRegistrationDepartmentId());
-            allowed.retainAll(new HashSet<>(deptEncounterIds));
-        }
-        if (StringUtils.isEmpty(query.getPatientKeyword())) {
+        boolean filterByDepartment = query.getRegistrationDepartmentId() != null;
+        boolean filterByPatient = StringUtils.isNotEmpty(query.getPatientKeyword());
+        // 无科室/患者二次条件时直接返回 payment 候选
+        if (!filterByDepartment && !filterByPatient) {
             return allowed;
+        }
+        // Pre：只加载候选就诊实体，禁止按科室全表扫 AMB
+        List<Encounter> encounters = this.encounterQueryService.listEncounterEntitiesByIds(allowed);
+        Long departmentId = query.getRegistrationDepartmentId();
+        Set<Long> departmentMatched = new HashSet<>();
+        for (Encounter encounter : encounters) {
+            if (encounter == null || encounter.getId() == null) {
+                continue;
+            }
+            if (filterByDepartment) {
+                // 挂号科室 = Encounter.organization_id；并收窄 AMB
+                if (!departmentId.equals(encounter.getOrganizationId())) {
+                    continue;
+                }
+                if (!EncounterClass.AMB.getCode().equals(encounter.getClassEnum())) {
+                    continue;
+                }
+            }
+            departmentMatched.add(encounter.getId());
+        }
+        if (!filterByPatient) {
+            return departmentMatched;
         }
         String keyword = query.getPatientKeyword().trim();
         List<Long> patientIds = this.patientQueryService.listPatientIdsByEncounterListKeyword(keyword);
         Set<Long> patientIdSet = new HashSet<>(patientIds);
-        List<Encounter> encounters = this.encounterQueryService.listEncounterEntitiesByIds(allowed);
         Set<Long> matchedEncounterIds = new HashSet<>();
-        // 患者关键字：门诊号 busNo 或姓名命中其一即可
+        // 患者关键字：门诊号 busNo 或姓名命中其一即可（在科室收窄后的集合上）
         for (Encounter encounter : encounters) {
             if (encounter == null || encounter.getId() == null) {
+                continue;
+            }
+            if (!departmentMatched.contains(encounter.getId())) {
                 continue;
             }
             if (encounter.getBusNo() != null

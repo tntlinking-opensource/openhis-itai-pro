@@ -4,6 +4,7 @@
  */
 package com.openhis.health.domain.administration.chargeitem.query;
 
+import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.OutpatientFeeDetailChargePaymentLinkQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.OutpatientFeeDetailPaymentContextQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.OutpatientFeeDetailPaymentScopeQueryModel;
@@ -46,6 +47,9 @@ public class OutpatientFeeDetailPageQuery extends AbstractPageQuery {
 
     /** 患者关键字（姓名、门诊号 busNo）。 */
     private String patientKeyword;
+
+    /** 费用性质合同业务号（{@code fin_contract.bus_no}）；空则不筛选。 */
+    private String feeNatureContractNo;
 
     /** 项目名称模糊；与 {@link #productCodeKeyword} 双填时 AND。 */
     private String productNameKeyword;
@@ -93,4 +97,14 @@ public class OutpatientFeeDetailPageQuery extends AbstractPageQuery {
      * bill_date 筛选命中的 payment scope 列表；供快照截断时补全已结 chargeItem（DM-FIN-002 §6.2.17）。
      */
     private List<OutpatientFeeDetailPaymentScopeQueryModel> paymentsInScope;
+
+    /**
+     * Support 预解析阶段已批量加载的 ChargeItem（id → 实体）；供同请求内候选行物化复用，避免二次 IN。
+     */
+    private Map<Long, ChargeItem> preloadedChargeItemsById;
+
+    /**
+     * 同一次请求内已物化的候选行缓存；page / summary / 导出翻页复用，禁止重复加载 ChargeItem。
+     */
+    private List<OutpatientFeeDetailChargeRowQueryModel> cachedChargeRows;
 }

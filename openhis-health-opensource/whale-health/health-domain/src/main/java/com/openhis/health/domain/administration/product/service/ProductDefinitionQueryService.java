@@ -142,6 +142,7 @@ public class ProductDefinitionQueryService {
         dto.setProductTableName(TableNameConstants.MED_MEDICATION_DEFINITION);
         dto.setProductDefinitionId(med.getId());
         dto.setProductBusNo(med.getBusNo());
+        dto.setProductName(med.getName());
         dto.setYbNo(med.getYbNo());
         put(result, dto);
     }
@@ -154,6 +155,7 @@ public class ProductDefinitionQueryService {
         dto.setProductTableName(TableNameConstants.WKF_ACTIVITY_DEFINITION);
         dto.setProductDefinitionId(act.getId());
         dto.setProductBusNo(act.getBusNo());
+        dto.setProductName(act.getName());
         dto.setYbNo(act.getYbNo());
         put(result, dto);
     }
@@ -168,6 +170,7 @@ public class ProductDefinitionQueryService {
         dto.setProductTableName(TableNameConstants.ADM_DEVICE_DEFINITION);
         dto.setProductDefinitionId(dev.getId());
         dto.setProductBusNo(dev.getBusNo());
+        dto.setProductName(dev.getName());
         dto.setYbNo(dev.getYbNo());
         put(result, dto);
     }
@@ -182,6 +185,7 @@ public class ProductDefinitionQueryService {
         dto.setProductTableName(TableNameConstants.ADM_HEALTHCARE_SERVICE);
         dto.setProductDefinitionId(healthcareService.getId());
         dto.setProductBusNo(healthcareService.getBusNo());
+        dto.setProductName(healthcareService.getName());
         dto.setYbNo(healthcareService.getYbNo());
         put(result, dto);
     }

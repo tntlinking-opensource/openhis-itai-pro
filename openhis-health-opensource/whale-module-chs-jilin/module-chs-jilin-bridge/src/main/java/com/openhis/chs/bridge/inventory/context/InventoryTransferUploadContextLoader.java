@@ -17,6 +17,7 @@ import com.openhis.health.domain.administration.practitioner.service.Practitione
 import com.openhis.health.domain.financial.contract.entity.Contract;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.workflow.inventoryitem.entity.InventoryItem;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
@@ -26,6 +27,8 @@ import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQue
 import com.openhis.chs.bridge.catalog.ChsInsuranceContractReaderImpl;
 import com.openhis.chs.bridge.inventory.assembler.InventoryPlatformFieldAssembler;
 import com.openhis.chs.bridge.inventory.assembler.InventoryUploadBatchNoAssembler;
+import com.openhis.chs.bridge.inventory.assembler.InventoryUploadLotPriceSupport;
+import com.openhis.chs.bridge.inventory.assembler.InventoryUploadQuantityAssembler;
 import com.openhis.chs.bridge.inventory.support.InventoryUploadTraceLineSupport;
 import com.openhis.chs.domain.inventory.command.UploadAfterTransferCommand;
 import lombok.RequiredArgsConstructor;
@@ -33,7 +36,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -54,15 +56,13 @@ import java.util.Set;
 @ConditionalOnProperty(name = "openhis.modules.chs.enabled", havingValue = "true")
 public class InventoryTransferUploadContextLoader {
 
-    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    private static final DateTimeFormatter DATE_TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
     private final SupplyRequestQueryService supplyRequestQueryService;
     private final MedicationDefinitionQueryService medicationDefinitionQueryService;
     private final PractitionerQueryService practitionerQueryService;
     private final InventoryItemQueryService inventoryItemQueryService;
     private final ChsInsuranceContractReaderImpl contractReader;
     private final InventoryUploadTraceLineSupport uploadTraceLineSupport;
+    private final InventoryUploadLotPriceSupport uploadLotPriceSupport;
 
     /** 组装 3502 调拨库存变更上报命令。 */
     public InvUpload3502Command build3502Request(UploadAfterTransferCommand command) {
@@ -150,18 +150,22 @@ public class InventoryTransferUploadContextLoader {
         cmd.setMedListCodg(trimToNull(medication.getYbNo()));
         cmd.setFixmedinsHilistId(medication.getBusNo());
         cmd.setFixmedinsHilistName(medication.getName());
-        cmd.setFixmedinsBchno(InventoryUploadBatchNoAssembler.buildFixmedinsBchno(
-            medication.getBusNo(), line.getLotNumber()));
+        // fixmedins_bchno：调拨单据头 busNo（运维补传；supply_request 行上的单据号）
+        cmd.setFixmedinsBchno(InventoryUploadBatchNoAssembler.buildFixmedinsBchno(line.getBusNo()));
         cmd.setManuLotnum(line.getLotNumber());
-        cmd.setCnt(transferQty);
-        cmd.setPric(line.getPrice());
+        // 数量：拆零 → 操作单位绝对值；再按 101 入库正 / 102 出库负赋符号
+        BigDecimal opQtyAbs = InventoryUploadQuantityAssembler.splitQuantityToOperationUnit(
+            medication, line.getUnitCode(), transferQty);
+        cmd.setCnt(invChgType.toSignedCnt(opQtyAbs));
+        cmd.setPric(uploadLotPriceSupport.resolve3502OperationUnitPrice(
+            medication, line.getLotNumber(), line.getUnitCode(), line.getPrice()));
         cmd.setInvChgType(invChgType.getCode());
         cmd.setInvChgTime(resolveTransferDateTime(line));
         cmd.setInvChgOpterName(resolveOperatorName(line));
         cmd.setRxFlag(InventoryPlatformFieldAssembler.toRxFlagCode(medication.getRxFlag()));
         cmd.setMemo(line.getRemake());
         uploadTraceLineSupport.applyMedicationSupplyLineTrace(
-            medication, line.getUnitCode(), line.getTraceNo(), cmd);
+            medication, line.getUnitCode(), line.getTraceNo(), transferQty, cmd);
         fillInventoryDates(cmd, line, invChgType);
         return cmd;
     }
@@ -191,10 +195,10 @@ public class InventoryTransferUploadContextLoader {
         }
         InventoryItem item = items.get(0);
         if (item.getProductionDate() != null) {
-            cmd.setManuDate(item.getProductionDate().toLocalDate().format(DATE_FMT));
+            cmd.setManuDate(item.getProductionDate().toLocalDate().format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
         }
         if (item.getExpirationDate() != null) {
-            cmd.setExpyEnd(item.getExpirationDate().toLocalDate().format(DATE_FMT));
+            cmd.setExpyEnd(item.getExpirationDate().toLocalDate().format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
         }
     }
 
@@ -220,12 +224,12 @@ public class InventoryTransferUploadContextLoader {
      */
     private String resolveTransferDateTime(SupplyRequestModel line) {
         if (line.getApprovalTime() != null) {
-            return line.getApprovalTime().format(DATE_TIME_FMT);
+            return line.getApprovalTime().format(GeneralSharedConstants.DATE_TIME_FORMATTER);
         }
         if (line.getOccurrenceTime() != null) {
-            return line.getOccurrenceTime().format(DATE_TIME_FMT);
+            return line.getOccurrenceTime().format(GeneralSharedConstants.DATE_TIME_FORMATTER);
         }
-        return DATE_TIME_FMT.format(java.time.LocalDateTime.now());
+        return GeneralSharedConstants.DATE_TIME_FORMATTER.format(java.time.LocalDateTime.now());
     }
 
     /**

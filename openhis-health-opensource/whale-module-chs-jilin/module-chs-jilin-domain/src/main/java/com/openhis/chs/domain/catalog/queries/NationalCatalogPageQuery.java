@@ -40,4 +40,7 @@ public class NationalCatalogPageQuery extends ChsCatalogPageQuery {
 
     /** 选码/检索：1301 文件明细行（含批准文号、规格、厂家） */
     private boolean pickerMode1301Detail;
+
+    /** 选码：排除平台已过期（enddate 已过） */
+    private boolean excludePlatformExpired;
 }

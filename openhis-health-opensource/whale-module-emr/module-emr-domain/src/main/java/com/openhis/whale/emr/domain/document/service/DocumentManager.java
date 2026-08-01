@@ -67,17 +67,39 @@ public class DocumentManager {
     }
 
     /**
-     * 分页列表：按患者、就诊、文书类型、状态筛选
+     * 分页列表：按患者、就诊、文书类型、状态筛选（单就诊）。
      */
     public Page<Document> findPage(String patientId, String encounterId, String documentTypeCode, String status, Pageable pageable) {
+        List<String> encounterIds = null;
+        if (encounterId != null && !encounterId.isEmpty()) {
+            encounterIds = List.of(encounterId);
+        }
+        return findPage(patientId, encounterIds, documentTypeCode, status, pageable);
+    }
+
+    /**
+     * 分页列表：按患者、就诊集合（IN）、文书类型、状态筛选。
+     *
+     * @param encounterIds 就诊 id 集合；空或 null 表示不按就诊过滤
+     */
+    public Page<Document> findPage(
+            String patientId,
+            List<String> encounterIds,
+            String documentTypeCode,
+            String status,
+            Pageable pageable) {
         Specification<Document> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.equal(root.get("isDeleted"), false));
             if (patientId != null && !patientId.isEmpty()) {
                 predicates.add(cb.equal(root.get("patientId"), patientId));
             }
-            if (encounterId != null && !encounterId.isEmpty()) {
-                predicates.add(cb.equal(root.get("encounterId"), encounterId));
+            if (encounterIds != null && !encounterIds.isEmpty()) {
+                if (encounterIds.size() == 1) {
+                    predicates.add(cb.equal(root.get("encounterId"), encounterIds.get(0)));
+                } else {
+                    predicates.add(root.get("encounterId").in(encounterIds));
+                }
             }
             if (documentTypeCode != null && !documentTypeCode.isEmpty()) {
                 predicates.add(cb.equal(root.get("documentTypeCode"), documentTypeCode));

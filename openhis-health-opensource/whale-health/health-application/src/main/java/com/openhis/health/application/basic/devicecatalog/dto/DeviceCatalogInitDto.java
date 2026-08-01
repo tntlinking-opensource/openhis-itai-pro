@@ -20,19 +20,19 @@ import java.util.Map;
 public class DeviceCatalogInitDto {
 
     /**
-     * 五类计量单位统一候选（术语体系 {@code unit_code}，与药品目录 {@code unitCodeOptions} 同口径）。
+     * 计量单位统一候选（术语 {@code unit_code}；采购/拆零/包装/库存共用）。
      */
     private List<Map<String, Object>> unitCodeOptions;
 
-    /** 包装单位（术语体系 {@code purchase_unit}，兼容旧前端；内容与 {@link #unitCodeOptions} 同源）。 */
+    /** 包装单位下拉（与 {@link #unitCodeOptions} 同源，旧前端字段名）。 */
     private List<Map<String, Object>> packUnits;
-    /** 销售单位（术语体系 {@code sales_unit}）。 */
+    /** 销售单位下拉（与 {@link #unitCodeOptions} 同源）。 */
     private List<Map<String, Object>> saleUnits;
-    /** 最小/拆零单位（术语体系 {@code split_unit}）。 */
+    /** 拆零单位下拉（与 {@link #unitCodeOptions} 同源）。 */
     private List<Map<String, Object>> minUnits;
-    /** 库存单位（术语体系 {@code stock_unit}）。 */
+    /** 库存单位下拉（与 {@link #unitCodeOptions} 同源）。 */
     private List<Map<String, Object>> stockUnits;
-    /** 剂量单位（术语体系 {@code dose_unit}）。 */
+    /** 剂量单位（术语 {@code dose_unit}）。 */
     private List<Map<String, Object>> doseUnits;
 
     /** 耗材分类（术语体系 {@code device_category_code}）。 */

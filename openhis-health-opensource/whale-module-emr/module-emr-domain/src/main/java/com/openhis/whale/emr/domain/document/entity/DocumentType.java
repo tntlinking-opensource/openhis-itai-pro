@@ -53,4 +53,11 @@ public class DocumentType extends BaseAuditedEntity implements IMultiTenant {
      */
     @Column(name = "sort_order")
     private Integer sortOrder;
+
+    /**
+     * 文书分类编码：OUTPATIENT / INPATIENT / NOTICE / SURGERY / OTHER
+     */
+    @Size(max = 32)
+    @Column(name = "category_code", length = 32)
+    private String categoryCode;
 }

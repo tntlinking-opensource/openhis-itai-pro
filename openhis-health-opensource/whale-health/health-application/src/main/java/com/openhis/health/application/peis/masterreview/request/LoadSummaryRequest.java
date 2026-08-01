@@ -1,0 +1,23 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.openhis.health.application.peis.masterreview.request;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.Data;
+
+import java.io.Serializable;
+
+/**
+ * 汇总结果请求（IF-PEIS-MAS-02）。
+ */
+@Data
+public class LoadSummaryRequest implements Serializable {
+
+    private static final long serialVersionUID = 1L;
+
+    /** 就诊主键。 */
+    @Schema(description = "就诊主键", requiredMode = Schema.RequiredMode.REQUIRED)
+    private Long encounterId;
+}

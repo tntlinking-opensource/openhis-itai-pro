@@ -41,6 +41,9 @@ public class ProductDefinitionSelectionTerminologyMaps {
     /** 剂型 {@code DOSE_FORM_CODE}。 */
     private Map<String, String> doseFormLabelByCode = Collections.emptyMap();
 
+    /** 中药特殊煎法 {@code DOSAGE_INSTRUCTION}。 */
+    private Map<String, String> dosageInstructionLabelByCode = Collections.emptyMap();
+
     /** 限制使用 {@code RESTRICTED_ENUM}。 */
     private Map<String, String> restrictedEnumLabelByCode = Collections.emptyMap();
 

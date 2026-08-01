@@ -13,26 +13,31 @@ import com.openhis.health.application.inpatient.doctorstation.diagnosis.request.
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.request.GetCommonDiagnosesRequest;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.request.GetEncounterDiagnosisRequest;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.request.PageConditionDefinitionRequest;
+import com.openhis.health.application.inpatient.doctorstation.diagnosis.request.SaveEncounterDiagnosisChildRequest;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.request.SaveEncounterDiagnosisRequest;
+import com.openhis.health.application.inpatient.doctorstation.diagnosis.request.SwitchMainEncounterDiagnosisRequest;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.response.CommonDiagnosesResponse;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.response.ConditionDefinitionPageResponse;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.response.ConditionDefinitionRowResponse;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.response.DeleteEncounterDiagnosisResponse;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.response.EncounterDiagnosisResponse;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.response.SaveEncounterDiagnosisResponse;
+import com.openhis.health.application.inpatient.doctorstation.diagnosis.response.SwitchMainEncounterDiagnosisResponse;
+import com.openhis.health.application.inpatient.doctorstation.diagnosis.request.DeleteEncounterDiagnosisRequest;
 import com.openhis.health.domain.administration.encounter.command.BatchUpsertEncounterDiagnosisAssociationCommand;
 import com.openhis.health.domain.administration.encounter.command.RemoveEncounterDiagnosisAssociationCommand;
+import com.openhis.health.domain.administration.encounter.command.SwitchPrimaryEncounterDiagnosisCommand;
+import com.openhis.health.domain.administration.encounter.queries.model.EncounterDiagnosisQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
-import com.openhis.health.domain.clinical.condition.command.DelEncounterDiagnosisCommand;
-import com.openhis.health.domain.clinical.condition.command.SaveDoctorDiagnosisCommand;
-import com.openhis.health.domain.clinical.condition.entity.Condition;
-import com.openhis.health.domain.clinical.condition.service.ConditionDomainService;
-import com.openhis.health.domain.clinical.condition.service.ConditionQueryService;
+import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.DoctorStationConditionDefinitionRowModel;
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
+import com.openhis.health.domain.custom.conditiontemplate.command.BindConditionTemplateCommand;
 import com.openhis.health.domain.custom.conditiontemplate.queries.model.ConditionTemplateQueryModel;
+import com.openhis.health.domain.custom.conditiontemplate.service.ConditionTemplateDomainService;
 import com.openhis.health.domain.custom.conditiontemplate.service.ConditionTemplateQueryService;
 import com.openhis.health.application.inpatient.doctorstation.encountermanage.support.InpatientDoctorStationEncounterVisibilityResolver;
+import com.openhis.health.application.shared.diagnosis.EncounterDiagnosisReferenceSupport;
 import com.openhis.health.application.shared.diagnosis.EncounterDiagnosisSnapshotAssembler;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.share.constants.DoctorStationDiagnosisConstants;
@@ -41,10 +46,13 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InpatientDoctorStationDiagnosisConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.ConditionTemplateBinding;
-import com.openhis.health.domain.share.enums.IptPatientDiseaseDiagType;
+import com.openhis.health.application.outpatient.doctorstation.diagnosis.request.BindCommonDiagnosisRequest;
+import com.openhis.health.application.outpatient.doctorstation.diagnosis.response.BindCommonDiagnosisResponse;
+import com.openhis.health.application.outpatient.doctorstation.diagnosis.support.PatientHistoryCommonDiagnosisAssembler;
+import com.openhis.health.application.outpatient.doctorstation.diagnosis.support.PatientHistoryCommonDiagnosisRow;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
-import com.openhis.health.infrastructure.integration.emr.EmrAdmissionDiagnosisSyncExtension;
+import com.openhis.health.domain.share.enums.IptPatientDiseaseDiagType;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.session.CurrentOperatorResolver;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -54,9 +62,12 @@ import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
+import com.openhis.health.infrastructure.integration.emr.EmrAdmissionDiagnosisSyncExtension;
+
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -65,7 +76,7 @@ import java.util.Set;
  * 住院医生站诊断录入应用编排。
  *
  * <p>读路径：从住院就诊快照解析当前诊断；分页检索诊断定义与常用模板。</p>
- * <p>写路径：批量保存/删除诊断，同步更新就诊诊断快照与领域 Condition。</p>
+ * <p>写路径：批量保存/删除诊断，仅维护 adm_encounter_diagnosis。</p>
  */
 @Slf4j
 @Service
@@ -77,16 +88,19 @@ public class InpatientDoctorStationDiagnosisAppService {
     private final EncounterDiagnosisSnapshotAssembler encounterDiagnosisSnapshotAssembler;
     private final ConditionDefinitionQueryService conditionDefinitionQueryService;
     private final ConditionTemplateQueryService conditionTemplateQueryService;
-    private final ConditionQueryService conditionQueryService;
-    private final ConditionDomainService conditionDomainService;
+    /** 个人/科室常用模板写侧（与门诊 IF-DOR-08A 同构）。 */
+    private final ConditionTemplateDomainService conditionTemplateDomainService;
     private final EncounterDomainService encounterDomainService;
+    private final EncounterQueryService encounterQueryService;
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
     private final CurrentPractitionerResolver currentPractitionerResolver;
     /** 登录用户个人模板读路径须用 {@code whale_users.id}。 */
     private final CurrentOperatorResolver currentOperatorResolver;
     private final CodeSystemQueryService codeSystemQueryService;
     private final InpatientDoctorStationDiagnosisMapper inpatientDoctorStationDiagnosisMapper;
+    private final PatientHistoryCommonDiagnosisAssembler patientHistoryCommonDiagnosisAssembler;
     private final EmrAdmissionDiagnosisSyncExtension emrAdmissionDiagnosisSyncExtension;
+    private final EncounterDiagnosisReferenceSupport encounterDiagnosisReferenceSupport;
 
     /**
      * 加载住院就诊当前诊断列表（实时扫表，禁止仅依赖上下文 JSON）。
@@ -187,10 +201,10 @@ public class InpatientDoctorStationDiagnosisAppService {
     }
 
     /**
-     * 批量保存住院诊断（Condition + 就诊诊断快照关联）。
+     * 批量保存住院诊断（仅维护 adm_encounter_diagnosis）。
      *
      * @param request 全量诊断批次（含主诊唯一、排序唯一等应用层校验）
-     * @return 保存条数与 conditionId 列表
+     * @return 保存条数与 encounterDiagnosisId 列表
      * @throws BusinessException 门控失败或领域规则冲突时抛出
      */
     public SaveEncounterDiagnosisResponse saveDoctorDiagnosis(SaveEncounterDiagnosisRequest request) {
@@ -205,16 +219,15 @@ public class InpatientDoctorStationDiagnosisAppService {
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
             "请先选择患者");
+        // Gate：将被移除或改定义的诊断若仍被引用则拒绝（DD §8.1）
+        this.assertWesternBatchReferenceGate(request);
         SaveEncounterDiagnosisResponse response;
         try {
-            // Cmd：保存 Condition 并同步就诊诊断关联
-            SaveDoctorDiagnosisCommand saveCmd =
-                inpatientDoctorStationDiagnosisMapper.toSaveDoctorDiagnosisCommand(request, operatorId);
-            List<Long> savedIds = conditionDomainService.saveDoctorDiagnosis(saveCmd);
             BatchUpsertEncounterDiagnosisAssociationCommand assocCmd =
                 inpatientDoctorStationDiagnosisMapper.toBatchUpsertEncounterDiagnosisAssociationCommand(
-                    request, savedIds, operatorId);
+                    request, operatorId);
             encounterDomainService.batchUpsertEncounterDiagnosisAssociation(assocCmd);
+            List<Long> savedIds = this.collectWesternEncounterDiagnosisIds(request.getEncounterId());
             response = inpatientDoctorStationDiagnosisMapper.toSaveEncounterDiagnosisResponse(savedIds.size(), savedIds);
         } catch (BusinessException ex) {
             throw ex;
@@ -227,16 +240,98 @@ public class InpatientDoctorStationDiagnosisAppService {
     }
 
     /**
+     * 新增诊断时追加个人/科室常用模板绑定（与门诊 IF-DOR-08A 同构）。
+     *
+     * @param request 定义主键与勾选标志
+     * @return 绑定结果
+     * @throws BusinessException 未勾选、登录上下文缺失或写库失败
+     */
+    public BindCommonDiagnosisResponse bindCommonDiagnosis(BindCommonDiagnosisRequest request) {
+        // Gate：定义主键与至少勾选一类常用
+        if (request == null || request.getConditionDefinitionId() == null) {
+            throw new BusinessException(ErrorCodeConstants.CONDITION_TEMPLATE_INVALID_ARGUMENT, "诊断定义标识不能为空");
+        }
+        boolean saveAsPersonal = Boolean.TRUE.equals(request.getSaveAsPersonal());
+        boolean saveAsDepartment = Boolean.TRUE.equals(request.getSaveAsDepartment());
+        if (!saveAsPersonal && !saveAsDepartment) {
+            throw new BusinessException(ErrorCodeConstants.CONDITION_TEMPLATE_INVALID_ARGUMENT, "请至少勾选存个人常用或存科室常用");
+        }
+        // Pre：待绑定定义集合
+        List<Long> definitionIds = new ArrayList<>();
+        definitionIds.add(request.getConditionDefinitionId());
+        if (request.getSyndromeDefinitionId() != null
+            && !request.getSyndromeDefinitionId().equals(request.getConditionDefinitionId())) {
+            definitionIds.add(request.getSyndromeDefinitionId());
+        }
+        Long operatorId = this.currentOperatorResolver.findOperatorIdOrNull();
+        if (operatorId == null) {
+            throw new BusinessException(ErrorCodeConstants.CONDITION_TEMPLATE_INVALID_ARGUMENT, "请先登录后再操作");
+        }
+        int personalBoundCount = 0;
+        int departmentBoundCount = 0;
+        // Cmd：个人常用
+        if (saveAsPersonal) {
+            List<Long> boundIds = this.bindTemplateDefinitions(
+                operatorId, ConditionTemplateBinding.PERSONAL.getCode(), definitionIds, operatorId);
+            personalBoundCount = boundIds.size();
+        }
+        // Cmd：科室常用
+        if (saveAsDepartment) {
+            Long orgId = this.managedOrganizationIdsResolver.resolveOrganizationUnitIdForQuery();
+            if (orgId == null) {
+                throw new BusinessException(ErrorCodeConstants.CONDITION_TEMPLATE_INVALID_ARGUMENT, "当前登录科室无效，无法存科室常用");
+            }
+            List<Long> boundIds = this.bindTemplateDefinitions(
+                orgId, ConditionTemplateBinding.DEPARTMENT.getCode(), definitionIds, operatorId);
+            departmentBoundCount = boundIds.size();
+        }
+        // Asm：成功响应
+        BindCommonDiagnosisResponse response = new BindCommonDiagnosisResponse();
+        response.setSuccess(Boolean.TRUE);
+        response.setPersonalBoundCount(personalBoundCount);
+        response.setDepartmentBoundCount(departmentBoundCount);
+        response.setMessage("常用诊断已保存");
+        return response;
+    }
+
+    /**
+     * 按归属对象与绑定类型批量绑定诊断定义。
+     *
+     * @param objectId      归属对象
+     * @param bindingEnum   绑定类型
+     * @param definitionIds 定义主键列表
+     * @param operatorId    操作人
+     * @return 新插入行主键
+     */
+    private List<Long> bindTemplateDefinitions(
+        Long objectId, String bindingEnum, List<Long> definitionIds, Long operatorId) {
+        BindConditionTemplateCommand command = new BindConditionTemplateCommand();
+        command.setObjectId(objectId);
+        command.setBindingEnum(bindingEnum);
+        command.setOperatorId(operatorId);
+        List<BindConditionTemplateCommand.BindConditionTemplateItemCommand> items = new ArrayList<>();
+        for (Long definitionId : definitionIds) {
+            BindConditionTemplateCommand.BindConditionTemplateItemCommand item =
+                new BindConditionTemplateCommand.BindConditionTemplateItemCommand();
+            item.setDefinitionId(definitionId);
+            items.add(item);
+        }
+        command.setItems(items);
+        return this.conditionTemplateDomainService.bindConditionTemplate(command);
+    }
+
+    /**
      * 删除单条住院诊断（幂等：已删仍返回成功）。
      *
-     * @param request 待删 conditionId 与就诊上下文
+     * @param request 待删 encounterDiagnosisId 与就诊上下文
      * @return 删除结果与提示文案
      * @throws BusinessException 仍有医嘱引用或门控失败时抛出
      */
     public DeleteEncounterDiagnosisResponse delEncounterDiagnosis(DeleteEncounterDiagnosisRequest request) {
+        Long encounterDiagnosisId = inpatientDoctorStationDiagnosisMapper.resolveDeleteEncounterDiagnosisId(request);
         // Gate：删除请求、住院类别、患者一致性与可写态
         inpatientDoctorStationDiagnosisMapper.validateDeleteEncounterDiagnosisRequest(
-            request.getConditionId(),
+            encounterDiagnosisId,
             request.getEncounterId());
         InpatientEncounterContextQueryModel snapshot;
         Long gatePatientId = request.getPatientId();
@@ -253,32 +348,22 @@ public class InpatientDoctorStationDiagnosisAppService {
         inpatientDoctorStationDiagnosisMapper.validateInpatientEncounterPatientGate(snapshot, gatePatientId);
         inpatientDoctorStationDiagnosisMapper.validateInpatientEncounterClassImp(snapshot);
         inpatientDoctorStationDiagnosisMapper.validateInpatientEncounterWritableGate(snapshot);
-        // Gate：仍有医嘱引用时禁止删除
-        int adviceCnt = conditionQueryService.countAdviceRefByConditionId(request.getConditionId());
-        if (adviceCnt > 0) {
-            throw new BusinessException(ErrorCodeConstants.CONDITION_RULE_CONFLICT, "先处理相关医嘱后再删");
-        }
+        // Gate：医嘱/账单引用计数（DD §8.1）
+        encounterDiagnosisReferenceSupport.assertNotReferenced(encounterDiagnosisId);
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
             "请先选择患者");
         try {
-            // Cmd：移除就诊关联并删除 Condition
             RemoveEncounterDiagnosisAssociationCommand rmCmd = new RemoveEncounterDiagnosisAssociationCommand();
             RemoveEncounterDiagnosisAssociationCommand.RemoveEncounterDiagnosisAssociationItemCommand item =
                 new RemoveEncounterDiagnosisAssociationCommand.RemoveEncounterDiagnosisAssociationItemCommand();
             item.setEncounterId(request.getEncounterId());
-            item.setConditionId(request.getConditionId());
+            item.setEncounterDiagnosisId(encounterDiagnosisId);
             item.setRemoveReason(InpatientDoctorStationDiagnosisConstants.DELETE_REASON_INPATIENT_DOCTOR_STATION);
             rmCmd.setItem(item);
             rmCmd.setOperatorId(operatorId);
             encounterDomainService.removeEncounterDiagnosisAssociation(rmCmd);
-            DelEncounterDiagnosisCommand delCmd = new DelEncounterDiagnosisCommand();
-            delCmd.setConditionId(request.getConditionId());
-            delCmd.setOperatorId(operatorId);
-            delCmd.setReason(InpatientDoctorStationDiagnosisConstants.DELETE_REASON_INPATIENT_DOCTOR_STATION);
-            conditionDomainService.delEncounterDiagnosis(delCmd);
         } catch (BusinessException ex) {
-            // Branch：幂等删除，事实或关联已不存在时仍返回成功
             if (ErrorCodeConstants.CONDITION_NOT_FOUND.equals(ex.getErrorCode())) {
                 return inpatientDoctorStationDiagnosisMapper.toDeleteEncounterDiagnosisResponse(true, "删除成功");
             }
@@ -287,12 +372,117 @@ public class InpatientDoctorStationDiagnosisAppService {
             }
             throw ex;
         } catch (RuntimeException ex) {
-            log.warn("delEncounterDiagnosis failed conditionId={}", request.getConditionId(), ex);
+            log.warn("delEncounterDiagnosis failed encounterDiagnosisId={}", encounterDiagnosisId, ex);
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_RULE_CONFLICT, "删除失败，请稍后重试或联系管理员");
         }
         syncAdmissionDiagnosisToEmrIfEnabled(request.getEncounterId(), gatePatientId);
-        // Asm：返回删除成功响应
         return inpatientDoctorStationDiagnosisMapper.toDeleteEncounterDiagnosisResponse(true, "删除成功");
+    }
+
+    /**
+     * 切换住院就诊主诊断：目标行（或中医病证组）设为主诊，同就诊仅保留这一条/一组主诊。
+     *
+     * @param request 就诊与目标就诊诊断行
+     * @return 切换结果
+     * @throws BusinessException 参数/可见性/持久化失败
+     */
+    public SwitchMainEncounterDiagnosisResponse switchMainEncounterDiagnosis(
+        SwitchMainEncounterDiagnosisRequest request) {
+        // Gate：主键必填
+        if (request == null || request.getEncounterId() == null) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "就诊标识不能为空");
+        }
+        if (request.getEncounterDiagnosisId() == null) {
+            throw new BusinessException(ErrorCodeConstants.CONDITION_INVALID_ARGUMENT, "诊断标识不能为空");
+        }
+        // Pre：住院可见性与患者门控
+        InpatientEncounterContextQueryModel snapshot;
+        Long gatePatientId = request.getPatientId();
+        if (gatePatientId != null) {
+            snapshot = this.inpatientDoctorStationEncounterVisibilityResolver.assertVisible(
+                request.getEncounterId(), gatePatientId);
+        } else {
+            snapshot = this.inpatientDoctorStationEncounterVisibilityResolver.assertVisibleEncounter(
+                request.getEncounterId(),
+                InpatientDoctorStationConstants.EX_IP_DOR_103,
+                "当前患者不在本科室可见范围，请刷新左侧列表");
+            gatePatientId = snapshot.getPatientId();
+        }
+        inpatientDoctorStationDiagnosisMapper.validateInpatientEncounterPatientGate(snapshot, gatePatientId);
+        inpatientDoctorStationDiagnosisMapper.validateInpatientEncounterClassImp(snapshot);
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
+            ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "请先登录后再操作");
+        // Cmd：领域切换主诊
+        try {
+            SwitchPrimaryEncounterDiagnosisCommand cmd = new SwitchPrimaryEncounterDiagnosisCommand();
+            cmd.setEncounterId(request.getEncounterId());
+            cmd.setEncounterDiagnosisId(request.getEncounterDiagnosisId());
+            cmd.setOperatorId(operatorId);
+            this.encounterDomainService.switchPrimaryEncounterDiagnosis(cmd);
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            log.warn("switchMainEncounterDiagnosis failed encounterDiagnosisId={}",
+                request.getEncounterDiagnosisId(), ex);
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_RULE_CONFLICT, "切换主诊断失败，请稍后重试或联系管理员");
+        }
+        syncAdmissionDiagnosisToEmrIfEnabled(request.getEncounterId(), gatePatientId);
+        // Asm：成功响应
+        SwitchMainEncounterDiagnosisResponse response = new SwitchMainEncounterDiagnosisResponse();
+        response.setSuccess(Boolean.TRUE);
+        response.setMessage("已设为主诊断");
+        return response;
+    }
+
+    /**
+     * 西医全量保存：汇总本批保留行与定义变更，交引用门禁校验。
+     *
+     * @param request 保存请求
+     */
+    private void assertWesternBatchReferenceGate(SaveEncounterDiagnosisRequest request) {
+        Set<Long> keepIds = new HashSet<>();
+        Map<Long, Long> defByDxId = new HashMap<>();
+        List<SaveEncounterDiagnosisChildRequest> children = request.getDiagnosisChildList();
+        if (children != null) {
+            for (SaveEncounterDiagnosisChildRequest child : children) {
+                if (child == null) {
+                    continue;
+                }
+                Long dxId = child.getEncounterDiagnosisId();
+                if (dxId == null) {
+                    continue;
+                }
+                keepIds.add(dxId);
+                if (child.getConditionDefinitionId() != null) {
+                    defByDxId.put(dxId, child.getConditionDefinitionId());
+                }
+            }
+        }
+        encounterDiagnosisReferenceSupport.assertWesternBatchSaveAllowed(
+            request.getEncounterId(), keepIds, defByDxId);
+    }
+
+    /**
+     * 保存后收集本次就诊西医诊断行主键。
+     *
+     * @param encounterId 就诊主键
+     * @return 就诊诊断行 id 列表
+     */
+    private List<Long> collectWesternEncounterDiagnosisIds(Long encounterId) {
+        List<EncounterDiagnosisQueryModel> rows = encounterQueryService.listEncounterDiagnoses(encounterId);
+        rows.sort(Comparator
+            .comparing(EncounterDiagnosisQueryModel::getRank, Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(EncounterDiagnosisQueryModel::getDiagnosisId, Comparator.nullsLast(Comparator.naturalOrder())));
+        List<Long> ids = new ArrayList<>();
+        for (EncounterDiagnosisQueryModel row : rows) {
+            if (Boolean.TRUE.equals(row.getTcmFlag())) {
+                continue;
+            }
+            if (row.getDiagnosisId() != null) {
+                ids.add(row.getDiagnosisId());
+            }
+        }
+        return ids;
     }
 
     /**
@@ -377,29 +567,13 @@ public class InpatientDoctorStationDiagnosisAppService {
      */
     private List<CommonDiagnosisRowDto> buildPatientHistoryCommonRows(Long patientId, Map<String, String> sourceLabels) {
         List<CommonDiagnosisRowDto> rows = new ArrayList<>();
-        List<Condition> conditions = conditionQueryService.findByPatientId(patientId);
-        Set<Long> seenDef = new LinkedHashSet<>();
-        List<Long> orderedIds = new ArrayList<>();
-        for (Condition condition : conditions) {
-            if (condition.getDefinitionId() == null) {
-                continue;
+        List<PatientHistoryCommonDiagnosisRow> historyRows =
+            patientHistoryCommonDiagnosisAssembler.assemble(patientId);
+        for (PatientHistoryCommonDiagnosisRow historyRow : historyRows) {
+            CommonDiagnosisRowDto row = inpatientDoctorStationDiagnosisMapper.toCommonDiagnosisRowDto(historyRow, sourceLabels);
+            if (row != null) {
+                rows.add(row);
             }
-            if (seenDef.add(condition.getDefinitionId())) {
-                orderedIds.add(condition.getDefinitionId());
-            }
-        }
-        List<DoctorStationConditionDefinitionRowModel> defs =
-            conditionDefinitionQueryService.listActiveDoctorStationRowsByIds(orderedIds);
-        Map<Long, DoctorStationConditionDefinitionRowModel> byId = new HashMap<>();
-        for (DoctorStationConditionDefinitionRowModel def : defs) {
-            byId.put(def.getId(), def);
-        }
-        for (Long definitionId : orderedIds) {
-            DoctorStationConditionDefinitionRowModel def = byId.get(definitionId);
-            if (def == null) {
-                continue;
-            }
-            rows.add(inpatientDoctorStationDiagnosisMapper.toCommonDiagnosisRowDto(def, sourceLabels));
         }
         return rows;
     }

@@ -38,4 +38,13 @@ public class DocumentSummaryDto {
     private Long createdBy;
     /** 最后更新人 id */
     private Long updatedBy;
+    /**
+     * 创建时使用的模板 ID（溯源；列表挂到模板树下用）
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long sourceTemplateId;
+    /** 就诊科室名称（列表树展示） */
+    private String deptName;
+    /** 保存人显示名（优先更新人，否则创建人） */
+    private String savedByName;
 }

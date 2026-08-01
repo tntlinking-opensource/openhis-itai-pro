@@ -58,6 +58,9 @@ public final class ProductDefinitionCatalogEditorHintsAssembler {
         dto.setCategoryCodeDictText(trimToNull(row.getCategoryCodeDictText()));
         dto.setProductBusNo(trimToNull(row.getProductBusNo()));
         dto.setTotalVolume(trimToNull(row.getTotalVolume()));
+        // 追溯贴码：供前端扫码应扫数；建码时服务端另从药典写入主档快照
+        dto.setTraceUnitCode(trimToNull(row.getTraceUnitCode()));
+        dto.setTraceUnitRatio(row.getTraceUnitRatio());
         dto.setPurchasePrice(null);
         return dto;
     }

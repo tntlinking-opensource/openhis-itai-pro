@@ -56,6 +56,16 @@ public class DepartmentRequisitionLineDto {
     @Schema(description = "批号")
     private String lotNumber;
 
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    /** 生产日期。 */
+    @Schema(description = "生产日期")
+    private LocalDateTime startTime;
+
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    /** 有效期/失效日期。 */
+    @Schema(description = "有效期/失效日期")
+    private LocalDateTime endTime;
+
     /** 追溯码。 */
     @Schema(description = "追溯码")
     private String traceNo;

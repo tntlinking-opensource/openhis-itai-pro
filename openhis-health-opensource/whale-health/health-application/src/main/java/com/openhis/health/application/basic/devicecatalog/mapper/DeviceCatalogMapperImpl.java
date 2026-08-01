@@ -63,6 +63,8 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
         dto.setPurchaseUnitRatio(entity.getPurchaseUnitRatio());
         dto.setStockUnitRatio(entity.getStockUnitRatio());
         dto.setPackageUnitRatio(entity.getPackageUnitRatio());
+        dto.setTraceUnitCode(entity.getTraceUnitCode());
+        dto.setTraceUnitRatio(entity.getTraceUnitRatio());
         String splitUnitCode = entity.getSplitUnitCode();
         dto.setSplitUnitCode(splitUnitCode);
         dto.setMinUnitCode(splitUnitCode);
@@ -80,7 +82,6 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
         dto.setApprovalNumber(entity.getApprovalNumber());
         dto.setYbFlag(entity.getYbFlag());
         dto.setYbNo(entity.getYbNo());
-        dto.setYbOrgNo(entity.getYbOrgNo());
         dto.setYbMatchFlag(entity.getYbMatchFlag());
         dto.setChrgitmLv(entity.getChrgitmLv());
         dto.setSubstanceText(entity.getSubstanceText());
@@ -153,7 +154,6 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
             item.setApprovalNumber(request.getApprovalNumber());
             item.setYbFlag(DeviceCatalogMapperImpl.persistBoolAsInt(request.getYbFlag()));
             item.setYbNo(request.getYbNo());
-            item.setYbOrgNo(request.getYbOrgNo());
             item.setYbMatchFlag(DeviceCatalogMapperImpl.persistBoolAsInt(request.getYbMatchFlag()));
             item.setChrgitmLv(request.getChrgitmLv());
             item.setSubstanceText(request.getSubstanceText());
@@ -170,6 +170,9 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
             item.setPurchaseUnitRatio(request.getPurchaseUnitRatio());
             item.setStockUnitRatio(request.getStockUnitRatio());
             item.setPackageUnitRatio(request.getPackageUnitRatio());
+            // 追溯码贴码单位：耗材可选，由 AppService 成对校验后写入
+            item.setTraceUnitCode(request.getTraceUnitCode());
+            item.setTraceUnitRatio(request.getTraceUnitRatio());
         }
         cmd.setItems(Collections.singletonList(item));
         return cmd;
@@ -222,7 +225,6 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
             item.setLocationId(request.getLocationId());
             item.setYbFlag(DeviceCatalogMapperImpl.persistBoolAsInt(request.getYbFlag()));
             item.setYbNo(request.getYbNo());
-            item.setYbOrgNo(request.getYbOrgNo());
             item.setYbMatchFlag(DeviceCatalogMapperImpl.persistBoolAsInt(request.getYbMatchFlag()));
             item.setChrgitmLv(request.getChrgitmLv());
             item.setSubstanceText(request.getSubstanceText());
@@ -239,6 +241,9 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
             item.setPurchaseUnitRatio(request.getPurchaseUnitRatio());
             item.setStockUnitRatio(request.getStockUnitRatio());
             item.setPackageUnitRatio(request.getPackageUnitRatio());
+            // 追溯码贴码单位：编辑路径同样可选成对写入
+            item.setTraceUnitCode(request.getTraceUnitCode());
+            item.setTraceUnitRatio(request.getTraceUnitRatio());
 
             // 变更字段：与领域实体属性名 / FieldNameConstants 一致，供事件消费方与反射口径对齐
             List<String> changed = new ArrayList<>();
@@ -317,9 +322,6 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
             if (request.getYbNo() != null) {
                 changed.add(FieldNameConstants.YB_NO);
             }
-            if (request.getYbOrgNo() != null) {
-                changed.add(FieldNameConstants.YB_ORG_NO);
-            }
             if (request.getYbMatchFlag() != null) {
                 changed.add(FieldNameConstants.YB_MATCH_FLAG);
             }
@@ -364,6 +366,12 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
             }
             if (request.getPackageUnitRatio() != null) {
                 changed.add(FieldNameConstants.PACKAGE_UNIT_RATIO);
+            }
+            if (request.getTraceUnitCode() != null) {
+                changed.add("traceUnitCode");
+            }
+            if (request.getTraceUnitRatio() != null) {
+                changed.add("traceUnitRatio");
             }
             item.setChangedFields(changed);
         }

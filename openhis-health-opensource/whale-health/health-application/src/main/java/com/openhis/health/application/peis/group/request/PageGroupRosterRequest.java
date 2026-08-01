@@ -1,0 +1,31 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.openhis.health.application.peis.group.request;
+
+import com.openhis.health.application.shared.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import lombok.Getter;
+import lombok.Setter;
+
+/**
+ * 团检名册分页请求。
+ */
+@Getter
+@Setter
+public class PageGroupRosterRequest extends AbstractHealthPageRequest {
+
+    private static final long serialVersionUID = 1L;
+
+    /** 批次主键。 */
+    private Long batchId;
+
+    /** 支付状态过滤（可选）。 */
+    private String payStatusCode;
+
+    /** 学院主键（可选）。 */
+    private Long collegeId;
+
+    /** 班级名称（可选）。 */
+    private String className;
+}

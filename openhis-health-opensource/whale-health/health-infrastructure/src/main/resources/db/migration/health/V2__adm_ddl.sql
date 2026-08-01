@@ -110,8 +110,7 @@ CREATE TABLE IF NOT EXISTS "public"."adm_charge_item" (
     "print_count" int4,
     "org_id" int8,
     "refund_id" int8,
-    "condition_id" int8,
-    "encounter_diagnosis_id" int8,
+    "encounter_diagnosis_ids" varchar(2000),
     "tcm_flag" bool,
     CONSTRAINT "adm_charge_item_pkey" PRIMARY KEY ("id")
 );
@@ -166,8 +165,7 @@ COMMENT ON COLUMN adm_charge_item.claim_state_enum IS '理赔状态枚举（DM c
 COMMENT ON COLUMN adm_charge_item.print_count IS '打印次数（DM print_count）';
 COMMENT ON COLUMN adm_charge_item.org_id IS '开立机构主键（DM org_id）';
 COMMENT ON COLUMN adm_charge_item.refund_id IS '退费关联主键（DM refund_id）';
-COMMENT ON COLUMN adm_charge_item.condition_id IS '病情/诊断条件关联（DM condition_id）';
-COMMENT ON COLUMN adm_charge_item.encounter_diagnosis_id IS '就诊诊断关联主键（DM encounter_diagnosis_id）';
+COMMENT ON COLUMN adm_charge_item.encounter_diagnosis_ids IS '绑定就诊诊断主键 CSV（有序，首位为主诊断 adm_encounter_diagnosis.id；挂费自请求拷贝）';
 COMMENT ON COLUMN adm_charge_item.tcm_flag IS '是否中医相关标记（DM tcm_flag）';
 
 -- from V4__adm_charge_item_definition.sql
@@ -276,7 +274,6 @@ CREATE TABLE IF NOT EXISTS "public"."adm_device_definition" (
     "rx_flag" bool,
     "yb_flag" bool,
     "yb_no" varchar(255),
-    "yb_org_no" varchar(255),
     "yb_match_flag" bool,
     "chrgitm_lv" int4,
     "status_enum" varchar(255) NOT NULL,
@@ -286,6 +283,8 @@ CREATE TABLE IF NOT EXISTS "public"."adm_device_definition" (
     "purchase_unit_ratio" numeric(18,6),
     "stock_unit_ratio" numeric(18,6),
     "package_unit_ratio" numeric(18,6),
+    "trace_unit_code" varchar(64),
+    "trace_unit_ratio" numeric(18,6),
     CONSTRAINT "adm_device_definition_pkey" PRIMARY KEY ("id")
 );
 COMMENT ON TABLE adm_device_definition IS '管理域 device definition';
@@ -336,7 +335,6 @@ COMMENT ON COLUMN adm_device_definition.allergen_flag IS '过敏标记';
 COMMENT ON COLUMN adm_device_definition.rx_flag IS '处方标志';
 COMMENT ON COLUMN adm_device_definition.yb_flag IS '医保标记';
 COMMENT ON COLUMN adm_device_definition.yb_no IS '医保编码';
-COMMENT ON COLUMN adm_device_definition.yb_org_no IS '医药机构目录编码';
 COMMENT ON COLUMN adm_device_definition.yb_match_flag IS '医保对码标记';
 COMMENT ON COLUMN adm_device_definition.chrgitm_lv IS '医保等级';
 COMMENT ON COLUMN adm_device_definition.status_enum IS '发布状态（存储为整数码）';
@@ -346,6 +344,8 @@ COMMENT ON COLUMN adm_device_definition.dose_unit_ratio IS '剂量单位→拆�
 COMMENT ON COLUMN adm_device_definition.purchase_unit_ratio IS '采购单位→拆零单位换算倍数（拆零单位为1）';
 COMMENT ON COLUMN adm_device_definition.stock_unit_ratio IS '库存单位→拆零单位换算倍数（拆零单位为1）';
 COMMENT ON COLUMN adm_device_definition.package_unit_ratio IS '销售单位→拆零单位换算倍数（拆零单位为1）';
+COMMENT ON COLUMN adm_device_definition.trace_unit_code IS '追溯码所贴包装单位（可空；有码时须与 ratio 同时维护）';
+COMMENT ON COLUMN adm_device_definition.trace_unit_ratio IS '1 个追溯码单位对应的拆零数量；可空；有码时须 > 0';
 
 -- seed: adm_device_definition
 -- ----- seed sync from DB (adm_device_definition, 1 rows) -----
@@ -441,7 +441,7 @@ CREATE TABLE IF NOT EXISTS "public"."adm_encounter_diagnosis" (
     "deleted_by" int8,
     "version" int4 NOT NULL DEFAULT 0,
     "encounter_id" int8 NOT NULL,
-    "condition_id" int8 NOT NULL,
+    "condition_definition_id" int8 NOT NULL,
     "primary_flag" bool,
     "rank" int4,
     "description" varchar(255),
@@ -465,8 +465,8 @@ COMMENT ON COLUMN adm_encounter_diagnosis.is_deleted IS '软删标记';
 COMMENT ON COLUMN adm_encounter_diagnosis.deleted_at IS '删除时间';
 COMMENT ON COLUMN adm_encounter_diagnosis.deleted_by IS '删除人';
 COMMENT ON COLUMN adm_encounter_diagnosis.version IS '乐观锁版本号';
-COMMENT ON COLUMN adm_encounter_diagnosis.encounter_id IS '就诊诊断关联子实体：持久化就诊与病情（Condition）的多对多事实及诊断扩展字段';
-COMMENT ON COLUMN adm_encounter_diagnosis.condition_id IS '病情/诊断条件主键';
+COMMENT ON COLUMN adm_encounter_diagnosis.encounter_id IS '就诊主键';
+COMMENT ON COLUMN adm_encounter_diagnosis.condition_definition_id IS '诊断目录主键（cln_condition_definition.id；不再经 cln_condition）';
 COMMENT ON COLUMN adm_encounter_diagnosis.primary_flag IS '是否主诊断';
 COMMENT ON COLUMN adm_encounter_diagnosis.rank IS '排序序号';
 COMMENT ON COLUMN adm_encounter_diagnosis.description IS '诊断描述';
@@ -1059,12 +1059,15 @@ COMMENT ON COLUMN adm_patient_identifier.start_time IS '有效开始时间';
 COMMENT ON COLUMN adm_patient_identifier.end_time IS '有效结束时间';
 COMMENT ON COLUMN adm_patient_identifier.patient_id IS '所属患者标识';
 
--- from V19__adm_patient_student.sql
--- adm_patient_student（建表）
--- Flyway V19
+-- adm_patient_student 已迁出 whale-module-campus（cmp_patient_student）；基线不再建表
 
-CREATE TABLE IF NOT EXISTS "public"."adm_patient_student" (
+-- GAP-OPN-002：库房期初关闭态独立表（仅三房 Location 可写行）；AS-BAS-INV-001
+CREATE TABLE IF NOT EXISTS "public"."adm_location_inventory_opening" (
     "id" int8 NOT NULL,
+    "location_id" int8 NOT NULL,
+    "opening_closed" bool NOT NULL DEFAULT false,
+    "closed_time" timestamptz(6),
+    "closed_by" int8,
     "tenant_id" int8,
     "created_at" timestamptz(6) NOT NULL,
     "updated_at" timestamptz(6),
@@ -1074,59 +1077,16 @@ CREATE TABLE IF NOT EXISTS "public"."adm_patient_student" (
     "deleted_at" timestamptz(6),
     "deleted_by" int8,
     "version" int4 NOT NULL DEFAULT 0,
-    "name" varchar(255) NOT NULL,
-    "py_str" varchar(255),
-    "wb_str" varchar(255),
-    "gender_enum" varchar(255),
-    "age" int4,
-    "student_no" varchar(255) NOT NULL,
-    "id_card" varchar(255),
-    "phone" varchar(255),
-    "college" varchar(255),
-    "major" varchar(255),
-    "edu_level" int4,
-    "enroll_time" timestamptz(6),
-    "leave_time" timestamptz(6),
-    "grade" varchar(255),
-    "study_type" int4,
-    "school_status" int4,
-    "physical_exam_result" int4,
-    "counselor" varchar(255),
-    "counselor_phone" varchar(255),
-    "patient_id" int8 NOT NULL,
-    CONSTRAINT "adm_patient_student_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "adm_location_inventory_opening_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "uk_adm_loc_inv_opening_location" UNIQUE ("location_id")
 );
-COMMENT ON TABLE adm_patient_student IS '管理域 patient student';
-COMMENT ON COLUMN adm_patient_student.id IS '主键';
-COMMENT ON COLUMN adm_patient_student.tenant_id IS '租户标识';
-COMMENT ON COLUMN adm_patient_student.created_at IS '创建时间';
-COMMENT ON COLUMN adm_patient_student.updated_at IS '最后更新时间';
-COMMENT ON COLUMN adm_patient_student.created_by IS '创建人';
-COMMENT ON COLUMN adm_patient_student.updated_by IS '最后更新人';
-COMMENT ON COLUMN adm_patient_student.is_deleted IS '软删标记';
-COMMENT ON COLUMN adm_patient_student.deleted_at IS '删除时间';
-COMMENT ON COLUMN adm_patient_student.deleted_by IS '删除人';
-COMMENT ON COLUMN adm_patient_student.version IS '乐观锁版本号';
-COMMENT ON COLUMN adm_patient_student.name IS '公费学生资质子实体';
-COMMENT ON COLUMN adm_patient_student.py_str IS '拼音码';
-COMMENT ON COLUMN adm_patient_student.wb_str IS '五笔码';
-COMMENT ON COLUMN adm_patient_student.gender_enum IS '性别编码';
-COMMENT ON COLUMN adm_patient_student.age IS '年龄';
-COMMENT ON COLUMN adm_patient_student.student_no IS '学号';
-COMMENT ON COLUMN adm_patient_student.id_card IS '身份证号';
-COMMENT ON COLUMN adm_patient_student.phone IS '联系电话';
-COMMENT ON COLUMN adm_patient_student.college IS '学院';
-COMMENT ON COLUMN adm_patient_student.major IS '专业';
-COMMENT ON COLUMN adm_patient_student.edu_level IS '学历层次';
-COMMENT ON COLUMN adm_patient_student.enroll_time IS '入校时间';
-COMMENT ON COLUMN adm_patient_student.leave_time IS '离校时间';
-COMMENT ON COLUMN adm_patient_student.grade IS '年级';
-COMMENT ON COLUMN adm_patient_student.study_type IS '学习形式';
-COMMENT ON COLUMN adm_patient_student.school_status IS '在校状态';
-COMMENT ON COLUMN adm_patient_student.physical_exam_result IS '体检结果';
-COMMENT ON COLUMN adm_patient_student.counselor IS '辅导员';
-COMMENT ON COLUMN adm_patient_student.counselor_phone IS '辅导员电话';
-COMMENT ON COLUMN adm_patient_student.patient_id IS '所属患者标识';
+
+COMMENT ON TABLE adm_location_inventory_opening IS '库房库存期初关闭态（独立表；仅药库/药房/科室药房）';
+COMMENT ON COLUMN adm_location_inventory_opening.location_id IS '位置主键（=adm_location.id，业务唯一）';
+COMMENT ON COLUMN adm_location_inventory_opening.opening_closed IS '是否已关闭期初';
+COMMENT ON COLUMN adm_location_inventory_opening.closed_time IS '关闭时间';
+COMMENT ON COLUMN adm_location_inventory_opening.closed_by IS '关闭操作人';
+
 
 -- from V20__adm_pr_assign.sql
 -- adm_pr_assign（建表 + 种子数据）
@@ -1152,7 +1112,6 @@ CREATE TABLE IF NOT EXISTS "public"."adm_pr_assign" (
     "type_code" int4,
     "role_id" int8 NOT NULL,
     CONSTRAINT "adm_pr_assign_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "ck_adm_pr_assign_org_or_location_not_null" CHECK ("org_id" IS NOT NULL OR "location_id" IS NOT NULL),
     CONSTRAINT "fk_adm_pr_assign_whale_role" FOREIGN KEY ("role_id") REFERENCES whale_roles (id)
 );
 
@@ -1171,8 +1130,8 @@ COMMENT ON COLUMN adm_pr_assign.version IS '乐观锁版本号';
 COMMENT ON COLUMN adm_pr_assign.name IS '名称';
 COMMENT ON COLUMN adm_pr_assign.active_flag IS '是否启用';
 COMMENT ON COLUMN adm_pr_assign.practitioner_id IS '医护人员标识';
-COMMENT ON COLUMN adm_pr_assign.org_id IS '机构标识';
-COMMENT ON COLUMN adm_pr_assign.location_id IS '位置/科室标识';
+COMMENT ON COLUMN adm_pr_assign.org_id IS '机构/科室标识；可空（仅挂角色未配管辖科室时）';
+COMMENT ON COLUMN adm_pr_assign.location_id IS '位置标识；可空（仅挂角色未配库房/药房/病区时）';
 COMMENT ON COLUMN adm_pr_assign.specialty_code IS 'specialty编码';
 COMMENT ON COLUMN adm_pr_assign.type_code IS '类型编码';
 COMMENT ON COLUMN adm_pr_assign.role_id IS '岗位分配聚合根（{ adm_pr_assign}）';

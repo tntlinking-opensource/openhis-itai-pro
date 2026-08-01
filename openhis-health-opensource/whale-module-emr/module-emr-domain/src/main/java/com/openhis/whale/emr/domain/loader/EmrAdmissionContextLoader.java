@@ -21,4 +21,12 @@ public interface EmrAdmissionContextLoader {
 
     /** 贡献医护主数据键值。 */
     void contributePractitioner(Map<String, String> target, Long practitionerId);
+
+    /**
+     * 贡献机构/医院名称（如 {@code org.name}）。
+     * <p>自给定组织向上回溯至医院节点；若上下文已有 {@code org.name} 则可不覆盖。</p>
+     */
+    default void contributeOrganization(Map<String, String> target, Long organizationId) {
+        // 默认无实现；HIS bridge 覆盖
+    }
 }

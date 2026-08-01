@@ -9,6 +9,8 @@ import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.administration.location.command.*;
 import com.openhis.health.domain.administration.location.entity.Location;
+import com.openhis.health.domain.administration.location.entity.LocationInventoryOpening;
+import com.openhis.health.domain.administration.location.repository.LocationInventoryOpeningRepository;
 import com.openhis.health.domain.administration.location.repository.LocationRepository;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.LocationForm;
@@ -20,6 +22,7 @@ import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.*;
 import lombok.RequiredArgsConstructor;
 
@@ -33,6 +36,7 @@ import lombok.RequiredArgsConstructor;
 public class LocationDomainService {
 
     private final LocationRepository locationRepository;
+    private final LocationInventoryOpeningRepository locationInventoryOpeningRepository;
     private final IDomainEventPublisher domainEventPublisher;
     private final BusinessSequenceService businessSequenceService;
 
@@ -85,7 +89,10 @@ public class LocationDomainService {
             location.initDraft();
         }
         location.assertRegisterRequiredFields();
-        location.setBusNo(this.buildBusNo(item.getParentId(), parentMap));
+        String busNo = this.buildBusNo(item.getParentId(), parentMap);
+        // Gate：位置层级编码唯一（序号抬升由数据导入/迁移负责，此处只拒绝撞号）。
+        this.assertBusNoUnique(busNo, null);
+        location.setBusNo(busNo);
         return location;
     }
 
@@ -457,6 +464,30 @@ public class LocationDomainService {
     }
 
     /**
+     * 断言位置层级编码全局唯一。
+     *
+     * @param busNo     待校验层级编码
+     * @param excludeId 排除自身主键；新建传 null
+     * @throws BusinessException 编码已被其他位置占用时
+     */
+    private void assertBusNoUnique(String busNo, Long excludeId) {
+        if (busNo == null || busNo.isBlank()) {
+            throw new BusinessException(ErrorCodeConstants.LOCATION_INVALID_ARGUMENT, "位置编码不能为空");
+        }
+        boolean exists;
+        if (excludeId == null) {
+            exists = locationRepository.existsByBusNo(busNo);
+        } else {
+            exists = locationRepository.existsByBusNoAndIdNot(busNo, excludeId);
+        }
+        if (exists) {
+            throw new BusinessException(
+                ErrorCodeConstants.LOCATION_BUS_NO_CONFLICT,
+                "位置编码不可重复：" + busNo);
+        }
+    }
+
+    /**
      * 停用前校验不存在启用或暂停中的子节点。
      *
      * @param parentId 父级位置主键
@@ -575,6 +606,68 @@ public class LocationDomainService {
             }
         }
         return map;
+    }
+
+    /**
+     * 关闭指定库房的库存期初闸门（GAP-OPN-002；幂等）。
+     *
+     * <p>仅 {@link LocationForm#WAREHOUSE}/{@link LocationForm#PHARMACY}/{@link LocationForm#DEPARTMENT_PHARMACY}
+     * 允许写关闭行；其它形态拒绝。</p>
+     *
+     * @param command 含 locationId 的关闭命令
+     * @return 位置主键
+     * @throws BusinessException 位置不存在或形态不允许
+     */
+    public Long closeInventoryOpening(CloseInventoryOpeningCommand command) {
+        List<CloseInventoryOpeningCommand.CloseInventoryOpeningItemCommand> items = command.resolveItems();
+        if (items.size() != 1) {
+            throw new BusinessException(ErrorCodeConstants.LOCATION_INVALID_ARGUMENT, "关闭期初一次仅允许一个库房");
+        }
+        CloseInventoryOpeningCommand.CloseInventoryOpeningItemCommand item = items.get(0);
+        if (item.getLocationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.LOCATION_INVALID_ARGUMENT, "locationId 不能为空");
+        }
+        Long locationId = item.getLocationId();
+        Location location = locationRepository.findById(locationId)
+            .orElseThrow(() -> new BusinessException(ErrorCodeConstants.LOCATION_NOT_FOUND, "位置不存在"));
+        this.assertInventoryOpeningClosableForm(location.getFormEnum());
+
+        Optional<LocationInventoryOpening> existing =
+            locationInventoryOpeningRepository.findByLocationIdAndIsDeletedFalse(locationId);
+        LocalDateTime now = LocalDateTime.now();
+        if (existing.isPresent()) {
+            LocationInventoryOpening row = existing.get();
+            // 已关闭：幂等成功，不重复改时间
+            row.markClosed(command.getOperatorId(), now);
+            locationInventoryOpeningRepository.save(row);
+            return locationId;
+        }
+
+        LocationInventoryOpening created = new LocationInventoryOpening();
+        created.setLocationId(locationId);
+        created.setOpeningClosed(Boolean.FALSE);
+        created.markClosed(command.getOperatorId(), now);
+        locationInventoryOpeningRepository.save(created);
+        return locationId;
+    }
+
+    /**
+     * 断言位置形态允许期初关闭行。
+     *
+     * @param formEnum Location.form_enum 持久化码
+     */
+    private void assertInventoryOpeningClosableForm(String formEnum) {
+        if (LocationForm.WAREHOUSE.getCode().equals(formEnum)) {
+            return;
+        }
+        if (LocationForm.PHARMACY.getCode().equals(formEnum)) {
+            return;
+        }
+        if (LocationForm.DEPARTMENT_PHARMACY.getCode().equals(formEnum)) {
+            return;
+        }
+        throw new BusinessException(ErrorCodeConstants.LOCATION_INVALID_ARGUMENT,
+            "仅药库/药房/科室药房允许关闭库存期初");
     }
 
     /**

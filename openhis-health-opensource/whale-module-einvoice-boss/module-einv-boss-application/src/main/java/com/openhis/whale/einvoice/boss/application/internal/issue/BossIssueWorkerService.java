@@ -122,11 +122,19 @@ public class BossIssueWorkerService {
                 result.setBillNo(snapshot.getHealthBillNo());
                 return result;
             }
+            // 退费/退号已作废的草稿：停止重试与补偿开具，避免对已退款业务重新出票。
+            if (InvoiceStatus.CANCELLED.getCode().equals(snapshot.getInvoiceStatus())) {
+                taskStatusWriter.markSuccess(task.getId(), "票据已作废，跳过开具");
+                BossInvoiceIssueResult result = new BossInvoiceIssueResult();
+                result.setBusNo(snapshot.getBusNo());
+                return result;
+            }
         }
 
         try {
             if (!commonIssue) {
-                document = documentInitializer.refreshForIssue(task.getInvoiceId());
+                // initialize：非 ADJUSTED 重建明细（保证 std*数量=金额），ADJUSTED 保留人工调额
+                document = documentInitializer.initialize(task.getInvoiceId());
             }
             List<EinvBossLine> lines = lineRepository.findByDocumentIdAndIsDeletedFalseOrderByLineNoAsc(document.getId());
             List<BigDecimal> lineAmounts = lines.stream().map(EinvBossLine::getAmount).collect(Collectors.toList());

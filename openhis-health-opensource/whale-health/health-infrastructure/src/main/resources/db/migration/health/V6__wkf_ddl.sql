@@ -335,7 +335,10 @@ CREATE TABLE IF NOT EXISTS "public"."wkf_device_request" (
     "use_start_time" timestamptz(6),
     "use_end_time" timestamptz(6),
     "use_timing" varchar(255),
+    "req_opened_time" timestamptz(6),
     "req_authored_time" timestamptz(6),
+    "stop_time" timestamptz(6),
+    "stopper_id" int8,
     "performer_enum" varchar(255),
     "performer_id" int8,
     "perform_org_id" int8,
@@ -345,8 +348,7 @@ CREATE TABLE IF NOT EXISTS "public"."wkf_device_request" (
     "refund_device_id" int8,
     "yb_class_enum" varchar(255),
     "trace_no" varchar(50000),
-    "condition_definition_id" int8,
-    "encounter_diagnosis_id" int8,
+    "encounter_diagnosis_ids" varchar(2000),
     "observation_id_json" varchar(255),
     "support_info" varchar(255),
     "based_on_table" varchar(255),
@@ -394,7 +396,10 @@ COMMENT ON COLUMN wkf_device_request.use_time IS 'use时间';
 COMMENT ON COLUMN wkf_device_request.use_start_time IS 'use开始时间';
 COMMENT ON COLUMN wkf_device_request.use_end_time IS 'use结束时间';
 COMMENT ON COLUMN wkf_device_request.use_timing IS '用药时机';
-COMMENT ON COLUMN wkf_device_request.req_authored_time IS 'reqauthored时间';
+COMMENT ON COLUMN wkf_device_request.req_opened_time IS '开立时间（首次建草稿）';
+COMMENT ON COLUMN wkf_device_request.req_authored_time IS '签发时间';
+COMMENT ON COLUMN wkf_device_request.stop_time IS '停嘱时间';
+COMMENT ON COLUMN wkf_device_request.stopper_id IS '停嘱人（医务人员主键）';
 COMMENT ON COLUMN wkf_device_request.performer_enum IS 'performer枚举值';
 COMMENT ON COLUMN wkf_device_request.performer_id IS 'performer标识';
 COMMENT ON COLUMN wkf_device_request.perform_org_id IS 'performorg标识';
@@ -404,8 +409,7 @@ COMMENT ON COLUMN wkf_device_request.contract_code IS '合同编码';
 COMMENT ON COLUMN wkf_device_request.refund_device_id IS 'refund设备标识';
 COMMENT ON COLUMN wkf_device_request.yb_class_enum IS '医保class枚举值';
 COMMENT ON COLUMN wkf_device_request.trace_no IS '追踪编号';
-COMMENT ON COLUMN wkf_device_request.condition_definition_id IS '耗材请求聚合根';
-COMMENT ON COLUMN wkf_device_request.encounter_diagnosis_id IS '就诊诊断标识';
+COMMENT ON COLUMN wkf_device_request.encounter_diagnosis_ids IS '绑定就诊诊断主键 CSV（有序，首位为主诊断 adm_encounter_diagnosis.id）';
 COMMENT ON COLUMN wkf_device_request.observation_id_json IS '观察项ID JSON';
 COMMENT ON COLUMN wkf_device_request.support_info IS '辅助信息';
 COMMENT ON COLUMN wkf_device_request.based_on_table IS '依据表名';
@@ -648,7 +652,8 @@ CREATE TABLE IF NOT EXISTS "public"."wkf_service_request" (
     "unit_code" varchar(255) NOT NULL,
     "patient_id" int8 NOT NULL,
     "encounter_id" int8 NOT NULL,
-    "authored_time" timestamptz(6),
+    "req_opened_time" timestamptz(6),
+    "req_authored_time" timestamptz(6),
     "requester_id" int8 NOT NULL,
     "performer_type_code" varchar(255),
     "performer_id" int8,
@@ -660,13 +665,14 @@ CREATE TABLE IF NOT EXISTS "public"."wkf_service_request" (
     "contract_id" int8,
     "occurrence_start_time" timestamptz(6),
     "occurrence_end_time" timestamptz(6),
+    "stop_time" timestamptz(6),
+    "stopper_id" int8,
     "relevant_history_id" int8,
     "refund_service_id" int8,
     "content_json" varchar(255),
     "yb_class_enum" varchar(255),
     "print_count" int4,
-    "condition_definition_id" int8,
-    "encounter_diagnosis_id" int8,
+    "encounter_diagnosis_ids" varchar(2000),
     "therapy_enum" varchar(255),
     "rate_code" varchar(255),
     "parent_id" int8,
@@ -704,7 +710,8 @@ COMMENT ON COLUMN wkf_service_request.quantity IS '数量';
 COMMENT ON COLUMN wkf_service_request.unit_code IS '单元编码';
 COMMENT ON COLUMN wkf_service_request.patient_id IS '患者标识';
 COMMENT ON COLUMN wkf_service_request.encounter_id IS '就诊标识';
-COMMENT ON COLUMN wkf_service_request.authored_time IS 'authored时间';
+COMMENT ON COLUMN wkf_service_request.req_opened_time IS '开立时间（首次建草稿）';
+COMMENT ON COLUMN wkf_service_request.req_authored_time IS '签发时间';
 COMMENT ON COLUMN wkf_service_request.requester_id IS 'requester标识';
 COMMENT ON COLUMN wkf_service_request.performer_type_code IS 'performer类型编码';
 COMMENT ON COLUMN wkf_service_request.performer_id IS 'performer标识';
@@ -715,14 +722,15 @@ COMMENT ON COLUMN wkf_service_request.org_id IS '机构标识';
 COMMENT ON COLUMN wkf_service_request.reason_text IS '原因文本';
 COMMENT ON COLUMN wkf_service_request.contract_id IS '合同标识';
 COMMENT ON COLUMN wkf_service_request.occurrence_start_time IS 'occurrence开始时间';
-COMMENT ON COLUMN wkf_service_request.occurrence_end_time IS 'occurrence结束时间';
+COMMENT ON COLUMN wkf_service_request.occurrence_end_time IS '计划结束时间';
+COMMENT ON COLUMN wkf_service_request.stop_time IS '停嘱时间';
+COMMENT ON COLUMN wkf_service_request.stopper_id IS '停嘱人（医务人员主键）';
 COMMENT ON COLUMN wkf_service_request.relevant_history_id IS 'relevanthistory标识';
 COMMENT ON COLUMN wkf_service_request.refund_service_id IS 'refund服务标识';
 COMMENT ON COLUMN wkf_service_request.content_json IS '内容JSON';
 COMMENT ON COLUMN wkf_service_request.yb_class_enum IS '医保class枚举值';
 COMMENT ON COLUMN wkf_service_request.print_count IS '打印count';
-COMMENT ON COLUMN wkf_service_request.condition_definition_id IS '诊断定义主键（列 { condition_definition_id}，即 { cln_condition_definition.id}）';
-COMMENT ON COLUMN wkf_service_request.encounter_diagnosis_id IS '就诊诊断标识';
+COMMENT ON COLUMN wkf_service_request.encounter_diagnosis_ids IS '绑定就诊诊断主键 CSV（有序，首位为主诊断 adm_encounter_diagnosis.id）';
 COMMENT ON COLUMN wkf_service_request.therapy_enum IS 'therapy枚举值';
 COMMENT ON COLUMN wkf_service_request.rate_code IS 'rate编码';
 COMMENT ON COLUMN wkf_service_request.parent_id IS 'parent标识';
@@ -974,11 +982,12 @@ CREATE TABLE IF NOT EXISTS "public"."wkf_supply_request" (
     "end_time" timestamptz(6),
     "lot_number" varchar(255),
     "trace_no" varchar(50000),
-    "trace_unit_code" varchar(64),
     "price" numeric(19,6),
     "total_price" numeric(19,6),
     "remake" varchar(255),
     "profit_loss_price" numeric(19, 6),
+    "invoice_no" varchar(255) DEFAULT '0',
+    "consuming_organization_id" int8,
     CONSTRAINT "wkf_supply_request_pkey" PRIMARY KEY ("id")
 );
 COMMENT ON TABLE wkf_supply_request IS '工作流 supply request';
@@ -1023,11 +1032,12 @@ COMMENT ON COLUMN wkf_supply_request.start_time IS '效期区间起点（与 { e
 COMMENT ON COLUMN wkf_supply_request.end_time IS '效期区间止点（入库入账时可用于库存项有效期等编排）';
 COMMENT ON COLUMN wkf_supply_request.lot_number IS '批号';
 COMMENT ON COLUMN wkf_supply_request.trace_no IS '追踪编号';
-COMMENT ON COLUMN wkf_supply_request.trace_unit_code IS '追溯码所贴包装单位；进货行维护';
 COMMENT ON COLUMN wkf_supply_request.price IS '价格';
 COMMENT ON COLUMN wkf_supply_request.total_price IS '合计价格';
 COMMENT ON COLUMN wkf_supply_request.remake IS '备注';
 COMMENT ON COLUMN wkf_supply_request.profit_loss_price IS '盘点盈亏金额；盘盈为正、盘亏为负；非盘点类型可空';
+COMMENT ON COLUMN wkf_supply_request.invoice_no IS '采购发票号（进销存 3503/3504 purc_invo_no；未填默认 0；同号多行共享）';
+COMMENT ON COLUMN wkf_supply_request.consuming_organization_id IS '领用科室（行政 Organization.id）；DEPT_ISSUE 客户端选择落库；DEPT_ISSUE_RETURN 自源领用单带出；历史单可空';
 -- booking V10 · 门诊同日同患者同服务防重（GAP-BKG-001）
 COMMENT ON COLUMN wkf_appointment_queue.healthcare_service_id IS '冗余：门诊防重（同 patient+service+booking_date）';
 COMMENT ON COLUMN wkf_appointment_queue.booking_date IS '冗余：预约自然日（Asia/Shanghai）';

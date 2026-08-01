@@ -28,4 +28,9 @@ public class DeviceDispenseListModel {
 
     /** 设备申请主键。 */
     private Long deviceReqId;
+
+    /**
+     * 源发放主键（待退/已退对冲行指向原已发事实；正向行通常为空）。
+     */
+    private Long basedOnId;
 }

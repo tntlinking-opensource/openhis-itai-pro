@@ -69,6 +69,15 @@ public class DocumentDetailRowDto {
     private String purposeLocationName;
 
     @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "领用科室 consumingOrganizationId")
+    /** 领用科室（行政 Organization；领用/退领有值）。 */
+    private Long consumingOrganizationId;
+
+    @Schema(description = "领用科室名称 consumingOrganizationName")
+    /** 领用科室展示名。 */
+    private String consumingOrganizationName;
+
+    @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "供应商 supplierId")
     /** 供应商 supplierId。 */
     private Long supplierId;

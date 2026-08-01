@@ -9,6 +9,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * 供应单行追溯写编排命令（AS-CUS-TRC-001-SDD §3.1）。
@@ -61,4 +62,9 @@ public class RecordTraceFromSupplyLineSpec {
 
     /** 单端轨迹方向 OUT/IN；调拨成对由 {@link RecordTraceTransferPairSpec} 处理。 */
     private String recordDirectionEnum;
+
+    /**
+     * 显式每码拆零量（退领镜像领用 OUT 用）；非空时跳过剩余先出/前填重算。
+     */
+    private List<TraceNumberRecordOrchestrator.ExplicitPerCodeSplit> explicitPerCodeSplits;
 }

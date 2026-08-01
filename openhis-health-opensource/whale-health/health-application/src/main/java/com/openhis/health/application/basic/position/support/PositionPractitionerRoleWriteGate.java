@@ -10,7 +10,6 @@ import com.openhis.health.domain.administration.practitionerrole.command.AssignP
 import com.openhis.health.domain.administration.practitionerrole.command.UpdatePractitionerRoleServicesCommand;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.identity.application.RoleAppService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -29,10 +28,12 @@ public class PositionPractitionerRoleWriteGate {
 
     private final PractitionerQueryService practitionerQueryService;
     private final HealthcareServiceQueryService healthcareServiceQueryService;
-    private final RoleAppService roleAppService;
 
     /**
      * 校验分配命令中的医务人员与就诊类型引用均存在。
+     *
+     * <p>{@code role_id} 可为内置或自定义角色：岗位行挂在「用户勾选且声明了对应 StaffScope 的角色」上，
+     * 不再限制仅内置业务角色。</p>
      *
      * @param items 分配项
      */
@@ -45,10 +46,6 @@ public class PositionPractitionerRoleWriteGate {
         for (AssignPractitionerRoleCommand.AssignPractitionerRoleItemCommand item : items) {
             if (item == null) {
                 continue;
-            }
-            if (item.getRoleId() != null && !roleAppService.isBuiltInRole(item.getRoleId())) {
-                throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_RULE_CONFLICT,
-                        "岗位分配仅允许使用内置业务角色");
             }
             if (item.getPractitionerId() != null) {
                 practitionerIds.add(item.getPractitionerId());

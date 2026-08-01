@@ -28,8 +28,10 @@ public class LoadDocumentDetailFormInitResponse {
     /** 本域单据类型下拉。 */
     private List<OptionDto> typeEnumOptions;
 
-    @Schema(description = "默认单据类型")
-    /** 默认单据类型。 */
+    /**
+     * 建议默认单据类型（仅供前端初始选中回填；后端查询未传 {@code typeEnum} 时查本域全部，不强制此值）。
+     */
+    @Schema(description = "建议默认单据类型（前端回填用）")
     private String defaultTypeEnum;
 
     @Schema(description = "源库位下拉")

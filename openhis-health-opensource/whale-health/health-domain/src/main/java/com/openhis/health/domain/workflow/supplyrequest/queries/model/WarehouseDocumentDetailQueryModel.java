@@ -41,6 +41,12 @@ public class WarehouseDocumentDetailQueryModel {
     private String purposeTypeEnum;
     /** 目标位置主键。 */
     private Long purposeLocationId;
+    /**
+     * 领用科室（行政 Organization 主键；库列 {@code consuming_organization_id}）。
+     *
+     * <p>{@code DEPT_ISSUE}/{@code DEPT_ISSUE_RETURN} 有值；其它类型通常为空。</p>
+     */
+    private Long consumingOrganizationId;
     /** 物品来源表名。 */
     private String itemTable;
     /** 物品定义主键。 */

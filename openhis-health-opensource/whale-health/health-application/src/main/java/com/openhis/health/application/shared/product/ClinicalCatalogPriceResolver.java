@@ -7,6 +7,7 @@ package com.openhis.health.application.shared.product;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.administration.chargeitemdefinition.query.ChargeItemDefinitionQueryCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
+import com.openhis.health.domain.custom.servicelocationtemplate.entity.ServiceLocationTemplate;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseOrderCatalogOccupancyModel;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -32,11 +33,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 临床目录读侧与暂存写路径单价解析（门诊/住院开嘱、护士划价）。
+ * 临床目录读侧与暂存写路径单价解析（门诊/住院开嘱、护士划价、签发 FIFO 分段挂费）。
  *
- * <p>口径：诊疗仅 {@link PriceType#SALE}；药品/耗材按取药科室模板库位上 FIFO 首条可用库存批号
- * 匹配 {@link PriceType#LOT_NUMBER_PRICE}；无库存时回落批号售价择优。
- * 暂存写路径可透传 {@code clientResolvedDispenseLocationId}，跳过模板二次 match。</p>
+ * <p>口径：诊疗仅 {@link PriceType#SALE}；药品/耗材有 FIFO/执行批号时必须按批号匹配
+ * {@link PriceType#LOT_NUMBER_PRICE}（{@link #selectExecutionPriceLineForChargeDraft} /
+ * {@link #resolveCatalogUnitPrice}）；<strong>禁止</strong>在已给定批号时跨批号
+ * {@code priority}/id 择优落账。无库存且无批号时才允许批号售价择优兜底。</p>
+ *
+ * <p>暂存写路径可透传 {@code clientResolvedDispenseLocationId}，跳过模板二次 match。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -56,6 +60,46 @@ public class ClinicalCatalogPriceResolver {
 
     /** 耗材发放占用读侧。 */
     private final DeviceDispenseQueryService deviceDispenseQueryService;
+
+    /**
+     * 判断定价行在<strong>不查库存</strong>时是否已能给出目录单价。
+     *
+     * <p>诊疗看 {@link PriceType#SALE}；药耗看批号售价或参考零售价（无库存展示用 SALE）。
+     * 供 IF-DOR-11 装配器收集 fallback，避免预扫 {@link #resolveCatalogUnitPrice} 触发 N+1。</p>
+     *
+     * @param productTableName 产品物理表
+     * @param lines            已批量加载的定价行
+     * @return true 表示无需再按定义主键兜底取价
+     */
+    public boolean hasResolvableCatalogPriceFromLines(String productTableName, List<ChargeItemDefinition> lines) {
+        if (lines == null || lines.isEmpty() || StringUtils.isEmpty(productTableName)) {
+            return false;
+        }
+        // 诊疗：仅看 SALE
+        if (ProductTableNameHelper.isActivity(productTableName)) {
+            return selectBestSalePriceLine(lines) != null;
+        }
+        // 药耗：有批号售价或参考零售价即可展示（无库存时用 SALE）
+        if (ProductTableNameHelper.isMedicationOrDevice(productTableName)) {
+            if (selectBestLotNumberPriceLine(lines) != null) {
+                return true;
+            }
+            return selectBestSalePriceLine(lines) != null;
+        }
+        return true;
+    }
+
+    /**
+     * 药耗无可用库存时的目录展示参考价：取 {@link PriceType#SALE}（零售/参考售价）。
+     *
+     * <p>无库存本身开不出，展示价不按批号 {@code priority} 择优，也不再二次查库存。</p>
+     *
+     * @param lines 同实例定价行
+     * @return SALE 择优行；无则 null
+     */
+    public ChargeItemDefinition selectReferenceSalePriceLine(List<ChargeItemDefinition> lines) {
+        return selectBestSalePriceLine(lines);
+    }
 
     /**
      * 按当前页产品定义批量加载定价行并按「表+实例」分组。
@@ -82,7 +126,7 @@ public class ClinicalCatalogPriceResolver {
     }
 
     /**
-     * 按表名分组实例 id 批量加载定价行。
+     * 按表名分组实例 id 批量加载定价行（目录选品：按表收窄价类，避免拉进价/限价）。
      *
      * @param instanceIdsByTable 表 → 实例 id 列表
      * @return 复合键 → 定价行列表
@@ -101,6 +145,8 @@ public class ClinicalCatalogPriceResolver {
             ChargeItemDefinitionQueryCommand cmd = new ChargeItemDefinitionQueryCommand();
             cmd.setInstanceTable(entry.getKey());
             cmd.setInstanceIds(entry.getValue());
+            // 目录展示价类：诊疗仅 SALE；药耗 SALE（无库存参考）+ LOT_NUMBER_PRICE（FIFO 批号）
+            cmd.setPriceTypeCodes(this.resolveCatalogPriceTypeCodes(entry.getKey()));
             List<ChargeItemDefinition> lines = chargeItemDefinitionQueryService.findPriceLinesByProjects(cmd);
             for (ChargeItemDefinition line : lines) {
                 if (line == null) {
@@ -111,6 +157,22 @@ public class ClinicalCatalogPriceResolver {
             }
         }
         return grouped;
+    }
+
+    /**
+     * 目录选品按产品表解析应收窄的价类集合。
+     *
+     * @param productTableName 产品物理表
+     * @return 价类 code 列表；未知表回落 SALE+LOT_NUMBER_PRICE
+     */
+    private List<String> resolveCatalogPriceTypeCodes(String productTableName) {
+        if (ProductTableNameHelper.isActivity(productTableName)) {
+            return List.of(PriceType.SALE.getCode());
+        }
+        if (ProductTableNameHelper.isMedicationOrDevice(productTableName)) {
+            return List.of(PriceType.SALE.getCode(), PriceType.LOT_NUMBER_PRICE.getCode());
+        }
+        return List.of(PriceType.SALE.getCode(), PriceType.LOT_NUMBER_PRICE.getCode());
     }
 
     /**
@@ -147,8 +209,10 @@ public class ClinicalCatalogPriceResolver {
                 if (lotMatched != null) {
                     return lotMatched;
                 }
+                // 已锁定 FIFO/库存批号却无该批 LOT_NUMBER_PRICE：禁止跨批号 priority 冒充
+                return null;
             }
-            // 无库存批号命中时：批号售价行内择优（展示价兜底）
+            // 无库存批号：才允许批号售价行内择优（展示/暂存兜底）
             return selectBestLotNumberPriceLine(lines);
         }
         // 其它实例表：回落 SALE 择优，再无则取首行
@@ -165,19 +229,24 @@ public class ClinicalCatalogPriceResolver {
     }
 
     /**
-     * 费用草稿单价来源（写路径；无库存上下文时药耗仍取批号售价择优）。
+     * 费用草稿单价来源（<strong>仅</strong>诊疗 SALE，或药耗<strong>无库存/无批号</strong>时的兜底）。
+     *
+     * <p>药耗已有 FIFO/执行批号的落账路径必须改调
+     * {@link #selectExecutionPriceLineForChargeDraft}，禁止本方法跨批号 priority 择优。</p>
      *
      * @param instanceTable 定价实例表
      * @param lines         定价行集合
-     * @return 写入费用草稿的定价行
+     * @return 写入费用草稿的定价行；无命中时 null
      */
     public ChargeItemDefinition selectFirstPriceLineForChargeDraft(String instanceTable, List<ChargeItemDefinition> lines) {
         if (lines == null || lines.isEmpty()) {
             return null;
         }
+        // 诊疗：仅 SALE 择优（无批号维度）
         if (ProductTableNameHelper.isActivity(instanceTable)) {
             return selectBestSalePriceLine(lines);
         }
+        // 药耗：仅无库存/无批号兜底；有 FIFO 批号时禁止调用本方法落账
         if (ProductTableNameHelper.isMedicationOrDevice(instanceTable)) {
             return selectBestLotNumberPriceLine(lines);
         }
@@ -242,19 +311,23 @@ public class ClinicalCatalogPriceResolver {
             if (catalogPrice != null) {
                 return catalogPrice;
             }
-            // 无 FIFO 命中时仍取批号售价择优，避免暂存完全无价
+            // 无 FIFO 批号可对时才允许跨批号择优兜底（BR-ORD-001 无库存）
             return selectFirstPriceLineForChargeDraft(productTableName, priceLines);
         }
         return selectFirstPriceLineForChargeDraft(productTableName, priceLines);
     }
 
     /**
-     * 护士执行新建 Charge 时选取定价行：诊疗 {@link PriceType#SALE}；药耗按执行批号匹配批号售价。
+     * 护士执行 / 门诊签发 FIFO 分段新建 Charge：诊疗 {@link PriceType#SALE}；
+     * 药耗<strong>必须</strong>按执行/FIFO 批号匹配 {@link PriceType#LOT_NUMBER_PRICE}。
+     *
+     * <p>批号非空却未命中定价行时返回 {@code null}（由调用方抛业务异常），
+     * <strong>禁止</strong>回落其它批号的 priority 择优价，避免「批号对、价格错」。</p>
      *
      * @param instanceTable      定价实例表
      * @param lines              定价行集合
-     * @param executionLotNumber 执行/FIFO 批号
-     * @return 定价行
+     * @param executionLotNumber 执行/FIFO 批号；药耗落账必填
+     * @return 定价行；批号未命中或无可用行时 null
      */
     public ChargeItemDefinition selectExecutionPriceLineForChargeDraft(
         String instanceTable,
@@ -264,17 +337,17 @@ public class ClinicalCatalogPriceResolver {
         if (lines == null || lines.isEmpty()) {
             return null;
         }
+        // 诊疗：无批号维度，SALE 择优
         if (ProductTableNameHelper.isActivity(instanceTable)) {
             return selectBestSalePriceLine(lines);
         }
         if (ProductTableNameHelper.isMedicationOrDevice(instanceTable)) {
             Map<String, ChargeItemDefinition> lotPriceIndex = indexLotNumberPriceRows(lines);
+            // 有 FIFO/执行批号：只认该批号价；未命中不跨批回落
             if (StringUtils.isNotEmpty(executionLotNumber)) {
-                ChargeItemDefinition lotMatched = resolveLotNumberPriceLineForLot(lotPriceIndex, executionLotNumber);
-                if (lotMatched != null) {
-                    return lotMatched;
-                }
+                return resolveLotNumberPriceLineForLot(lotPriceIndex, executionLotNumber);
             }
+            // 批号空：仅允许空 lot_no 定价行；再无则无库存兜底择优
             ChargeItemDefinition blankLotLine = resolveLotNumberPriceLineForLot(lotPriceIndex, null);
             if (blankLotLine != null) {
                 return blankLotLine;
@@ -423,6 +496,9 @@ public class ClinicalCatalogPriceResolver {
         if (productDefinitionIds.isEmpty()) {
             return leadingLotByProductKey;
         }
+        // Pre：机构模板一次加载，避免批量 FIFO 时按产品反复 findAllByOrganizationId
+        List<ServiceLocationTemplate> organizationTemplates =
+            clinicalCatalogDispenseLocationResolver.loadOrganizationTemplateRows(organizationId);
         Map<Long, List<Long>> candidateLocsByProductId = new LinkedHashMap<>();
         LinkedHashSet<Long> unionCandidateLocs = new LinkedHashSet<>();
         for (ProductDefinitionDisplayDto productRow : productRows) {
@@ -434,14 +510,15 @@ public class ClinicalCatalogPriceResolver {
                 categoryCode,
                 MedicationCommonConstants.DEFAULT_SERVICE_LOCATION_DISTRIBUTION_CATEGORY_CODE
             );
-            List<Long> candidateLocs = resolveCandidateLocations(
-                organizationId,
-                productTableName,
-                rowCategoryCode,
-                productRow.getProductDefinitionId(),
-                productRow.getMethodCode(),
-                pharmacyLocationId
-            );
+            List<Long> candidateLocs =
+                clinicalCatalogDispenseLocationResolver.listApplicableCandidateLocationIdsFromLoaded(
+                    organizationTemplates,
+                    productTableName,
+                    rowCategoryCode,
+                    productRow.getProductDefinitionId(),
+                    productRow.getMethodCode(),
+                    pharmacyLocationId
+                );
             candidateLocsByProductId.put(productRow.getProductDefinitionId(), candidateLocs);
             unionCandidateLocs.addAll(candidateLocs);
         }
@@ -604,6 +681,9 @@ public class ClinicalCatalogPriceResolver {
 
     /**
      * 从定价行列表中取 LOT_NUMBER_PRICE 类型最优行（priority 小优先，同 priority id 小优先）。
+     *
+     * <p><strong>仅</strong>用于无 FIFO/执行批号时的兜底，或同批号多行决胜前的类型过滤；
+     * 有明确批号的落账禁止直接调用本方法冒充该批售价。</p>
      *
      * @param lines 同实例定价行
      * @return 最优批号价行；无匹配时 null

@@ -38,9 +38,12 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 /**
  * 盘点/损益 agree 路径追溯写编排 Support（AS-CUS-TRC-001 · IF-TRC-14）。
  *
- * <p>业务语义：行上 {@code trace_no} 存实盘扫到的<strong>剩余码</strong>；与本库
- * {@link TraceNumberQueryService#listInStockTraceNumbersByInventoryItemKey} 差分得盘亏/报损 OUT（未扫到的在库码）
- * 或盘盈 IN（扫到但不在本库账上的新码）。</p>
+ * <p><strong>盘点</strong>：行上 {@code trace_no} 存实盘<strong>剩余码</strong>；与本库
+ * {@link TraceNumberQueryService#listInStockTraceNumbersByInventoryItemKey} 差分 →
+ * 未扫到 OUT（盘亏）、多扫到 IN（盘盈）。未扫剩余码则追溯不变（不默认全出）。</p>
+ *
+ * <p><strong>损益</strong>：行上 {@code trace_no} 存盈亏码本身；与 {@code item_quantity} 正负同向直接
+ * {@code HOSPITAL_IO} IN（报溢）/ OUT（报损），不做剩余码差分。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -59,7 +62,7 @@ public class TraceNumberStocktakeGainLossTraceOrchestrator {
     private final TraceNumberSupplyAgreeTraceOrchestrator traceNumberSupplyAgreeTraceOrchestrator;
 
     /**
-     * 批量处理已同意盘点/损益明细行（IF-TRC-14）。
+     * 批量处理已同意<strong>盘点</strong>明细行（IF-TRC-14 · 剩余码差分）。
      *
      * @param agreedLines            已同意供应行
      * @param operatorId             操作人
@@ -85,7 +88,7 @@ public class TraceNumberStocktakeGainLossTraceOrchestrator {
             if (line == null || line.getId() == null) {
                 continue;
             }
-            // 零盈亏行不写追溯；仅药品行参与 IF-TRC-14
+            // 零盈亏行不写追溯；仅药品行参与盘点差分
             BigDecimal profitLossQty = line.getItemQuantity();
             if (profitLossQty == null || profitLossQty.compareTo(BigDecimal.ZERO) == 0) {
                 continue;
@@ -105,11 +108,92 @@ public class TraceNumberStocktakeGainLossTraceOrchestrator {
             return;
         }
         try {
-            // Cmd：批量单端 HOSPITAL_IO OUT/IN 落主/子表
+            // Cmd：批量单端 HOSPITAL_IO OUT/IN 落主/子表（盘点差分结果）
             traceNumberSupplyAgreeTraceOrchestrator.recordSingleEndLines(pending);
         } catch (BusinessException ex) {
-            throw new BusinessException(agreeInventoryErrorCode, "追溯码盘点/损益记录失败：" + ex.getMessage());
+            throw new BusinessException(agreeInventoryErrorCode, "追溯码盘点记录失败：" + ex.getMessage());
         }
+    }
+
+    /**
+     * 批量处理已同意<strong>损益</strong>明细行（IF-TRC-14 · 盈亏码直接加减）。
+     *
+     * <p>行 {@code trace_no} 为报溢/报损扫到的码；{@code item_quantity} &gt; 0 → IN，
+     * &lt; 0 → OUT；数量取盈亏绝对值，按码均分。无码行跳过。</p>
+     *
+     * @param agreedLines            已同意供应行
+     * @param operatorId             操作人
+     * @param productByCompositeKey  品项复合键 → 产品读模型
+     * @param agreeInventoryErrorCode 库存 agree 失败码（追溯失败时复用并前缀说明）
+     * @throws BusinessException 落库失败时，包装为 {@code agreeInventoryErrorCode}
+     */
+    public void recordDirectFromAgreedGainLossLines(
+        List<SupplyRequestModel> agreedLines,
+        Long operatorId,
+        Map<String, ProductDefinitionDisplayDto> productByCompositeKey,
+        String agreeInventoryErrorCode
+    ) {
+        if (agreedLines == null || agreedLines.isEmpty()) {
+            return;
+        }
+        Map<String, ProductDefinitionDisplayDto> safeProductMap = productByCompositeKey;
+        if (safeProductMap == null) {
+            safeProductMap = Map.of();
+        }
+        List<RecordTraceFromSupplyLineSpec> pending = new ArrayList<>();
+        for (SupplyRequestModel line : agreedLines) {
+            if (line == null || line.getId() == null) {
+                continue;
+            }
+            // 零盈亏或不扫码：不写追溯
+            BigDecimal profitLossQty = line.getItemQuantity();
+            if (profitLossQty == null || profitLossQty.compareTo(BigDecimal.ZERO) == 0) {
+                continue;
+            }
+            if (trimToNull(line.getTraceNo()) == null) {
+                continue;
+            }
+            if (!TableNameConstants.MED_MEDICATION_DEFINITION.equals(trimToNull(line.getItemTable()))) {
+                continue;
+            }
+            String productKey = ProductDefinitionKeyUtil.buildCompositeKey(
+                line.getItemTable(), line.getItemId());
+            ProductDefinitionDisplayDto product = safeProductMap.get(productKey);
+            RecordTraceFromStocktakeGainLossLineSpec lineCmd = this.buildLineCommand(line, operatorId, product);
+            RecordTraceFromSupplyLineSpec writeCmd = this.buildDirectGainLossSupplyCommand(lineCmd);
+            pending.add(writeCmd);
+        }
+        if (pending.isEmpty()) {
+            return;
+        }
+        try {
+            // Cmd：批量单端 HOSPITAL_IO 直接 IN/OUT（与损益正负同向）
+            traceNumberSupplyAgreeTraceOrchestrator.recordSingleEndLines(pending);
+        } catch (BusinessException ex) {
+            throw new BusinessException(agreeInventoryErrorCode, "追溯码损益记录失败：" + ex.getMessage());
+        }
+    }
+
+    /**
+     * 由损益行命令组装单端供应写命令（正 → IN，负 → OUT，数量取绝对值）。
+     *
+     * @param cmd 损益写编排命令（含扫码与盈亏拆零量）
+     * @return 待落库的供应写命令
+     */
+    private RecordTraceFromSupplyLineSpec buildDirectGainLossSupplyCommand(
+        RecordTraceFromStocktakeGainLossLineSpec cmd
+    ) {
+        RecordTraceFromSupplyLineSpec writeCmd = this.buildBaseSupplyCommand(cmd);
+        writeCmd.setTraceNos(cmd.getScannedTraceNos());
+        writeCmd.setQuantity(cmd.getProfitLossSplitQuantity().abs());
+        // 报损：扫少的码直接 OUT；报溢：扫多的码直接 IN
+        if (cmd.getProfitLossSplitQuantity().compareTo(BigDecimal.ZERO) < 0) {
+            writeCmd.setRecordDirectionEnum(TraceDirection.OUT.getCode());
+        } else {
+            writeCmd.setRecordDirectionEnum(TraceDirection.IN.getCode());
+            writeCmd.setTraceUnitCode(this.resolveTraceUnitCode(cmd));
+        }
+        return writeCmd;
     }
 
     /**
@@ -157,7 +241,11 @@ public class TraceNumberStocktakeGainLossTraceOrchestrator {
             traceNumberRecordOrchestrator.splitTraceNos(cmd.getScannedTraceNos()));
         BigDecimal profitLossQty = cmd.getProfitLossSplitQuantity();
         if (profitLossQty.compareTo(BigDecimal.ZERO) < 0) {
-            // Gate：盘亏/报损时剩余扫码须在本库账上，防止扫外库码
+            // 未扫剩余码：追溯不变（不默认全出、也不强制扫）
+            if (scannedCodes.isEmpty()) {
+                return result;
+            }
+            // Gate：剩余扫码须在本库账上，防止扫外库码
             for (String scanned : scannedCodes) {
                 if (!inStockCodes.contains(scanned)) {
                     throw new BusinessException(
@@ -171,7 +259,7 @@ public class TraceNumberStocktakeGainLossTraceOrchestrator {
             if (inStockCodes.isEmpty()) {
                 return result;
             }
-            // 盘亏/报损：未扫到的在库码整码 OUT（数量取本库净拆零量）
+            // 盘亏：未扫到的在库码整码 OUT（数量取本库净拆零量）
             for (String inStockCode : inStockCodes) {
                 if (scannedCodes.contains(inStockCode)) {
                     continue;
@@ -257,8 +345,9 @@ public class TraceNumberStocktakeGainLossTraceOrchestrator {
             if (StringUtils.isNotEmpty(product.getSplitUnitCode())) {
                 cmd.setSplitUnitCode(product.getSplitUnitCode().trim());
             }
-            if (StringUtils.isNotEmpty(product.getPackageUnitCode())) {
-                cmd.setTraceUnitCode(product.getPackageUnitCode().trim());
+            // 盘盈新建主档：贴码单位取药典追溯单位（可游离包装单位），禁止再用包装单位顶替
+            if (StringUtils.isNotEmpty(product.getTraceUnitCode())) {
+                cmd.setTraceUnitCode(product.getTraceUnitCode().trim());
             }
         }
         if (trimToNull(cmd.getSplitUnitCode()) == null && line.getUnitCode() != null) {
@@ -300,6 +389,10 @@ public class TraceNumberStocktakeGainLossTraceOrchestrator {
             return cmd.getTraceUnitCode().trim();
         }
         MedicationProductUnitConversionSource source = cmd.getUnitConversionSource();
+        // 盘盈新建主档：优先药典追溯贴码单位，再回落包装/拆零
+        if (source != null && trimToNull(source.getTraceUnitCode()) != null) {
+            return source.getTraceUnitCode().trim();
+        }
         if (source != null && trimToNull(source.getPackageUnitCode()) != null) {
             return source.getPackageUnitCode().trim();
         }
@@ -358,7 +451,7 @@ public class TraceNumberStocktakeGainLossTraceOrchestrator {
         /** 批号。 */
         private String lotNumber;
 
-        /** 实盘扫到的剩余追溯码（逗号串）。 */
+        /** 扫到的追溯码逗号串（盘点=剩余码；损益=盈亏码本身）。 */
         private String scannedTraceNos;
 
         /** 行盈亏拆零量（负为盘亏/报损，正为盘盈/报溢）。 */

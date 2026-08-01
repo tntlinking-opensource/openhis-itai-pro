@@ -23,4 +23,9 @@ public class ChargeItemDefinitionQueryCommand {
     private String lotNo;
     /** 批量实例主键（与 instanceTable 联用）。 */
     private Collection<Long> instanceIds;
+    /**
+     * 可选价类 code 集合（如目录选品仅 {@code SALE}+{@code LOT_NUMBER_PRICE}）；
+     * 空或 null 表示不按价类收窄。
+     */
+    private Collection<String> priceTypeCodes;
 }

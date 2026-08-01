@@ -256,10 +256,8 @@ public class MedicationDispenseDomainService {
             List<Long> releasedIds = released.stream().map(MedicationDispense::getId).collect(Collectors.toList());
             publishMedicationDispenseReserveReleased(command.getMedReqId(), releasedIds, command.getOperatorId());
         }
-        List<String> busSeqList = businessSequenceService.getSeqByDay(
-            AggregateTypeConstants.MEDICATION_DISPENSE, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH, segments.size());
+        // 取号只走 buildFromGenerateInput 内一次 getSeqByDay；禁止再批量预占后覆盖，否则会隔号浪费（医生站签发 FIFO）。
         List<MedicationDispense> created = new ArrayList<>();
-        int seqIndex = 0;
         for (ReplaceFifoMedicationDispenseDraftsCommand.Segment segment : segments) {
             if (segment.getLocationId() == null) {
                 throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "FIFO 分段 locationId 不能为空");
@@ -270,8 +268,6 @@ public class MedicationDispenseDomainService {
             MedicationDispense dispense = this.buildFromGenerateInput(
                 command.getMedReqId(), command.getMedicationId(), command.getEncounterId(), command.getPatientId(),
                 segment.getLocationId(), segment.getQuantity(), command.getUnitCode(), command.getDispenseEnum());
-            dispense.setBusNo(busSeqList.get(seqIndex));
-            seqIndex = seqIndex + 1;
             dispense.setLotNumber(segment.getLotNumber());
             dispense.initDraft();
             created.add(dispense);

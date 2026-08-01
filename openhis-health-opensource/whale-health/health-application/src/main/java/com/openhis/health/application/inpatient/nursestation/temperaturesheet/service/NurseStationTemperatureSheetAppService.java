@@ -422,10 +422,9 @@ public class NurseStationTemperatureSheetAppService {
             totalPages = 1;
         }
         LocalDate dateFrom = admissionDate.plusDays((long) page * windowDays);
+        // 当前页始终返回完整窗口天数（含尚未到达的日期列），与纸质体温单整页展示一致；
+        // 不得截断到今日，否则「下一天」已保存的记录不会进入 gridRows/曲线。
         LocalDate dateTo = dateFrom.plusDays(windowDays - 1);
-        if (dateTo.isAfter(endAnchor)) {
-            dateTo = endAnchor;
-        }
         WindowPage windowPage = new WindowPage();
         windowPage.dateFrom = dateFrom;
         windowPage.dateTo = dateTo;

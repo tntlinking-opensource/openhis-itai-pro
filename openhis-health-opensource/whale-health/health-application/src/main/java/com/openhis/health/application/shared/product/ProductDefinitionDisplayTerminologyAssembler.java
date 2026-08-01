@@ -8,6 +8,7 @@ import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler
 import com.openhis.health.application.shared.option.FrequencyOptionLoader;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.domain.administration.product.service.ProductDefinitionQueryService;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogUnitBandDto;
@@ -36,12 +37,46 @@ public class ProductDefinitionDisplayTerminologyAssembler {
     /** 频次展示码表：cus_frequency 主数据。 */
     private final FrequencyOptionLoader frequencyOptionLoader;
 
+    /** 选品术语映射软缓存（短 TTL，避免每页重建十余张码表）。 */
+    private volatile ProductDefinitionSelectionTerminologyMaps cachedSelectionMaps;
+
+    /** 软缓存写入时刻（epoch ms）。 */
+    private volatile long cachedSelectionMapsAtMs;
+
     /**
-     * 加载产品展示所需的术语映射（每请求/每页调用一次即可）。
+     * 加载产品展示所需的术语映射（每请求/每页调用一次即可；进程内短窗复用）。
      *
      * @return 预热后的术语映射容器
      */
     public ProductDefinitionSelectionTerminologyMaps loadSelectionTerminologyMaps() {
+        long nowMs = System.currentTimeMillis();
+        ProductDefinitionSelectionTerminologyMaps cached = this.cachedSelectionMaps;
+        if (cached != null
+            && nowMs - this.cachedSelectionMapsAtMs
+                < GeneralSharedConstants.PRODUCT_DEFINITION_SELECTION_TERMINOLOGY_CACHE_TTL_MS) {
+            return cached;
+        }
+        synchronized (this) {
+            cached = this.cachedSelectionMaps;
+            nowMs = System.currentTimeMillis();
+            if (cached != null
+                && nowMs - this.cachedSelectionMapsAtMs
+                    < GeneralSharedConstants.PRODUCT_DEFINITION_SELECTION_TERMINOLOGY_CACHE_TTL_MS) {
+                return cached;
+            }
+            ProductDefinitionSelectionTerminologyMaps maps = this.buildSelectionTerminologyMaps();
+            this.cachedSelectionMaps = maps;
+            this.cachedSelectionMapsAtMs = System.currentTimeMillis();
+            return maps;
+        }
+    }
+
+    /**
+     * 实际组装选品术语映射（单位/类目/用法/频次等）。
+     *
+     * @return 新映射容器
+     */
+    private ProductDefinitionSelectionTerminologyMaps buildSelectionTerminologyMaps() {
         ProductDefinitionSelectionTerminologyMaps maps = new ProductDefinitionSelectionTerminologyMaps();
         maps.setUnitLabelByCode(
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.UNIT_CODE));
@@ -58,6 +93,8 @@ public class ProductDefinitionDisplayTerminologyAssembler {
         maps.setRateLabelByCode(frequencyOptionLoader.buildRateLabelMap());
         maps.setDoseFormLabelByCode(
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.DOSE_FORM_CODE));
+        maps.setDosageInstructionLabelByCode(
+            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.DOSAGE_INSTRUCTION));
         maps.setRestrictedEnumLabelByCode(
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.RESTRICTED_ENUM));
         maps.setPartAttributeLabelByCode(
@@ -120,6 +157,16 @@ public class ProductDefinitionDisplayTerminologyAssembler {
 
         applyUnitDictText(row, maps.getUnitLabelByCode());
 
+        // 医保等级文案：药品/诊疗/耗材共用 CHRGITM_LV，须在按表分流 return 前统一回填
+        if (row.getChrgitmLv() == null
+            || maps.getChrgitmLvLabelByCode() == null
+            || maps.getChrgitmLvLabelByCode().isEmpty()) {
+            row.setChrgitmLvText(null);
+        } else {
+            row.setChrgitmLvText(OrderCatalogDisplayAssembler.resolveCategoryDisplay(
+                maps.getChrgitmLvLabelByCode(), String.valueOf(row.getChrgitmLv())));
+        }
+
         if (!TableNameConstants.MED_MEDICATION_DEFINITION.equals(row.getProductTableName())) {
             if (TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(row.getProductTableName())) {
                 if (StringUtils.isEmpty(row.getCategoryCodeDictText())) {
@@ -136,18 +183,14 @@ public class ProductDefinitionDisplayTerminologyAssembler {
             maps.getMethodLabelByCode(), row.getMethodCode()));
         row.setDoseFormCodeDictText(OrderCatalogDisplayAssembler.resolveCategoryDisplay(
             maps.getDoseFormLabelByCode(), row.getDoseFormCode()));
+        row.setDosageInstructionDictText(OrderCatalogDisplayAssembler.resolveCategoryDisplay(
+            maps.getDosageInstructionLabelByCode(), row.getDosageInstruction()));
         row.setRestrictedEnumDictText(OrderCatalogDisplayAssembler.resolveCategoryDisplay(
             maps.getRestrictedEnumLabelByCode(), row.getRestrictedEnum()));
         row.setPartAttributeEnumDictText(OrderCatalogDisplayAssembler.resolveCategoryDisplay(
             maps.getPartAttributeLabelByCode(), row.getPartAttributeEnum()));
         row.setThoPartAttributeEnumDictText(OrderCatalogDisplayAssembler.resolveCategoryDisplay(
             maps.getThoPartAttributeLabelByCode(), row.getThoPartAttributeEnum()));
-        if (row.getChrgitmLv() == null || maps.getChrgitmLvLabelByCode() == null || maps.getChrgitmLvLabelByCode().isEmpty()) {
-            row.setChrgitmLvText(null);
-        } else {
-            row.setChrgitmLvText(OrderCatalogDisplayAssembler.resolveCategoryDisplay(
-                maps.getChrgitmLvLabelByCode(), String.valueOf(row.getChrgitmLv())));
-        }
 
         if (StringUtils.isNotEmpty(row.getDoseUnitCode())) {
             String doseName = OrderCatalogDisplayAssembler.resolveCategoryDisplay(
@@ -170,6 +213,8 @@ public class ProductDefinitionDisplayTerminologyAssembler {
         row.setStockUnitCodeDictText(OrderCatalogDisplayAssembler.resolveCategoryDisplay(unitLabelByCode, row.getStockUnitCode()));
         row.setDefEncounterUnitCodeDictText(OrderCatalogDisplayAssembler.resolveCategoryDisplay(unitLabelByCode, row.getDefEncounterUnitCode()));
         row.setDefInhospitalUnitCodeDictText(OrderCatalogDisplayAssembler.resolveCategoryDisplay(unitLabelByCode, row.getDefInhospitalUnitCode()));
+        // 追溯码贴码单位与业务单位同属 UNIT_CODE 术语
+        row.setTraceUnitCodeDictText(OrderCatalogDisplayAssembler.resolveCategoryDisplay(unitLabelByCode, row.getTraceUnitCode()));
     }
 
     /**

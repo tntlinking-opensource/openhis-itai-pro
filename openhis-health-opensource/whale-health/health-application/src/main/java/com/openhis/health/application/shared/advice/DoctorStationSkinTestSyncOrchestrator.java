@@ -41,7 +41,8 @@ import java.util.Set;
  * 门诊/住院医生站皮试联动写编排（AS-OP-DOR-003 / AS-IP-DOR-003 · BR-ORD-025 / BR-IP-ORD-024）。
  *
  * <p>皮试药 {@code skinTestFlag=true} 时联动 doctor-prescription「皮试检查」{@code ServiceRequest}；
- * 门诊同步挂操作费草稿，住院开嘱侧不挂费（护士皮试 Tab 登记时锚既有 doctor SR 计费）。</p>
+ * 门诊同步挂操作费草稿，住院开嘱侧不挂费（护士执行皮试检查后计费，皮试 Tab 仅登记结果）。
+ * 住院换批重做：同一皮试药可挂多条 companion（{@link #appendCompanionSkinTestServiceRequest}）。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -80,7 +81,7 @@ public class DoctorStationSkinTestSyncOrchestrator {
      * @param orgId               执行机构主键
      * @param operatorId          操作人
      * @param medicationRequestId   皮试药品申请主键
-     * @param therapyTypeCode     皮试药长临 code（住院继承 companion）
+     * @param medicationRequestId   皮试药品申请主键
      * @param payload             皮试药草稿规格（诊断/合同等）
      */
     public void syncAfterMedicationDraftLine(
@@ -91,7 +92,6 @@ public class DoctorStationSkinTestSyncOrchestrator {
         Long orgId,
         Long operatorId,
         Long medicationRequestId,
-        String therapyTypeCode,
         SkinTestMedicationDraftSpec payload
     ) {
         if (medicationRequestId == null || payload == null) {
@@ -101,7 +101,7 @@ public class DoctorStationSkinTestSyncOrchestrator {
         if (Boolean.TRUE.equals(payload.getSkinTestFlag())) {
             this.upsertCompanionSkinTestServiceRequest(
                 chargePolicy, encounterId, patientId, accountId, orgId, operatorId,
-                medicationRequestId, therapyTypeCode, payload);
+                medicationRequestId, payload);
         } else {
             this.removeDraftCompanionSkinTestServiceRequest(
                 chargePolicy, encounterId, medicationRequestId, operatorId);
@@ -127,22 +127,26 @@ public class DoctorStationSkinTestSyncOrchestrator {
         }
         Long skinTestActivityId = activityDefinitionQueryService.requireIdByExactName(
             GeneralSharedConstants.SKIN_TEST_INSPECTION_ACTIVITY_NAME);
-        ServiceRequest companion = this.findCompanionSkinTestServiceRequest(medicationRequestId, skinTestActivityId);
-        if (companion == null) {
-            return;
+        // 换批后同药可有多条 companion：取消防皮试时软删全部草稿态联动 SR
+        List<ServiceRequest> companions =
+            this.listCompanionSkinTestServiceRequests(medicationRequestId, skinTestActivityId);
+        for (ServiceRequest companion : companions) {
+            if (companion == null || companion.getId() == null) {
+                continue;
+            }
+            // 业务分支：已签发 companion 由签退链路处理，暂存删改仅同步清理草稿态
+            if (!RequestStatus.DRAFT.getCode().equals(companion.getStatusEnum())) {
+                continue;
+            }
+            // 业务分支：门诊须先作废锚定 SR 的未计费草稿费用
+            if (chargePolicy == ChargePolicy.OUTPATIENT) {
+                chargeItemDomainService.voidUnbilledDraftChargeItemsByServiceAnchor(
+                    ServiceAdviceCommandAssembler.toVoidDraftChargeAnchor(
+                        encounterId, TableNameConstants.WKF_SERVICE_REQUEST, companion.getId(), operatorId));
+            }
+            serviceRequestDomainService.removeServiceRequestDraft(
+                ServiceAdviceCommandAssembler.toRemoveServiceRequestDraftCommand(companion.getId(), operatorId));
         }
-        // 业务分支：已签发 companion 由签退链路处理，暂存删改仅同步清理草稿态
-        if (!RequestStatus.DRAFT.getCode().equals(companion.getStatusEnum())) {
-            return;
-        }
-        // 业务分支：门诊须先作废锚定 SR 的未计费草稿费用
-        if (chargePolicy == ChargePolicy.OUTPATIENT) {
-            chargeItemDomainService.voidUnbilledDraftChargeItemsByServiceAnchor(
-                ServiceAdviceCommandAssembler.toVoidDraftChargeAnchor(
-                    encounterId, TableNameConstants.WKF_SERVICE_REQUEST, companion.getId(), operatorId));
-        }
-        serviceRequestDomainService.removeServiceRequestDraft(
-            ServiceAdviceCommandAssembler.toRemoveServiceRequestDraftCommand(companion.getId(), operatorId));
     }
 
     /**
@@ -176,22 +180,26 @@ public class DoctorStationSkinTestSyncOrchestrator {
             return signTargets;
         }
         List<AdviceSignTargetSpec> expanded = new ArrayList<>(signTargets);
+        // 换批追加后同药可有多条草稿 companion：签发须全部扩入
         for (Long medicationRequestId : skinTestMedicationRequestIds) {
-            ServiceRequest companion = this.findCompanionSkinTestServiceRequest(medicationRequestId, skinTestActivityId);
-            if (companion == null || companion.getId() == null) {
-                continue;
+            List<ServiceRequest> companions =
+                this.listCompanionSkinTestServiceRequests(medicationRequestId, skinTestActivityId);
+            for (ServiceRequest companion : companions) {
+                if (companion == null || companion.getId() == null) {
+                    continue;
+                }
+                if (!RequestStatus.DRAFT.getCode().equals(companion.getStatusEnum())) {
+                    continue;
+                }
+                if (existingServiceRequestIds.contains(companion.getId())) {
+                    continue;
+                }
+                AdviceSignTargetSpec extra = new AdviceSignTargetSpec();
+                extra.setProductTableName(TableNameConstants.WKF_ACTIVITY_DEFINITION);
+                extra.setRequestId(companion.getId());
+                expanded.add(extra);
+                existingServiceRequestIds.add(companion.getId());
             }
-            if (!RequestStatus.DRAFT.getCode().equals(companion.getStatusEnum())) {
-                continue;
-            }
-            if (existingServiceRequestIds.contains(companion.getId())) {
-                continue;
-            }
-            AdviceSignTargetSpec extra = new AdviceSignTargetSpec();
-            extra.setProductTableName(TableNameConstants.WKF_ACTIVITY_DEFINITION);
-            extra.setRequestId(companion.getId());
-            expanded.add(extra);
-            existingServiceRequestIds.add(companion.getId());
         }
         return expanded;
     }
@@ -215,21 +223,105 @@ public class DoctorStationSkinTestSyncOrchestrator {
         }
         Long skinTestActivityId = activityDefinitionQueryService.requireIdByExactName(
             GeneralSharedConstants.SKIN_TEST_INSPECTION_ACTIVITY_NAME);
-        ServiceRequest companion = this.findCompanionSkinTestServiceRequest(medicationRequestId, skinTestActivityId);
-        if (companion == null || companion.getId() == null) {
-            return;
+        List<ServiceRequest> companions =
+            this.listCompanionSkinTestServiceRequests(medicationRequestId, skinTestActivityId);
+        // 先清草稿，再对称签退已签发 companion（换批多条须全部处理）
+        this.removeDraftCompanionSkinTestServiceRequest(chargePolicy, encounterId, medicationRequestId, operatorId);
+        for (ServiceRequest companion : companions) {
+            if (companion == null || companion.getId() == null) {
+                continue;
+            }
+            // 仅已发送态可签退；草稿/已签退跳过，避免同批显式勾选 companion 时二次签退报错
+            if (!RequestStatus.ACTIVE.getCode().equals(companion.getStatusEnum())) {
+                continue;
+            }
+            if (chargePolicy == ChargePolicy.OUTPATIENT) {
+                chargeItemDomainService.rollbackPlannedChargeItemsAfterAdviceSignedOff(
+                    encounterId, TableNameConstants.WKF_SERVICE_REQUEST, companion.getId());
+            }
+            serviceRequestDomainService.withdrawSignedServiceRequest(
+                ServiceAdviceCommandAssembler.toWithdrawServiceRequestCommand(companion.getId(), operatorId));
         }
-        String status = companion.getStatusEnum();
-        if (RequestStatus.DRAFT.getCode().equals(status)) {
-            this.removeDraftCompanionSkinTestServiceRequest(chargePolicy, encounterId, medicationRequestId, operatorId);
-            return;
+    }
+
+    /**
+     * 收集皮试药将联动签退的 companion「皮试检查」SR id（同批勾选药+companion 时去重用）。
+     *
+     * @param medicationRequestIds 本批待签退药品申请主键
+     * @return companion SR id 集合；无则空集
+     */
+    public Set<Long> collectCompanionSkinTestServiceRequestIds(List<Long> medicationRequestIds) {
+        Set<Long> companionIds = new HashSet<>();
+        if (medicationRequestIds == null || medicationRequestIds.isEmpty()) {
+            return companionIds;
         }
-        if (chargePolicy == ChargePolicy.OUTPATIENT) {
-            chargeItemDomainService.rollbackPlannedChargeItemsAfterAdviceSignedOff(
-                encounterId, TableNameConstants.WKF_SERVICE_REQUEST, companion.getId());
+        Long skinTestActivityId = activityDefinitionQueryService.requireIdByExactName(
+            GeneralSharedConstants.SKIN_TEST_INSPECTION_ACTIVITY_NAME);
+        for (Long medicationRequestId : medicationRequestIds) {
+            if (medicationRequestId == null) {
+                continue;
+            }
+            List<ServiceRequest> companions =
+                this.listCompanionSkinTestServiceRequests(medicationRequestId, skinTestActivityId);
+            for (ServiceRequest companion : companions) {
+                if (companion == null || companion.getId() == null) {
+                    continue;
+                }
+                companionIds.add(companion.getId());
+            }
         }
-        serviceRequestDomainService.withdrawSignedServiceRequest(
-            ServiceAdviceCommandAssembler.toWithdrawServiceRequestCommand(companion.getId(), operatorId));
+        return companionIds;
+    }
+
+    /**
+     * 住院换批追加 companion「皮试检查」临嘱（IF-IP-DOR-27 / BR-IP-ORD-024③）。
+     *
+     * <p>已有草稿 companion 时复用其 id（不重复建）；否则新建，{@code based_on} 锚皮试药；
+     * 住院不挂费。门诊调用方勿用本方法（门诊仍走勾选联动 + 挂费）。</p>
+     *
+     * @param encounterId         就诊主键
+     * @param patientId           患者主键
+     * @param orgId               执行机构（继承皮试药）
+     * @param operatorId          操作人
+     * @param medicationRequestId 长期皮试药主键（based_on 锚点）
+     * @param payload             诊断/合同等继承字段；{@code skinTestFlag} 须为 true
+     * @return 新建或复用的 companion 诊疗申请主键
+     */
+    public Long appendCompanionSkinTestServiceRequest(
+        Long encounterId,
+        Long patientId,
+        Long orgId,
+        Long operatorId,
+        Long medicationRequestId,
+        SkinTestMedicationDraftSpec payload
+    ) {
+        if (medicationRequestId == null || payload == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "追加皮试检查须指定皮试药与草稿规格");
+        }
+        // Gate：追加仅针对已勾皮试的药品
+        if (!Boolean.TRUE.equals(payload.getSkinTestFlag())) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
+                "仅已勾选皮试的药品可追加皮试检查");
+        }
+        Long skinTestActivityId = activityDefinitionQueryService.requireIdByExactName(
+            GeneralSharedConstants.SKIN_TEST_INSPECTION_ACTIVITY_NAME);
+        // 已有未签发草稿：复用，避免同药堆积未签发皮试检查
+        ServiceRequest draftExisting =
+            this.findDraftCompanionSkinTestServiceRequest(medicationRequestId, skinTestActivityId);
+        if (draftExisting != null && draftExisting.getId() != null) {
+            return draftExisting.getId();
+        }
+        ProductDefinitionDisplayDto activityProductRow = this.loadSkinTestActivityProductRow(skinTestActivityId);
+        BigDecimal quantity = BigDecimal.ONE;
+        String unitCode = ServiceAdviceDraftCommandHelper.requireUnitCode(null, null, activityProductRow);
+        String therapyEnum = TherapyType.TEMPORARY.getCode();
+        CreateServiceRequestDraftCommand createCmd = this.buildCreateSkinTestServiceRequestCommand(
+            encounterId, patientId, operatorId, medicationRequestId, skinTestActivityId,
+            activityProductRow, orgId, therapyEnum, payload, quantity, unitCode);
+        return serviceRequestDomainService.createServiceRequestDraft(createCmd);
     }
 
     /**
@@ -242,7 +334,6 @@ public class DoctorStationSkinTestSyncOrchestrator {
      * @param orgId                执行机构
      * @param operatorId           操作人
      * @param medicationRequestId  皮试药品请求 ID（based_on 锚点）
-     * @param therapyTypeCode      皮试药长临 code（住院继承）
      * @param payload              诊断与合同等草稿字段
      */
     private void upsertCompanionSkinTestServiceRequest(
@@ -253,18 +344,26 @@ public class DoctorStationSkinTestSyncOrchestrator {
         Long orgId,
         Long operatorId,
         Long medicationRequestId,
-        String therapyTypeCode,
         SkinTestMedicationDraftSpec payload
     ) {
         Long skinTestActivityId = activityDefinitionQueryService.requireIdByExactName(
             GeneralSharedConstants.SKIN_TEST_INSPECTION_ACTIVITY_NAME);
         ProductDefinitionDisplayDto activityProductRow = this.loadSkinTestActivityProductRow(skinTestActivityId);
-        ServiceRequest existing = this.findCompanionSkinTestServiceRequest(medicationRequestId, skinTestActivityId);
+        // 暂存联动：仅维护草稿 companion；已签发历史留给换批追加（IF-IP-DOR-27）
+        ServiceRequest existing =
+            this.findDraftCompanionSkinTestServiceRequest(medicationRequestId, skinTestActivityId);
         Long performOrgId = orgId;
         BigDecimal quantity = BigDecimal.ONE;
         String unitCode = ServiceAdviceDraftCommandHelper.requireUnitCode(null, null, activityProductRow);
-        String therapyEnum = this.resolveTherapyEnumForSkinTestCompanion(chargePolicy, therapyTypeCode);
+        // 皮试检查为一次性操作：门诊/住院均固定临嘱（对齐 BR-ORD-025；无长期皮试）
+        String therapyEnum = TherapyType.TEMPORARY.getCode();
         if (existing == null) {
+            // 业务分支：同药已有已签发 companion 时，勾选暂存不再自动再建（避免无意多开；换批走 append）
+            List<ServiceRequest> allCompanions =
+                this.listCompanionSkinTestServiceRequests(medicationRequestId, skinTestActivityId);
+            if (!allCompanions.isEmpty()) {
+                return;
+            }
             CreateServiceRequestDraftCommand createCmd = this.buildCreateSkinTestServiceRequestCommand(
                 encounterId, patientId, operatorId, medicationRequestId, skinTestActivityId,
                 activityProductRow, performOrgId, therapyEnum, payload, quantity, unitCode);
@@ -275,10 +374,6 @@ public class DoctorStationSkinTestSyncOrchestrator {
                     encounterId, patientId, accountId, orgId, operatorId,
                     serviceRequestId, skinTestActivityId, activityProductRow, quantity, unitCode);
             }
-            return;
-        }
-        if (!RequestStatus.DRAFT.getCode().equals(existing.getStatusEnum())) {
-            // 已签发 companion 不在暂存相位改写，避免与护士登记/计费事实冲突
             return;
         }
         // 业务分支：门诊 modify 前先作废旧草稿费用，避免双挂
@@ -307,7 +402,7 @@ public class DoctorStationSkinTestSyncOrchestrator {
      * @param skinTestActivityId   皮试检查活动 ID
      * @param activityProductRow   活动产品读模型
      * @param performOrgId         执行机构
-     * @param therapyEnum          长临 code
+     * @param therapyEnum          固定 {@link TherapyType#TEMPORARY}（皮试无长期）
      * @param payload              诊断/合同等
      * @param quantity             数量
      * @param unitCode             单位 code
@@ -342,8 +437,7 @@ public class DoctorStationSkinTestSyncOrchestrator {
         item.setContractId(payload.getContractId());
         item.setRequesterId(operatorId);
         item.setGenerateSourceEnum(GenerateSource.DOCTOR_PRESCRIPTION.getCode());
-        item.setConditionDefinitionId(payload.getConditionDefinitionId());
-        item.setEncounterDiagnosisId(payload.getEncounterDiagnosisId());
+        item.setEncounterDiagnosisIds(payload.getEncounterDiagnosisIds());
         item.setBasedOnTable(TableNameConstants.MED_MEDICATION_REQUEST);
         item.setBasedOnId(medicationRequestId);
         cmd.setItem(item);
@@ -377,8 +471,7 @@ public class DoctorStationSkinTestSyncOrchestrator {
         item.setQuantity(quantity);
         item.setUnitCode(unitCode);
         item.setOrgId(performOrgId);
-        item.setConditionDefinitionId(payload.getConditionDefinitionId());
-        item.setEncounterDiagnosisId(payload.getEncounterDiagnosisId());
+        item.setEncounterDiagnosisIds(payload.getEncounterDiagnosisIds());
         cmd.setItem(item);
         return cmd;
     }
@@ -435,16 +528,20 @@ public class DoctorStationSkinTestSyncOrchestrator {
     }
 
     /**
-     * 按药品请求锚点查找已存在的皮试 companion 诊疗申请（医生处方 + 皮试活动）。
+     * 按药品请求锚点列出全部皮试 companion 诊疗申请（医生处方 + 皮试活动；含草稿与已签发）。
      *
      * @param medicationRequestId 药品请求 ID
      * @param skinTestActivityId  皮试检查活动 ID
-     * @return 命中实体；无则 null
+     * @return companion 列表；无则空列表
      */
-    private ServiceRequest findCompanionSkinTestServiceRequest(Long medicationRequestId, Long skinTestActivityId) {
+    private List<ServiceRequest> listCompanionSkinTestServiceRequests(
+        Long medicationRequestId,
+        Long skinTestActivityId
+    ) {
         List<ServiceRequest> candidates = serviceRequestQueryService.listServiceRequestsByBasedOnAnchor(
             TableNameConstants.MED_MEDICATION_REQUEST, medicationRequestId);
         String doctorSource = GenerateSource.DOCTOR_PRESCRIPTION.getCode();
+        List<ServiceRequest> result = new ArrayList<>();
         for (ServiceRequest candidate : candidates) {
             if (candidate == null || Boolean.TRUE.equals(candidate.getIsDeleted())) {
                 continue;
@@ -455,23 +552,33 @@ public class DoctorStationSkinTestSyncOrchestrator {
             if (!skinTestActivityId.equals(candidate.getActivityId())) {
                 continue;
             }
-            return candidate;
+            result.add(candidate);
         }
-        return null;
+        return result;
     }
 
     /**
-     * 解析皮试 companion SR 的长临属性：住院继承皮试药同行，门诊固定临嘱。
+     * 查找同药下草稿态皮试 companion（换批多条时暂存/追加优先锚草稿）。
      *
-     * @param chargePolicy    挂费策略
-     * @param therapyTypeCode 皮试药长临 code（住院侧）
-     * @return 写入 companion SR 的 therapy code
+     * @param medicationRequestId 药品请求 ID
+     * @param skinTestActivityId  皮试检查活动 ID
+     * @return 首条草稿 companion；无则 null
      */
-    private String resolveTherapyEnumForSkinTestCompanion(ChargePolicy chargePolicy, String therapyTypeCode) {
-        if (chargePolicy == ChargePolicy.INPATIENT) {
-            return StringUtils.firstNonBlank(therapyTypeCode, TherapyType.TEMPORARY.getCode());
+    private ServiceRequest findDraftCompanionSkinTestServiceRequest(
+        Long medicationRequestId,
+        Long skinTestActivityId
+    ) {
+        List<ServiceRequest> companions =
+            this.listCompanionSkinTestServiceRequests(medicationRequestId, skinTestActivityId);
+        for (ServiceRequest companion : companions) {
+            if (companion == null) {
+                continue;
+            }
+            if (RequestStatus.DRAFT.getCode().equals(companion.getStatusEnum())) {
+                return companion;
+            }
         }
-        return TherapyType.TEMPORARY.getCode();
+        return null;
     }
 
     /**

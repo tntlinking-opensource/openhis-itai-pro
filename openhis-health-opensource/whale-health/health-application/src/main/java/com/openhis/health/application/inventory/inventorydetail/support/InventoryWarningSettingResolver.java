@@ -48,7 +48,7 @@ public class InventoryWarningSettingResolver {
     }
 
     /**
-     * 库存预警包装单位数量上限（不含）：全院各库房合计包装数 &lt; 返回值即命中预警。
+     * 库存预警包装单位数量上限（不含）：目录未维护警戒线时，全院各库房合计包装数 &lt; 返回值即命中预警。
      *
      * @return 正数；未配置或非法时回落 {@link InventoryWarningConstants#DEFAULT_MIN_PACKAGE_QUANTITY_WARNING}
      */

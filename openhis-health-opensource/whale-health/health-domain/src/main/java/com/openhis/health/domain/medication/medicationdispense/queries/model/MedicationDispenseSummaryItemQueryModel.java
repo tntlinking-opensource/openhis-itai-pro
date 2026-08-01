@@ -38,6 +38,18 @@ public class MedicationDispenseSummaryItemQueryModel {
     private Long encounterId;
     /** 患者标识。 */
     private Long patientId;
+    /** 药品申请（医嘱）标识；摆药单按患者+本字段合并展示。 */
+    private Long medReqId;
+    /** 用药说明（剂量展示回落）。 */
+    private String dosageInstruction;
+    /** 用法 code。 */
+    private String methodCode;
+    /** 频次 code。 */
+    private String frequencyCode;
+    /** 单次剂量（摆药展示优先；空则回落医嘱）。 */
+    private BigDecimal dose;
+    /** 剂量单位 code。 */
+    private String doseUnitCode;
     /** 追溯码串（可为空）。 */
     private String traceNo;
 }

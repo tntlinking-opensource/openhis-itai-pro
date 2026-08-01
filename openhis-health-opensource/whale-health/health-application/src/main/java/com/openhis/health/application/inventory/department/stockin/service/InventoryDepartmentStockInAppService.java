@@ -19,6 +19,7 @@ import com.openhis.health.application.inventory.department.stockin.response.*;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
+import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
@@ -78,6 +79,8 @@ public class InventoryDepartmentStockInAppService {
     private final LocationQueryService locationQueryService;
     /** 机构内药师/库管人员下拉。 */
     private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
+    /** 医务人员读侧：列表制单人/审批人姓名回填。 */
+    private final PractitionerQueryService practitionerQueryService;
     /** 岗位管辖库位 Gate（科室药房 id 收窄）。 */
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
     /** 产品定义批量读（详情展示 enrich）。 */
@@ -104,9 +107,9 @@ public class InventoryDepartmentStockInAppService {
             List<Location> warehouses = locationQueryService.listAllActiveWarehouses();
             List<Location> gatedDepartmentPharmacies = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(departmentPharmacies);
             List<Location> gatedWarehouses = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(warehouses);
-            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
                 WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
-            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
                 WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE, resolvedOrg);
             return stockInMapper.toLoadStockInFormInitResponse(
                 stockInMapper.toOptionDtoListFromLocations(gatedDepartmentPharmacies),
@@ -187,6 +190,8 @@ public class InventoryDepartmentStockInAppService {
             List<StockInListRowDto> records = this.stockInMapper.toStockInListAggregated(busNos, lines);
             this.enrichStockInListSourceLocationNames(records);
             this.enrichStockInListStatusEnumText(records);
+            // —— 壳单侧栏与出库同构：制单人/审批人姓名；历史壳缺审批人时从 originalBusNo 出库头补全。——
+            this.enrichStockInListDisplayNames(records);
             int pageNo = request.getPageNo().intValue();
             int pageSize = listQuery.getBoundedPageSize();
             // Asm：聚合分页结果并映射为列表响应
@@ -396,6 +401,102 @@ public class InventoryDepartmentStockInAppService {
             SupplyStatus st = EnumUtil.fromCode(SupplyStatus.class, row.getStatusEnum().trim());
             if (st != null) {
                 row.setStatusEnumText(st.getDisplay());
+            }
+        }
+    }
+
+    /**
+     * 科室入库列表：补全制单人/审批人展示名；历史壳单缺审批人时从关联出库单头回填 id 后再解析姓名。
+     *
+     * @param rows 本页列表行
+     */
+    private void enrichStockInListDisplayNames(List<StockInListRowDto> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        // —— 历史壳单未落审批人：按 originalBusNo 回读出库头，补 applicant/approver（只改列表 DTO，不写库）。——
+        Set<String> outboundBusNos = new HashSet<>();
+        for (StockInListRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            boolean missingPeople = row.getApplicantId() == null || row.getApproverId() == null;
+            if (!missingPeople) {
+                continue;
+            }
+            if (StringUtils.isEmpty(row.getOriginalBusNo())) {
+                continue;
+            }
+            outboundBusNos.add(row.getOriginalBusNo().trim());
+        }
+        Map<String, SupplyRequestModel> outboundHeadByBusNo = new HashMap<>();
+        for (String outBusNo : outboundBusNos) {
+            SupplyByBusNoQuery q = new SupplyByBusNoQuery();
+            q.setBusNo(outBusNo);
+            List<SupplyRequestModel> outLines = this.supplyRequestQueryService.getSupplyByBusNo(q);
+            if (outLines == null || outLines.isEmpty()) {
+                continue;
+            }
+            SupplyRequestModel head = outLines.get(0);
+            if (head != null) {
+                outboundHeadByBusNo.put(outBusNo, head);
+            }
+        }
+        for (StockInListRowDto row : rows) {
+            if (row == null || StringUtils.isEmpty(row.getOriginalBusNo())) {
+                continue;
+            }
+            SupplyRequestModel outHead = outboundHeadByBusNo.get(row.getOriginalBusNo().trim());
+            if (outHead == null) {
+                continue;
+            }
+            if (row.getApplicantId() == null && outHead.getApplicantId() != null) {
+                row.setApplicantId(outHead.getApplicantId());
+            }
+            if (row.getApproverId() == null && outHead.getApproverId() != null) {
+                row.setApproverId(outHead.getApproverId());
+            }
+            if (row.getApprovalTime() == null && outHead.getApprovalTime() != null) {
+                row.setApprovalTime(outHead.getApprovalTime());
+            }
+        }
+        Set<Long> practitionerIds = new HashSet<>();
+        for (StockInListRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getApplicantId() != null) {
+                practitionerIds.add(row.getApplicantId());
+            }
+            if (row.getApproverId() != null) {
+                practitionerIds.add(row.getApproverId());
+            }
+        }
+        Map<Long, String> practitionerNameById = new HashMap<>();
+        for (Long pid : practitionerIds) {
+            if (pid == null) {
+                continue;
+            }
+            Practitioner pr = this.practitionerQueryService.findById(pid);
+            if (pr != null && StringUtils.isNotEmpty(pr.getName())) {
+                practitionerNameById.put(pid, pr.getName().trim());
+            }
+        }
+        for (StockInListRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getApplicantId() != null) {
+                String name = practitionerNameById.get(row.getApplicantId());
+                if (name != null) {
+                    row.setCreatorName(name);
+                }
+            }
+            if (row.getApproverId() != null) {
+                String name = practitionerNameById.get(row.getApproverId());
+                if (name != null) {
+                    row.setApproverName(name);
+                }
             }
         }
     }

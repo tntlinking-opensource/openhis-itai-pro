@@ -26,7 +26,7 @@ import java.util.List;
 @Accessors(chain = true)
 @Schema(
     description = "新建科室领用单 IF-DEP-IS-04",
-    requiredProperties = {"purposeLocationId", "lines"}
+    requiredProperties = {"purposeLocationId", "consumingOrganizationId", "lines"}
 )
 public class CreateDeptIssueRequest {
 
@@ -35,6 +35,12 @@ public class CreateDeptIssueRequest {
     /** 科室药房 purposeLocationId。 */
     @Schema(description = "科室药房 purposeLocationId", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long purposeLocationId;
+
+    @NotNull(message = "consumingOrganizationId 不能为空")
+    @JsonSerialize(using = ToStringSerializer.class)
+    /** 领用科室行政 Organization 主键（与科室药房解耦，手选落库）。 */
+    @Schema(description = "领用科室 consumingOrganizationId", requiredMode = Schema.RequiredMode.REQUIRED)
+    private Long consumingOrganizationId;
 
     @JsonSerialize(using = ToStringSerializer.class)
     /** 经办人 practitionerId。 */

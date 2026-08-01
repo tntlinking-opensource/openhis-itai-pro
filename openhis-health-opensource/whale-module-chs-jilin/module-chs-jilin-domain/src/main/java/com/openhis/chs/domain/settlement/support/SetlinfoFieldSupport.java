@@ -124,7 +124,8 @@ public final class SetlinfoFieldSupport {
         row.setFundPaySumamt(decimalOr(setlinfo.getFundPaySumamt(), fallback(pre, YbClinicPreSettle::getFundPaySumamt)));
         row.setAcctPay(decimalOr(setlinfo.getAcctPay(), fallback(pre, YbClinicPreSettle::getAcctPay)));
         row.setPsnCashPay(decimalOr(setlinfo.getPsnCashPay(), fallback(pre, YbClinicPreSettle::getPsnCashPay)));
-        row.setInsutype(setlinfo.getInsutype());
+        // 2207 setlinfo 常不回传 insutype：回落预结算快照（读卡/预结算已存）
+        row.setInsutype(firstNonEmpty(setlinfo.getInsutype(), pre == null ? null : pre.getInsutype()));
         row.setMedType(setlinfo.getMedType());
         row.setPsnName(setlinfo.getPsnName());
         row.setCvlservFlag(setlinfo.getCvlservFlag());
@@ -182,7 +183,8 @@ public final class SetlinfoFieldSupport {
         row.setFundPaySumamt(decimalOr(setlinfo.getFundPaySumamt(), fallbackIp(pre, YbInpatientPreSettle::getFundPaySumamt)));
         row.setAcctPay(decimalOr(setlinfo.getAcctPay(), fallbackIp(pre, YbInpatientPreSettle::getAcctPay)));
         row.setPsnCashPay(decimalOr(setlinfo.getPsnCashPay(), fallbackIp(pre, YbInpatientPreSettle::getPsnCashPay)));
-        row.setInsutype(setlinfo.getInsutype());
+        // 2304 setlinfo 常不回传 insutype：回落预结算快照
+        row.setInsutype(firstNonEmpty(setlinfo.getInsutype(), pre == null ? null : pre.getInsutype()));
         row.setMedType(setlinfo.getMedType());
         row.setPsnName(setlinfo.getPsnName());
         row.setCvlservFlag(setlinfo.getCvlservFlag());
@@ -282,6 +284,19 @@ public final class SetlinfoFieldSupport {
             return value;
         }
         return fallback;
+    }
+
+    /**
+     * 取首个非空字符串（trim 后）。
+     */
+    private static String firstNonEmpty(String primary, String fallback) {
+        if (isNotEmpty(primary)) {
+            return primary.trim();
+        }
+        if (isNotEmpty(fallback)) {
+            return fallback.trim();
+        }
+        return null;
     }
 
     /**

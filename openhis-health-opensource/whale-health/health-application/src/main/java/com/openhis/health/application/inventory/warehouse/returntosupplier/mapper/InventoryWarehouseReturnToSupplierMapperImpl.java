@@ -188,6 +188,7 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         res.setSourceTypeEnum(this.toApiSortSupplyRequestType(head.getSourceTypeEnum()));
         res.setPurposeTypeEnum(this.toApiSortSupplyRequestType(head.getPurposeTypeEnum()));
         res.setCategoryEnum(this.toApiSortSupplyCategory(head.getCategoryEnum()));
+        res.setInvoiceNo(head.getInvoiceNo());
         List<ReturnToSupplierDetailLineDto> detailLines = new ArrayList<>();
         for (SupplyRequestModel line : lines) {
             detailLines.add(this.toDetailLine(line, productByKey));
@@ -254,6 +255,7 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
             request.getCategoryEnum(),
             request.getSupplierId(),
             request.getPractitionerId(),
+            request.getInvoiceNo(),
             request.getLines(),
             null,
             operatorId,
@@ -283,6 +285,7 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
             request.getCategoryEnum(),
             request.getSupplierId(),
             request.getPractitionerId(),
+            request.getInvoiceNo(),
             request.getLines(),
             request.getBusNo(),
             operatorId,
@@ -299,6 +302,7 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
      * @param categoryEnumSort        前端供应类别 sort
      * @param supplierId              供应商
      * @param practitionerId          经办人
+     * @param invoiceNo               采购发票号（可空）
      * @param lines                   明细行
      * @param busNo                   修订时业务单号；新建为 null
      * @param operatorId              操作人
@@ -313,6 +317,7 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         Integer categoryEnumSort,
         Long supplierId,
         Long practitionerId,
+        String invoiceNo,
         List<ReturnToSupplierLineDto> lines,
         String busNo,
         Long operatorId,
@@ -364,6 +369,8 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
             item.setReason(line.getReason());
             item.setLotNumber(line.getLotNumber());
             item.setTraceNo(line.getTraceNo());
+            // 单头发票号写入每一行；空时由 3504 上报从关联进货单回落
+            item.setInvoiceNo(invoiceNo);
             items.add(item);
         }
         command.setItems(items);
@@ -760,8 +767,18 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
             dto.setSourceLocationId(head.getSourceLocationId());
             dto.setPurposeLocationId(head.getPurposeLocationId());
             dto.setSupplierId(head.getSupplierId());
+            // —— 制单人/审批人主键取头行；展示名由 AppService 批量富化。——
+            dto.setApplicantId(head.getApplicantId());
+            dto.setApproverId(head.getApproverId());
+            // —— 双写 totalPrice/totalAmount，兼容侧栏卡片字段兼容读取。——
             dto.setTotalPrice(totalAmount);
-            dto.setApplyTime(maxApply);
+            dto.setTotalAmount(totalAmount);
+            // —— 制单时间：优先申请时刻，缺省回落业务发生时刻（与进货关联选单同构）。——
+            if (maxApply != null) {
+                dto.setApplyTime(maxApply);
+            } else {
+                dto.setApplyTime(maxOccurrence);
+            }
             dto.setApprovalTime(approvalTime);
             out.add(dto);
         }
@@ -818,6 +835,9 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
 
     /**
      * 将已同意进货单与可退余量映射为退货预填响应。
+     *
+     * <p>行上 {@code traceNo} 置空；由 AppService 调用 {@code ReturnToSupplierRemainingTracePrefiller}
+     * 按当前院内剩余码覆盖（BR-WHS-RT-008），禁止在此回放进货历史码串。</p>
      *
      * @param inboundLines    进货明细
      * @param returnableByKey   行键 → 可退余量
@@ -884,7 +904,8 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
             dto.setSourceAvailableQuantity(safeAvailable.getOrDefault(key, BigDecimal.ZERO));
             dto.setUnitCode(line.getUnitCode());
             dto.setLotNumber(line.getLotNumber());
-            dto.setTraceNo(line.getTraceNo());
+            // 追溯码不由进货历史串回放；由 AppService 调 RemainingTracePrefiller 覆盖（BR-WHS-RT-008）
+            dto.setTraceNo(null);
             dto.setPrice(line.getPrice());
             dto.setTotalPrice(line.getTotalPrice());
             dto.setOccurrenceTime(line.getOccurrenceTime());

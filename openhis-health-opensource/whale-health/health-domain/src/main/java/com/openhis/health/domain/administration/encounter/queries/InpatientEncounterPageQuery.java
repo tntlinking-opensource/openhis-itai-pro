@@ -56,9 +56,9 @@ public class InpatientEncounterPageQuery extends AbstractPageQuery {
     /** 就诊主键白名单（{@code IN}）；批量卡片/勾选回显场景。 */
     private Collection<Long> encounterIdsIn;
     /**
-     * 护士站列表状态筛选码（{@link com.openhis.health.domain.share.constants.InpatientNurseStationConstants} {@code STATUS_FILTER_*}）。
+     * 护士站列表状态筛选码（已废止）。
      *
-     * <p>空=默认在院 {@code REGISTERED}～{@code COMPLETED}；{@code SETTLED_DISCHARGED}=已出院结算召回列表。</p>
+     * <p>空=默认在院；历史 {@code SETTLED_DISCHARGED} 已迁出，应用层应置 null。</p>
      */
     private String nurseStationStatusFilter;
     /** 就诊状态持久化码集合（{@code status_enum IN}）；由应用层或读侧解析 {@code nurseStationStatusFilter} 后写入。 */

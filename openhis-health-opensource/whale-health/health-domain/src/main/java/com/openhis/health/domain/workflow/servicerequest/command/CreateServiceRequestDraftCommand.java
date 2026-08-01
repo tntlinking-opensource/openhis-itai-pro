@@ -44,20 +44,21 @@ public class CreateServiceRequestDraftCommand extends BatchCommand<CreateService
         private Long requesterId;
         /** 明细引用行（检查部位、附加耗材等）。 */
         private List<DetailItemCommand> detailItems;
-        /** 医嘱备注/嘱托（展示用）。 */
+        /** 医嘱备注（展示用；与 {@link #entrustContent} 分立，嘱托正文不落本字段）。 */
         private String note;
+        /**
+         * 嘱托医嘱正文（持久化 {@code wkf_service_request.entrust_content}；
+         * 住院嘱托行必填，见 AS-IP-DOR-003 · BR-IP-ORD-028）。
+         */
+        private String entrustContent;
         /** 生成来源持久化码（医生站列表与药品/耗材对称过滤）。 */
         private String generateSourceEnum;
         /** 医生站列表展示排序号（可选）。 */
         private Integer sortNumber;
         /**
-         * 诊断定义主键（门诊医生站绑定诊断；持久化 {@code wkf_service_request.condition_definition_id}）。
+         * 绑定就诊诊断主键有序串（医生站绑定诊断；持久化 {@code wkf_service_request.encounter_diagnosis_ids}；有序，首位为主诊断）。
          */
-        private Long conditionDefinitionId;
-        /**
-         * 就诊诊断主键（医生站绑定诊断；持久化 {@code wkf_service_request.encounter_diagnosis_id}）。
-         */
-        private Long encounterDiagnosisId;
+        private String encounterDiagnosisIds;
         /** 用药频次编码（长期诊疗必填；持久化 {@code wkf_service_request.rate_code}）。 */
         private String rateCode;
         /** 执行科室（持久化 {@code wkf_service_request.org_id}）。 */

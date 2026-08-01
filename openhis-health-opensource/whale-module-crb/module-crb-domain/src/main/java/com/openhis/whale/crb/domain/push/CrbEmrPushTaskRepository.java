@@ -39,4 +39,13 @@ public interface CrbEmrPushTaskRepository extends JpaRepository<CrbEmrPushTask, 
      */
     List<CrbEmrPushTask> findTop50ByTenantIdAndStatusAndDueAtLessThanEqualAndIsDeletedFalseOrderByDueAtAsc(
             Long tenantId, String status, LocalDateTime dueAtBefore);
+
+    /**
+     * 按主键与租户加载未删除任务。
+     *
+     * @param id 任务 id
+     * @param tenantId 租户 id
+     * @return 任务
+     */
+    Optional<CrbEmrPushTask> findByIdAndTenantIdAndIsDeletedFalse(Long id, Long tenantId);
 }

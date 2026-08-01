@@ -22,6 +22,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -334,9 +335,14 @@ public class EncounterMedicationDispenseSlipReadAssembler {
             prescriptionNo = req.getPrescriptionNo();
         }
         row.setPrescriptionNo(prescriptionNo);
-        row.setOrderingPractitionerId(slip.getMedRequesterId());
-        if (slip.getMedRequesterId() != null) {
-            row.setOrderingPractitionerName(context.orderingDrNames().get(slip.getMedRequesterId()));
+        // 开单医生：slip.medRequesterId 可能为空（主表无列），回落药嘱 requester_id
+        Long orderingPractitionerId = slip.getMedRequesterId();
+        if (orderingPractitionerId == null && req != null) {
+            orderingPractitionerId = req.getRequesterId();
+        }
+        row.setOrderingPractitionerId(orderingPractitionerId);
+        if (orderingPractitionerId != null) {
+            row.setOrderingPractitionerName(context.orderingDrNames().get(orderingPractitionerId));
         }
         if (outpatientMode && context.invMap() != null && slip.getDispenseId() != null) {
             row.setInventoryDetailList(context.invMap().get(slip.getDispenseId()));
@@ -356,6 +362,10 @@ public class EncounterMedicationDispenseSlipReadAssembler {
             row.setMedicationCategoryCode(product.getCategoryCode());
             row.setMedicationCategoryText(product.getCategoryCodeDictText());
             row.setSplitRatio(product.getDoseUnitRatio());
+            // 包装/拆零单位：门诊发药应扫码数换算（默认追溯单位=包装）
+            row.setPackageUnitCode(product.getPackageUnitCode());
+            row.setPackageUnitRatio(product.getPackageUnitRatio());
+            row.setSplitUnitCode(product.getSplitUnitCode());
             if (StringUtils.isNotEmpty(product.getPartAttributeEnum())) {
                 row.setPartAttributeCode(product.getPartAttributeEnum());
                 row.setPartAttributeText(
@@ -376,7 +386,12 @@ public class EncounterMedicationDispenseSlipReadAssembler {
             row.setDoseUnitCode(req.getDoseUnitCode());
             row.setDispensePerSupplyDays(req.getDispensePerDuration());
             row.setPrescriptionGroupId(req.getGroupId());
-            row.setRequestAuthoredTime(req.getReqAuthoredTime());
+            LocalDateTime requestOpenedTime = req.getReqOpenedTime();
+            // 发药 slip 展示主轴：开立时刻优先，空回落签发追溯列。
+            if (requestOpenedTime == null) {
+                requestOpenedTime = req.getReqAuthoredTime();
+            }
+            row.setRequestOpenedTime(requestOpenedTime);
             row.setEncounterMedicationTypeCode(req.getRxTypeCode());
             row.setEncounterMedicationTypeText(
                 OrderCatalogDisplayAssembler.resolveCategoryDisplay(context.rxLabels(), req.getRxTypeCode()));
@@ -471,6 +486,8 @@ public class EncounterMedicationDispenseSlipReadAssembler {
         MedicationRequestListQueryModel req,
         boolean outpatientMode) {
         row.setTcmFlag(req.getTcmFlag());
+        // 方头代煎标志：中药饮片同方各行一致，供发药单/明细展示代煎费
+        row.setSufferingFlag(req.getSufferingFlag());
         if (Boolean.TRUE.equals(req.getTcmFlag())) {
             row.setTcmFlagText(MedicationCommonConstants.TCM_CLASS_DISPLAY_TCM);
         } else if (outpatientMode) {

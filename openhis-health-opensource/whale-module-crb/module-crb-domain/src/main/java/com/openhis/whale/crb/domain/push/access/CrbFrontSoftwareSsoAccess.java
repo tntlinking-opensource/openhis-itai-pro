@@ -9,11 +9,13 @@ package com.openhis.whale.crb.domain.push.access;
  *
  * <p><b>职责：</b>定义传染病前置软件单点登录 token 的 domain 出站契约，屏蔽 HTTP 与 gateway 细节。</p>
  * <p><b>实现位置：</b>{@code com.openhis.whale.crb.bridge.push.access.CrbFrontSoftwareSsoAccessAdapter}</p>
- * <p><b>调用方：</b>{@code InfectiousIntegrationAppService}（P1 联调）</p>
+ * <p><b>调用方：</b>已废止 — 改用 {@code InfectiousIntegrationAppService#probeFrontSoftwareConnectivity} 读配置探测。</p>
  * <p><b>架构边界：</b>application 经本端口调用，禁止直接注入 {@code com.openhis.whale.crb.gateway.client.*}。</p>
  * <p><b>迁移阶段：</b>P10-A</p>
+ *
+ * @deprecated 禁止使用 — SSO 接口已废止，保留仅供 bridge 适配器编译兼容。
  */
-
+@Deprecated
 public interface CrbFrontSoftwareSsoAccess {
 
     /**

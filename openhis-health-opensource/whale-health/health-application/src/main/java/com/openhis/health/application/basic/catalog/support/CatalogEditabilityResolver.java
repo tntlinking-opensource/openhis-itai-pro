@@ -63,7 +63,7 @@ public class CatalogEditabilityResolver {
         }
         if (serviceRequestQueryService.existsByActivityId(activityId)) {
             model.setEditabilityCode(CatalogEditabilityConstants.LOCK_CLINICAL);
-            model.setEditabilityMessage("医生开过该诊疗项目，分类/单位/价格等字段不可修改");
+            model.setEditabilityMessage("医生开过该诊疗项目，名称/分类/单位/价格等字段不可修改");
             return model;
         }
         model.setEditabilityCode(CatalogEditabilityConstants.OK);
@@ -72,7 +72,11 @@ public class CatalogEditabilityResolver {
     }
 
     /**
-     * 产品目录可编辑性：已入库锁分类/单位/价格；有临床引用锁关键字段。
+     * 产品目录可编辑性（药/材）。
+     *
+     * <p>与删除不同：编辑先判临床（二级）再判入库（一级）；删除仍用
+     * {@link CatalogEditabilityConstants#isLocked}——任一引用即整单禁删。
+     * 入库锁名称/分类/单位/拆零；开立另锁临床与规格；拆分属性与医保等级仍可改。</p>
      *
      * @param itemId               目录项 id
      * @param hasClinicalReference 是否存在临床引用
@@ -85,15 +89,17 @@ public class CatalogEditabilityResolver {
             model.setEditabilityMessage("允许编辑");
             return model;
         }
+        // 二级：开过 → 结构 + 临床与规格锁定（拆分属性与医保等级仍可改）
+        if (hasClinicalReference) {
+            model.setEditabilityCode(CatalogEditabilityConstants.LOCK_CLINICAL);
+            model.setEditabilityMessage("医生开过该目录项，名称/分类/单位/拆零倍数/临床规格等字段不可修改");
+            return model;
+        }
+        // 一级：未开过才校验入库（临床与规格段仍可改）
         boolean hasInbound = supplyRequestQueryService.existsInboundByItemId(itemId);
         if (hasInbound) {
             model.setEditabilityCode(CatalogEditabilityConstants.LOCK_INVENTORY);
-            model.setEditabilityMessage("该目录已经入库过，分类/单位/拆零倍数/价格等字段不可修改");
-            return model;
-        }
-        if (hasClinicalReference) {
-            model.setEditabilityCode(CatalogEditabilityConstants.LOCK_CLINICAL);
-            model.setEditabilityMessage("医生开过该目录项，分类/单位/拆零倍数/价格等字段不可修改");
+            model.setEditabilityMessage("该目录已经入库过，名称/分类/单位/拆零倍数等字段不可修改");
             return model;
         }
         model.setEditabilityCode(CatalogEditabilityConstants.OK);

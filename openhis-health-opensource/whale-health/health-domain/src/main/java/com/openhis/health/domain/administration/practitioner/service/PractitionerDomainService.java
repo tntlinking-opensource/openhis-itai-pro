@@ -35,6 +35,9 @@ public class PractitionerDomainService {
     /** 工号 busNo：主数据全局递增，前缀 {@link AggregateTypeConstants#PRACTITIONER}；新建禁止外部注入（B.10.9）。 */
     private final BusinessSequenceService businessSequenceService;
 
+    /** 采番撞号时单条最大重试次数（对齐序号后仍冲突多为并发占用）。 */
+    private static final int BUS_NO_ALLOCATE_MAX_ATTEMPTS = 32;
+
     /**
      * 批量创建医务人员：校验用户唯一与工号唯一，必要时分配业务工号并发创建事件。
      *
@@ -43,12 +46,10 @@ public class PractitionerDomainService {
      */
     public Long createPractitioner(CreatePractitionerCommand cmd) {
         List<CreatePractitionerCommand.CreatePractitionerItemCommand> items = cmd.resolveItems();
-        // 前置校验：本批医务人员工号一律由领域层批量采番，禁止命令行注入（B.10.9）。
-        List<String> allocatedBusNos = businessSequenceService.getSeq(
-            AggregateTypeConstants.PRACTITIONER, BusinessSequenceConstants.MASTER_DATA_2_PREFIX_SEQ_LENGTH, items.size());
+        // 前置：将 PR 序号抬到库内已有最大后缀，避免迁移/导数据后 whale_sequence 落后撞号。
+        alignPrSequenceWithExistingBusNo();
         List<Practitioner> toSave = new ArrayList<>();
-        for (int index = 0; index < items.size(); index++) {
-            CreatePractitionerCommand.CreatePractitionerItemCommand item = items.get(index);
+        for (CreatePractitionerCommand.CreatePractitionerItemCommand item : items) {
             if (item.getUserId() == null) {
                 throw new BusinessException(ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT, "用户标识不能为空");
             }
@@ -56,11 +57,8 @@ public class PractitionerDomainService {
             if (practitionerRepository.findFirstByUserIdOrderByIdAsc(item.getUserId()).isPresent()) {
                 throw new BusinessException(ErrorCodeConstants.PRACTITIONER_RULE_CONFLICT, "用户已绑定医务人员");
             }
-            String busNo = allocatedBusNos.get(index);
-            // 采番工号与库内已有 busNo 冲突时拒绝落库，避免静默覆盖
-            if (practitionerRepository.existsByBusNo(busNo)) {
-                throw new BusinessException(ErrorCodeConstants.PRACTITIONER_BUS_NO_CONFLICT, "工号已存在");
-            }
+            // 工号一律领域层采番，禁止命令行注入（B.10.9）；撞号则跳号重试。
+            String busNo = allocateUniqueBusNo();
             Practitioner p = new Practitioner();
             p.bindUser(item.getUserId());
             p.setName(item.getName());
@@ -79,6 +77,31 @@ public class PractitionerDomainService {
             domainEventPublisher.publish(new PractitionerCreatedEvent(p.getId(), p.getUserId(), p.getName(), p.getBusNo()));
         }
         return saved.get(0).getId();
+    }
+
+    /**
+     * 按库内已占用的 {@code PR} 工号后缀抬升序号水位。
+     */
+    private void alignPrSequenceWithExistingBusNo() {
+        Long maxSuffix = practitionerRepository.findMaxPrBusNoSuffix();
+        if (maxSuffix == null || maxSuffix <= 0L) {
+            return;
+        }
+        businessSequenceService.ensureAtLeast(AggregateTypeConstants.PRACTITIONER, maxSuffix);
+    }
+
+    /**
+     * 采番一条未被占用的医务人员工号；对齐后仍冲突则继续取下一号。
+     */
+    private String allocateUniqueBusNo() {
+        for (int attempt = 0; attempt < BUS_NO_ALLOCATE_MAX_ATTEMPTS; attempt++) {
+            String busNo = businessSequenceService.getSeq(
+                AggregateTypeConstants.PRACTITIONER, BusinessSequenceConstants.MASTER_DATA_2_PREFIX_SEQ_LENGTH);
+            if (!practitionerRepository.existsByBusNo(busNo)) {
+                return busNo;
+            }
+        }
+        throw new BusinessException(ErrorCodeConstants.PRACTITIONER_BUS_NO_CONFLICT, "工号采番冲突，请稍后重试");
     }
 
     /**

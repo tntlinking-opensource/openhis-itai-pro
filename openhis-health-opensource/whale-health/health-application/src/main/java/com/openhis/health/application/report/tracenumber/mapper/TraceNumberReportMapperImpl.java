@@ -66,6 +66,7 @@ public class TraceNumberReportMapperImpl implements TraceNumberReportMapper {
         dto.setTraceUnitCode(model.getTraceUnitCode());
         dto.setLocationStockStatusEnum(model.getLocationStockStatusEnum());
         dto.setLocationNetSplitQuantity(model.getLocationNetSplitQuantity());
+        dto.setCurrentLocationIds(model.getCurrentLocationIds());
         dto.setLastFlowAt(model.getLastFlowAt());
         return dto;
     }
@@ -138,8 +139,9 @@ public class TraceNumberReportMapperImpl implements TraceNumberReportMapper {
         }
         TraceNumberRecordRowDto dto = new TraceNumberRecordRowDto();
         dto.setId(model.getId());
-        dto.setRecordCategoryEnum(model.getRecordCategoryEnum());
-        dto.setRecordDirectionEnum(model.getRecordDirectionEnum());
+        // Asm：领域 record* → 对客 flow*（与 AS-CUS-TRC-002 §3.5 对齐）
+        dto.setFlowCategoryEnum(model.getRecordCategoryEnum());
+        dto.setFlowDirectionEnum(model.getRecordDirectionEnum());
         dto.setLocationId(model.getLocationId());
         dto.setQuantity(model.getQuantity());
         dto.setUnitCode(model.getUnitCode());
@@ -189,8 +191,7 @@ public class TraceNumberReportMapperImpl implements TraceNumberReportMapper {
         exportRow.setInHospitalStatusLabel(row.getInHospitalStatusLabel());
         exportRow.setRemainingSplitQuantity(row.getRemainingSplitQuantity());
         exportRow.setTraceUnitCodeLabel(row.getTraceUnitCode());
-        exportRow.setLocationStockStatusLabel(row.getLocationStockStatusLabel());
-        exportRow.setLocationNetSplitQuantity(row.getLocationNetSplitQuantity());
+        exportRow.setCurrentLocationNames(row.getCurrentLocationNames());
         if (row.getLastFlowAt() != null) {
             exportRow.setLastFlowAtLabel(
                 GeneralSharedConstants.DATE_TIME_FORMATTER.format(row.getLastFlowAt()));

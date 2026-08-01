@@ -53,39 +53,56 @@ public class Op2205Invoker {
             throw new BusinessException(ChsErrorCodes.PLATFORM_FAILED, "缺少 chrg_bchno");
         }
         Long tenantId = OutpatientSettleCommandAssembler.resolveTenantId(enriched.getTenantId());
-        YbClinicPreSettle pre = clinicPreSettleDomainService.requireByChrgBchno(enriched.getChrgBchno(), tenantId);
-        if (!YbClinicPreSettle.STATUS_ACTIVE.equals(pre.getStatus())) {
+        YbClinicPreSettle pre = clinicPreSettleDomainService.findByChrgBchno(enriched.getChrgBchno(), tenantId);
+        if (pre != null && !YbClinicPreSettle.STATUS_ACTIVE.equals(pre.getStatus())) {
             return new OpRevokeFeeDetailResult()
                 .setChrgBchno(pre.getChrgBchno())
                 .setRevoked(false);
         }
+        String chrgBchno = enriched.getChrgBchno().trim();
+        String mdtrtId;
+        String psnNo;
         String contractBusNo;
-        if (isNotEmpty(enriched.getContractBusNo())) {
-            contractBusNo = enriched.getContractBusNo().trim();
+        String insuplcAdmdvs;
+        if (pre != null) {
+            mdtrtId = pre.getMdtrtId();
+            psnNo = pre.getPsnNo();
+            if (isNotEmpty(enriched.getContractBusNo())) {
+                contractBusNo = enriched.getContractBusNo().trim();
+            } else {
+                contractBusNo = pre.getContractBusNo();
+            }
+            if (isNotEmpty(enriched.getInsuplcAdmdvs())) {
+                insuplcAdmdvs = enriched.getInsuplcAdmdvs();
+            } else {
+                insuplcAdmdvs = pre.getInsuplcAdmdvs();
+            }
         } else {
-            contractBusNo = pre.getContractBusNo();
+            // 2204 已成功、2206 未落库时：无预结算快照，用命令补齐字段直接 2205
+            mdtrtId = enriched.getMdtrtId();
+            psnNo = enriched.getPsnNo();
+            contractBusNo = enriched.getContractBusNo();
+            insuplcAdmdvs = enriched.getInsuplcAdmdvs();
+            if (isEmpty(mdtrtId) || isEmpty(psnNo) || isEmpty(contractBusNo)) {
+                throw new BusinessException(ChsErrorCodes.PLATFORM_FAILED, "未找到预结算快照，且缺少 2205 撤销必要字段");
+            }
         }
         OutpatientSettleCommandAssembler.requireContractConfig(contractBusNo);
-        String insuplcAdmdvs;
-        if (isNotEmpty(enriched.getInsuplcAdmdvs())) {
-            insuplcAdmdvs = enriched.getInsuplcAdmdvs();
-        } else {
-            insuplcAdmdvs = pre.getInsuplcAdmdvs();
-        }
         InvokeContext invokeContext = OutpatientSettleCommandAssembler.buildInvokeContext(
             enriched.getOperatorId(), insuplcAdmdvs);
 
-        Op2205Input input2205 = Op2205InputAssembler.assemble(
-            pre.getMdtrtId(), pre.getChrgBchno(), pre.getPsnNo());
+        Op2205Input input2205 = Op2205InputAssembler.assemble(mdtrtId, chrgBchno, psnNo);
         ResultBody body2205 = gatewayClient.invoke(
             contractBusNo, ChsInfNo.OUTPATIENT_FEE_REVOKE, input2205, invokeContext);
         ChsPlatformResponseSupport.requireSuccess(body2205, ChsInfNo.OUTPATIENT_FEE_REVOKE);
 
-        clinicFeeUploadDomainService.markRevokedByChrgBchno(pre.getChrgBchno(), tenantId);
-        clinicPreSettleDomainService.markCancelledAndSave(pre);
+        clinicFeeUploadDomainService.markRevokedByChrgBchno(chrgBchno, tenantId);
+        if (pre != null) {
+            clinicPreSettleDomainService.markCancelledAndSave(pre);
+        }
 
         return new OpRevokeFeeDetailResult()
-            .setChrgBchno(pre.getChrgBchno())
+            .setChrgBchno(chrgBchno)
             .setRevoked(true);
     }
 

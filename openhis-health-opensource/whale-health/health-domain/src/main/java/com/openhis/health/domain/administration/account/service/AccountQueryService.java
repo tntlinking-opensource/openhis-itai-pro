@@ -10,6 +10,7 @@ import com.openhis.health.domain.administration.account.entity.Account;
 import com.openhis.health.domain.administration.account.repository.AccountRepository;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -182,7 +183,79 @@ public class AccountQueryService {
      * @return 就诊主键 → 账户
      */
     public Map<Long, Account> mapRegistrationAccountsByEncounterIds(Collection<Long> encounterIds) {
-        if (encounterIds == null || encounterIds.isEmpty()) {
+        return this.mapAccountsByEncounterIdsAndTypeCode(
+            encounterIds, AccountTypeCode.PERSONAL_CASH_ACCOUNT.getCode());
+    }
+
+    /**
+     * 按就诊主键批量解析默认医保账户（{@link AccountTypeCode#MEDICAL_INSURANCE}）。
+     *
+     * <p>同一就诊仅保留一条有效行；未开立不含键。供医生站/护士站费用性质展示「有医保账户优先」。</p>
+     *
+     * @param encounterIds 就诊主键集合
+     * @return 就诊主键 → 医保账户
+     */
+    public Map<Long, Account> mapMedicalInsuranceAccountsByEncounterIds(Collection<Long> encounterIds) {
+        return this.mapAccountsByEncounterIdsAndTypeCode(
+            encounterIds, AccountTypeCode.MEDICAL_INSURANCE.getCode());
+    }
+
+    /**
+     * 批量解析就诊「展示优先」费用性质合同号：有医保账户且 {@code contract_no} 非空则用医保户，否则回落登记个人现金户。
+     *
+     * <p>挂号可同时开立自费与医保账户；卡片/医嘱默认展示须优先医保合同，选自费才走个人现金户合同。</p>
+     *
+     * @param encounterIds 就诊主键集合
+     * @return 就诊主键 → {@code fin_contract.bus_no}；无可用合同号时不含键
+     */
+    public Map<Long, String> mapPreferredContractNoByEncounterIds(Collection<Long> encounterIds) {
+        Map<Long, Account> insuranceByEncounterId =
+            this.mapMedicalInsuranceAccountsByEncounterIds(encounterIds);
+        Map<Long, Account> registrationByEncounterId =
+            this.mapRegistrationAccountsByEncounterIds(encounterIds);
+        LinkedHashSet<Long> unique = new LinkedHashSet<>();
+        if (encounterIds != null) {
+            for (Long id : encounterIds) {
+                if (id != null) {
+                    unique.add(id);
+                }
+            }
+        }
+        if (unique.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, String> out = new HashMap<>(unique.size() * 2);
+        for (Long encounterId : unique) {
+            Account insuranceAccount = insuranceByEncounterId.get(encounterId);
+            if (insuranceAccount != null) {
+                String insuranceContractNo = trimContractNo(insuranceAccount.getContractNo());
+                if (insuranceContractNo != null) {
+                    out.put(encounterId, insuranceContractNo);
+                    continue;
+                }
+            }
+            Account registrationAccount = registrationByEncounterId.get(encounterId);
+            if (registrationAccount == null) {
+                continue;
+            }
+            String registrationContractNo = trimContractNo(registrationAccount.getContractNo());
+            if (registrationContractNo != null) {
+                out.put(encounterId, registrationContractNo);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 按就诊集合与账户类型码批量加载有效账户（同就诊同类型仅保留首条）。
+     *
+     * @param encounterIds 就诊主键集合
+     * @param typeCode     账户类型持久化码
+     * @return 就诊主键 → 账户
+     */
+    private Map<Long, Account> mapAccountsByEncounterIdsAndTypeCode(
+        Collection<Long> encounterIds, String typeCode) {
+        if (encounterIds == null || encounterIds.isEmpty() || typeCode == null || typeCode.isEmpty()) {
             return Collections.emptyMap();
         }
         LinkedHashSet<Long> unique = new LinkedHashSet<>();
@@ -194,8 +267,7 @@ public class AccountQueryService {
         if (unique.isEmpty()) {
             return Collections.emptyMap();
         }
-        List<Account> list = repository.findByEncounterIdInAndTypeCode(
-            unique, AccountTypeCode.PERSONAL_CASH_ACCOUNT.getCode());
+        List<Account> list = repository.findByEncounterIdInAndTypeCode(unique, typeCode);
         Map<Long, Account> out = new HashMap<>(list.size() * 2);
         for (Account row : list) {
             if (row == null || row.getEncounterId() == null) {
@@ -209,6 +281,72 @@ public class AccountQueryService {
             }
         }
         return out;
+    }
+
+    /**
+     * 裁剪合同业务号空白；空串视为无值。
+     *
+     * @param contractNo 原始合同号
+     * @return 非空合同号；否则 {@code null}
+     */
+    private static String trimContractNo(String contractNo) {
+        if (contractNo == null) {
+            return null;
+        }
+        String trimmed = contractNo.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        return trimmed;
+    }
+
+    /**
+     * 按优先费用性质合同号列出就诊主键（报表筛选；口径同 {@link #mapPreferredContractNoByEncounterIds}）。
+     *
+     * <p>先按 {@code contract_no} 反查候选就诊，再校验「展示优先」合同号与筛选值一致，
+     * 避免双账户场景仅命中非优先户。</p>
+     *
+     * @param contractNo {@code fin_contract.bus_no}；空则返回空列表
+     * @return 去重后的就诊主键；无命中时空列表
+     */
+    public List<Long> listEncounterIdsByPreferredContractNo(String contractNo) {
+        String normalized = trimContractNo(contractNo);
+        // 空合同号：无法按费用性质收窄
+        if (normalized == null) {
+            return Collections.emptyList();
+        }
+        List<Account> candidates = this.repository.findAllByContractNo(normalized);
+        // 无账户命中：筛选结果为空
+        if (candidates == null || candidates.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashSet<Long> candidateEncounterIds = new LinkedHashSet<>();
+        // Loop：收集有效账户上的就诊主键
+        for (Account row : candidates) {
+            if (row == null || row.getEncounterId() == null) {
+                continue;
+            }
+            // 停用账户不参与费用性质筛选候选
+            if (!this.isEffectiveActiveAccount(row)) {
+                continue;
+            }
+            candidateEncounterIds.add(row.getEncounterId());
+        }
+        // 候选空：无有效就诊
+        if (candidateEncounterIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Map<Long, String> preferredByEncounter =
+            this.mapPreferredContractNoByEncounterIds(candidateEncounterIds);
+        List<Long> matched = new ArrayList<>(candidateEncounterIds.size());
+        // Loop：仅保留优先合同号与筛选值一致的就诊
+        for (Long encounterId : candidateEncounterIds) {
+            String preferred = preferredByEncounter.get(encounterId);
+            if (normalized.equals(preferred)) {
+                matched.add(encounterId);
+            }
+        }
+        return matched;
     }
 
     /**

@@ -23,7 +23,6 @@ import com.openhis.health.domain.administration.organization.entity.Organization
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
-import com.openhis.health.domain.clinical.condition.service.ConditionQueryService;
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.administration.product.service.ProductDefinitionQueryService;
@@ -62,7 +61,6 @@ public class ChsWorkInjurySettleContextLoader implements WorkInjurySettleContext
     private final EncounterContextQueryService encounterContextQueryService;
     private final EncounterQueryService encounterQueryService;
     private final ChargeItemQueryService chargeItemQueryService;
-    private final ConditionQueryService conditionQueryService;
     private final ConditionDefinitionQueryService conditionDefinitionQueryService;
     private final OrganizationQueryService organizationQueryService;
     private final PractitionerQueryService practitionerQueryService;
@@ -169,7 +167,6 @@ public class ChsWorkInjurySettleContextLoader implements WorkInjurySettleContext
         InsuranceDiagnosisCodeSupport.MainDiagnosis diagnosis = InsuranceDiagnosisCodeSupport.resolveMainDiagnosis(
                 encounterId,
                 encounterQueryService,
-                conditionQueryService,
                 conditionDefinitionQueryService);
         ctx.setAdmDiagCode(diagnosis.code());
         ctx.setAdmDiagName(diagnosis.name());
@@ -221,9 +218,22 @@ public class ChsWorkInjurySettleContextLoader implements WorkInjurySettleContext
         for (ChargeItem item : chargeItems) {
             ProductDefinitionCatalogQueryModel product = resolveProduct(item, productMap, definitionMap);
             if (product == null || isEmpty(product.getYbNo())) {
-                throw new BusinessException(
-                        WiErrorCodes.INVALID_INVOKE_SESSION,
-                        "收费项缺少国家医保编码(yb_no): chargeItemId=" + item.getId());
+                String displayName =
+                    product != null && isNotEmpty(product.getProductName())
+                        ? product.getProductName().trim()
+                        : null;
+                StringBuilder tip = new StringBuilder("收费项缺少国家医保编码(yb_no)");
+                if (isNotEmpty(displayName)) {
+                    tip.append("：").append(displayName);
+                }
+                if (isNotEmpty(item.getBusNo())) {
+                    tip.append("，单据号=").append(item.getBusNo().trim());
+                }
+                if (product != null && isNotEmpty(product.getProductBusNo())) {
+                    tip.append("，院内产品编码=").append(product.getProductBusNo().trim());
+                }
+                tip.append("，chargeItemId=").append(item.getId());
+                throw new BusinessException(WiErrorCodes.INVALID_INVOKE_SESSION, tip.toString());
             }
             WiSettleChargeLine line = new WiSettleChargeLine();
             line.setChargeItemId(item.getId());

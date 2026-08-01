@@ -7,6 +7,8 @@ package com.openhis.chs.domain.outpatient.repository;
 import com.openhis.chs.domain.outpatient.entity.YbPersonCache;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 /** 1101 人员信息当日缓存 {@code yb_person_cache} 仓储 */
@@ -23,4 +25,15 @@ public interface YbPersonCacheRepository extends JpaRepository<YbPersonCache, Lo
      */
     Optional<YbPersonCache> findFirstByContractIdAndMdtrtCertTypeAndMdtrtCertNoAndTenantIdAndIsDeletedFalse(
         Long contractId, String mdtrtCertType, String mdtrtCertNo, Long tenantId);
+
+    /**
+     * 按契约查找未过期缓存（快照含身份证号时的回落查询，按缓存时间倒序）。
+     *
+     * @param contractId 契约 ID
+     * @param tenantId   租户 ID
+     * @param expireAt   须晚于该时刻（通常为 now）
+     * @return 未过期缓存列表
+     */
+    List<YbPersonCache> findByContractIdAndTenantIdAndIsDeletedFalseAndExpireAtAfterOrderByCachedAtDesc(
+        Long contractId, Long tenantId, LocalDateTime expireAt);
 }

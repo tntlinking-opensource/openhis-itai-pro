@@ -1,0 +1,36 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.openhis.whale.crb.domain.dict.queries.model;
+
+import lombok.Getter;
+import lombok.Setter;
+import lombok.experimental.Accessors;
+
+/**
+ * 药品对照分页行模型。
+ */
+@Getter
+@Setter
+@Accessors(chain = true)
+public class DrugCodeMapRowModel {
+
+    /** 主键。 */
+    private Long id;
+
+    /** 院内药品业务码。 */
+    private String medBusNo;
+
+    /** 院内药品名称。 */
+    private String medName;
+
+    /** 国家药品码。 */
+    private String nationalDrugCode;
+
+    /** 国家药品名称。 */
+    private String nationalDrugName;
+
+    /** 是否已对照（国家码非空）。 */
+    private Boolean mapped;
+}

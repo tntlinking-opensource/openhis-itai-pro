@@ -62,6 +62,18 @@ public class PriceAdjustmentLineDto {
     @Schema(description = "厂家/产地")
     private String manufacturer;
 
+    /**
+     * 项目种类展示名（目录 enrich，与选品 IF-PRC-04 同口径）。
+     */
+    @Schema(description = "项目种类展示名")
+    private String categoryCodeDictText;
+
+    /**
+     * 单位展示名（物流=包装单位；诊疗=开立单位回落包装；与选品同口径）。
+     */
+    @Schema(description = "单位展示名")
+    private String unitName;
+
     /** 目标进价。 */
     @Schema(description = "目标进价")
     private BigDecimal newPurchaseAmount;

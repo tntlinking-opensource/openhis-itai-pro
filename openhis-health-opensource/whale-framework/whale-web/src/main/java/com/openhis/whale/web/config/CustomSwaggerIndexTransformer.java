@@ -11,6 +11,7 @@ import org.springdoc.core.providers.ObjectMapperProvider;
 import org.springdoc.webmvc.ui.SwaggerIndexPageTransformer;
 import org.springdoc.webmvc.ui.SwaggerWelcomeCommon;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -25,8 +26,10 @@ import org.slf4j.LoggerFactory;
 /**
  * 自定义 Swagger UI 索引页面转换器
  * 确保 Swagger UI 加载正确的 API 文档 URL
+ * <p>prod 关闭 springdoc 时本配置不加载，避免强依赖 SwaggerUiConfigProperties 导致启动失败。</p>
  */
 @Configuration
+@ConditionalOnProperty(name = "springdoc.api-docs.enabled", havingValue = "true", matchIfMissing = true)
 public class CustomSwaggerIndexTransformer {
 
     private static final Logger logger = LoggerFactory.getLogger(CustomSwaggerIndexTransformer.class);

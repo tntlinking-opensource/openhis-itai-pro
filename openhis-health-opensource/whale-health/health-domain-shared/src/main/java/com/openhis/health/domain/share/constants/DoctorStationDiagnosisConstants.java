@@ -57,40 +57,64 @@ public interface DoctorStationDiagnosisConstants {
      */
     String MAIN_DIAGNOSIS_DISPLAY_TAG = "主";
 
-    /** 术语 {@code condition_definition_source}：疾病与诊断（西医通用）。 */
+    /** 术语 {@code condition_definition_source}：院内诊断（医院自维护，非医保目录）。 */
+    String SOURCE_HOSPITAL_DX = "hospital_dx";
+
+    /** 术语 {@code condition_definition_source}：疾病与诊断目录（医保 1307）。 */
     String SOURCE_GENERAL_DX = "general_dx";
 
-    /** 术语：特慢病诊断目录。 */
+    /** 术语：门诊慢特病种目录（医保 1309）。 */
     String SOURCE_CHRONIC_SPEC = "chronic_spec";
 
-    /** 术语：按病种目录。 */
+    /** 术语：按病种付费病种目录（医保 1310）。 */
     String SOURCE_DISEASE_PKG = "disease_pkg";
 
-/** DoctorStationDiagnosis 共享常量：paid dx，值 {@code paid_dx}。 */
+    /** 术语：按病种付费病种目录历史别名（与 {@link #SOURCE_DISEASE_PKG} 同属 1310；侧栏已停用）。 */
     String SOURCE_PAID_DX = "paid_dx";
 
-    /** 术语：日间手术治疗病种。 */
+    /** 术语：日间手术治疗病种目录（医保 1311）。 */
     String SOURCE_DAY_SURGERY_DX = "day_surgery_dx";
 
-    /** 术语：中医诊断（病名）。 */
+    /** 术语：中医疾病目录（医保 1314）。 */
     String SOURCE_TCM_DX = "tcm_dx";
 
-    /** 术语：中医证候目录。 */
+    /** 术语：中医证候目录（医保 1315）。 */
     String SOURCE_TCM_SYNDROME = "tcm_syndrome";
 
-    /** 术语：肿瘤形态学目录。 */
+    /** 术语：肿瘤形态学目录（医保 1313）。 */
     String SOURCE_TUMOR_MORPH = "tumor_morph";
 
+    /** 术语：国家临床版 2.0（病案首页选码；不进医生站西医候选）。 */
+    String SOURCE_CLINICAL_V2 = "clinical_v2";
+
     /**
-     * 目录来源枚举串：西医侧分组，与 {@code cln_condition_definition.source_enum} 及 V58 术语码一致。
+     * 术语：体检诊断（PEIS 诊断建议库；不进医生站西医/中医候选）。
+     * <p>与 {@link #SOURCE_HOSPITAL_DX} 隔离，避免体检口语化模板污染医生站开诊断。</p>
+     */
+    String SOURCE_PEIS_DX = "peis_dx";
+
+    /**
+     * 目录来源枚举串：西医侧分组，与 {@code cln_condition_definition.source_enum} 及术语码一致。
+     * <p>用于中西医标签判定（{@link #resolveDiagnosisKindFromSource}）；医生站检索 IN 列表以系统设置
+     * {@code doctorStationWesternDiagnosisSources} 为准，默认见 {@link #DEFAULT_WESTERN_DIAGNOSIS_SEARCH_SOURCES}。
+     * {@link #SOURCE_PEIS_DX} / {@link #SOURCE_CLINICAL_V2} 均不在此集合。</p>
      */
     List<String> CONDITION_SOURCE_CODES_WESTERN = List.of(
+        SOURCE_HOSPITAL_DX,
         SOURCE_GENERAL_DX,
         SOURCE_CHRONIC_SPEC,
         SOURCE_DISEASE_PKG,
         SOURCE_PAID_DX,
         SOURCE_DAY_SURGERY_DX,
         SOURCE_TUMOR_MORPH);
+
+    /**
+     * 医生站西医诊断检索默认目录来源（未配置或配置非法时回落）。
+     * <p>院内诊断 + 疾病与诊断目录(1307)；门诊慢特病种等需在系统设置中显式加入。</p>
+     */
+    List<String> DEFAULT_WESTERN_DIAGNOSIS_SEARCH_SOURCES = List.of(
+        SOURCE_HOSPITAL_DX,
+        SOURCE_GENERAL_DX);
 
     /**
      * 目录来源枚举串：中医侧分组。
@@ -153,6 +177,28 @@ public interface DoctorStationDiagnosisConstants {
         String REFUTED = "REFUTED";
 /** DoctorStationDiagnosisConstants：ENTERED_IN_ERROR，值 {@code ENTERED_IN_ERROR}。 */
         String ENTERED_IN_ERROR = "ENTERED_IN_ERROR";
+    }
+
+    /** IF-DOR-06B：备案码命中列 — 医保编码。 */
+    String OPSP_MATCH_FIELD_YB_NO = "yb_no";
+
+    /** IF-DOR-06B：备案码命中列 — 诊断目录编码。 */
+    String OPSP_MATCH_FIELD_CONDITION_CODE = "condition_code";
+
+    /**
+     * IF-DOR-06B 行映射状态（与 AS-OP-DOR-002 / AS-SDD 一致）。
+     */
+    interface OpspFilingMatchStatus {
+        /** 已映射到唯一启用目录，可勾选导入。 */
+        String MATCHED = "matched";
+        /** 未找到院内目录。 */
+        String UNMATCHED = "unmatched";
+        /** 备案已过期。 */
+        String EXPIRED = "expired";
+        /** 当前就诊已开立该定义。 */
+        String ALREADY_ON_ENCOUNTER = "alreadyOnEncounter";
+        /** 同优先级多条目录，禁止静默写入。 */
+        String AMBIGUOUS = "ambiguous";
     }
 
     /**

@@ -38,15 +38,17 @@ public interface DoctorStationRefundApplicationMapper {
     /**
      * IF-DRA-01（Asm）：装配单条可退账单行。
      *
-     * @param chargeItem       收费明细实体；调用方保证非空
-     * @param payment          支付流水读模型；调用方保证非空
-     * @param itemDisplayName  收费项名称摘要（与门诊收费 {@code itemName} 同口径，由编排侧批量解析）
+     * @param chargeItem           收费明细实体；调用方保证非空
+     * @param payment              支付流水读模型；调用方保证非空
+     * @param itemDisplayName      收费项名称摘要（与门诊收费 {@code itemName} 同口径，由编排侧批量解析）
+     * @param quantityUnitDisplay  数量单位展示文案（目录单位槽解析后）；允许 null
      * @return 可退行 DTO；若 chargeItem 为 null 返回 null
      */
     RefundableChargeLineItemDto toRefundableChargeLineItemDto(
         ChargeItem chargeItem,
         PaymentReconciliationQueryModel payment,
-        String itemDisplayName
+        String itemDisplayName,
+        String quantityUnitDisplay
     );
 
     /**
@@ -92,12 +94,16 @@ public interface DoctorStationRefundApplicationMapper {
 
     /**
      * IF-DRA-03（Asm）：装配退药请求命令。
+     * <p>
+     * {@code originRequestId} 必须是药品申请主键（经应用层 {@code resolveMedicationRequestId} 解析），
+     * 不得传入发放主键（{@code BR-CHG-001} 下 {@code service_*} 锚请求、{@code dispense_*} 锚分段）。
+     * </p>
      *
-     * @param chargeItem 拟退药品收费行
-     * @param operatorId 操作人主键
+     * @param medicationRequestId 原正向药品申请主键
+     * @param operatorId          操作人主键
      * @return 领域命令
      */
-    CreateRefundMedicationOrderCommand toCreateRefundMedicationOrderCommand(ChargeItem chargeItem, Long operatorId);
+    CreateRefundMedicationOrderCommand toCreateRefundMedicationOrderCommand(Long medicationRequestId, Long operatorId);
 
     /**
      * IF-DRA-03（Asm）：装配重开药品医嘱命令。

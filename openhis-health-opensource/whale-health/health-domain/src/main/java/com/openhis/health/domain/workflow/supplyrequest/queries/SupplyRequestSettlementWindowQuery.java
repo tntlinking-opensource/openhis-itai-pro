@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 库房日结期间供应动账批量读入参（**AS-INV-RPT-001** · **DM-WKF-006 §6.2.12**）。
+ * 库房期初期末明细期间供应动账批量读入参（**AS-INV-RPT-001** · **DM-WKF-006 §6.2.12**）。
  *
  * <p>时间轴为 {@code approval_time}；双闭 {@code LocalDateTime} 边界由
  * {@code DailySettlementWindowResolver}（**BR-INV-SET-004**）换算后写入

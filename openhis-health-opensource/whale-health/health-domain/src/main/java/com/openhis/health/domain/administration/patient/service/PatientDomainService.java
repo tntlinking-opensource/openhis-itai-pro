@@ -11,10 +11,8 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.health.domain.administration.patient.command.*;
 import com.openhis.health.domain.administration.patient.entity.Patient;
 import com.openhis.health.domain.administration.patient.entity.PatientIdentifier;
-import com.openhis.health.domain.administration.patient.entity.PatientStudent;
 import com.openhis.health.domain.administration.patient.repository.PatientIdentifierRepository;
 import com.openhis.health.domain.administration.patient.repository.PatientRepository;
-import com.openhis.health.domain.administration.patient.repository.PatientStudentRepository;
 import com.openhis.health.domain.administration.patient.valueobject.Address;
 import com.openhis.health.domain.administration.patient.valueobject.BloodType;
 import com.openhis.health.domain.administration.patient.valueobject.ContactPerson;
@@ -37,9 +35,9 @@ import java.util.*;
 /**
  * 患者（{@code adm_patient}）聚合写侧领域服务。
  *
- * <p>职责：建档、档案修改、标识符与学生扩展档维护及领域事件发布。</p>
+ * <p>职责：建档、档案修改、标识符维护及领域事件发布。</p>
  * <p>不变量：身份证唯一、批量上限、标识符跨患者唯一；持久化先于患者领域事件（B.14）。</p>
- * <p>仅注入本聚合 {@link PatientRepository} 及标识符/学生子表仓储。</p>
+ * <p>仅注入本聚合 {@link PatientRepository} 及标识符子表仓储。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -48,8 +46,6 @@ public class PatientDomainService {
     private final PatientRepository patientRepository;
 
     private final PatientIdentifierRepository patientIdentifierRepository;
-
-    private final PatientStudentRepository patientStudentRepository;
 
     private final IDomainEventPublisher domainEventPublisher;
 
@@ -382,72 +378,6 @@ public class PatientDomainService {
     }
 
     /**
-     * 新增或更新学生资质。
-     *
-     * @param command 命令
-     */
-    public void upsertPatientStudentRecord(UpsertPatientStudentRecordCommand command) {
-        List<UpsertPatientStudentRecordCommand.UpsertPatientStudentRecordItemCommand> items = command.resolveItems();
-        this.assertBatchSize(items.size());
-        Map<Long, Patient> patientMap = loadPatientMap(CommandBatchUtil.extractIds(items, UpsertPatientStudentRecordCommand.UpsertPatientStudentRecordItemCommand::getPatientId));
-        Set<Long> studentIds = new HashSet<>();
-        for (UpsertPatientStudentRecordCommand.UpsertPatientStudentRecordItemCommand item : items) {
-            // 命令显式传入该字段时才覆盖写，null 表示本条不变更
-            if (item.getStudentId() != null) {
-                studentIds.add(item.getStudentId());
-            }
-        }
-        Map<Long, PatientStudent> studentMap = loadStudentMap(studentIds);
-        List<PatientStudent> toSave = new ArrayList<>();
-        for (UpsertPatientStudentRecordCommand.UpsertPatientStudentRecordItemCommand item : items) {
-            Patient patient = this.requirePatient(patientMap, item.getPatientId());
-            patient.assertStudentRecordUpsertable(this.normalizeIdCard(item.getIdCard()));
-            PatientStudent student = this.resolveStudentEntity(patient, item, studentMap);
-            student.assertValid();
-            student.setPatientId(patient.getId());
-            toSave.add(student);
-        }
-        List<PatientStudent> savedStudents = patientStudentRepository.saveAll(toSave);
-        for (PatientStudent student : savedStudents) {
-            domainEventPublisher.publish(new PatientStudentRecordUpsertedEvent(student.getPatientId(), student.getId(),
-                student.getStudentNo(), student.getSchoolStatus()));
-        }
-    }
-
-    /**
-     * 停用公费学生资质。
-     *
-     * @param command 命令
-     */
-    public void disablePatientStudentRecord(DisablePatientStudentRecordCommand command) {
-        List<DisablePatientStudentRecordCommand.DisablePatientStudentRecordItemCommand> items = command.resolveItems();
-        this.assertBatchSize(items.size());
-        Map<Long, Patient> patientMap = loadPatientMap(CommandBatchUtil.extractIds(items, DisablePatientStudentRecordCommand.DisablePatientStudentRecordItemCommand::getPatientId));
-        Set<Long> studentIds = new HashSet<>();
-        for (DisablePatientStudentRecordCommand.DisablePatientStudentRecordItemCommand item : items) {
-            studentIds.add(item.getStudentId());
-        }
-        Map<Long, PatientStudent> studentMap = loadStudentMap(studentIds);
-        List<PatientStudent> toSave = new ArrayList<>();
-        Long operatorId = requireOperatorId();
-        for (DisablePatientStudentRecordCommand.DisablePatientStudentRecordItemCommand item : items) {
-            Patient patient = this.requirePatient(patientMap, item.getPatientId());
-            patient.assertStudentRecordDisableAllowed();
-            PatientStudent student = studentMap.get(item.getStudentId());
-            // 业务条件分支：见相邻判断的业务后果
-            if (student == null || !student.getPatientId().equals(item.getPatientId())) {
-                throw new BusinessException(ErrorCodeConstants.PATIENT_NOT_FOUND, "学生资质记录不存在");
-            }
-            student.disable(operatorId);
-            toSave.add(student);
-        }
-        patientStudentRepository.saveAll(toSave);
-        for (PatientStudent student : toSave) {
-            domainEventPublisher.publish(new PatientStudentRecordDisabledEvent(student.getPatientId(), student.getStudentNo()));
-        }
-    }
-
-    /**
      * 校验身份证是否唯一。
      *
      * @param idCard 身份证号
@@ -762,25 +692,6 @@ public class PatientDomainService {
     }
 
     /**
-     * 加载学生记录映射。
-     *
-     * @param studentIds 学生记录标识集合
-     * @return 学生映射
-     */
-    private Map<Long, PatientStudent> loadStudentMap(Set<Long> studentIds) {
-        Map<Long, PatientStudent> map = new HashMap<>();
-        // 业务条件分支：见相邻判断的业务后果
-        if (studentIds.isEmpty()) {
-            return map;
-        }
-        List<PatientStudent> students = patientStudentRepository.findAllByIdIn(studentIds);
-        for (PatientStudent student : students) {
-            map.put(student.getId(), student);
-        }
-        return map;
-    }
-
-    /**
      * 获取并校验患者实体。
      *
      * @param map 患者映射
@@ -975,53 +886,6 @@ public class PatientDomainService {
         if (!Objects.equals(oldValue, newValue)) {
             changed.add(field);
         }
-    }
-
-    /**
-     * 按输入解析学生实体。
-     *
-     * @param patient 患者主档
-     * @param item 子命令
-     * @param studentMap 学生记录映射
-     * @return 学生实体
-     */
-    private PatientStudent resolveStudentEntity(Patient patient,
-                                                UpsertPatientStudentRecordCommand.UpsertPatientStudentRecordItemCommand item,
-                                                Map<Long, PatientStudent> studentMap) {
-        PatientStudent student = null;
-        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
-        if (item.getStudentId() != null) {
-            student = studentMap.get(item.getStudentId());
-            // 必填入参缺失时拒绝继续，避免写脏数据
-            if (student == null) {
-                throw new BusinessException(ErrorCodeConstants.PATIENT_NOT_FOUND, "学籍记录不存在");
-            }
-        }
-        // 必填入参缺失时拒绝继续，避免写脏数据
-        if (student == null) {
-            student = new PatientStudent();
-        }
-        student.setName(item.getName());
-        student.setPyStr(this.buildPyStr(item.getName()));
-        student.setWbStr(this.buildWbStr(item.getName()));
-        student.setGenderEnum(patient.getGenderEnum());
-        student.setAge(AgeCalculatorUtil.calculateAge(patient.getBirthDate()));
-        student.setStudentNo(item.getStudentNo());
-        student.setIdCard(this.normalizeIdCard(item.getIdCard()));
-        student.setPhone(item.getPhone());
-        student.setCollege(item.getCollege());
-        student.setMajor(item.getMajor());
-        student.setEduLevel(item.getEduLevel());
-        student.setEnrollTime(item.getEnrollTime());
-        student.setLeaveTime(item.getLeaveTime());
-        student.setGrade(item.getGrade());
-        student.setStudyType(item.getStudyType());
-        student.setSchoolStatus(item.getSchoolStatus());
-        student.setPhysicalExamResult(item.getPhysicalExamResult());
-        student.setCounselor(item.getCounselor());
-        student.setCounselorPhone(item.getCounselorPhone());
-        // 操作人由底层审计框架自动填充，领域命令不传递 operatorId。
-        return student;
     }
 
     /**

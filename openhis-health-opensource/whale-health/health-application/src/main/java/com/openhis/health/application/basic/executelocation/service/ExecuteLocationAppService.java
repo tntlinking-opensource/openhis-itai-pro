@@ -23,6 +23,7 @@ import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
+import com.openhis.health.domain.share.enums.OrganizationType;
 import com.openhis.health.domain.custom.activityexecutionlocation.command.CreateExecutionRuleCommand;
 import com.openhis.health.domain.custom.activityexecutionlocation.command.DeleteExecutionRuleCommand;
 import com.openhis.health.domain.custom.activityexecutionlocation.command.UpdateExecutionRuleCommand;
@@ -54,11 +55,11 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 基础数据「执行科室」配置应用服务：WH-EXE001 按执行科室维护诊疗项目执行规则。
+ * 基础数据「执行科室」配置应用服务：WH-EXE001 按开立科室维护诊疗项目执行规则（行内选执行科室，对齐取药科室）。
  *
  * <p>职责边界：</p>
  * <ul>
- *   <li>{@link ActivityExecutionLocationQueryService}：按执行科室列出规则（配置读侧）</li>
+ *   <li>{@link ActivityExecutionLocationQueryService}：按开立科室列出规则（配置读侧）</li>
  *   <li>{@link ActivityExecutionLocationDomainService}：单条/批量 CRUD</li>
  *   <li>{@link ProductDefinitionCatalogPageLoader}：挑选待绑定的诊疗活动（复用既有目录读能力，不新增查询 IF）</li>
  *   <li>{@link ProductDefinitionDisplayTerminologyAssembler}：列表 enrich 诊疗项目名称</li>
@@ -92,16 +93,17 @@ public class ExecuteLocationAppService {
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
 
     /**
-     * 返回执行科室配置页初始化选项：执行科室树、诊疗大类。
+     * 返回执行科室配置页初始化选项：开立科室树、执行科室树、诊疗大类。
      *
      * @return 初始化 DTO
      */
     public ExecuteLocationInitDto init() {
         // Gate：只读页初始化，不写库
-        // Pre：加载执行科室树与诊疗大类下拉
+        // Pre：开立科室用完整机构树（左侧导航）；执行科室仅 DEPARTMENT，排除医院根
         // Asm：映射页初始化响应
         ExecuteLocationInitDto dto = new ExecuteLocationInitDto();
-        dto.setExecutionOrgOptions(this.buildOrganizationOptions());
+        dto.setOrganizationOptions(this.buildOrganizationOptions());
+        dto.setExecutionOrgOptions(this.buildDepartmentExecutionOrgOptions());
         dto.setActivityCategoryOptions(
             terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.ACTIVITY_CATEGORY_CODE));
         dto.setExecutionLocationOptions(Collections.emptyList());
@@ -111,16 +113,16 @@ public class ExecuteLocationAppService {
     /**
      * 分页检索可供绑定的诊疗活动定义，复用产品定义读模型（{@code wkf_activity_definition}）。
      *
-     * @param request 分页条件，须含执行科室与诊疗大类
+     * @param request 分页条件，须含开立科室与诊疗大类
      * @return 分页选项；value 为产品定义主键字符串
      * @throws BusinessException 必填参数缺失时
      */
     public PagedResult<OptionDto> pageActivityDefinitionsForExecution(
         QueryActivityDefinitionForExecuteLocationRequest request
     ) {
-        // Gate：执行科室与诊疗大类必填
-        if (request == null || request.getExecutionOrgId() == null) {
-            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "执行科室ID不能为空");
+        // Gate：开立科室与诊疗大类必填
+        if (request == null || request.getOrganizationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "开立科室ID不能为空");
         }
         if (request.getActivityCategoryCode() == null || request.getActivityCategoryCode().isBlank()) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "诊疗大类不能为空");
@@ -142,26 +144,26 @@ public class ExecuteLocationAppService {
     }
 
     /**
-     * 按执行科室（及可选诊疗大类）列出已配置执行规则，并在应用层 enrich 展示名。
+     * 按开立科室（及可选诊疗大类）列出已配置执行规则，并在应用层 enrich 展示名。
      *
      * <p><b>规模说明</b>：当前实现先拉全量规则再在内存 {@code subList} 分页；规则数量显著增大时应改为查询层数据库分页。</p>
      *
-     * @param request 查询请求，须含 {@code executionOrgId}
+     * @param request 查询请求，须含 {@code organizationId}
      * @return 内存分页后的 DTO 页
-     * @throws BusinessException 执行科室 id 缺失或不存在时
+     * @throws BusinessException 开立科室 id 缺失或不存在时
      */
-    public PagedResult<ExecuteLocationDto> listByExecutionOrgId(QueryExecuteLocationRequest request) {
-        // Gate：执行科室 id 必填且须存在
-        if (request == null || request.getExecutionOrgId() == null) {
-            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "执行科室ID不能为空");
+    public PagedResult<ExecuteLocationDto> listByOrganizationId(QueryExecuteLocationRequest request) {
+        // Gate：开立科室 id 必填且须存在
+        if (request == null || request.getOrganizationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "开立科室ID不能为空");
         }
-        Organization organization = organizationQueryService.loadOrganizationByIdForDisplay(request.getExecutionOrgId());
+        Organization organization = organizationQueryService.loadOrganizationByIdForDisplay(request.getOrganizationId());
         if (organization == null) {
-            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "执行科室不存在");
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "开立科室不存在");
         }
-        // Pre：拉取该科室下全部规则并在内存分页
-        List<ExecutionRuleListQueryModel> rows = activityExecutionLocationQueryService.listExecutionRulesByExecutionOrg(
-            request.getExecutionOrgId(),
+        // Pre：拉取该开立科室下全部规则并在内存分页
+        List<ExecutionRuleListQueryModel> rows = activityExecutionLocationQueryService.listExecutionRulesByOrganization(
+            request.getOrganizationId(),
             request.getActivityCategoryCode()
         );
         List<ExecuteLocationDto> content = new ArrayList<>();
@@ -197,19 +199,24 @@ public class ExecuteLocationAppService {
      * @throws BusinessException 请求体非法或校验失败时
      */
     public Long create(CreateExecuteLocationRequest request) {
-        // Gate：请求体、诊疗大类与写路径公共校验
+        // Gate：请求体、开立科室、诊疗大类、执行科室与写路径公共校验
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "创建请求不能为空");
         }
         if (request.getActivityCategoryCode() == null || request.getActivityCategoryCode().isBlank()) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "诊疗大类不能为空");
         }
-        this.validateWriteRequest(request.getExecutionOrgId(), request.getStartTime(), request.getEndTime());
+        this.validateWriteRequest(
+            request.getOrganizationId(),
+            request.getExecutionOrgId(),
+            request.getStartTime(),
+            request.getEndTime());
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT,
             "请先登录后再保存执行科室规则");
         // Cmd：创建单条执行规则
         CreateExecutionRuleCommand command = new CreateExecutionRuleCommand();
+        command.setOrganizationId(request.getOrganizationId());
         command.setExecutionOrgId(request.getExecutionOrgId());
         command.setActivityCategoryCode(request.getActivityCategoryCode());
         command.setOperatorId(operatorId);
@@ -235,7 +242,11 @@ public class ExecuteLocationAppService {
         if (request == null || request.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "ID不能为空");
         }
-        this.validateWriteRequest(request.getExecutionOrgId(), request.getStartTime(), request.getEndTime());
+        this.validateWriteRequest(
+            request.getOrganizationId(),
+            request.getExecutionOrgId(),
+            request.getStartTime(),
+            request.getEndTime());
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT,
             "请先登录后再保存执行科室规则");
@@ -274,8 +285,11 @@ public class ExecuteLocationAppService {
      * @throws BusinessException 科室、大类或诊疗定义列表不合法时
      */
     public void batchCreate(BatchCreateExecuteLocationRequest request) {
-        // Gate：科室、大类、诊疗定义列表与写路径公共校验
-        if (request == null || request.getExecutionOrgId() == null) {
+        // Gate：开立科室、执行科室、大类、诊疗定义列表与写路径公共校验
+        if (request == null || request.getOrganizationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "开立科室ID不能为空");
+        }
+        if (request.getExecutionOrgId() == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "执行科室ID不能为空");
         }
         if (request.getActivityCategoryCode() == null || request.getActivityCategoryCode().isBlank()) {
@@ -284,12 +298,17 @@ public class ExecuteLocationAppService {
         if (request.getActivityDefinitionIds() == null || request.getActivityDefinitionIds().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "诊疗定义列表不能为空");
         }
-        this.validateWriteRequest(request.getExecutionOrgId(), request.getStartTime(), request.getEndTime());
+        this.validateWriteRequest(
+            request.getOrganizationId(),
+            request.getExecutionOrgId(),
+            request.getStartTime(),
+            request.getEndTime());
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT,
             "请先登录后再保存执行科室规则");
         // Cmd：批量展开为子命令后一次性创建
         CreateExecutionRuleCommand command = new CreateExecutionRuleCommand();
+        command.setOrganizationId(request.getOrganizationId());
         command.setExecutionOrgId(request.getExecutionOrgId());
         command.setActivityCategoryCode(request.getActivityCategoryCode());
         command.setOperatorId(operatorId);
@@ -299,6 +318,7 @@ public class ExecuteLocationAppService {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "诊疗定义不能为空");
             }
             CreateExecuteLocationRequest single = new CreateExecuteLocationRequest();
+            single.setOrganizationId(request.getOrganizationId());
             single.setExecutionOrgId(request.getExecutionOrgId());
             single.setActivityCategoryCode(request.getActivityCategoryCode());
             single.setActivityDefinitionId(definitionId);
@@ -315,23 +335,36 @@ public class ExecuteLocationAppService {
     }
 
     /**
-     * 写路径公共校验：执行科室存在、时段合法。
+     * 写路径公共校验：开立科室与执行科室均须存在、时段合法。
      *
+     * @param organizationId 开立科室
      * @param executionOrgId 执行科室
      * @param startTime 开始时间字符串
      * @param endTime 结束时间字符串
      */
     private void validateWriteRequest(
+        Long organizationId,
         Long executionOrgId,
         String startTime,
         String endTime
     ) {
+        if (organizationId == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "开立科室ID不能为空");
+        }
+        Organization orderingOrg = organizationQueryService.loadOrganizationByIdForDisplay(organizationId);
+        if (orderingOrg == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "开立科室不存在");
+        }
         if (executionOrgId == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "执行科室ID不能为空");
         }
-        Organization organization = organizationQueryService.loadOrganizationByIdForDisplay(executionOrgId);
-        if (organization == null) {
+        Organization executionOrg = organizationQueryService.loadOrganizationByIdForDisplay(executionOrgId);
+        if (executionOrg == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "执行科室不存在");
+        }
+        // 医院根节点不是科室，禁止写入执行科室
+        if (!OrganizationType.DEPARTMENT.getCode().equals(executionOrg.getTypeEnum())) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "执行科室须为科室节点，不能选择医院");
         }
         if (StringUtils.isNotEmpty(startTime) && StringUtils.isNotEmpty(endTime)) {
             java.time.LocalTime start = executeLocationMapper.parseTime(startTime);
@@ -345,22 +378,26 @@ public class ExecuteLocationAppService {
     }
 
     /**
-     * 批量 enrich 规则行展示字段（科室名、地点名、诊疗大类文案、诊疗项目名称）。
+     * 批量 enrich 规则行展示字段（开立/执行科室名、地点名、诊疗大类文案、诊疗项目名称）。
      *
      * @param rows 待 enrich 列表
-     * @param executionOrgName 当前选中执行科室名称
+     * @param organizationName 当前选中开立科室名称
      */
-    private void enrichDtoList(List<ExecuteLocationDto> rows, String executionOrgName) {
+    private void enrichDtoList(List<ExecuteLocationDto> rows, String organizationName) {
         if (rows == null || rows.isEmpty()) {
             return;
         }
         Set<Long> locationIds = new HashSet<>();
+        Set<Long> executionOrgIds = new HashSet<>();
         List<ProductDefinitionBatchLookup> productLookups = new ArrayList<>();
         for (ExecuteLocationDto row : rows) {
             if (row == null) {
                 continue;
             }
-            row.setExecutionOrgName(executionOrgName);
+            row.setOrganizationName(organizationName);
+            if (row.getExecutionOrgId() != null) {
+                executionOrgIds.add(row.getExecutionOrgId());
+            }
             if (row.getExecutionLocationId() != null) {
                 locationIds.add(row.getExecutionLocationId());
             }
@@ -371,6 +408,7 @@ public class ExecuteLocationAppService {
                 productLookups.add(lookup);
             }
         }
+        Map<Long, String> executionOrgNameById = organizationQueryService.mapNamesByIds(executionOrgIds);
         Map<Long, String> locationNameById = locationQueryService.mapNamesByIds(locationIds);
         Map<String, ProductDefinitionDisplayDto> productByKey = productDefinitionDisplayTerminologyAssembler.loadAsMap(productLookups);
         Map<String, String> activityCategoryLabels =
@@ -378,6 +416,9 @@ public class ExecuteLocationAppService {
         for (ExecuteLocationDto row : rows) {
             if (row == null) {
                 continue;
+            }
+            if (row.getExecutionOrgId() != null) {
+                row.setExecutionOrgName(executionOrgNameById.get(row.getExecutionOrgId()));
             }
             if (row.getExecutionLocationId() != null) {
                 row.setExecutionLocationName(locationNameById.get(row.getExecutionLocationId()));
@@ -396,7 +437,7 @@ public class ExecuteLocationAppService {
     }
 
     /**
-     * 将扁平组织机构列表组装为树形 {@link OptionDto}。
+     * 将扁平组织机构列表组装为树形 {@link OptionDto}（含医院根，供左侧开立科室导航）。
      *
      * @return 树根选项列表
      */
@@ -427,6 +468,34 @@ public class ExecuteLocationAppService {
             }
         }
         return buildOrganizationOptionTree(rootOrganizations, childrenByParentId);
+    }
+
+    /**
+     * 构建执行科室下拉：仅启用科室节点，排除医院根（与责任科室下拉同口径）。
+     *
+     * @return 扁平科室选项列表
+     */
+    private List<OptionDto> buildDepartmentExecutionOrgOptions() {
+        List<Organization> departments = organizationQueryService.getOrganizationTreeForResponsibilityDept();
+        if (departments == null || departments.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<OptionDto> result = new ArrayList<>();
+        long sort = 0L;
+        for (Organization organization : departments) {
+            if (organization == null || organization.getId() == null) {
+                continue;
+            }
+            sort++;
+            result.add(new OptionDto(
+                sort,
+                String.valueOf(organization.getId()),
+                organization.getName(),
+                organization.getBusNo(),
+                Collections.emptyList()
+            ));
+        }
+        return result;
     }
 
     /**

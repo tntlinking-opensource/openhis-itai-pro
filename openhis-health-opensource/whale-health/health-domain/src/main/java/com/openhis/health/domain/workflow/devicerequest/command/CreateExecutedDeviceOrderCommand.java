@@ -44,5 +44,9 @@ public class CreateExecutedDeviceOrderCommand extends BatchCommand<CreateExecute
         private String basedOnTable;
         /** 上级医嘱来源 ID（补费路径；执行绑定/直接划价可为空）。 */
         private Long basedOnId;
+        /**
+         * 组套标识（可选；执行绑定耗材可与主药嘱 {@code package_id} 对齐，成组共用一份时取组内任一行即可）。
+         */
+        private Long packageId;
     }
 }

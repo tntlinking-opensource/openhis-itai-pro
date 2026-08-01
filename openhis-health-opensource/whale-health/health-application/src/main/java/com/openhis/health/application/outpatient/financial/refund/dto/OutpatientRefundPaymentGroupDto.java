@@ -70,4 +70,16 @@ public class OutpatientRefundPaymentGroupDto {
      */
     @Schema(description = "原支付落库渠道码列表")
     private List<String> originalPayChannelCodes;
+
+    /** 原支付医保统筹金额（{@code INSURANCE_FUND} 分桶合计；无则为 0）。 */
+    @Schema(description = "原支付医保统筹金额")
+    private BigDecimal ybFundPaySumamt;
+
+    /** 原支付医保个账金额（{@code INSURANCE_ACCT} 分桶合计；无则为 0）。 */
+    @Schema(description = "原支付医保个账金额")
+    private BigDecimal ybAcctPay;
+
+    /** 原支付自付渠道合计（现金/微信等用户可选渠道；无则为 0）。 */
+    @Schema(description = "原支付自付渠道合计")
+    private BigDecimal selfPayAmount;
 }

@@ -80,6 +80,10 @@ public class InpatientPharmacySummaryDispenseAssembler {
                 dto.setManufacturerName(trimToNull(product.getManufacturer()));
                 dto.setDisplayQuantityText(MedicationPackageSplitQuantityDisplayAssembler.buildDisplayQuantityText(
                     row.getItemQuantity(), product));
+                // 包装/拆零：汇总待扫换算（与患者发药同口径）
+                dto.setPackageUnitCode(product.getPackageUnitCode());
+                dto.setPackageUnitRatio(product.getPackageUnitRatio());
+                dto.setSplitUnitCode(product.getSplitUnitCode());
             }
             lines.add(dto);
         }

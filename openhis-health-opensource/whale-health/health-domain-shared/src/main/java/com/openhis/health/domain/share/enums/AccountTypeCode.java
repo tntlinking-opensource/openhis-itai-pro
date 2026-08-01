@@ -52,6 +52,19 @@ public enum AccountTypeCode implements EnumInterface {
         50L),
 
     /**
+     * 公费账户（Campus ADR-CMP-001 D12）。
+     *
+     * <p>挂号时若 Campus 启用且存在学生档案则幂等开立；支付明细公费行挂本类型。
+     * 收银改草稿落账见 {@code TODO(ADR-CMP-001 D5/D12)}。</p>
+     */
+    PUBLIC_EXPENSE_ACCOUNT(
+        0L,
+        "PUBLIC_EXPENSE_ACCOUNT",
+        "公费账户",
+        "高校公费分账账户；依赖 whale-module-campus。",
+        60L),
+
+    /**
      * 挂号费发票草稿等业务 type_code（非 adm_account 主路径；与历史 REG 字面量对齐）。
      */
     REG(

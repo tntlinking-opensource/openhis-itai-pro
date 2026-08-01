@@ -123,4 +123,37 @@ public interface SupplyRequestRepository extends JpaRepository<SupplyRequest, Lo
      * @return 命中任一行时为 true
      */
     boolean existsByItemIdAndStatusEnumInAndIsDeletedFalse(Long itemId, Collection<String> statusEnums);
+
+    /**
+     * 同库（purpose）是否存在非 OPENING、指定状态集合的未删供应单（GAP-OPN-004 供应侧）。
+     *
+     * @param purposeLocationId 目的库房
+     * @param typeEnums         排除的 OPENING 类型集合（NotIn）
+     * @param statusEnums       已提交及以上状态集合
+     * @return 存在则为 true
+     */
+    boolean existsByPurposeLocationIdAndTypeEnumNotInAndStatusEnumInAndIsDeletedFalse(
+        Long purposeLocationId, Collection<String> typeEnums, Collection<String> statusEnums);
+
+    /**
+     * 同库是否存在指定类型与状态的未删供应单（审核中闸门等）。
+     *
+     * @param purposeLocationId 目的库房
+     * @param typeEnums         OPENING 类型
+     * @param statusEnum        状态
+     * @return 存在则为 true
+     */
+    boolean existsByPurposeLocationIdAndTypeEnumInAndStatusEnumAndIsDeletedFalse(
+        Long purposeLocationId, Collection<String> typeEnums, String statusEnum);
+
+    /**
+     * 同库当前有效 AGREE 期初行（同号多行）。
+     *
+     * @param purposeLocationId 目的库房
+     * @param typeEnums         OPENING 类型
+     * @param statusEnum        {@code AGREE}
+     * @return 行列表
+     */
+    List<SupplyRequest> findByPurposeLocationIdAndTypeEnumInAndStatusEnumAndIsDeletedFalse(
+        Long purposeLocationId, Collection<String> typeEnums, String statusEnum);
 }

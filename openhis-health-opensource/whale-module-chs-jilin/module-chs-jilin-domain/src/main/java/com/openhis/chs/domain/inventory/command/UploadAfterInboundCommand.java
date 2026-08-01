@@ -10,7 +10,7 @@ import lombok.experimental.Accessors;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 入库审核通过后触发 3503 采购上报（不调 3502） */
+/** 入库审核通过后触发 3503 采购上报（成功后伴生 3502/108） */
 @Data
 @Accessors(chain = true)
 public class UploadAfterInboundCommand {

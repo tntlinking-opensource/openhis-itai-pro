@@ -79,6 +79,10 @@ public class RefundableChargeLineItemDto {
     @Schema(description = "计价数量")
     private BigDecimal quantity;
 
+    /** 数量单位展示（如克/盒；由目录单位槽解析，供退费弹窗数量列拼接）。 */
+    @Schema(description = "数量单位展示")
+    private String quantityUnit;
+
     /** 行金额（与收费明细总价口径一致）。 */
     @Schema(description = "行金额（与收费明细总价口径一致）")
     private BigDecimal lineTotalAmount;

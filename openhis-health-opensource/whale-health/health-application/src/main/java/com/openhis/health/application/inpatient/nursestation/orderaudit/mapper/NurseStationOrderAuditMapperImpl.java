@@ -19,7 +19,6 @@ import com.openhis.health.domain.administration.encounter.queries.InpatientEncou
 import com.openhis.health.application.shared.advice.InpatientOrderListSkeleton;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
-import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.TherapyType;
 import com.openhis.health.domain.workflow.servicerequest.command.RejectServiceRequestToDraftCommand;
@@ -113,7 +112,7 @@ public class NurseStationOrderAuditMapperImpl implements NurseStationOrderAuditM
     }
 
     /**
-     * 读模型骨架二次过滤：纯 DRAFT、退药/退诊疗关联行（BR-IP-AUD-002）。
+     * 读模型骨架二次过滤：纯 DRAFT、退药/退诊疗（认 {@code refund_*_id}，不认 based_on；BR-IP-AUD-002）。
      *
      * @param skeleton Q-IP-AUD-001 结果；可 null
      * @return 过滤后列表；入参 null 时返回空列表
@@ -374,19 +373,25 @@ public class NurseStationOrderAuditMapperImpl implements NurseStationOrderAuditM
     }
 
     /**
-     * 退药/退诊疗或负向派生行识别（BR-IP-AUD-002）。
+     * 退药/退诊疗负向 Request 防御过滤（BR-IP-AUD-002）。
+     *
+     * <p>住院退药主路径<strong>不</strong>生成负向药/诊 Request（发药对冲 + 取消执行回退账单）；
+     * 负向 Request 属门诊退费。本方法对 {@code refund_*_id}/诊疗负数量的排除仅为与门诊同源防御。
+     * <b>禁止</b>用 {@code based_on} 当排除条件——医生开立皮试检查等合法医嘱也可挂 based_on。</p>
      *
      * @param row 读模型行
-     * @return true 为应排除的关联行
+     * @return true 为应排除的负向 Request 行（住院正常数据通常不会命中）
      */
     private boolean isRefundOrDerivativeRow(InpatientOrderListSkeleton row) {
-        if (row.getBasedOnId() != null && StringUtils.isNotEmpty(row.getBasedOnTable())) {
-            String table = row.getBasedOnTable().trim();
-            if (TableNameConstants.MED_MEDICATION_REQUEST.equalsIgnoreCase(table)
-                || TableNameConstants.WKF_SERVICE_REQUEST.equalsIgnoreCase(table)) {
-                return true;
-            }
+        if (ReadModelOrderTypeConstants.MED_REQUEST.equals(row.getOrderType())
+            && row.getRefundMedicineId() != null) {
+            return true;
         }
+        if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(row.getOrderType())
+            && row.getRefundServiceId() != null) {
+            return true;
+        }
+        // 门诊同源防御：负数量冲正行
         if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(row.getOrderType())) {
             BigDecimal qty = row.getQuantity();
             if (qty != null && qty.signum() < 0) {

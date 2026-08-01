@@ -13,7 +13,6 @@ import com.openhis.chs.bridge.outpatient.workflow.OpOutpatientPreSettleOrchestra
 import com.openhis.chs.bridge.settlement.invoker.Op2601Invoker;
 import com.openhis.chs.domain.catalog.access.ChsInsuranceContractReader;
 import com.openhis.chs.domain.outpatient.result.OpRevokeSettleResult;
-import com.openhis.chs.domain.outpatient.result.OpSettleRecordResult;
 import com.openhis.chs.domain.outpatient.entity.YbClinicPreSettle;
 import com.openhis.chs.domain.outpatient.loader.OpPreSettleContextLoader;
 import com.openhis.chs.domain.outpatient.service.YbClinicPreSettleQueryService;
@@ -22,6 +21,7 @@ import com.openhis.chs.domain.settlement.entity.YbSettlementRecord;
 import com.openhis.chs.domain.settlement.service.YbSettlementRecordDomainService;
 import com.openhis.chs.domain.settlement.service.YbSettlementRecordQueryService;
 import com.openhis.chs.gateway.support.ChsCurrentOperatorResolver;
+import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationDomainService;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.OutpatientChargeInsuranceExtension;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargeConfirmExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargeCorrectSettleExtensionIn;
@@ -77,6 +77,8 @@ public class OutpatientChargeInsuranceExtensionImpl implements OutpatientChargeI
     private final YbSettlementRecordQueryService settlementRecordQueryService;
     private final YbSettlementRecordDomainService settlementRecordDomainService;
     private final ChsCurrentOperatorResolver currentOperatorResolver;
+    /** 支付侧医保桥表写：2208/2601 后与 yb_settlement_record 同态标 REVOKED。 */
+    private final PaymentReconciliationDomainService paymentReconciliationDomainService;
 
     /** 本地：返回 Extension 已启用。 */
     @Override
@@ -152,20 +154,12 @@ public class OutpatientChargeInsuranceExtensionImpl implements OutpatientChargeI
         List<OutpatientChargeSettlementRecordExtensionOut> results = new ArrayList<>();
         for (YbSettlementRecord row : rows) {
             results.add(ChsOutpatientInsuranceIntegrationMapper.toExtensionSettlementRecord(
-                new OpSettleRecordResult()
-                    .setSettlementRecordId(row.getId())
-                    .setPaymentId(row.getPaymentId())
-                    .setPreSettleId(row.getPreSettleId())
-                    .setContractId(row.getContractId())
-                    .setChrgBchno(row.getChrgBchno())
-                    .setSetlId(row.getSetlId())
-                    .setMdtrtId(row.getMdtrtId())
-                    .setMsgid2207(row.getMsgid2207())));
+                ChsOutpatientInsuranceIntegrationMapper.toSettleRecordResult(row)));
         }
         return results;
     }
 
-    /** 【2208】撤销门诊结算，标记回执已撤销。 */
+    /** 【2208】撤销门诊结算，标记回执已撤销，并同步支付侧桥表 REVOKED。 */
     @Override
     public OutpatientChargeRevokeSettleExtensionOut revokeSettle(OutpatientChargeRevokeSettleExtensionIn command) {
         OpRevokeSettleResult result = op2208Invoker.invoke(
@@ -173,6 +167,10 @@ public class OutpatientChargeInsuranceExtensionImpl implements OutpatientChargeI
         if (result == null) {
             return new OutpatientChargeRevokeSettleExtensionOut();
         }
+        // Cmd：fin_payment_yb_settlement 与 yb_settlement_record 同态（日结个账/统筹依赖 CONFIRMED）
+        this.paymentReconciliationDomainService.markYbSettlementsRevoked(
+            result.getSettlementRecordId(),
+            result.getSetlId());
         return ChsOutpatientInsuranceIntegrationMapper.toExtensionRevokeSettleOut(result);
     }
 
@@ -190,7 +188,7 @@ public class OutpatientChargeInsuranceExtensionImpl implements OutpatientChargeI
         return out;
     }
 
-    /** 【2601】冲正原 2207 结算交易，写入 yb_settlement_correction。 */
+    /** 【2601】冲正原 2207 结算交易，写入 yb_settlement_correction，并同步支付侧桥表 REVOKED。 */
     @Override
     public void correctSettleTransaction(OutpatientChargeCorrectSettleExtensionIn command) {
         if (command == null || command.getSettlementRecordId() == null) {
@@ -204,5 +202,9 @@ public class OutpatientChargeInsuranceExtensionImpl implements OutpatientChargeI
         SettlementCorrectionCommand domainCommand = OutpatientChargeInsuranceIntegrationMapper.toCorrectionCommand(
             command, record, operatorId, tenantId);
         op2601Invoker.invoke(domainCommand);
+        // Cmd：2601 后 yb 凭证已 REVOKED，支付桥表须同态，避免日结虚增
+        this.paymentReconciliationDomainService.markYbSettlementsRevoked(
+            record.getId(),
+            record.getSetlId());
     }
 }

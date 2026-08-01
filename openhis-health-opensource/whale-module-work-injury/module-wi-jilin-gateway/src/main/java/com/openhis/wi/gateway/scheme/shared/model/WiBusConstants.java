@@ -5,18 +5,18 @@
 package com.openhis.wi.gateway.scheme.shared.model;
 
 /**
- * 吉林工伤出站报文定点常量（院方确认 Q2）。
+ * 吉林工伤出站报文定点常量（开源样例值，部署时按院点覆盖）。
  */
 public final class WiBusConstants {
 
-    /** DLL 出站 fixmedins_code（与院内 H22010402403 展示码不同）。 */
-    public static final String FIXMEDINS_CODE = "JL2201992002";
+    /** DLL 出站 fixmedins_code（与院内 H00000000000 展示码不同）。 */
+    public static final String FIXMEDINS_CODE = "JL0000000001";
 
     /** 接收方系统编码。 */
     public static final String RECER_SYS_CODE = "LNYTH";
 
     /** fin_contract bus_no（工伤契约）。 */
-    public static final String CONTRACT_BUS_NO = "H22010402403-GS";
+    public static final String CONTRACT_BUS_NO = "H00000000000-GS";
 
     /** 方案码写入 yb_invoke_log / yb_settlement_record。 */
     public static final String SCHEME_CODE = "WORK_INJURY";
@@ -24,3 +24,4 @@ public final class WiBusConstants {
     private WiBusConstants() {
     }
 }
+

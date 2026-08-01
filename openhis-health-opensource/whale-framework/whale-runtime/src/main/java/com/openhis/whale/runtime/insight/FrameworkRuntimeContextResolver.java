@@ -5,9 +5,9 @@
 package com.openhis.whale.runtime.insight;
 
 import com.openhis.whale.core.infrastructure.security.ICurrentUser;
+import com.openhis.whale.core.infrastructure.version.ProductVersionFiles;
 import com.openhis.whale.identity.infrastructure.jwt.JwtTokenProvider;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -25,9 +25,6 @@ public class FrameworkRuntimeContextResolver {
     private final ICurrentUser currentUser;
     private final JwtTokenProvider jwtTokenProvider;
 
-    @Value("${app.version:2.0.2-SNAPSHOT}")
-    private String softwareVersion;
-
     public FrameworkRuntimeContextResolver(ICurrentUser currentUser, JwtTokenProvider jwtTokenProvider) {
         this.currentUser = currentUser;
         this.jwtTokenProvider = jwtTokenProvider;
@@ -35,7 +32,9 @@ public class FrameworkRuntimeContextResolver {
 
     public Map<String, Object> buildCommonContext() {
         Map<String, Object> context = new LinkedHashMap<>();
-        context.put("softwareVersion", softwareVersion);
+        context.put(
+                "softwareVersion",
+                ProductVersionFiles.readDisplayVersion(FrameworkRuntimeContextResolver.class).orElse(""));
         context.put("loginUserId", resolveLoginUserId());
         context.put("loginTime", resolveLoginTime());
         return context;

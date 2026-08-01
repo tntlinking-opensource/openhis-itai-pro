@@ -9,6 +9,7 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
+import com.openhis.health.domain.share.utils.EncounterDiagnosisIdsPredicates;
 import com.openhis.health.domain.workflow.devicerequest.entity.DeviceRequest;
 import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestFifoSignContext;
 import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestHistoryModel;
@@ -260,7 +261,10 @@ public class DeviceRequestQueryService {
         model.setPatientId(request.getPatientId());
         model.setBusNo(request.getBusNo());
         model.setGenerateSourceEnum(request.getGenerateSourceEnum());
+        model.setReqOpenedTime(request.getReqOpenedTime());
         model.setReqAuthoredTime(request.getReqAuthoredTime());
+        model.setStopTime(request.getStopTime());
+        model.setStopperId(request.getStopperId());
         model.setSortNumber(request.getSortNumber());
         model.setRequesterId(request.getRequesterId());
         model.setQuantity(request.getQuantity());
@@ -273,8 +277,9 @@ public class DeviceRequestQueryService {
         model.setDeviceSpecifications(request.getDeviceSpecifications());
         model.setBasedOnTable(request.getBasedOnTable());
         model.setBasedOnId(request.getBasedOnId());
-        model.setConditionDefinitionId(request.getConditionDefinitionId());
-        model.setEncounterDiagnosisId(request.getEncounterDiagnosisId());
+        // 组套标识：列表回显供绑定耗材与主药 package_id 对齐核对
+        model.setPackageId(request.getPackageId());
+        model.setEncounterDiagnosisIds(request.getEncounterDiagnosisIds());
         return model;
     }
 
@@ -498,5 +503,27 @@ public class DeviceRequestQueryService {
         DeviceRequest request = deviceRequestRepository.findById(id).orElseThrow(
             () -> new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_NOT_FOUND, "耗材请求不存在"));
         return this.toListModel(request);
+    }
+
+    /**
+     * 统计未软删耗材请求中 {@code encounter_diagnosis_ids} 引用指定就诊诊断行的条数。
+     *
+     * @param encounterDiagnosisId 就诊诊断行主键
+     * @return 引用条数
+     */
+    public int countReferencingEncounterDiagnosisId(Long encounterDiagnosisId) {
+        if (encounterDiagnosisId == null) {
+            return 0;
+        }
+        Specification<DeviceRequest> specification = (root, query, cb) -> cb.and(
+            cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+            EncounterDiagnosisIdsPredicates.containsEncounterDiagnosisId(
+                cb, root.get(FieldNameConstants.ENCOUNTER_DIAGNOSIS_IDS), encounterDiagnosisId)
+        );
+        long count = deviceRequestRepository.count(specification);
+        if (count > Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
+        }
+        return (int) count;
     }
 }

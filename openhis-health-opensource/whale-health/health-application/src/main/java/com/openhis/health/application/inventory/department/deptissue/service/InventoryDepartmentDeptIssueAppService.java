@@ -24,6 +24,7 @@ import com.openhis.health.application.inventory.department.deptissue.response.*;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
+import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
@@ -43,11 +44,14 @@ import com.openhis.health.domain.share.constants.InventoryDepartmentConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationStatus;
+import com.openhis.health.domain.share.enums.OrganizationType;
+import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.SupplyRequestType;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.share.utils.EnumUtil;
+import com.openhis.health.domain.workflow.inventoryitem.queries.InventoryItemQuery;
 import com.openhis.health.domain.workflow.inventoryitem.queries.InventoryItemPageQuery;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryCatalogAvailabilityRowModel;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryItemModel;
@@ -67,6 +71,7 @@ import com.openhis.health.application.inventory.support.SupplyRequestPricedWrite
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
 import com.openhis.health.infrastructure.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
 import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterDeptIssueExtensionIn;
+import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -95,8 +100,9 @@ import java.util.Set;
 /**
  * 科室领用单（{@link SupplyType#DEPT_ISSUE}，DM-WKF-006）应用编排（IF-DEP-IS · AS-INV-DEP-004）。
  *
- * <p>单端点科室药房扣减：建单/改单 → 提交 → 药师岗位 agree → {@code createSupplyDelivery} + 库存扣减。
- * 库位须为 {@link LocationForm#DEPARTMENT_PHARMACY}；{@code source_*} 恒 NULL。</p>
+ * <p>单端点科室药房扣减：建单/改单 → 提交 → 管辖库位 agree → {@code createSupplyDelivery} + 库存扣减。
+ * 库位须为 {@link LocationForm#DEPARTMENT_PHARMACY}；{@code source_*} 恒 NULL。
+ * 领用科室 {@code consumingOrganizationId} 由前端手选行政科室落库，与科室药房解耦。</p>
  *
  * <p>职责边界：</p>
  * <ul>
@@ -104,7 +110,8 @@ import java.util.Set;
  *   <li>{@link SupplyDeliveryDomainService} / {@link SupplyDeliveryQueryService}：同意发放与幂等门禁</li>
  *   <li>{@link InventoryItemDomainService} / {@link InventoryItemQueryService}：同意扣减与选品可用量</li>
  *   <li>{@link LocationQueryService} / {@link OrganizationQueryService}：科室药房与上级科室只读 enrich</li>
- *   <li>{@link PractitionerRoleScopeLoader}：药师岗位 agree 门禁（非财务岗）</li>
+ *   <li>{@link PractitionerRoleScopeLoader}：init 药师下拉（agree 不按岗位门禁）</li>
+ *   <li>{@link CurrentManagedLocationIdsResolver}：建单/同意等写路径科室药房管辖 Gate</li>
  *   <li>{@link TraceNumberSupplyAgreeTraceOrchestrator}：条件追溯写出库轨迹</li>
  * </ul>
  *
@@ -140,9 +147,9 @@ public class InventoryDepartmentDeptIssueAppService {
     private final OrganizationQueryService organizationQueryService;
     /** 医务人员读模型（列表制单/审批人 enrich）。 */
     private final PractitionerQueryService practitionerQueryService;
-    /** 岗位范围加载（init 药师、agree 药师门禁）。 */
+    /** 岗位范围加载（init 药师下拉）。 */
     private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
-    /** 管辖库位 Gate（列表/建单/选品）。 */
+    /** 管辖库位 Gate（列表/建单/选品/同意）。 */
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
     /** 产品定义批量读（详情/选品 enrich）。 */
     /** 选品术语与单位展示名。 */
@@ -170,11 +177,12 @@ public class InventoryDepartmentDeptIssueAppService {
             // Pre：拉取启用库位/人员并经管辖 Gate 收窄
             List<Location> departmentPharmacies = locationQueryService.listAllActiveDepartmentPharmacies();
             List<Location> gatedDepartmentPharmacies = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(departmentPharmacies);
-            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
                 WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
             // Asm：下拉选项写入初始化响应
             return deptIssueMapper.toLoadDeptIssueFormInitResponse(
                 deptIssueMapper.toDeptPharmacyOptionDtoListFromLocations(gatedDepartmentPharmacies),
+                this.buildActiveDepartmentOrganizationOptions(),
                 deptIssueMapper.toOptionDtoListProductTableTypes(),
                 deptIssueMapper.toOptionDtoListSupplyStatuses(),
                 deptIssueMapper.toOptionDtoListFromPractitioners(pharmacists));
@@ -312,17 +320,11 @@ public class InventoryDepartmentDeptIssueAppService {
             if (locOpt.isPresent() && StringUtils.isNotEmpty(locOpt.get().getName())) {
                 res.setPurposeLocationName(locOpt.get().getName().trim());
             }
-            Long orgId = null;
-            if (locOpt.isPresent()) {
-                orgId = locOpt.get().getOrganizationId();
-            }
-            if (orgId != null) {
-                res.setConsumingOrganizationId(String.valueOf(orgId));
-                Map<Long, String> orgNames = this.organizationQueryService.findOrganizationNamesByIds(List.of(orgId));
-                res.setConsumingOrganizationName(orgNames.get(orgId));
-            }
         }
+        this.enrichDeptIssueDetailConsumingOrganizationName(res);
         this.enrichDeptIssueDetailProductDisplay(res.getLines(), products, terminologyMaps);
+        // Asm：行上 end_time 为空时，按科室药房+品批从库存补齐有效期（选品/历史单回显）
+        this.enrichDeptIssueDetailLineExpiryFromInventory(head.getPurposeLocationId(), res.getLines());
         // Asm：槽价按落库行价 enrich（BR-PRICE-SRC-001 历史业务，禁止覆盖为当前目录价）
         this.enrichDeptIssueDetailLinesCatalogPricing(res.getLines());
         return res;
@@ -345,10 +347,16 @@ public class InventoryDepartmentDeptIssueAppService {
         if (request.getPurposeLocationId() == null) {
             throw new BusinessException(ErrorCodeConstants.DEP_IS_001, "purposeLocationId 不能为空");
         }
+        if (request.getConsumingOrganizationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.DEP_IS_001, "consumingOrganizationId 不能为空");
+        }
         this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.DEP_IS_101, "机构上下文缺失");
         this.assertDeptIssuePurposeLocationGate(request.getPurposeLocationId());
+        this.assertConsumingOrganizationGate(request.getConsumingOrganizationId());
         this.assertDeptIssueLinesFields(request.getLines());
         this.assertDeptIssueDraftLinesWithinPurposeAvailableInventory(request.getPurposeLocationId(), request.getLines());
+        // Pre：写行未带 endTime 时从库存批号效期回填，保证详情「有效期」可回显
+        this.fillDeptIssueLineEndTimeFromInventory(request.getPurposeLocationId(), request.getLines());
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.DEP_IS_101, "用户未登录");
         Long applicantId = this.currentPractitionerResolver.requirePractitionerId(
             ErrorCodeConstants.DEP_IS_101, "当前用户未绑定医务人员档案，无法制单");
@@ -382,8 +390,12 @@ public class InventoryDepartmentDeptIssueAppService {
         if (request.getPurposeLocationId() == null) {
             throw new BusinessException(ErrorCodeConstants.DEP_IS_001, "purposeLocationId 不能为空");
         }
+        if (request.getConsumingOrganizationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.DEP_IS_001, "consumingOrganizationId 不能为空");
+        }
         this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.DEP_IS_101, "机构上下文缺失");
         this.assertDeptIssuePurposeLocationGate(request.getPurposeLocationId());
+        this.assertConsumingOrganizationGate(request.getConsumingOrganizationId());
         // Pre：回读存量并校验工作流可编辑态
         VerifyAbleEditQuery editQuery = new VerifyAbleEditQuery();
         editQuery.setBusNo(request.getBusNo().trim());
@@ -402,6 +414,8 @@ public class InventoryDepartmentDeptIssueAppService {
         }
         this.assertDeptIssueLinesFields(request.getLines());
         this.assertDeptIssueDraftLinesWithinPurposeAvailableInventory(request.getPurposeLocationId(), request.getLines());
+        // Pre：写行未带 endTime 时从库存批号效期回填
+        this.fillDeptIssueLineEndTimeFromInventory(request.getPurposeLocationId(), request.getLines());
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.DEP_IS_101, "用户未登录");
         Long applicantId = this.currentPractitionerResolver.requirePractitionerId(
             ErrorCodeConstants.DEP_IS_101, "当前用户未绑定医务人员档案，无法制单");
@@ -476,27 +490,20 @@ public class InventoryDepartmentDeptIssueAppService {
     /**
      * 科室领用单同意编排：领域落已同意态 → 领用发放 → 科室药房扣减 → 条件追溯。
      *
-     * <p>须药师岗位；发放命令为 {@code createSupplyDelivery}。重复 agree、发放已完成、库存不足等场景抛
+     * <p>须管辖单据科室药房（不按药师岗位）；发放命令为 {@code createSupplyDelivery}。重复 agree、发放已完成、库存不足等场景抛
      * {@link ErrorCodeConstants#DEP_IS_104}。</p>
      *
      * @param request 含 busNo；须未重复同意
      * @return 同意后 busNo 与状态 code
      */
     public AgreeDeptIssueResponse agreeDeptIssue(AgreeDeptIssueRequest request) {
-        // Gate：busNo 与操作人
+        // Gate：busNo、机构上下文与操作人
         if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.DEP_IS_001, "busNo 不能为空");
         }
-        Long sessionOrgId = this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
             ErrorCodeConstants.DEP_IS_101, "机构上下文缺失");
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.DEP_IS_101, "用户未登录");
-        Long operatorPractitionerId = this.currentPractitionerResolver.requirePractitionerId(
-            ErrorCodeConstants.DEP_IS_101, "当前用户未绑定医务人员档案，无法审批");
-        Set<Long> pharmacistIds = this.practitionerRoleScopeLoader.resolvePractitionerIdsForActivePlatformRole(
-            WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, sessionOrgId);
-        if (!pharmacistIds.contains(operatorPractitionerId)) {
-            throw new BusinessException(ErrorCodeConstants.DEP_IS_104, "当前用户无药师岗位，无法同意领用单");
-        }
 
         // Pre：回读领用单并校验未重复同意
         SupplyByBusNoQuery q = new SupplyByBusNoQuery();
@@ -506,6 +513,8 @@ public class InventoryDepartmentDeptIssueAppService {
             throw new BusinessException(ErrorCodeConstants.DEP_IS_103, "领用单不存在");
         }
         this.assertDeptIssue(beforeLines);
+        // Gate：同意仅校验管辖库位，能管该科室药房即可审批
+        this.assertDeptIssuePurposeLocationGate(beforeLines.get(0).getPurposeLocationId());
         SupplyRequestValidationModel validation = supplyRequestQueryService.supplyRequestValidation(request.getBusNo().trim());
         if (Boolean.TRUE.equals(validation.getHasAgreed())) {
             throw new BusinessException(ErrorCodeConstants.DEP_IS_104, "领用单已同意，禁止重复同意");
@@ -636,9 +645,10 @@ public class InventoryDepartmentDeptIssueAppService {
 
         if (!traceCommands.isEmpty()) {
             try {
+                // 消耗侧可选扫：盖不住由 orchestrator 跳过写追溯，同意主流程不因扫码失败回滚
                 traceNumberSupplyAgreeTraceOrchestrator.recordSingleEndLines(traceCommands);
             } catch (BusinessException ex) {
-                throw new BusinessException(ErrorCodeConstants.DEP_IS_104, "追溯码领用记录失败：" + ex.getMessage());
+                log.warn("追溯码领用记录跳过（不挡同意）：{}", ex.getMessage());
             }
         }
 
@@ -745,6 +755,8 @@ public class InventoryDepartmentDeptIssueAppService {
         InventoryItemPageQuery invQuery = new InventoryItemPageQuery();
         invQuery.setLocationId(request.getPurposeLocationId());
         invQuery.setItemTable(request.getProductTableName().trim());
+        // —— 前台可选：true 仅返回选品库位账面量>0 的批号行；false/未传不过滤数量。——
+        invQuery.setPositiveQuantityOnly(request.getPositiveQuantityOnly());
         PageQueryBinder.bind(request, invQuery);
         Pageable pageable = PageRequest.of(
             request.springPageIndex(), request.getBoundedPageSize(), Sort.by(Sort.Direction.ASC, FieldNameConstants.ID));
@@ -1070,6 +1082,91 @@ public class InventoryDepartmentDeptIssueAppService {
     }
 
     /**
+     * 详情行 {@code endTime} 为空时，按科室药房+品批从库存项补齐有效期（只读 enrich，不写库）。
+     *
+     * @param purposeLocationId 科室药房库位
+     * @param lines             详情明细
+     */
+    private void enrichDeptIssueDetailLineExpiryFromInventory(
+        Long purposeLocationId,
+        List<DeptIssueDetailLineDto> lines) {
+        if (purposeLocationId == null || lines == null || lines.isEmpty()) {
+            return;
+        }
+        for (DeptIssueDetailLineDto dto : lines) {
+            if (dto == null || dto.getEndTime() != null) {
+                continue;
+            }
+            if (StringUtils.isEmpty(dto.getItemTable()) || dto.getItemId() == null) {
+                continue;
+            }
+            LocalDateTime expiry = this.resolveInventoryExpirationDate(
+                purposeLocationId, dto.getItemTable().trim(), dto.getItemId(), dto.getLotNumber());
+            if (expiry != null) {
+                dto.setEndTime(expiry);
+            }
+        }
+    }
+
+    /**
+     * 写模型行未带 {@code endTime} 时，从库存批号效期回填后再落库。
+     *
+     * @param purposeLocationId 科室药房库位
+     * @param lines             写模型明细
+     */
+    private void fillDeptIssueLineEndTimeFromInventory(Long purposeLocationId, List<DeptIssueLineDto> lines) {
+        if (purposeLocationId == null || lines == null || lines.isEmpty()) {
+            return;
+        }
+        for (DeptIssueLineDto line : lines) {
+            if (line == null || line.getEndTime() != null) {
+                continue;
+            }
+            if (StringUtils.isEmpty(line.getItemTable()) || line.getItemId() == null) {
+                continue;
+            }
+            LocalDateTime expiry = this.resolveInventoryExpirationDate(
+                purposeLocationId, line.getItemTable().trim(), line.getItemId(), line.getLotNumber());
+            if (expiry != null) {
+                line.setEndTime(expiry);
+            }
+        }
+    }
+
+    /**
+     * 解析库存项批号效期（科室药房 + 品 + 批号）。
+     *
+     * @param locationId 库位
+     * @param itemTable  物品表
+     * @param itemId     物品定义主键
+     * @param lotNumber  批号，可空
+     * @return 效期；未找到或库存未维护时 null
+     */
+    private LocalDateTime resolveInventoryExpirationDate(
+        Long locationId,
+        String itemTable,
+        Long itemId,
+        String lotNumber) {
+        InventoryItemQuery query = new InventoryItemQuery();
+        query.setLocationId(locationId);
+        query.setItemTable(itemTable);
+        query.setItemId(itemId);
+        if (StringUtils.isNotEmpty(lotNumber)) {
+            query.setLotNumber(lotNumber.trim());
+        }
+        List<InventoryItemModel> rows = this.inventoryItemQueryService.findInventoryItemByItemInfo(query);
+        if (rows == null || rows.isEmpty()) {
+            return null;
+        }
+        for (InventoryItemModel row : rows) {
+            if (row != null && row.getExpirationDate() != null) {
+                return row.getExpirationDate();
+            }
+        }
+        return null;
+    }
+
+    /**
      * 详情明细目录价带与持久化行价对齐（BR-PRICE-SRC-001：仅用 supplyLine.price）。
      *
      * @param lines 详情明细行
@@ -1092,16 +1189,78 @@ public class InventoryDepartmentDeptIssueAppService {
     }
 
     /**
-     * 校验领用科室药房在管辖 Gate 内、为启用中形态且上级科室非空。
+     * 校验领用科室药房在管辖 Gate 内且为启用中科室药房形态。
      *
      * @param purposeLocationId 科室药房位置 id
      */
     private void assertDeptIssuePurposeLocationGate(Long purposeLocationId) {
         Set<Long> allowedDepartmentPharmacies = this.resolveGatedDepartmentPharmacyLocationIdsForGate();
         this.assertDepartmentPharmacyLocationAllowed(purposeLocationId, allowedDepartmentPharmacies);
-        Optional<Location> locOpt = locationQueryService.findOptionalById(purposeLocationId);
-        if (locOpt.isEmpty() || locOpt.get().getOrganizationId() == null) {
-            throw new BusinessException(ErrorCodeConstants.DEP_IS_002, "科室药房未配置上级科室，无法领用");
+    }
+
+    /**
+     * 校验手选领用科室：须存在、启用且类型为行政科室（{@link OrganizationType#DEPARTMENT}）。
+     *
+     * @param consumingOrganizationId 领用科室 Organization 主键
+     */
+    private void assertConsumingOrganizationGate(Long consumingOrganizationId) {
+        if (consumingOrganizationId == null) {
+            throw new BusinessException(ErrorCodeConstants.DEP_IS_001, "consumingOrganizationId 不能为空");
+        }
+        Organization organization = this.organizationQueryService.loadOrganizationByIdForDisplay(consumingOrganizationId);
+        if (organization == null) {
+            throw new BusinessException(ErrorCodeConstants.DEP_IS_002, "领用科室不存在");
+        }
+        if (!OrganizationType.DEPARTMENT.getCode().equals(organization.getTypeEnum())) {
+            throw new BusinessException(ErrorCodeConstants.DEP_IS_002, "领用科室须为行政科室");
+        }
+        if (!PublicationStatus.ACTIVE.getCode().equals(organization.getStatusEnum())) {
+            throw new BusinessException(ErrorCodeConstants.DEP_IS_002, "领用科室未启用");
+        }
+        if (!Boolean.TRUE.equals(organization.getActiveFlag())) {
+            throw new BusinessException(ErrorCodeConstants.DEP_IS_002, "领用科室未启用");
+        }
+    }
+
+    /**
+     * 装配启用行政科室下拉（{@link OrganizationType#DEPARTMENT} + {@link PublicationStatus#ACTIVE}）。
+     *
+     * @return 行政科室 OptionDto 列表
+     */
+    private List<OptionDto> buildActiveDepartmentOrganizationOptions() {
+        List<OptionDto> options = new ArrayList<>();
+        for (Organization organization : this.organizationQueryService.getOrganizationTree()) {
+            if (organization == null || organization.getId() == null) {
+                continue;
+            }
+            if (!OrganizationType.DEPARTMENT.getCode().equals(organization.getTypeEnum())) {
+                continue;
+            }
+            Long id = organization.getId();
+            String label = organization.getName();
+            if (StringUtils.isEmpty(label)) {
+                label = String.valueOf(id);
+            }
+            options.add(new OptionDto(id, String.valueOf(id), label));
+        }
+        return options;
+    }
+
+    /**
+     * 详情响应回填领用科室展示名（优先使用 mapper 已解析的落库/回落 id，勿覆盖 consumingOrganizationId）。
+     *
+     * @param response 领用单详情响应
+     */
+    private void enrichDeptIssueDetailConsumingOrganizationName(GetDeptIssueDetailResponse response) {
+        if (response == null || StringUtils.isEmpty(response.getConsumingOrganizationId())) {
+            return;
+        }
+        try {
+            Long orgId = Long.valueOf(response.getConsumingOrganizationId().trim());
+            Map<Long, String> orgNames = this.organizationQueryService.findOrganizationNamesByIds(List.of(orgId));
+            response.setConsumingOrganizationName(orgNames.get(orgId));
+        } catch (NumberFormatException ignored) {
+            // 非法 id 跳过名称 enrich
         }
     }
 

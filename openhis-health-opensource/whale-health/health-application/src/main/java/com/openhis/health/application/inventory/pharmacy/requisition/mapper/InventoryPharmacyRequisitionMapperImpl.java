@@ -36,6 +36,7 @@ import com.openhis.health.domain.share.enums.SupplyCategory;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.share.utils.EnumUtil;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryItemModel;
 import com.openhis.health.domain.workflow.supplyrequest.command.AgreeRequestCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreateRequisitionCommand;
@@ -51,6 +52,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -202,9 +204,13 @@ public class InventoryPharmacyRequisitionMapperImpl implements InventoryPharmacy
                 }
             }
             LocalDateTime maxApply = null;
+            List<BigDecimal> lineTotals = new ArrayList<>();
             for (SupplyRequestModel line : lines) {
                 if (line == null) {
                     continue;
+                }
+                if (line.getTotalPrice() != null) {
+                    lineTotals.add(line.getTotalPrice());
                 }
                 if (line.getApplyTime() != null) {
                     // 列表申请时间取同号下最晚申请时刻，表示「单据活跃时间」上界。
@@ -213,6 +219,7 @@ public class InventoryPharmacyRequisitionMapperImpl implements InventoryPharmacy
                     }
                 }
             }
+            BigDecimal totalAmount = MonetaryAmountSupport.sumThenSettle(lineTotals);
             LocalDateTime approvalTime = null;
             List<SupplyRequestModel> sortedById = new ArrayList<>(lines);
             sortedById.sort(this::compareSupplyModelIdAscNullsLast);
@@ -238,6 +245,7 @@ public class InventoryPharmacyRequisitionMapperImpl implements InventoryPharmacy
             dto.setOriginalBusNo(head.getOriginalBusNo());
             dto.setApprovalTime(approvalTime);
             dto.setApplyTime(maxApply);
+            dto.setTotalAmount(totalAmount);
             out.add(dto);
         }
         return out;
@@ -491,6 +499,8 @@ public class InventoryPharmacyRequisitionMapperImpl implements InventoryPharmacy
             item.setOccurrenceTime(occ);
             item.setReason(line.getRemake());
             item.setLotNumber(line.getLotNumber());
+            item.setStartTime(line.getStartTime());
+            item.setEndTime(line.getEndTime());
             item.setTraceNo(line.getTraceNo());
             item.setPrice(line.getPrice());
             item.setTotalPrice(line.getTotalPrice());

@@ -16,12 +16,17 @@ import com.openhis.chs.domain.catalog.result.CatalogDownloadJobProgressResult;
 import com.openhis.chs.domain.catalog.result.CatalogDownloadJobStartResult;
 import com.openhis.chs.domain.catalog.result.CatalogDownloadPreviewResult;
 import com.openhis.chs.domain.catalog.service.YbCatalogDownloadCursorQueryService;
+import com.openhis.chs.domain.catalog.service.YbNationalCatalogQueryService;
 import com.openhis.chs.domain.contract.ChsContractSnapshot;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * 目录文件下载页 UI 应用服务（POST /api/app/insuranceCatalogDownload/*）。
@@ -32,6 +37,7 @@ import java.util.List;
 public class InsuranceCatalogDownloadAppService {
 
     private final YbCatalogDownloadCursorQueryService catalogDownloadCursorQueryService;
+    private final YbNationalCatalogQueryService nationalCatalogQueryService;
     private final ChsInsuranceContractReader contractReader;
     private final CatalogDownloadAccess catalogDownloadAccess;
 
@@ -55,12 +61,27 @@ public class InsuranceCatalogDownloadAppService {
         return catalogDownloadAccess.getCatalogDownloadJobProgress(safe.getJobId());
     }
 
-    /** 查询各 infno 的增量下载游标。 */
+    /** 查询各 infno 的增量下载游标（含镜像行数等展示字段）。 */
     public ListCatalogDownloadCursorsResponse listDownloadCursors(ListDownloadCursorsRequest request) {
         ListDownloadCursorsRequest safe = request == null ? new ListDownloadCursorsRequest() : request;
         ChsContractSnapshot contract = contractReader.requireContract(safe.getContractBusNo(), null);
+        Long tenantId = TenantUtils.getCurrentTenantId();
         List<YbCatalogDownloadCursor> rows = catalogDownloadCursorQueryService.listByContractIdAndTenantId(
-            contract.id(), TenantUtils.getCurrentTenantId());
-        return InsuranceCatalogDownloadMapper.toCursorResponse(rows);
+            contract.id(), tenantId);
+
+        Set<String> listTypes = new HashSet<>();
+        for (YbCatalogDownloadCursor row : rows) {
+            if (row == null || row.getInfno() == null) {
+                continue;
+            }
+            listTypes.add(InsuranceCatalogDownloadMapper.listTypeForInfno(row.getInfno()));
+        }
+        Map<String, Long> listTypeRowCounts = new HashMap<>();
+        for (String listType : listTypes) {
+            listTypeRowCounts.put(
+                listType,
+                nationalCatalogQueryService.countByContractAndListType(contract.id(), listType, tenantId));
+        }
+        return InsuranceCatalogDownloadMapper.toCursorResponse(rows, listTypeRowCounts);
     }
 }

@@ -16,7 +16,7 @@ import lombok.experimental.Accessors;
 @Schema(description = "待挂号撤销响应")
 public class CancelPlannedRegistrationResponse {
 
-    /** 撤销后的就诊状态（通常为 CANCELLED）。 */
+    /** 撤销后的就诊状态（未收费取消为 {@code ENTERED_IN_ERROR}，与退号 {@code CANCELLED} 区分）。 */
     @Schema(description = "就诊状态")
     private String encounterStatus;
 

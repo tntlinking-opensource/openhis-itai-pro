@@ -12,7 +12,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * 库房日结耗材发退药明细行读模型（**AS-INV-RPT-001** · **DM-WKF-007 §6.2.19**）。
+ * 库房期初期末明细耗材发退药明细行读模型（**AS-INV-RPT-001** · **DM-WKF-007 §6.2.19**）。
  *
  * <p>发/退方向由应用层按 {@code status_enum} 拆分动态列；本读模型不做品种汇总。</p>
  */

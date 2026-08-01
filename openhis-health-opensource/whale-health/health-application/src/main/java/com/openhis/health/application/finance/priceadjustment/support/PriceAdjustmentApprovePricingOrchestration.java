@@ -17,7 +17,6 @@ import com.openhis.health.domain.custom.priceadjustment.support.PriceAdjustmentI
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.PriceType;
 import com.openhis.health.domain.share.enums.PublicationStatus;
-import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
@@ -25,7 +24,9 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 调价审批同意定价落库：停用旧 {@code ACTIVE} 行并新增启用行（IF-PRC-13 / BR-PRC-APR-003～005）。
@@ -180,12 +181,19 @@ public class PriceAdjustmentApprovePricingOrchestration {
         if (line.getDetails() == null) {
             return;
         }
-        // 批号级价：按子表批号展开 LOT_NUMBER_COST / LOT_NUMBER_PRICE。
+        // 批号级价：按子表批号展开；同批多库房多行时按批号去重，避免重复停用/新增
+        Set<String> writtenLots = new HashSet<>();
         for (PriceAdjustmentDetailQueryModel detail : line.getDetails()) {
+            // 空行或无批号：无法写批号价
             if (detail == null || StringUtils.isEmpty(detail.getLotNumber())) {
                 continue;
             }
             String lot = detail.getLotNumber().trim();
+            // 同批号已写过定价：跳过后续库位行
+            if (!writtenLots.add(lot)) {
+                continue;
+            }
+            // 主行调了进价：该批号写 LOT_NUMBER_COST
             if (line.getNewPurchaseAmount() != null) {
                 deactivateItems.add(
                     this.deactivateItem(itemTable, itemId, PriceType.LOT_NUMBER_COST.getCode(), lot));
@@ -199,6 +207,7 @@ public class PriceAdjustmentApprovePricingOrchestration {
                     operatorId
                 ));
             }
+            // 主行调了售价：该批号写 LOT_NUMBER_PRICE
             if (line.getNewSellingAmount() != null) {
                 deactivateItems.add(
                     this.deactivateItem(itemTable, itemId, PriceType.LOT_NUMBER_PRICE.getCode(), lot));

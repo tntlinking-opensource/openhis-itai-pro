@@ -238,10 +238,30 @@ public class PaymentReconciliation extends BaseAuditedEntity {
         if (settlementId == null) {
             throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT, "交账头标识不能为空");
         }
-        // 已挂载表示另一交账批次已归档，禁止重复纳入
+        // 已挂载表示另一交账批次已纳入，禁止重复挂载
         if (this.cashierSettlementId != null) {
             throw new BusinessException(ErrorCodeConstants.CASHIER_SETTLEMENT_CONCURRENT_CONFLICT, "支付流水已被交账，请刷新后重试");
         }
         this.cashierSettlementId = settlementId;
+    }
+
+    /**
+     * 清空交账挂载（撤回/驳回）。
+     *
+     * @param expectedSettlementId 期望的交账头；不一致则拒绝，防清错批次
+     * @throws BusinessException 期望 id 空或不匹配
+     */
+    public void clearCashierSettlement(Long expectedSettlementId) {
+        // 期望批次为空无法安全清挂载
+        if (expectedSettlementId == null) {
+            throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT, "交账头标识不能为空");
+        }
+        // 未挂载或已挂其它批次，拒绝静默清空
+        if (this.cashierSettlementId == null || !this.cashierSettlementId.equals(expectedSettlementId)) {
+            throw new BusinessException(
+                ErrorCodeConstants.CASHIER_SETTLEMENT_CONCURRENT_CONFLICT,
+                "支付流水交账挂载已变更，请刷新后重试");
+        }
+        this.cashierSettlementId = null;
     }
 }

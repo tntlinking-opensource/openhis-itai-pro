@@ -23,7 +23,7 @@ import lombok.RequiredArgsConstructor;
  * 取药科室模板（{@code cus_service_location_template}）聚合写侧领域服务。
  *
  * <p>职责：按开立科室维护发放规则（整科覆盖保存、批量插入、按科软删）。</p>
- * <p>不变量：组合键不重复（BR-SLT-004）、优先级从 1 连续；持久化先于 {@link ServiceLocationTemplateEditedEvent}。</p>
+ * <p>不变量：配置键（匹配条件+默认发药位置）不重复（BR-SLT-004）、优先级从 1 连续；持久化先于 {@link ServiceLocationTemplateEditedEvent}。</p>
  * <p>仅注入本聚合 {@link ServiceLocationTemplateRepository}。</p>
  */
 @Service
@@ -131,7 +131,9 @@ public class ServiceLocationTemplateDomainService {
     }
 
     /**
-     * 校验「物品表 + 发放类别 + 具体项 + 用法 + 生效时段」组合键在本次提交中不重复（BR-SLT-004）。
+     * 校验「物品表 + 发放类别 + 具体项 + 用法 + 生效时段 + 默认发药位置」在本次提交中不重复（BR-SLT-004）。
+     *
+     * <p>同匹配条件可指向多个药房，由 {@code priority} 排候选序；仅条件与库位全同才拒绝。</p>
      *
      * @param organizationId 开立科室/机构标识
      * @param items 待保存规则列表
@@ -144,8 +146,9 @@ public class ServiceLocationTemplateDomainService {
                 + item.getDistributionCategoryCode() + "\u0001"
                 + String.valueOf(item.getItemDefinitionId()) + "\u0001"
                 + String.valueOf(item.getMethodCode()) + "\u0001"
-                + this.timeWindowKey(item.getStartTime(), item.getEndTime());
-            // 同一科室下五元组+时段完全相同视为重复配置，拒绝保存以免匹配歧义
+                + this.timeWindowKey(item.getStartTime(), item.getEndTime()) + "\u0001"
+                + String.valueOf(item.getDefLocationId());
+            // 同一科室下匹配条件与默认发药位置全同视为重复行
             if (keys.contains(key)) {
                 throw new BusinessException(ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT, "规则配置键不可重复");
             }

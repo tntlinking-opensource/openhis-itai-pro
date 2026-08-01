@@ -4,6 +4,9 @@
  */
 package com.openhis.health.application.inventory.pharmacy.returntowarehouse.dto;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
@@ -22,7 +25,10 @@ public class ReturnablePharmacyStockInLineDto {
     @Schema(description = "物品表 itemTable")
     private String itemTable;
 
-    /** 物品 itemId。 */
+    /**
+     * 物品主键 itemId（JSON 字符串，防前端 Number 精度丢失导致退库行键对不上）。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "物品 itemId")
     private Long itemId;
 
@@ -85,4 +91,8 @@ public class ReturnablePharmacyStockInLineDto {
     /** 计量单位展示名 unitCodeDictText。 */
     @Schema(description = "计量单位展示名 unitCodeDictText")
     private String unitCodeDictText;
+
+    /** 产品目录 productCatalog（含 unitBands，可退行单位回显用）。 */
+    @Schema(description = "产品目录 productCatalog")
+    private ProductDefinitionCatalogEditorHintsDto productCatalog;
 }

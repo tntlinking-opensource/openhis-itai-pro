@@ -35,6 +35,7 @@ import java.util.*;
  */
 @Component
 @Order(0)  // 使用 Order(0) 确保在其他自定义器之前执行，这样可以在 SpringDoc 自动扫描的路径基础上添加动态路径
+@SuppressWarnings({"rawtypes", "unchecked"})
 public class DynamicOpenApiCustomizer implements OpenApiCustomizer {
 
     private static final Logger logger = LoggerFactory.getLogger(DynamicOpenApiCustomizer.class);
@@ -331,7 +332,6 @@ public class DynamicOpenApiCustomizer implements OpenApiCustomizer {
                 Schema<?> wrapperSchema = new Schema<>();
                 wrapperSchema.setType("object");
                 wrapperSchema.setDescription("参数对象");
-                @SuppressWarnings("rawtypes")
                 Map<String, Schema> properties = new HashMap<>();
                 Schema<?> valueSchema = buildSchemaForType(paramType);
                 properties.put("value", valueSchema);
@@ -349,7 +349,6 @@ public class DynamicOpenApiCustomizer implements OpenApiCustomizer {
         objectSchema.setType("object");
         objectSchema.setDescription("方法参数对象，按顺序传递参数");
 
-        @SuppressWarnings("rawtypes")
         Map<String, Schema> properties = new HashMap<>();
         for (int i = 0; i < parameters.length; i++) {
             Parameter param = parameters[i];
@@ -528,7 +527,6 @@ public class DynamicOpenApiCustomizer implements OpenApiCustomizer {
             schema.setFormat("double");
         }  else if (type.isEnum()) {
             schema.setType("string");
-            @SuppressWarnings("rawtypes")
             List enumValues = new ArrayList();
             for (Object enumConstant : type.getEnumConstants()) {
                 enumValues.add(enumConstant.toString());
@@ -574,7 +572,6 @@ public class DynamicOpenApiCustomizer implements OpenApiCustomizer {
             fieldSchema.setFormat("double");
         } else if (fieldType.isEnum()) {
             fieldSchema.setType("string");
-            @SuppressWarnings("rawtypes")
             List enumValues = new ArrayList();
             for (Object enumConstant : fieldType.getEnumConstants()) {
                 enumValues.add(enumConstant.toString());
@@ -614,7 +611,6 @@ public class DynamicOpenApiCustomizer implements OpenApiCustomizer {
             fieldSchema.setFormat("double");
         } else if (itemType.isEnum()) {
                             itemSchema.setType("string");
-                            @SuppressWarnings("rawtypes")
                             List enumValues = new ArrayList();
                             for (Object enumConstant : itemType.getEnumConstants()) {
                                 enumValues.add(enumConstant.toString());
@@ -705,7 +701,6 @@ public class DynamicOpenApiCustomizer implements OpenApiCustomizer {
                 wrapperSchema.setType("object");
                 wrapperSchema.setDescription("参数对象");
 
-                @SuppressWarnings("rawtypes")
                 Map<String, Schema> properties = new HashMap<>();
 
                 // 从注解构建 Schema
@@ -721,7 +716,6 @@ public class DynamicOpenApiCustomizer implements OpenApiCustomizer {
         objectSchema.setType("object");
         objectSchema.setDescription("方法参数对象");
 
-        @SuppressWarnings("rawtypes")
         Map<String, Schema> properties = new HashMap<>();
 
         for (int i = 0; i < parameters.length; i++) {

@@ -19,16 +19,22 @@ import com.openhis.chs.domain.catalog.command.RevokeActivityCatalog3302Command;
 import com.openhis.chs.domain.catalog.command.RevokeCatalog3302Command;
 import com.openhis.chs.domain.catalog.command.RevokeCatalog3302RowCommand;
 import com.openhis.chs.domain.catalog.command.RevokeDeviceCatalog3302Command;
+import com.openhis.chs.domain.catalog.command.RevokeFromInstitutionMatchCommand;
 import com.openhis.chs.domain.catalog.command.RevokeMedicationCatalog3302Command;
 import com.openhis.chs.domain.catalog.command.UploadActivityCatalog3301Command;
 import com.openhis.chs.domain.catalog.command.UploadCatalog3301Command;
 import com.openhis.chs.domain.catalog.command.UploadCatalog3301RowCommand;
 import com.openhis.chs.domain.catalog.command.UploadDeviceCatalog3301Command;
 import com.openhis.chs.domain.catalog.command.UploadMedicationCatalog3301Command;
+import com.openhis.chs.domain.catalog.entity.YbInstitutionCatalogMatch;
+import com.openhis.chs.domain.catalog.repository.HospitalCatalogPresenceLookup;
 import com.openhis.chs.domain.catalog.result.Catalog3301UploadResult;
 import com.openhis.chs.domain.catalog.result.Catalog3301UploadRowResult;
 import com.openhis.chs.domain.catalog.result.Catalog3302RevokeResult;
 import com.openhis.chs.domain.catalog.result.Catalog3302RevokeRowResult;
+import com.openhis.chs.domain.catalog.result.HospitalCatalogPresence;
+import com.openhis.chs.domain.catalog.service.YbInstitutionCatalogMatchQueryService;
+import com.openhis.chs.domain.share.enums.ListType;
 import com.openhis.health.domain.administration.devicedefinition.entity.DeviceDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.queries.model.MedicationDefinitionDetailQueryModel;
 import com.openhis.health.domain.workflow.activitydefinition.queries.model.ActivityDefinitionBaseQueryModel;
@@ -55,6 +61,8 @@ public class CatalogMappingUploadWorkflow implements CatalogMappingUploadAccess 
     private final Cat3302Invoker cat3302Invoker;
     private final CatalogMappingHealthAssemblySupport healthAssembly;
     private final CatalogPlatformSupport catalogPlatformSupport;
+    private final YbInstitutionCatalogMatchQueryService institutionCatalogMatchQueryService;
+    private final HospitalCatalogPresenceLookup hospitalCatalogPresenceLookup;
 
     @Override
     public Catalog3301UploadResult uploadMedication(UploadMedicationCatalog3301Command command) {
@@ -141,6 +149,68 @@ public class CatalogMappingUploadWorkflow implements CatalogMappingUploadAccess 
             return result;
         }
         throw revokeFailed(rowResult, result);
+    }
+
+    @Override
+    public Catalog3302RevokeResult revokeFromInstitutionMatch(RevokeFromInstitutionMatchCommand command) {
+        Long operatorId = catalogPlatformSupport.requireOperatorId("请先登录");
+        if (command == null || command.getMatchId() == null) {
+            throw new BusinessException("MATCH_ID_REQUIRED", "请指定平台已对照镜像行");
+        }
+        if (isEmpty(command.getContractBusNo())) {
+            throw new BusinessException("CONTRACT_BUS_NO_REQUIRED", "请选择医保契约");
+        }
+        YbInstitutionCatalogMatch match = institutionCatalogMatchQueryService.findActiveById(command.getMatchId());
+        if (match == null) {
+            throw new BusinessException("MATCH_NOT_FOUND", "平台已对照镜像行不存在");
+        }
+        if (isEmpty(match.getMedinsListCodg()) || isEmpty(match.getMedListCodg()) || isEmpty(match.getListType())) {
+            throw new BusinessException("MATCH_INCOMPLETE", "镜像缺少院内编码/医保编码/目录类别，无法撤销");
+        }
+
+        String listType = match.getListType().trim();
+        String busNo = match.getMedinsListCodg().trim();
+        String medListCodg = match.getMedListCodg().trim();
+        HospitalCatalogPresence presence = hospitalCatalogPresenceLookup
+            .resolve(listType, List.of(busNo))
+            .get(HospitalCatalogPresenceLookup.key(listType, busNo));
+
+        RevokeCatalog3302RowCommand row = new RevokeCatalog3302RowCommand()
+            .setFixmedinsHilistId(busNo)
+            .setListType(listType)
+            .setMedListCodg(medListCodg);
+        if (presence != null) {
+            row.setProductTable(presence.getProductTable());
+            row.setProductId(presence.getProductId());
+        } else {
+            row.setProductTable(HospitalCatalogPresenceLookup.productTableOf(listType));
+        }
+
+        Catalog3302RevokeResult result = invokeRevoke3302(command.getContractBusNo().trim(), List.of(row));
+        Catalog3302RevokeRowResult rowResult = firstRevokeRow(result);
+        if (rowResult != null && rowResult.isSuccess()) {
+            if (presence != null && presence.getProductId() != null) {
+                clearHospitalMatchFlag(listType, presence, operatorId);
+            }
+            institutionCatalogMatchQueryService.markInvalid(match);
+            return result;
+        }
+        throw revokeFailed(rowResult, result);
+    }
+
+    private void clearHospitalMatchFlag(String listType, HospitalCatalogPresence presence, Long operatorId) {
+        if (ListType.MEDICAL_SERVICE.getCode().equals(listType)) {
+            healthAssembly.syncActivityMatchFlag(
+                presence.getProductId(), presence.getYbNo(), null, false, operatorId);
+            return;
+        }
+        if (ListType.MEDICAL_CONSUMABLE.getCode().equals(listType)) {
+            DeviceDefinition device = healthAssembly.requireDevice(presence.getProductId());
+            healthAssembly.syncDeviceMatchFlag(device, false, operatorId);
+            return;
+        }
+        healthAssembly.syncMedicationMatchFlag(
+            presence.getProductId(), presence.getYbNo(), null, false, operatorId);
     }
 
     private Catalog3301UploadResult finalizeUpload3301(

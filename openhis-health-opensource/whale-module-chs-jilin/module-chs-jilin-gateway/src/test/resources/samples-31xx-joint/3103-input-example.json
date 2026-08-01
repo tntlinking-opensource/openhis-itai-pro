@@ -1,0 +1,31 @@
+{
+  "input": {
+    "data": {
+      "warn_type": "2",
+      "warns": [
+        {
+          "warn_rslt_id": "3d932016-ac20-4157-9d1e-d240b6cc3991",
+          "dspo_way_rea": "修改医嘱",
+          "dspo_way": "1"
+        }
+      ]
+    }
+  },
+  "infno": "3103",
+  "msgid": "H22010400562202303231104040942",
+  "mdtrtarea_admvs": "229900",
+  "insuplc_admdvs": "229900",
+  "recer_sys_code": "MBS_LOCAL",
+  "dev_no": "",
+  "dev_safe_info": "",
+  "cainfo": "",
+  "signtype": "",
+  "infver": "1.0",
+  "opter_type": "1",
+  "opter": "D1069",
+  "opter_name": "张三",
+  "inf_time": "2023-03-23 11:03:41",
+  "fixmedins_code": "H22010400562",
+  "fixmedins_name": "测试医院",
+  "sign_no": "220000202303230906210106092971"
+}

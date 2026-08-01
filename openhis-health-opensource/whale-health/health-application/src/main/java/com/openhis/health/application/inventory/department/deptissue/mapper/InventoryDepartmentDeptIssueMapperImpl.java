@@ -39,6 +39,7 @@ import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.SupplyCategory;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.workflow.inventoryitem.command.DecreaseQuantityCommand;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryItemModel;
 import com.openhis.health.domain.workflow.supplydelivery.command.CreateSupplyDeliveryCommand;
@@ -185,20 +186,23 @@ public class InventoryDepartmentDeptIssueMapperImpl implements InventoryDepartme
     /**
      * 装配科室领用页初始化响应（选项集合写入各字段）。
      *
-     * @param pharmacyOpts   科室药房下拉
-     * @param productTables  物品表类型下拉
-     * @param statusOpts     状态下拉
-     * @param pharmacistOpts 药师下拉
+     * @param pharmacyOpts        科室药房下拉
+     * @param organizationOpts    启用行政科室下拉
+     * @param productTables       物品表类型下拉
+     * @param statusOpts          状态下拉
+     * @param pharmacistOpts      药师下拉
      * @return 页初始化响应
      */
     @Override
     public LoadDeptIssueFormInitResponse toLoadDeptIssueFormInitResponse(
         List<DeptPharmacyOptionDto> pharmacyOpts,
+        List<OptionDto> organizationOpts,
         List<OptionDto> productTables,
         List<OptionDto> statusOpts,
         List<OptionDto> pharmacistOpts) {
         LoadDeptIssueFormInitResponse res = new LoadDeptIssueFormInitResponse();
         res.setDepartmentPharmacyOptions(pharmacyOpts);
+        res.setOrganizationOptions(organizationOpts);
         res.setProductTableOptions(productTables);
         res.setStatusOptions(statusOpts);
         res.setPharmacistOptions(pharmacistOpts);
@@ -288,12 +292,21 @@ public class InventoryDepartmentDeptIssueMapperImpl implements InventoryDepartme
             dto.setApproverId(head.getApproverId());
             dto.setApplyTime(maxApply);
             dto.setApprovalTime(approvalTime);
-            if (head.getPurposeLocationId() != null) {
-                Long orgId = this.resolveOrganizationIdForLocation(head.getPurposeLocationId());
-                if (orgId != null) {
-                    dto.setConsumingOrganizationId(String.valueOf(orgId));
-                }
+            // 领用科室：优先落库 consumingOrganizationId，历史单回落药房上级科室
+            Long orgId = this.resolveConsumingOrganizationId(head);
+            if (orgId != null) {
+                dto.setConsumingOrganizationId(String.valueOf(orgId));
             }
+            // —— 侧栏「总金额」：明细行 totalPrice 求和（BR-MON-001 计算刻度加总）。——
+            BigDecimal totalAmount = BigDecimal.ZERO;
+            for (SupplyRequestModel line : lines) {
+                if (line == null || line.getTotalPrice() == null) {
+                    continue;
+                }
+                totalAmount = totalAmount.add(MonetaryAmountSupport.scaleCalc(line.getTotalPrice()));
+            }
+            dto.setTotalPrice(totalAmount);
+            dto.setTotalAmount(totalAmount);
             out.add(dto);
         }
         return out;
@@ -353,11 +366,10 @@ public class InventoryDepartmentDeptIssueMapperImpl implements InventoryDepartme
             }
         }
         res.setApprovalTime(approvalTime);
-        if (head.getPurposeLocationId() != null) {
-            Long orgId = this.resolveOrganizationIdForLocation(head.getPurposeLocationId());
-            if (orgId != null) {
-                res.setConsumingOrganizationId(String.valueOf(orgId));
-            }
+        // 领用科室：优先落库 consumingOrganizationId，历史单回落药房上级科室
+        Long orgId = this.resolveConsumingOrganizationId(head);
+        if (orgId != null) {
+            res.setConsumingOrganizationId(String.valueOf(orgId));
         }
         List<DeptIssueDetailLineDto> detailLines = new ArrayList<>();
         for (SupplyRequestModel line : lines) {
@@ -396,6 +408,9 @@ public class InventoryDepartmentDeptIssueMapperImpl implements InventoryDepartme
         dto.setUnitCode(line.getUnitCode());
         dto.setPrice(line.getPrice());
         dto.setTotalPrice(line.getTotalPrice());
+        // 效期/行备注：供前端「有效期」「备注」列回显（与请领同构）
+        dto.setEndTime(line.getEndTime());
+        dto.setRemake(line.getRemake());
         dto.setItemName(null);
         dto.setSpec(null);
         dto.setManufacturer(null);
@@ -441,13 +456,21 @@ public class InventoryDepartmentDeptIssueMapperImpl implements InventoryDepartme
                 item.setCategoryEnum(categoryCode);
                 item.setPurposeTypeEnum(purposeTypeCode);
                 item.setPurposeLocationId(request.getPurposeLocationId());
+                // 领用科室：手选行政科室落库，与科室药房解耦
+                item.setConsumingOrganizationId(request.getConsumingOrganizationId());
                 item.setPractitionerId(request.getPractitionerId());
                 item.setReason(request.getReason());
-                item.setRemake(request.getRemake());
+                // 行备注优先取明细 remake；头 remake 仅作历史兼容回落（头字段不覆盖行已填备注）
+                if (line.getRemake() != null && !line.getRemake().isBlank()) {
+                    item.setRemake(line.getRemake());
+                } else {
+                    item.setRemake(request.getRemake());
+                }
                 item.setLotNumber(line.getLotNumber());
                 item.setTraceNo(line.getTraceNo());
                 item.setPrice(line.getPrice());
                 item.setTotalPrice(this.resolveLineTotalPrice(line));
+                item.setEndTime(line.getEndTime());
                 item.setApplicantId(applicantId);
                 item.setApplyTime(null);
                 item.setOccurrenceTime(null);
@@ -476,6 +499,7 @@ public class InventoryDepartmentDeptIssueMapperImpl implements InventoryDepartme
         }
         CreateDeptIssueRequest synthetic = new CreateDeptIssueRequest();
         synthetic.setPurposeLocationId(request.getPurposeLocationId());
+        synthetic.setConsumingOrganizationId(request.getConsumingOrganizationId());
         synthetic.setPractitionerId(request.getPractitionerId());
         synthetic.setReason(request.getReason());
         synthetic.setRemake(request.getRemake());
@@ -799,7 +823,7 @@ public class InventoryDepartmentDeptIssueMapperImpl implements InventoryDepartme
     }
 
     /**
-     * 按行单价与数量计算行总价；缺单价或数量时返回 null。
+     * 按行单价与数量计算行总价（BR-MON-001 计算刻度）；缺单价或数量时返回 null。
      *
      * @param line 写模型明细行
      * @return 行总价；无法计算时 null
@@ -808,11 +832,32 @@ public class InventoryDepartmentDeptIssueMapperImpl implements InventoryDepartme
         if (line == null || line.getPrice() == null || line.getItemQuantity() == null) {
             return null;
         }
-        return line.getPrice().multiply(line.getItemQuantity());
+        return MonetaryAmountSupport.lineTotal(line.getPrice(), line.getItemQuantity());
     }
 
     /**
-     * 由科室药房库位主键解析上级科室 organization_id。
+     * 解析领用科室 organization 主键：优先落库 {@code consumingOrganizationId}，历史单回落科室药房上级科室。
+     *
+     * @param head 供应请求表头行
+     * @return 领用科室主键；无法解析时 null
+     */
+    private Long resolveConsumingOrganizationId(SupplyRequestModel head) {
+        if (head == null) {
+            return null;
+        }
+        // 新单：直接用落库领用科室
+        if (head.getConsumingOrganizationId() != null) {
+            return head.getConsumingOrganizationId();
+        }
+        // 历史单：回落科室药房 Location.organization_id
+        if (head.getPurposeLocationId() != null) {
+            return this.resolveOrganizationIdForLocation(head.getPurposeLocationId());
+        }
+        return null;
+    }
+
+    /**
+     * 由科室药房库位主键解析上级科室 organization_id（历史单回落）。
      *
      * @param locationId 科室药房库位主键
      * @return 上级科室主键；库位不存在或未配置时 null

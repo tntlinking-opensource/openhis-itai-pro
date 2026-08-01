@@ -198,6 +198,7 @@ public class NursingRecordMapperImpl implements NursingRecordMapper {
         request.setSkinStatus(item.getSkinStatus());
         request.setTubeCare(item.getTubeCare());
         request.setConditionMeasure(item.getConditionMeasure());
+        request.setRecorderId(item.getRecorderId());
         return request;
     }
 

@@ -30,6 +30,11 @@ public class LoadPurchaseOrderFormInitResponse {
     private List<OptionDto> warehouseLocationOptions;
 
     /**
+     * 科室药房下拉（关联科室采购申请弹窗）：首项「全部」{@code value="0"}，其余为院内启用科室药房。
+     */
+    private List<OptionDto> departmentPharmacyLocationOptions;
+
+    /**
      * 启用供应商下拉：{@code value} 为供应商主键字符串，{@code label} 含类型展示后缀。
      */
     private List<OptionDto> supplierOptions;

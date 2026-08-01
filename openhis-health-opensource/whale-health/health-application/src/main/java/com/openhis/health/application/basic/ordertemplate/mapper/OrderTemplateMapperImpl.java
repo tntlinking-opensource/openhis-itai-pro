@@ -28,6 +28,7 @@ import com.openhis.health.domain.custom.ordertemplate.queries.model.OrderTemplat
 import com.openhis.health.domain.custom.ordertemplate.queries.model.OrderTemplateWithLinesQueryModel;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.health.domain.share.enums.OrderTemplateBinding;
 import com.openhis.health.domain.share.enums.OrderTemplateKind;
@@ -711,6 +712,17 @@ public class OrderTemplateMapperImpl implements OrderTemplateMapper {
                 filtered.add(row);
             }
         }
+        // B.2.1：当前页内存过滤后，精确全等（名称/模板码）置顶
+        filtered.sort((left, right) -> {
+            int exactCmp = KeywordExactFirstOrderSupport.compareExactFirst(
+                trimmedKeyword,
+                List.of(left.getName(), left.getTemplateCode()),
+                List.of(right.getName(), right.getTemplateCode()));
+            if (exactCmp != 0) {
+                return exactCmp;
+            }
+            return 0;
+        });
         return filtered;
     }
 

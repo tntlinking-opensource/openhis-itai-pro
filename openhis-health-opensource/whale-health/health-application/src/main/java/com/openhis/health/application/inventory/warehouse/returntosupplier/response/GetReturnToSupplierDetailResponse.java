@@ -59,6 +59,12 @@ public class GetReturnToSupplierDetailResponse {
     @Schema(description = "供应类别 categoryEnum")
     private Integer categoryEnum;
 
+    /**
+     * 采购发票号（同单共享；进销存 {@code purc_invo_no}）。
+     */
+    @Schema(description = "采购发票号 invoiceNo")
+    private String invoiceNo;
+
     /** 明细行 lines。 */
     @Schema(description = "明细行 lines")
     private List<ReturnToSupplierDetailLineDto> lines;

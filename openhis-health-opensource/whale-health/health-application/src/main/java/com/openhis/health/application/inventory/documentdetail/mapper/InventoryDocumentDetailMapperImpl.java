@@ -127,6 +127,7 @@ public class InventoryDocumentDetailMapperImpl implements InventoryDocumentDetai
             exportRow.setTypeEnumText(row.getTypeEnumText());
             exportRow.setSourceLocationName(row.getSourceLocationName());
             exportRow.setPurposeLocationName(row.getPurposeLocationName());
+            exportRow.setConsumingOrganizationName(row.getConsumingOrganizationName());
             exportRow.setSupplierName(row.getSupplierName());
             exportRow.setApplicantName(row.getApplicantName());
             exportRow.setApproverName(row.getApproverName());
@@ -212,6 +213,7 @@ public class InventoryDocumentDetailMapperImpl implements InventoryDocumentDetai
         columns.add(new TabularColumnDef("typeEnumText", "单据类型"));
         columns.add(new TabularColumnDef("sourceLocationName", "源库位"));
         columns.add(new TabularColumnDef("purposeLocationName", "目的库位"));
+        columns.add(new TabularColumnDef("consumingOrganizationName", "领用科室"));
         columns.add(new TabularColumnDef("supplierName", "供应商"));
         columns.add(new TabularColumnDef("applicantName", "申请人"));
         columns.add(new TabularColumnDef("approverName", "审批人"));
@@ -253,6 +255,7 @@ public class InventoryDocumentDetailMapperImpl implements InventoryDocumentDetai
         map.put("typeEnumText", exportRow.getTypeEnumText());
         map.put("sourceLocationName", exportRow.getSourceLocationName());
         map.put("purposeLocationName", exportRow.getPurposeLocationName());
+        map.put("consumingOrganizationName", exportRow.getConsumingOrganizationName());
         map.put("supplierName", exportRow.getSupplierName());
         map.put("applicantName", exportRow.getApplicantName());
         map.put("approverName", exportRow.getApproverName());

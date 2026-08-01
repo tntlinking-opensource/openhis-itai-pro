@@ -4,9 +4,11 @@
  */
 package com.openhis.health.application.outpatient.pharmacy.returnmedicine.service;
 
+import com.openhis.health.application.shared.financial.EncounterContractDisplayAssembler;
 import com.openhis.health.application.shared.validator.CurrentManagedLocationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
+import com.openhis.health.application.outpatient.pharmacy.returnmedicine.dto.ReturnPatientRowDto;
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.assembler.OutpatientReturnMedicinePatientQueueAssembler;
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.mapper.OutpatientPharmacyReturnMedicineMapper;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
@@ -104,6 +106,8 @@ public class OutpatientPharmacyReturnMedicineAppService {
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final OutpatientPharmacyReturnMedicineMapper returnMedicineMapper;
     private final OutpatientReturnMedicinePatientQueueAssembler outpatientReturnMedicinePatientQueueAssembler;
+    /** 就诊费用性质（优先合同名）批量回填队列卡片，与发药队列同口径。 */
+    private final EncounterContractDisplayAssembler encounterContractDisplayAssembler;
 
     /**
      * 加载退药初始化元数据（科室与退药状态筛选项）。
@@ -160,15 +164,46 @@ public class OutpatientPharmacyReturnMedicineAppService {
                 this.medicationDispenseQueryService.mapAggregatedRefundStatusCodeByEncounterIds(encounterIds);
             List<ReturnMedicinePatientQueueRow> rows =
                 this.outpatientReturnMedicinePatientQueueAssembler.buildRows(infos, refundCodeByEncounter);
+            // Asm：队列行映射后回填费用性质（与发药/医生站卡片同口径）。
+            List<ReturnPatientRowDto> patientRows = this.returnMedicineMapper.mapToReturnPatientRows(rows);
+            this.applyQueueContractDisplayLabels(patientRows);
             PageReturnPatientResponse response = new PageReturnPatientResponse();
-            return PagedResultBuilder.build(
-                response,
-                this.returnMedicineMapper.mapToReturnPatientRows(rows),
-                encounterIdPage);
+            return PagedResultBuilder.build(response, patientRows, encounterIdPage);
         } catch (BusinessException ex) {
             throw ex;
         } catch (RuntimeException ex) {
             throw new BusinessException(ErrorCodeConstants.EX_PHA_002_101_LOAD_FAILED, "退药队列查询失败：" + ex.getMessage());
+        }
+    }
+
+    /**
+     * 退药队列行批量回填 {@code contractDisplay}（与发药队列/医生站患者卡片费用性质同口径）。
+     *
+     * @param patientRows 本页已映射的队列 DTO；空或无就诊主键时直接返回
+     */
+    private void applyQueueContractDisplayLabels(List<ReturnPatientRowDto> patientRows) {
+        if (patientRows == null || patientRows.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
+        // Loop：收集本页就诊主键，供合同展示一次批量解析
+        for (ReturnPatientRowDto row : patientRows) {
+            if (row != null && row.getEncounterId() != null) {
+                encounterIds.add(row.getEncounterId());
+            }
+        }
+        // 本页无有效就诊时跳过合同装配
+        if (encounterIds.isEmpty()) {
+            return;
+        }
+        Map<Long, String> contractDisplayByEncounterId =
+            this.encounterContractDisplayAssembler.mapContractDisplayByEncounterIds(encounterIds);
+        // Loop：逐行写回费用性质展示名；无合同时留空，前端回落「自费」
+        for (ReturnPatientRowDto row : patientRows) {
+            if (row == null || row.getEncounterId() == null) {
+                continue;
+            }
+            row.setContractDisplay(contractDisplayByEncounterId.get(row.getEncounterId()));
         }
     }
 
@@ -322,11 +357,7 @@ public class OutpatientPharmacyReturnMedicineAppService {
         resp.setFailedItems(new ArrayList<>());
         if (confirm) {
             resp.setMessage(MedicationCommonConstants.OUTPATIENT_PHARMACY_RETURN_CONFIRM_SUCCESS_MESSAGE);
-            String medicareUploadWarning =
-                tryUploadMedicareInventoryAfterReturn(request, encounterIdForUpload, confirmedDispenseIds);
-            if (StringUtils.isNotEmpty(medicareUploadWarning)) {
-                resp.setMessage(medicareUploadWarning);
-            }
+            tryUploadMedicareInventoryAfterReturn(request, encounterIdForUpload, confirmedDispenseIds);
         } else {
             resp.setMessage(MedicationCommonConstants.OUTPATIENT_PHARMACY_RETURN_DECLINE_SUCCESS_MESSAGE);
         }
@@ -334,34 +365,22 @@ public class OutpatientPharmacyReturnMedicineAppService {
     }
 
     /**
-     * 退药本地事实提交后触发 3506；失败仅告警，不回滚退药。
-     *
-     * @return 需合并进响应的告警文案；无告警时 {@code null}
+     * 退药本地事实提交后触发 3506（afterCommit + 异步）；失败不回滚退药。
      */
-    private String tryUploadMedicareInventoryAfterReturn(
+    private void tryUploadMedicareInventoryAfterReturn(
         ConfirmMedicineReturnRequest request,
         Long encounterId,
         List<Long> dispenseIds
     ) {
         if (encounterId == null || dispenseIds == null || dispenseIds.isEmpty()) {
-            return null;
+            return;
         }
-        try {
-            if (inventoryUploadExtension.isEnabled()) {
-                InventoryUploadAfterReturnExtensionIn uploadCommand = new InventoryUploadAfterReturnExtensionIn()
-                    .setEncounterId(encounterId)
-                    .setDispenseIds(dispenseIds);
-                inventoryUploadExtension.uploadAfterReturn(uploadCommand);
-            }
-        } catch (RuntimeException ex) {
-            log.warn("医保进销存3506上传失败（本地退药已成功）", ex);
-            return MedicationCommonConstants.OUTPATIENT_PHARMACY_RETURN_CONFIRM_SUCCESS_MESSAGE
-                + "；"
-                + ErrorCodeConstants.EX_OPP_207_MEDICARE_PARTIAL_FAILURE
-                + "："
-                + ex.getMessage();
-        }
-        return null;
+        inventoryUploadExtension.runUploadIfEnabled(() -> {
+            InventoryUploadAfterReturnExtensionIn uploadCommand = new InventoryUploadAfterReturnExtensionIn()
+                .setEncounterId(encounterId)
+                .setDispenseIds(dispenseIds);
+            inventoryUploadExtension.uploadAfterReturn(uploadCommand);
+        });
     }
 
     /**

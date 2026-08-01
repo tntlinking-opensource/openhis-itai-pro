@@ -25,6 +25,17 @@ public class ChsContractPropertiesAccessImpl implements ChsContractPropertiesAcc
         return findField(contractBusNo, ContractConfig::getFixmedinsCode);
     }
 
+    /**
+     * 定点医疗机构名称（{@code contract.{bus_no}.fixmedins_name}）。
+     *
+     * @param contractBusNo 契约 bus_no
+     * @return 非空名称
+     */
+    @Override
+    public Optional<String> findFixmedinsName(String contractBusNo) {
+        return findField(contractBusNo, ContractConfig::getFixmedinsName);
+    }
+
     @Override
     public Optional<String> findAdmVs(String contractBusNo) {
         return findField(contractBusNo, ContractConfig::getAdmVs);

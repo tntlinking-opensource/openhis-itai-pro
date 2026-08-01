@@ -8,16 +8,16 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 入院诊断项：住院就诊诊断关联（可复用门诊病情事实）。
+ * 入院诊断项：住院就诊诊断关联，直挂诊断目录，不经 {@code cln_condition}。
  */
 @Getter
 @Setter
 public class AdmissionConditionItem {
 
-    /** 已有病情事实主键。 */
-    private Long conditionId;
+    /** 已有就诊诊断关联行主键 {@code adm_encounter_diagnosis.id}；更新时可选。 */
+    private Long encounterDiagnosisId;
 
-    /** 新开诊断时必填：诊断目录主键。 */
+    /** 新开或复用诊断时必填：诊断目录主键 {@code cln_condition_definition.id}。 */
     private Long conditionDefinitionId;
 
     /** 是否主诊断。 */

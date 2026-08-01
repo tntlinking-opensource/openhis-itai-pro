@@ -13,14 +13,15 @@ import lombok.Data;
  * 退药患者队列行（IF-PHA-02-02）。
  */
 @Data
-/** 退药患者队列行。 */
 @Schema(description = "退药患者队列行")
 public class ReturnPatientRowDto {
 
+    /** 就诊主键。 */
     @Schema(description = "就诊主键", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long encounterId;
 
+    /** 患者姓名。 */
     @Schema(description = "患者姓名", requiredMode = Schema.RequiredMode.REQUIRED)
     private String patientName;
 
@@ -59,4 +60,11 @@ public class ReturnPatientRowDto {
     /** 就诊日期/接诊时间。 */
     @Schema(description = "就诊日期/接诊时间", requiredMode = Schema.RequiredMode.REQUIRED)
     private String receptionTime;
+
+    /**
+     * 费用性质展示名（就诊优先合同名；与发药队列/医生站/护士站卡片 {@code contractDisplay} 同口径）。
+     * <p>无合同时为空，前端回落「自费」。</p>
+     */
+    @Schema(description = "费用性质展示名")
+    private String contractDisplay;
 }

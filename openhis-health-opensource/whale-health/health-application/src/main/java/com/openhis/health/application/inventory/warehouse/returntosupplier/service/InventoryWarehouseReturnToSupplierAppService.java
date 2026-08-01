@@ -8,16 +8,20 @@ import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.L
 import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.ReturnToSupplierLineDto;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.ReturnToSupplierListRowDto;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.support.ReturnToSupplierInboundLineHelper;
+import com.openhis.health.application.inventory.warehouse.returntosupplier.support.ReturnToSupplierRemainingTracePrefiller;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.mapper.InventoryWarehouseReturnToSupplierMapper;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.request.*;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.response.*;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
+import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.custom.supplier.queries.model.SupplierDetailQueryModel;
 import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
 import com.openhis.health.application.shared.tracenumber.TraceNumberSupplyAgreeTraceOrchestrator;
 import com.openhis.health.application.shared.tracenumber.RecordTraceFromSupplyLineSpec;
 import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
+import com.openhis.health.domain.share.constants.ChargeItemAmountScaleConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InventoryWarehouseConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -27,6 +31,7 @@ import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.share.enums.TraceDirection;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.EnumUtil;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryCatalogAvailabilityRowModel;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDomainService;
@@ -65,18 +70,21 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
  * 药库退货单（{@link SupplyType#CABINET_RETURN_TO_SUPPLIER}）应用编排（AS-INV-WHS-005）。
  *
  * <p>明细须从已同意进货单（{@code original_bus_no}）拉取，禁止自由选品；同一进货单可多次部分退货直至可退余量为 0。
- * 同意后：领域落已同意态 → 退货发放 → 源药库扣减（须源库仍有实物库存；已调拨至药房须先调回）→ 追溯码；可选触发医保 3504 上传。</p>
+ * 同意后：领域落已同意态 → 退货发放 → 源药库扣减（须源库仍有实物库存；已调拨至药房须先调回）→ 追溯码；可选触发医保 3504 上传。
+ * IF-WHS-RT-13 追溯码预填为当前院内剩余（本库优先 / 全院回落），禁止回放进货扫码快照（BR-WHS-RT-008）。</p>
  */
 @Slf4j
 @Service
@@ -95,11 +103,13 @@ public class InventoryWarehouseReturnToSupplierAppService {
     private final InventoryItemDomainService inventoryItemDomainService;
     private final InventoryItemQueryService inventoryItemQueryService;
     private final LocationQueryService locationQueryService;
+    private final PractitionerQueryService practitionerQueryService;
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
     private final SupplierQueryService supplierQueryService;
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final InventoryWarehouseReturnToSupplierMapper returnToSupplierMapper;
     private final TraceNumberSupplyAgreeTraceOrchestrator traceNumberSupplyAgreeTraceOrchestrator;
+    private final ReturnToSupplierRemainingTracePrefiller returnToSupplierRemainingTracePrefiller;
 
     /**
      * 加载库房单据页主数据（管辖药库、枚举选项、制单人员等）。
@@ -183,6 +193,10 @@ public class InventoryWarehouseReturnToSupplierAppService {
             List<SupplyRequestModel> lines = this.supplyRequestQueryService.listByBusNosWithFilter(listQuery, busNos);
             List<ReturnToSupplierListRowDto> records =
                 this.returnToSupplierMapper.toReturnToSupplierListAggregated(busNos, lines);
+            // Pre：侧栏卡片制单人/审核人/供应商展示名批量富化（与进货单 IF-WHS-IN-02 同构）
+            this.enrichReturnToSupplierListDisplayNames(records, lines);
+            // Pre：历史单未落价时按来源进货落库价回补列表合计（审核中单据不可再保存）
+            this.enrichReturnToSupplierListAmountsFromInboundIfMissing(records, lines);
             int pageNo = request.getPageNo().intValue();
             int pageSize = listQuery.getBoundedPageSize();
             // Asm：映射分页响应
@@ -283,6 +297,8 @@ public class InventoryWarehouseReturnToSupplierAppService {
             // Cmd：组装 Create 命令并调用领域写服务
             CreateReturnToSupplierCommand cmd = this.returnToSupplierMapper.toCreateReturnToSupplierCommand(
                 request, operatorId, applicantId, null);
+            // Pre：从来源进货行回填包装单价，供领域写价门禁重算行额（BR-PRICE-SRC-001）
+            this.fillReturnToSupplierCommandPricesFromInbound(cmd);
             String busNo = this.supplyRequestDomainService.createReturnToSupplier(cmd);
             // Asm：返回 busNo
             return this.returnToSupplierMapper.toCreateReturnToSupplierResponse(busNo);
@@ -356,6 +372,8 @@ public class InventoryWarehouseReturnToSupplierAppService {
             // Cmd：同号全量对齐修订（领域仍走 createReturnToSupplier 写路径）
             CreateReturnToSupplierCommand cmd = this.returnToSupplierMapper.toCreateReturnToSupplierCommandForUpdate(
                 request, operatorId, applicantId, originalSnapshot);
+            // Pre：从来源进货行回填包装单价，供领域写价门禁重算行额（BR-PRICE-SRC-001）
+            this.fillReturnToSupplierCommandPricesFromInbound(cmd);
             String busNo = this.supplyRequestDomainService.createReturnToSupplier(cmd);
             // Asm：返回 busNo
             return this.returnToSupplierMapper.toUpdateReturnToSupplierResponse(busNo);
@@ -735,8 +753,8 @@ public class InventoryWarehouseReturnToSupplierAppService {
             }
             int pageNo = request.getPageNo().intValue();
             int pageSize = listQuery.getBoundedPageSize();
-            // Pre：批量解析供应商展示名，供选单列表展示
-            this.enrichLinkableGoodsReceiptSupplierNames(filtered);
+            // Pre：批量解析供应商/制单人/目的库展示名，供选单列表展示（对偶 IF-WHS-IN-12）
+            this.enrichLinkableGoodsReceiptDisplayNames(filtered);
             // Asm：映射分页响应（total 仍按进货单去重计数；本页再筛可退）
             return this.returnToSupplierMapper.toPageLinkableGoodsReceiptsAggregatedResponse(
                 mergedTotal, pageNo, pageSize, filtered);
@@ -750,7 +768,7 @@ public class InventoryWarehouseReturnToSupplierAppService {
      * 按进货单号拉取退货草稿预填（IF-WHS-RT-13，对偶 IF-WHS-IN-13）。
      *
      * @param request 须含 {@code busNo}；可选 {@code sourceLocationId} 与进货目的库一致；改单时可传 {@code excludeReturnBusNo}
-     * @return 退货表单预填（含可退余量与源库可用量）
+     * @return 退货表单预填（含可退余量、源库可用量；追溯码为当前院内剩余，见 BR-WHS-RT-008）
      * @throws BusinessException {@link ErrorCodeConstants#WHS_RT_001} 参数非法；
      *                            {@link ErrorCodeConstants#WHS_RT_002} 进货单不可引用
      */
@@ -821,6 +839,8 @@ public class InventoryWarehouseReturnToSupplierAppService {
         // Asm：映射退货预填响应
         GetLinkableGoodsReceiptDetailResponse res = this.returnToSupplierMapper.toGetLinkableGoodsReceiptDetailResponse(
             inboundLines, returnableByKey, returnedByKey, availableByKey, products);
+        // Asm：覆盖追溯码为当前院内剩余（本库优先 / 全院回落；禁止回放进货历史码串 · BR-WHS-RT-008）
+        this.returnToSupplierRemainingTracePrefiller.fillRemainingTraceNos(res.getLines(), inboundWarehouseId);
         if (head.getSupplierId() != null) {
             // —— 表头供应商名称富化，与列表选单展示口径一致。——
             this.supplierQueryService.findSupplierNameIfPresent(head.getSupplierId())
@@ -1149,41 +1169,303 @@ public class InventoryWarehouseReturnToSupplierAppService {
             dto.setPurposeLocationId(sourceLocationId);
         }
         dto.setSupplierId(head.getSupplierId());
+        // —— 制单人取进货单头行申请人，展示名由 enrichLinkableGoodsReceiptDisplayNames 回填。——
+        dto.setApplicantId(head.getApplicantId());
         dto.setTotalAmount(totalAmount);
         dto.setApprovalTime(approvalTime);
-        dto.setApplyTime(approvalTime);
+        // —— 选单「制单时间」优先业务发生时刻，其次申请时刻，最后回落审批时刻。——
+        LocalDateTime applyTime = head.getOccurrenceTime();
+        if (applyTime == null) {
+            applyTime = head.getApplyTime();
+        }
+        if (applyTime == null) {
+            applyTime = approvalTime;
+        }
+        dto.setApplyTime(applyTime);
         dto.setReturnable(returnable);
         return dto;
     }
 
     /**
-     * 为可关联进货单列表行批量填充供应商名称。
+     * 创建/修订前：按行键从来源进货单回填包装单价到命令行（BR-PRICE-SRC-001）。
      *
-     * @param rows 列表行
+     * <p>领域 {@code SupplyRequestWritePricingSupport#applyReturnToSupplierCommand} 再据此重算
+     * {@code totalPrice}；进货行缺价时由写价门禁回落批号/目录进价。</p>
+     *
+     * @param command 待写领域命令
      */
-    private void enrichLinkableGoodsReceiptSupplierNames(List<LinkableGoodsReceiptListRowDto> rows) {
+    private void fillReturnToSupplierCommandPricesFromInbound(CreateReturnToSupplierCommand command) {
+        if (command == null) {
+            return;
+        }
+        List<CreateReturnToSupplierCommand.CreateReturnToSupplierItemCommand> items = command.resolveItems();
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        CreateReturnToSupplierCommand.CreateReturnToSupplierItemCommand head = items.get(0);
+        if (head == null || StringUtils.isEmpty(head.getOriginalBusNo())) {
+            return;
+        }
+        List<SupplyRequestModel> inboundLines = this.loadInboundLinesByBusNo(head.getOriginalBusNo().trim());
+        Map<String, SupplyRequestModel> inboundByKey =
+            ReturnToSupplierInboundLineHelper.indexInboundLinesByKey(inboundLines);
+        for (CreateReturnToSupplierCommand.CreateReturnToSupplierItemCommand item : items) {
+            if (item == null || item.getItemId() == null || StringUtils.isEmpty(item.getItemTable())) {
+                continue;
+            }
+            String key = ReturnToSupplierInboundLineHelper.buildInboundLineKey(
+                item.getItemTable(), item.getItemId(), item.getLotNumber());
+            if (key.isEmpty()) {
+                continue;
+            }
+            SupplyRequestModel inboundLine = inboundByKey.get(key);
+            if (inboundLine == null || inboundLine.getPrice() == null) {
+                // 进货行无落库价：交由领域写价回落批号/目录
+                continue;
+            }
+            item.setPrice(inboundLine.getPrice());
+        }
+    }
+
+    /**
+     * 列表合计为 0/空时，按来源进货落库价 × 退货拆零量回补展示金额（修复历史未落价单据）。
+     *
+     * <p>仅影响列表读出参，不写回库；新单/可修订单经写价门禁落库后本路径不再触发。</p>
+     *
+     * @param rows        当前页聚合列表行
+     * @param detailLines 当前页供应请求明细
+     */
+    private void enrichReturnToSupplierListAmountsFromInboundIfMissing(
+        List<ReturnToSupplierListRowDto> rows,
+        List<SupplyRequestModel> detailLines) {
+        if (rows == null || rows.isEmpty() || detailLines == null || detailLines.isEmpty()) {
+            return;
+        }
+        Map<String, List<SupplyRequestModel>> linesByBusNo = new LinkedHashMap<>();
+        for (SupplyRequestModel line : detailLines) {
+            if (line == null || StringUtils.isEmpty(line.getBusNo())) {
+                continue;
+            }
+            linesByBusNo.computeIfAbsent(line.getBusNo().trim(), k -> new ArrayList<>()).add(line);
+        }
+        Map<String, Map<String, SupplyRequestModel>> inboundIndexByOriginal = new HashMap<>();
+        for (ReturnToSupplierListRowDto row : rows) {
+            if (row == null || StringUtils.isEmpty(row.getBusNo())) {
+                continue;
+            }
+            BigDecimal existing = row.getTotalAmount();
+            if (existing == null) {
+                existing = row.getTotalPrice();
+            }
+            if (existing != null && existing.compareTo(BigDecimal.ZERO) != 0) {
+                // 已有非零合计：以落库快照为准，不覆盖
+                continue;
+            }
+            List<SupplyRequestModel> returnLines = linesByBusNo.get(row.getBusNo().trim());
+            if (returnLines == null || returnLines.isEmpty()) {
+                continue;
+            }
+            String originalBusNo = row.getOriginalBusNo();
+            if (StringUtils.isEmpty(originalBusNo)) {
+                originalBusNo = returnLines.get(0).getOriginalBusNo();
+            }
+            if (StringUtils.isEmpty(originalBusNo)) {
+                continue;
+            }
+            String originalKey = originalBusNo.trim();
+            Map<String, SupplyRequestModel> inboundByKey = inboundIndexByOriginal.get(originalKey);
+            if (inboundByKey == null) {
+                List<SupplyRequestModel> inboundLines = this.loadInboundLinesByBusNo(originalKey);
+                inboundByKey = ReturnToSupplierInboundLineHelper.indexInboundLinesByKey(inboundLines);
+                inboundIndexByOriginal.put(originalKey, inboundByKey);
+            }
+            BigDecimal sum = BigDecimal.ZERO;
+            boolean anyPriced = false;
+            for (SupplyRequestModel returnLine : returnLines) {
+                if (returnLine == null || returnLine.getItemId() == null
+                    || StringUtils.isEmpty(returnLine.getItemTable())) {
+                    continue;
+                }
+                if (returnLine.getTotalPrice() != null) {
+                    sum = sum.add(returnLine.getTotalPrice());
+                    anyPriced = true;
+                    continue;
+                }
+                String lineKey = ReturnToSupplierInboundLineHelper.buildInboundLineKey(
+                    returnLine.getItemTable(), returnLine.getItemId(), returnLine.getLotNumber());
+                SupplyRequestModel inboundLine = inboundByKey.get(lineKey);
+                if (inboundLine == null || returnLine.getItemQuantity() == null) {
+                    continue;
+                }
+                BigDecimal inboundQty = inboundLine.getItemQuantity();
+                BigDecimal inboundTotal = inboundLine.getTotalPrice();
+                if (inboundTotal == null || inboundQty == null
+                    || inboundQty.compareTo(BigDecimal.ZERO) <= 0) {
+                    continue;
+                }
+                // —— 按进货行落库总额比例分摊：退货拆零量 / 进货拆零量 × 进货行总额（保留 BR-INV-DTL-007）。——
+                BigDecimal lineAmt = inboundTotal.multiply(returnLine.getItemQuantity())
+                    .divide(
+                        inboundQty,
+                        ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE,
+                        MonetaryAmountSupport.MONETARY_ROUNDING);
+                sum = sum.add(MonetaryAmountSupport.scaleCalc(lineAmt));
+                anyPriced = true;
+            }
+            if (!anyPriced) {
+                continue;
+            }
+            row.setTotalAmount(sum);
+            row.setTotalPrice(sum);
+        }
+    }
+
+    /**
+     * 为退货单列表行批量填充供应商名、制单人名、审批人名（IF-WHS-RT-02 侧栏卡片展示）。
+     *
+     * <p>主键取自聚合行（头行口径）；未命中主数据时保持 null，由前端降级为「—」。</p>
+     *
+     * @param rows         当前页聚合列表行
+     * @param detailLines  当前页供应请求明细（本方法仅作非空门禁，主键以 rows 为准）
+     */
+    private void enrichReturnToSupplierListDisplayNames(
+        List<ReturnToSupplierListRowDto> rows,
+        List<SupplyRequestModel> detailLines) {
         if (rows == null || rows.isEmpty()) {
             return;
         }
+        if (detailLines == null || detailLines.isEmpty()) {
+            // 无明细时无法保证列表主键与单据一致，跳过富化
+            return;
+        }
+        Set<Long> supplierIds = new HashSet<>();
+        Set<Long> practitionerIds = new HashSet<>();
+        for (ReturnToSupplierListRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getSupplierId() != null) {
+                supplierIds.add(row.getSupplierId());
+            }
+            if (row.getApplicantId() != null) {
+                practitionerIds.add(row.getApplicantId());
+            }
+            if (row.getApproverId() != null) {
+                practitionerIds.add(row.getApproverId());
+            }
+        }
         Map<Long, String> supplierNameById = new HashMap<>();
-        for (LinkableGoodsReceiptListRowDto row : rows) {
-            if (row == null || row.getSupplierId() == null) {
-                continue;
-            }
-            Long supplierId = row.getSupplierId();
-            if (supplierNameById.containsKey(supplierId)) {
-                continue;
-            }
+        for (Long supplierId : supplierIds) {
+            // B.6.4：跨聚合读 SupplierQueryService，仅取展示名
             this.supplierQueryService.findSupplierNameIfPresent(supplierId)
                 .ifPresent(name -> supplierNameById.put(supplierId, name));
         }
-        for (LinkableGoodsReceiptListRowDto row : rows) {
-            if (row == null || row.getSupplierId() == null) {
+        Map<Long, String> practitionerNameById = new HashMap<>();
+        for (Long pid : practitionerIds) {
+            if (pid == null) {
                 continue;
             }
-            String supplierName = supplierNameById.get(row.getSupplierId());
-            if (supplierName != null) {
-                row.setSupplierName(supplierName);
+            // B.6.4：跨聚合读 PractitionerQueryService，仅取展示名
+            Practitioner practitioner = this.practitionerQueryService.findById(pid);
+            if (practitioner != null && StringUtils.isNotEmpty(practitioner.getName())) {
+                practitionerNameById.put(pid, practitioner.getName().trim());
+            }
+        }
+        for (ReturnToSupplierListRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getSupplierId() != null) {
+                String supplierName = supplierNameById.get(row.getSupplierId());
+                if (supplierName != null) {
+                    row.setSupplierName(supplierName);
+                }
+            }
+            if (row.getApplicantId() != null) {
+                String creatorName = practitionerNameById.get(row.getApplicantId());
+                if (creatorName != null) {
+                    row.setCreatorName(creatorName);
+                }
+            }
+            if (row.getApproverId() != null) {
+                String approverName = practitionerNameById.get(row.getApproverId());
+                if (approverName != null) {
+                    row.setApproverName(approverName);
+                }
+            }
+        }
+    }
+
+    /**
+     * 为可关联进货单列表行批量填充供应商名、制单人名、目的库名（IF-WHS-RT-12 展示富化）。
+     *
+     * @param rows 列表行
+     */
+    private void enrichLinkableGoodsReceiptDisplayNames(List<LinkableGoodsReceiptListRowDto> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        Set<Long> supplierIds = new HashSet<>();
+        Set<Long> applicantIds = new HashSet<>();
+        Set<Long> purposeLocationIds = new HashSet<>();
+        for (LinkableGoodsReceiptListRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            // 收集本页需解析的主键，避免逐行查主数据
+            if (row.getSupplierId() != null) {
+                supplierIds.add(row.getSupplierId());
+            }
+            if (row.getApplicantId() != null) {
+                applicantIds.add(row.getApplicantId());
+            }
+            if (row.getPurposeLocationId() != null) {
+                purposeLocationIds.add(row.getPurposeLocationId());
+            }
+        }
+        Map<Long, String> supplierNameById = new HashMap<>();
+        for (Long supplierId : supplierIds) {
+            this.supplierQueryService.findSupplierNameIfPresent(supplierId)
+                .ifPresent(name -> supplierNameById.put(supplierId, name));
+        }
+        Map<Long, String> practitionerNameById = new HashMap<>();
+        for (Long applicantId : applicantIds) {
+            // B.6.4：跨聚合读 PractitionerQueryService，仅取展示名
+            Practitioner practitioner = this.practitionerQueryService.findById(applicantId);
+            if (practitioner != null && StringUtils.isNotEmpty(practitioner.getName())) {
+                practitionerNameById.put(applicantId, practitioner.getName().trim());
+            }
+        }
+        Map<Long, String> purposeLocationNameById = new HashMap<>();
+        for (Long locationId : purposeLocationIds) {
+            Optional<Location> locOpt = this.locationQueryService.findOptionalById(locationId);
+            locOpt.ifPresent(loc -> {
+                if (StringUtils.isNotEmpty(loc.getName())) {
+                    purposeLocationNameById.put(locationId, loc.getName().trim());
+                }
+            });
+        }
+        for (LinkableGoodsReceiptListRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getSupplierId() != null) {
+                String supplierName = supplierNameById.get(row.getSupplierId());
+                if (supplierName != null) {
+                    row.setSupplierName(supplierName);
+                }
+            }
+            if (row.getApplicantId() != null) {
+                String creatorName = practitionerNameById.get(row.getApplicantId());
+                if (creatorName != null) {
+                    row.setCreatorName(creatorName);
+                }
+            }
+            if (row.getPurposeLocationId() != null) {
+                String purposeLocationName = purposeLocationNameById.get(row.getPurposeLocationId());
+                if (purposeLocationName != null) {
+                    row.setPurposeLocationName(purposeLocationName);
+                }
             }
         }
     }

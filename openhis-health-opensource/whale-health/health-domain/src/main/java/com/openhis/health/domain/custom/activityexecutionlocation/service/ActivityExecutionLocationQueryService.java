@@ -24,9 +24,9 @@ import java.util.Map;
 /**
  * 执行科室规则读侧查询服务。
  *
- * <p>职责：按诊疗定义解析「在什么时间由哪个科室/地点执行」的规则列表与单条命中，支持批量评核。</p>
+ * <p>职责：按开立科室 + 诊疗定义解析「在什么时间由哪个科室/地点执行」的规则列表与单条命中。</p>
  *
- * <p>边界：只读；锚点主键缺失或批量入参为空时抛 {@link BusinessException}；无规则覆盖查询时刻时返回 {@code null} 或空映射项由调用方处理。</p>
+ * <p>边界：只读；开立科室或诊疗定义缺失时抛 {@link BusinessException}；无规则覆盖查询时刻时返回 {@code null} 或空列表由调用方处理。</p>
  *
  * <p>聚合边界：仅本聚合 {@link ActivityExecutionLocationRepository}。</p>
  */
@@ -37,42 +37,38 @@ public class ActivityExecutionLocationQueryService {
     private final ActivityExecutionLocationRepository repository;
 
     /**
-     * 按诊疗定义查询规则列表（按优先级升序、id 升序稳定排序；1 最优先）。
-     *
-     * @param activityDefinitionId 诊疗定义标识
-     * @return 规则列表
-     * @throws BusinessException 诊疗定义标识为空
-     */
-    public List<ExecutionRuleListQueryModel> listExecutionRulesByActivityDefinition(Long activityDefinitionId) {
-        return this.listExecutionRulesForActivityResolution(activityDefinitionId, null);
-    }
-
-    /**
-     * 按诊疗定义解析可命中的执行规则：项目级规则 + 同大类默认规则（未配具体项目）。
+     * 按开立科室 + 诊疗定义解析可命中的执行规则：项目级规则 + 同大类默认规则（未配具体项目）。
      *
      * <p>医生站开立诊疗时消费：先返回绑定该项目的规则，再叠加 {@code activity_definition_id} 为空的大类默认规则。</p>
      *
+     * @param organizationId 开立科室标识（就诊科室）
      * @param activityDefinitionId 诊疗定义标识
      * @param activityCategoryCode 活动类别编码；为空时仅返回项目级规则
      * @return 合并去重后的规则列表
-     * @throws BusinessException 诊疗定义标识为空
+     * @throws BusinessException 开立科室或诊疗定义标识为空
      */
     public List<ExecutionRuleListQueryModel> listExecutionRulesForActivityResolution(
+        Long organizationId,
         Long activityDefinitionId,
         String activityCategoryCode
     ) {
+        if (organizationId == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "开立科室标识不能为空");
+        }
         if (activityDefinitionId == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "诊疗定义标识不能为空");
         }
         Map<Long, ActivityExecutionLocation> uniqueRules = new HashMap<>();
-        for (ActivityExecutionLocation rule : repository.findAllByActivityDefinitionId(activityDefinitionId)) {
+        for (ActivityExecutionLocation rule :
+            repository.findAllByOrganizationIdAndActivityDefinitionId(organizationId, activityDefinitionId)) {
             if (rule.getId() != null) {
                 uniqueRules.put(rule.getId(), rule);
             }
         }
         if (activityCategoryCode != null && !activityCategoryCode.trim().isEmpty()) {
             for (ActivityExecutionLocation rule :
-                repository.findAllByActivityCategoryCodeAndActivityDefinitionIdIsNull(activityCategoryCode.trim())) {
+                repository.findAllByOrganizationIdAndActivityCategoryCodeAndActivityDefinitionIdIsNull(
+                    organizationId, activityCategoryCode.trim())) {
                 if (rule.getId() != null) {
                     uniqueRules.put(rule.getId(), rule);
                 }
@@ -88,27 +84,28 @@ public class ActivityExecutionLocationQueryService {
     }
 
     /**
-     * 按执行科室查询规则列表（可按活动类别过滤）。
+     * 按开立科室查询规则列表（可按活动类别过滤）；WH-EXE001 配置页消费。
      *
-     * @param executionOrgId 执行科室标识
+     * @param organizationId 开立科室标识
      * @param activityCategoryCode 活动类别编码（可空）
      * @return 规则列表
+     * @throws BusinessException 开立科室标识为空
      */
-    public List<ExecutionRuleListQueryModel> listExecutionRulesByExecutionOrg(
-        Long executionOrgId,
+    public List<ExecutionRuleListQueryModel> listExecutionRulesByOrganization(
+        Long organizationId,
         String activityCategoryCode
     ) {
-        if (executionOrgId == null) {
+        if (organizationId == null) {
             throw new BusinessException(
                 ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT,
-                "执行科室标识不能为空");
+                "开立科室标识不能为空");
         }
         List<ActivityExecutionLocation> rules;
         if (activityCategoryCode == null || activityCategoryCode.trim().isEmpty()) {
-            rules = repository.findAllByExecutionOrgId(executionOrgId);
+            rules = repository.findAllByOrganizationId(organizationId);
         } else {
-            rules = repository.findAllByExecutionOrgIdAndActivityCategoryCode(
-                executionOrgId, activityCategoryCode.trim());
+            rules = repository.findAllByOrganizationIdAndActivityCategoryCode(
+                organizationId, activityCategoryCode.trim());
         }
         this.sortRulesForDisplay(rules);
         List<ExecutionRuleListQueryModel> result = new ArrayList<>();
@@ -119,32 +116,39 @@ public class ActivityExecutionLocationQueryService {
     }
 
     /**
-     * 按诊疗定义与时刻解析单条最优先命中规则。
+     * 按开立科室 + 诊疗定义与时刻解析单条最优先命中规则。
      *
-     * <p>优先匹配项目级规则；无命中且提供活动类别时，再回退到大类默认规则（未配具体项目）。</p>
+     * <p>优先匹配项目级规则；无命中且提供活动类别时，再回退到大类默认规则。</p>
      *
+     * @param organizationId 开立科室标识
      * @param activityDefinitionId 诊疗定义标识
      * @param activityCategoryCode 活动类别编码；可空
-     * @param atTime               评核时刻；{@code null} 时使用当前时刻
+     * @param atTime 评核时刻；{@code null} 时使用当前时刻
      * @return 命中规则；无命中时 {@code null}
-     * @throws BusinessException 诊疗定义标识为空
+     * @throws BusinessException 开立科室或诊疗定义标识为空
      */
     public ExecutionRuleHitQueryModel findByActivityAndTime(
+        Long organizationId,
         Long activityDefinitionId,
         String activityCategoryCode,
         LocalTime atTime
     ) {
+        if (organizationId == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "开立科室标识不能为空");
+        }
         if (activityDefinitionId == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "诊疗定义标识不能为空");
         }
         if (atTime == null) {
             atTime = LocalTime.now();
         }
-        List<ActivityExecutionLocation> rules = repository.findAllByActivityDefinitionId(activityDefinitionId);
+        List<ActivityExecutionLocation> rules =
+            repository.findAllByOrganizationIdAndActivityDefinitionId(organizationId, activityDefinitionId);
         ActivityExecutionLocation hit = this.findTopHit(rules, atTime);
         if (hit == null && activityCategoryCode != null && !activityCategoryCode.trim().isEmpty()) {
             List<ActivityExecutionLocation> categoryRules =
-                repository.findAllByActivityCategoryCodeAndActivityDefinitionIdIsNull(activityCategoryCode.trim());
+                repository.findAllByOrganizationIdAndActivityCategoryCodeAndActivityDefinitionIdIsNull(
+                    organizationId, activityCategoryCode.trim());
             hit = this.findTopHit(categoryRules, atTime);
         }
         if (hit == null) {
@@ -154,36 +158,30 @@ public class ActivityExecutionLocationQueryService {
     }
 
     /**
-     * 按诊疗定义与时刻解析单条最优先命中规则（仅项目级规则，不含大类默认回退）。
+     * 批量按开立科室 + 诊疗定义与时刻解析各锚点的最优先命中规则（仅项目级）。
      *
-     * @param activityDefinitionId 诊疗定义标识
-     * @param atTime               评核时刻；{@code null} 时使用当前时刻
-     * @return 命中规则；无命中时 {@code null}
-     * @throws BusinessException 诊疗定义标识为空
-     */
-    public ExecutionRuleHitQueryModel findByActivityAndTime(Long activityDefinitionId, LocalTime atTime) {
-        return this.findByActivityAndTime(activityDefinitionId, null, atTime);
-    }
-
-    /**
-     * 批量按诊疗定义与时刻解析各锚点的最优先命中规则。
-     *
+     * @param organizationId 开立科室标识
      * @param activityDefinitionIds 诊疗定义标识集合
-     * @param atTime                评核时刻；{@code null} 时使用当前时刻
+     * @param atTime 评核时刻；{@code null} 时使用当前时刻
      * @return 锚点到批量命中模型映射
-     * @throws BusinessException 集合为空
+     * @throws BusinessException 开立科室为空或集合为空
      */
     public Map<Long, ExecutionRuleBatchHitQueryModel> findForBatchByActivityAndTime(
+        Long organizationId,
         List<Long> activityDefinitionIds,
         LocalTime atTime
     ) {
+        if (organizationId == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "开立科室标识不能为空");
+        }
         if (activityDefinitionIds == null || activityDefinitionIds.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "诊疗定义标识集合不能为空");
         }
         if (atTime == null) {
             atTime = LocalTime.now();
         }
-        List<ActivityExecutionLocation> rules = repository.findAllByActivityDefinitionIdIn(activityDefinitionIds);
+        List<ActivityExecutionLocation> rules =
+            repository.findAllByOrganizationIdAndActivityDefinitionIdIn(organizationId, activityDefinitionIds);
         return this.groupTopHitsByActivityDefinition(rules, atTime);
     }
 
@@ -208,6 +206,7 @@ public class ActivityExecutionLocationQueryService {
     private ExecutionRuleListQueryModel toListModel(ActivityExecutionLocation rule) {
         ExecutionRuleListQueryModel model = new ExecutionRuleListQueryModel();
         model.setId(rule.getId());
+        model.setOrganizationId(rule.getOrganizationId());
         model.setActivityDefinitionId(rule.getActivityDefinitionId());
         model.setActivityCategoryCode(rule.getActivityCategoryCode());
         model.setExecutionOrgId(rule.getExecutionOrgId());
@@ -223,7 +222,7 @@ public class ActivityExecutionLocationQueryService {
     /**
      * 将实体转换为命中查询模型。
      *
-     * @param rule     规则实体
+     * @param rule 规则实体
      * @param anchorId 诊疗定义锚点 id
      * @return 命中查询模型
      */
@@ -243,7 +242,7 @@ public class ActivityExecutionLocationQueryService {
     /**
      * 在候选集合中按时间窗和优先级选取命中规则。
      *
-     * @param rules  候选规则
+     * @param rules 候选规则
      * @param atTime 查询时刻
      * @return 命中规则；无命中时 {@code null}
      */
@@ -257,7 +256,7 @@ public class ActivityExecutionLocationQueryService {
                 best = rule;
                 continue;
             }
-            // 同刻多规则并存时取优先级更高者（数值小优先，与取药科室一致）。
+            // 同刻多规则并存时取优先级更高者（数值小优先）。
             if (this.isHigherPriority(rule, best)) {
                 best = rule;
             }
@@ -268,7 +267,7 @@ public class ActivityExecutionLocationQueryService {
     /**
      * 批量按诊疗定义分组选取命中规则（每个锚点保留一条最优规则）。
      *
-     * @param rules  候选规则
+     * @param rules 候选规则
      * @param atTime 查询时刻
      * @return 锚点到批量命中模型映射
      */
@@ -306,7 +305,7 @@ public class ActivityExecutionLocationQueryService {
     /**
      * 判断规则日时间窗是否覆盖查询时刻（闭区间）。
      *
-     * @param rule   规则
+     * @param rule 规则
      * @param atTime 查询时刻
      * @return 是否命中
      */
@@ -329,7 +328,7 @@ public class ActivityExecutionLocationQueryService {
     /**
      * 判断左规则优先级是否高于右规则；优先级相等时用规则 id 较小者稳定决胜。
      *
-     * @param left  左规则
+     * @param left 左规则
      * @param right 右规则
      * @return {@code true} 表示左规则更优先
      */

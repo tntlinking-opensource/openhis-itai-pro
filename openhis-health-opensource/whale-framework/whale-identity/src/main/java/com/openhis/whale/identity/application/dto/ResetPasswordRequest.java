@@ -23,6 +23,6 @@ public class ResetPasswordRequest {
      * 新密码
      */
     @NotBlank(message = "新密码不能为空")
-    @Size(min = 8, message = "密码长度至少8位")
+    @Size(min = 6, message = "密码长度至少6位")
     private String newPassword;
 }

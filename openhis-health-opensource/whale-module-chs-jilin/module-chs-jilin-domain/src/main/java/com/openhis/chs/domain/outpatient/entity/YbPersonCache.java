@@ -28,7 +28,8 @@ public class YbPersonCache extends BaseAuditedEntity implements IExcludeFromAudi
     @Column(name = "mdtrt_cert_type", nullable = false, length = 3)
     private String mdtrtCertType;
 
-    @Column(name = "mdtrt_cert_no", nullable = false, length = 64)
+    /** 03 社保卡可为 BusiCardInfo 卡串，需长于国标 50/旧库 64 */
+    @Column(name = "mdtrt_cert_no", nullable = false, length = 2048)
     private String mdtrtCertNo;
 
     @Column(name = "psn_no", nullable = false, length = 30)

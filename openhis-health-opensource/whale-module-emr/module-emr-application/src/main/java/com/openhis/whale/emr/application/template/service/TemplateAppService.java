@@ -186,10 +186,10 @@ public class TemplateAppService {
         Specification<Template> spec = buildTemplateSpec(request);
         // Cmd：分页查模板
         var templatePage = templateRepository.findAll(spec, PageRequest.of(pageNo - 1, size));
-        // Asm：映射分页响应（含 content）
+        // Asm：映射分页响应（列表不含 content，避免医生站树回退 getList 时拖垮接口）
         TemplatePageResponse response = new TemplatePageResponse();
         response.setContent(templatePage.getContent().stream()
-                .map(t -> toTemplateDto(t, true))
+                .map(t -> toTemplateDto(t, false))
                 .collect(Collectors.toList()));
         response.setTotalCount(templatePage.getTotalElements());
         return response;
@@ -226,24 +226,19 @@ public class TemplateAppService {
                 && templateRepository.findByCodeAndIsDeletedFalse(request.getCode()).isPresent()) {
             throw new IllegalArgumentException("模板编码已存在: " + request.getCode());
         }
-        // Pre：组装实体；医生站创建强制个人范围
+        // Pre：组装实体；医生站仅允许个人/科室，所有者与科室取当前登录上下文（避免前端雪花精度问题）
         Template t = new Template();
         t.setName(request.getName());
         t.setCode(request.getCode());
         t.setDocumentTypeCode(request.getDocumentTypeCode());
         if (Boolean.TRUE.equals(request.getFromDoctorStation())) {
-            applyScopeFieldsToTemplate(
-                    t,
-                    TemplateScopeLevel.PERSONAL.getCode(),
-                    null,
-                    resolveOwnerForCreate(request.getOwnerPractitionerId()),
-                    request.getEncounterClassCode());
+            applyDoctorStationScopeOnCreate(t, request);
         } else {
             applyScopeFieldsToTemplate(
                     t,
                     resolveScopeLevelForCreate(request.getScopeLevel()),
-                    request.getOrganizationId(),
-                    resolveOwnerForCreate(request.getOwnerPractitionerId()),
+                    parseOptionalLongId(request.getOrganizationId(), "organizationId"),
+                    resolveOwnerForCreate(parseOptionalLongId(request.getOwnerPractitionerId(), "ownerPractitionerId")),
                     request.getEncounterClassCode());
         }
         t.setEncounterTypeEnum(request.getEncounterTypeEnum());
@@ -296,13 +291,13 @@ public class TemplateAppService {
             }
             Long orgId;
             if (request.getOrganizationId() != null) {
-                orgId = request.getOrganizationId();
+                orgId = parseOptionalLongId(request.getOrganizationId(), "organizationId");
             } else {
                 orgId = t.getOrganizationId();
             }
             Long ownerId;
             if (request.getOwnerPractitionerId() != null) {
-                ownerId = request.getOwnerPractitionerId();
+                ownerId = parseOptionalLongId(request.getOwnerPractitionerId(), "ownerPractitionerId");
             } else {
                 ownerId = t.getOwnerPractitionerId();
             }
@@ -411,6 +406,47 @@ public class TemplateAppService {
         return TemplateScopeLevel.HOSPITAL.getCode();
     }
 
+    /**
+     * 医生站「存为模版」：仅 PERSONAL / DEPARTMENT；
+     * 个人所有者与科室 id 取当前登录上下文，避免前端雪花精度丢失。
+     */
+    private void applyDoctorStationScopeOnCreate(Template t, CreateTemplateRequest request) {
+        String scope = TemplateScopeValidator.normalizeScopeLevel(request.getScopeLevel());
+        if (scope == null) {
+            scope = TemplateScopeLevel.PERSONAL.getCode();
+        }
+        if (TemplateScopeLevel.PERSONAL.getCode().equals(scope)) {
+            Long ownerId = currentUser != null ? currentUser.getCurrentPractitionerId() : null;
+            if (ownerId == null) {
+                throw new ValidationException("当前账号未关联医务人员，无法保存个人模板");
+            }
+            applyScopeFieldsToTemplate(
+                    t,
+                    TemplateScopeLevel.PERSONAL.getCode(),
+                    null,
+                    ownerId,
+                    request.getEncounterClassCode());
+            return;
+        }
+        if (TemplateScopeLevel.DEPARTMENT.getCode().equals(scope)) {
+            Long orgId = parseOptionalLongId(request.getOrganizationId(), "organizationId");
+            if (orgId == null && currentUser != null) {
+                orgId = currentUser.getCurrentOrganizationUnitId();
+            }
+            if (orgId == null) {
+                throw new ValidationException("当前账号未关联科室，无法保存科室模板");
+            }
+            applyScopeFieldsToTemplate(
+                    t,
+                    TemplateScopeLevel.DEPARTMENT.getCode(),
+                    orgId,
+                    null,
+                    request.getEncounterClassCode());
+            return;
+        }
+        throw new ValidationException("医生站仅支持另存为个人模板或科室模板");
+    }
+
     private Long resolveOwnerForCreate(Long requestedOwner) {
         if (requestedOwner != null) {
             return requestedOwner;
@@ -460,6 +496,18 @@ public class TemplateAppService {
             return Long.parseLong(raw.trim());
         } catch (NumberFormatException ex) {
             throw new ValidationException("模板 ID 格式无效: " + raw);
+        }
+    }
+
+    /** 可选雪花 ID：空则 null；非法则校验失败 */
+    private static Long parseOptionalLongId(String raw, String fieldName) {
+        if (!StringUtils.hasText(raw)) {
+            return null;
+        }
+        try {
+            return Long.parseLong(raw.trim());
+        } catch (NumberFormatException ex) {
+            throw new ValidationException(fieldName + " 格式无效: " + raw);
         }
     }
 
@@ -554,8 +602,12 @@ public class TemplateAppService {
         dto.setName(t.getName());
         dto.setCode(t.getCode());
         dto.setDocumentTypeCode(t.getDocumentTypeCode());
-        documentManager.getDocumentTypeByCode(t.getDocumentTypeCode())
-                .ifPresent(dt -> dto.setDocumentTypeName(dt.getName()));
+        try {
+            documentManager.getDocumentTypeByCode(t.getDocumentTypeCode())
+                    .ifPresent(dt -> dto.setDocumentTypeName(dt.getName()));
+        } catch (RuntimeException ignored) {
+            // 分类列迁移未落地等场景：列表仍可用，仅缺少类型中文名
+        }
         dto.setScopeLevel(t.getScopeLevel());
         TemplateScopeLevel scopeLevel = TemplateScopeLevel.fromCode(t.getScopeLevel());
         if (scopeLevel != null) {

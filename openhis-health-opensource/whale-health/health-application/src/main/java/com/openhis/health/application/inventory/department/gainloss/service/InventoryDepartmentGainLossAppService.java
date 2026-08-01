@@ -124,7 +124,7 @@ public class InventoryDepartmentGainLossAppService {
     private final InventoryDepartmentGainLossMapper gainLossMapper;
     private final InventoryWarehouseInboundReceiptMapper inboundReceiptMapper;
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
-    /** IF-TRC-14 盘点/损益剩余码差分写追溯。 */
+    /** IF-TRC-14 损益：盈亏码与正负同向直接 IN/OUT。 */
     private final TraceNumberStocktakeGainLossTraceOrchestrator traceNumberStocktakeGainLossTraceOrchestrator;
 
     /**
@@ -141,9 +141,9 @@ public class InventoryDepartmentGainLossAppService {
         try {
             List<Location> departmentPharmacies = locationQueryService.listAllActiveDepartmentPharmacies();
             List<Location> gatedDepartmentPharmacies = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(departmentPharmacies);
-            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
                 WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
-            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
                 WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE, resolvedOrg);
             // Asm：下拉选项写入初始化响应
             return gainLossMapper.toLoadGainLossFormInitResponse(
@@ -606,8 +606,8 @@ public class InventoryDepartmentGainLossAppService {
                 }
             }
         }
-        // Cmd：IF-TRC-14 剩余码与本库账差分写追溯主子表（库存入账成功后、同事务）
-        traceNumberStocktakeGainLossTraceOrchestrator.recordFromAgreedLines(
+        // Cmd：IF-TRC-14 损益扫码与正负同向直接 HOSPITAL_IO IN/OUT（库存入账成功后、同事务）
+        traceNumberStocktakeGainLossTraceOrchestrator.recordDirectFromAgreedGainLossLines(
             agreedLines, operatorId, productByKey, ErrorCodeConstants.DEP_GL_104);
         // Asm：可选医保进销存上报
         tryUploadMedicareInventoryAfterGainLossAgree(request, agreedLines);
@@ -655,8 +655,8 @@ public class InventoryDepartmentGainLossAppService {
         if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.DEP_GL_001, "busNo 不能为空");
         }
-        if (StringUtils.isEmpty(request.getChangeReason()) && StringUtils.isEmpty(request.getChangeReasonCode())) {
-            // 驳回须留痕，文本与原因码至少一项
+        if (StringUtils.isEmpty(request.getRejectReason())) {
+            // 驳回须留痕
             throw new BusinessException(ErrorCodeConstants.DEP_GL_001, "驳回原因不能为空");
         }
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.DEP_GL_101, "用户未登录");
@@ -713,6 +713,8 @@ public class InventoryDepartmentGainLossAppService {
         InventoryItemPageQuery invQuery = new InventoryItemPageQuery();
         invQuery.setLocationId(request.getPurposeLocationId());
         invQuery.setItemTable(request.getProductTableName().trim());
+        // —— 前台可选：true 仅返回选品库位账面量>0 的批号行；false/未传不过滤数量。——
+        invQuery.setPositiveQuantityOnly(request.getPositiveQuantityOnly());
         PageQueryBinder.bind(request, invQuery);
         Pageable pageable = PageRequest.of(
             request.springPageIndex(), request.getBoundedPageSize(), Sort.by(Sort.Direction.ASC, FieldNameConstants.ID));
@@ -1068,8 +1070,9 @@ public class InventoryDepartmentGainLossAppService {
             if (StringUtils.isEmpty(line.getUnitCode())) {
                 throw new BusinessException(ErrorCodeConstants.DEP_GL_001, "损益明细单位不能为空");
             }
-            if (line.getGainLossQuantity() == null) {
-                throw new BusinessException(ErrorCodeConstants.DEP_GL_001, "盈亏数量不能为空");
+            if (line.getGainLossQuantity() == null
+                || line.getGainLossQuantity().compareTo(BigDecimal.ZERO) == 0) {
+                throw new BusinessException(ErrorCodeConstants.DEP_GL_001, "盈亏数量不能为空或为 0（正报溢、负报损）");
             }
             if (line.getActualQuantity() != null && line.getActualQuantity().compareTo(BigDecimal.ZERO) < 0) {
                 throw new BusinessException(ErrorCodeConstants.DEP_GL_001, "实盘数量不能为负");

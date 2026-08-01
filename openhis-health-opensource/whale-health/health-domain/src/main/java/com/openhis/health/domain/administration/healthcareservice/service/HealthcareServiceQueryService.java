@@ -21,7 +21,8 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>职责：为挂号、排班等场景提供启用中的医疗服务列表及按主键加载详情。</p>
  *
- * <p>边界：只读；列表过滤条件为 {@link HealthcareServiceStatus#ACTIVE} 语义码。</p>
+ * <p>边界：只读；挂号下拉过滤 {@link HealthcareServiceStatus#ACTIVE}；维护台另见
+ * {@link #listServicesForRegistrationManage()}。</p>
  * <p>聚合边界：仅本聚合 {@link HealthcareServiceRepository}。</p>
  */
 @Service
@@ -37,6 +38,21 @@ public class HealthcareServiceQueryService {
     public List<HealthcareService> listServicesForRegistration() {
         // 仅返回已发布（ACTIVE）行，停用服务不出现在挂号下拉中。
         return repository.findAllByStatusEnum(HealthcareServiceStatus.ACTIVE.getCode());
+    }
+
+    /**
+     * 列出挂号类型维护台可见的医疗服务（草稿/启用/停用；不含已废弃）。
+     *
+     * <p>与 {@link #listServicesForRegistration()} 分离，避免停用项从维护列表消失后无法再启用或删除。</p>
+     *
+     * @return 医疗服务列表，可能为空
+     */
+    public List<HealthcareService> listServicesForRegistrationManage() {
+        // 维护台需同时展示启用与停用，删除前也须能看到停用项。
+        return repository.findAllByStatusEnumIn(List.of(
+            HealthcareServiceStatus.DRAFT.getCode(),
+            HealthcareServiceStatus.ACTIVE.getCode(),
+            HealthcareServiceStatus.RETIRED.getCode()));
     }
 
     /**

@@ -21,9 +21,9 @@ import java.util.List;
  */
 public final class ChsInventoryConstants {
 
-    /** 本地上报来源：门诊/住院发药核发（对应 3505 销售，不再单独 3502） */
+    /** 本地上报来源：门诊/住院发药核发（3505 及配对 3502；退药 3506 及配对 3502） */
     public static final String SOURCE_TYPE_DISPENSE = "DISPENSE";
-    /** 本地上报来源：采购入库同意（对应 3503） */
+    /** 本地上报来源：采购入库/退供同意（对应 3503/3504 及其伴生 3502） */
     public static final String SOURCE_TYPE_INBOUND = "INBOUND";
     /** 本地上报来源：盘点同意产生的盈亏（对应 3502 盘盈/盘损） */
     public static final String SOURCE_TYPE_STOCKTAKE = "STOCKTAKE";
@@ -39,6 +39,11 @@ public final class ChsInventoryConstants {
     public static final String SOURCE_TYPE_MANUAL = "MANUAL";
     /** 本地上报来源：机构首次进销存初始化（3501+3502） */
     public static final String SOURCE_TYPE_INIT = "INIT";
+    /**
+     * 本地上报来源：住院清床后汇总径净销售（3505）及其反结/召回冲销（3506）。
+     * <p>与发药当时 {@link #SOURCE_TYPE_DISPENSE} 区分，便于按就诊精确冲销清床批次。</p>
+     */
+    public static final String SOURCE_TYPE_CLEAR_BED_SUMMARY = "CLEAR_BED_SUMMARY";
 
     /** 本地与平台库存比对：仅本系统有记录、平台无 */
     public static final String COMPARE_DIFF_LOCAL_ONLY = "LOCAL_ONLY";
@@ -76,10 +81,31 @@ public final class ChsInventoryConstants {
     /** 350x 部分查询接口返回的 {@code retRslt}：失败（或本地占位失败） */
     public static final String PLATFORM_RET_RSLT_FAILED = "0";
 
+    /**
+     * 350x 数量字段小数位（平台 {@code purc_retn_cnt}/{@code sel_retn_cnt}/{@code cnt} 为 numeric(16,4)）。
+     * <p>舍入模式复用 {@link com.openhis.health.domain.share.utils.MonetaryAmountSupport#MONETARY_ROUNDING}，禁止业务类再声明私有 scale。</p>
+     */
+    public static final int UPLOAD_QUANTITY_SCALE = 4;
+
+    /**
+     * 3503/3504 采购发票号缺省占位（业务未填 {@code invoice_no} 时上报，避免拦正常进退货）。
+     * <p>平台字段 {@code purc_invo_no}；有真实发票号时优先用库值。</p>
+     */
+    public static final String DEFAULT_PURC_INVO_NO = "0";
+
     /** 机构进销存初始化：单次请求最大明细行数（防止超时） */
     public static final int INITIALIZE_INVENTORY_DEFAULT_MAX_LINES = 200;
     /** 本地上报记录列表查询默认上限 */
     public static final int LOCAL_UPLOAD_LIST_DEFAULT_LIMIT = 500;
+
+    /**
+     * 3511 查原销售流水：平台必填 begndate/enddate 的回看天数。
+     *
+     * <p>长春平台限制「开始日至结束日不得大于 30 天」（含首尾）。
+     * {@code begin = today − N} 时 N 须为 29，否则 today−30～today 共 31 个自然日会被拒。</p>
+     * <p>业务定位只靠 {@code fixmedins_bchno}；不传 {@code med_list_codg}。</p>
+     */
+    public static final long PLATFORM_SALE_QUERY_LOOKBACK_DAYS = 29L;
 
     /** 重试任务可捞取的本地状态：失败 + 待上报 */
     public static final List<String> RETRYABLE_UPLOAD_STATUSES = Collections.unmodifiableList(Arrays.asList(

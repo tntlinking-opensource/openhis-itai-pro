@@ -60,6 +60,11 @@ public class GetPurchaseOrderDetailResponse {
     private Long practitionerId;
 
     /**
+     * 来源科室采购申请单号（{@code original_bus_no}）；手工直建时为 null。
+     */
+    private String originalBusNo;
+
+    /**
      * 乐观锁版本：与同号明细行 {@code version} 对齐（Mapper 优先首行，否则回退至任一行非空版本，仍空则 0）。
      * 须原样带入 {@link com.openhis.health.application.inventory.warehouse.purchaseorder.request.UpdatePurchaseOrderRequest}。
      */

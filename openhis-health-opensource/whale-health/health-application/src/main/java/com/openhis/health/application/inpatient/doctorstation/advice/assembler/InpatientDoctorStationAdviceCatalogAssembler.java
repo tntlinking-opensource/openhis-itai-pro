@@ -4,10 +4,10 @@
  */
 package com.openhis.health.application.inpatient.doctorstation.advice.assembler;
 
-import com.openhis.health.application.shared.product.ClinicalCatalogDispenseLocationResolver;
+import com.openhis.health.application.shared.product.ClinicalCatalogInventoryPageBatch;
+import com.openhis.health.application.shared.product.ClinicalCatalogInventoryPageBatchLoader;
 import com.openhis.health.application.shared.product.ClinicalCatalogPriceResolver;
 import com.openhis.health.application.shared.product.ClinicalCatalogUnitPriceQuery;
-import com.openhis.health.application.shared.product.DoctorStationAdviceInventoryUnitQuantityHelper;
 import com.openhis.health.application.shared.product.ProductTableNameHelper;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.InpatientDoctorStationAdviceCatalogRowDto;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.InpatientDoctorStationAdviceInventoryRowDto;
@@ -15,19 +15,15 @@ import com.openhis.health.application.inpatient.doctorstation.advice.request.Pag
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
-import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseOrderCatalogOccupancyModel;
-import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.enums.PriceType;
+import com.openhis.health.application.shared.product.MedicationPackageSplitQuantityDisplayAssembler;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
-import com.openhis.health.domain.workflow.devicedispense.queries.model.DeviceDispenseOrderCatalogOccupancyModel;
-import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQueryService;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryCatalogAvailabilityRowModel;
-import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
 import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
@@ -35,7 +31,6 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -53,25 +48,20 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class InpatientDoctorStationAdviceCatalogAssembler {
 
-    /** 机构下配送/发药库位模板：解析候选库位 ID 列表。 */
-    /** 取药科室模板库位解析。 */
-    private final ClinicalCatalogDispenseLocationResolver clinicalCatalogDispenseLocationResolver;
-    /** 库存可用量：按表名+物料/定义+库位批量查询目录可开量。 */
-    private final InventoryItemQueryService inventoryItemQueryService;
-    /** 同就诊药品发放预占：目录可开量扣减。 */
-    private final MedicationDispenseQueryService medicationDispenseQueryService;
-    /** 同就诊耗材发放预占：目录可开量扣减。 */
-    private final DeviceDispenseQueryService deviceDispenseQueryService;
-    /** 收费项定义（定价行）：当前页批量取价。 */
+    /** 收费项定义（定价行）：当前页批量取价与 fallback 主键加载。 */
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
 
     /** 临床目录统一单价解析（诊疗 SALE / 药耗批号售价）。 */
     private final ClinicalCatalogPriceResolver clinicalCatalogPriceResolver;
+
+    /** 当前页药耗库存/库位/预占批量预取（消 N+1）。 */
+    private final ClinicalCatalogInventoryPageBatchLoader clinicalCatalogInventoryPageBatchLoader;
+
     /** 默认执行科室展示名（诊疗 org_id → 机构名称）。 */
     private final OrganizationQueryService organizationQueryService;
 
     /**
-     * IF-IP-TCM-35：装配饮片目录分页（仅定价与单位，不含库存预占/预减）。
+     * IF-IP-TCM-35：装配饮片目录分页（不下发库存明细/可开量；单价仍按 FIFO 首条可用批号匹配批号售价）。
      *
      * @param request  请求
      * @param page     产品定义分页结果
@@ -83,6 +73,7 @@ public class InpatientDoctorStationAdviceCatalogAssembler {
         Page<ProductDefinitionDisplayDto> page,
         InpatientEncounterContextQueryModel snapshot
     ) {
+        // Gate：请求患者必须与住院快照一致
         if (!request.getPatientId().equals(snapshot.getPatientId())) {
             return List.of();
         }
@@ -90,6 +81,7 @@ public class InpatientDoctorStationAdviceCatalogAssembler {
         if (content.isEmpty()) {
             return List.of();
         }
+        // Pre：定价行批量加载；fallback 仅按定价行是否可解析收集，禁止预扫 resolveCatalogUnitPrice
         Map<String, List<ChargeItemDefinition>> priceByKey = clinicalCatalogPriceResolver.loadPriceLinesGrouped(content);
         Long orgId = snapshot.getOrganizationId();
         if (request.getOrganizationUnitId() != null) {
@@ -97,50 +89,37 @@ public class InpatientDoctorStationAdviceCatalogAssembler {
         }
         LinkedHashSet<Long> fallbackChargeDefIds = new LinkedHashSet<>();
         for (ProductDefinitionDisplayDto pre : content) {
+            if (pre.getChargeItemDefinitionId() == null) {
+                continue;
+            }
             String compositeKey = ProductDefinitionKeyUtil.buildCompositeKey(
                 pre.getProductTableName(), pre.getProductDefinitionId());
             List<ChargeItemDefinition> preLines = priceByKey.getOrDefault(compositeKey, List.of());
-            ClinicalCatalogUnitPriceQuery preCmd = ClinicalCatalogUnitPriceQuery.builder()
-                .productTableName(pre.getProductTableName())
-                .productDefinitionId(pre.getProductDefinitionId())
-                .categoryCode(pre.getCategoryCode())
-                .methodCode(pre.getMethodCode())
-                .organizationId(orgId)
-                .pharmacyLocationId(request.getPharmacyLocationId())
-                .encounterId(request.getEncounterId())
-                .priceLines(preLines)
-                .productRowForOccupancy(pre)
-                .build();
-            if (clinicalCatalogPriceResolver.resolveCatalogUnitPrice(preCmd) == null
-                && pre.getChargeItemDefinitionId() != null) {
+            if (!clinicalCatalogPriceResolver.hasResolvableCatalogPriceFromLines(pre.getProductTableName(), preLines)) {
                 fallbackChargeDefIds.add(pre.getChargeItemDefinitionId());
             }
         }
-        Map<Long, ChargeItemDefinition> fallbackPriceByDefId = chargeItemDefinitionQueryService.findAllDefinitionsByIdIn(fallbackChargeDefIds);
+        Map<Long, ChargeItemDefinition> fallbackPriceByDefId =
+            chargeItemDefinitionQueryService.findAllDefinitionsByIdIn(fallbackChargeDefIds);
+        // Pre：批量预取候选库位 + 库存 + 预占（取价仍走 FIFO 首批号；本路径不下发 inventoryList）
+        ClinicalCatalogInventoryPageBatch inventoryBatch =
+            clinicalCatalogInventoryPageBatchLoader.preload(content, orgId, request.getPharmacyLocationId());
         List<InpatientDoctorStationAdviceCatalogRowDto> rows = new ArrayList<>();
         for (ProductDefinitionDisplayDto productRow : content) {
             InpatientDoctorStationAdviceCatalogRowDto dto = baseRow(productRow);
+            // 饮片目录：不展示库存明细与可开量，但默认发药点仍回填
             dto.setInventoryList(List.of());
             dto.setAvailableQuantity(null);
-            Long defaultDispenseLocationId = resolveDefaultDispenseLocationId(orgId, productRow);
+            String productCompositeKey = ProductDefinitionKeyUtil.buildCompositeKey(
+                productRow.getProductTableName(), productRow.getProductDefinitionId());
+            Long defaultDispenseLocationId = inventoryBatch.getDefaultDispenseLocationId(productCompositeKey);
             if (defaultDispenseLocationId != null) {
                 dto.setDefaultDispenseLocationId(defaultDispenseLocationId);
             }
-            String productCompositeKey = ProductDefinitionKeyUtil.buildCompositeKey(
-                productRow.getProductTableName(), productRow.getProductDefinitionId());
             List<ChargeItemDefinition> lines = priceByKey.getOrDefault(productCompositeKey, List.of());
-            ClinicalCatalogUnitPriceQuery priceCmd = ClinicalCatalogUnitPriceQuery.builder()
-                .productTableName(productRow.getProductTableName())
-                .productDefinitionId(productRow.getProductDefinitionId())
-                .categoryCode(productRow.getCategoryCode())
-                .methodCode(productRow.getMethodCode())
-                .organizationId(orgId)
-                .pharmacyLocationId(request.getPharmacyLocationId())
-                .encounterId(request.getEncounterId())
-                .priceLines(lines)
-                .productRowForOccupancy(productRow)
-                .build();
-            ChargeItemDefinition selected = clinicalCatalogPriceResolver.resolveCatalogUnitPrice(priceCmd);
+            // Asm：药耗单价 = FIFO 首条净可用库存批号 ↔ LOT_NUMBER_PRICE；禁止用 priority 代替批号匹配
+            ChargeItemDefinition selected = resolveMedicationOrDeviceCatalogPriceByFifoLot(
+                productRow, lines, inventoryBatch, productCompositeKey, orgId, request);
             ChargeItemDefinition catalogPriceLine = selected;
             if (selected != null) {
                 dto.setChargeItemDefinitionId(selected.getId());
@@ -154,8 +133,10 @@ public class InpatientDoctorStationAdviceCatalogAssembler {
                     && !PriceType.SALE.getCode().equals(fallback.getPriceTypeCode())) {
                     fallback = null;
                 }
+                // 药耗兜底：允许批号售价或参考零售价 SALE
                 if (fallback != null && ProductTableNameHelper.isMedicationOrDevice(productRow.getProductTableName())
-                    && !PriceType.LOT_NUMBER_PRICE.getCode().equals(fallback.getPriceTypeCode())) {
+                    && !PriceType.LOT_NUMBER_PRICE.getCode().equals(fallback.getPriceTypeCode())
+                    && !PriceType.SALE.getCode().equals(fallback.getPriceTypeCode())) {
                     fallback = null;
                 }
                 if (fallback != null) {
@@ -181,6 +162,86 @@ public class InpatientDoctorStationAdviceCatalogAssembler {
     }
 
     /**
+     * 药耗目录单价：优先用预取库存中 FIFO 首条净可用批号匹配 {@link PriceType#LOT_NUMBER_PRICE}；
+     * 无可用库存（或批号对不上价）时取 {@link PriceType#SALE} 参考零售价展示。
+     *
+     * @param productRow           产品读模型
+     * @param lines                已批量加载的定价行
+     * @param inventoryBatch       当前页库存预取
+     * @param productCompositeKey  产品复合键
+     * @param orgId                开立机构
+     * @param request              目录请求（药房/就诊上下文）
+     * @return 命中的定价行；无命中为 null
+     */
+    private ChargeItemDefinition resolveMedicationOrDeviceCatalogPriceByFifoLot(
+        ProductDefinitionDisplayDto productRow,
+        List<ChargeItemDefinition> lines,
+        ClinicalCatalogInventoryPageBatch inventoryBatch,
+        String productCompositeKey,
+        Long orgId,
+        PageInpatientDoctorStationAdviceCatalogRequest request
+    ) {
+        if (!ProductTableNameHelper.isMedicationOrDevice(productRow.getProductTableName())) {
+            // 诊疗：仅 SALE，无 FIFO
+            ClinicalCatalogUnitPriceQuery priceCmd = ClinicalCatalogUnitPriceQuery.builder()
+                .productTableName(productRow.getProductTableName())
+                .productDefinitionId(productRow.getProductDefinitionId())
+                .categoryCode(productRow.getCategoryCode())
+                .methodCode(productRow.getMethodCode())
+                .organizationId(orgId)
+                .pharmacyLocationId(request.getPharmacyLocationId())
+                .encounterId(request.getEncounterId())
+                .priceLines(lines)
+                .productRowForOccupancy(productRow)
+                .build();
+            return clinicalCatalogPriceResolver.resolveCatalogUnitPrice(priceCmd);
+        }
+        // 药耗：FIFO 首条净可用批号 → LOT_NUMBER_PRICE；对不上或无库存 → SALE 参考价
+        String leadingLot = findLeadingNetAvailableLotNumber(inventoryBatch, productCompositeKey);
+        if (StringUtils.isNotEmpty(leadingLot)) {
+            Map<String, ChargeItemDefinition> lotPriceIndex =
+                clinicalCatalogPriceResolver.indexLotNumberPriceRows(lines);
+            ChargeItemDefinition lotMatched =
+                clinicalCatalogPriceResolver.resolveLotNumberPriceLineForLot(lotPriceIndex, leadingLot);
+            if (lotMatched != null) {
+                return lotMatched;
+            }
+        }
+        return clinicalCatalogPriceResolver.selectReferenceSalePriceLine(lines);
+    }
+
+    /**
+     * 从预取库存中取 FIFO 首条净可用批号（扣发放预占后 quantity&gt;0；行序与库存读侧效期/创建时间 FIFO 一致）。
+     *
+     * @param inventoryBatch      当前页预取
+     * @param productCompositeKey 产品复合键
+     * @return 批号；无可用行为 null
+     */
+    private String findLeadingNetAvailableLotNumber(
+        ClinicalCatalogInventoryPageBatch inventoryBatch,
+        String productCompositeKey
+    ) {
+        List<InventoryCatalogAvailabilityRowModel> physical = inventoryBatch.getPhysicalRows(productCompositeKey);
+        Map<String, BigDecimal> occupancy = inventoryBatch.getOccupancy(productCompositeKey);
+        for (InventoryCatalogAvailabilityRowModel row : physical) {
+            if (row == null) {
+                continue;
+            }
+            BigDecimal net = row.getQuantity();
+            if (net == null) {
+                net = BigDecimal.ZERO;
+            }
+            String occKey = ProductTableNameHelper.tripleCompositeKey(
+                row.getItemTable(), row.getItemId(), row.getLocationId());
+            net = net.subtract(occupancy.getOrDefault(occKey, BigDecimal.ZERO));
+            if (net.compareTo(BigDecimal.ZERO) > 0) {
+                return row.getLotNumber();
+            }
+        }
+        return null;
+    }
+
+    /**
      * 装配目录分页结果（读模型分页已由调用方执行一次）。
      *
      * <p><b>规模（B.2）</b>：定价批量查询与库存/预占计算均按<strong>当前页</strong>内容收敛；
@@ -196,7 +257,7 @@ public class InpatientDoctorStationAdviceCatalogAssembler {
         Page<ProductDefinitionDisplayDto> page,
         InpatientEncounterContextQueryModel snapshot
     ) {
-        // 门控：请求患者必须与住院快照一致，防止越权用他人就诊上下文套目录数据
+        // Gate：请求患者必须与住院快照一致，防止越权用他人就诊上下文套目录数据
         if (!request.getPatientId().equals(snapshot.getPatientId())) {
             return List.of();
         }
@@ -205,47 +266,45 @@ public class InpatientDoctorStationAdviceCatalogAssembler {
             return List.of();
         }
 
-        // Pre：当前页所有产品行的定价行一次性拉齐，避免循环内逐条打定价查询（A.9.1 批量 I/O 精神在应用层的对齐）
+        // Pre：当前页定价行一次拉齐
         Map<String, List<ChargeItemDefinition>> priceByKey = clinicalCatalogPriceResolver.loadPriceLinesGrouped(content);
         Long orgId = snapshot.getOrganizationId();
         if (request.getOrganizationUnitId() != null) {
             orgId = request.getOrganizationUnitId();
         }
 
+        // Pre：仅按定价行是否已可解析收集 fallback，禁止 resolveCatalogUnitPrice 触发模板+库存 N+1
         LinkedHashSet<Long> fallbackChargeDefIds = new LinkedHashSet<>();
         for (ProductDefinitionDisplayDto pre : content) {
+            if (pre.getChargeItemDefinitionId() == null) {
+                continue;
+            }
             String compositeKey = ProductDefinitionKeyUtil.buildCompositeKey(
                 pre.getProductTableName(), pre.getProductDefinitionId());
             List<ChargeItemDefinition> preLines = priceByKey.getOrDefault(compositeKey, List.of());
-            ClinicalCatalogUnitPriceQuery preCmd = ClinicalCatalogUnitPriceQuery.builder()
-                .productTableName(pre.getProductTableName())
-                .productDefinitionId(pre.getProductDefinitionId())
-                .categoryCode(pre.getCategoryCode())
-                .methodCode(pre.getMethodCode())
-                .organizationId(orgId)
-                .pharmacyLocationId(request.getPharmacyLocationId())
-                .encounterId(request.getEncounterId())
-                .priceLines(preLines)
-                .productRowForOccupancy(pre)
-                .build();
-            if (clinicalCatalogPriceResolver.resolveCatalogUnitPrice(preCmd) == null
-                && pre.getChargeItemDefinitionId() != null) {
+            if (!clinicalCatalogPriceResolver.hasResolvableCatalogPriceFromLines(pre.getProductTableName(), preLines)) {
                 fallbackChargeDefIds.add(pre.getChargeItemDefinitionId());
             }
         }
-        Map<Long, ChargeItemDefinition> fallbackPriceByDefId = chargeItemDefinitionQueryService.findAllDefinitionsByIdIn(fallbackChargeDefIds);
+        Map<Long, ChargeItemDefinition> fallbackPriceByDefId =
+            chargeItemDefinitionQueryService.findAllDefinitionsByIdIn(fallbackChargeDefIds);
+
+        // Pre：当前页药耗候选库位 + 库存 + 预占一次批量预取
+        ClinicalCatalogInventoryPageBatch inventoryBatch =
+            clinicalCatalogInventoryPageBatchLoader.preload(content, orgId, request.getPharmacyLocationId());
+
         List<InpatientDoctorStationAdviceCatalogRowDto> rows = new ArrayList<>();
         for (ProductDefinitionDisplayDto productRow : content) {
             InpatientDoctorStationAdviceCatalogRowDto dto = baseRow(productRow);
+            String productCompositeKey = ProductDefinitionKeyUtil.buildCompositeKey(
+                productRow.getProductTableName(), productRow.getProductDefinitionId());
 
             if (TableNameConstants.MED_MEDICATION_DEFINITION.equals(productRow.getProductTableName())
                 || TableNameConstants.ADM_DEVICE_DEFINITION.equals(productRow.getProductTableName())) {
-                // 药品/耗材：需要库存 ∩ 模板库位，并扣减候选库房全局草稿/待发占用，得到「可开量」
-                List<Long> candidateLocs = resolveCandidateLocations(orgId, productRow, request.getPharmacyLocationId());
-                List<Long> itemIds = List.of(productRow.getProductDefinitionId());
-                List<InventoryCatalogAvailabilityRowModel> physical = inventoryItemQueryService.findAvailableCatalogRowsForOrder(
-                    productRow.getProductTableName(), itemIds, candidateLocs);
-                Map<String, BigDecimal> occ = loadOccupancyMap(productRow, candidateLocs);
+                // 药品/耗材：使用预取库存 ∩ 候选库位，并扣减发放预占
+                List<InventoryCatalogAvailabilityRowModel> physical =
+                    inventoryBatch.getPhysicalRows(productCompositeKey);
+                Map<String, BigDecimal> occ = inventoryBatch.getOccupancy(productCompositeKey);
                 List<InpatientDoctorStationAdviceInventoryRowDto> invDtos = new ArrayList<>();
                 BigDecimal sumNetSplit = BigDecimal.ZERO;
                 int order = 0;
@@ -264,11 +323,12 @@ public class InpatientDoctorStationAdviceCatalogAssembler {
                     inv.setItemId(row.getItemId());
                     inv.setCategoryCode(productRow.getCategoryCode());
                     inv.setInventoryId(row.getId());
-                    // 库存明细 quantity 仍为拆零单位；目录汇总 availableQuantity 在 unitBands 就绪后换算展示单位
                     inv.setQuantity(net);
                     inv.setUnitCode(productRow.getSplitUnitCode());
                     inv.setUnitName(productRow.getSplitUnitCodeDictText());
                     inv.setLotNumber(row.getLotNumber());
+                    inv.setExpirationDate(row.getExpirationDate());
+                    inv.setCreatedAt(row.getCreatedAt());
                     inv.setLocationId(row.getLocationId());
                     inv.setLocationStoreId(row.getLocationId());
                     inv.setDisplayOrder(order++);
@@ -277,16 +337,13 @@ public class InpatientDoctorStationAdviceCatalogAssembler {
                 }
                 dto.setInventoryList(invDtos);
                 dto.setAvailableQuantity(sumNetSplit);
-                // IF-IP-DOR-11 读侧：默认发药库位（目录展示；住院写路径不使用）
-                Long defaultDispenseLocationId = resolveDefaultDispenseLocationId(orgId, productRow);
+                Long defaultDispenseLocationId = inventoryBatch.getDefaultDispenseLocationId(productCompositeKey);
                 if (defaultDispenseLocationId != null) {
                     dto.setDefaultDispenseLocationId(defaultDispenseLocationId);
                 }
             }
 
-            // Asm：单价来自批量定价结果；药耗有库存时按「库存批号 ↔ 定价 lot_no」逐行回填，目录行单价与首条库存批号对齐
-            String productCompositeKey = ProductDefinitionKeyUtil.buildCompositeKey(
-                productRow.getProductTableName(), productRow.getProductDefinitionId());
+            // Asm：单价来自批量定价；药耗有库存时按批号对齐
             List<ChargeItemDefinition> lines = priceByKey.getOrDefault(productCompositeKey, List.of());
             boolean headerPriceFromInventoryLots = false;
             ChargeItemDefinition catalogPriceLine = null;
@@ -313,18 +370,39 @@ public class InpatientDoctorStationAdviceCatalogAssembler {
                 }
             }
             if (!headerPriceFromInventoryLots) {
-                ClinicalCatalogUnitPriceQuery priceCmd = ClinicalCatalogUnitPriceQuery.builder()
-                    .productTableName(productRow.getProductTableName())
-                    .productDefinitionId(productRow.getProductDefinitionId())
-                    .categoryCode(productRow.getCategoryCode())
-                    .methodCode(productRow.getMethodCode())
-                    .organizationId(orgId)
-                    .pharmacyLocationId(request.getPharmacyLocationId())
-                    .encounterId(request.getEncounterId())
-                    .priceLines(lines)
-                    .productRowForOccupancy(productRow)
-                    .build();
-                ChargeItemDefinition selected = clinicalCatalogPriceResolver.resolveCatalogUnitPrice(priceCmd);
+                ChargeItemDefinition selected;
+                if (ProductTableNameHelper.isMedicationOrDevice(productRow.getProductTableName())) {
+                    String leadingLot = null;
+                    if (inventoryRows != null && !inventoryRows.isEmpty()) {
+                        leadingLot = inventoryRows.get(0).getLotNumber();
+                    }
+                    if (StringUtils.isNotEmpty(leadingLot)) {
+                        // 有 FIFO 批号：按批号匹配 LOT_NUMBER_PRICE；对不上则参考零售价 SALE
+                        Map<String, ChargeItemDefinition> lotPriceIndex =
+                            clinicalCatalogPriceResolver.indexLotNumberPriceRows(lines);
+                        selected = clinicalCatalogPriceResolver.resolveLotNumberPriceLineForLot(
+                            lotPriceIndex, leadingLot);
+                        if (selected == null) {
+                            selected = clinicalCatalogPriceResolver.selectReferenceSalePriceLine(lines);
+                        }
+                    } else {
+                        // 无可用库存：展示参考零售价 SALE（开不出，不按批号 priority）
+                        selected = clinicalCatalogPriceResolver.selectReferenceSalePriceLine(lines);
+                    }
+                } else {
+                    ClinicalCatalogUnitPriceQuery priceCmd = ClinicalCatalogUnitPriceQuery.builder()
+                        .productTableName(productRow.getProductTableName())
+                        .productDefinitionId(productRow.getProductDefinitionId())
+                        .categoryCode(productRow.getCategoryCode())
+                        .methodCode(productRow.getMethodCode())
+                        .organizationId(orgId)
+                        .pharmacyLocationId(request.getPharmacyLocationId())
+                        .encounterId(request.getEncounterId())
+                        .priceLines(lines)
+                        .productRowForOccupancy(productRow)
+                        .build();
+                    selected = clinicalCatalogPriceResolver.resolveCatalogUnitPrice(priceCmd);
+                }
                 if (selected != null) {
                     dto.setChargeItemDefinitionId(selected.getId());
                     dto.setUnitPrice(selected.getPriceValue());
@@ -338,8 +416,10 @@ public class InpatientDoctorStationAdviceCatalogAssembler {
                         && !PriceType.SALE.getCode().equals(fallback.getPriceTypeCode())) {
                         fallback = null;
                     }
+                    // 药耗兜底：允许批号售价或参考零售价 SALE
                     if (fallback != null && ProductTableNameHelper.isMedicationOrDevice(productRow.getProductTableName())
-                        && !PriceType.LOT_NUMBER_PRICE.getCode().equals(fallback.getPriceTypeCode())) {
+                        && !PriceType.LOT_NUMBER_PRICE.getCode().equals(fallback.getPriceTypeCode())
+                        && !PriceType.SALE.getCode().equals(fallback.getPriceTypeCode())) {
                         fallback = null;
                     }
                     if (fallback != null) {
@@ -359,8 +439,12 @@ public class InpatientDoctorStationAdviceCatalogAssembler {
                 productRow, catalogPriceTypeCode);
             dto.setUnitBands(ProductDefinitionCatalogUnitBandsAssembler.buildDoctorStationBands(
                 productRow, bandPricingUnitCode, dto.getUnitPrice()));
-            // 目录库存列：拆零净量换算为 PACKAGE 槽（或主计价单位）后再下发，与 unitCode / unitPrice 配套
+            // Asm：库存列展示对齐库存明细（满包整数+拆零余量）；数值 availableQuantity 仍换算包装单位供对比
             if (dto.getAvailableQuantity() != null) {
+                // 此时 availableQuantity 仍为拆零净量加总，先写展示文案再换算包装数值
+                dto.setAvailableQuantityText(
+                    MedicationPackageSplitQuantityDisplayAssembler.buildDisplayQuantityText(
+                        dto.getAvailableQuantity(), productRow));
                 dto.setAvailableQuantity(ProductDefinitionCatalogUnitBandsAssembler.convertDoctorStationCatalogAvailableQuantity(
                     productRow, dto.getUnitBands(), dto.getAvailableQuantity()));
             }
@@ -372,6 +456,8 @@ public class InpatientDoctorStationAdviceCatalogAssembler {
 
     /**
      * 批量回填默认执行科室展示名（{@code defaultPerformOrgId} 为机构主键，非库位）。
+     *
+     * @param rows 当前页目录行
      */
     private void enrichDefaultPerformOrgNames(List<InpatientDoctorStationAdviceCatalogRowDto> rows) {
         Set<Long> orgIds = new LinkedHashSet<>();
@@ -396,7 +482,7 @@ public class InpatientDoctorStationAdviceCatalogAssembler {
     }
 
     /**
-     * 从产品读模型装配目录行「与库存、定价无关」的基础展示字段（类型、名称、类别、五类单位槽、药品默认频次用法等）。
+     * 从产品读模型装配目录行「与库存、定价无关」的基础展示字段。
      *
      * @param productRow 当前页一条产品定义读模型
      * @return 已填充基础字段的 DTO，不含库存与定价单价
@@ -407,11 +493,12 @@ public class InpatientDoctorStationAdviceCatalogAssembler {
         dto.setProductTableName(productRow.getProductTableName());
         dto.setBusNo(productRow.getProductBusNo());
         dto.setName(productRow.getProductName());
+        // 商品名：药品主档 merchandise_name；非药品为空
+        dto.setMerchandiseName(productRow.getMerchandiseName());
         dto.setPyCode(productRow.getPyStr());
         dto.setWbCode(productRow.getWbStr());
         dto.setCategoryCode(productRow.getCategoryCode());
         dto.setCategoryCodeDictText(productRow.getCategoryCodeDictText());
-        // 计价主单位：仅包装单位（package_unit_code），禁止跨槽回落
         String primaryUnitCode = ProductDefinitionCatalogUnitBandsAssembler.resolveCatalogPrimaryUnitCode(productRow);
         dto.setUnitCode(primaryUnitCode);
         dto.setUnitName(ProductDefinitionCatalogUnitBandsAssembler.resolveCatalogPrimaryUnitName(productRow));
@@ -420,8 +507,15 @@ public class InpatientDoctorStationAdviceCatalogAssembler {
         dto.setRateCodeDictText(productRow.getRateCodeDictText());
         dto.setMethodCode(productRow.getMethodCode());
         dto.setMethodCodeDictText(productRow.getMethodCodeDictText());
+        // 中药特殊煎法：目录维护值，选品时默认带入方明细
+        dto.setDosageInstruction(productRow.getDosageInstruction());
+        dto.setDosageInstructionDictText(productRow.getDosageInstructionDictText());
         dto.setDoseFormCode(productRow.getDoseFormCode());
         dto.setDoseFormCodeDictText(productRow.getDoseFormCodeDictText());
+        // 药品目录默认/最小/最大单次剂量（剂量单位），供开立页默认带出
+        dto.setDose(productRow.getDose());
+        dto.setMinUnit(productRow.getMinUnit());
+        dto.setMaxUnit(productRow.getMaxUnit());
         dto.setRestrictedFlag(productRow.getRestrictedFlag());
         dto.setRestrictedScope(productRow.getRestrictedScope());
         dto.setRestrictedEnum(productRow.getRestrictedEnum());
@@ -431,6 +525,7 @@ public class InpatientDoctorStationAdviceCatalogAssembler {
         dto.setThoPartAttributeEnum(productRow.getThoPartAttributeEnum());
         dto.setThoPartAttributeEnumDictText(productRow.getThoPartAttributeEnumDictText());
         dto.setTotalVolume(productRow.getTotalVolume());
+        dto.setManufacturer(productRow.getManufacturer());
         dto.setSkinTestFlag(productRow.getSkinTestFlag());
         dto.setInjectFlag(productRow.getInjectFlag());
         if (StringUtils.isNotEmpty(productRow.getActivityTypeCode())) {
@@ -438,58 +533,9 @@ public class InpatientDoctorStationAdviceCatalogAssembler {
         }
         dto.setDefaultPerformOrgId(productRow.getLocationId());
         dto.setDefaultPerformOrgName(productRow.getLocationName());
+        // 医保等级：读模型已回填 chrgitmLvText，开立页单价旁展示
+        dto.setChrgitmLv(productRow.getChrgitmLv());
+        dto.setChrgitmLvText(productRow.getChrgitmLvText());
         return dto;
-    }
-
-    /**
-     * 解析发药/耗材候选库位：按开立科室 + 物品表 + 目录 {@code categoryCode}（药品/耗材类别）+ 具体项 + 用法
-     * 过滤模板适用行（calcScore≥0）；若请求携带药房库位且命中候选，则收窄为该单点库位。
-     *
-     * @param orgId               机构或科室所属机构，用于模板查询
-     * @param productRow          当前产品行（表名、categoryCode、定义 id、默认用法参与模板匹配）
-     * @param pharmacyLocationId 可选；前端指定「在某药房开」时传入
-     * @return 候选库位 ID 列表；机构缺失时返回空列表表示不做库存展示
-     */
-    private List<Long> resolveCandidateLocations(Long orgId, ProductDefinitionDisplayDto productRow, Long pharmacyLocationId) {
-        return clinicalCatalogDispenseLocationResolver.listApplicableCandidateLocationIds(
-            orgId, productRow, pharmacyLocationId);
-    }
-
-    /**
-     * IF-IP-DOR-11 读侧：按取药科室模板解析默认发药/发材库位。
-     *
-     * @param orgId      开立机构
-     * @param productRow 产品读模型
-     * @return 默认库位 id；目录读侧展示用
-     */
-    private Long resolveDefaultDispenseLocationId(Long orgId, ProductDefinitionDisplayDto productRow) {
-        return clinicalCatalogDispenseLocationResolver.matchDefaultDispenseLocationId(orgId, productRow);
-    }
-
-    /**
-     * 构建候选库位下已占用数量映射（拆零单位），键为 {@link ProductTableNameHelper#tripleCompositeKey}；不限就诊。
-     *
-     * @param productRow     当前目录产品（区分药品/耗材预占查询分支及单位换算）
-     * @param candidateLocs  模板解析出的库位候选；空则直接返回空映射
-     * @return 复合键 → 拆零单位预占数量；无发放时为空映射
-     */
-    private Map<String, BigDecimal> loadOccupancyMap(ProductDefinitionDisplayDto productRow, List<Long> candidateLocs) {
-        Map<String, BigDecimal> acc = new LinkedHashMap<>();
-        if (candidateLocs == null || candidateLocs.isEmpty()) {
-            return new LinkedHashMap<>();
-        }
-        if (TableNameConstants.MED_MEDICATION_DEFINITION.equals(productRow.getProductTableName())) {
-            List<MedicationDispenseOrderCatalogOccupancyModel> occRows = medicationDispenseQueryService.listMedicationDispensesForOrderCatalogOccupancy(
-                candidateLocs, List.of(productRow.getProductDefinitionId()));
-            return DoctorStationAdviceInventoryUnitQuantityHelper.mergeMedicationOccupancyInSplitUnits(
-                occRows, productRow, productRow.getProductTableName());
-        }
-        if (TableNameConstants.ADM_DEVICE_DEFINITION.equals(productRow.getProductTableName())) {
-            List<DeviceDispenseOrderCatalogOccupancyModel> occRows = deviceDispenseQueryService.listDeviceDispensesForOrderCatalogOccupancy(
-                candidateLocs, List.of(productRow.getProductDefinitionId()));
-            return DoctorStationAdviceInventoryUnitQuantityHelper.mergeDeviceOccupancyInSplitUnits(
-                occRows, productRow, productRow.getProductTableName());
-        }
-        return new LinkedHashMap<>();
     }
 }

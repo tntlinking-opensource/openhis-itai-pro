@@ -75,7 +75,7 @@ public class Supplier extends BaseAuditedEntity {
     private String note;
 
     /**
-     * 初始化草稿状态。
+     * 初始化草稿状态（注册流程中的中间态；业务要求注册完成后须再 {@link #activate()} 为启用）。
      */
     public void initDraftStatus() {
         this.statusEnum = SupplierStatus.DRAFT.getCode();

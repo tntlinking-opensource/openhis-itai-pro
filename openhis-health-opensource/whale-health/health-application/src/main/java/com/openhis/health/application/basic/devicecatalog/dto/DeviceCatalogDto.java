@@ -90,6 +90,21 @@ public class DeviceCatalogDto {
     /** 销售→拆零倍数。 */
     private BigDecimal packageUnitRatio;
 
+    /**
+     * 追溯码所贴单位编码（术语 {@code unit_code}；可游离于五类业务单位之外）。
+     *
+     * <p>耗材可选；有值时同意入库写入追溯码主档。</p>
+     */
+    private String traceUnitCode;
+
+    /** 追溯码单位字典展示文案。 */
+    private String traceUnitCode_dictText;
+
+    /**
+     * 1 个追溯码单位对应的拆零数量；与 {@link #traceUnitCode} 成对。
+     */
+    private BigDecimal traceUnitRatio;
+
     /** 拆零单位编码（持久化 {@code split_unit_code}）。 */
     private String splitUnitCode;
     /** 拆零单位字典展示文案。 */
@@ -144,8 +159,6 @@ public class DeviceCatalogDto {
     private Boolean ybFlag;
     /** 医保码。 */
     private String ybNo;
-    /** 医保机构码。 */
-    private String ybOrgNo;
     /** 医保是否已对码。 */
     private Boolean ybMatchFlag;
     /** 医保收费等级。 */
@@ -180,9 +193,13 @@ public class DeviceCatalogDto {
     /** 管辖范围说明。 */
     private String jurisdiction;
 
-    /** 采购价（元）。 */
+    /**
+     * 采购参考价（维护态 {@code PURCHASE}，元/包装单位；真正进价见批号 {@code LOT_NUMBER_COST}）。
+     */
     private BigDecimal purchasePrice;
-    /** 零售价（元）。 */
+    /**
+     * 销售参考价（维护态 {@code SALE}，元/包装单位；真正售价见批号 {@code LOT_NUMBER_PRICE}）。
+     */
     private BigDecimal retailPrice;
     /** 限价（元）。 */
     private BigDecimal maximumRetailPrice;

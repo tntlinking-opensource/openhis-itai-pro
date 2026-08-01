@@ -295,4 +295,24 @@ public class PractitionerRoleScopeLoader {
         }
         return acc;
     }
+
+    /**
+     * 库存单据经手人下拉：按平台角色装载在职人员。
+     *
+     * <p>仅认 {@code adm_pr_assign} 岗位分配，且须挂在会话机构
+     * （{@code adm_pr_assign.org_id = organizationId}）。机构为空或该机构无命中时返回空列表，
+     * 不回退全院。</p>
+     *
+     * @param platformRoleCode {@code whale_roles.code}
+     * @param organizationId   会话机构主键；空则返回空列表
+     * @return 人员列表，永不为 null
+     */
+    public List<Practitioner> listActivePractitionersForInventoryDocHandlerRole(
+        String platformRoleCode,
+        Long organizationId) {
+        if (organizationId == null) {
+            return Collections.emptyList();
+        }
+        return listActivePractitionersForPlatformRoleInOrganization(platformRoleCode, organizationId);
+    }
 }

@@ -29,4 +29,19 @@ public class OpSettleChargeLine {
     private String bilgDeptName;
     private String bilgDrCodg;
     private String bilgDrName;
+
+    /**
+     * 医院目录/项目名称（3101 {@code hilist_name}/{@code hosplist_name}；2204 可忽略）。
+     */
+    private String itemName;
+    /** 目录类别（3101 {@code hilist_type}）。 */
+    private String hilistType;
+    /** 收费类别（3101 {@code chrg_type}）。 */
+    private String chrgType;
+    /** 医保目录等级（3101 {@code hilist_lv}）。 */
+    private String hilistLv;
+    /** 规格（3101 {@code spec}）。 */
+    private String spec;
+    /** 数量单位（3101 {@code spec_unt}）。 */
+    private String specUnt;
 }

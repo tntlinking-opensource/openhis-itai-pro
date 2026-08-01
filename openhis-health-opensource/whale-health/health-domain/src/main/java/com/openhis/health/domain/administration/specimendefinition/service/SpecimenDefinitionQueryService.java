@@ -17,7 +17,9 @@ import com.openhis.health.domain.administration.specimendefinition.queries.model
 import com.openhis.health.domain.administration.specimendefinition.repository.SpecimenDefinitionRepository;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.enums.PublicationStatus;
+import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
+import jakarta.persistence.criteria.Order;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
@@ -90,15 +92,34 @@ public class SpecimenDefinitionQueryService {
                     cb.like(cb.lower(root.get(FieldNameConstants.PY_STR)), likeIc),
                     cb.like(cb.lower(root.get(FieldNameConstants.WB_STR)), likeIc)
                 ));
+                // B.2.1：精确全等置顶，次级仍按更新时间、主键倒序
+                List<Order> secondary = List.of(
+                    cb.desc(root.get(FieldNameConstants.UPDATED_AT)),
+                    cb.desc(root.get(FieldNameConstants.ID)));
+                KeywordExactFirstOrderSupport.applyExactFirstOrder(
+                    cq,
+                    cb,
+                    keywordTrim,
+                    secondary,
+                    root.get(FieldNameConstants.NAME),
+                    root.get(FieldNameConstants.BUS_NO),
+                    root.get(FieldNameConstants.PY_STR),
+                    root.get(FieldNameConstants.WB_STR));
             }
             return cb.and(preds.toArray(Predicate[]::new));
         };
-        // 单次 SQL 分页：未指定排序时默认 updatedAt、id 降序（DM §6.2.1）
+        // 单次 SQL 分页：无关键字时默认 updatedAt、id 降序；有关键字时 Spec 写精确优先（B.2.1）
         Pageable effectivePageable = pageable;
         Sort defaultSort = Sort.by(
             Sort.Order.desc(FieldNameConstants.UPDATED_AT),
             Sort.Order.desc(FieldNameConstants.ID));
-        if (pageable == null) {
+        if (StringUtils.isNotEmpty(keywordTrim)) {
+            if (pageable == null) {
+                effectivePageable = PageRequest.of(0, DEFAULT_PAGE_SIZE);
+            } else {
+                effectivePageable = this.unsortPageableIfKeyword(true, pageable);
+            }
+        } else if (pageable == null) {
             effectivePageable = PageRequest.of(0, DEFAULT_PAGE_SIZE, defaultSort);
         } else if (pageable.getSort().isUnsorted()) {
             effectivePageable = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), defaultSort);
@@ -168,13 +189,28 @@ public class SpecimenDefinitionQueryService {
                     cb.like(cb.lower(root.get(FieldNameConstants.PY_STR)), likeIc),
                     cb.like(cb.lower(root.get(FieldNameConstants.WB_STR)), likeIc)
                 ));
+                // B.2.1：检索下拉精确全等置顶，次级主键升序
+                List<Order> secondary = List.of(cb.asc(root.get(FieldNameConstants.ID)));
+                KeywordExactFirstOrderSupport.applyExactFirstOrder(
+                    cq,
+                    cb,
+                    keywordTrim,
+                    secondary,
+                    root.get(FieldNameConstants.NAME),
+                    root.get(FieldNameConstants.BUS_NO),
+                    root.get(FieldNameConstants.PY_STR),
+                    root.get(FieldNameConstants.WB_STR));
             }
             return cb.and(preds.toArray(Predicate[]::new));
         };
-        // 单次 SQL 查询：条数由 limit 控制，在 DB 侧截断并按主键升序
-        Page<SpecimenDefinition> page = repository.findAll(
-            spec,
-            PageRequest.of(0, limit, Sort.by(Sort.Direction.ASC, FieldNameConstants.ID)));
+        // 有关键字时无 Sort，保留 Spec 精确优先；无关键字时按主键升序截断
+        Pageable searchPageable;
+        if (StringUtils.isNotEmpty(keywordTrim)) {
+            searchPageable = PageRequest.of(0, limit);
+        } else {
+            searchPageable = PageRequest.of(0, limit, Sort.by(Sort.Direction.ASC, FieldNameConstants.ID));
+        }
+        Page<SpecimenDefinition> page = repository.findAll(spec, searchPageable);
         List<SpecimenDefinitionSearchItemQueryModel> result = new ArrayList<>();
         for (SpecimenDefinition entity : page.getContent()) {
             result.add(toSearchItem(entity));
@@ -233,6 +269,23 @@ public class SpecimenDefinitionQueryService {
             result.add(model);
         }
         return result;
+    }
+
+    /**
+     * 关键字非空且 Pageable 带 Sort 时剥掉 Sort，避免覆盖 Specification 精确优先 ORDER BY。
+     *
+     * @param keywordPresent 是否带非空关键字
+     * @param pageable       原始分页
+     * @return 关键字场景下的无 Sort Pageable；否则原 pageable
+     */
+    private Pageable unsortPageableIfKeyword(boolean keywordPresent, Pageable pageable) {
+        if (!keywordPresent || pageable == null) {
+            return pageable;
+        }
+        if (!pageable.getSort().isSorted()) {
+            return pageable;
+        }
+        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
     }
 
     /**

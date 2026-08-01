@@ -36,7 +36,11 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * 价格调整写侧领域服务（DM-CUS-011 v2 单据模型）。
@@ -461,6 +465,8 @@ public class PriceAdjustmentDomainService {
             }
             PriceAdjustmentDetail detail = new PriceAdjustmentDetail();
             detail.setAdjustmentId(row.getId());
+            // 库位可空：有则落库供日结按库过滤；写价/盈亏公式不读本字段
+            detail.setLocationId(detailLine.getLocationId());
             detail.setLotNumber(detailLine.getLotNumber().trim());
             detail.setQuantity(detailLine.getQuantity());
             detail.setOldPurchaseAmount(detailLine.getOldPurchaseAmount());
@@ -556,8 +562,25 @@ public class PriceAdjustmentDomainService {
      * @param lines 主行列表
      */
     private void assertDetailSnapshotReady(List<PriceAdjustment> lines) {
+        if (lines == null || lines.isEmpty()) {
+            return;
+        }
+        List<Long> adjustmentIds = new ArrayList<>(lines.size());
         for (PriceAdjustment row : lines) {
-            List<PriceAdjustmentDetail> details = detailRepository.findByAdjustmentIdAndIsDeletedFalse(row.getId());
+            adjustmentIds.add(row.getId());
+        }
+        List<PriceAdjustmentDetail> allDetails =
+            detailRepository.findByAdjustmentIdInAndIsDeletedFalse(adjustmentIds);
+        Map<Long, List<PriceAdjustmentDetail>> detailsByAdjustmentId = new HashMap<>();
+        for (PriceAdjustmentDetail detail : allDetails) {
+            if (detail == null || detail.getAdjustmentId() == null) {
+                continue;
+            }
+            detailsByAdjustmentId.computeIfAbsent(detail.getAdjustmentId(), key -> new ArrayList<>()).add(detail);
+        }
+        for (PriceAdjustment row : lines) {
+            List<PriceAdjustmentDetail> details =
+                detailsByAdjustmentId.getOrDefault(row.getId(), new ArrayList<>());
             if (PriceAdjustmentItemTableSupport.isClinicalItemTable(row.getItemTable())) {
                 if (details.size() != 1) {
                     throw new BusinessException(
@@ -597,13 +620,30 @@ public class PriceAdjustmentDomainService {
      * @param lines 本单主行
      */
     private void assertNoOtherPendingForItems(List<PriceAdjustment> lines) {
+        if (lines == null || lines.isEmpty()) {
+            return;
+        }
+        Map<String, Set<Long>> itemIdsByTable = new HashMap<>();
         for (PriceAdjustment row : lines) {
-            boolean pending = repository.existsByItemTableAndItemIdAndStatusEnumAndIsDeletedFalse(
-                row.getItemTable(),
-                row.getItemId(),
-                PriceAdjustmentStatus.PENDING.getCode()
-            );
-            if (pending) {
+            if (row == null || row.getItemId() == null || row.getItemTable() == null) {
+                continue;
+            }
+            itemIdsByTable
+                .computeIfAbsent(row.getItemTable().trim(), key -> new HashSet<>())
+                .add(row.getItemId());
+        }
+        for (Map.Entry<String, Set<Long>> entry : itemIdsByTable.entrySet()) {
+            List<Long> itemIds = new ArrayList<>(entry.getValue());
+            if (itemIds.isEmpty()) {
+                continue;
+            }
+            List<PriceAdjustment> pendingRows =
+                repository.findByItemTableAndItemIdInAndStatusEnumAndIsDeletedFalse(
+                    entry.getKey(),
+                    itemIds,
+                    PriceAdjustmentStatus.PENDING.getCode()
+                );
+            if (pendingRows != null && !pendingRows.isEmpty()) {
                 throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_ITEM_PENDING, "该项目存在待审批调价单");
             }
         }

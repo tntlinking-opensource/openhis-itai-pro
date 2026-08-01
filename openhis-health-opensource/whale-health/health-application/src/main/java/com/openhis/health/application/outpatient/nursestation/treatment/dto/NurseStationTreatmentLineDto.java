@@ -169,6 +169,24 @@ public class NurseStationTreatmentLineDto {
     private String doseUnitName;
 
     /**
+     * 单次剂量展示串（**仅药品**）：最小单位为主，必要时括号附计量；单位相同时无括号。
+     */
+    @Schema(description = "单次剂量展示串（最小单位为主，括号附计量；单位相同时无括号）")
+    private String dosageDisplay;
+
+    /** 单次剂量对应的最小单位数量（**仅药品**）；单位相同或无法换算时为 null。 */
+    @Schema(description = "单次剂量对应的最小单位数量")
+    private BigDecimal splitDose;
+
+    /** 最小单位编码（**仅药品**）。 */
+    @Schema(description = "最小单位编码")
+    private String splitDoseUnitCode;
+
+    /** 最小单位展示名（**仅药品**）。 */
+    @Schema(description = "最小单位展示名")
+    private String splitDoseUnitName;
+
+    /**
      * 给药途径/用法编码（**仅药品**；持久化 {@code med_medication_request.method_code}）。
      */
     @Schema(description = "给药途径/用法编码")

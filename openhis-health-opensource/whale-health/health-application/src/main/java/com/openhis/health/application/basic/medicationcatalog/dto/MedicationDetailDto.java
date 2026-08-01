@@ -102,6 +102,12 @@ public class MedicationDetailDto extends MedicationDto {
     private String doseUnitCode_dictText;
 
     /**
+     * 单次最小剂量
+     */
+    @Schema(description = "单次最小用药剂量", example = "0.5")
+    private BigDecimal minUnit;
+
+    /**
      * 单次最大剂量
      */
     @Schema(description = "单次最大用药剂量", example = "1.0")
@@ -269,9 +275,9 @@ public class MedicationDetailDto extends MedicationDto {
     private String manufacturerText;
 
     /**
-     * 供应商
+     * 供应商标识（历史字段；目录维护写路径已不再写入，读侧可能仍回显旧值）。
      */
-    @Schema(description = "供应商ID", example = "60001", type = "string")
+    @Schema(description = "供应商标识（目录维护已废弃）", example = "60001", type = "string")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long supplyId;
 
@@ -288,15 +294,15 @@ public class MedicationDetailDto extends MedicationDto {
     private Integer characteristic;
 
     /**
-     * 购入价
+     * 采购参考价（维护态 {@code PURCHASE}，元/包装单位；真正进价见批号 {@code LOT_NUMBER_COST}）。
      */
-    @Schema(description = "药品购入价格", example = "10.5")
+    @Schema(description = "采购参考价（元/包装单位）", example = "10.5")
     private BigDecimal purchasePrice;
 
     /**
-     * 零售价
+     * 销售参考价（维护态 {@code SALE}，元/包装单位；真正售价见批号 {@code LOT_NUMBER_PRICE}）。
      */
-    @Schema(description = "药品零售价格", example = "15.8")
+    @Schema(description = "销售参考价（元/包装单位）", example = "15.8")
     private BigDecimal retailPrice;
 
     /**
@@ -429,9 +435,23 @@ public class MedicationDetailDto extends MedicationDto {
     private BigDecimal packageUnitRatio;
 
     /**
+     * 追溯码所贴单位编码（术语 {@code unit_code}；可游离于五类业务单位之外）。
+     *
+     * <p>药品目录必填；同意入库写入追溯码主档。</p>
+     */
+    @Schema(description = "追溯码单位编码", example = "DW003")
+    private String traceUnitCode;
+
+    /**
+     * 1 个追溯码单位对应的拆零数量；与 {@link #traceUnitCode} 成对，须 &gt; 0。
+     */
+    @Schema(description = "追溯码单位→拆零倍数", example = "10")
+    private BigDecimal traceUnitRatio;
+
+    /**
      * 医保等级
      */
-    @Schema(description = "医保等级 1-甲类 2-乙类 3-丙类", example = "2", allowableValues = {"1", "2", "3"})
+    @Schema(description = "医保等级（与 yb_type 一致：1自费 2甲类 3乙类 4丙类）", example = "2", allowableValues = {"1", "2", "3", "4"})
     private Integer chrgitmLv;
 
     /** 病案结算类型编码（术语 mr_settlement_type_code）。 */

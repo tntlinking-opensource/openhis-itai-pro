@@ -6,6 +6,7 @@ package com.openhis.chs.domain.catalog.access;
 
 import com.openhis.chs.domain.catalog.command.RevokeActivityCatalog3302Command;
 import com.openhis.chs.domain.catalog.command.RevokeDeviceCatalog3302Command;
+import com.openhis.chs.domain.catalog.command.RevokeFromInstitutionMatchCommand;
 import com.openhis.chs.domain.catalog.command.RevokeMedicationCatalog3302Command;
 import com.openhis.chs.domain.catalog.command.UploadActivityCatalog3301Command;
 import com.openhis.chs.domain.catalog.command.UploadDeviceCatalog3301Command;
@@ -71,4 +72,12 @@ public interface CatalogMappingUploadAccess {
      * @return 平台返回摘要
      */
     Catalog3302RevokeResult revokeDevice(RevokeDeviceCatalog3302Command command);
+
+    /**
+     * 按 1317 本地镜像行撤销平台对照（支持院内停用/孤儿）。
+     *
+     * @param command 镜像撤销命令
+     * @return 平台返回摘要
+     */
+    Catalog3302RevokeResult revokeFromInstitutionMatch(RevokeFromInstitutionMatchCommand command);
 }

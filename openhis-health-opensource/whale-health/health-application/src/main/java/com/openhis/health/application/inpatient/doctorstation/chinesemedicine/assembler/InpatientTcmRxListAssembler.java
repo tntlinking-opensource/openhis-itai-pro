@@ -11,6 +11,8 @@ import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
+import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
@@ -40,6 +42,7 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -59,6 +62,7 @@ public class InpatientTcmRxListAssembler {
 
     private final MedicationDefinitionQueryService medicationDefinitionQueryService;
     private final ChargeItemQueryService chargeItemQueryService;
+    private final PractitionerQueryService practitionerQueryService;
     private final TerminologyOptionLoader terminologyOptionLoader;
     private final FrequencyOptionLoader frequencyOptionLoader;
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
@@ -75,9 +79,16 @@ public class InpatientTcmRxListAssembler {
         if (groups == null || groups.isEmpty()) {
             return result;
         }
+        // 方列表按开立时间（reqOpenedTime）倒序，与住院医嘱统一列表口径一致。
+        List<TcmHerbalPrescriptionGroupQueryModel> orderedGroups = new ArrayList<>(groups);
+        orderedGroups.sort(Comparator
+            .comparing(TcmHerbalPrescriptionGroupQueryModel::getReqOpenedTime,
+                Comparator.nullsLast(Comparator.reverseOrder()))
+            .thenComparing(TcmHerbalPrescriptionGroupQueryModel::getPrescriptionNo,
+                Comparator.nullsLast(Comparator.naturalOrder())));
         Set<Long> medicationIds = new HashSet<>();
         Set<Long> requestIds = new HashSet<>();
-        for (TcmHerbalPrescriptionGroupQueryModel group : groups) {
+        for (TcmHerbalPrescriptionGroupQueryModel group : orderedGroups) {
             if (group.getLines() == null) {
                 continue;
             }
@@ -107,7 +118,7 @@ public class InpatientTcmRxListAssembler {
         Map<String, ProductDefinitionDisplayDto> productByKey = loadMedicationProducts(medicationIds);
         Map<String, List<ChargeItemDefinition>> priceByKey =
             clinicalCatalogPriceResolver.loadPriceLinesGrouped(new ArrayList<>(productByKey.values()));
-        for (TcmHerbalPrescriptionGroupQueryModel group : groups) {
+        for (TcmHerbalPrescriptionGroupQueryModel group : orderedGroups) {
             TcmRxHeaderDto header = new TcmRxHeaderDto();
             header.setPrescriptionGroupKey(group.getPrescriptionGroupKey());
             header.setPrescriptionNo(group.getPrescriptionNo());
@@ -182,12 +193,19 @@ public class InpatientTcmRxListAssembler {
             return result;
         }
         Set<Long> medicationIds = new LinkedHashSet<>();
+        Set<Long> requesterIds = new LinkedHashSet<>();
+        // 先收集饮片与开立人主键，批量查名后再组装行，避免 N+1
         for (TcmHerbalPrescriptionHistoryGroupQueryModel group : groups) {
             if (group.getMedicationIds() != null) {
                 medicationIds.addAll(group.getMedicationIds());
             }
+            // 方级开立人：有 requesterId 才参与批量姓名加载
+            if (group.getRequesterId() != null) {
+                requesterIds.add(group.getRequesterId());
+            }
         }
         Map<Long, String> medicationNameById = loadMedicationNames(medicationIds);
+        Map<Long, String> practitionerNameById = loadPractitionerNames(requesterIds);
         String keywordTrimmed = trimToEmpty(keyword).toLowerCase();
         for (TcmHerbalPrescriptionHistoryGroupQueryModel group : groups) {
             List<String> medicationNames = new ArrayList<>();
@@ -197,10 +215,20 @@ public class InpatientTcmRxListAssembler {
                     medicationNames.add(name);
                 }
             }
+            String authoredByName = null;
+            // 有开立人主键则回填姓名，供列表展示与关键字过滤
+            if (group.getRequesterId() != null) {
+                authoredByName = practitionerNameById.get(group.getRequesterId());
+            }
             if (StringUtils.isNotEmpty(keywordTrimmed)) {
                 boolean matched = false;
                 if (group.getPrescriptionNo() != null
                     && group.getPrescriptionNo().toLowerCase().contains(keywordTrimmed)) {
+                    matched = true;
+                }
+                // 关键字命中开立人姓名时保留该历史方
+                if (!matched && StringUtils.isNotEmpty(authoredByName)
+                    && authoredByName.toLowerCase().contains(keywordTrimmed)) {
                     matched = true;
                 }
                 if (!matched) {
@@ -211,6 +239,7 @@ public class InpatientTcmRxListAssembler {
                         }
                     }
                 }
+                // 处方号/开立人/药名均未命中：过滤掉该方
                 if (!matched) {
                     continue;
                 }
@@ -218,7 +247,8 @@ public class InpatientTcmRxListAssembler {
             TcmRxHistoryRowDto row = new TcmRxHistoryRowDto();
             row.setPrescriptionNo(group.getPrescriptionNo());
             row.setEncounterId(group.getEncounterId());
-            row.setAuthoredAt(group.getReqAuthoredTime());
+            row.setReqOpenedTime(group.getReqOpenedTime());
+            row.setAuthoredByName(authoredByName);
             row.setMedicationNames(medicationNames);
             int lineCount = 0;
             if (group.getLineCount() != null) {
@@ -227,7 +257,34 @@ public class InpatientTcmRxListAssembler {
             row.setSummaryText(lineCount + "味");
             result.add(row);
         }
+        // 历史方按开立时间倒序，与住院医嘱统一列表口径一致。
+        result.sort(Comparator
+            .comparing(TcmRxHistoryRowDto::getReqOpenedTime, Comparator.nullsLast(Comparator.reverseOrder()))
+            .thenComparing(TcmRxHistoryRowDto::getPrescriptionNo, Comparator.nullsLast(Comparator.naturalOrder())));
         return result;
+    }
+
+    /**
+     * 批量加载开立人姓名。
+     *
+     * @param ids 医务人员主键集合
+     * @return id → 姓名
+     */
+    private Map<Long, String> loadPractitionerNames(Set<Long> ids) {
+        Map<Long, String> map = new HashMap<>();
+        // 无开立人主键：跳过跨聚合读，避免空集打 PractitionerQueryService
+        if (ids == null || ids.isEmpty()) {
+            return map;
+        }
+        List<Practitioner> list = practitionerQueryService.findAllByIds(ids);
+        for (Practitioner practitioner : list) {
+            // 脏数据或缺主键行：跳过，不污染 id→姓名 Map
+            if (practitioner == null || practitioner.getId() == null) {
+                continue;
+            }
+            map.put(practitioner.getId(), practitioner.getName());
+        }
+        return map;
     }
 
     /**

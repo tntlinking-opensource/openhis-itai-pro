@@ -45,6 +45,19 @@ public interface ThirdPartyPaymentExtension {
     }
 
     /**
+     * 原支付是否仍存在须 Win 原路退的银联被扫成功单。
+     *
+     * <p>有 {@code upc_bpc_order} 且 status=SUCCESS（含 tradeNo/merTradeNo）时为 true；
+     * 本地退费前必须先提交 {@code clientRefundResult}，禁止静默跳过导致「HIS 已退、银联未退」。</p>
+     *
+     * @param paymentId HIS 原支付单主键
+     * @return 须强制 Win 退货确认时为 true；未装配 Module 时为 false
+     */
+    default boolean hasSuccessfulConsumerScanOrder(Long paymentId) {
+        return false;
+    }
+
+    /**
      * 确认 Win 被扫回传（通道 C · P0）。
      *
      * @param command 含 merTradeNo、tradeNo、payType、respCode 等

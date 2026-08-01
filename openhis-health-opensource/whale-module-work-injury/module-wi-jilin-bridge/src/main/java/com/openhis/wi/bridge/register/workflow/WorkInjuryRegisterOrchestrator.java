@@ -74,7 +74,7 @@ public class WorkInjuryRegisterOrchestrator {
     }
 
     /**
-     * 启动 REG_QUERY invoke 会话（【9102】首步 prepare）。
+     * 启动 REG_QUERY invoke 会话（【1101】→【9102】首步 prepare）。
      *
      * @param request encounter/contract；phase 会被覆盖为 REG_QUERY
      */

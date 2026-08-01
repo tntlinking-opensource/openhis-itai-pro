@@ -31,6 +31,9 @@ public final class CatalogFileParserRegistry {
         register(spec1307());
         register(spec1308());
         register(spec1309());
+        register(spec1310());
+        register(spec1311());
+        register(spec1313());
         register(spec1314());
         register(spec1315());
     }
@@ -106,7 +109,11 @@ public final class CatalogFileParserRegistry {
             0, 4, -1, 7, -1, 50, -1, 67, -1, 46, 47, -1, 69, 70);
     }
 
-    /** 1307 疾病与诊断（规范 24 列 TAB，见 docs/apis/13xx/1307）。 */
+    /**
+     * 1307 疾病与诊断（规范 24 列）。
+     * <p>code/name=第11/12列诊断代码/名称（idx 10/11）；vali=第19列（idx 18）；
+     * verNo/verName=第23/24列（idx 22/23）。章/节/类目/亚目行诊断码常为空或字面量 null，解析时跳过。</p>
+     */
     private static CatalogFileParserSpec spec1307() {
         return new CatalogFileParserSpec(
             ChsInfNo.DISEASE_CATALOG_DOWNLOAD,
@@ -116,7 +123,11 @@ public final class CatalogFileParserRegistry {
             10, 11, -1, -1, -1, -1, -1, 18, -1, -1, -1, 21, 22, 23);
     }
 
-    /** 1308 手术操作：col11/12=操作代码/名称（index 10/11）；版本列 index 22 对齐 OpenHIS */
+    /**
+     * 1308 手术操作（规范 24 列）。
+     * <p>code/name=第11/12列手术操作代码/名称（idx 10/11）；vali=第19列（idx 18）；
+     * verNo/verName=第23/24列（idx 22/23）。</p>
+     */
     private static CatalogFileParserSpec spec1308() {
         return new CatalogFileParserSpec(
             ChsInfNo.SURGERY_CATALOG_DOWNLOAD,
@@ -126,7 +137,11 @@ public final class CatalogFileParserRegistry {
             10, 11, -1, -1, -1, -1, -1, 18, -1, -1, -1, 21, 22, 23);
     }
 
-    /** 1309 门诊慢特病：col1/15=代码/名称（index 0/14）；版本列 col10=index 9 */
+    /**
+     * 1309 门诊慢特病（与 1310/1311 列位不同）。
+     * <p>code=第1列目录代码（idx 0）；name=第15列病种名称（idx 14）；
+     * vali=第6列（idx 5）；verNo=第10列（idx 9）；verName=第12列（idx 11）。</p>
+     */
     private static CatalogFileParserSpec spec1309() {
         return new CatalogFileParserSpec(
             ChsInfNo.SPECIAL_DISEASE_CATALOG_DOWNLOAD,
@@ -136,7 +151,55 @@ public final class CatalogFileParserRegistry {
             0, 14, -1, -1, -1, -1, -1, 5, -1, -1, -1, 8, 9, 11);
     }
 
-    /** 1314 中医疾病 */
+    /**
+     * 1310 按病种付费。
+     * <p>code/name=第2/3列病种目录代码/名称（idx 1/2）；vali=第6列（idx 5）；
+     * updt=第9列（idx 8）；verNo=第10列（idx 9）；verName=第13列（idx 12）。
+     * 注意：与 1311 不同，有效标志不在第4列。</p>
+     */
+    private static CatalogFileParserSpec spec1310() {
+        return new CatalogFileParserSpec(
+            ChsInfNo.BY_DISEASE_PAYMENT_CATALOG_DOWNLOAD,
+            ChsInfNo.BY_DISEASE_PAYMENT_CATALOG_DOWNLOAD,
+            ChsInfNo.BY_DISEASE_PAYMENT_CATALOG_DOWNLOAD,
+            CatalogVersionChainMode.VERSION_NUMBER_ONLY,
+            1, 2, -1, -1, -1, -1, -1, 5, -1, -1, -1, 8, 9, 12);
+    }
+
+    /**
+     * 1311 日间手术治疗病种（列布局独立，勿与 1309/1310 混用）。
+     * <p>code/name=第2/3列病种目录代码/名称（idx 1/2）；vali=第4列（idx 3）；
+     * updt=第7列（idx 6）；verNo=第8列（idx 7）；verName=第11列（idx 10）；
+     * 第14/15列=手术操作名称/代码（本解析不映射到 hilist）。</p>
+     */
+    private static CatalogFileParserSpec spec1311() {
+        return new CatalogFileParserSpec(
+            ChsInfNo.DAY_SURGERY_DISEASE_CATALOG_DOWNLOAD,
+            ChsInfNo.DAY_SURGERY_DISEASE_CATALOG_DOWNLOAD,
+            ChsInfNo.DAY_SURGERY_DISEASE_CATALOG_DOWNLOAD,
+            CatalogVersionChainMode.VERSION_NUMBER_ONLY,
+            1, 2, -1, -1, -1, -1, -1, 3, -1, -1, -1, 6, 7, 10);
+    }
+
+    /**
+     * 1313 肿瘤形态学。
+     * <p>code/name=第4/5列形态学分类代码/名称（idx 3/4）；vali=第6列（idx 5）；
+     * verNo/verName=第10/11列（idx 9/10）。第2/3列为肿瘤/细胞类型，不作主键。</p>
+     */
+    private static CatalogFileParserSpec spec1313() {
+        return new CatalogFileParserSpec(
+            ChsInfNo.TUMOR_MORPHOLOGY_CATALOG_DOWNLOAD,
+            ChsInfNo.TUMOR_MORPHOLOGY_CATALOG_DOWNLOAD,
+            ChsInfNo.TUMOR_MORPHOLOGY_CATALOG_DOWNLOAD,
+            CatalogVersionChainMode.VERSION_NUMBER_ONLY,
+            3, 4, -1, -1, -1, -1, -1, 5, -1, -1, -1, 8, 9, 10);
+    }
+
+    /**
+     * 1314 中医疾病。
+     * <p>code/name=第6/7列疾病分类代码/名称（idx 5/6）；vali=第9列（idx 8）；
+     * verNo/verName=第13/14列（idx 12/13）。第2–5列科别/专科类目常为字面量 null。</p>
+     */
     private static CatalogFileParserSpec spec1314() {
         return new CatalogFileParserSpec(
             ChsInfNo.TCM_DISEASE_CATALOG_DOWNLOAD,
@@ -146,13 +209,17 @@ public final class CatalogFileParserRegistry {
             5, 6, -1, -1, -1, -1, -1, 8, -1, -1, -1, 11, 12, 13);
     }
 
-    /** 1315 中医证候：col2/3=类目代码/名称（index 1/2）；版本列 col13=index 12 对齐 OpenHIS {@code version} */
+    /**
+     * 1315 中医证候（与 1314 同列布局，语义不同）。
+     * <p>code/name=第6/7列证候分类代码/名称（idx 5/6）；vali=第9列（idx 8）；
+     * verNo/verName=第13/14列（idx 12/13）。第2–5列类目/属性常为字面量 null，不可作主键。</p>
+     */
     private static CatalogFileParserSpec spec1315() {
         return new CatalogFileParserSpec(
             ChsInfNo.TCM_SYNDROME_CATALOG_DOWNLOAD,
             ChsInfNo.TCM_SYNDROME_CATALOG_DOWNLOAD,
             ChsInfNo.TCM_SYNDROME_CATALOG_DOWNLOAD,
             CatalogVersionChainMode.VERSION_NUMBER_ONLY,
-            1, 2, -1, -1, -1, -1, -1, 8, -1, -1, -1, 11, 12, 13);
+            5, 6, -1, -1, -1, -1, -1, 8, -1, -1, -1, 11, 12, 13);
     }
 }

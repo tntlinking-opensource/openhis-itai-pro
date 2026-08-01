@@ -12,6 +12,11 @@ import com.openhis.whale.identity.domain.OrganizationUnit;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -59,6 +64,57 @@ public class HealthOrganizationUnitScopeAdapter implements IOrganizationUnitScop
         }
         return organizationUnitAppService.findOptionalById(whaleOrganizationUnitId)
             .flatMap(ou -> resolveBusinessOrganizationIdFromCode(ou.getCode()));
+    }
+
+    /**
+     * 由 OU code 反查 HIS 组织主键（登录列表已批量加载 OU 时避免再按 id 读库）。
+     *
+     * @param organizationUnitCode Whale OU code
+     * @return {@code adm_organization.id}；无法解析 empty
+     */
+    @Override
+    public Optional<Long> findBusinessOrganizationIdByOrganizationUnitCode(String organizationUnitCode) {
+        return resolveBusinessOrganizationIdFromCode(organizationUnitCode);
+    }
+
+    /**
+     * 批量 OU code → HIS 组织 id：{@code org-} 前缀内存解析，其余按 busNo 一次查出。
+     *
+     * @param organizationUnitCodes OU code 集合
+     * @return code → 业务组织主键
+     */
+    @Override
+    public Map<String, Long> mapBusinessOrganizationIdsByOrganizationUnitCodes(
+            Collection<String> organizationUnitCodes) {
+        Map<String, Long> result = new HashMap<>();
+        if (organizationUnitCodes == null || organizationUnitCodes.isEmpty()) {
+            return result;
+        }
+        List<String> busNos = new ArrayList<>();
+        for (String rawCode : organizationUnitCodes) {
+            if (rawCode == null || rawCode.isBlank()) {
+                continue;
+            }
+            String code = rawCode.trim();
+            Optional<Long> fromOrgPrefix = OrganizationUnitLinkCode.parseBusinessOrganizationId(code);
+            // org-{id}：无需查库
+            if (fromOrgPrefix.isPresent()) {
+                result.put(code, fromOrgPrefix.get());
+                continue;
+            }
+            busNos.add(code);
+        }
+        if (busNos.isEmpty()) {
+            return result;
+        }
+        Map<String, Long> idByBusNo = organizationQueryService.mapIdsByBusNos(busNos);
+        for (String busNo : busNos) {
+            Long organizationId = idByBusNo.get(busNo);
+            if (organizationId != null) {
+                result.put(busNo, organizationId);
+            }
+        }
+        return result;
     }
 
     /**

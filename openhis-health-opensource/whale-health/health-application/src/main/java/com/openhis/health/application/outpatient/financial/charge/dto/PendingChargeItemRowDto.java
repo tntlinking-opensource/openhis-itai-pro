@@ -98,13 +98,24 @@ public class PendingChargeItemRowDto {
     @Schema(description = "费用性质合同主键（账户 contract_no → fin_contract.id）")
     private Long contractId;
 
+    /**
+     * 费用性质合同分类码（账户 contract_no → fin_contract.category_enum）。
+     * <p>供收银判断是否需读卡；勿与 {@link #chargeCategoryCode}（药品/项目目录分类）混淆。</p>
+     */
+    @Schema(description = "费用性质合同分类码（fin_contract.category_enum，如 3=省医保）")
+    private String contractCategoryCode;
+
     /** 费用性质展示（供前端列 feeNatureDisplay）。 */
     @Schema(description = "费用性质展示（与 contractName 同源，供 IF-OPC-03 前端列 feeNatureDisplay）")
     private String feeNatureDisplay;
 
     /** 医疗类别/医保诊疗类别 code。 */
-    @Schema(description = "医疗类别/医保诊疗类别（adm_encounter_diagnosis.med_type，按收费行 encounter_diagnosis_id 解析）")
+    @Schema(description = "医疗类别/医保诊疗类别（adm_encounter_diagnosis.med_type，按收费行 encounter_diagnosis_ids ids 串首位解析）")
     private String medTypeCode;
+
+    /** 绑定就诊诊断主键有序串（列 encounter_diagnosis_ids；有序，首位为主诊断）。 */
+    @Schema(description = "绑定就诊诊断主键有序串（encounter_diagnosis_ids）")
+    private String encounterDiagnosisIds;
 
     /** 医保目录编码（产品读模型 yb_no）。 */
     @Schema(description = "医保目录编码（产品读模型 yb_no）")
@@ -113,4 +124,12 @@ public class PendingChargeItemRowDto {
     /** 医保编码展示（供前端列 medicalInsuranceCode）。 */
     @Schema(description = "医保编码展示（与 ybNo 同源，供前端列 medicalInsuranceCode）")
     private String medicalInsuranceCode;
+
+    /** 医保收费项目等级码（术语 CHRGITM_LV，如 1/2/3）。 */
+    @Schema(description = "医保收费项目等级码（CHRGITM_LV）")
+    private Integer chrgitmLv;
+
+    /** 医保类别展示（甲类/乙类/丙类等）。 */
+    @Schema(description = "医保类别展示（甲类/乙类/丙类）")
+    private String chrgitmLvText;
 }

@@ -5,6 +5,7 @@
 package com.openhis.chs.domain.catalog.entity;
 
 import com.openhis.whale.core.domain.BaseAuditedEntity;
+import com.openhis.whale.core.domain.IExcludeFromAudit;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
@@ -15,12 +16,14 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * 国家医保目录镜像行（1312 查询 / 1301 解析入库） */
+ * 国家医保目录镜像行（1312 查询 / 1301 解析入库）。
+ * <p>量大，主路径走 JDBC bulk；JPA 路径亦排除框架审计。</p>
+ */
 @Getter
 @Setter
 @Entity
 @Table(name = "yb_national_catalog_item")
-public class YbNationalCatalogItem extends BaseAuditedEntity {
+public class YbNationalCatalogItem extends BaseAuditedEntity implements IExcludeFromAudit {
 
     @Column(name = "contract_id", nullable = false)
     private Long contractId;

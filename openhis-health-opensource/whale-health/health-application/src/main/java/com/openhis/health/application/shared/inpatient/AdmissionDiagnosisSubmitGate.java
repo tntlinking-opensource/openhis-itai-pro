@@ -51,8 +51,9 @@ public class AdmissionDiagnosisSubmitGate {
             if (Boolean.TRUE.equals(row.getPrimaryFlag())) {
                 hasPrimary = true;
             }
-            if (row.getConditionId() == null && row.getConditionDefinitionId() == null) {
-                throw new BusinessException(invalidArgumentCode, "入院诊断须指定病情或诊断目录");
+            if (row.getEncounterDiagnosisId() == null
+                && row.getConditionDefinitionId() == null) {
+                throw new BusinessException(invalidArgumentCode, "入院诊断须指定诊断目录");
             }
             if (Boolean.TRUE.equals(row.getTcmFlag())) {
                 tcmRowCount++;
@@ -103,8 +104,8 @@ public class AdmissionDiagnosisSubmitGate {
      */
     public interface AdmissionDiagnosisRowView {
 
-        /** 已有病情事实主键。 */
-        Long getConditionId();
+        /** 已有就诊诊断行主键。 */
+        Long getEncounterDiagnosisId();
 
         /** 诊断目录主键。 */
         Long getConditionDefinitionId();

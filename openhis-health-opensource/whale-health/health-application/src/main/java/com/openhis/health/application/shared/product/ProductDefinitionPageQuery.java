@@ -45,6 +45,11 @@ public class ProductDefinitionPageQuery extends AbstractPageQuery {
     /** 排除药品目录 medication_category_code（如开立西药医嘱传 {@code ["4"]} 排除中草药）；仅药品检索。 */
     private List<String> excludeMedicationCategoryCodes;
 
+    /**
+     * 排除活动定义 {@code category_code}（如门诊 IF-DOR-11 排除嘱托 {@code ["52"]}，BR-ORD-032）。
+     */
+    private List<String> excludeCategoryCodes;
+
     /** 启用标志。 */
     private Boolean activeFlag;
 

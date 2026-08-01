@@ -4,6 +4,8 @@
  */
 package com.openhis.health.application.inventory.department.returntowarehouse.dto;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -11,7 +13,9 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * 科室退库单列表行（库房单据读模型展平，一行一明细）。
+ * 科室退库单列表行（IF-DEPT-RTW-02：按 {@code bus_no} 聚合展示，兼容明细行级遗留路径）。
+ *
+ * <p>聚合路径一行一单；{@code supplierName}/{@code creatorName}/{@code approverName} 由应用层列表查询后批量富化。</p>
  */
 @Getter
 @Setter
@@ -23,18 +27,23 @@ public class ReturnToWarehouseListRowDto {
     private String busNo;
     /** 来源科室入库单号（{@code original_bus_no}）。 */
     private String originalBusNo;
-    /** 单据类型 sortOrder（固定 14）。 */
+    /** 单据类型 sortOrder。 */
     private Integer typeEnum;
     /** 单据状态 sortOrder。 */
     private Integer statusEnum;
     /** 供应类别 sortOrder。 */
     private Integer categoryEnum;
     /** 源科室药房库位主键。 */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long sourceLocationId;
     /** 目的药库库位主键。 */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long purposeLocationId;
     /** 供应商主键。 */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long supplierId;
+    /** 供应商展示名（列表富化）。 */
+    private String supplierName;
     /** 物品定义主键。 */
     private Long itemId;
     /** 物品来源表名。 */
@@ -49,8 +58,24 @@ public class ReturnToWarehouseListRowDto {
     private String traceNo;
     /** 行单价（落库快照）。 */
     private BigDecimal price;
-    /** 行合计金额（落库快照）。 */
+    /**
+     * 行合计金额：聚合列表路径下为整单明细合计；明细行级路径下为行合计（落库快照）。
+     *
+     * <p>与 {@link #totalAmount} 同值写入，兼容侧栏卡片读 {@code totalPrice}/{@code totalAmount}。</p>
+     */
     private BigDecimal totalPrice;
+    /** 单据总金额（与 totalPrice 同口径）。 */
+    private BigDecimal totalAmount;
+    /** 申请人主键。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long applicantId;
+    /** 制单人展示名（列表富化）。 */
+    private String creatorName;
+    /** 审批人主键。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long approverId;
+    /** 审批人展示名（列表富化）。 */
+    private String approverName;
     /** 申请时间。 */
     private LocalDateTime applyTime;
     /** 审批时间。 */

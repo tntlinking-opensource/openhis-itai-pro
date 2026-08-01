@@ -40,7 +40,10 @@ public class BossCompensationRow {
     /** 业务线展示名。 */
     private String issueKindLabel;
 
-    /** 支付金额。 */
+    /** 开票金额（票面，收费项合计；非患者现金）。 */
+    private BigDecimal totalAmt;
+
+    /** 支付金额（患者现金 displayAmount，可医保全报为 0）。 */
     private BigDecimal paymentAmt;
 
     /** 业务流水号。 */

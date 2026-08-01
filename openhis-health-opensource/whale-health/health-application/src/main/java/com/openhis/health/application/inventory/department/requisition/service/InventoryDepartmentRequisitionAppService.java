@@ -10,11 +10,13 @@ import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEdito
 import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogUnitBandDto;
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.inventory.InventoryListPractitionerNameResolver;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.application.shared.validator.CurrentManagedLocationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.application.shared.validator.PageWindowGate;
+import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
 import com.openhis.health.application.inventory.department.requisition.dto.DepartmentRequisitionDetailLineDto;
 import com.openhis.health.application.inventory.department.requisition.dto.DepartmentRequisitionLineDto;
 import com.openhis.health.application.inventory.department.requisition.dto.DepartmentRequisitionListRowDto;
@@ -24,6 +26,7 @@ import com.openhis.health.application.inventory.department.requisition.request.*
 import com.openhis.health.application.inventory.department.requisition.response.*;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionSelectionTerminologyMaps;
@@ -34,6 +37,7 @@ import com.openhis.health.domain.share.constants.InventoryDepartmentConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationStatus;
 import com.openhis.health.domain.share.enums.SupplyStatus;
@@ -93,30 +97,39 @@ public class InventoryDepartmentRequisitionAppService {
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
+    private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
     private final InventoryDepartmentRequisitionMapper requisitionMapper;
+    private final InventoryListPractitionerNameResolver inventoryListPractitionerNameResolver;
 
     /**
-     * 科室药房请领页初始化（IF-DEP-QL-01）：目的科室药房、来源药库与单据状态下拉。
+     * 科室药房请领页初始化（IF-DEP-QL-01）：目的科室药房、来源药库、入库项目类型、单据状态与人员下拉。
      *
      * @param request 可为空；机构上下文由服务端 Resolver 解析
      * @return 表单初始化选项集合
      * @throws BusinessException {@link ErrorCodeConstants#DEP_QL_101} 机构上下文缺失或主数据加载失败
      */
     public LoadDepartmentRequisitionFormInitResponse loadDepartmentRequisitionFormInit(LoadDepartmentRequisitionFormInitRequest request) {
-        // Gate：会话机构上下文须存在，否则无法按管辖收窄库位
-        // Pre：拉取启用科室药房/药库并经 CurrentManagedLocationIdsResolver 收窄
-        managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
+        // Gate：会话机构上下文须存在，否则无法按管辖收窄库位与人员
+        // Pre：拉取启用科室药房/药库并经 CurrentManagedLocationIdsResolver 收窄；按平台角色装载药师/库管
+        Long resolvedOrg = managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
             ErrorCodeConstants.DEP_QL_101, "机构上下文缺失");
         try {
             List<Location> departmentPharmacies = locationQueryService.listAllActiveDepartmentPharmacies();
             List<Location> warehouses = locationQueryService.listAllActiveWarehouses();
             List<Location> gatedDepartmentPharmacies = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(departmentPharmacies);
             List<Location> gatedWarehouses = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(warehouses);
+            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
+                WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
+            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
+                WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE, resolvedOrg);
             // Asm：下拉选项写入初始化响应
             return requisitionMapper.toLoadDepartmentRequisitionFormInitResponse(
                 requisitionMapper.toOptionDtoListFromLocations(gatedDepartmentPharmacies),
                 requisitionMapper.toOptionDtoListFromLocations(gatedWarehouses),
-                requisitionMapper.toOptionDtoListSupplyStatuses());
+                requisitionMapper.toOptionDtoListInboundItemTableTypes(),
+                requisitionMapper.toOptionDtoListSupplyStatuses(),
+                requisitionMapper.toOptionDtoListFromPractitioners(pharmacists),
+                requisitionMapper.toOptionDtoListFromPractitioners(warehouseKeepers));
         } catch (RuntimeException ex) {
             log.warn("loadDepartmentRequisitionFormInit failed", ex);
             throw new BusinessException(ErrorCodeConstants.DEP_QL_101, "科室药房请领页主数据加载失败");
@@ -188,6 +201,7 @@ public class InventoryDepartmentRequisitionAppService {
             List<DepartmentRequisitionListRowDto> records = requisitionMapper.toDepartmentRequisitionListAggregated(busNos, lines);
             this.enrichDepartmentRequisitionListSourceLocationNames(records);
             this.enrichDepartmentRequisitionListStatusEnumText(records);
+            this.enrichDepartmentRequisitionListDisplayNames(records);
             int pageNo = request.getPageNo().intValue();
             int pageSize = listQuery.getBoundedPageSize();
             // Asm：聚合行映射为分页响应
@@ -530,8 +544,8 @@ public class InventoryDepartmentRequisitionAppService {
         InventoryItemPageQuery invQuery = new InventoryItemPageQuery();
         invQuery.setLocationId(request.getSourceLocationId());
         invQuery.setItemTable(request.getProductTableName().trim());
-        // —— 仅展示账面量大于零的批号行，与库存明细「有库存」列表口径一致。——
-        invQuery.setPositiveQuantityOnly(true);
+        // —— 前台可选：true 仅返回选品库位账面量>0 的批号行；false/未传不过滤数量。——
+        invQuery.setPositiveQuantityOnly(request.getPositiveQuantityOnly());
         PageQueryBinder.bind(request, invQuery);
         Pageable pageable = PageRequest.of(request.springPageIndex(), request.getBoundedPageSize(), Sort.by(Sort.Direction.ASC, FieldNameConstants.ID));
         try {
@@ -678,6 +692,47 @@ public class InventoryDepartmentRequisitionAppService {
             SupplyStatus st = EnumUtil.fromCode(SupplyStatus.class, row.getStatusEnum().trim());
             if (st != null) {
                 row.setStatusEnumText(st.getDisplay());
+            }
+        }
+    }
+
+    /**
+     * 科室请领列表：批量解析制单人/审批人展示名。
+     *
+     * @param rows 列表行
+     */
+    private void enrichDepartmentRequisitionListDisplayNames(List<DepartmentRequisitionListRowDto> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        Set<Long> practitionerIds = new HashSet<>();
+        for (DepartmentRequisitionListRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getApplicantId() != null) {
+                practitionerIds.add(row.getApplicantId());
+            }
+            if (row.getApproverId() != null) {
+                practitionerIds.add(row.getApproverId());
+            }
+        }
+        Map<Long, String> nameById = this.inventoryListPractitionerNameResolver.resolveNamesByIds(practitionerIds);
+        for (DepartmentRequisitionListRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getApplicantId() != null) {
+                String name = nameById.get(row.getApplicantId());
+                if (name != null) {
+                    row.setCreatorName(name);
+                }
+            }
+            if (row.getApproverId() != null) {
+                String name = nameById.get(row.getApproverId());
+                if (name != null) {
+                    row.setApproverName(name);
+                }
             }
         }
     }

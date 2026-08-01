@@ -4,6 +4,7 @@
  */
 package com.openhis.whale.identity.infrastructure.repository;
 
+import com.openhis.whale.core.infrastructure.transaction.SkipSoftDeleteFilter;
 import com.openhis.whale.identity.domain.RoleClaim;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -29,9 +30,21 @@ public interface RoleClaimRepository extends JpaRepository<RoleClaim, Long>, Jpa
     List<RoleClaim> findByRoleIdAndClaimType(Long roleId, String claimType);
 
     /**
+     * 按角色与声明类型查询全部行（含已软删），避免 UNIQUE(role_id, claim_type, claim_value) 与软删冲突。
+     */
+    @SkipSoftDeleteFilter
+    List<RoleClaim> findAllByRoleIdAndClaimType(Long roleId, String claimType);
+
+    /**
      * 根据角色ID、声明类型和声明值查找
      */
     Optional<RoleClaim> findByRoleIdAndClaimTypeAndClaimValue(Long roleId, String claimType, String claimValue);
+
+    /**
+     * 按角色、类型、值查询（含已软删），供恢复避免 uk_whale_rc_role_type_value 重复插入。
+     */
+    @SkipSoftDeleteFilter
+    Optional<RoleClaim> findFirstByRoleIdAndClaimTypeAndClaimValue(Long roleId, String claimType, String claimValue);
 
     /**
      * 删除角色的所有声明

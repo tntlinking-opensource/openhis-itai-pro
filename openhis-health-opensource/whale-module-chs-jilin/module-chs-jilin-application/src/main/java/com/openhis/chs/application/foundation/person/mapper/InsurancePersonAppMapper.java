@@ -35,6 +35,8 @@ public class InsurancePersonAppMapper {
         platformCommand.setInsuplcAdmdvs(command.getInsuplcAdmdvs());
         platformCommand.setOperatorId(operatorId);
         platformCommand.setTenantId(TenantUtils.getCurrentTenantId());
+        // UI 显式读卡须取平台最新 balc，跳过当日人员缓存。
+        platformCommand.setForceRefresh(true);
         return platformCommand;
     }
 }

@@ -37,9 +37,9 @@ public class ServiceApplyFormHeaderDto {
     @Schema(description = "执行科室展示名")
     private String orgName;
 
-    /** 首行开立时间 ISO-8601 local。 */
-    @Schema(description = "首行开立时间 ISO-8601 local")
-    private String authoredAt;
+    /** 首行开立时间 ISO-8601 local（{@code req_opened_time}）。 */
+    @Schema(description = "首行开立时间 ISO-8601 local（req_opened_time）")
+    private String reqOpenedTime;
 
     /** 组内状态摘要。 */
     @Schema(description = "组内状态摘要")

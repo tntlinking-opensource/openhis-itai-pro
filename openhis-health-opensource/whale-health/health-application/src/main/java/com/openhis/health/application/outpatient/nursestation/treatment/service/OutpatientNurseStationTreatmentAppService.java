@@ -21,6 +21,8 @@ import com.openhis.health.application.shared.advice.ServiceAdviceDraftCommandHel
 import com.openhis.health.application.shared.advice.TcmMethodCodeDisplayAssembler;
 import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler;
 import com.openhis.health.application.shared.advice.OrderRequestCatalogWarmAssembler;
+import com.openhis.health.application.shared.product.MedicationDosageDisplayAssembler;
+import com.openhis.health.application.shared.product.MedicationDosageDisplayAssembler.MedicationDosageDisplayResult;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.application.shared.option.FrequencyOptionLoader;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
@@ -489,11 +491,12 @@ public class OutpatientNurseStationTreatmentAppService {
             GeneralSharedConstants.SKIN_TEST_INSPECTION_ACTIVITY_NAME);
         // 判断是否存在耗材执行项
         boolean hasDevice = request.getDeviceDispenseIds() != null && !request.getDeviceDispenseIds().isEmpty();
-        // 自动扣库时：前端传入耗材房优先；未传时回落发放单 location_id；仍缺库房且需 FIFO 时报错
+        // 自动扣库时：护士传入耗材房则强制按该房 FIFO；未传回落发放单 location_id；仍缺库房且需 FIFO 时报错
         if (hasDevice && this.deviceAutoInventoryDeductSettingResolver.isEnabled()) {
             this.deviceDispenseNurseWorkflowOrchestrator.validateOutpatientAutoDeductInventoryLocation(
                 request.getDeviceDispenseIds(),
                 request.getInventoryLocationId());
+            // Gate：护士指定房须落在登录者管辖药房白名单（与下拉同源）
             if (request.getInventoryLocationId() != null) {
                 this.assertInventoryLocationInManagedPharmacies(request.getInventoryLocationId());
             }
@@ -1728,6 +1731,16 @@ public class OutpatientNurseStationTreatmentAppService {
             line.setDoseUnitCode(row.getDoseUnitCode());
             line.setDoseUnitName(ProductDefinitionCatalogUnitBandsAssembler.resolveDoseUnitDisplayName(
                 medicationDisplayWarm.getDoseUnitLabelByCode(), row.getDoseUnitCode(), medProduct));
+            // Asm：单次剂量展示串 + 拆零结构化字段（单位相同时无括号）
+            MedicationDosageDisplayResult dosageResult = MedicationDosageDisplayAssembler.build(
+                row.getDose(),
+                row.getDoseUnitCode(),
+                medicationDisplayWarm.getDoseUnitLabelByCode(),
+                medProduct);
+            line.setDosageDisplay(dosageResult.getDosageDisplay());
+            line.setSplitDose(dosageResult.getSplitDose());
+            line.setSplitDoseUnitCode(dosageResult.getSplitDoseUnitCode());
+            line.setSplitDoseUnitName(dosageResult.getSplitDoseUnitName());
             line.setMethodCode(row.getMethodCode());
             line.setMethodName(TcmMethodCodeDisplayAssembler.resolveMethodDisplayName(
                 medicationDisplayWarm.getTcmMethodLabelByCode(),
@@ -1744,6 +1757,10 @@ public class OutpatientNurseStationTreatmentAppService {
             line.setDose(null);
             line.setDoseUnitCode(null);
             line.setDoseUnitName(null);
+            line.setDosageDisplay(null);
+            line.setSplitDose(null);
+            line.setSplitDoseUnitCode(null);
+            line.setSplitDoseUnitName(null);
             line.setMethodCode(row.getMethodCode());
             line.setMethodName(null);
             line.setRateCode(row.getRateCode());

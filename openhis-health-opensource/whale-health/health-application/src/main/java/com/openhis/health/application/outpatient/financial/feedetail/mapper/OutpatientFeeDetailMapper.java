@@ -55,6 +55,7 @@ public interface OutpatientFeeDetailMapper {
      * @param deviceSubCategoryOptions      耗材细分类
      * @param registrationDepartmentOptions 挂号科室
      * @param cashierOptions                收费员
+     * @param feeNatureOptions              费用性质（bus_no）
      * @return 初始化响应
      */
     LoadOutpatientFeeDetailPageInitResponse toLoadOutpatientFeeDetailPageInitResponse(
@@ -67,7 +68,8 @@ public interface OutpatientFeeDetailMapper {
         List<OptionDto> activitySubCategoryOptions,
         List<OptionDto> deviceSubCategoryOptions,
         List<OptionDto> registrationDepartmentOptions,
-        List<OptionDto> cashierOptions);
+        List<OptionDto> cashierOptions,
+        List<OptionDto> feeNatureOptions);
 
     /**
      * 就诊块 + 全量 summary → 分页响应。

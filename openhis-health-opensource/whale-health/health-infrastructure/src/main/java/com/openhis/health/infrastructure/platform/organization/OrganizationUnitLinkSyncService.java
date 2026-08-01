@@ -14,11 +14,15 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
  * HIS {@code adm_organization} 与 Whale {@link OrganizationUnit} 的按需同步（岗位/登录场景）。
+ *
+ * <p>批量解析优先：一次加载机构 + 一次按 code 查 OU，避免登录选科室时按科室 N+1。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -33,18 +37,60 @@ public class OrganizationUnitLinkSyncService {
     /**
      * 将 HIS 组织 id 列表解析为 Whale OU id；缺失时按 {@link OrganizationUnitLinkCode} 补建 OU。
      *
+     * <p>热路径（登录 sync）：批量读机构与 OU；仅对尚未建 OU 的科室回落单条补建。</p>
+     *
      * @param businessOrganizationIds HIS {@code adm_organization.id} 列表
-     * @return 已存在或新建成功的 Whale OU id 列表
+     * @return 已存在或新建成功的 Whale OU id 列表（去重、保持入参顺序）
      */
     public List<Long> resolveWhaleOrganizationUnitIds(List<Long> businessOrganizationIds) {
         if (businessOrganizationIds == null || businessOrganizationIds.isEmpty()) {
             return List.of();
         }
-        List<Long> whaleIds = new ArrayList<>();
+        LinkedHashSet<Long> distinctBusinessIds = new LinkedHashSet<>();
         for (Long businessOrgId : businessOrganizationIds) {
-            if (businessOrgId == null) {
+            if (businessOrgId != null) {
+                distinctBusinessIds.add(businessOrgId);
+            }
+        }
+        if (distinctBusinessIds.isEmpty()) {
+            return List.of();
+        }
+
+        // Pre：一次查出全部 HIS 机构，再生成 code 列表
+        Map<Long, Organization> organizationById = organizationQueryService.mapByIds(distinctBusinessIds);
+        List<String> codes = new ArrayList<>(organizationById.size());
+        for (Long businessOrgId : distinctBusinessIds) {
+            Organization organization = organizationById.get(businessOrgId);
+            if (organization == null) {
                 continue;
             }
+            String code = OrganizationUnitLinkCode.fromOrganization(organization);
+            if (code == null || code.isBlank()) {
+                continue;
+            }
+            codes.add(code);
+        }
+        // Pre：一次按 code 命中已有 Whale OU
+        Map<String, OrganizationUnit> unitByCode = organizationUnitAppService.mapByCodes(codes);
+
+        List<Long> whaleIds = new ArrayList<>(distinctBusinessIds.size());
+        for (Long businessOrgId : distinctBusinessIds) {
+            Organization organization = organizationById.get(businessOrgId);
+            // 机构不存在或越租户：跳过，不阻断其余科室登录
+            if (organization == null) {
+                continue;
+            }
+            String code = OrganizationUnitLinkCode.fromOrganization(organization);
+            if (code == null || code.isBlank()) {
+                continue;
+            }
+            OrganizationUnit existing = unitByCode.get(code);
+            // 已同步过：直接取 OU 主键
+            if (existing != null && existing.getId() != null) {
+                whaleIds.add(existing.getId());
+                continue;
+            }
+            // 首次或缺链：单条补建（冷路径，稳态登录不应再进）
             ensureWhaleOrganizationUnitId(businessOrgId).ifPresent(whaleIds::add);
         }
         return whaleIds;
@@ -73,7 +119,7 @@ public class OrganizationUnitLinkSyncService {
         if (code == null || code.isBlank()) {
             return Optional.empty();
         }
-        OrganizationUnit ou = organizationUnitAppService.findOptionalByCode(code)
+        OrganizationUnit ou = organizationUnitAppService.findOptionalByCodeIncludingDeleted(code)
             .orElseGet(() -> {
                 OrganizationUnit created = new OrganizationUnit();
                 created.setCode(code);

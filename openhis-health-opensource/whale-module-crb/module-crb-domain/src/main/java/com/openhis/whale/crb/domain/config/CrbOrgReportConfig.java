@@ -13,7 +13,10 @@ import lombok.Setter;
 
 /**
  * 院端前置软件连接与机构上报配置（crb_org_report_config）。
+ *
+ * @deprecated 禁止使用 — 前置连接改由 {@code CrbProperties}（application.yml）配置，不再读写本表。
  */
+@Deprecated
 @Entity
 @Table(name = "crb_org_report_config")
 @Getter

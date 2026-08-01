@@ -178,9 +178,27 @@ public class CurrentManagedOrganizationIdsResolver {
     }
 
     /**
-     * 解析默认登录组织（{@code adm_practitioner.org_id}；未填则会话医院）。
+     * 解析当前会话医院（登录选院 {@code sessionHospitalId}）。
      *
-     * @return 默认登录组织主键；无法解析时 {@code null}
+     * <p>仅返回医院级组织，不回落科室（{@code getCurrentOrganizationUnitId}）。</p>
+     *
+     * @return 会话医院主键；未选院或无效时 {@code null}
+     */
+    public Long resolveSessionHospitalIdOrNull() {
+        if (!currentUser.isAuthenticated()) {
+            return null;
+        }
+        Long hospitalId = currentUser.getSessionHospitalId();
+        if (hospitalId == null || hospitalId == 0L) {
+            return null;
+        }
+        return hospitalId;
+    }
+
+    /**
+     * 解析默认登录科室（{@code adm_practitioner.org_id}；须为科室，不回落医院）。
+     *
+     * @return 默认登录科室主键；无法解析时 {@code null}
      */
     private Long resolveDefaultLoginOrganizationIdOrNull() {
         if (loginDefaultOrganizationResolver == null) {
@@ -254,6 +272,24 @@ public class CurrentManagedOrganizationIdsResolver {
             currentUser.getCurrentOrganizationUnitId(),
             missingErrorCode,
             missingErrorMessage);
+    }
+
+    /**
+     * 写路径：要求当前会话医院（登录选院 {@code sessionHospitalId}）。
+     *
+     * <p>目录主数据应挂医院，不回落会话科室。</p>
+     *
+     * @param missingErrorCode    未选院时的错误码
+     * @param missingErrorMessage 未选院时的提示
+     * @return 会话医院主键
+     * @throws BusinessException 未选院或无效时
+     */
+    public Long requireSessionHospitalId(String missingErrorCode, String missingErrorMessage) {
+        Long hospitalId = this.resolveSessionHospitalIdOrNull();
+        if (hospitalId == null) {
+            throw new BusinessException(missingErrorCode, missingErrorMessage);
+        }
+        return hospitalId;
     }
 
     /**

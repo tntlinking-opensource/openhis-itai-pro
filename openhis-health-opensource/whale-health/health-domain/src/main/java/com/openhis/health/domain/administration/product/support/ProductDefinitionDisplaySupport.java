@@ -11,6 +11,7 @@ import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.product.MedicationProductUnitConversionSource;
 import com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefinition;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.math.BigDecimal;
 
@@ -51,6 +52,15 @@ public final class ProductDefinitionDisplaySupport {
         dto.setStockUnitRatio(definition.getStockUnitRatio());
         dto.setPackageUnitRatio(definition.getPackageUnitRatio());
         dto.setDoseUnitRatio(definition.getDoseUnitRatio());
+        dto.setTraceUnitCode(definition.getTraceUnitCode());
+        dto.setTraceUnitRatio(definition.getTraceUnitRatio());
+        // 默认/最小/最大单次剂量：供医生站开立默认带出与快捷切换（剂量单位）
+        dto.setDose(definition.getDose());
+        dto.setMinUnit(definition.getMinUnit());
+        dto.setMaxUnit(definition.getMaxUnit());
+        // 库存警戒量：供 AS-INV-WHS-004 库存预警按目录优先于全局设置
+        dto.setItemMinQuantity(definition.getItemMinQuantity());
+        dto.setItemMaxQuantity(definition.getItemMaxQuantity());
         dto.setDefEncounterUnitCode(definition.getDefEncounterUnitCode());
         dto.setDefInhospitalUnitCode(definition.getDefInhospitalUnitCode());
         dto.setTotalVolume(definition.getTotalVolume());
@@ -68,9 +78,13 @@ public final class ProductDefinitionDisplaySupport {
         dto.setRateCode(definition.getRateCode());
         dto.setMethodCode(definition.getMethodCode());
         dto.setDoseFormCode(definition.getDoseFormCode());
+        // 中药特殊煎法：供医生站中药选品默认带出
+        dto.setDosageInstruction(definition.getDosageInstruction());
         dto.setRestrictedFlag(definition.getRestrictedFlag());
         dto.setRestrictedScope(definition.getRestrictedScope());
         dto.setRestrictedEnum(definition.getRestrictedEnum());
+        // 药品性质（medicine_properties）与门诊拆分属性（OrderCalcRule）分字段投影，分方只读前者
+        dto.setPharmacologyCategoryCode(definition.getPharmacologyCategoryCode());
         dto.setPartAttributeEnum(definition.getPartAttributeEnum());
         dto.setThoPartAttributeEnum(definition.getThoPartAttributeEnum());
         dto.setSkinTestFlag(definition.getSkinTestFlag());
@@ -102,6 +116,8 @@ public final class ProductDefinitionDisplaySupport {
         dto.setYbNo(definition.getYbNo());
         dto.setPyStr(definition.getPyStr());
         dto.setWbStr(definition.getWbStr());
+        // 医保等级：诊疗目录维护字段，供医生站开立选品展示
+        dto.setChrgitmLv(definition.getChrgitmLv());
         dto.setActivityTypeCode(definition.getTypeEnum());
         dto.setLocationId(definition.getOrgId());
         dto.setPackageUnitRatio(BigDecimal.ONE);
@@ -134,6 +150,11 @@ public final class ProductDefinitionDisplaySupport {
         dto.setStockUnitRatio(definition.getStockUnitRatio());
         dto.setPackageUnitRatio(definition.getPackageUnitRatio());
         dto.setDoseUnitRatio(definition.getDoseUnitRatio());
+        dto.setTraceUnitCode(definition.getTraceUnitCode());
+        dto.setTraceUnitRatio(definition.getTraceUnitRatio());
+        // 库存警戒量：供 AS-INV-WHS-004 库存预警按目录优先于全局设置
+        dto.setItemMinQuantity(definition.getItemMinQuantity());
+        dto.setItemMaxQuantity(definition.getItemMaxQuantity());
         dto.setDefEncounterUnitCode(definition.getDefEncounterUnitCode());
         dto.setDefInhospitalUnitCode(definition.getDefInhospitalUnitCode());
         dto.setTotalVolume(definition.getTotalVolume());
@@ -192,6 +213,26 @@ public final class ProductDefinitionDisplaySupport {
         source.setStockUnitRatio(dto.getStockUnitRatio());
         source.setPackageUnitCode(dto.getPackageUnitCode());
         source.setPackageUnitRatio(dto.getPackageUnitRatio());
+        source.setTraceUnitCode(dto.getTraceUnitCode());
+        source.setTraceUnitRatio(dto.getTraceUnitRatio());
         return source;
+    }
+
+    /**
+     * 解析产品展示名（通用名优先，其次商品名），供库存不足等业务提示使用。
+     *
+     * @param productRow 产品读模型
+     * @param fallback   名称均空时的兜底文案（如「药品」）
+     * @return 非空展示名
+     */
+    public static String resolveProductDisplayName(ProductDefinitionDisplayDto productRow, String fallback) {
+        if (productRow == null) {
+            return fallback;
+        }
+        String name = StringUtils.firstNonBlank(productRow.getProductName(), productRow.getMerchandiseName());
+        if (StringUtils.isEmpty(name)) {
+            return fallback;
+        }
+        return name;
     }
 }

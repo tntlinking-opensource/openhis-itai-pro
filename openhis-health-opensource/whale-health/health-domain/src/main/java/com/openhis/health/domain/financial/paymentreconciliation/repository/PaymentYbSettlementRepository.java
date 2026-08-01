@@ -18,5 +18,21 @@ public interface PaymentYbSettlementRepository extends JpaRepository<PaymentYbSe
     List<PaymentYbSettlement> findAllByReconciliationIdInAndIsDeletedFalseOrderByReconciliationIdAscCreatedAtAsc(
         Collection<Long> reconciliationIds);
 
+    /**
+     * 按 CHS 结算回执主键查支付侧桥表行（2208/2305 撤销回写用）。
+     *
+     * @param settlementRecordId {@code yb_settlement_record.id}
+     * @return 未软删行
+     */
+    List<PaymentYbSettlement> findAllBySettlementRecordIdAndIsDeletedFalse(Long settlementRecordId);
+
+    /**
+     * 按平台 setl_id 查支付侧桥表行（无 settlement_record_id 时的回落）。
+     *
+     * @param setlId 平台结算号
+     * @return 未软删行
+     */
+    List<PaymentYbSettlement> findAllBySetlIdAndIsDeletedFalse(String setlId);
+
     void deleteByReconciliationId(Long reconciliationId);
 }

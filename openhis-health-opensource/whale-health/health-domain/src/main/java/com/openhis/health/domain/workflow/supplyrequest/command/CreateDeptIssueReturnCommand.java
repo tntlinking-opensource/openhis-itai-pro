@@ -16,7 +16,8 @@ import java.time.LocalDateTime;
  *
  * <p>单端点语义：仅写 {@code purpose_location_id}/{@code purpose_type_enum}（与源领用单相同科室药房），{@code source_*} 保持空；
  * {@code original_bus_no} 必填，指向已同意 {@link com.openhis.health.domain.share.enums.SupplyType#DEPT_ISSUE}。
- * {@code item_quantity} 为退回正数（拆零）。可退余量校验在应用层（行键不含追溯码）。</p>
+ * {@code item_quantity} 为退回正数（拆零）。可退余量校验在应用层（行键不含追溯码）。
+ * 领用科室 {@code consuming_organization_id} 须自源领用单带出，禁止客户端改写。</p>
  *
  * <p>修订：首行 {@code busNo} 非空时表示同号全量替换（软删+重插），见
  * {@link com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService#createDeptIssueReturn}。</p>
@@ -54,6 +55,12 @@ public class CreateDeptIssueReturnCommand extends BatchCommand<CreateDeptIssueRe
         private String purposeTypeEnum;
         /** 科室药房位置主键（单端点真源）。 */
         private Long purposeLocationId;
+        /**
+         * 领用科室（行政 Organization 主键；落库 {@code consuming_organization_id}）。
+         *
+         * <p>须与源领用单一致，由应用层自原单头带入。</p>
+         */
+        private Long consumingOrganizationId;
         /** 批号。 */
         private String lotNumber;
         /** 追溯码（源领用行有码时应用层须校验同码）。 */
@@ -70,6 +77,10 @@ public class CreateDeptIssueReturnCommand extends BatchCommand<CreateDeptIssueRe
         private String reason;
         /** 行备注（库列 {@code remake}）。 */
         private String remake;
+        /**
+         * 批号效期止点（落库 {@code end_time}；通常自源领用行带入，供详情回显有效期）。
+         */
+        private LocalDateTime endTime;
         /** 单价（可选，展示/计价辅助）。 */
         private BigDecimal price;
         /** 行总价。 */

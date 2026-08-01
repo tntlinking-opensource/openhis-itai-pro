@@ -6,6 +6,7 @@ package com.openhis.health.domain.custom.chargeitemautogen.service;
 
 
 import com.openhis.health.domain.share.constants.FieldNameConstants;
+import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.health.domain.custom.chargeitemautogen.entity.ChargeItemAutoGen;
 import com.openhis.health.domain.custom.chargeitemautogen.queries.ChargeItemAutoGenPageQuery;
@@ -16,6 +17,7 @@ import com.openhis.health.domain.custom.chargeitemautogen.repository.ChargeItemA
 import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -158,14 +160,28 @@ public class ChargeItemAutoGenQueryService {
                     predicates.add(cb.equal(root.get(FieldNameConstants.PERFORMING_ORG_ID), query.getPerformingOrgId()));
                 }
                 if (StringUtils.isNotEmpty(query.getRuleNameKeyword())) {
-                    String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getRuleNameKeyword().trim());
+                    String trimmed = query.getRuleNameKeyword().trim();
+                    String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
                     predicates.add(cb.like(cb.lower(root.get(FieldNameConstants.RULE_NAME)), likeIc));
+                    // B.2.1：规则名精确全等置顶
+                    KeywordExactFirstOrderSupport.applyExactFirstOrder(
+                        cq,
+                        cb,
+                        trimmed,
+                        List.of(cb.desc(root.get(FieldNameConstants.ID))),
+                        root.get(FieldNameConstants.RULE_NAME));
                 }
             }
             return cb.and(predicates.toArray(new Predicate[0]));
         };
 
-        Page<ChargeItemAutoGen> page = repository.findAll(specification, pageable);
+        // 关键字非空时剥掉 Pageable Sort，保留 Spec 精确优先 ORDER BY
+        Pageable effective = pageable;
+        if (query != null && StringUtils.isNotEmpty(query.getRuleNameKeyword())
+            && pageable != null && pageable.getSort().isSorted()) {
+            effective = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
+        }
+        Page<ChargeItemAutoGen> page = repository.findAll(specification, effective);
         return page.map(this::toPageItemModel);
     }
 

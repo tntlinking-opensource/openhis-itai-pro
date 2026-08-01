@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 库房日结耗材发退药批量读入参（**AS-INV-RPT-001** · **DM-WKF-007 §6.2.19**）。
+ * 库房期初期末明细耗材发退药批量读入参（**AS-INV-RPT-001** · **DM-WKF-007 §6.2.19**）。
  *
  * <p>时间轴为 {@code dispense_time}；自然日边界由应用层换算后写入起止时刻。</p>
  */

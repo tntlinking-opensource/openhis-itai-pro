@@ -140,6 +140,24 @@ public interface DoctorStationAdviceConstants {
     /** 取消停嘱：出院/转科门禁拦截。 */
     String MSG_CANCEL_STOP_DISCHARGE_GATE = "存在出院或转科申请，无法取消停嘱";
 
+    /** 改业务时间：请求主键缺失。 */
+    String MSG_CHANGE_BUSINESS_TIME_REQUEST_ID_REQUIRED = "改业务时间时 requestId 不能为空";
+
+    /** 改业务时间：产品表名缺失。 */
+    String MSG_CHANGE_BUSINESS_TIME_PRODUCT_TABLE_REQUIRED = "改业务时间时 productTableName 不能为空";
+
+    /** 改业务时间：时间种类缺失。 */
+    String MSG_CHANGE_BUSINESS_TIME_KIND_REQUIRED = "改业务时间时 timeKind 不能为空";
+
+    /** 改业务时间：新时间为空。 */
+    String MSG_CHANGE_BUSINESS_TIME_NEW_TIME_REQUIRED = "改业务时间时 newTime 不能为空";
+
+    /** 改业务时间：时间种类非法（仅 OPENED/STOP）。 */
+    String MSG_CHANGE_BUSINESS_TIME_KIND_INVALID = "时间种类仅允许 OPENED 或 STOP，禁止修改签发时间";
+
+    /** 改停嘱时间：须长期且已停嘱。 */
+    String MSG_CHANGE_STOP_TIME_NOT_STOPPED = "仅已停嘱的长期医嘱可修改停嘱时间";
+
     /** 药品草稿载荷缺失。 */
     String MSG_MEDICATION_DRAFT_PAYLOAD_REQUIRED = "药品草稿载荷不能为空";
 
@@ -224,8 +242,15 @@ public interface DoctorStationAdviceConstants {
     /** 签发 FIFO：无候选发放库位。 */
     String MSG_SIGN_FIFO_NO_CANDIDATE_LOCATION = "未解析到候选发放库位，无法按 FIFO 拆分发药";
 
-    /** 签发 FIFO：库存不足以覆盖医嘱数量。 */
-    String MSG_SIGN_FIFO_INSUFFICIENT_STOCK_FOR_ADVICE = "候选库位可用库存不足以覆盖医嘱数量，拒绝签发";
+    /**
+     * 签发 FIFO：库存不足以覆盖医嘱数量（{@code %s} 为药品展示名）。
+     */
+    String MSG_SIGN_FIFO_INSUFFICIENT_STOCK_FOR_ADVICE = "【%s】候选库位可用库存不足以覆盖医嘱数量，拒绝签发";
+
+    /**
+     * 签发 FIFO：耗材库存不足以覆盖医嘱数量（{@code %s} 为耗材展示名）。
+     */
+    String MSG_SIGN_FIFO_INSUFFICIENT_STOCK_FOR_DEVICE = "【%s】候选库位可用库存不足以覆盖耗材医嘱数量，拒绝签发";
 
     /**
      * 药品/耗材医嘱草稿单位码缺省占位（与门诊 Mapper 口径一致，待主数据补齐后由域层校验）。
@@ -286,12 +311,42 @@ public interface DoctorStationAdviceConstants {
     /** EX-IP-ORD-107：就诊待结算禁止开立/变更医嘱（IF-IP-DOR-03 可写 Gate）。 */
     String EX_IP_ORD_107 = "EX-IP-ORD-107";
 
+    /** EX-IP-ORD-306：嘱托医嘱正文空/空白（IF-IP-DOR-14 · BR-IP-ORD-028）。 */
+    String EX_IP_ORD_306 = "EX-IP-ORD-306";
+
     /** 护理级别（category 26）仅允许开立长期医嘱。 */
     String MSG_NURSING_LEVEL_LONG_TERM_ONLY = "护理级别医嘱仅允许开立长期医嘱";
 
     /** 同就诊已存在有效护理级别医嘱，须先停嘱再开新级别。 */
     String MSG_NURSING_LEVEL_STOP_BEFORE_NEW = "已存在有效护理级别医嘱，请先停嘱后再开立新的护理级别";
 
+    /** 嘱托行须填写自由文本正文（entrustContent）。 */
+    String MSG_ENTRUST_CONTENT_REQUIRED = "请填写嘱托内容";
+
+    /** EX-ORD-308：门诊禁开嘱托医嘱（IF-DOR-11/14 · BR-ORD-032）。 */
+    String EX_ORD_308 = "EX-ORD-308";
+
+    /** 门诊不可开立嘱托（BR-ORD-032 / BR-IP-ORD-028②）。 */
+    String MSG_OUTPATIENT_ENTRUST_FORBIDDEN = "门诊不可开立嘱托医嘱";
+
+    /** 出院带药 therapy 仅允许药品行，禁止诊疗/嘱托/申请单（BR-IP-ORD-029）。 */
+    String MSG_DISCHARGE_MEDICATION_MEDICATION_ONLY = "出院带药仅允许开立药品医嘱";
+
     /** Bean Validation：产品定义主键必填（目录预选键）。 */
     String VALIDATION_PRODUCT_DEFINITION_ID_REQUIRED = "产品定义主键不能为空";
+
+    /** IF-IP-DOR-27：追加皮试检查时药品主键列表为空。 */
+    String MSG_APPEND_SKIN_TEST_MED_IDS_REQUIRED = "追加皮试检查时药品主键列表不能为空";
+
+    /** IF-IP-DOR-27：仅长期药品可追加皮试检查。 */
+    String MSG_APPEND_SKIN_TEST_LONG_TERM_ONLY = "仅长期皮试药可追加皮试检查";
+
+    /** IF-IP-DOR-27：药品未勾选皮试。 */
+    String MSG_APPEND_SKIN_TEST_FLAG_REQUIRED = "仅已勾选皮试的药品可追加皮试检查";
+
+    /** IF-IP-DOR-27：已停嘱药品不可追加。 */
+    String MSG_APPEND_SKIN_TEST_STOPPED_FORBIDDEN = "已停嘱药品不可追加皮试检查";
+
+    /** IF-IP-DOR-27：药品不属于当前就诊。 */
+    String MSG_APPEND_SKIN_TEST_ENCOUNTER_MISMATCH = "皮试药不属于当前就诊，无法追加皮试检查";
 }

@@ -25,6 +25,7 @@ import com.openhis.health.domain.administration.chargeitemdefinition.entity.Char
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
@@ -223,7 +224,14 @@ public class DoctorStationRefundApplicationAppService {
                 continue;
             }
             String itemDisplayName = this.resolveRefundableChargeLineItemDisplayName(row, definitionMap, productMap);
-            lines.add(this.doctorStationRefundApplicationMapper.toRefundableChargeLineItemDto(row, payment, itemDisplayName));
+            ChargeItemDefinition definitionRow = null;
+            if (row.getDefinitionId() != null) {
+                definitionRow = definitionMap.get(row.getDefinitionId());
+            }
+            ProductDefinitionDisplayDto product = this.resolveProductForChargeItem(row, productMap, definitionRow);
+            String quantityUnitDisplay = this.resolveRefundableQuantityUnitDisplay(row, product);
+            lines.add(this.doctorStationRefundApplicationMapper.toRefundableChargeLineItemDto(
+                row, payment, itemDisplayName, quantityUnitDisplay));
         }
         // Asm：按支付与收费行主键排序后封装响应（BR-DRA-002）。
         return this.doctorStationRefundApplicationMapper.toListRefundableChargeLinesForEncounterResponse(lines);
@@ -416,8 +424,8 @@ public class DoctorStationRefundApplicationAppService {
         }
         // Gate：同一原支付须一次申请退清，禁止分次申请（BR-DRA-022）。
         this.assertNoSplitRefundOnPayment(encounterId, request);
-        // Cmd：先处理保留行账单重生成（BR-DRA-004），再进入拟退药/耗/诊编排，避免新行锚点与旧事实冲突。
-        this.regeneratePreservedChargeLines(operatorId, request, chargeById);
+        // Gate：产品不支持半退保留；未拟退行不得随单提交，否则会误再生 PLANNED 并挡住原 SETTLED 再申请。
+        this.assertNoPreservedRefundLines(request);
         List<Long> refundingIds = new ArrayList<>();
         for (RefundApplicationLineItemDto line : request.getLines()) {
             // Pre：构造拟退集合 R：仅本单退费为 true 的行进入第二段编排（BR-DRA-010）。
@@ -493,17 +501,27 @@ public class DoctorStationRefundApplicationAppService {
             // Pre：诊疗写库前强校验服务申请可读（BR-DRA-007）。
             this.serviceRequestQueryService.mustGetServiceRequest(serviceRequestId);
         }
+        Set<Long> processedOriginDispenseIds = new HashSet<>();
         for (ChargeItem medCharge : medCharges) {
-            // Cmd：逐条执行药品退费互斥分支（BR-DRA-005）。
+            // Cmd：逐条执行药品退费互斥分支（BR-DRA-005）；域层对同一原药嘱幂等复用负向单（BR-MRQ-013）。
             MedicationDispense dispense = this.pickMedicationDispenseForChargeItem(medCharge, medDispenseByReq);
-            this.executeMedicationRefundBranch(medCharge, dispense, operatorId);
+            this.executeMedicationRefundBranch(medCharge, dispense, operatorId, processedOriginDispenseIds);
         }
+        Set<Long> processedDeviceRequestIds = new HashSet<>();
         for (ChargeItem devCharge : devCharges) {
-            // Cmd：逐条执行耗材退费分支（BR-DRA-006）。
+            // Cmd：逐条执行耗材退费分支（BR-DRA-006）；同批共锚同一耗嘱时跳过二次建负向单后的重复发放编排。
+            Long deviceRequestId = this.resolveDeviceRequestId(devCharge);
+            if (deviceRequestId != null && !processedDeviceRequestIds.add(deviceRequestId)) {
+                continue;
+            }
             this.executeDeviceRefundBranch(devCharge, operatorId);
         }
+        Set<Long> processedServiceRequestIds = new HashSet<>();
         for (ChargeItem svcCharge : svcCharges) {
-            // Cmd：逐条执行诊疗取消/停止分支（BR-DRA-007）。
+            // Cmd：逐条执行诊疗取消/停止分支（BR-DRA-007）；同批共锚同一诊疗申请时幂等跳过。
+            if (svcCharge.getServiceId() != null && !processedServiceRequestIds.add(svcCharge.getServiceId())) {
+                continue;
+            }
             this.executeServiceRefundBranch(svcCharge, operatorId);
         }
         // Cmd：拟退行统一进入退款中过程态并发布申请事件（BR-DRA-008）。
@@ -655,7 +673,30 @@ public class DoctorStationRefundApplicationAppService {
     }
 
     /**
+     * IF-DRA-03 Gate：产品不支持半退保留；提交体中不得出现 {@code refundForCurrentBill=false}。
+     *
+     * <p>历史缺陷：前端把未勾选支付单行以保留标记整表提交，后端会再生 PLANNED 并按 BR-REF-020
+     * 挡住原 SETTLED，导致后续无法再申请退费。</p>
+     *
+     * @param request 提交体
+     * @throws BusinessException 存在保留行时抛出 EX-DRA-304
+     */
+    private void assertNoPreservedRefundLines(SubmitOutpatientRefundApplicationRequest request) {
+        for (RefundApplicationLineItemDto line : request.getLines()) {
+            if (!Boolean.TRUE.equals(line.getRefundForCurrentBill())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_RULE_CONFLICT,
+                    DoctorStationRefundApplicationConstants.MESSAGE_CODE_HALF_REFUND_NOT_SUPPORTED
+                        + ": 不支持半退保留，请仅提交拟退支付单且整单退费");
+            }
+        }
+    }
+
+    /**
      * 半退保留链：克隆上游并落库新收费行（IF-DRA-03 步骤 6～7）。
+     *
+     * <p>产品当前不支持半退；{@link #assertNoPreservedRefundLines} 已拒绝保留行，本方法保留供历史对照，
+     * 正常提交路径不再调用。</p>
      *
      * @param operatorId 操作人主键
      * @param request    提交体
@@ -860,16 +901,24 @@ public class DoctorStationRefundApplicationAppService {
 
     /**
      * 为收费行挑选用于退费编排的药品发放单（若存在多条，优先匹配收费行 dispense 锚点）。
+     * <p>
+     * 索引键为药品申请主键（经 {@link #resolveMedicationRequestId}），不得直接用 {@code serviceId}
+     *（兼容发放表作 service 锚点时 serviceId 为发放主键）。
+     * </p>
      *
-     * @param chargeItem        收费行
-     * @param medDispenseByReq  药品申请主键索引
+     * @param chargeItem       收费行
+     * @param medDispenseByReq 药品申请主键索引
      * @return 命中发放；可能为 null
      */
     private MedicationDispense pickMedicationDispenseForChargeItem(
         ChargeItem chargeItem,
         Map<Long, List<MedicationDispense>> medDispenseByReq
     ) {
-        List<MedicationDispense> bucket = medDispenseByReq.get(chargeItem.getServiceId());
+        Long medicationRequestId = this.resolveMedicationRequestId(chargeItem);
+        if (medicationRequestId == null) {
+            return null;
+        }
+        List<MedicationDispense> bucket = medDispenseByReq.get(medicationRequestId);
         if (bucket == null || bucket.isEmpty()) {
             return null;
         }
@@ -886,40 +935,53 @@ public class DoctorStationRefundApplicationAppService {
 
     /**
      * 药品拟退互斥分支（IF-DRA-03 步骤 12～15）。
+     * <p>
+     * 同一原药嘱可被本批多条收费行共锚（{@code BR-CHG-001}）；负向单由域层幂等复用，
+     * 待退发放按原发放主键在本批内去重，避免重复落 PENDING_REFUND。
+     * </p>
      *
-     * @param chargeItem 拟退收费行
-     * @param dispense   可能为空的发放事实
-     * @param operatorId 操作人主键
+     * @param chargeItem                 拟退收费行
+     * @param dispense                   可能为空的发放事实
+     * @param operatorId                 操作人主键
+     * @param processedOriginDispenseIds 本批已编排过待退/作废的原发放主键
      */
-    private void executeMedicationRefundBranch(ChargeItem chargeItem, MedicationDispense dispense, Long operatorId) {
+    private void executeMedicationRefundBranch(
+        ChargeItem chargeItem,
+        MedicationDispense dispense,
+        Long operatorId,
+        Set<Long> processedOriginDispenseIds
+    ) {
         boolean wrote = false;
         if (dispense != null && this.isMedicationDispenseCompletedOrPartCompleted(dispense)) {
             // Cmd：已发/部分发路径（IF-DRA-03 步骤 12）：退药申请单 + 待退药发放。
-            this.createRefundMedicationOrderAndPendingDispense(chargeItem, dispense, operatorId);
+            this.createRefundMedicationOrderAndPendingDispense(chargeItem, dispense, operatorId, processedOriginDispenseIds);
             wrote = true;
         }
         if (!wrote && dispense != null && this.isMedicationDispenseCancellableQuietly(dispense)) {
-            // Cmd：未发可作废路径：作废原发放单（分支 13）。
-            this.medicationDispenseDomainService.cancelMedicationDispense(
-                this.doctorStationRefundApplicationMapper.toCancelMedicationDispenseCommand(
-                    dispense.getId(),
-                    DoctorStationRefundApplicationConstants.MEDICATION_DISPENSE_NOT_PERFORMED_REASON_OUTPATIENT_REFUND_APP,
-                    operatorId
-                )
-            );
+            // Cmd：未发可作废路径：作废原发放单（分支 13）；同批同一发放只作废一次。
+            if (processedOriginDispenseIds.add(dispense.getId())) {
+                this.medicationDispenseDomainService.cancelMedicationDispense(
+                    this.doctorStationRefundApplicationMapper.toCancelMedicationDispenseCommand(
+                        dispense.getId(),
+                        DoctorStationRefundApplicationConstants.MEDICATION_DISPENSE_NOT_PERFORMED_REASON_OUTPATIENT_REFUND_APP,
+                        operatorId
+                    )
+                );
+            }
             wrote = true;
         }
         if (!wrote) {
-            // Cmd：医嘱重开路径（分支 14）。
+            // Cmd：医嘱重开路径（分支 14）；同批共锚同一药嘱时仅尝试一次。
+            Long medicationRequestId = this.resolveMedicationRequestId(chargeItem);
             try {
                 this.medicationRequestDomainService.reopenMedicationOrder(
-                    this.doctorStationRefundApplicationMapper.toReopenMedicationOrderCommand(chargeItem.getServiceId(), operatorId)
+                    this.doctorStationRefundApplicationMapper.toReopenMedicationOrderCommand(medicationRequestId, operatorId)
                 );
                 wrote = true;
             } catch (BusinessException ex) {
                 log.debug(
                     "reopenMedicationOrder skipped medReqId={} chargeItemId={}",
-                    chargeItem.getServiceId(),
+                    medicationRequestId,
                     chargeItem.getId(),
                     ex
                 );
@@ -928,30 +990,50 @@ public class DoctorStationRefundApplicationAppService {
         }
         if (!wrote && dispense != null) {
             // Cmd：待退药窗口（IF-DRA-03 步骤 15）：先建退药申请再建待退发放。
-            this.createRefundMedicationOrderAndPendingDispense(chargeItem, dispense, operatorId);
+            this.createRefundMedicationOrderAndPendingDispense(chargeItem, dispense, operatorId, processedOriginDispenseIds);
             wrote = true;
         }
         if (!wrote) {
-            // Gate：若药嘱侧无法落入任一分支，则视为重复/非法申请（EX-DRA-301）。
+            // Gate：药嘱侧无法落入任一分支时拒绝，避免收费行进入 REFUNDING 但无药嘱侧事实。
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_RULE_CONFLICT, "退药申请无法落地，请刷新后重试");
         }
     }
 
     /**
      * 创建退药申请单并基于原发放单生成待退药发放行（AS-OP-PHA-002 队列入口）。
+     * <p>
+     * 负向药嘱 {@code originRequestId} 须为药品申请主键（经 {@link #resolveMedicationRequestId}），
+     * 不得直接传发放主键；本批同一原发放只建一条 PENDING_REFUND。
+     * </p>
      *
-     * @param chargeItem 拟退收费行
-     * @param dispense   原发放事实
-     * @param operatorId 操作人主键
+     * @param chargeItem                 拟退收费行
+     * @param dispense                   原发放事实
+     * @param operatorId                 操作人主键
+     * @param processedOriginDispenseIds 本批已建待退发放的原发放主键
      */
     private void createRefundMedicationOrderAndPendingDispense(
         ChargeItem chargeItem,
         MedicationDispense dispense,
-        Long operatorId
+        Long operatorId,
+        Set<Long> processedOriginDispenseIds
     ) {
+        Long medicationRequestId = this.resolveMedicationRequestId(chargeItem);
+        if (medicationRequestId == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.CHARGE_ITEM_RULE_CONFLICT,
+                "拟退药品收费明细无法解析药品申请锚点"
+            );
+        }
         Long refundRequestId = this.medicationRequestDomainService.createRefundMedicationOrder(
-            this.doctorStationRefundApplicationMapper.toCreateRefundMedicationOrderCommand(chargeItem, operatorId)
+            this.doctorStationRefundApplicationMapper.toCreateRefundMedicationOrderCommand(
+                medicationRequestId,
+                operatorId
+            )
         );
+        // 同批多收费行命中同一原发放时，待退发放只落一次。
+        if (!processedOriginDispenseIds.add(dispense.getId())) {
+            return;
+        }
         this.medicationDispenseDomainService.createPendingRefundDispense(
             this.doctorStationRefundApplicationMapper.toCreatePendingRefundDispenseCommand(
                 dispense, refundRequestId, operatorId
@@ -1220,5 +1302,28 @@ public class DoctorStationRefundApplicationAppService {
             return definitionRow.getChargeName();
         }
         return OutpatientChargeConstants.PENDING_CHARGE_ITEM_DISPLAY_FALLBACK;
+    }
+
+    /**
+     * IF-DRA-01：可退行数量单位展示（与收费小票同口径：目录单位槽优先，否则回落 quantity_unit 原码）。
+     *
+     * @param row     收费明细
+     * @param product 目录读模型；可空
+     * @return 单位展示；无单位时 {@code null}
+     */
+    private String resolveRefundableQuantityUnitDisplay(ChargeItem row, ProductDefinitionDisplayDto product) {
+        if (row == null || StringUtils.isEmpty(row.getQuantityUnit())) {
+            return null;
+        }
+        String unitCode = row.getQuantityUnit().trim();
+        if (product != null) {
+            String fromProduct = ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayNameFromProduct(
+                product,
+                unitCode);
+            if (StringUtils.isNotEmpty(fromProduct)) {
+                return fromProduct.trim();
+            }
+        }
+        return unitCode;
     }
 }

@@ -9,6 +9,8 @@ import com.openhis.health.domain.administration.encounter.queries.model.Practiti
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
+import com.openhis.health.domain.financial.paymentreconciliation.queries.model.OutpatientFeeDetailChargePaymentLinkQueryModel;
+import com.openhis.health.domain.financial.paymentreconciliation.queries.model.OutpatientFeeDetailPaymentContextQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationQueryService;
 import com.openhis.health.domain.share.constants.PractitionerWorkloadConstants;
 import com.openhis.health.domain.share.enums.EncounterClass;
@@ -23,6 +25,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.time.LocalDateTime;
 
 /**
  * 科室/医生工作量读路径 scope 预解析（application/report/practitionerworkload/support；AS-RPT-001 IF-RPT-WKL-02～04）。
@@ -63,9 +66,11 @@ public class PractitionerWorkloadLoader {
         // Pre：未选科室 = 该域全部 ACTIVE 科室；已选须与 encounterScope 类别一致
         List<Long> organizationIds = this.resolveOrganizationIds(query, encounterClassCode);
         query.setResolvedOrganizationIds(organizationIds);
-        // Pre：就诊 scope = class + 挂号科室 IN（经 Encounter QS，B.6.4）
+        // Pre：就诊 scope = class + 挂号科室 IN + bill_date 窗相交（经 Encounter QS，B.6.4）
+        LocalDateTime windowFrom = query.getBillDateFrom().atStartOfDay();
+        LocalDateTime windowTo = query.getBillDateTo().atTime(23, 59, 59);
         List<Long> encounterScope = this.encounterQueryService.listEncounterIdsForPractitionerWorkloadScope(
-            encounterClassCode, organizationIds);
+            encounterClassCode, organizationIds, windowFrom, windowTo);
         query.setResolvedEncounterScope(encounterScope);
         // Pre：选医生时挂号统计仅保留 REGISTRATION_DOCTOR 命中就诊
         if (query.getPractitionerId() != null) {
@@ -83,16 +88,54 @@ public class PractitionerWorkloadLoader {
             query.setEncounterContextByEncounterId(Collections.emptyMap());
             return;
         }
-        // Pre：挂号号源分组需 Encounter 上下文（organization_id / service_type_id / status）
-        LinkedHashSet<Long> encounterIdsForContext = new LinkedHashSet<>();
-        for (Long encounterId : encounterScope) {
-            if (encounterId != null) {
-                encounterIdsForContext.add(encounterId);
-            }
+        // Pre：挂号号源分组需 Encounter 上下文；仅拉 payment 命中就诊，禁止全量 encounterScope
+        LinkedHashSet<Long> encounterIdsForContext =
+            this.collectEncounterIdsForWorkloadContext(query);
+        if (encounterIdsForContext.isEmpty()) {
+            query.setEncounterContextByEncounterId(Collections.emptyMap());
+            return;
         }
         Map<Long, PractitionerWorkloadEncounterContextQueryModel> contextByEncounterId =
             this.encounterQueryService.mapPractitionerWorkloadEncounterContextByIds(encounterIdsForContext);
         query.setEncounterContextByEncounterId(contextByEncounterId);
+    }
+
+    /**
+     * 从 payment 关联收集需拉 Encounter 上下文的就诊 id（优先 links，回落 paymentContext）。
+     *
+     * @param query 已写入 paymentChargeItemLinks / paymentContextByChargeItemId
+     * @return 去重后的 encounterId；无命中为空集合
+     */
+    private LinkedHashSet<Long> collectEncounterIdsForWorkloadContext(PractitionerWorkloadPageQuery query) {
+        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
+        List<OutpatientFeeDetailChargePaymentLinkQueryModel> links = query.getPaymentChargeItemLinks();
+        // Pre：优先从 chargeItem↔payment 关联行取 encounterId
+        if (links != null) {
+            for (OutpatientFeeDetailChargePaymentLinkQueryModel link : links) {
+                if (link == null || link.getPaymentContext() == null) {
+                    continue;
+                }
+                Long encounterId = link.getPaymentContext().getEncounterId();
+                if (encounterId != null) {
+                    encounterIds.add(encounterId);
+                }
+            }
+        }
+        // 若 links 无 encounterId：回落 chargeItem → payment 上下文 values
+        if (encounterIds.isEmpty()) {
+            Map<Long, OutpatientFeeDetailPaymentContextQueryModel> paymentContextByChargeItemId =
+                query.getPaymentContextByChargeItemId();
+            if (paymentContextByChargeItemId != null) {
+                for (OutpatientFeeDetailPaymentContextQueryModel paymentContext
+                    : paymentContextByChargeItemId.values()) {
+                    if (paymentContext == null || paymentContext.getEncounterId() == null) {
+                        continue;
+                    }
+                    encounterIds.add(paymentContext.getEncounterId());
+                }
+            }
+        }
+        return encounterIds;
     }
 
     /**

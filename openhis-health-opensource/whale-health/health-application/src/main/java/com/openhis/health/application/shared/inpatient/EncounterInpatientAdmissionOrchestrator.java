@@ -13,13 +13,8 @@ import com.openhis.health.domain.administration.encounter.queries.model.Encounte
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDiagnosisQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.domain.clinical.condition.command.SaveDoctorDiagnosisCommand;
-import com.openhis.health.domain.clinical.condition.command.SaveDoctorDiagnosisTcmCommand;
-import com.openhis.health.domain.clinical.condition.service.ConditionDomainService;
-import com.openhis.health.domain.clinical.condition.service.ConditionQueryService;
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
 import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
-import com.openhis.health.domain.share.constants.DoctorStationDiagnosisConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.IptPatientDiseaseDiagType;
 import com.openhis.health.domain.share.enums.YbMedType;
@@ -30,13 +25,10 @@ import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /**
- * 住院登记写路径跨聚合编排：开立登记账户与入院诊断（病情事实 + 就诊诊断关联）。
- *
- * <p>Encounter 写侧不再直接依赖 Account / Condition 聚合（B.6.1.3.1）。</p>
+ * 住院登记写路径跨聚合编排：开立登记账户与入院诊断（仅 adm_encounter_diagnosis，不经 Condition）。
  */
 @Component
 @RequiredArgsConstructor
@@ -46,10 +38,6 @@ public class EncounterInpatientAdmissionOrchestrator {
     private final AccountDomainService accountDomainService;
     /** 业务序列服务（中医病证组号 {@code tcm_syndrome_group} 分配）。 */
     private final BusinessSequenceService businessSequenceService;
-    /** 病情事实写侧领域服务（新开入院诊断 condition）。 */
-    private final ConditionDomainService conditionDomainService;
-    /** 病情事实读侧查询（主诊已关联定义复用判定）。 */
-    private final ConditionQueryService conditionQueryService;
     /** 就诊写侧领域服务（就诊诊断关联 upsert）。 */
     private final EncounterDomainService encounterDomainService;
     /** 就诊读侧查询（患者反查与主诊存在判定）。 */
@@ -77,7 +65,7 @@ public class EncounterInpatientAdmissionOrchestrator {
     }
 
     /**
-     * 写入入院诊断：新开或复用病情事实后维护就诊诊断关联（住院申请等场景复用）。
+     * 写入入院诊断：直挂 conditionDefinitionId 维护就诊诊断关联（住院申请等场景复用）。
      *
      * @param patientId 患者主键
      * @param encounterId 住院就诊主键
@@ -99,15 +87,13 @@ public class EncounterInpatientAdmissionOrchestrator {
             new ArrayList<>();
         int rank = 1;
         for (AdmissionConditionItem dx : normalizedItems) {
-            Long conditionId = dx.getConditionId();
-            if (conditionId == null) {
-                conditionId = this.resolveConditionIdForAdmissionDxItem(
-                    patientId, encounterId, dx, operatorId);
+            if (dx.getConditionDefinitionId() == null) {
+                throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "入院诊断须指定诊断目录");
             }
             if (Boolean.TRUE.equals(dx.getTcmFlag())) {
-                tcmAssocItems.add(this.newAdmissionTcmAssocItem(dx, conditionId, rank));
+                tcmAssocItems.add(this.newAdmissionTcmAssocItem(dx, rank));
             } else {
-                westernAssocItems.add(this.newAdmissionDiagnosisAssocItem(encounterId, dx, conditionId, rank));
+                westernAssocItems.add(this.newAdmissionDiagnosisAssocItem(encounterId, dx, rank));
             }
             rank++;
         }
@@ -167,7 +153,7 @@ public class EncounterInpatientAdmissionOrchestrator {
      */
     private AdmissionConditionItem copyAdmissionConditionItem(AdmissionConditionItem source) {
         AdmissionConditionItem target = new AdmissionConditionItem();
-        target.setConditionId(source.getConditionId());
+        target.setEncounterDiagnosisId(source.getEncounterDiagnosisId());
         target.setConditionDefinitionId(source.getConditionDefinitionId());
         target.setPrimaryFlag(source.getPrimaryFlag());
         target.setDescription(source.getDescription());
@@ -236,108 +222,22 @@ public class EncounterInpatientAdmissionOrchestrator {
     }
 
     /**
-     * 为单条入院诊断项解析或新建 conditionId：已关联同定义则复用，否则按中医/西医分支落库。
-     *
-     * @param patientId   患者 ID
-     * @param encounterId 就诊 ID
-     * @param dx          入院诊断项
-     * @param operatorId  操作人
-     * @return condition 主键
-     * @throws BusinessException 缺诊断目录或规则冲突
-     */
-    private Long resolveConditionIdForAdmissionDxItem(
-        Long patientId,
-        Long encounterId,
-        AdmissionConditionItem dx,
-        Long operatorId) {
-        if (dx.getConditionDefinitionId() == null) {
-            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "入院诊断须指定病情或诊断目录");
-        }
-        Long existingConditionId = this.resolveExistingConditionIdForAdmissionDefinition(
-            encounterId, dx.getConditionDefinitionId());
-        if (existingConditionId != null) {
-            return existingConditionId;
-        }
-        if (Boolean.TRUE.equals(dx.getTcmFlag())) {
-            SaveDoctorDiagnosisTcmCommand saveTcmCmd = new SaveDoctorDiagnosisTcmCommand();
-            saveTcmCmd.setEncounterId(encounterId);
-            saveTcmCmd.setPatientId(patientId);
-            saveTcmCmd.setOperatorId(operatorId);
-            SaveDoctorDiagnosisTcmCommand.DoctorDiagnosisTcmItemCommand tcmItem =
-                new SaveDoctorDiagnosisTcmCommand.DoctorDiagnosisTcmItemCommand();
-            tcmItem.setDefinitionId(dx.getConditionDefinitionId());
-            tcmItem.setDescription(dx.getDescription());
-            tcmItem.setTcmFlag(Boolean.TRUE);
-            tcmItem.setVerificationStatusEnum(
-                DoctorStationDiagnosisConstants.ConditionVerificationStatusCode.CONFIRMED);
-            saveTcmCmd.setItems(Collections.singletonList(tcmItem));
-            List<Long> savedTcmIds = conditionDomainService.saveDoctorDiagnosisTcm(saveTcmCmd);
-            return savedTcmIds.get(0);
-        }
-        SaveDoctorDiagnosisCommand saveCmd = new SaveDoctorDiagnosisCommand();
-        saveCmd.setEncounterId(encounterId);
-        saveCmd.setPatientId(patientId);
-        saveCmd.setOperatorId(operatorId);
-        saveCmd.setAdmissionDiagnosisFlow(Boolean.TRUE);
-        SaveDoctorDiagnosisCommand.DoctorDiagnosisItemCommand diagItem =
-            new SaveDoctorDiagnosisCommand.DoctorDiagnosisItemCommand();
-        diagItem.setDefinitionId(dx.getConditionDefinitionId());
-        diagItem.setDescription(dx.getDescription());
-        diagItem.setVerificationStatusEnum(
-            DoctorStationDiagnosisConstants.ConditionVerificationStatusCode.CONFIRMED);
-        saveCmd.setItems(Collections.singletonList(diagItem));
-        List<Long> savedIds = conditionDomainService.saveDoctorDiagnosis(saveCmd);
-        return savedIds.get(0);
-    }
-
-    /**
-     * 就诊主诊已关联同一诊断定义时复用已有 conditionId，避免重复创建入院诊断。
-     *
-     * @param encounterId            就诊 ID
-     * @param conditionDefinitionId  诊断目录定义 ID
-     * @return 可复用的 condition 主键；主诊不存在或定义不一致时 null
-     */
-    private Long resolveExistingConditionIdForAdmissionDefinition(
-        Long encounterId, Long conditionDefinitionId) {
-        if (encounterId == null || conditionDefinitionId == null) {
-            return null;
-        }
-        List<EncounterDiagnosisQueryModel> rows = encounterQueryService.listEncounterDiagnoses(encounterId);
-        Long linkedConditionId = null;
-        for (EncounterDiagnosisQueryModel row : rows) {
-            if (Boolean.TRUE.equals(row.getPrimaryFlag())) {
-                linkedConditionId = row.getConditionId();
-                break;
-            }
-        }
-        if (linkedConditionId == null) {
-            return null;
-        }
-        Long existingDefinitionId = conditionQueryService.findDefinitionIdByConditionId(linkedConditionId);
-        if (existingDefinitionId == null || !conditionDefinitionId.equals(existingDefinitionId)) {
-            return null;
-        }
-        return linkedConditionId;
-    }
-
-    /**
      * 构建西医入院诊断就诊关联 upsert 项。
      *
      * @param encounterId 就诊主键
      * @param dx          入院诊断项
-     * @param conditionId 病情事实主键
      * @param rank        排序序号
      * @return 就诊诊断关联命令项
      */
     private UpsertEncounterDiagnosisAssociationCommand.UpsertEncounterDiagnosisAssociationItemCommand newAdmissionDiagnosisAssocItem(
         Long encounterId,
         AdmissionConditionItem dx,
-        Long conditionId,
         int rank) {
         UpsertEncounterDiagnosisAssociationCommand.UpsertEncounterDiagnosisAssociationItemCommand assoc =
             new UpsertEncounterDiagnosisAssociationCommand.UpsertEncounterDiagnosisAssociationItemCommand();
         assoc.setEncounterId(encounterId);
-        assoc.setConditionId(conditionId);
+        assoc.setEncounterDiagnosisId(dx.getEncounterDiagnosisId());
+        assoc.setConditionDefinitionId(dx.getConditionDefinitionId());
         assoc.setPrimaryFlag(dx.getPrimaryFlag());
         assoc.setRank(rank);
         assoc.setDescription(dx.getDescription());
@@ -350,18 +250,17 @@ public class EncounterInpatientAdmissionOrchestrator {
     /**
      * 构建中医入院诊断批量关联项（含病证组号）。
      *
-     * @param dx          入院诊断项
-     * @param conditionId 病情事实主键
-     * @param rank        排序序号
+     * @param dx   入院诊断项
+     * @param rank 排序序号
      * @return 中医就诊诊断关联命令项
      */
     private BatchUpsertEncounterDiagnosisAssociationCommand.DiagnosisItemCommand newAdmissionTcmAssocItem(
         AdmissionConditionItem dx,
-        Long conditionId,
         int rank) {
         BatchUpsertEncounterDiagnosisAssociationCommand.DiagnosisItemCommand assoc =
             new BatchUpsertEncounterDiagnosisAssociationCommand.DiagnosisItemCommand();
-        assoc.setConditionId(conditionId);
+        assoc.setEncounterDiagnosisId(dx.getEncounterDiagnosisId());
+        assoc.setConditionDefinitionId(dx.getConditionDefinitionId());
         assoc.setPrimaryFlag(dx.getPrimaryFlag());
         assoc.setRank(rank);
         assoc.setDescription(dx.getDescription());

@@ -4,8 +4,10 @@
  */
 package com.openhis.chs.bridge.catalog.support;
 
+import com.openhis.chs.domain.settlement.support.SettlementTraceCountSupport;
 import com.openhis.chs.domain.share.enums.ListType;
 import static com.openhis.whale.core.application.util.StringUtils.isEmpty;
+import static com.openhis.whale.core.application.util.StringUtils.isNotEmpty;
 
 import com.openhis.chs.domain.share.constants.ChsCatalogConstants;
 import com.openhis.chs.domain.catalog.command.RevokeCatalog3302RowCommand;
@@ -102,7 +104,7 @@ public class CatalogMappingHealthAssemblySupport {
             .setMedListCodg(activity.getYbNo().trim());
     }
 
-    /** 组装耗材 3301 上行行。 */
+    /** 组装耗材 3301 上行行（med_list_codg 截前 15 位）。 */
     public UploadCatalog3301RowCommand toDeviceUploadRow(DeviceDefinition device, String listType) {
         requireYbNo(device.getYbNo());
         return new UploadCatalog3301RowCommand()
@@ -111,7 +113,8 @@ public class CatalogMappingHealthAssemblySupport {
             .setFixmedinsHilistId(CatalogMappingRowSupport.fixmedinsHilistId(device.getBusNo(), device.getId()))
             .setFixmedinsHilistName(device.getName())
             .setListType(CatalogMappingRowSupport.listType(listType, ListType.MEDICAL_CONSUMABLE.getCode()))
-            .setMedListCodg(device.getYbNo().trim())
+            .setMedListCodg(SettlementTraceCountSupport.toPlatformMedListCodg(
+                TableNameConstants.ADM_DEVICE_DEFINITION, device.getYbNo().trim()))
             .setAprvno(device.getApprovalNumber())
             .setSpec(device.getTotalVolume());
     }
@@ -144,7 +147,7 @@ public class CatalogMappingHealthAssemblySupport {
             .setMedListCodg(activity.getYbNo().trim());
     }
 
-    /** 组装耗材 3302 撤销上行行。 */
+    /** 组装耗材 3302 撤销上行行（med_list_codg 截前 15 位）。 */
     public RevokeCatalog3302RowCommand toDeviceRevokeRow(DeviceDefinition device, String listType) {
         requireYbNo(device.getYbNo());
         return new RevokeCatalog3302RowCommand()
@@ -152,7 +155,8 @@ public class CatalogMappingHealthAssemblySupport {
             .setProductId(device.getId())
             .setFixmedinsHilistId(CatalogMappingRowSupport.fixmedinsHilistId(device.getBusNo(), device.getId()))
             .setListType(CatalogMappingRowSupport.listType(listType, ListType.MEDICAL_CONSUMABLE.getCode()))
-            .setMedListCodg(device.getYbNo().trim());
+            .setMedListCodg(SettlementTraceCountSupport.toPlatformMedListCodg(
+                TableNameConstants.ADM_DEVICE_DEFINITION, device.getYbNo().trim()));
     }
 
     /** 3301 成功后回写药品 yb_match_flag / chrgitm_lv。 */
@@ -196,17 +200,47 @@ public class CatalogMappingHealthAssemblySupport {
         activityDefinitionDomainService.syncActivityYbMapping(sync);
     }
 
-    /** 3301/3302 后回写耗材 yb_match_flag / chrgitm_lv。 */
+    /** 3301/3302 后回写耗材 yb_match_flag / chrgitm_lv（不再写 yb_org_no）。 */
     public void syncDeviceMatchFlag(DeviceDefinition device, boolean matched, Long operatorId) {
+        syncDeviceYbMapping(
+            device.getId(),
+            device.getYbFlag(),
+            device.getYbNo(),
+            matched,
+            device.getChrgitmLv(),
+            operatorId);
+    }
+
+    /**
+     * 1317 等场景：按主键回写耗材医保编码与对码标志。
+     *
+     * @param deviceId   耗材定义主键
+     * @param ybFlag     是否医保
+     * @param ybNo       医保目录编码
+     * @param matched    是否已对照
+     * @param chrgitmLv  收费项目等级
+     * @param operatorId 操作人
+     */
+    public void syncDeviceYbMapping(
+            Long deviceId,
+            Boolean ybFlag,
+            String ybNo,
+            boolean matched,
+            Integer chrgitmLv,
+            Long operatorId) {
         SyncDeviceDefinitionYbMappingCommand sync = new SyncDeviceDefinitionYbMappingCommand();
         sync.setOperatorId(operatorId);
         SyncDeviceDefinitionYbMappingCommand.Item item = new SyncDeviceDefinitionYbMappingCommand.Item();
-        item.setId(device.getId());
-        item.setYbFlag(device.getYbFlag());
-        item.setYbNo(device.getYbNo());
-        item.setYbOrgNo(device.getYbOrgNo());
+        item.setId(deviceId);
+        item.setYbFlag(ybFlag);
+        // 回写保留完整医保编码；上传 med_list_codg 时再截前 15
+        if (isNotEmpty(ybNo)) {
+            item.setYbNo(ybNo.trim());
+        } else {
+            item.setYbNo(ybNo);
+        }
         item.setYbMatchFlag(matched);
-        item.setChrgitmLv(device.getChrgitmLv());
+        item.setChrgitmLv(chrgitmLv);
         sync.setItems(List.of(item));
         deviceDefinitionDomainService.syncDeviceDefinitionYbMapping(sync);
     }

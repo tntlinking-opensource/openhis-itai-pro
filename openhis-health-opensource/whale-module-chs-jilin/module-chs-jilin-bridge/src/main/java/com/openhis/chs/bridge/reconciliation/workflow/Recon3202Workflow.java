@@ -55,13 +55,20 @@ public class Recon3202Workflow implements Recon3202DetailInvoker {
 
     @Override
     public ReconDetail3202Result invoke(ReconDetail3202Command command) {
-        ReconDetail3202Command safe = command == null ? new ReconDetail3202Command() : command;
+        ReconDetail3202Command safe;
+        if (command == null) {
+            safe = new ReconDetail3202Command();
+        } else {
+            safe = command;
+        }
         ReconContractContext ctx = reconPlatformSupport.resolveContract(safe.getContractBusNo(), safe.getContractId());
         LocalDate begin = reconPlatformSupport.parseDate(safe.getStmtBegndate(), "对账开始日期");
         LocalDate end = reconPlatformSupport.parseDate(safe.getStmtEnddate(), "对账结束日期");
+        // 结束早于开始则无法生成明细对账文件
         if (end.isBefore(begin)) {
             throw new BusinessException(ChsErrorCodes.CONTRACT_INVALID, "结束日期不能早于开始日期");
         }
+        // 结算经办机构为 3202 必填
         if (isEmpty(safe.getSetlOptins())) {
             throw new BusinessException(ChsErrorCodes.CONTRACT_INVALID, "结算经办机构不能为空");
         }
@@ -78,8 +85,12 @@ public class Recon3202Workflow implements Recon3202DetailInvoker {
         BigDecimal fund = safe.getFundPaySumamt();
         BigDecimal cash = safe.getCashPayamt();
         Integer setlCount = safe.getFixmedinsSetlCnt();
+        // 金额/笔数缺省时：先按维度列表汇总，再折叠为区间合计填入 3202
         if (medfee == null || fund == null || cash == null || setlCount == null) {
-            ClearAmountSummaryResult summary = reconciliationQueryService.summarizeClearAmounts(period, tenantId);
+            List<ClearAmountSummaryResult> amountRows =
+                reconciliationQueryService.summarizeClearAmounts(period, tenantId);
+            ClearAmountSummaryResult summary =
+                reconciliationQueryService.mergeClearAmountSummaries(amountRows);
             if (medfee == null) {
                 medfee = summary.getMedfeeSumamt();
             }
@@ -126,7 +137,12 @@ public class Recon3202Workflow implements Recon3202DetailInvoker {
             new String(textBytes, StandardCharsets.UTF_8));
         int mismatchCount = ReconPlatformOutputParser.countMismatch(resultRows);
 
-        String uploadFilename = uploadResult.getFilename() != null ? uploadResult.getFilename() : zipFilename;
+        String uploadFilename;
+        if (uploadResult.getFilename() != null) {
+            uploadFilename = uploadResult.getFilename();
+        } else {
+            uploadFilename = zipFilename;
+        }
         var detailRow = reconciliationDomainService.saveReconDetail(
             ctx.contract().id(),
             ctx.busNo(),

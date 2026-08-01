@@ -6,11 +6,13 @@ package com.openhis.chs.domain.invoke.repository;
 
 import com.openhis.chs.domain.invoke.entity.YbInvokeLog;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.util.List;
 
 /** {@link YbInvokeLog} 仓储 */
-public interface YbInvokeLogRepository extends JpaRepository<YbInvokeLog, Long> {
+public interface YbInvokeLogRepository
+    extends JpaRepository<YbInvokeLog, Long>, JpaSpecificationExecutor<YbInvokeLog> {
 
     /**
      * 按支付单查询 invoke 日志，按创建时间倒序。

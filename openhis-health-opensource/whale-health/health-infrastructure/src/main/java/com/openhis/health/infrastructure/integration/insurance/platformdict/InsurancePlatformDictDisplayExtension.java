@@ -33,4 +33,14 @@ public interface InsurancePlatformDictDisplayExtension {
     default Map<String, String> lookupInsuplcAdmdvsLabels(Collection<String> admdvsCodes) {
         return Collections.emptyMap();
     }
+
+    /**
+     * 批量解析险种类型（insutype）展示名。
+     *
+     * @param insutypeCodes 平台险种码列表
+     * @return code → label；未命中时不包含该 key
+     */
+    default Map<String, String> lookupInsutypeLabels(Collection<String> insutypeCodes) {
+        return Collections.emptyMap();
+    }
 }

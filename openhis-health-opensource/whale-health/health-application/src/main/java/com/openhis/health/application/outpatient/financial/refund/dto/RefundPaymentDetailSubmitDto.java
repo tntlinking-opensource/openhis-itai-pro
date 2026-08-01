@@ -30,4 +30,28 @@ public class RefundPaymentDetailSubmitDto {
     /** 本渠道实退金额。 */
     @Schema(description = "本渠道实退金额", requiredMode = Schema.RequiredMode.REQUIRED)
     private BigDecimal amount;
+
+    /** 原支付明细交易号（医保行须带原 setl_id）。 */
+    @Schema(description = "原支付明细交易号（医保 setl_id）")
+    private String payTransNo;
+
+    /** 原支付明细交易文本。 */
+    @Schema(description = "原支付明细交易文本")
+    private String payTransText;
+
+    /** 原支付明细交易时间。 */
+    @Schema(description = "原支付明细交易时间")
+    private java.time.LocalDateTime payTransDate;
+
+    /** 渠道结果枚举（沿用原明细终态，禁止落 DRAFT）。 */
+    @Schema(description = "渠道结果枚举")
+    private String resultEnum;
+
+    /** 原支付明细账户主键。 */
+    @Schema(description = "账户主键")
+    private Long accountId;
+
+    /** 原支付明细账户编码。 */
+    @Schema(description = "账户编码")
+    private String accountCode;
 }

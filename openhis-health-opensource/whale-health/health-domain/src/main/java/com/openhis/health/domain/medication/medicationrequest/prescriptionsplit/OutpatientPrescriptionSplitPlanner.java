@@ -5,9 +5,11 @@
 package com.openhis.health.domain.medication.medicationrequest.prescriptionsplit;
 
 import com.openhis.health.domain.medication.medicationrequest.command.PrescriptionSplitLineContext;
+import com.openhis.health.domain.share.constants.DailySettlementSharedConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.PrescriptionSplitConstants;
 import com.openhis.health.domain.share.enums.YbMedType;
+import com.openhis.health.domain.share.utils.EncounterDiagnosisIdsSupport;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.util.StringUtils;
 
@@ -20,9 +22,14 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 门诊药品处方分方装箱：按医保医疗类别、特殊管理药品、饮片、药房与金额/品种上限划分处方单元。
+ * 门诊药品处方分方装箱：按医保医疗类别、药品性质、饮片、西药/中成药目录分类、药房与金额/品种上限划分处方单元。
  *
- * <p>纯领域算法，无 Spring 依赖；由 {@code MedicationRequestDomainService#splitPrescription} 调用。</p>
+ * <p>纯领域算法，无 Spring 依赖；由 {@code MedicationRequestDomainService#splitPrescription} 调用。
+ * 特殊管理药品判读字段为 {@code pharmacologyCategoryCode}（术语 medicine_properties），
+ * 禁止使用门诊拆分属性 {@code part_attribute_enum}。</p>
+ *
+ * <p>诊断：硬分区键不含诊断集；同分区内装箱时两包诊断集<strong>有交集即可同方</strong>
+ * （两侧皆空亦相容；一侧空一侧非空不相容）。方头展示诊断并集由读侧按 {@code prescription_no} 聚合。</p>
  */
 public final class OutpatientPrescriptionSplitPlanner {
 
@@ -56,7 +63,7 @@ public final class OutpatientPrescriptionSplitPlanner {
             }
             bucket.add(pack);
         }
-        // Loop：各 med_type+轨道+库房分区内做 greedy 装箱
+        // Loop：各 med_type+轨道+库房分区内做 greedy 装箱（诊断在桶内按交集相容）
         List<PrescriptionUnitPlan> units = new ArrayList<>();
         for (List<PrescriptionSplitPack> partitionPacks : byPartition.values()) {
             List<PrescriptionUnitPlan> partitionUnits = packPartition(partitionPacks, limit);
@@ -67,7 +74,7 @@ public final class OutpatientPrescriptionSplitPlanner {
 
     /**
      * 将同一分区内原子包做多轮装箱：每轮从待装队列中尽量填满一桶（≤5 行），
-     * 仅因同药同用法冲突暂跳过的包可在同轮继续尝试后续包，避免过早封桶导致 3+4 而非 5+2。
+     * 仅因同药同用法或诊断不相容暂跳过的包可在同轮继续尝试后续包，避免过早封桶导致 3+4 而非 5+2。
      *
      * @param packs        同一 med_type+轨道+库房分区内的原子包
      * @param amountLimit  单张处方金额上限（元）
@@ -180,14 +187,15 @@ public final class OutpatientPrescriptionSplitPlanner {
     }
 
     /**
-     * 西成药/麻精/毒性轨道是否超出单张处方医嘱行上限。
+     * 西药/中成药/麻精/毒性轨道是否超出单张处方医嘱行上限。
      *
-     * @param splitTrack  分方轨道
+     * @param splitTrack   分方轨道
      * @param requestCount 医嘱行数
      * @return 超限时 true
      */
     private static boolean exceedsWesternRequestLineLimit(String splitTrack, int requestCount) {
-        if (!PrescriptionSplitConstants.SPLIT_TRACK_WESTERN_PATENT.equals(splitTrack)
+        if (!PrescriptionSplitConstants.SPLIT_TRACK_WESTERN.equals(splitTrack)
+            && !PrescriptionSplitConstants.SPLIT_TRACK_CHINESE_PATENT.equals(splitTrack)
             && !PrescriptionSplitConstants.SPLIT_TRACK_NARCOTIC_PSYCH_ONE.equals(splitTrack)
             && !PrescriptionSplitConstants.SPLIT_TRACK_TOXIC.equals(splitTrack)) {
             return false;
@@ -319,7 +327,8 @@ public final class OutpatientPrescriptionSplitPlanner {
         private BigDecimal amountSum = BigDecimal.ZERO;
         private String splitTrack;
         private String medType;
-        private boolean herbalFlag;
+        /** 已装入行的诊断 id 并集（方头全集口径）。 */
+        private final Set<Long> diagnosisIdUnion = new LinkedHashSet<>();
 
         boolean canAbsorb(PrescriptionSplitPack pack, BigDecimal amountLimit) {
             if (pack == null) {
@@ -328,7 +337,7 @@ public final class OutpatientPrescriptionSplitPlanner {
             List<PrescriptionSplitLineEntry> mergedEntries = new ArrayList<>(entries);
             mergedEntries.addAll(pack.entries);
             int mergedRequestCount = countRequestLines(mergedEntries);
-            // 西药/麻精/毒性轨道：合并后医嘱行数不得超过 5（相同目录主键的多条 req 仍分别计入）
+            // 西药/中成药/麻精/毒性轨道：合并后医嘱行数不得超过 5（相同目录主键的多条 req 仍分别计入）
             if (exceedsWesternRequestLineLimit(pack.splitTrack, mergedRequestCount)) {
                 return false;
             }
@@ -341,7 +350,23 @@ public final class OutpatientPrescriptionSplitPlanner {
             if (nextAmount.compareTo(amountLimit) > 0) {
                 return false;
             }
+            // 空桶首包无诊断约束；其后须与桶内诊断并集有交集（或双侧皆空）
+            if (!entries.isEmpty() && !diagnosisCompatibleWithBin(pack)) {
+                return false;
+            }
             return true;
+        }
+
+        /**
+         * 待装包与桶内诊断并集是否相容（有交集 / 双侧皆空）。
+         *
+         * @param pack 待装原子包
+         * @return 相容时 true
+         */
+        private boolean diagnosisCompatibleWithBin(PrescriptionSplitPack pack) {
+            String binKey = EncounterDiagnosisIdsSupport.joinOrderedIds(new ArrayList<>(diagnosisIdUnion));
+            String packKey = EncounterDiagnosisIdsSupport.joinOrderedIds(new ArrayList<>(pack.diagnosisIds));
+            return EncounterDiagnosisIdsSupport.compatibleForSamePrescription(binKey, packKey);
         }
 
         void absorb(PrescriptionSplitPack pack) {
@@ -349,7 +374,7 @@ public final class OutpatientPrescriptionSplitPlanner {
             amountSum = amountSum.add(pack.amountSum);
             splitTrack = pack.splitTrack;
             medType = pack.medType;
-            herbalFlag = pack.herbalFlag;
+            diagnosisIdUnion.addAll(pack.diagnosisIds);
         }
 
         PrescriptionUnitPlan toPlan() {
@@ -357,7 +382,7 @@ public final class OutpatientPrescriptionSplitPlanner {
             for (PrescriptionSplitLineEntry entry : entries) {
                 requestIds.add(entry.requestId);
             }
-            String rxType = deriveRxTypeCode(splitTrack, herbalFlag, medType);
+            String rxType = deriveRxTypeCode(splitTrack, medType);
             return new PrescriptionUnitPlan(requestIds, rxType);
         }
     }
@@ -369,9 +394,9 @@ public final class OutpatientPrescriptionSplitPlanner {
         private final List<PrescriptionSplitLineEntry> entries = new ArrayList<>();
         private BigDecimal amountSum = BigDecimal.ZERO;
         private String medType;
+        private final Set<Long> diagnosisIds = new LinkedHashSet<>();
         private String splitTrack;
         private Long pharmacyLocationId;
-        private boolean herbalFlag;
 
         static PrescriptionSplitPack fromLine(PrescriptionSplitLineContext line) {
             PrescriptionSplitPack pack = new PrescriptionSplitPack();
@@ -386,15 +411,21 @@ public final class OutpatientPrescriptionSplitPlanner {
                 amountSum = amountSum.add(lineAmount);
             }
             medType = normalizeMedType(line.getMedType());
+            // 成组多行：诊断取并集（入参可为 canonical key 或原始 ids 串）
+            diagnosisIds.addAll(EncounterDiagnosisIdsSupport.toIdSetLenient(line.getDiagnosisSetKey()));
             splitTrack = resolveSplitTrack(line);
             pharmacyLocationId = line.getPharmacyLocationId();
-            herbalFlag = Boolean.TRUE.equals(line.getTcmFlag());
         }
 
         boolean hasDuplicateMedicationUsage() {
             return OutpatientPrescriptionSplitPlanner.hasDuplicateMedicationUsage(entries);
         }
 
+        /**
+         * 硬分区键：仅 medType + 轨道 + 库房（诊断改为桶内交集，不入键）。
+         *
+         * @return 分区键
+         */
         String partitionKey() {
             String med;
             if (medType == null) {
@@ -434,42 +465,64 @@ public final class OutpatientPrescriptionSplitPlanner {
     }
 
     /**
-     * 按药品性质与饮片标志判定分方轨道（P0′ 特殊药品 / 饮片 / 西药中成药）。
+     * 按药品性质、饮片标志与目录分类判定分方轨道（特殊药品 / 饮片 / 中成药 / 西药）。
+     *
+     * <p>先看 {@code pharmacologyCategoryCode}（药品性质）：非普通药走麻/精一/毒性独占轨；
+     * 普通药（含空值按普通）再按 {@code medicationCategoryCode} 分西药/中成药轨。
+     * 饮片以 {@code tcmFlag} 优先。不得读取门诊拆分属性。</p>
      *
      * @param line 行快照
      * @return 分方轨道码
      */
     private static String resolveSplitTrack(PrescriptionSplitLineContext line) {
-        // 饮片单独轨道，不与西药混方
+        // 饮片单独轨道，不与西药/中成药混方
         if (Boolean.TRUE.equals(line.getTcmFlag())) {
             return PrescriptionSplitConstants.SPLIT_TRACK_HERBAL;
         }
-        String part = line.getPartAttributeEnum();
-        if (part == null) {
-            part = PrescriptionSplitConstants.PART_ATTRIBUTE_NORMAL;
+        String medicineProperty = line.getPharmacologyCategoryCode();
+        // 未维护性质时按普通药，再走西药/中成药目录分类
+        if (medicineProperty == null) {
+            medicineProperty = PrescriptionSplitConstants.MEDICINE_PROPERTY_NORMAL;
         }
-        part = part.trim();
-        // 麻/精一须单独处方
-        if (PrescriptionSplitConstants.PART_ATTRIBUTE_NARCOTIC.equals(part)
-            || PrescriptionSplitConstants.PART_ATTRIBUTE_PSYCH_ONE.equals(part)) {
+        medicineProperty = medicineProperty.trim();
+        // 非普通：麻/精一须单独处方（码来自 medicine_properties，非拆零规则）
+        if (PrescriptionSplitConstants.MEDICINE_PROPERTY_NARCOTIC.equals(medicineProperty)
+            || PrescriptionSplitConstants.MEDICINE_PROPERTY_PSYCH_ONE.equals(medicineProperty)) {
             return PrescriptionSplitConstants.SPLIT_TRACK_NARCOTIC_PSYCH_ONE;
         }
-        // 毒性药品单独轨道
-        if (PrescriptionSplitConstants.PART_ATTRIBUTE_TOXIC.equals(part)) {
+        // 非普通：毒性药品单独轨道
+        if (PrescriptionSplitConstants.MEDICINE_PROPERTY_TOXIC.equals(medicineProperty)) {
             return PrescriptionSplitConstants.SPLIT_TRACK_TOXIC;
         }
-        return PrescriptionSplitConstants.SPLIT_TRACK_WESTERN_PATENT;
+        // 普通药（含精二）：中成药与西药分轨
+        if (isChinesePatentCategory(line.getMedicationCategoryCode())) {
+            return PrescriptionSplitConstants.SPLIT_TRACK_CHINESE_PATENT;
+        }
+        return PrescriptionSplitConstants.SPLIT_TRACK_WESTERN;
+    }
+
+    /**
+     * 判定药品目录分类是否为中成药。
+     *
+     * @param medicationCategoryCode {@code medication_category_code}
+     * @return 中成药时 true
+     */
+    private static boolean isChinesePatentCategory(String medicationCategoryCode) {
+        if (StringUtils.isEmpty(medicationCategoryCode)) {
+            return false;
+        }
+        return DailySettlementSharedConstants.MEDICATION_CATEGORY_PATENT_CHINESE_CODE
+            .equals(medicationCategoryCode.trim());
     }
 
     /**
      * 按轨道与医保医疗类别推导处方类别码（355）。
      *
      * @param splitTrack 分方轨道
-     * @param herbalFlag 是否饮片方
      * @param medType    医保医疗类别 code
      * @return {@code rx_type_code}
      */
-    private static String deriveRxTypeCode(String splitTrack, boolean herbalFlag, String medType) {
+    private static String deriveRxTypeCode(String splitTrack, String medType) {
         // 麻/精一处方类别固定为 7
         if (PrescriptionSplitConstants.SPLIT_TRACK_NARCOTIC_PSYCH_ONE.equals(splitTrack)) {
             return PrescriptionSplitConstants.RX_TYPE_NARCOTIC_PSYCH_ONE;
@@ -480,7 +533,8 @@ public final class OutpatientPrescriptionSplitPlanner {
         }
         boolean emergency = YbMedType.EMERGENCY.getCode().equals(medType);
         boolean pediatric = isPediatricMedType(medType);
-        if (herbalFlag) {
+        // 中药饮片：急诊/儿科抬升
+        if (PrescriptionSplitConstants.SPLIT_TRACK_HERBAL.equals(splitTrack)) {
             if (emergency) {
                 return PrescriptionSplitConstants.RX_TYPE_EMERGENCY_HERBAL;
             }
@@ -488,6 +542,16 @@ public final class OutpatientPrescriptionSplitPlanner {
                 return PrescriptionSplitConstants.RX_TYPE_PEDIATRIC_HERBAL;
             }
             return PrescriptionSplitConstants.RX_TYPE_OUTPATIENT_HERBAL;
+        }
+        // 中成药：与西药对称抬升急诊/儿科类别
+        if (PrescriptionSplitConstants.SPLIT_TRACK_CHINESE_PATENT.equals(splitTrack)) {
+            if (emergency) {
+                return PrescriptionSplitConstants.RX_TYPE_EMERGENCY_PATENT;
+            }
+            if (pediatric) {
+                return PrescriptionSplitConstants.RX_TYPE_PEDIATRIC_PATENT;
+            }
+            return PrescriptionSplitConstants.RX_TYPE_OUTPATIENT_PATENT;
         }
         if (emergency) {
             return PrescriptionSplitConstants.RX_TYPE_EMERGENCY_WESTERN;

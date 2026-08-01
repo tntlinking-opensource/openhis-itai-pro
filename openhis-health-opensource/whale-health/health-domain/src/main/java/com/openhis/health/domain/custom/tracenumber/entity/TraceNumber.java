@@ -51,6 +51,14 @@ public class TraceNumber extends BaseAuditedEntity {
     @Column(name = "trace_unit_code", nullable = false, length = 64)
     private String traceUnitCode;
 
+    /**
+     * 建码时 1 个追溯码单位对应的拆零数量快照（来自当时药典 {@code trace_unit_ratio}）。
+     *
+     * <p>发退/应扫换算优先本列；药典日后变更不回写。</p>
+     */
+    @Column(name = "trace_unit_ratio", precision = 18, scale = 6)
+    private BigDecimal traceUnitRatio;
+
     /** 拆零剩余量（最小单位）。 */
     @Column(name = "remaining_split_quantity", nullable = false, precision = 18, scale = 4)
     private BigDecimal remainingSplitQuantity;
@@ -81,6 +89,10 @@ public class TraceNumber extends BaseAuditedEntity {
         }
         if (StringUtils.isEmpty(this.traceUnitCode)) {
             throw new BusinessException(ErrorCodeConstants.TRACE_NUMBER_INVALID_ARGUMENT, "追溯码单位不能为空");
+        }
+        // 建码须落比例快照，否则发退无法在药典变更后仍按原贴码层级换算
+        if (this.traceUnitRatio == null || this.traceUnitRatio.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ErrorCodeConstants.TRACE_NUMBER_INVALID_ARGUMENT, "追溯码单位换算比快照须大于 0");
         }
         if (this.remainingSplitQuantity == null) {
             throw new BusinessException(ErrorCodeConstants.TRACE_NUMBER_INVALID_ARGUMENT, "拆零剩余量不能为空");

@@ -28,6 +28,10 @@ public class LoadNurseStationNursingRecordInitResponse {
     @Schema(description = "常用体征项选项")
     private List<OptionDto> vitalSignItemOptions;
 
+    /** 意识状态下拉选项。 */
+    @Schema(description = "意识状态下拉选项")
+    private List<OptionDto> consciousnessOptions;
+
     /** 默认周区间说明。 */
     @Schema(description = "默认周区间说明")
     private String defaultWeekRangeDescription;

@@ -13,6 +13,9 @@ import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.application.shared.advice.AdviceChargeDisplayStatusAssembler;
 import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler;
 import com.openhis.health.application.shared.advice.OrderRequestCatalogWarmAssembler;
+import com.openhis.health.application.shared.product.MedicationDosageDisplayAssembler;
+import com.openhis.health.application.shared.product.MedicationDosageDisplayAssembler.MedicationDosageDisplayResult;
+import com.openhis.health.application.shared.product.MedicationMerchandiseDisplaySupport;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.application.shared.advice.AdviceExtensionJsonParser.AdvicePackageChildItemDto;
@@ -20,6 +23,7 @@ import com.openhis.health.application.shared.advice.AdviceExtensionJsonParser;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.application.shared.advice.OrderRequestCatalogWarmContext;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
+import com.openhis.health.domain.share.utils.EncounterDiagnosisIdsSupport;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.DoctorStationAdviceConstants;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
@@ -27,6 +31,8 @@ import com.openhis.health.domain.share.enums.ClinicalStatus;
 import com.openhis.health.domain.share.enums.EnumInterface;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceRowDto;
+import com.openhis.health.domain.administration.encounter.entity.EncounterDiagnosis;
+import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
@@ -62,6 +68,7 @@ import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRe
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import com.openhis.health.application.shared.advice.ServiceRequestDetailListAssembler;
+import com.openhis.health.application.shared.financial.ContractExpenseNatureAssembler;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
@@ -121,10 +128,14 @@ public class DoctorStationAdviceListAssembler {
     private final CodeSystemQueryService codeSystemQueryService;
     /** 诊断定义 id → 展示名（药品行 {@link DoctorStationAdviceRowDto#getConditionDefinitionName()}）。 */
     private final ConditionDefinitionQueryService conditionDefinitionQueryService;
+    /** 就诊诊断读侧：由 {@code encounterDiagnosisIds} 解析诊断定义展示名。 */
+    private final EncounterQueryService encounterQueryService;
     /** 库位名称批量解析（FIFO 发放首选库位展示）。 */
     private final LocationQueryService locationQueryService;
     /** 机构/科室名称批量解析（诊疗执行科室 org_id 展示）。 */
     private final OrganizationQueryService organizationQueryService;
+    /** 费用性质：药嘱 contract_id → ContractCategory 分类文案（处方笺展示）。 */
+    private final ContractExpenseNatureAssembler contractExpenseNatureAssembler;
 
     /** 诊疗套餐子项批量加载（B.6.2，禁止透出 children_json 串）。 */
     private final ActivityDefinitionQueryService activityDefinitionQueryService;
@@ -213,9 +224,10 @@ public class DoctorStationAdviceListAssembler {
         Set<Long> activityDefIds = new HashSet<>();
         Set<Long> deviceDefIds = new HashSet<>();
         Set<Long> practitionerIds = new HashSet<>();
-        Set<Long> adviceConditionDefinitionIds = new HashSet<>();
+        Set<Long> adviceEncounterDiagnosisIds = new HashSet<>();
         Set<Long> servicePerformOrgIds = new HashSet<>();
-        // Loop：扫描药品行，收集定义 id、开立者与关联诊断，供后续批量预热与展示回填。
+        Set<Long> medicationContractIds = new HashSet<>();
+        // Loop：扫描药品行，收集定义 id、开立者、绑定诊断与费用性质，供后续批量预热与展示回填。
         for (MedicationRequestListQueryModel row : medicationRows) {
             if (row.getMedicationId() != null) {
                 medicationDefIds.add(row.getMedicationId());
@@ -226,11 +238,12 @@ public class DoctorStationAdviceListAssembler {
             if (row.getRequesterId() != null) {
                 practitionerIds.add(row.getRequesterId());
             }
-            if (row.getConditionDefinitionId() != null) {
-                adviceConditionDefinitionIds.add(row.getConditionDefinitionId());
+            collectEncounterDiagnosisIdsFromIds(row.getEncounterDiagnosisIds(), adviceEncounterDiagnosisIds);
+            if (row.getContractId() != null) {
+                medicationContractIds.add(row.getContractId());
             }
         }
-        // Loop：扫描诊疗行，收集活动定义 id、开立者、诊断定义 id、执行科室 org_id。
+        // Loop：扫描诊疗行，收集活动定义 id、开立者、绑定诊断 id、执行科室 org_id。
         for (ServiceRequestListModel row : serviceRows) {
             if (row.getActivityId() != null) {
                 activityDefIds.add(row.getActivityId());
@@ -238,9 +251,7 @@ public class DoctorStationAdviceListAssembler {
             if (row.getRequesterId() != null) {
                 practitionerIds.add(row.getRequesterId());
             }
-            if (row.getConditionDefinitionId() != null) {
-                adviceConditionDefinitionIds.add(row.getConditionDefinitionId());
-            }
+            collectEncounterDiagnosisIdsFromIds(row.getEncounterDiagnosisIds(), adviceEncounterDiagnosisIds);
             if (row.getOrgId() != null) {
                 servicePerformOrgIds.add(row.getOrgId());
             }
@@ -248,7 +259,7 @@ public class DoctorStationAdviceListAssembler {
                 servicePerformOrgIds.add(row.getLocationId());
             }
         }
-        // Loop：扫描耗材行，收集器材定义 id、开立者与诊断定义 id。
+        // Loop：扫描耗材行，收集器材定义 id、开立者与绑定诊断 id。
         for (DeviceRequestListModel row : deviceRows) {
             if (row.getDeviceDefId() != null) {
                 deviceDefIds.add(row.getDeviceDefId());
@@ -256,8 +267,17 @@ public class DoctorStationAdviceListAssembler {
             if (row.getRequesterId() != null) {
                 practitionerIds.add(row.getRequesterId());
             }
-            if (row.getConditionDefinitionId() != null) {
-                adviceConditionDefinitionIds.add(row.getConditionDefinitionId());
+            collectEncounterDiagnosisIdsFromIds(row.getEncounterDiagnosisIds(), adviceEncounterDiagnosisIds);
+        }
+
+        Map<Long, Long> conditionDefinitionIdByEncounterDiagnosisId = new HashMap<>();
+        Set<Long> adviceConditionDefinitionIds = new HashSet<>();
+        if (!adviceEncounterDiagnosisIds.isEmpty()) {
+            for (EncounterDiagnosis ed : encounterQueryService.listEncounterDiagnosisEntitiesByIds(adviceEncounterDiagnosisIds)) {
+                if (ed.getId() != null && ed.getConditionDefinitionId() != null) {
+                    conditionDefinitionIdByEncounterDiagnosisId.put(ed.getId(), ed.getConditionDefinitionId());
+                    adviceConditionDefinitionIds.add(ed.getConditionDefinitionId());
+                }
             }
         }
 
@@ -272,6 +292,9 @@ public class DoctorStationAdviceListAssembler {
         Map<Long, String> servicePerformOrgNameById = organizationQueryService.mapNamesByIds(servicePerformOrgIds);
         Map<Long, String> conditionDefinitionDisplayByDefinitionId =
             loadConditionDefinitionDisplayNames(adviceConditionDefinitionIds);
+        // Pre：费用性质分类文案（contract_id → 自费/公费/省医保/市医保/职工医保）
+        Map<Long, String> feeNatureTextByContractId =
+            this.contractExpenseNatureAssembler.mapCategoryTextByContractIdIn(medicationContractIds);
 
         Map<String, String> unitLabelByCode =
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.UNIT_CODE);
@@ -366,7 +389,9 @@ public class DoctorStationAdviceListAssembler {
             line.setProductTableName(TableNameConstants.MED_MEDICATION_DEFINITION);
             MedicationDefinition def = medicationDefinitionById.get(medicationRow.getMedicationId());
             if (def != null) {
-                line.setAdviceDisplayName(def.getName());
+                // Asm：页面查处方展示名 = 通用名(商品名)；无商品名不拼空括号（打印勿复用本口径）
+                line.setAdviceDisplayName(MedicationMerchandiseDisplaySupport.formatDisplayName(
+                    def.getName(), def.getMerchandiseName()));
                 line.setSpecificationText(StringUtils.defaultIfBlank(def.getTotalVolume(), def.getComprisedText()));
             }
             line.setQuantity(medicationRow.getQuantity());
@@ -380,6 +405,16 @@ public class DoctorStationAdviceListAssembler {
             line.setDoseUnitCode(medicationRow.getDoseUnitCode());
             line.setDoseUnitName(ProductDefinitionCatalogUnitBandsAssembler.resolveDoseUnitDisplayName(
                 doseUnitLabelByCode, medicationRow.getDoseUnitCode(), medProduct));
+            // Asm：单次剂量展示串 + 拆零结构化字段（单位相同时无括号）
+            MedicationDosageDisplayResult dosageResult = MedicationDosageDisplayAssembler.build(
+                medicationRow.getDose(),
+                medicationRow.getDoseUnitCode(),
+                doseUnitLabelByCode,
+                medProduct);
+            line.setDosageDisplay(dosageResult.getDosageDisplay());
+            line.setSplitDose(dosageResult.getSplitDose());
+            line.setSplitDoseUnitCode(dosageResult.getSplitDoseUnitCode());
+            line.setSplitDoseUnitName(dosageResult.getSplitDoseUnitName());
             line.setMethodCode(medicationRow.getMethodCode());
             line.setMethodName(TcmMethodCodeDisplayAssembler.resolveMethodDisplayName(
                 tcmMethodLabelByCode, methodLabelByCode, medicationRow.getTcmFlag(), medicationRow.getMethodCode()));
@@ -410,24 +445,36 @@ public class DoctorStationAdviceListAssembler {
             }
             line.setInjectionFlag(medicationRow.getInfusionFlag());
             line.setInjectionFlagText(formatYesNoChinese(medicationRow.getInfusionFlag()));
-            line.setConditionDefinitionId(medicationRow.getConditionDefinitionId());
-            line.setEncounterDiagnosisId(medicationRow.getEncounterDiagnosisId());
-            if (medicationRow.getConditionDefinitionId() != null) {
-                line.setConditionDefinitionName(
-                    conditionDefinitionDisplayByDefinitionId.get(medicationRow.getConditionDefinitionId()));
-            }
+            line.setEncounterDiagnosisIds(medicationRow.getEncounterDiagnosisIds());
+            line.setConditionDefinitionName(resolveConditionDefinitionDisplayNames(
+                medicationRow.getEncounterDiagnosisIds(),
+                conditionDefinitionIdByEncounterDiagnosisId,
+                conditionDefinitionDisplayByDefinitionId));
             line.setDecoctionDelegatedFlag(medicationRow.getSufferingFlag());
             line.setChineseHerbsDoseQuantity(toIntegerHerbDoses(medicationRow.getChineseHerbsDoseQuantity(), medicationRow.getTcmFlag()));
             line.setBasedOnServiceRequestId(resolveBasedOnServiceRequestId(medicationRow.getBasedOnTable(), medicationRow.getBasedOnId()));
             line.setPrescriptionNo(medicationRow.getPrescriptionNo());
             line.setGroupId(medicationRow.getGroupId());
+            // 组套标识：成组药嘱与 groupId 同源，供绑定耗材 package_id 对齐
+            line.setPackageId(medicationRow.getPackageId());
             line.setAuthoredById(medAuthorId);
             line.setAuthoredByName(practitionerNameById.get(medAuthorId));
-            line.setAuthoredAt(formatAuthoredInstantForApi(medicationRow.getReqAuthoredTime()));
-            line.setEndTime(formatAuthoredInstantForApi(medicationRow.getEffectiveDoseEnd()));
+            // 时间字段与落库列同名：开立 / 签发 / 停嘱。
+            LocalDateTime medOpenedAt = medicationRow.getReqOpenedTime();
+            if (medOpenedAt == null) {
+                medOpenedAt = medicationRow.getReqAuthoredTime();
+            }
+            line.setReqOpenedTime(formatRequestInstantForApi(medOpenedAt));
+            line.setReqAuthoredTime(formatRequestInstantForApi(medicationRow.getReqAuthoredTime()));
+            line.setStopTime(formatRequestInstantForApi(medicationRow.getStopTime()));
             line.setSortNumber(medicationRow.getSortNumber());
             line.setStatusEnum(medicationRow.getStatusEnum());
             line.setStatusEnumText(resolveRequestStatusDisplay(medicationRow.getStatusEnum()));
+            // 费用性质：药嘱 contract_id + 分类文案（处方笺展示）
+            line.setContractId(medicationRow.getContractId());
+            if (medicationRow.getContractId() != null) {
+                line.setFeeNatureText(feeNatureTextByContractId.get(medicationRow.getContractId()));
+            }
             applyChargeRollup(line, medicationRollup.get(medicationRow.getId()));
             fillLineAmountByUnitAndQuantity(line);
             line.setIsAuthoredByCurrentUser(resolveIsMine(currentUserId, medAuthorId));
@@ -495,16 +542,21 @@ public class DoctorStationAdviceListAssembler {
             line.setBasedOnServiceRequestId(resolveBasedOnServiceRequestId(serviceRow.getBasedOnTable(), serviceRow.getBasedOnId()));
             line.setBasedOnMedicationRequestId(
                 resolveBasedOnMedicationRequestId(serviceRow.getBasedOnTable(), serviceRow.getBasedOnId()));
-            line.setConditionDefinitionId(serviceRow.getConditionDefinitionId());
-            line.setEncounterDiagnosisId(serviceRow.getEncounterDiagnosisId());
-            if (serviceRow.getConditionDefinitionId() != null) {
-                line.setConditionDefinitionName(
-                    conditionDefinitionDisplayByDefinitionId.get(serviceRow.getConditionDefinitionId()));
-            }
+            line.setEncounterDiagnosisIds(serviceRow.getEncounterDiagnosisIds());
+            line.setConditionDefinitionName(resolveConditionDefinitionDisplayNames(
+                serviceRow.getEncounterDiagnosisIds(),
+                conditionDefinitionIdByEncounterDiagnosisId,
+                conditionDefinitionDisplayByDefinitionId));
             line.setAuthoredById(serviceRow.getRequesterId());
             line.setAuthoredByName(practitionerNameById.get(serviceRow.getRequesterId()));
-            line.setAuthoredAt(formatAuthoredInstantForApi(serviceRow.getReqAuthoredTime()));
-            line.setEndTime(formatAuthoredInstantForApi(serviceRow.getOccurrenceEndTime()));
+            // 时间字段与落库列同名：开立 / 签发 / 停嘱。
+            LocalDateTime svcOpenedAt = serviceRow.getReqOpenedTime();
+            if (svcOpenedAt == null) {
+                svcOpenedAt = serviceRow.getReqAuthoredTime();
+            }
+            line.setReqOpenedTime(formatRequestInstantForApi(svcOpenedAt));
+            line.setReqAuthoredTime(formatRequestInstantForApi(serviceRow.getReqAuthoredTime()));
+            line.setStopTime(formatRequestInstantForApi(serviceRow.getStopTime()));
             line.setSortNumber(serviceRow.getSortNumber());
             line.setStatusEnum(serviceRow.getStatusEnum());
             line.setStatusEnumText(resolveRequestStatusDisplay(serviceRow.getStatusEnum()));
@@ -564,15 +616,25 @@ public class DoctorStationAdviceListAssembler {
             line.setPerformLocationId(deviceRow.getPerformLocation());
             line.setRemark(deviceRow.getRemark());
             line.setBasedOnServiceRequestId(resolveBasedOnServiceRequestId(deviceRow.getBasedOnTable(), deviceRow.getBasedOnId()));
-            line.setConditionDefinitionId(deviceRow.getConditionDefinitionId());
-            line.setEncounterDiagnosisId(deviceRow.getEncounterDiagnosisId());
-            if (deviceRow.getConditionDefinitionId() != null) {
-                line.setConditionDefinitionName(
-                    conditionDefinitionDisplayByDefinitionId.get(deviceRow.getConditionDefinitionId()));
-            }
+            // 用法绑定派生耗材：based_on 指向药嘱时暴露 basedOnMedicationRequestId；packageId 与主药组套对齐
+            line.setBasedOnMedicationRequestId(
+                resolveBasedOnMedicationRequestId(deviceRow.getBasedOnTable(), deviceRow.getBasedOnId()));
+            line.setPackageId(deviceRow.getPackageId());
+            line.setEncounterDiagnosisIds(deviceRow.getEncounterDiagnosisIds());
+            line.setConditionDefinitionName(resolveConditionDefinitionDisplayNames(
+                deviceRow.getEncounterDiagnosisIds(),
+                conditionDefinitionIdByEncounterDiagnosisId,
+                conditionDefinitionDisplayByDefinitionId));
             line.setAuthoredById(deviceRow.getRequesterId());
             line.setAuthoredByName(practitionerNameById.get(deviceRow.getRequesterId()));
-            line.setAuthoredAt(formatAuthoredInstantForApi(deviceRow.getReqAuthoredTime()));
+            // 时间字段与落库列同名：开立 / 签发。
+            LocalDateTime deviceOpenedAt = deviceRow.getReqOpenedTime();
+            if (deviceOpenedAt == null) {
+                deviceOpenedAt = deviceRow.getReqAuthoredTime();
+            }
+            line.setReqOpenedTime(formatRequestInstantForApi(deviceOpenedAt));
+            line.setReqAuthoredTime(formatRequestInstantForApi(deviceRow.getReqAuthoredTime()));
+            line.setStopTime(formatRequestInstantForApi(deviceRow.getStopTime()));
             line.setSortNumber(deviceRow.getSortNumber());
             line.setStatusEnum(deviceRow.getStatusEnum());
             line.setStatusEnumText(resolveRequestStatusDisplay(deviceRow.getStatusEnum()));
@@ -595,7 +657,7 @@ public class DoctorStationAdviceListAssembler {
             .comparing((DoctorStationAdviceRowDto row) ->
                 ServiceApplyFormOrchestrator.resolveApplyFormGroupingSortKey(row.getPrescriptionNo()))
             .thenComparing(DoctorStationAdviceRowDto::getSortNumber, Comparator.nullsLast(Comparator.naturalOrder()))
-            .thenComparing(DoctorStationAdviceRowDto::getAuthoredAt, Comparator.nullsLast(Comparator.reverseOrder()))
+            .thenComparing(this::resolveAdviceOpenedInstantForSort, Comparator.nullsLast(Comparator.reverseOrder()))
             .thenComparing(DoctorStationAdviceRowDto::getRequestId, Comparator.nullsLast(Comparator.naturalOrder())));
         return unifiedRows;
     }
@@ -842,6 +904,58 @@ public class DoctorStationAdviceListAssembler {
             map.put(p.getId(), p.getName());
         }
         return map;
+    }
+
+    /**
+     * 从医嘱绑定 ids 串 收集就诊诊断主键（去重写入 target）。
+     *
+     * @param idsText    {@code encounter_diagnosis_ids} 原始串
+     * @param target 收集容器
+     */
+    private static void collectEncounterDiagnosisIdsFromIds(String idsText, Set<Long> target) {
+        if (target == null || StringUtils.isEmpty(idsText)) {
+            return;
+        }
+        String[] parts = idsText.split(",");
+        for (String part : parts) {
+            if (StringUtils.isEmpty(part)) {
+                continue;
+            }
+            String trimmed = part.trim();
+            if (StringUtils.isEmpty(trimmed)) {
+                continue;
+            }
+            try {
+                target.add(Long.parseLong(trimmed));
+            } catch (NumberFormatException ignored) {
+                // 跳过非法段，避免整表装配失败
+            }
+        }
+    }
+
+    /**
+     * 按绑定 ids 全量拼诊断展示名（顿号；读侧一药多诊断回显）。
+     *
+     * @param idsText {@code encounter_diagnosis_ids}
+     * @param conditionDefinitionIdByEncounterDiagnosisId 就诊诊断 id → 诊断定义 id
+     * @param conditionDefinitionDisplayByDefinitionId    诊断定义 id → 名称
+     * @return 拼接名；无命中时 null
+     */
+    private static String resolveConditionDefinitionDisplayNames(
+        String idsText,
+        Map<Long, Long> conditionDefinitionIdByEncounterDiagnosisId,
+        Map<Long, String> conditionDefinitionDisplayByDefinitionId) {
+        return EncounterDiagnosisIdsSupport.joinOrderedDisplayNames(idsText, encounterDiagnosisId -> {
+            if (conditionDefinitionIdByEncounterDiagnosisId == null
+                || conditionDefinitionDisplayByDefinitionId == null) {
+                return null;
+            }
+            Long definitionId = conditionDefinitionIdByEncounterDiagnosisId.get(encounterDiagnosisId);
+            if (definitionId == null) {
+                return null;
+            }
+            return conditionDefinitionDisplayByDefinitionId.get(definitionId);
+        });
     }
 
     /**
@@ -1208,14 +1322,31 @@ public class DoctorStationAdviceListAssembler {
     /**
      * 开立/业务时刻格式化为 API 约定 ISO local 字符串。
      *
-     * @param authoredTime 时刻
+     * @param instant 时刻
      * @return 格式化串；{@code null} 入参返回 {@code null}
      */
-    private String formatAuthoredInstantForApi(LocalDateTime authoredTime) {
-        if (authoredTime == null) {
+    private String formatRequestInstantForApi(LocalDateTime instant) {
+        if (instant == null) {
             return null;
         }
-        return GeneralSharedConstants.ISO_LOCAL_DATE_TIME_FORMATTER.format(authoredTime);
+        return GeneralSharedConstants.ISO_LOCAL_DATE_TIME_FORMATTER.format(instant);
+    }
+
+    /**
+     * 单行开立排序键：优先 {@code reqOpenedTime}，空则回落 {@code reqAuthoredTime}。
+     *
+     * @param row 列表行
+     * @return ISO 本地时间串；皆空时 null
+     */
+    private String resolveAdviceOpenedInstantForSort(DoctorStationAdviceRowDto row) {
+        if (row == null) {
+            return null;
+        }
+        // 业务主轴：开立时刻优先，空则回落签发追溯列。
+        if (row.getReqOpenedTime() != null) {
+            return row.getReqOpenedTime();
+        }
+        return row.getReqAuthoredTime();
     }
 
     /**
@@ -1301,9 +1432,9 @@ public class DoctorStationAdviceListAssembler {
             merged.addAll(assembleAdviceQueryRows(
                 historyEncounterId, patientId, false, null, orderingDepartmentId, requestStatusEnumIn));
         }
-        // Asm：跨就诊结果按开立时间倒序，同时间再按就诊倒序。
+        // Asm：跨就诊结果按开立时间（空则签发）倒序，同时间再按就诊倒序。
         merged.sort(Comparator
-            .comparing(DoctorStationAdviceRowDto::getAuthoredAt, Comparator.nullsLast(Comparator.reverseOrder()))
+            .comparing(this::resolveAdviceOpenedInstantForSort, Comparator.nullsLast(Comparator.reverseOrder()))
             .thenComparing(DoctorStationAdviceRowDto::getEncounterId, Comparator.nullsLast(Comparator.reverseOrder())));
         return merged;
     }

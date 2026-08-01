@@ -21,5 +21,13 @@ public class InvUpload3501Command {
     private Long sourceId;
     /** 缺省 STOCKTAKE；初始化传 INIT */
     private String sourceType;
+    /**
+     * 操作人主键：异步出站由调用线程写入；空则编排器回落登录态。
+     */
+    private Long operatorId;
+    /**
+     * 操作人姓名：异步出站由调用线程写入；空则签到解析回落。
+     */
+    private String operatorName;
     private List<InvUploadLineCommand> lines = new ArrayList<>();
 }

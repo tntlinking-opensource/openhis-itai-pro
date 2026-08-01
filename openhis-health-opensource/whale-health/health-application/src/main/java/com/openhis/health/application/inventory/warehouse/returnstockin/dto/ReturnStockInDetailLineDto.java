@@ -4,6 +4,7 @@
  */
 package com.openhis.health.application.inventory.warehouse.returnstockin.dto;
 
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
@@ -45,6 +46,14 @@ public class ReturnStockInDetailLineDto {
     @Schema(description = "批号 lotNumber")
     private String lotNumber;
 
+    /** 效期起 startTime。 */
+    @Schema(description = "效期起 startTime")
+    private LocalDateTime startTime;
+
+    /** 效期止 endTime。 */
+    @Schema(description = "效期止 endTime")
+    private LocalDateTime endTime;
+
     /** 追溯码 traceNo。 */
     @Schema(description = "追溯码 traceNo")
     private String traceNo;
@@ -64,4 +73,17 @@ public class ReturnStockInDetailLineDto {
     /** 产品名称 productName。 */
     @Schema(description = "产品名称 productName")
     private String productName;
+
+    /** 计量单位展示名（详情数量列回显；由产品读模型解析，禁止用 unitCode 冒充）。 */
+    @Schema(description = "计量单位展示名")
+    private String unitCodeDictText;
+
+    /**
+     * 产品目录编辑提示（含 unitBands）。
+     *
+     * <p>供前端 {@code hydrateInventoryDetailLineQtyForGrid} 将落库 SPLIT 数量换算为展示计量带；
+     * 不改变 {@link #itemQuantity} 落库语义，不读当前目录价覆盖行价（BR-PRICE-SRC-001）。</p>
+     */
+    @Schema(description = "产品目录 productCatalog")
+    private ProductDefinitionCatalogEditorHintsDto productCatalog;
 }

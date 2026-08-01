@@ -31,6 +31,8 @@ public class UpdateReturnToWarehouseRequest {
     private Integer categoryEnum;
     /** 供应商主键。 */
     private Long supplierId;
+    /** 经手人主键。 */
+    private Long practitionerId;
     /** 明细行列表。 */
     private List<ReturnToWarehouseLineDto> lines;
     /** 禁止传入；传入时应用层返回 DEPT_RTW_105。 */

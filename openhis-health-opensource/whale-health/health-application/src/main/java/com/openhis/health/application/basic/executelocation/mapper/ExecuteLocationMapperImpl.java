@@ -33,6 +33,7 @@ public class ExecuteLocationMapperImpl implements ExecuteLocationMapper {
         }
         ExecuteLocationDto dto = new ExecuteLocationDto();
         dto.setId(model.getId());
+        dto.setOrganizationId(model.getOrganizationId());
         dto.setActivityDefinitionId(model.getActivityDefinitionId());
         dto.setActivityCategoryCode(model.getActivityCategoryCode());
         dto.setExecutionOrgId(model.getExecutionOrgId());
@@ -83,6 +84,7 @@ public class ExecuteLocationMapperImpl implements ExecuteLocationMapper {
         }
         UpdateExecutionRuleCommand command = new UpdateExecutionRuleCommand();
         command.setId(request.getId());
+        command.setOrganizationId(request.getOrganizationId());
         command.setActivityDefinitionId(request.getActivityDefinitionId());
         command.setActivityCategoryCode(request.getActivityCategoryCode());
         command.setExecutionOrgId(request.getExecutionOrgId());

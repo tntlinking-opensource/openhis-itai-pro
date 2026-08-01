@@ -42,6 +42,29 @@ public class DoctorStationAdviceDraftLineRequest {
     @Schema(description = "医生站列表展示排序号（可选，小靠前）")
     private Integer sortNumber;
 
+    /**
+     * 派生绑定行来源锚表（IF-DOR-23→IF-DOR-14；如 {@code med_medication_request}）。
+     * 与 {@link #basedOnId} 成对；普通手工开立行可空。
+     */
+    @Schema(description = "派生绑定行 based_on 表名；与 basedOnId 成对")
+    private String basedOnTable;
+
+    /**
+     * 派生绑定行来源锚主键（成组药嘱可任取组内一条 MR id；非成组即触发行 requestId）。
+     * 与 {@link #basedOnTable} 成对。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "派生绑定行 based_on 主键；与 basedOnTable 成对")
+    private Long basedOnId;
+
+    /**
+     * 组套标识（成组用法绑定耗材与主药嘱 {@code package_id}/{@code group_id} 对齐；非成组可空）。
+     * 持久化至耗材请求 {@code wkf_device_request.package_id}；诊疗申请无该列。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "组套标识；成组绑定耗材与主药 package_id 对齐")
+    private Long packageId;
+
     /** 药品载荷。 */
     @Schema(description = "药品载荷")
     private SaveMedicationAdviceDraftLinePayload medicationPayload;

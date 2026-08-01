@@ -46,7 +46,7 @@ public class OutpatientFeeDetailMapperImpl implements OutpatientFeeDetailMapper 
         this.applyFilterFields(query, request.getDateFrom(), request.getDateTo(),
             request.getRegistrationDepartmentId(), request.getFeeCategoryCodes(), request.getSubCategoryCodes(),
             request.getPatientKeyword(), request.getProductNameKeyword(), request.getProductCodeKeyword(),
-            request.getCashierId(), request.getTradeDirection());
+            request.getCashierId(), request.getTradeDirection(), request.getFeeNatureContractNo());
         return query;
     }
 
@@ -64,7 +64,7 @@ public class OutpatientFeeDetailMapperImpl implements OutpatientFeeDetailMapper 
         this.applyFilterFields(query, request.getDateFrom(), request.getDateTo(),
             request.getRegistrationDepartmentId(), request.getFeeCategoryCodes(), request.getSubCategoryCodes(),
             request.getPatientKeyword(), request.getProductNameKeyword(), request.getProductCodeKeyword(),
-            request.getCashierId(), request.getTradeDirection());
+            request.getCashierId(), request.getTradeDirection(), request.getFeeNatureContractNo());
         return query;
     }
 
@@ -94,7 +94,8 @@ public class OutpatientFeeDetailMapperImpl implements OutpatientFeeDetailMapper 
         List<OptionDto> activitySubCategoryOptions,
         List<OptionDto> deviceSubCategoryOptions,
         List<OptionDto> registrationDepartmentOptions,
-        List<OptionDto> cashierOptions) {
+        List<OptionDto> cashierOptions,
+        List<OptionDto> feeNatureOptions) {
         LoadOutpatientFeeDetailPageInitResponse response = new LoadOutpatientFeeDetailPageInitResponse();
         response.setDefaultDateFrom(defaultDateFrom);
         response.setDefaultDateTo(defaultDateTo);
@@ -106,6 +107,7 @@ public class OutpatientFeeDetailMapperImpl implements OutpatientFeeDetailMapper 
         response.setDeviceSubCategoryOptions(deviceSubCategoryOptions);
         response.setRegistrationDepartmentOptions(registrationDepartmentOptions);
         response.setCashierOptions(cashierOptions);
+        response.setFeeNatureOptions(feeNatureOptions);
         return response;
     }
 
@@ -161,6 +163,8 @@ public class OutpatientFeeDetailMapperImpl implements OutpatientFeeDetailMapper 
             row.setPatientName(block.getPatientName());
             row.setBusNo(block.getBusNo());
             row.setRegistrationDepartmentName(block.getRegistrationDepartmentName());
+            row.setFeeNatureDisplay(block.getFeeNatureDisplay());
+            row.setMedTypeDisplay(block.getMedTypeDisplay());
         }
         row.setFeeCategoryDisplay(line.getFeeCategoryDisplay());
         row.setSubCategoryDisplay(line.getSubCategoryDisplay());
@@ -174,15 +178,11 @@ public class OutpatientFeeDetailMapperImpl implements OutpatientFeeDetailMapper 
         row.setBillDate(line.getBillDate());
         row.setInsuranceLevelDisplay(line.getInsuranceLevelDisplay());
         row.setInsuranceTypeDisplay(line.getInsuranceTypeDisplay());
-        row.setBaseAmount(line.getBaseAmount());
-        row.setDiscountAmount(line.getDiscountAmount());
-        row.setReceivableAmount(line.getReceivableAmount());
-        row.setDiscountedAmount(line.getDiscountedAmount());
-        row.setUnitPrice(line.getUnitPrice());
-        row.setLineAmount(line.getLineAmount());
+        row.setPurchaseUnitPrice(line.getPurchaseUnitPrice());
+        row.setPurchaseAmount(line.getPurchaseAmount());
+        row.setSaleUnitPrice(line.getSaleUnitPrice());
+        row.setSaleAmount(line.getSaleAmount());
         row.setActualReceivedAmount(line.getActualReceivedAmount());
-        row.setInsuranceAmount(line.getInsuranceAmount());
-        row.setSelfPayAmount(line.getSelfPayAmount());
         return row;
     }
 
@@ -223,6 +223,7 @@ public class OutpatientFeeDetailMapperImpl implements OutpatientFeeDetailMapper 
      * @param productCodeKeyword      项目编码关键字
      * @param cashierId               收费人
      * @param tradeDirection          收退 Tab
+     * @param feeNatureContractNo     费用性质合同 bus_no
      */
     private void applyFilterFields(
         OutpatientFeeDetailPageQuery query,
@@ -235,7 +236,8 @@ public class OutpatientFeeDetailMapperImpl implements OutpatientFeeDetailMapper 
         String productNameKeyword,
         String productCodeKeyword,
         Long cashierId,
-        String tradeDirection) {
+        String tradeDirection,
+        String feeNatureContractNo) {
         if (StringUtils.isNotEmpty(dateFrom)) {
             query.setBillDateFrom(LocalDate.parse(dateFrom.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
         }
@@ -256,6 +258,7 @@ public class OutpatientFeeDetailMapperImpl implements OutpatientFeeDetailMapper 
         } else {
             query.setTradeDirection(resolvedTradeDirection);
         }
+        query.setFeeNatureContractNo(trimToNull(feeNatureContractNo));
     }
 
     /**

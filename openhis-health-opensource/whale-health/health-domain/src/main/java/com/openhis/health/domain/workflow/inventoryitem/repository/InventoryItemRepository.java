@@ -51,6 +51,14 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem, Lo
         String lotNumber, Long locationId, String itemTable, Long itemId);
 
     /**
+     * 按库房列出未删除库存行（期初整库替换清账用）。
+     *
+     * @param locationId 库房位置主键
+     * @return 该库库存行（可空）
+     */
+    List<InventoryItem> findByLocationIdAndIsDeletedFalse(Long locationId);
+
+    /**
      * 按主键集合加悲观写锁（护士站/签发 FIFO Gate GAP-EXE-001/005）。
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)

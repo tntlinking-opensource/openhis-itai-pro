@@ -47,10 +47,12 @@ public class ExecuteOutpatientBillRefundByPaymentRequest {
     @Schema(description = "半退保留再生收费明细主键集合")
     private List<Long> preservedNewChargeItemIds;
 
-    /** 渠道实退拆分明细。 */
-    @NotEmpty(message = "refundPaymentDetails 不能为空")
-    /** 渠道实退拆分明细。 */
-    @Schema(description = "渠道实退拆分明细", requiredMode = Schema.RequiredMode.REQUIRED)
+    /**
+     * 渠道实退拆分明细（可选）。
+     *
+     * <p>服务端按原支付明细原路返回装配；前端可省略。若传入则须与原支付分桶一致。</p>
+     */
+    @Schema(description = "渠道实退拆分明细（可选；默认按原支付原路返回）")
     private List<RefundPaymentDetailSubmitDto> refundPaymentDetails;
 
     /**

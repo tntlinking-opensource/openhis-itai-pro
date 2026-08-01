@@ -71,6 +71,8 @@ public final class ChsInfNo {
     // —— 目录 / 对码 ——
     /** 【1312】医保目录信息查询（增量） */
     public static final String CATALOG_QUERY = "1312";
+    /** 【1317】医药机构目录匹配信息查询 */
+    public static final String CATALOG_ORG_MATCH_QUERY = "1317";
     /** 【3301】目录对照上传 */
     public static final String CATALOG_MAPPING_UPLOAD = "3301";
     /** 【3302】目录对照撤销 */
@@ -111,6 +113,12 @@ public final class ChsInfNo {
     public static final String SURGERY_CATALOG_DOWNLOAD = "1308";
     /** 【1309】门诊慢特病种目录下载 */
     public static final String SPECIAL_DISEASE_CATALOG_DOWNLOAD = "1309";
+    /** 【1310】按病种付费病种目录下载 */
+    public static final String BY_DISEASE_PAYMENT_CATALOG_DOWNLOAD = "1310";
+    /** 【1311】日间手术治疗病种目录下载 */
+    public static final String DAY_SURGERY_DISEASE_CATALOG_DOWNLOAD = "1311";
+    /** 【1313】肿瘤形态学目录下载 */
+    public static final String TUMOR_MORPHOLOGY_CATALOG_DOWNLOAD = "1313";
     /** 【1314】中医疾病目录下载 */
     public static final String TCM_DISEASE_CATALOG_DOWNLOAD = "1314";
     /** 【1315】中医证候目录下载 */
@@ -143,6 +151,12 @@ public final class ChsInfNo {
     public static final String INVENTORY_INBOUND_TRACE_QUERY = "3512";
     /** 【3513】销售商品追溯信息查询 */
     public static final String INVENTORY_SALE_TRACE_QUERY = "3513";
+
+    // —— 明细审核 31xx（吉林：仅 3101/3103；不做 3102）——
+    /** 【3101】明细审核事前提醒分析（吉林含原事中场景，靠 trig_scen 区分） */
+    public static final String DETAIL_AUDIT_PRIOR = "3101";
+    /** 【3103】事前提醒服务反馈 */
+    public static final String DETAIL_AUDIT_FEEDBACK = "3103";
 
     // —— 信息查询 52xx / 其它 ——
     /** 【5201】就诊信息查询 */
@@ -190,6 +204,7 @@ public final class ChsInfNo {
         Map.entry(INPATIENT_ADMISSION_REVOKE, "入院撤销"),
         Map.entry(INPATIENT_DISCHARGE_REVOKE, "出院撤销"),
         Map.entry(CATALOG_QUERY, "医保目录信息查询"),
+        Map.entry(CATALOG_ORG_MATCH_QUERY, "医药机构目录匹配信息查询"),
         Map.entry(CATALOG_MAPPING_UPLOAD, "目录对照上传"),
         Map.entry(CATALOG_MAPPING_REVOKE, "目录对照撤销"),
         Map.entry(RECON_DAILY_LEDGER, "医药机构费用结算对总账"),
@@ -208,6 +223,9 @@ public final class ChsInfNo {
         Map.entry(DISEASE_CATALOG_DOWNLOAD, "疾病与诊断目录下载"),
         Map.entry(SURGERY_CATALOG_DOWNLOAD, "手术操作目录下载"),
         Map.entry(SPECIAL_DISEASE_CATALOG_DOWNLOAD, "门诊慢特病种目录下载"),
+        Map.entry(BY_DISEASE_PAYMENT_CATALOG_DOWNLOAD, "按病种付费病种目录下载"),
+        Map.entry(DAY_SURGERY_DISEASE_CATALOG_DOWNLOAD, "日间手术治疗病种目录下载"),
+        Map.entry(TUMOR_MORPHOLOGY_CATALOG_DOWNLOAD, "肿瘤形态学目录下载"),
         Map.entry(TCM_DISEASE_CATALOG_DOWNLOAD, "中医疾病目录下载"),
         Map.entry(TCM_SYNDROME_CATALOG_DOWNLOAD, "中医证候目录下载"),
         Map.entry(INVENTORY_STOCKTAKE, "商品盘存上传"),
@@ -230,6 +248,8 @@ public final class ChsInfNo {
         Map.entry(OPSP_DRUG_QUERY, "人员慢特病用药记录查询"),
         Map.entry(PERSON_CUM_QUERY, "人员累计信息查询"),
         Map.entry(PERSON_OPSP_FILING_QUERY, "人员慢特病备案查询"),
+        Map.entry(DETAIL_AUDIT_PRIOR, "明细审核事前提醒分析"),
+        Map.entry(DETAIL_AUDIT_FEEDBACK, "事前提醒服务反馈"),
         Map.entry(TRANSACTION_CORRECT, "冲正交易"),
         Map.entry(DICT_QUERY, "字典表查询"),
         Map.entry(MEDCAS_HOMEPAGE, "住院病案首页信息上传"));

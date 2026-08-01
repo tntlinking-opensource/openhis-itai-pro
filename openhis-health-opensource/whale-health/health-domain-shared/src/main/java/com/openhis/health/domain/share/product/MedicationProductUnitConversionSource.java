@@ -34,4 +34,12 @@ public class MedicationProductUnitConversionSource {
     private String packageUnitCode;
     /** package单位Ratio（MedicationProductUnitConversionSource）。 */
     private BigDecimal packageUnitRatio;
+    /**
+     * 追溯码贴码单位（可游离于五类业务单位之外；与 {@link #traceUnitRatio} 成对）。
+     */
+    private String traceUnitCode;
+    /**
+     * 1 个追溯码单位对应的拆零数量；须 &gt; 0 方可参与换算。
+     */
+    private BigDecimal traceUnitRatio;
 }

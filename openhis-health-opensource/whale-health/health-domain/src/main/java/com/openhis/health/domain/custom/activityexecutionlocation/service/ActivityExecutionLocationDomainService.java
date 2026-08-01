@@ -31,8 +31,8 @@ import lombok.RequiredArgsConstructor;
 /**
  * 执行科室规则（{@code cus_activity_execution_location}）聚合写侧领域服务。
  *
- * <p>职责：维护活动类别/诊疗定义锚点下的执行科室与时段规则；批量新增时预取候选集校验闭区间不重叠（BR-ACT-EXEC-001）。</p>
- * <p>不变量：同锚点时段不可重叠；软删后不再参与匹配；持久化先于 {@link ActivityExecutionLocationEditedEvent}。</p>
+ * <p>职责：按开立科室维护「诊疗大类/项目 → 执行科室 + 时段」规则；批量新增时预取候选集校验闭区间不重叠（BR-ACT-EXEC-001）。</p>
+ * <p>不变量：同一开立科室 + 活动类别 + 相同锚点粒度下时段不可重叠；软删后不再参与匹配；持久化先于事件。</p>
  * <p>仅注入本聚合 {@link ActivityExecutionLocationRepository}。</p>
  */
 @Service
@@ -45,12 +45,15 @@ public class ActivityExecutionLocationDomainService {
     /**
      * 新增执行规则（支持单条和批量）。
      *
-     * @param command 新增命令
+     * @param command 新增命令（须含开立科室、执行科室、活动类别与明细）
      * @return 新增主键列表
      * @throws BusinessException 参数非法或时段重叠冲突时
      */
     public List<Long> createExecutionRule(CreateExecutionRuleCommand command) {
-        // 前置校验：活动类别、执行科室与明细非空
+        // 前置校验：开立科室、活动类别、执行科室与明细非空
+        if (command.getOrganizationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "开立科室标识不能为空");
+        }
         if (command.getActivityCategoryCode() == null || command.getActivityCategoryCode().trim().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "活动类别编码不能为空");
         }
@@ -67,6 +70,7 @@ public class ActivityExecutionLocationDomainService {
         // Loop：遍历命令项，逐条组装聚合根并进行字段级不变式校验。
         for (CreateExecutionRuleCommand.CreateExecutionRuleItemCommand item : items) {
             ActivityExecutionLocation rule = new ActivityExecutionLocation();
+            rule.setOrganizationId(command.getOrganizationId());
             rule.setActivityDefinitionId(item.getActivityDefinitionId());
             rule.setActivityCategoryCode(command.getActivityCategoryCode());
             rule.setExecutionOrgId(command.getExecutionOrgId());
@@ -79,12 +83,12 @@ public class ActivityExecutionLocationDomainService {
             rule.assertRequiredFields();
             rule.assertAnchorPresent();
 
-            // Pre：先收集到批量待处理集合，重叠校验统一批量预取候选集后执行，避免 N+1 数据库访问。
+            // Pre：先收集到批量待处理集合，重叠校验统一批量预取候选集后执行，避免 N+1。
             this.appendToNewRulesMap(newRulesByAnchor, rule);
             toSave.add(rule);
         }
 
-        // Pre：对同锚点候选集执行时段重叠校验，防止配置冲突（批量预取 + 内存校验）。
+        // Pre：对同开立科室锚点候选集执行时段重叠校验。
         Map<AnchorGroupKey, List<ActivityExecutionLocation>> existedByAnchor = this.loadCandidatesForBatchCreate(newRulesByAnchor.keySet());
         this.assertNoTimeOverlapForBatchCreate(existedByAnchor, newRulesByAnchor);
 
@@ -115,38 +119,41 @@ public class ActivityExecutionLocationDomainService {
         ActivityExecutionLocation rule = repository.findById(command.getId())
             .orElseThrow(() -> new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_NOT_FOUND, "执行科室规则不存在"));
 
-        // 合并命令字段到聚合根并执行必填与锚点校验。
+        // 开立科室可随命令覆盖（配置页切换后改行）。
+        if (command.getOrganizationId() != null) {
+            rule.setOrganizationId(command.getOrganizationId());
+        }
         // 诊疗定义可空（大类默认规则），更新时须允许显式清空项目锚点。
         rule.setActivityDefinitionId(command.getActivityDefinitionId());
-        // 命令传入活动类别编码时覆盖头表类别。
+        // 命令传入活动类别编码时覆盖。
         if (command.getActivityCategoryCode() != null) {
             rule.setActivityCategoryCode(command.getActivityCategoryCode());
         }
-        // 命令传入执行科室标识时覆盖头表科室。
+        // 命令传入执行科室标识时覆盖。
         if (command.getExecutionOrgId() != null) {
             rule.setExecutionOrgId(command.getExecutionOrgId());
         }
-        // 命令传入执行地点标识时覆盖明细地点。
+        // 命令传入执行地点标识时覆盖。
         if (command.getExecutionLocationId() != null) {
             rule.setExecutionLocationId(command.getExecutionLocationId());
         }
-        // 命令传入时段开始时间时覆盖规则起始时刻。
+        // 命令传入时段开始时间时覆盖。
         if (command.getStartTime() != null) {
             rule.setStartTime(command.getStartTime());
         }
-        // 命令传入时段结束时间时覆盖规则截止时刻。
+        // 命令传入时段结束时间时覆盖。
         if (command.getEndTime() != null) {
             rule.setEndTime(command.getEndTime());
         }
-        // 命令传入优先级时覆盖匹配排序权重。
+        // 命令传入优先级时覆盖。
         if (command.getPriority() != null) {
             rule.setPriority(command.getPriority());
         }
-        // 命令传入展示排序时覆盖列表展示顺序。
+        // 命令传入展示排序时覆盖。
         if (command.getDisplayOrder() != null) {
             rule.setDisplayOrder(command.getDisplayOrder());
         }
-        // 命令传入备注时覆盖规则说明。
+        // 命令传入备注时覆盖。
         if (command.getRemark() != null) {
             rule.setRemark(command.getRemark());
         }
@@ -193,9 +200,7 @@ public class ActivityExecutionLocationDomainService {
     /**
      * 校验更新场景时段是否重叠（排除待更新规则自身）。
      *
-     * <p>遍历同活动类别、同科室的已有规则，若存在与 candidate 时段重叠且 ID 不同的规则，则抛出异常。</p>
-     *
-     * @param candidate 待更新规则，其 id 字段用于排除自身
+     * @param candidate 待更新规则
      * @throws BusinessException 时段与已有规则重叠
      */
     private void assertNoTimeOverlapOnUpdate(ActivityExecutionLocation candidate) {
@@ -205,7 +210,7 @@ public class ActivityExecutionLocationDomainService {
             if (Objects.equals(item.getId(), candidate.getId())) {
                 continue;
             }
-            // 与同锚点存量规则时段闭区间重叠则拒绝更新。
+            // 与同开立科室锚点存量规则时段闭区间重叠则拒绝更新。
             if (this.isOverlapped(item.getStartTime(), item.getEndTime(), candidate.getStartTime(), candidate.getEndTime())) {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_RULE_CONFLICT, "执行科室规则时段存在重叠");
             }
@@ -213,55 +218,49 @@ public class ActivityExecutionLocationDomainService {
     }
 
     /**
-     * 按锚点加载候选规则集合。
-     *
-     * <p>按诊疗定义锚点查询同科室同类别下的已有规则。</p>
+     * 按开立科室锚点加载候选规则集合。
      *
      * @param candidate 待处理规则
-     * @return 候选集合（去重后的已有规则列表）
+     * @return 候选集合
      */
     private List<ActivityExecutionLocation> loadCandidates(ActivityExecutionLocation candidate) {
         if (candidate.getActivityDefinitionId() == null) {
-            return repository.findAllByExecutionOrgIdAndActivityCategoryCodeAndActivityDefinitionIdIsNull(
-                candidate.getExecutionOrgId(),
+            return repository.findAllByOrganizationIdAndActivityCategoryCodeAndActivityDefinitionIdIsNull(
+                candidate.getOrganizationId(),
                 candidate.getActivityCategoryCode()
             );
         }
-        return repository.findAllByExecutionOrgIdAndActivityCategoryCodeAndActivityDefinitionId(
-            candidate.getExecutionOrgId(),
+        return repository.findAllByOrganizationIdAndActivityCategoryCodeAndActivityDefinitionId(
+            candidate.getOrganizationId(),
             candidate.getActivityCategoryCode(),
             candidate.getActivityDefinitionId()
         );
     }
 
     /**
-     * 将新增规则加入“按锚点分组”的批量容器中。
-     *
-     * <p>每条规则按诊疗定义锚点分组参与重叠校验。</p>
+     * 将新增规则加入「按开立科室锚点分组」的批量容器。
      *
      * @param newRulesByAnchor 新增规则分组容器
      * @param rule 待新增规则
      */
     private void appendToNewRulesMap(Map<AnchorGroupKey, List<ActivityExecutionLocation>> newRulesByAnchor, ActivityExecutionLocation rule) {
-        // 分组前校验执行科室与活动类别必填，否则无法定位重叠校验锚点。
-        if (rule.getExecutionOrgId() == null || rule.getActivityCategoryCode() == null) {
-            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "执行科室标识与活动类别编码不能为空");
+        // 分组前校验开立科室与活动类别必填。
+        if (rule.getOrganizationId() == null || rule.getActivityCategoryCode() == null) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "开立科室标识与活动类别编码不能为空");
         }
         AnchorGroupKey key;
         if (rule.getActivityDefinitionId() == null) {
-            // 未配具体项目时，按「执行科室 + 活动类别」分组做时段重叠校验。
-            key = AnchorGroupKey.forCategory(rule.getExecutionOrgId(), rule.getActivityCategoryCode());
+            // 未配具体项目时，按「开立科室 + 活动类别」分组做时段重叠校验。
+            key = AnchorGroupKey.forCategory(rule.getOrganizationId(), rule.getActivityCategoryCode());
         } else {
             key = AnchorGroupKey.forActivity(
-                rule.getExecutionOrgId(), rule.getActivityCategoryCode(), rule.getActivityDefinitionId());
+                rule.getOrganizationId(), rule.getActivityCategoryCode(), rule.getActivityDefinitionId());
         }
         this.appendRule(newRulesByAnchor, key, rule);
     }
 
     /**
      * 按 key 追加到 list。
-     *
-     * <p>若分组容器中不存在该 key，则创建新列表并放入容器。</p>
      *
      * @param newRulesByAnchor 分组容器
      * @param key 分组 key
@@ -278,7 +277,7 @@ public class ActivityExecutionLocationDomainService {
     }
 
     /**
-     * 批量加载“新增规则所涉及锚点”的候选存量规则，用于一次性完成时段重叠校验，避免 N+1。
+     * 批量加载新增规则所涉开立科室锚点的存量规则，避免 N+1。
      *
      * @param keys 锚点分组 key 集合
      * @return 存量规则分组结果
@@ -288,9 +287,9 @@ public class ActivityExecutionLocationDomainService {
         Map<OrgCategoryKey, Set<Long>> activityIdsByOrgCategory = new HashMap<>();
         Set<OrgCategoryKey> categoryOnlyOrgCategories = new HashSet<>();
 
-        // 先按（执行科室 + 活动类别）分组，收集诊疗锚点集合，后续用 IN 查询一次性预取。
+        // 先按（开立科室 + 活动类别）分组，收集诊疗锚点集合。
         for (AnchorGroupKey key : keys) {
-            OrgCategoryKey orgCategoryKey = new OrgCategoryKey(key.getExecutionOrgId(), key.getActivityCategoryCode());
+            OrgCategoryKey orgCategoryKey = new OrgCategoryKey(key.getOrganizationId(), key.getActivityCategoryCode());
             if (key.getActivityDefinitionId() == null) {
                 categoryOnlyOrgCategories.add(orgCategoryKey);
                 continue;
@@ -303,25 +302,25 @@ public class ActivityExecutionLocationDomainService {
             ids.add(key.getActivityDefinitionId());
         }
 
-        // 大类默认规则：按（执行科室 + 活动类别）预取 activity_definition_id 为空的存量行。
+        // 大类默认规则：按（开立科室 + 活动类别）预取 activity_definition_id 为空的存量行。
         for (OrgCategoryKey orgCategoryKey : categoryOnlyOrgCategories) {
             List<ActivityExecutionLocation> existed =
-                repository.findAllByExecutionOrgIdAndActivityCategoryCodeAndActivityDefinitionIdIsNull(
-                    orgCategoryKey.getExecutionOrgId(),
+                repository.findAllByOrganizationIdAndActivityCategoryCodeAndActivityDefinitionIdIsNull(
+                    orgCategoryKey.getOrganizationId(),
                     orgCategoryKey.getActivityCategoryCode()
                 );
             AnchorGroupKey anchorKey = AnchorGroupKey.forCategory(
-                orgCategoryKey.getExecutionOrgId(),
+                orgCategoryKey.getOrganizationId(),
                 orgCategoryKey.getActivityCategoryCode());
             for (ActivityExecutionLocation row : existed) {
                 this.appendRule(result, anchorKey, row);
             }
         }
 
-        // 诊疗定义锚点：按（执行科室 + 活动类别）批量 IN 预取，再按 anchorId 回填到分组 map。
+        // 诊疗定义锚点：按（开立科室 + 活动类别）批量 IN 预取。
         for (Map.Entry<OrgCategoryKey, Set<Long>> entry : activityIdsByOrgCategory.entrySet()) {
-            List<ActivityExecutionLocation> existed = repository.findAllByExecutionOrgIdAndActivityCategoryCodeAndActivityDefinitionIdIn(
-                entry.getKey().getExecutionOrgId(),
+            List<ActivityExecutionLocation> existed = repository.findAllByOrganizationIdAndActivityCategoryCodeAndActivityDefinitionIdIn(
+                entry.getKey().getOrganizationId(),
                 entry.getKey().getActivityCategoryCode(),
                 entry.getValue()
             );
@@ -330,14 +329,14 @@ public class ActivityExecutionLocationDomainService {
                     continue;
                 }
                 AnchorGroupKey anchorKey = AnchorGroupKey.forActivity(
-                    entry.getKey().getExecutionOrgId(),
+                    entry.getKey().getOrganizationId(),
                     entry.getKey().getActivityCategoryCode(),
                     row.getActivityDefinitionId());
                 this.appendRule(result, anchorKey, row);
             }
         }
 
-        // 统一去重（同一存量规则可能因数据口径被重复回填）。
+        // 统一去重。
         for (Map.Entry<AnchorGroupKey, List<ActivityExecutionLocation>> entry : result.entrySet()) {
             Map<Long, ActivityExecutionLocation> unique = new HashMap<>();
             for (ActivityExecutionLocation row : entry.getValue()) {
@@ -349,9 +348,7 @@ public class ActivityExecutionLocationDomainService {
     }
 
     /**
-     * 批量新增场景：对每个锚点分组执行“闭区间时段不重叠”校验。
-     *
-     * <p>校验包含两部分：存量规则之间（理论上应已满足）与“存量 vs 新增”“新增 vs 新增”。</p>
+     * 批量新增场景：对每个开立科室锚点分组执行闭区间时段不重叠校验。
      *
      * @param existedByAnchor 存量规则分组
      * @param newRulesByAnchor 新增规则分组
@@ -363,7 +360,7 @@ public class ActivityExecutionLocationDomainService {
         for (Map.Entry<AnchorGroupKey, List<ActivityExecutionLocation>> entry : newRulesByAnchor.entrySet()) {
             List<ActivityExecutionLocation> combined = new ArrayList<>();
             List<ActivityExecutionLocation> existed = existedByAnchor.get(entry.getKey());
-            // 同锚点存在存量规则时并入待校验集合，校验存量与新增之间不重叠。
+            // 同锚点存在存量规则时并入待校验集合。
             if (existed != null && !existed.isEmpty()) {
                 combined.addAll(existed);
             }
@@ -373,21 +370,20 @@ public class ActivityExecutionLocationDomainService {
     }
 
     /**
-     * 同一锚点分组内，校验闭区间时段不重叠。
+     * 同一开立科室锚点分组内，校验闭区间时段不重叠。
      *
-     * @param rules 同一锚点下的候选规则（包含存量与新增）
+     * @param rules 同一锚点下的候选规则
      */
     private void assertNoTimeOverlapInSameAnchorGroup(List<ActivityExecutionLocation> rules) {
         // 单条或空集合无需做时段重叠检测。
         if (rules == null || rules.size() <= 1) {
             return;
         }
-        // 按时段开始时间 → 结束时间 → ID（新建中 ID 为 null 时排最前）排序，用于后续时段重叠检测。
         rules.sort(Comparator
             .comparing((ActivityExecutionLocation r) -> this.normalizeStart(r.getStartTime()))
             .thenComparing(r -> this.normalizeEnd(r.getEndTime()))
             .thenComparing(r -> {
-                // ID 为 null 表示待新增规则，以 Long.MIN_VALUE 排最前，保证与已有规则的时段比对顺序稳定。
+                // ID 为 null 表示待新增规则，排最前以保证比对顺序稳定。
                 if (r.getId() == null) {
                     return Long.MIN_VALUE;
                 }
@@ -404,7 +400,7 @@ public class ActivityExecutionLocationDomainService {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_RULE_CONFLICT, "执行科室规则时段存在重叠");
             }
 
-            // 保持 prevEnd 为当前扫描段的最大 end，覆盖包含型区间。
+            // 保持 prevEnd 为当前扫描段的最大 end。
             if (currEnd.isAfter(prevEnd)) {
                 prevEnd = currEnd;
             }
@@ -418,7 +414,7 @@ public class ActivityExecutionLocationDomainService {
      * @return 规范化开始时间
      */
     private LocalTime normalizeStart(LocalTime startTime) {
-        // 开始时间为空表示全天起始，按最小时刻参与重叠比较。
+        // 开始时间为空表示全天起始。
         if (startTime == null) {
             return LocalTime.MIN;
         }
@@ -432,7 +428,7 @@ public class ActivityExecutionLocationDomainService {
      * @return 规范化结束时间
      */
     private LocalTime normalizeEnd(LocalTime endTime) {
-        // 结束时间为空表示全天截止，按最大时刻参与重叠比较。
+        // 结束时间为空表示全天截止。
         if (endTime == null) {
             return LocalTime.MAX;
         }
@@ -440,25 +436,28 @@ public class ActivityExecutionLocationDomainService {
     }
 
     /**
-     * （执行科室 + 活动类别）维度的分组 key。
+     * （开立科室 + 活动类别）维度的分组 key。
      */
     private static class OrgCategoryKey {
-        private final Long executionOrgId;
+        private final Long organizationId;
         private final String activityCategoryCode;
 
         /**
-         * 构造「执行科室 + 活动类别」分组键。
+         * 构造「开立科室 + 活动类别」分组键。
+         *
+         * @param organizationId 开立科室
+         * @param activityCategoryCode 活动类别
          */
-        private OrgCategoryKey(Long executionOrgId, String activityCategoryCode) {
-            this.executionOrgId = executionOrgId;
+        private OrgCategoryKey(Long organizationId, String activityCategoryCode) {
+            this.organizationId = organizationId;
             this.activityCategoryCode = activityCategoryCode;
         }
 
         /**
-         * @return 执行科室主键
+         * @return 开立科室主键
          */
-        private Long getExecutionOrgId() {
-            return executionOrgId;
+        private Long getOrganizationId() {
+            return organizationId;
         }
 
         /**
@@ -479,65 +478,72 @@ public class ActivityExecutionLocationDomainService {
                 return false;
             }
             OrgCategoryKey that = (OrgCategoryKey) o;
-            return Objects.equals(executionOrgId, that.executionOrgId)
+            return Objects.equals(organizationId, that.organizationId)
                 && Objects.equals(activityCategoryCode, that.activityCategoryCode);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(executionOrgId, activityCategoryCode);
+            return Objects.hash(organizationId, activityCategoryCode);
         }
     }
 
     /**
-     * （执行科室 + 活动类别 + 诊疗定义）维度的分组 key。
+     * （开立科室 + 活动类别 + 诊疗定义）维度的分组 key。
      */
     private static class AnchorGroupKey {
-        private final Long executionOrgId;
+        private final Long organizationId;
         private final String activityCategoryCode;
         private final Long activityDefinitionId;
 
-        private AnchorGroupKey(Long executionOrgId, String activityCategoryCode, Long activityDefinitionId) {
-            this.executionOrgId = executionOrgId;
+        /**
+         * 构造锚点分组键。
+         *
+         * @param organizationId 开立科室
+         * @param activityCategoryCode 活动类别
+         * @param activityDefinitionId 诊疗定义；大类默认时为 null
+         */
+        private AnchorGroupKey(Long organizationId, String activityCategoryCode, Long activityDefinitionId) {
+            this.organizationId = organizationId;
             this.activityCategoryCode = activityCategoryCode;
             this.activityDefinitionId = activityDefinitionId;
         }
 
         /**
-         * 构造「执行科室 + 活动类别 + 诊疗定义」锚点分组键（定义级规则）。
+         * 构造「开立科室 + 活动类别 + 诊疗定义」锚点分组键（定义级规则）。
          *
-         * @param executionOrgId        执行科室
-         * @param activityCategoryCode  活动类别 code
-         * @param activityDefinitionId  诊疗定义主键
+         * @param organizationId 开立科室
+         * @param activityCategoryCode 活动类别 code
+         * @param activityDefinitionId 诊疗定义主键
          * @return 锚点分组键
          */
         private static AnchorGroupKey forActivity(
-            Long executionOrgId,
+            Long organizationId,
             String activityCategoryCode,
             Long activityDefinitionId
         ) {
-            return new AnchorGroupKey(executionOrgId, activityCategoryCode, activityDefinitionId);
+            return new AnchorGroupKey(organizationId, activityCategoryCode, activityDefinitionId);
         }
 
         /**
-         * 构造「执行科室 + 活动类别」锚点分组键（类别级规则，无诊疗定义）。
+         * 构造「开立科室 + 活动类别」锚点分组键（类别级规则）。
          *
-         * @param executionOrgId       执行科室
+         * @param organizationId 开立科室
          * @param activityCategoryCode 活动类别 code
-         * @return 锚点分组键（activityDefinitionId 为 null）
+         * @return 锚点分组键
          */
         private static AnchorGroupKey forCategory(
-            Long executionOrgId,
+            Long organizationId,
             String activityCategoryCode
         ) {
-            return new AnchorGroupKey(executionOrgId, activityCategoryCode, null);
+            return new AnchorGroupKey(organizationId, activityCategoryCode, null);
         }
 
         /**
-         * @return 执行科室主键
+         * @return 开立科室主键
          */
-        private Long getExecutionOrgId() {
-            return executionOrgId;
+        private Long getOrganizationId() {
+            return organizationId;
         }
 
         /**
@@ -563,14 +569,14 @@ public class ActivityExecutionLocationDomainService {
                 return false;
             }
             AnchorGroupKey that = (AnchorGroupKey) o;
-            return Objects.equals(executionOrgId, that.executionOrgId)
+            return Objects.equals(organizationId, that.organizationId)
                 && Objects.equals(activityCategoryCode, that.activityCategoryCode)
                 && Objects.equals(activityDefinitionId, that.activityDefinitionId);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(executionOrgId, activityCategoryCode, activityDefinitionId);
+            return Objects.hash(organizationId, activityCategoryCode, activityDefinitionId);
         }
     }
 

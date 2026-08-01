@@ -6,10 +6,13 @@ package com.openhis.health.domain.workflow.supplyrequest.support;
 
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.health.domain.workflow.supplyrequest.entity.SupplyRequest;
 import com.openhis.health.domain.workflow.supplyrequest.queries.WarehouseDocumentDetailPageQuery;
 import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Order;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import com.openhis.whale.core.application.util.StringUtils;
@@ -27,7 +30,26 @@ public final class WarehouseDocumentDetailPagePredicateSupport {
     }
 
     /**
-     * 构建与分页列表相同的 WHERE 片段。
+     * 构建与分页列表相同的 WHERE 片段，并在有关键字时写入「精确优先」ORDER BY（B.2.1）。
+     *
+     * @param root  供应请求根
+     * @param cq    CriteriaQuery；count 查询由工具内部跳过 orderBy；可为 null（仅谓词）
+     * @param cb    条件构建器
+     * @param query 查询入参；为 null 时仅返回软删谓词
+     * @return 谓词列表
+     */
+    public static List<Predicate> collectPagePredicates(
+        Root<SupplyRequest> root,
+        CriteriaQuery<?> cq,
+        CriteriaBuilder cb,
+        WarehouseDocumentDetailPageQuery query) {
+        List<Predicate> predicates = collectPagePredicates(root, cb, query);
+        applyKeywordExactFirstOrder(cq, root, cb, query);
+        return predicates;
+    }
+
+    /**
+     * 构建与分页列表相同的 WHERE 片段（不含 ORDER BY）。
      *
      * @param root  供应请求根
      * @param cb    条件构建器
@@ -44,7 +66,9 @@ public final class WarehouseDocumentDetailPagePredicateSupport {
             return predicates;
         }
         if (StringUtils.isNotEmpty(query.getBusNo())) {
-            predicates.add(cb.equal(root.get(FieldNameConstants.BUS_NO), query.getBusNo().trim()));
+            // 单据号支持模糊：与报表页「单据号」检索习惯一致（完整号仍可精确命中）
+            String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getBusNo().trim());
+            predicates.add(cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), likeIc));
         }
         if (StringUtils.isNotEmpty(query.getTypeEnum())) {
             predicates.add(cb.equal(root.get(FieldNameConstants.TYPE_ENUM), query.getTypeEnum().trim()));
@@ -63,6 +87,19 @@ public final class WarehouseDocumentDetailPagePredicateSupport {
         }
         if (StringUtils.isNotEmpty(query.getStatusEnum())) {
             predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), query.getStatusEnum().trim()));
+        } else if (query.getStatusEnums() != null) {
+            // 多状态 IN：与 typeEnums 同构；空集合 → 无命中
+            List<String> statusCodes = new ArrayList<>();
+            for (String code : query.getStatusEnums()) {
+                if (StringUtils.isNotEmpty(code)) {
+                    statusCodes.add(code.trim());
+                }
+            }
+            if (statusCodes.isEmpty()) {
+                predicates.add(cb.disjunction());
+            } else {
+                predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(statusCodes));
+            }
         }
         if (query.getTenantId() != null) {
             predicates.add(cb.equal(root.get(FieldNameConstants.TENANT_ID), query.getTenantId()));
@@ -140,6 +177,36 @@ public final class WarehouseDocumentDetailPagePredicateSupport {
             predicates.add(cb.or(busNoLike, reasonLike, remakeLike));
         }
         return predicates;
+    }
+
+    /**
+     * 单据明细关键字：SQL 层「精确全等在前」（与 LIKE 列 busNo/reason/remake 同集合）；次级审批时间倒序。
+     *
+     * <p>批号关键字仅作过滤，不参与精确优先（与主 keyword 扫列不同）。</p>
+     *
+     * @param cq    CriteriaQuery；null 或 count 时跳过
+     * @param root  供应请求根
+     * @param cb    CriteriaBuilder
+     * @param query 分页查询；无主 keyword 时不写排序
+     */
+    public static void applyKeywordExactFirstOrder(
+        CriteriaQuery<?> cq,
+        Root<SupplyRequest> root,
+        CriteriaBuilder cb,
+        WarehouseDocumentDetailPageQuery query) {
+        if (query == null || StringUtils.isEmpty(query.getKeyword())) {
+            return;
+        }
+        String trimmed = query.getKeyword().trim();
+        List<Order> secondary = List.of(cb.desc(root.get(FieldNameConstants.APPROVAL_TIME)));
+        KeywordExactFirstOrderSupport.applyExactFirstOrder(
+            cq,
+            cb,
+            trimmed,
+            secondary,
+            root.get(FieldNameConstants.BUS_NO),
+            root.get(FieldNameConstants.REASON),
+            root.get(FieldNameConstants.REMAKE));
     }
 
     /**

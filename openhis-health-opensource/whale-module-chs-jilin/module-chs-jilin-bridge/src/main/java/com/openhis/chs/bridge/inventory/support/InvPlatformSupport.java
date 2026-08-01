@@ -41,10 +41,30 @@ public class InvPlatformSupport {
         return new InvContractContext(contract, busNo, fixmedinsCode);
     }
 
-    /** 组装 gateway {@link InvokeContext}（含签到后的 operatorId/operatorName）。 */
+    /** 组装 gateway {@link InvokeContext}（含签到后的 operatorId/operatorName）；须当前登录。 */
     public InvokeContext buildInvokeContext() {
-        Long operatorId = currentOperatorResolver.requireOperatorId("请先登录后再操作进销存");
-        InvokeContext partial = InvokeContext.builder().operatorId(String.valueOf(operatorId)).build();
+        return buildInvokeContext(null, null);
+    }
+
+    /**
+     * 组装 gateway {@link InvokeContext}；异步路径传入调用线程快照操作人，避免 {@code requireOperatorId}。
+     *
+     * @param operatorId   已捕获操作人主键；空则回落当前登录
+     * @param operatorName 操作人姓名；可空
+     * @return 签到后的调用上下文
+     */
+    public InvokeContext buildInvokeContext(Long operatorId, String operatorName) {
+        Long resolvedOperatorId = operatorId;
+        // Gate：同步运维台无快照时仍要求登录
+        if (resolvedOperatorId == null) {
+            resolvedOperatorId = currentOperatorResolver.requireOperatorId("请先登录后再操作进销存");
+        }
+        InvokeContext.InvokeContextBuilder partialBuilder = InvokeContext.builder()
+            .operatorId(String.valueOf(resolvedOperatorId));
+        if (isNotEmpty(operatorName)) {
+            partialBuilder.operatorName(operatorName.trim());
+        }
+        InvokeContext partial = partialBuilder.build();
         return InvokeContext.builder()
             .operatorId(signCredentialResolver.resolveOperatorId(partial))
             .operatorName(signCredentialResolver.resolveOperatorName(partial))

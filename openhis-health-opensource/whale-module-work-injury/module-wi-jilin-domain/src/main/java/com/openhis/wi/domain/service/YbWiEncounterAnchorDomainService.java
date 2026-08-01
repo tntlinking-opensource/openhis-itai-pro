@@ -19,7 +19,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** 工伤就诊锚点 {@code yb_wi_encounter_anchor} 写侧（9102/2301/2201～2208 状态机）。 */
+/** 工伤就诊锚点 {@code yb_wi_encounter_anchor} 写侧（1101/9102/2301/2201～2208 状态机）。 */
 @Service
 @ConditionalOnProperty(name = "openhis.modules.work-injury.enabled", havingValue = "true")
 @RequiredArgsConstructor
@@ -78,6 +78,28 @@ public class YbWiEncounterAnchorDomainService {
         if (!WorkInjuryConstants.QUALIFICATION_VALID.equals(anchor.getQualificationStatus())) {
             throw new BusinessException(WiErrorCodes.NO_QUALIFICATION, "审批资格未生效，请先完成 9102 并绑定 qualification_id");
         }
+    }
+
+    /**
+     * 【1101】submit 后写入 psn_no / injure_affirm_id。
+     *
+     * @param anchor         就诊锚点
+     * @param psnNo          平台人员编号
+     * @param injureAffirmId 认定 ID（可空）
+     */
+    @Transactional
+    public void apply1101Submit(YbWiEncounterAnchor anchor, String psnNo, String injureAffirmId) {
+        if (anchor == null) {
+            throw new BusinessException(WiErrorCodes.INVALID_INVOKE_SESSION, "就诊锚点不存在");
+        }
+        if (isEmpty(psnNo)) {
+            throw new BusinessException(WiErrorCodes.INVALID_INVOKE_SESSION, "1101 出参缺少 psn_no");
+        }
+        anchor.setPsnNo(psnNo.trim());
+        if (isNotEmpty(injureAffirmId)) {
+            anchor.setInjureAffirmId(injureAffirmId.trim());
+        }
+        encounterAnchorRepository.save(anchor);
     }
 
     /**

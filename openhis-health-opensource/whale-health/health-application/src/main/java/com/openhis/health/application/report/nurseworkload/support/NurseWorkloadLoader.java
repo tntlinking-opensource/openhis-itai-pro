@@ -23,6 +23,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.time.LocalDateTime;
 
 /**
  * 护士工作量读路径 scope 预解析（application/report/nurseworkload/support；AS-RPT-002 IF-RPT-NWL-02～05）。
@@ -60,11 +61,14 @@ public class NurseWorkloadLoader {
         if (query.getDateFrom().isAfter(query.getDateTo())) {
             throw new IllegalArgumentException("dateFrom must not be after dateTo");
         }
-        // Pre：门诊/住院 → Encounter.class_enum，并解析该域全部就诊 id（无科室收窄）
+        // Pre：门诊/住院 → Encounter.class_enum，并按统计日窗收窄就诊（禁止无日期全历史）
         String encounterClassCode = this.resolveEncounterClassCode(query.getEncounterScope());
         query.setResolvedEncounterClassCode(encounterClassCode);
-        // Pre：经 Encounter QS 解析护士工作量就诊 scope（B.6.4）
-        List<Long> encounterScope = this.encounterQueryService.listEncounterIdsForNurseWorkloadScope(encounterClassCode);
+        LocalDateTime windowFrom = query.getDateFrom().atStartOfDay();
+        LocalDateTime windowTo = query.getDateTo().atTime(23, 59, 59);
+        // Pre：经 Encounter QS 解析护士工作量就诊 scope（B.6.4；日窗相交）
+        List<Long> encounterScope = this.encounterQueryService.listEncounterIdsForNurseWorkloadScope(
+            encounterClassCode, windowFrom, windowTo);
         query.setResolvedEncounterScope(encounterScope);
         query.setDeviceAutoInventoryDeductEnabled(this.deviceAutoInventoryDeductSettingResolver.isEnabled());
         if (encounterScope.isEmpty()) {

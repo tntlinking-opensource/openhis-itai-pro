@@ -137,4 +137,22 @@ public interface MedicationDispenseRepository extends JpaRepository<MedicationDi
     List<MedicationDispense> findBySummaryNoAndStatusEnumAndIsDeletedFalse(
         String summaryNo,
         DispenseStatus statusEnum);
+
+    /**
+     * 本库是否已有已发药类发放（GAP-OPN-004 发放侧窄口径：COMPLETED/PART_COMPLETED）。
+     *
+     * @param locationId  发药库房
+     * @param statusEnums 状态集合
+     * @return 存在则为 true
+     */
+    boolean existsByLocationIdAndStatusEnumInAndIsDeletedFalse(
+        Long locationId, Collection<DispenseStatus> statusEnums);
+
+    /**
+     * 按交账头加载已挂载发放行（撤回/驳回清挂载）。
+     *
+     * @param cashierSettlementId 交账头主键
+     * @return 挂载发放行列表
+     */
+    List<MedicationDispense> findByCashierSettlementIdAndIsDeletedFalse(Long cashierSettlementId);
 }

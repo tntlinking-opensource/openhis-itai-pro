@@ -6,11 +6,14 @@ package com.openhis.health.application.inpatient.doctorstation.diagnosis.mapper;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
+import com.openhis.health.application.outpatient.doctorstation.diagnosis.support.PatientHistoryCommonDiagnosisRow;
 import com.openhis.health.application.shared.converter.TextValueConverter;
 import com.openhis.health.application.shared.diagnosis.DiagnosisJsonSnapshotParser;
+import com.openhis.health.application.shared.diagnosis.DoctorStationWesternDiagnosisSourceSettingResolver;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.dto.CommonDiagnosisRowDto;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.dto.EncounterDiagnosisRowDto;
+import com.openhis.health.application.inpatient.doctorstation.diagnosis.request.DeleteEncounterDiagnosisRequest;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.request.SaveEncounterDiagnosisChildRequest;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.request.SaveEncounterDiagnosisRequest;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.response.CommonDiagnosesResponse;
@@ -20,7 +23,6 @@ import com.openhis.health.application.inpatient.doctorstation.diagnosis.response
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.response.EncounterDiagnosisResponse;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.response.SaveEncounterDiagnosisResponse;
 import com.openhis.health.domain.administration.encounter.command.BatchUpsertEncounterDiagnosisAssociationCommand;
-import com.openhis.health.domain.clinical.condition.command.SaveDoctorDiagnosisCommand;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.DoctorStationConditionDefinitionRowModel;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.share.constants.DoctorStationDiagnosisConstants;
@@ -66,6 +68,9 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
 
     /** 读模型 {@code diagnosisJson} 快照解析，与 bridge 展示路径共用同一解析器。 */
     private final DiagnosisJsonSnapshotParser diagnosisJsonSnapshotParser;
+
+    /** 西医诊断检索目录来源（系统设置）。 */
+    private final DoctorStationWesternDiagnosisSourceSettingResolver westernDiagnosisSourceSettingResolver;
 
     /**
      * Gate：校验请求患者与读模型快照患者一致，防止串患者上下文。
@@ -121,7 +126,6 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
     private static EncounterDiagnosisRowDto toEncounterDiagnosisRowDto(
             DiagnosisJsonSnapshotParser.ParsedDiagnosisRow source) {
         EncounterDiagnosisRowDto dto = new EncounterDiagnosisRowDto();
-        dto.setConditionId(source.getConditionId());
         dto.setEncounterDiagnosisId(source.getEncounterDiagnosisId());
         dto.setConditionDefinitionId(source.getConditionDefinitionId());
         dto.setConditionCode(source.getConditionCode());
@@ -137,6 +141,8 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
         dto.setIptDiseaseTypeCode(source.getIptDiseaseTypeCode());
         dto.setIptDiseaseTypeText(source.getIptDiseaseTypeText());
         dto.setYbNo(source.getYbNo());
+        dto.setTcmSyndromeGroup(source.getTcmSyndromeGroup());
+        dto.setSourceEnum(source.getSourceEnum());
         return dto;
     }
 
@@ -158,7 +164,6 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
                 continue;
             }
             EncounterDiagnosisRowDto copy = new EncounterDiagnosisRowDto();
-            copy.setConditionId(row.getConditionId());
             copy.setEncounterDiagnosisId(row.getEncounterDiagnosisId());
             copy.setConditionDefinitionId(row.getConditionDefinitionId());
             copy.setConditionCode(row.getConditionCode());
@@ -174,6 +179,8 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
             copy.setIptDiseaseTypeCode(row.getIptDiseaseTypeCode());
             copy.setIptDiseaseTypeText(row.getIptDiseaseTypeText());
             copy.setYbNo(row.getYbNo());
+            copy.setTcmSyndromeGroup(row.getTcmSyndromeGroup());
+            copy.setSourceEnum(row.getSourceEnum());
             target.add(copy);
         }
         return target;
@@ -242,7 +249,7 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
         }
         String trimmed = diagnosisKindCode.trim();
         if (DoctorStationDiagnosisConstants.DIAGNOSIS_KIND_FILTER_WESTERN.equals(trimmed)) {
-            return new ArrayList<>(DoctorStationDiagnosisConstants.CONDITION_SOURCE_CODES_WESTERN);
+            return westernDiagnosisSourceSettingResolver.resolveWesternSearchSources();
         }
         if (DoctorStationDiagnosisConstants.DIAGNOSIS_KIND_FILTER_TCM.equals(trimmed)) {
             return new ArrayList<>(DoctorStationDiagnosisConstants.CONDITION_SOURCE_CODES_TCM);
@@ -291,6 +298,8 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
             definitionRow.setYbFlag(DoctorStationDiagnosisConstants.YB_FLAG_INT_NO);
             definitionRow.setYbFlagText(DoctorStationDiagnosisConstants.YB_FLAG_TEXT_NO);
         }
+        // 医保诊断编码：透传目录对码，供开诊弹窗列表展示；空串由前端显示「-」。
+        definitionRow.setYbNo(model.getYbNo());
         // 分页接口仅展示已启用定义；非 ACTIVE 行理论上不会进入本装配，此处仍防御性清空 status 展示。
         if (PublicationStatus.ACTIVE.getCode().equals(model.getStatusEnum())) {
             Long sort = PublicationStatus.ACTIVE.getSortOrder();
@@ -365,69 +374,27 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
     }
 
     /**
-     * 将保存请求装配为「诊断事实」领域批量命令。
-     *
-     * <p>实现要点：子项顺序与领域批量保存返回 id 顺序一致，后续关联命令依赖同一顺序，禁止在此处重排。</p>
+     * 将保存请求装配为就诊诊断关联批量 upsert 命令（不经 Condition）。
      *
      * @param request    医生站保存批次
-     * @param operatorId 当前操作人，写入命令审计字段
-     * @return 待调用的 {@link SaveDoctorDiagnosisCommand}
-     */
-    @Override
-    public SaveDoctorDiagnosisCommand toSaveDoctorDiagnosisCommand(SaveEncounterDiagnosisRequest request, Long operatorId) {
-        SaveDoctorDiagnosisCommand cmd = new SaveDoctorDiagnosisCommand();
-        cmd.setEncounterId(request.getEncounterId());
-        cmd.setPatientId(request.getPatientId());
-        cmd.setOperatorId(operatorId);
-        List<SaveDoctorDiagnosisCommand.DoctorDiagnosisItemCommand> items = new ArrayList<>();
-        for (SaveEncounterDiagnosisChildRequest child : request.getDiagnosisChildList()) {
-            SaveDoctorDiagnosisCommand.DoctorDiagnosisItemCommand item = new SaveDoctorDiagnosisCommand.DoctorDiagnosisItemCommand();
-            item.setId(child.getConditionId());
-            item.setDefinitionId(child.getConditionDefinitionId());
-            item.setVerificationStatusEnum(this.resolveVerificationCode(child.getVerificationStatusEnum()));
-            item.setYbNo(child.getYbNo());
-            item.setDescription(child.getDiagnosisDesc());
-            item.setCategoryEnum(child.getCategoryCode());
-            item.setSeverityEnum(child.getSeverityCode());
-            items.add(item);
-        }
-        cmd.setItems(items);
-        return cmd;
-    }
-
-    /**
-     * 在诊断事实保存成功后，装配「就诊诊断关联」批量 upsert 命令。
-     *
-     * <p>实现要点：{@code savedConditionIds.get(i)} 与 {@code diagnosisChildList.get(i)} 一一对应，含新建行在领域分配 id 后的顺序；
-     * 条数不一致说明领域返回与请求严重偏离，必须阻断以免错挂就诊诊断关联。</p>
-     *
-     * @param request            与保存事实时相同的请求批次
-     * @param savedConditionIds  与请求子项顺序一致的诊断事实 id 列表
-     * @param operatorId         操作人
-     * @return 就诊侧批量关联命令
-     * @throws com.openhis.whale.core.application.exception.BusinessException 条数与请求不一致时抛出
+     * @param operatorId 当前操作人
+     * @return 待调用的批量关联命令
      */
     @Override
     public BatchUpsertEncounterDiagnosisAssociationCommand toBatchUpsertEncounterDiagnosisAssociationCommand(
         SaveEncounterDiagnosisRequest request,
-        List<Long> savedConditionIds,
         Long operatorId) {
-        if (request.getDiagnosisChildList().size() != savedConditionIds.size()) {
-            throw new BusinessException(ErrorCodeConstants.CONDITION_RULE_CONFLICT, "诊断保存结果与入参条数不一致");
-        }
         BatchUpsertEncounterDiagnosisAssociationCommand cmd = new BatchUpsertEncounterDiagnosisAssociationCommand();
         cmd.setOperatorId(operatorId);
         BatchUpsertEncounterDiagnosisAssociationCommand.BatchUpsertEncounterDiagnosisAssociationItemCommand batchItem =
             new BatchUpsertEncounterDiagnosisAssociationCommand.BatchUpsertEncounterDiagnosisAssociationItemCommand();
         batchItem.setEncounterId(request.getEncounterId());
         List<BatchUpsertEncounterDiagnosisAssociationCommand.DiagnosisItemCommand> diagnosisItems = new ArrayList<>();
-        for (int i = 0; i < request.getDiagnosisChildList().size(); i++) {
-            SaveEncounterDiagnosisChildRequest child = request.getDiagnosisChildList().get(i);
-            Long conditionId = savedConditionIds.get(i);
+        for (SaveEncounterDiagnosisChildRequest child : request.getDiagnosisChildList()) {
             BatchUpsertEncounterDiagnosisAssociationCommand.DiagnosisItemCommand d =
                 new BatchUpsertEncounterDiagnosisAssociationCommand.DiagnosisItemCommand();
-            d.setConditionId(conditionId);
-            // 主诊标记：仅整型 1 视为主诊断，其余含 null 均写 false，与 Gate 主诊唯一规则一致。
+            d.setEncounterDiagnosisId(this.resolveChildEncounterDiagnosisId(child));
+            d.setConditionDefinitionId(child.getConditionDefinitionId());
             if (child.getMainDiagnosisFlag() != null
                 && child.getMainDiagnosisFlag() == DoctorStationDiagnosisConstants.MAIN_DIAGNOSIS_FLAG_YES) {
                 d.setPrimaryFlag(Boolean.TRUE);
@@ -436,7 +403,6 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
             }
             d.setRank(child.getDiagnosisSortNo());
             d.setDescription(child.getDiagnosisDesc());
-            // 就诊诊断关联 med_type：未传时默认普通门诊（医保 med_type=11）；住院 diag_type_code 仍由 iptDiseaseTypeCode 写入。
             String medTypeCode = trimToNull(child.getMedicalTypeCode());
             if (medTypeCode == null) {
                 medTypeCode = YbMedType.GENERAL_OUTPATIENT.getCode();
@@ -445,7 +411,6 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
             }
             d.setMedType(medTypeCode);
             d.setDiagTypeCode(trimToNull(child.getIptDiseaseTypeCode()));
-            // IF-IP-DOR-05 仅处理西医关联；中医病证组由 IF-IP-TCM-32 专管。
             d.setTcmFlag(Boolean.FALSE);
             diagnosisItems.add(d);
         }
@@ -455,30 +420,51 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
     }
 
     /**
-     * 装配保存诊断后的接口响应（条数与 id 列表）。
+     * 解析保存子项上的就诊诊断行主键。
      *
-     * @param savedCount         成功持久化的诊断事实条数
-     * @param savedConditionIds 与入参顺序一致的诊断事实主键列表
+     * @param child 保存子项
+     * @return 就诊诊断行主键；新建时为 null
+     */
+    private Long resolveChildEncounterDiagnosisId(SaveEncounterDiagnosisChildRequest child) {
+        return child.getEncounterDiagnosisId();
+    }
+
+    /**
+     * 装配保存诊断后的接口响应（条数与就诊诊断行 id 列表）。
+     *
+     * @param savedCount               成功持久化的诊断条数
+     * @param savedEncounterDiagnosisIds 就诊诊断行主键列表
      * @return 非 null 响应
      */
     @Override
-    public SaveEncounterDiagnosisResponse toSaveEncounterDiagnosisResponse(int savedCount, List<Long> savedConditionIds) {
+    public SaveEncounterDiagnosisResponse toSaveEncounterDiagnosisResponse(int savedCount, List<Long> savedEncounterDiagnosisIds) {
         SaveEncounterDiagnosisResponse response = new SaveEncounterDiagnosisResponse();
         response.setSavedCount(savedCount);
-        response.setSavedConditionIds(savedConditionIds);
+        response.setSavedEncounterDiagnosisIds(savedEncounterDiagnosisIds);
         return response;
+    }
+
+    /**
+     * 解析删除请求中的就诊诊断行主键。
+     *
+     * @param request 删除请求
+     * @return 行主键
+     */
+    @Override
+    public Long resolveDeleteEncounterDiagnosisId(DeleteEncounterDiagnosisRequest request) {
+        return request.getEncounterDiagnosisId();
     }
 
     /**
      * Gate：删除单条就诊诊断前校验主键非空。
      *
-     * @param conditionId 诊断事实 id
-     * @param encounterId 就诊 id
+     * @param encounterDiagnosisId 就诊诊断行 id
+     * @param encounterId          就诊 id
      * @throws com.openhis.whale.core.application.exception.BusinessException 任一端主键为空时抛出
      */
     @Override
-    public void validateDeleteEncounterDiagnosisRequest(Long conditionId, Long encounterId) {
-        if (conditionId == null) {
+    public void validateDeleteEncounterDiagnosisRequest(Long encounterDiagnosisId, Long encounterId) {
+        if (encounterDiagnosisId == null) {
             throw new BusinessException(ErrorCodeConstants.CONDITION_INVALID_ARGUMENT, "诊断标识不能为空");
         }
         if (encounterId == null) {
@@ -533,34 +519,33 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
     }
 
     /**
-     * 将界面整数码映射为持久化验证状态编码串（FHIR Condition.verificationStatus 语义子集）。
+     * 将患者历史合并读侧行转为常用诊断快捷行（含中医病证组字段）。
      *
-     * @param verificationStatusEnum 可为 null，表示前端未改验证态，按「已确认」落库以降低噪声
-     * @return 非空编码，供 {@link com.openhis.health.domain.clinical.condition.service.ConditionDomainService} 持久化
+     * @param model               历史读侧行
+     * @param sourceDisplayByCode 来源码到展示文案的映射
+     * @return 常用行；{@code model==null} 时为 {@code null}
      */
-    private String resolveVerificationCode(Integer verificationStatusEnum) {
-        if (verificationStatusEnum == null) {
-            return DoctorStationDiagnosisConstants.ConditionVerificationStatusCode.CONFIRMED;
+    @Override
+    public CommonDiagnosisRowDto toCommonDiagnosisRowDto(
+        PatientHistoryCommonDiagnosisRow model,
+        Map<String, String> sourceDisplayByCode) {
+        if (model == null) {
+            return null;
         }
-        if (verificationStatusEnum == DoctorStationDiagnosisConstants.VerificationUiCode.UNCONFIRMED) {
-            return DoctorStationDiagnosisConstants.ConditionVerificationStatusCode.UNCONFIRMED;
+        CommonDiagnosisRowDto row = new CommonDiagnosisRowDto();
+        row.setConditionDefinitionId(model.getConditionDefinitionId());
+        row.setSyndromeDefinitionId(model.getSyndromeDefinitionId());
+        row.setConditionCode(model.getConditionCode());
+        row.setConditionDefinitionName(model.getConditionDefinitionName());
+        row.setDiagnosisKind(model.getDiagnosisKind());
+        row.setDiagnosisKindText(DiagnosisKindPresentationUtil.toDisplay(model.getDiagnosisKind()));
+        row.setSourceEnum(model.getSourceEnum());
+        row.setYbNo(model.getYbNo());
+        row.setTcmSyndromeGroup(model.getTcmSyndromeGroup());
+        if (sourceDisplayByCode != null && model.getSourceEnumCode() != null) {
+            row.setSourceEnumText(sourceDisplayByCode.get(model.getSourceEnumCode()));
         }
-        if (verificationStatusEnum == DoctorStationDiagnosisConstants.VerificationUiCode.PROVISIONAL) {
-            return DoctorStationDiagnosisConstants.ConditionVerificationStatusCode.PROVISIONAL;
-        }
-        if (verificationStatusEnum == DoctorStationDiagnosisConstants.VerificationUiCode.DIFFERENTIAL) {
-            return DoctorStationDiagnosisConstants.ConditionVerificationStatusCode.DIFFERENTIAL;
-        }
-        if (verificationStatusEnum == DoctorStationDiagnosisConstants.VerificationUiCode.CONFIRMED) {
-            return DoctorStationDiagnosisConstants.ConditionVerificationStatusCode.CONFIRMED;
-        }
-        if (verificationStatusEnum == DoctorStationDiagnosisConstants.VerificationUiCode.REFUTED) {
-            return DoctorStationDiagnosisConstants.ConditionVerificationStatusCode.REFUTED;
-        }
-        if (verificationStatusEnum == DoctorStationDiagnosisConstants.VerificationUiCode.ENTERED_IN_ERROR) {
-            return DoctorStationDiagnosisConstants.ConditionVerificationStatusCode.ENTERED_IN_ERROR;
-        }
-        return DoctorStationDiagnosisConstants.ConditionVerificationStatusCode.CONFIRMED;
+        return row;
     }
 
     /**

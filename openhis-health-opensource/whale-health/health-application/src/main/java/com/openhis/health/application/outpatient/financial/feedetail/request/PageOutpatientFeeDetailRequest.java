@@ -64,4 +64,8 @@ public class PageOutpatientFeeDetailRequest extends AbstractHealthPageRequest {
     /** 收退 Tab：ALL / CHARGE / REFUND；默认 ALL。 */
     @Schema(description = "收退 Tab code")
     private String tradeDirection;
+
+    /** 费用性质合同业务号（{@code fin_contract.bus_no}）；空则不筛选。 */
+    @Schema(description = "费用性质合同业务号")
+    private String feeNatureContractNo;
 }

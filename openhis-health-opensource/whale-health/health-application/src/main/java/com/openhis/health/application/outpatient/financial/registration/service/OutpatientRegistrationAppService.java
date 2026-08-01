@@ -9,6 +9,7 @@ import com.openhis.health.application.outpatient.financial.registration.support.
 import com.openhis.health.application.outpatient.financial.registration.support.OutpatientRegistrationCancelGate;
 import com.openhis.health.application.outpatient.financial.registration.support.RegisterBenefitAreaHintHelper;
 import com.openhis.health.application.outpatient.financial.registration.support.RegisterContractMatchResolver;
+import com.openhis.health.application.outpatient.financial.registration.support.RegistrationDoctorRequiredSettingResolver;
 import com.openhis.health.application.outpatient.financial.registration.support.RegistrationReceiptPrintAssembler;
 import com.openhis.health.application.outpatient.financial.registration.mapper.OutpatientRegistrationMapper;
 import com.openhis.health.application.outpatient.financial.registration.request.*;
@@ -48,13 +49,11 @@ import com.openhis.health.domain.administration.invoice.service.InvoiceQueryServ
 import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.patient.command.RegisterPatientCommand;
+import com.openhis.health.domain.administration.patient.command.UpdatePatientPhoneCommand;
 import com.openhis.health.domain.administration.patient.queries.PatientPagedQuery;
 import com.openhis.health.domain.administration.patient.queries.model.PatientCoreQueryModel;
 import com.openhis.health.domain.administration.patient.queries.model.PatientDetailQueryModel;
 import com.openhis.health.domain.administration.patient.queries.model.PatientPageItemQueryModel;
-import com.openhis.health.domain.administration.patient.queries.model.PatientStudentProfileQueryModel;
-import com.openhis.health.domain.administration.patient.queries.model.PatientStudentQueryModel;
-import com.openhis.health.domain.administration.patient.queries.model.StudentPublicExpenseEligibilityQueryModel;
 import com.openhis.health.domain.administration.patient.queries.model.PatientSimpleQueryModel;
 import com.openhis.health.domain.administration.patient.service.PatientDomainService;
 import com.openhis.health.domain.administration.patient.service.PatientQueryService;
@@ -84,6 +83,7 @@ import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.*;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.share.utils.InsuranceContractCategorySupport;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
@@ -97,6 +97,7 @@ import com.openhis.health.application.basic.administration.support.PractitionerH
 import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
 import com.openhis.health.application.outpatient.financial.registration.support.ClinicRegistrationLoader;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.orchestration.OutpatientChargeInsuranceCompensationOrchestration;
+import com.openhis.health.infrastructure.integration.financial.orchestration.InvoiceAfterPaymentOrchestration;
 import com.openhis.health.infrastructure.integration.financial.orchestration.PaymentReconciliationSettleOrchestration;
 import com.openhis.health.infrastructure.integration.einvoice.orchestration.BossElectronicInvoiceAfterCommitOrchestration;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.OutpatientChargeInsuranceExtension;
@@ -111,10 +112,13 @@ import com.openhis.health.infrastructure.integration.insurance.outpatient.Extens
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargeRevokeFeeDetailExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientRegistrationPlatformQueryExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientRegistrationPlatformExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientRegistrationPlatformExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientRegistrationPlatformQueryExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientChargeConfirmExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientChargePreSettleExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientChargePreSettleQueryExtensionOut;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientChargeSettlementRecordExtensionOut;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargeRevokeSettleExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.benefit.InsuranceRegisterBenefitQueryExtension;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionIn.InsuranceCumulativeQueryExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionIn.InsuranceOpspFilingQueryExtensionIn;
@@ -195,6 +199,8 @@ public class OutpatientRegistrationAppService {
     private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
     /** 医师可接诊号源收窄与 Gate。 */
     private final PractitionerHealthcareServiceResolver practitionerHealthcareServiceResolver;
+    /** 挂号时医生是否必选（全局开关 registrationDoctorRequired）。 */
+    private final RegistrationDoctorRequiredSettingResolver registrationDoctorRequiredSettingResolver;
     /** 费用性质查询服务。 */
     private final ContractQueryService contractQueryService;
     /** 诊疗服务查询服务。 */
@@ -204,7 +210,7 @@ public class OutpatientRegistrationAppService {
     /** 就诊读侧查询服务。 */
     private final EncounterQueryService encounterQueryService;
     private final ClinicRegistrationLoader clinicRegistrationLoader;
-    /** 退号临床/收费前置门禁（BR-REG-015）。 */
+    /** 退号收费前置门禁（BR-REG-015；仅账单三态）。 */
     private final OutpatientRegistrationCancelGate outpatientRegistrationCancelGate;
     /** 账户写侧领域服务。 */
     private final AccountDomainService accountDomainService;
@@ -278,6 +284,7 @@ public class OutpatientRegistrationAppService {
 
     private final PaymentReconciliationSettleOrchestration paymentReconciliationSettleOrchestration;
     private final BossElectronicInvoiceAfterCommitOrchestration bossElectronicInvoiceAfterCommitOrchestration;
+    private final InvoiceAfterPaymentOrchestration invoiceAfterPaymentOrchestration;
 
     private final RegistrationReceiptPrintAssembler registrationReceiptPrintAssembler;
 
@@ -322,19 +329,14 @@ public class OutpatientRegistrationAppService {
             if (contract.getId() == null) {
                 continue;
             }
-            String admVsFallback = contractQueryService.findOptionalContractEntityById(contract.getId())
-                .map(Contract::getAdmVs)
-                .orElse(null);
-            Boolean ybFlag = contractQueryService.findOptionalContractEntityById(contract.getId())
-                .map(Contract::getYbFlag)
-                .orElse(null);
+            // Pre：列表项已带 adm_vs/yb_flag，禁止再按合同 id 循环回表实体（原 N+1）
             ContractInsuranceProfileDto profile = new ContractInsuranceProfileDto()
                 .setContractId(String.valueOf(contract.getId()))
                 .setCategoryCode(contract.getCategoryEnum())
                 .setBusNo(contract.getBusNo())
                 .setTreatmentAreaCode(
-                    registerContractMatchResolver.resolveTreatmentAreaCode(contract.getId(), admVsFallback))
-                .setYbFlag(ybFlag);
+                    registerContractMatchResolver.resolveTreatmentAreaCode(contract.getId(), contract.getAdmVs()))
+                .setYbFlag(contract.getYbFlag());
             contractInsuranceProfileById.put(String.valueOf(contract.getId()), profile);
         }
         response.setContractInsuranceProfileById(contractInsuranceProfileById);
@@ -343,6 +345,8 @@ public class OutpatientRegistrationAppService {
             WorkInjuryCapabilityExtensionOut capability = workInjuryModuleExtension.capability();
             response.setWorkInjuryCapability(capability);
         }
+        // Asm：下发「挂号医生是否必选」，前端据此切换医生表单项必填（种子默认非必选）
+        response.setRegistrationDoctorRequired(registrationDoctorRequiredSettingResolver.isRequired());
         return response;
     }
 
@@ -542,6 +546,10 @@ public class OutpatientRegistrationAppService {
         if (request.getContractId() == null || request.getOrganizationId() == null || request.getServiceTypeId() == null) {
             throw new BusinessException("REG-VAL-001", "请补齐挂号要素");
         }
+        // Gate：全局开关 registrationDoctorRequired=1 时必须指定接诊医生（BR-REG-001）
+        if (registrationDoctorRequiredSettingResolver.isRequired() && request.getPractitionerId() == null) {
+            throw new BusinessException("REG-VAL-001", "请选择接诊医生");
+        }
         // 预结算前先收敛患者主档：优先使用已选患者，其次按身份证命中既有患者，未命中则新建患者。
         Long patientId = resolvePatientIdForPreRegister(request);
         request.setPatientId(patientId);
@@ -551,7 +559,7 @@ public class OutpatientRegistrationAppService {
         // 与开立就诊同一业务时刻，保证防重自然日与领域 occurredAt 一致。
         LocalDateTime occurredAt = LocalDateTime.now();
         // 同患者、同目标科室、当日：凡占名额就诊（含待挂号 PLANNED 与诊毕）均阻断；仅 CANCELLED 撤销/退号后释放。
-        // 挂号防重检查：当日同科室已挂号则阻断重复挂号
+        // Pre：应用层早失败给出 REG-BIZ-409；领域 registerOutpatientEncounter 仍会再断言一次防并发窗。
         OutpatientDuplicateCheckQuery duplicateCheckQuery = new OutpatientDuplicateCheckQuery();
         duplicateCheckQuery.setPatientId(patientId);
         duplicateCheckQuery.setOrganizationId(request.getOrganizationId());
@@ -588,6 +596,7 @@ public class OutpatientRegistrationAppService {
         }
 
         // 挂号员与患者快照：投影依赖事件携带展示字段，须在此拉齐主档后再组装命令。
+        // Pre：操作人只解析一次，支付草稿 enterer 复用，避免重复会话读。
         Long registrarId = currentPractitionerResolver.requireOperatorId("REG-VAL-001", "当前登录用户不能为空");
         // Pre：仅「点选号源」传 slotId 才占号；纯表单手动挂号与排班库存解绑，禁止按科室策略自动占号
         boolean shouldAllocateWalkInSlot = false;
@@ -608,6 +617,11 @@ public class OutpatientRegistrationAppService {
         ChargeItemDefinition saleLine = chargeItemDefinitionQueryService.findSaleLineForHealthcareServiceRegistration(priceCommand);
         if (saleLine == null) {
             throw new BusinessException("REG-BIZ-404", "挂号定价不存在");
+        }
+        // Asm：支付草稿金额与创建命令一口价同源（create 落库写此值，preSettle 不改价），省一次按 id 回读 ChargeItem。
+        BigDecimal chargeItemAmount = saleLine.getPriceValue();
+        if (chargeItemAmount == null) {
+            chargeItemAmount = BigDecimal.ZERO;
         }
         // 先开立就诊并发布计划事件，保证读模型行存在且收费明细可绑定真实 encounterId；否则挂号收费创建事件的投影无法累加列表金额。
         RegisterOutpatientEncounterCommand encounterCommand = outpatientRegistrationMapper.toRegisterOutpatientEncounterCommand(
@@ -630,22 +644,31 @@ public class OutpatientRegistrationAppService {
             walkInSlotId = this.allocateWalkInSlotOrThrow(
                 request, patientId, registrarId, occurredAt.toLocalDate(), encounterId);
         }
+        // Pre：医保挂号确认即 2201 写 map(11)，供事前事中复用；与 ybRegisterFee 解耦；自费/非医保跳过
         this.runInsuranceRegistrationIfNeeded(request, encounterId);
         // 先开立默认个人现金账户（AccountTypeCode.PERSONAL_CASH_ACCOUNT），挂号费与后续医嘱费用草稿同锚；已存在则幂等跳过。
         Account registrationAccount = accountQueryService.getRegistrationAccount(patientId, encounterId);
         if (registrationAccount == null) {
+            // Cmd：开立就诊个人现金账户
             OpenEncounterAccountsCommand openAccountCommand =
                 outpatientRegistrationMapper.toOpenEncounterAccountsCommandForPreRegister(
                     request, encounterId, contractBusNo);
             accountDomainService.openEncounterAccounts(openAccountCommand);
+            // Pre：开户后须回读拿到账户主键与 busNo，供收费明细挂账
             registrationAccount = accountQueryService.getRegistrationAccount(patientId, encounterId);
-        } else if (registrationAccount.getId() != null) {
+        } else if (registrationAccount.getId() != null
+            && StringUtils.isNotBlank(contractBusNo)
+            && StringUtils.isBlank(registrationAccount.getContractNo())) {
+            // Cmd：仅合同号空缺时补写；已有 contract_no 或无 busNo 时跳过，避免无意义 findById
             accountDomainService.backfillContractNoIfMissing(registrationAccount.getId(), contractBusNo);
-            registrationAccount = accountQueryService.getRegistrationAccount(patientId, encounterId);
+            // Asm：内存回填即可，免二次 getRegistrationAccount
+            registrationAccount.setContractNo(contractBusNo.trim());
         }
         if (registrationAccount == null || registrationAccount.getId() == null) {
             throw new BusinessException("REG-BIZ-500", "开立就诊自费账户失败，无法生成收费明细");
         }
+        // TODO(ADR-CMP-001 D12)：Campus 启用且 ArchiveQueryReader 命中学生档案时，幂等开立
+        // AccountTypeCode.PUBLIC_EXPENSE_ACCOUNT；教职工挂号不开，收费选 gfChargeMode 时再处理。
         // 在就诊锚点与账户锚点齐备后创建挂号收费项并预结算，使 RegistrationChargeItemCreatedEvent 携带 encounterId/totalPrice。
         CreateChargeItemCommand createChargeItemCommand = outpatientRegistrationMapper.toCreateChargeItemCommand(
             request, saleLine, encounterId, occurredAt, registrationAccount.getId(), organization.getId());
@@ -653,26 +676,13 @@ public class OutpatientRegistrationAppService {
         Long chargeItemId = chargeItemDomainService.createRegistrationChargeItem(createChargeItemCommand);
         BatchChargeItemIdsCommand preSettleCommand = outpatientRegistrationMapper.toSingleChargeItemBatchCommand(chargeItemId);
         chargeItemDomainService.preSettleChargeItems(preSettleCommand);
-        // 以落库后的 ChargeItem.totalPrice 为支付草稿与响应总额的唯一口径，避免与定价定义二次取值不一致。
-        ChargeItemQueryCommand reloadChargeCmd = new ChargeItemQueryCommand();
-        reloadChargeCmd.setIds(List.of(chargeItemId));
-        List<ChargeItem> persistedChargeLines = chargeItemQueryService.loadChargeItemsByIds(reloadChargeCmd);
-        if (persistedChargeLines == null || persistedChargeLines.isEmpty()) {
-            throw new BusinessException("CHARGE_ITEM_002", "挂号收费明细落库后读取失败，请重试预结算");
-        }
-        ChargeItem persistedChargeLine = persistedChargeLines.get(0);
-        BigDecimal chargeItemAmount = persistedChargeLine.getTotalPrice();
-        if (chargeItemAmount == null) {
-            chargeItemAmount = BigDecimal.ZERO;
-        }
         // 使用就诊主键创建支付草稿，避免 payment.encounter_id 为空触发数据库约束异常。
         List<PaymentDetailItemCommand> paymentDetails = new ArrayList<>();
         CreatePaymentDraftFromPreSettleCommand paymentDraftCommand = outpatientRegistrationMapper
             .toCreatePaymentDraftFromPreSettleCommand(
                 request, encounterId, chargeItemId, chargeItemAmount, paymentDetails, contractBusNo);
-        // 支付草稿经办人取当前登录用户，避免 enterer_id 为空。
-        paymentDraftCommand.setEntererId(
-            currentPractitionerResolver.requireOperatorId("REG-VAL-001", "当前登录用户不能为空"));
+        // 支付草稿经办人复用上方已解析的挂号员，避免二次 requireOperatorId。
+        paymentDraftCommand.setEntererId(registrarId);
         Long paymentDraftId = paymentReconciliationDomainService.createPaymentDraftFromPreSettle(paymentDraftCommand);
         List<ChargeItemPreviewDto> previews = outpatientRegistrationMapper.toChargeItemPreviewDtoListBySaleLine(saleLine);
         Long responseAppointmentId = request.getAppointmentId();
@@ -698,38 +708,46 @@ public class OutpatientRegistrationAppService {
         return response;
     }
 
-    /** 预挂号阶段：医保费用性质时调 Extension 2201 平台登记。 */
+    /**
+     * 医保挂号确认：确保平台 2201 建档（{@code med_type=11}），写 {@code yb_encounter_platform_map}。
+     *
+     * <p>自费/非医保合同/工伤不调；须已读卡有 {@code psnNo}。与是否结挂号费（{@code ybRegisterFee}）无关。</p>
+     *
+     * @param request     预挂号请求
+     * @param encounterId 已创建的就诊 id
+     */
     private void runInsuranceRegistrationIfNeeded(PreRegisterSettlementRequest request, Long encounterId) {
+        if (request == null || encounterId == null) {
+            return;
+        }
         if (this.isWorkInjuryContract(request.getContractId())) {
             return;
         }
-        if (!outpatientRegistrationInsuranceExtension.isEnabled()) {
-            return;
-        }
-        if (request.getContractId() == null
+        if (!outpatientRegistrationInsuranceExtension.isEnabled()
+            || request.getContractId() == null
             || !outpatientRegistrationInsuranceExtension.supportsThirdPartyContract(request.getContractId())) {
             return;
         }
         if (StringUtils.isBlank(request.getPsnNo())) {
             throw new BusinessException("REG-VAL-002", "医保挂号须先读卡获取人员编号");
         }
-        OutpatientRegistrationPlatformExtensionIn command = new OutpatientRegistrationPlatformExtensionIn();
-        command.setEncounterId(encounterId);
-        command.setContractId(request.getContractId());
-        command.setPayerCertType(request.getYbMediumType());
-        command.setPayerCertNo(request.getYbCardInfo());
-        command.setInsuredPersonNo(request.getPsnNo());
-        command.setInsuplcAdmdvs(request.getInsuplcAdmdvs());
-        command.setInsutype(request.getInsutype());
-        command.setMedType(request.getMedType());
-        // Cmd：Extension → 2201（与挂号费 2206 分离）
+        // Pre：挂号建档强制普通门诊 11，禁止请求覆盖（慢病等在结算时再补 2201）
+        OutpatientRegistrationPlatformExtensionIn command = new OutpatientRegistrationPlatformExtensionIn()
+            .setEncounterId(encounterId)
+            .setContractId(request.getContractId())
+            .setPayerCertType(request.getYbMediumType())
+            .setPayerCertNo(request.getYbCardInfo())
+            .setInsuredPersonNo(request.getPsnNo())
+            .setInsuplcAdmdvs(request.getInsuplcAdmdvs())
+            .setInsutype(request.getInsutype())
+            .setMedType(YbMedType.GENERAL_OUTPATIENT.getCode());
         outpatientRegistrationInsuranceExtension.ensurePlatformRegistration(command);
     }
 
     /**
-     * 预结算勾选挂号费医保时走 Extension 2204→2206 并刷新支付草稿个人现金行。
+     * 预结算在 {@code ybRegisterFee=true} 时走 Extension：resolveMdtrtId(11)→2203→2204→2206，并刷新支付草稿个人现金行。
      *
-     * @param request              预结算请求
+     * @param request              预结算请求（含 ybRegisterFee / 读卡字段）
      * @param paymentDraftId       支付草稿 id
      * @param chargeItemId         挂号 chargeItem id
      * @param encounterId          就诊 id
@@ -744,12 +762,14 @@ public class OutpatientRegistrationAppService {
         Long encounterId,
         Account registrationAccount,
         PreRegisterSettlementResponse response) {
+        // Gate：工伤合同禁止挂号费走医保账户
         if (this.isWorkInjuryContract(request.getContractId())) {
             if (Boolean.TRUE.equals(request.getYbRegisterFee())) {
                 throw new BusinessException("WI-005", "工伤挂号费须自费，不得走医保/工伤账户");
             }
             return;
         }
+        // Gate：ybRegisterFee=false → 纯本地草稿，不写 map(11)
         if (!Boolean.TRUE.equals(request.getYbRegisterFee())) {
             return;
         }
@@ -763,7 +783,11 @@ public class OutpatientRegistrationAppService {
         if (StringUtils.isBlank(request.getPsnNo())) {
             throw new BusinessException("REG-VAL-002", "医保挂号须先读卡获取人员编号");
         }
+        // Pre：挂号费传 med_type=11（普通门诊）；长春等院点不支持 12，与诊疗费共用 map
         String medType = YbMedType.GENERAL_OUTPATIENT.getCode();
+        if (StringUtils.isNotBlank(request.getMedType())) {
+            medType = request.getMedType().trim();
+        }
         OutpatientChargePreSettleExtensionIn command = new OutpatientChargePreSettleExtensionIn();
         command.setEncounterId(encounterId);
         command.setChargeItemIds(List.of(chargeItemId));
@@ -776,7 +800,7 @@ public class OutpatientRegistrationAppService {
         command.setInsutype(request.getInsutype());
         command.setMedType(medType);
         command.setAcctUsedFlag(this.resolveRegisterFeeAcctUsedFlag(request.getYbUseAcctPay()));
-        // Cmd：挂号费走 Extension 2204→2206（非 RegistrationExtension）
+        // Cmd：统一预结算链（首启 2201 仅 map miss 时）
         OutpatientChargePreSettleExtensionOut ybResult = chargeInsuranceExtension.preSettle(command);
         BigDecimal psnCashPay = BigDecimal.ZERO;
         if (ybResult.getPsnCashPay() != null) {
@@ -857,42 +881,63 @@ public class OutpatientRegistrationAppService {
         if (expectedPayable.compareTo(actualPayable) != 0) {
             throw new BusinessException("PAY-VAL-002", "支付金额与预结算不一致");
         }
-        List<OutpatientChargeConfirmExtensionOut> ybConfirmResults =
-            this.collectRegisterFeeInsuranceConfirmResults(request, paymentDraft);
-        SettleOutpatientPaymentCommand settleOutpatientPaymentCommand =
-            outpatientRegistrationMapper.toSettleOutpatientPaymentCommand(request);
-        settleOutpatientPaymentCommand.setYbSettlements(this.buildRegisterFeeYbSettlementItems(ybConfirmResults));
-        this.mergeRegisterFeeInsurancePaymentDetails(
-            settleOutpatientPaymentCommand, ybConfirmResults, draftDetails);
-        Long operatorId = currentPractitionerResolver.requireOperatorId("PAY-VAL-001", "当前登录用户不能为空");
-        Long orgId = managedOrganizationIdsResolver.requireSessionOrganizationUnitId("PAY-VAL-001", "当前登录机构不能为空");
-        thirdPartyPaymentSettleOrchestrator.applyScanBeforeSettle(
-            request.getPaymentDraftId(),
-            settleOutpatientPaymentCommand.getPayReceiptDetails(),
-            request.getClientScanResult(),
-            operatorId,
-            orgId);
-        Long paymentId = paymentReconciliationSettleOrchestration.settleOutpatientPayment(settleOutpatientPaymentCommand);
-        BatchChargeItemIdsCommand settleItemsCommand = outpatientRegistrationMapper.toSingleChargeItemBatchCommand(chargeItemId);
-        // Cmd：挂号缴费与门诊收银共用 settleChargeItems，须写入收款人供明细列表回显（BR-OPC-016）。
-        settleItemsCommand.setOperatorId(operatorId);
-        chargeItemDomainService.settleChargeItems(settleItemsCommand);
-        // 缴费成功后将就诊状态从 PLANNED 迁移至 REGISTERED，与 EncounterStatus 生命周期对齐。
-        encounterDomainService.completeOutpatientRegistration(paymentDraft.getEncounterId());
+        // Gate：扫码渠道致命校验须在 2207 之前，与门诊收费确认对齐，避免平台已扣款后本地回滚掉单。
+        this.assertScanPayReadyBeforeInsuranceConfirm(request);
+        List<OutpatientChargeConfirmExtensionOut> ybConfirmResults = List.of();
+        try {
+            ybConfirmResults = this.collectRegisterFeeInsuranceConfirmResults(request, paymentDraft);
+            SettleOutpatientPaymentCommand settleOutpatientPaymentCommand =
+                outpatientRegistrationMapper.toSettleOutpatientPaymentCommand(request);
+            settleOutpatientPaymentCommand.setYbSettlements(this.buildRegisterFeeYbSettlementItems(ybConfirmResults));
+            this.mergeRegisterFeeInsurancePaymentDetails(
+                settleOutpatientPaymentCommand, ybConfirmResults, draftDetails);
+            Long operatorId = currentPractitionerResolver.requireOperatorId("PAY-VAL-001", "当前登录用户不能为空");
+            Long orgId = managedOrganizationIdsResolver.requireSessionOrganizationUnitId("PAY-VAL-001", "当前登录机构不能为空");
+            thirdPartyPaymentSettleOrchestrator.applyScanBeforeSettle(
+                request.getPaymentDraftId(),
+                settleOutpatientPaymentCommand.getPayReceiptDetails(),
+                request.getClientScanResult(),
+                operatorId,
+                orgId);
+            Long paymentId = paymentReconciliationSettleOrchestration.settleOutpatientPayment(settleOutpatientPaymentCommand);
+            BatchChargeItemIdsCommand settleItemsCommand = outpatientRegistrationMapper.toSingleChargeItemBatchCommand(chargeItemId);
+            // Cmd：挂号缴费与门诊收银共用 settleChargeItems，须写入收款人供明细列表回显（BR-OPC-016）。
+            settleItemsCommand.setOperatorId(operatorId);
+            chargeItemDomainService.settleChargeItems(settleItemsCommand);
+            // 缴费成功后将就诊状态从 PLANNED 迁移至 REGISTERED，与 EncounterStatus 生命周期对齐。
+            encounterDomainService.completeOutpatientRegistration(paymentDraft.getEncounterId());
 
-        if (request.getAppointmentId() != null && outpatientBookingRegistrationExtension.isEnabled()) {
-            outpatientBookingRegistrationExtension.linkEncounter(request.getAppointmentId(), paymentDraft.getEncounterId());
-            outpatientBookingRegistrationExtension.checkInAfterRegister(request.getAppointmentId(), paymentDraft.getEncounterId());
+            if (request.getAppointmentId() != null && outpatientBookingRegistrationExtension.isEnabled()) {
+                outpatientBookingRegistrationExtension.linkEncounter(request.getAppointmentId(), paymentDraft.getEncounterId());
+                outpatientBookingRegistrationExtension.checkInAfterRegister(request.getAppointmentId(), paymentDraft.getEncounterId());
+            }
+
+            // 第四步：票面（挂号收费项合计）> 0 时创建电子发票草稿；真正零元挂号跳过。博思开具由 einvoice-boss 异步处理。
+            BigDecimal invoiceFaceAmount = MonetaryAmountSupport.scaleSettle(registrationChargeLine.getTotalPrice());
+            CreateDraftInvoiceCommand draftInvoiceCommand =
+                outpatientRegistrationMapper.toCreateDraftInvoiceCommand(paymentDraft, paymentId, invoiceFaceAmount);
+            Long invoiceId = invoiceAfterPaymentOrchestration.createDraftAndScheduleIssueIfPayable(draftInvoiceCommand);
+            Invoice invoice = null;
+            if (invoiceId != null) {
+                invoice = invoiceQueryService.getInvoiceById(outpatientRegistrationMapper.toInvoiceQueryCommand(invoiceId));
+            }
+
+            // 第五步：回传最新支付信息与发票草稿信息，组装缴费结果。
+            return outpatientRegistrationMapper.toPayRegisterFeeResponse(
+                paymentReconciliationQueryService.mustGetPayment(paymentId), invoice);
+        } catch (RuntimeException ex) {
+            // 2207 已成功但本地落账失败：同事务内冲正平台结算，与门诊收费确认对齐。
+            if (!ybConfirmResults.isEmpty()) {
+                try {
+                    outpatientChargeInsuranceCompensationOrchestration.compensateSettlementsByPayment(
+                        request.getPaymentDraftId());
+                } catch (RuntimeException compensationEx) {
+                    compensationEx.addSuppressed(ex);
+                    throw compensationEx;
+                }
+            }
+            throw ex;
         }
-
-        // 第四步：支付完成后仅创建电子发票草稿；博思开具由 einvoice-boss 异步处理，不阻塞收费窗。
-        CreateDraftInvoiceCommand draftInvoiceCommand = outpatientRegistrationMapper.toCreateDraftInvoiceCommand(paymentDraft, paymentId);
-        Long invoiceId = invoiceDomainService.createDraftInvoiceAfterPayment(draftInvoiceCommand);
-        bossElectronicInvoiceAfterCommitOrchestration.afterDraftCreated(invoiceId);
-        Invoice invoice = invoiceQueryService.getInvoiceById(outpatientRegistrationMapper.toInvoiceQueryCommand(invoiceId));
-
-        // 第五步：回传最新支付信息与发票草稿信息，组装缴费结果。
-        return outpatientRegistrationMapper.toPayRegisterFeeResponse(paymentReconciliationQueryService.mustGetPayment(paymentId), invoice);
     }
 
     /**
@@ -908,8 +953,9 @@ public class OutpatientRegistrationAppService {
             throw new BusinessException("REG-VAL-001", "查询参数不完整");
         }
         pageWindowGate.requireNonNullPageWindow(request, "REG-VAL-001", "查询参数不完整");
-        // Pre：查询读模型分页并映射为响应记录。
+        // Pre：查询读模型分页；未收费取消（ENTERED_IN_ERROR）不展示；退号完成（CANCELLED）仍展示。
         ClinicRegisterPageQuery query = outpatientRegistrationMapper.toClinicRegisterPageQuery(request);
+        query.setExcludeStatusEnums(List.of(EncounterStatus.ENTERED_IN_ERROR.getCode()));
         Page<ClinicRegisterQueryModel> page = clinicRegistrationLoader.pageClinicRegister(query);
         // 读模型未存挂号费：按就诊批量拉取收费明细，用 BR-CHG-001 锚点（adm_healthcare_service + 号源类型）汇总 total_price 回填列表金额。
         Map<String, BigDecimal> registrationFeeByAnchor = buildRegistrationFeeTotalsForClinicRegisterPage(page.getContent());
@@ -935,7 +981,7 @@ public class OutpatientRegistrationAppService {
             }
         }
         Map<Long, Long> paymentIdByEncounter =
-            paymentReconciliationQueryService.findLatestSuccessPaymentIdsByEncounterIds(settledEncounterIds);
+            this.buildRegistrationFeePaymentIdsForClinicRegisterPage(settledEncounterIds);
         List<ClinicRegisterItemDto> records =
             outpatientRegistrationMapper.toClinicRegisterItemDtoList(
                 page, registrationFeeByAnchor, paymentDraftByEncounter, paymentIdByEncounter);
@@ -944,25 +990,33 @@ public class OutpatientRegistrationAppService {
     }
 
     /**
-     * 撤销待挂号（PLANNED）：作废支付草稿，必要时撤销医保 2206/2202，并将就诊置为 CANCELLED。
+     * 取消未收费挂号（PLANNED）：作废支付草稿，按需 2205/2202(med_type=12)，就诊置 {@code ENTERED_IN_ERROR}。
+     *
+     * <p>前端入口文案为「取消」。与退号（{@code CANCELLED}）分流：本方法仅处理未收费挂单。
+     * 已缴费挂号须走 {@code cancelWithRefund}（退号），不可调用本方法。</p>
+     *
+     * @param request 含 encounterId、可选 cancelReason
+     * @return 取消后状态与是否曾撤平台挂号
      */
     public CancelPlannedRegistrationResponse cancelPlannedRegistration(CancelPlannedRegistrationRequest request) {
-        // Gate：须指定待撤销的挂号就诊。
+        // Gate：须指定待取消的未收费挂号就诊
         if (request.getEncounterId() == null) {
             throw new BusinessException("CANCEL-VAL-001", "请先选择挂号记录");
         }
-        // Pre：须为门诊 AMB 且 PLANNED 状态，否则不可窗口撤销。
+        // Pre：须为门诊 AMB 且 PLANNED，已登记退号走 cancelWithRefund
         EncounterDetailQueryModel encounter = encounterQueryService.mustGetEncounterOfClass(
             request.getEncounterId(),
             EncounterClass.AMB.getCode(),
             ErrorCodeConstants.ENCOUNTER_INVALID_STATUS,
-            "当前就诊不是门诊类别，无法撤销");
+            "当前就诊不是门诊类别，无法取消挂号");
         if (!EncounterStatus.PLANNED.getCode().equals(encounter.getStatusEnum())) {
-            throw new BusinessException("CANCEL-BIZ-409", "仅待挂号状态可撤销");
+            throw new BusinessException("CANCEL-BIZ-409", "仅待挂号（未收费）状态可取消挂号");
         }
+        // Gate：已产生正式收费则禁止「取消挂号」（应走退号/退费）
+        this.assertPlannedRegistrationVoidable(request.getEncounterId());
         String cancelReason = request.getCancelReason();
         if (cancelReason == null || cancelReason.isBlank()) {
-            cancelReason = "窗口撤销待挂号";
+            cancelReason = "窗口取消挂号";
         }
         Long paymentDraftId = paymentReconciliationQueryService
             .findDraftPaymentIdsByEncounterIds(List.of(request.getEncounterId()))
@@ -971,6 +1025,7 @@ public class OutpatientRegistrationAppService {
             encounter.getPatientId(), request.getEncounterId());
         Long contractId = this.resolveContractIdFromAccount(registrationAccount);
         boolean insuranceRevoked = false;
+        // Cmd：有活跃预结算批次 → 2205 撤未结算明细
         if (paymentDraftId != null && chargeInsuranceExtension.isEnabled()) {
             List<OutpatientChargePreSettleQueryExtensionOut> active =
                 chargeInsuranceExtension.listActivePreSettlesByPaymentDraft(
@@ -983,17 +1038,18 @@ public class OutpatientRegistrationAppService {
                 revokeCommand.setChargeBatchNo(row.getChargeBatchNo().trim());
                 revokeCommand.setPaymentDraftId(paymentDraftId);
                 chargeInsuranceExtension.revokeFeeDetails(revokeCommand);
+                insuranceRevoked = true;
             }
         }
+        // Cmd：撤挂号费平台 map（11 现行 + 12 历史残留）；无 map 则 Extension 内幂等跳过
         if (outpatientRegistrationInsuranceExtension.isEnabled()
             && contractId != null
             && outpatientRegistrationInsuranceExtension.supportsThirdPartyContract(contractId)) {
-            OutpatientRegistrationPlatformExtensionIn revokeCommand = new OutpatientRegistrationPlatformExtensionIn();
-            revokeCommand.setEncounterId(request.getEncounterId());
-            revokeCommand.setContractId(contractId);
-            outpatientRegistrationInsuranceExtension.revokePlatformRegistration(revokeCommand);
-            insuranceRevoked = true;
+            if (this.revokeRegisterFeePlatformMaps(request.getEncounterId(), contractId)) {
+                insuranceRevoked = true;
+            }
         }
+        // Cmd：作废本地支付草稿并取消 PLANNED 就诊
         if (paymentDraftId != null) {
             AbortPreSettlementBeforePaymentCommand abortCommand = new AbortPreSettlementBeforePaymentCommand();
             abortCommand.setPaymentId(paymentDraftId);
@@ -1008,9 +1064,125 @@ public class OutpatientRegistrationAppService {
             bookingCancel.setOperatorId(operatorId);
             outpatientBookingRegistrationExtension.onRegistrationCancelled(request.getEncounterId(), bookingCancel);
         }
+        // Asm：返回 ENTERED_IN_ERROR 与是否触达平台撤销
         return new CancelPlannedRegistrationResponse()
-            .setEncounterStatus(EncounterStatus.CANCELLED.getCode())
+            .setEncounterStatus(EncounterStatus.ENTERED_IN_ERROR.getCode())
             .setInsurancePlatformRevoked(insuranceRevoked);
+    }
+
+    /**
+     * 「取消挂号」前置：本就诊不得已有成功支付（即未产生对应 med_type 的正式费用）。
+     *
+     * @param encounterId 待取消的未收费就诊
+     */
+    private void assertPlannedRegistrationVoidable(Long encounterId) {
+        List<PaymentReconciliationQueryModel> successPayments =
+            paymentReconciliationQueryService.findPaySuccessOrRefundingByEncounter(encounterId);
+        // Gate：已产生正式收费（成功/退费中支付）→ 应走退号而非取消挂号
+        if (successPayments != null && !successPayments.isEmpty()) {
+            throw new BusinessException("CANCEL-BIZ-409", "已产生正式费用，不能取消挂号，请使用退号");
+        }
+    }
+
+    /**
+     * 已结挂号费退号前：先 2208 撤结算，再 2202(med_type=12) 撤平台挂号（§3.6 必做）。
+     *
+     * @param encounterId 就诊 id
+     * @param payments    成功/退费中支付单（可空）
+     */
+    private void runRegisterFeeInsuranceRevokeBeforeCancel(
+        Long encounterId,
+        List<PaymentReconciliationQueryModel> payments) {
+        if (!chargeInsuranceExtension.isEnabled()) {
+            return;
+        }
+        if (payments != null) {
+            for (PaymentReconciliationQueryModel payment : payments) {
+                if (payment == null || payment.getId() == null) {
+                    continue;
+                }
+                List<OutpatientChargeSettlementRecordExtensionOut> records =
+                    chargeInsuranceExtension.listSettlementsByPayment(payment.getId());
+                if (records == null || records.isEmpty()) {
+                    continue;
+                }
+                for (OutpatientChargeSettlementRecordExtensionOut record : records) {
+                    if (record == null) {
+                        continue;
+                    }
+                    // Skip：本地已 REVOKED 不再打 2208（重试退号时 list 仍含已撤行）
+                    if (PaymentYbSettlementStatus.REVOKED.equals(record.getStatus())) {
+                        continue;
+                    }
+                    OutpatientChargeRevokeSettleExtensionIn revokeSettleCommand =
+                        new OutpatientChargeRevokeSettleExtensionIn();
+                    revokeSettleCommand.setSettlementRecordId(record.getSettlementRecordId());
+                    revokeSettleCommand.setPaymentId(payment.getId());
+                    revokeSettleCommand.setPreSettleId(record.getPreSettleId());
+                    revokeSettleCommand.setSettlementId(record.getSettlementId());
+                    try {
+                        // Cmd：2208 撤销原挂号费正式结算
+                        chargeInsuranceExtension.revokeSettle(revokeSettleCommand);
+                    } catch (RuntimeException ex) {
+                        String detail = ex.getMessage();
+                        if (detail == null || detail.isBlank()) {
+                            detail = "平台返回失败";
+                        }
+                        throw new BusinessException(
+                            "INS-013",
+                            "医保结算撤销失败（2208）：" + detail + "；请勿重复退号，联系医保办处理");
+                    }
+                }
+            }
+        }
+        EncounterDetailQueryModel encounter = encounterQueryService.mustGetEncounterOfClass(
+            encounterId,
+            EncounterClass.AMB.getCode(),
+            ErrorCodeConstants.ENCOUNTER_INVALID_STATUS,
+            "当前就诊不是门诊类别，无法退号");
+        Account registrationAccount = accountQueryService.getRegistrationAccount(
+            encounter.getPatientId(), encounterId);
+        Long contractId = this.resolveContractIdFromAccount(registrationAccount);
+        // Gate：非医保合同或未装配登记 Extension → 跳过 2202
+        if (!outpatientRegistrationInsuranceExtension.isEnabled()
+            || contractId == null
+            || !outpatientRegistrationInsuranceExtension.supportsThirdPartyContract(contractId)) {
+            return;
+        }
+        try {
+            // Cmd：2208 之后必 2202；11 现行与 12 历史残留都撤；无 map 则跳过
+            this.revokeRegisterFeePlatformMaps(encounterId, contractId);
+        } catch (RuntimeException ex) {
+            throw new BusinessException(
+                "INS-013",
+                "医保挂号撤销失败（2202），本地退号已中止，请联系医保办处理");
+        }
+    }
+
+    /**
+     * 撤销本就诊挂号费相关平台 map：普通门诊 11（现行）与门诊挂号 12（改码前残留）。
+     *
+     * @param encounterId 就诊 id
+     * @param contractId  费用性质 id
+     * @return 任一 map 实际触达平台撤销时 true
+     */
+    private boolean revokeRegisterFeePlatformMaps(Long encounterId, Long contractId) {
+        boolean revoked = false;
+        for (String medType : List.of(
+            YbMedType.GENERAL_OUTPATIENT.getCode(),
+            YbMedType.OUTPATIENT_REGISTRATION.getCode())) {
+            OutpatientRegistrationPlatformExtensionIn revokeCommand =
+                new OutpatientRegistrationPlatformExtensionIn();
+            revokeCommand.setEncounterId(encounterId);
+            revokeCommand.setContractId(contractId);
+            revokeCommand.setMedType(medType);
+            OutpatientRegistrationPlatformExtensionOut revokeOut =
+                outpatientRegistrationInsuranceExtension.revokePlatformRegistration(revokeCommand);
+            if (revokeOut != null && StringUtils.isNotBlank(revokeOut.getEncounterPlatformId())) {
+                revoked = true;
+            }
+        }
+        return revoked;
     }
 
     /**
@@ -1097,11 +1269,12 @@ public class OutpatientRegistrationAppService {
         if (ybUseAcctPay == null && previous != null && StringUtils.isNotBlank(previous.getAcctUsedFlag())) {
             ybUseAcctPay = !"0".equals(previous.getAcctUsedFlag().trim());
         }
+        // Pre：刷新挂号费预结算默认 med_type=11；请求显式传入时仍允许覆盖（运维/联调）
         String medType = YbMedType.GENERAL_OUTPATIENT.getCode();
         if (StringUtils.isNotBlank(request.getMedType())) {
             medType = request.getMedType().trim();
         }
-        // Cmd：Extension 2204→2206 重算并刷新支付草稿个人现金行
+        // Cmd：Extension 2203→2204→2206 重算并刷新支付草稿个人现金行
         OutpatientChargePreSettleExtensionIn command = new OutpatientChargePreSettleExtensionIn();
         command.setEncounterId(encounter.getId());
         command.setChargeItemIds(List.of(registrationChargeLine.getId()));
@@ -1143,7 +1316,10 @@ public class OutpatientRegistrationAppService {
     }
 
     /**
-     * 当日挂号统计（不含待收费 PLANNED）。
+     * 当日挂号统计。
+     *
+     * <p>不含待收费 {@code PLANNED}、不含未收费取消 {@code ENTERED_IN_ERROR}；
+     * 「已退」仅计退号完成 {@code CANCELLED}；「有效」= 当日挂号 − 已退。</p>
      *
      * @param request 统计日期，默认当天
      * @return 总数、已退数、有效数
@@ -1159,11 +1335,15 @@ public class OutpatientRegistrationAppService {
         LocalDateTime dayStart = date.atStartOfDay();
         LocalDateTime dayEnd = date.atTime(23, 59, 59);
 
+        // 当日挂号：排除待收费与未收费取消，避免冲高「有效」
         ClinicRegisterPageQuery totalQuery = new ClinicRegisterPageQuery();
         totalQuery.setStartTime(dayStart);
         totalQuery.setEndTime(dayEnd);
-        totalQuery.setExcludeStatusEnums(List.of(EncounterStatus.PLANNED.getCode()));
+        totalQuery.setExcludeStatusEnums(List.of(
+            EncounterStatus.PLANNED.getCode(),
+            EncounterStatus.ENTERED_IN_ERROR.getCode()));
 
+        // 已退：仅退号完成（CANCELLED），与未收费取消分流
         ClinicRegisterPageQuery cancelledQuery = new ClinicRegisterPageQuery();
         cancelledQuery.setStartTime(dayStart);
         cancelledQuery.setEndTime(dayEnd);
@@ -1182,7 +1362,8 @@ public class OutpatientRegistrationAppService {
     /**
      * 校验当前挂号记录是否允许退号。
      *
-     * <p>先执行 BR-REG-015 临床/收费全收口门禁，再校验就诊可退状态（BR-REG-008）。</p>
+     * <p>先执行 BR-REG-015 收费全收口门禁（非挂号锚点无待收/已收/退费中），再校验就诊可退状态（BR-REG-008）。
+     * 退药/退耗由门诊退费 IF-REF-04 在资金退费前收口，本接口不再查发放态。</p>
      *
      * @param request 退号校验请求
      * @return 退号可行性结果
@@ -1199,7 +1380,7 @@ public class OutpatientRegistrationAppService {
             EncounterClass.AMB.getCode(),
             ErrorCodeConstants.ENCOUNTER_INVALID_STATUS,
             "当前就诊不是门诊类别，无法退号");
-        // Gate：非挂号锚点收费/发药/耗材执行须全收口（BR-REG-015；诊疗执行不在范围）。
+        // Gate：非挂号锚点账单须无待收/已收/退费中（BR-REG-015；药耗已由 IF-REF-04 收口）。
         OutpatientRegistrationCancelBlockResult clinicalBillingBlock =
             outpatientRegistrationCancelGate.evaluateClinicalBillingBlock(request.getEncounterId());
         if (clinicalBillingBlock.isBlocked()) {
@@ -1234,9 +1415,13 @@ public class OutpatientRegistrationAppService {
     /**
      * 执行退号并联动退费与冲红。
      *
+     * <p>若挂号费已医保正式结算：本地退费前必先 【2208→2202(med_type=12)】。</p>
+     * <p>已付挂号费时逆向单须<strong>原路返回</strong>拷贝原支付 {@code contract_no} 与渠道明细
+     * （含统筹/个账/自付），对齐 {@code BR-REF-011}；禁止落空明细导致日结支付方式缺失。</p>
+     *
      * @param request 退号退费请求
      * @return 退号退费结果
-     * @throws BusinessException 参数不完整或不满足退号条件时抛出
+     * @throws BusinessException 参数不完整、不满足退号条件、无原支付渠道明细或医保撤销失败时抛出
      */
     public CancelWithRefundResponse cancelWithRefund(CancelWithRefundRequest request) {
         // Gate：退号退费必须具备最小参数集（含幂等 refundRequestId）。
@@ -1252,6 +1437,13 @@ public class OutpatientRegistrationAppService {
             }
             throw new BusinessException("REFUND-BIZ-403", refundBlockMsg);
         }
+        List<PaymentReconciliationQueryModel> payments = paymentReconciliationQueryService.findPaySuccessOrRefundingByEncounter(request.getEncounterId());
+        List<Long> paymentIds = new ArrayList<>();
+        for (PaymentReconciliationQueryModel payment : payments) {
+            paymentIds.add(payment.getId());
+        }
+        // Pre/Cmd：已医保结挂号费 → 必须先 2208，再 2202(med_type=12)，禁止只本地退
+        this.runRegisterFeeInsuranceRevokeBeforeCancel(request.getEncounterId(), payments);
         // 执行就诊退号动作。
         CancelOutpatientRegistrationCommand cancelCommand = outpatientRegistrationMapper.toCancelOutpatientRegistrationCommand(request);
         encounterDomainService.cancelOutpatientRegistration(cancelCommand);
@@ -1263,21 +1455,30 @@ public class OutpatientRegistrationAppService {
             cancelReason.setOperatorId(operatorId);
             outpatientBookingRegistrationExtension.onRegistrationCancelled(request.getEncounterId(), cancelReason);
         }
-        List<PaymentReconciliationQueryModel> payments = paymentReconciliationQueryService.findPaySuccessOrRefundingByEncounter(request.getEncounterId());
-        List<Long> paymentIds = new ArrayList<>();
-        for (PaymentReconciliationQueryModel payment : payments) {
-            paymentIds.add(payment.getId());
-        }
         // 存在支付记录时，创建逆向单并完成退费与收费项回退；原收费单保持 SUCCESS。
         PaymentReconciliationQueryModel refundPayment = null;
         if (!paymentIds.isEmpty()) {
             Long operatorId = currentPractitionerResolver.requireOperatorId("REFUND-VAL-001", "当前登录用户不能为空");
-            PaymentReconciliationQueryModel originalPayment = payments.get(0);
+            PaymentReconciliationQueryModel originalPayment =
+                this.requireRegistrationFeePaymentForCancel(request.getEncounterId());
             thirdPartyPaymentRefundOrchestrator.applyRefundBeforeLocalRefund(
                 originalPayment.getId(),
                 request.getClientRefundResult(),
                 operatorId);
-            RequestOutpatientRefundCommand requestRefundCommand = outpatientRegistrationMapper.toRequestOutpatientRefundCommand(request, originalPayment);
+            // Pre：整单原路返回——读原支付渠道明细（含统筹/个账/自付），对齐 IF-REF-05 / BR-REF-011
+            List<PaymentRecDetailQueryModel> originalPaymentDetails =
+                paymentReconciliationQueryService.listPaymentRecDetailsByPaymentId(originalPayment.getId());
+            List<PaymentDetailItemCommand> refundPaymentDetails =
+                outpatientRegistrationMapper.toRegistrationCancelRefundPaymentDetails(originalPaymentDetails);
+            // Gate：无渠道明细则无法原路退，禁止落空明细逆向单（日结支付方式会显示「—」）
+            if (refundPaymentDetails.isEmpty()) {
+                throw new BusinessException(
+                    ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                    "原挂号支付无渠道明细，无法退号退费");
+            }
+            RequestOutpatientRefundCommand requestRefundCommand =
+                outpatientRegistrationMapper.toRequestOutpatientRefundCommand(
+                    request, originalPayment, refundPaymentDetails);
             Long originalPaymentId = originalPayment.getId();
             Long reversePaymentId = null;
             try {
@@ -1296,18 +1497,26 @@ public class OutpatientRegistrationAppService {
             }
             refundPayment = paymentReconciliationQueryService.mustGetPayment(reversePaymentId);
         }
-        // 若存在已开票记录，则同步冲红。
+        // 若存在票据：DRAFT 仅本地作废（支付后立即退号常见）；ISSUED 冲红并调度博思。
         Invoice redInvoice = null;
         if (!payments.isEmpty()) {
             InvoiceQueryCommand latestInvoiceQuery = new InvoiceQueryCommand();
             latestInvoiceQuery.setPaymentId(payments.get(0).getId());
-            Invoice latestInvoice = invoiceQueryService.getLatestIssuedInvoiceByPaymentId(latestInvoiceQuery);
-            if (latestInvoice != null) {
-                CancelInvoiceCommand cancelInvoiceCommand = outpatientRegistrationMapper.toCancelInvoiceCommand(latestInvoice.getId(), request.getCancelReason());
-                invoiceDomainService.writeoffInvoiceAndCreateRedRecord(cancelInvoiceCommand);
-                bossElectronicInvoiceAfterCommitOrchestration.afterInvoiceCancelled(
+            Invoice latestInvoice = invoiceQueryService.getInvoiceByPaymentId(latestInvoiceQuery);
+            if (latestInvoice != null && !InvoiceStatus.CANCELLED.sameAs(latestInvoice.getStatusEnum())) {
+                CancelInvoiceCommand cancelInvoiceCommand = outpatientRegistrationMapper.toCancelInvoiceCommand(
                     latestInvoice.getId(), request.getCancelReason());
-                redInvoice = invoiceQueryService.getInvoiceById(outpatientRegistrationMapper.toInvoiceQueryCommand(latestInvoice.getId()));
+                if (InvoiceStatus.DRAFT.sameAs(latestInvoice.getStatusEnum())) {
+                    invoiceDomainService.voidDraftInvoice(cancelInvoiceCommand);
+                    bossElectronicInvoiceAfterCommitOrchestration.afterInvoiceCancelled(
+                        latestInvoice.getId(), request.getCancelReason());
+                } else if (InvoiceStatus.ISSUED.sameAs(latestInvoice.getStatusEnum())) {
+                    invoiceDomainService.writeoffInvoiceAndCreateRedRecord(cancelInvoiceCommand);
+                    bossElectronicInvoiceAfterCommitOrchestration.afterInvoiceCancelled(
+                        latestInvoice.getId(), request.getCancelReason());
+                    redInvoice = invoiceQueryService.getInvoiceById(
+                        outpatientRegistrationMapper.toInvoiceQueryCommand(latestInvoice.getId()));
+                }
             }
         }
         // 返回最新就诊、退费、红票状态供前端展示。
@@ -1361,6 +1570,9 @@ public class OutpatientRegistrationAppService {
 
     /**
      * 从挂号支付草稿解析并加载唯一挂号收费明细，供正式结算复用（禁止再次 {@code createRegistrationChargeItem}）。
+     *
+     * <p>自费时草稿 {@code displayAmount} 须等于 {@code ChargeItem.totalPrice}；
+     * 有 ACTIVE 2206 时 {@code displayAmount} 为个人现金应付，允许与原价不一致。</p>
      *
      * @param paymentDraft 预结算产生的支付草稿读模型
      * @return 已存在且处于可结算门禁的收费明细实体
@@ -1433,8 +1645,12 @@ public class OutpatientRegistrationAppService {
         if (linePersistedAmount == null) {
             linePersistedAmount = BigDecimal.ZERO;
         }
-        if (draftDisplayAmount.compareTo(linePersistedAmount) != 0) {
-            throw new BusinessException("PAY-BIZ-409", "支付草稿金额与收费明细不一致，请重新预结算");
+        // 自费：草稿 displayAmount 须与 ChargeItem.totalPrice 一致。
+        // 有 ACTIVE 2206 时 displayAmount 为个人现金应付（psnCashPay），允许与原价不一致。
+        if (!this.hasActiveRegisterFeeInsurancePreSettle(paymentDraft.getId())) {
+            if (draftDisplayAmount.compareTo(linePersistedAmount) != 0) {
+                throw new BusinessException("PAY-BIZ-409", "支付草稿金额与收费明细不一致，请重新预结算");
+            }
         }
         return registrationLine;
     }
@@ -1566,44 +1782,23 @@ public class OutpatientRegistrationAppService {
         }
         response.setBenefitKind("STUDENT");
         response.setStudentPreview(buildStudentProfilePreview(request));
-        if (request.getStudentId() != null) {
-            StudentPublicExpenseEligibilityQueryModel eligibility =
-                patientQueryService.checkStudentPublicExpenseEligibility(request.getPatientId(), request.getStudentId());
-            response.setStudentEligibility(StudentEligibilityPreviewDto.from(eligibility));
-        }
         return response;
     }
 
     /**
-     * 加载患者学籍档案并映射为挂号待遇预览 DTO。
+     * 加载患者基本信息并映射为挂号待遇预览 DTO（学籍已迁出 campus 模块，studentRecords 为空）。
      *
      * @param request 待遇预览请求（含 patientId）
      * @return 学生档案预览
      */
     private StudentRegisterBenefitPreviewDto buildStudentProfilePreview(LoadRegisterBenefitPreviewRequest request) {
-        PatientStudentProfileQueryModel profile =
-            patientQueryService.loadPatientStudentProfile(request.getPatientId());
+        PatientDetailQueryModel detail = patientQueryService.loadPatientDetail(request.getPatientId());
         StudentRegisterBenefitPreviewDto dto = new StudentRegisterBenefitPreviewDto();
-        dto.setPatientId(profile.getPatientId());
-        dto.setPatientName(profile.getName());
-        dto.setIdCard(profile.getIdCard());
-        dto.setPhone(profile.getPhone());
-        if (profile.getStudentRecords() != null) {
-            for (PatientStudentQueryModel row : profile.getStudentRecords()) {
-                StudentRecordPreviewDto item = new StudentRecordPreviewDto();
-                item.setStudentId(row.getId());
-                item.setName(row.getName());
-                item.setStudentNo(row.getStudentNo());
-                item.setCollege(row.getCollege());
-                item.setMajor(row.getMajor());
-                item.setGrade(row.getGrade());
-                item.setSchoolStatus(row.getSchoolStatus());
-                item.setPhysicalExamResult(row.getPhysicalExamResult());
-                if (row.getLeaveTime() != null) {
-                    item.setLeaveTimeText(row.getLeaveTime().toString());
-                }
-                dto.getStudentRecords().add(item);
-            }
+        if (detail != null && detail.getPatient() != null) {
+            dto.setPatientId(detail.getPatient().getId());
+            dto.setPatientName(detail.getPatient().getName());
+            dto.setIdCard(detail.getPatient().getIdCard());
+            dto.setPhone(detail.getPatient().getPhone());
         }
         return dto;
     }
@@ -1972,20 +2167,26 @@ public class OutpatientRegistrationAppService {
     /**
      * 在预结算前解析患者主档：有患者ID直接复用，否则按身份证号查重后复用或建档。
      *
+     * <p>复用既有患者（直选 ID 或身份证命中）时，若表单携带非空联系电话且与主档不一致，
+     * 则调用 {@link PatientDomainService#updatePatientPhone} 回写主档，保证挂号列表
+     * {@code contactPhone}（读 {@code Patient.phone}）可回显。</p>
+     *
      * @param request 预结算请求
      * @return 可用患者ID
      * @throws BusinessException 新建患者时姓名/性别未补齐，或当前登录机构不可用时抛出
      */
     private Long resolvePatientIdForPreRegister(PreRegisterSettlementRequest request) {
-        // 已选中既有患者时，直接复用前端指定患者。
+        // 已选中既有患者时，直接复用前端指定患者，并按需回写表单联系电话。
         if (request.getPatientId() != null) {
+            this.syncPatientPhoneFromPreRegisterIfNeeded(request.getPatientId(), request.getPhone());
             return request.getPatientId();
         }
         // 未传身份证号时跳过同人识别，直接按最小建档字段走后续建档流程。
         if (request.getIdCardNo() != null && !request.getIdCardNo().isBlank()) {
-            // 按身份证精确命中既有患者，命中后复用该患者继续挂号。
+            // 按身份证精确命中既有患者，命中后复用该患者并回写表单联系电话。
             PatientSimpleQueryModel matchedPatient = patientQueryService.findPatientByIdCard(request.getIdCardNo());
             if (matchedPatient != null) {
+                this.syncPatientPhoneFromPreRegisterIfNeeded(matchedPatient.getId(), request.getPhone());
                 return matchedPatient.getId();
             }
         }
@@ -2008,6 +2209,37 @@ public class OutpatientRegistrationAppService {
             }
         }
         return patientDomainService.registerPatient(command);
+    }
+
+    /**
+     * 复用既有患者时，将挂号表单非空联系电话回写主档（与主档相同则跳过）。
+     *
+     * <p>挂号列表「联系电话」取自 {@code Patient.phone}；仅新建分支会在建档命令写入 phone，
+     * 复用分支须显式回写，否则表单填写的电话不会出现在历史就诊列表。</p>
+     *
+     * @param patientId 既有患者主键
+     * @param formPhone 挂号表单联系电话；空则不改主档
+     */
+    private void syncPatientPhoneFromPreRegisterIfNeeded(Long patientId, String formPhone) {
+        // Pre：表单未填电话则不改主档，避免空串覆盖既有号码。
+        if (formPhone == null || formPhone.isBlank()) {
+            return;
+        }
+        String trimmedPhone = formPhone.trim();
+        PatientDetailQueryModel detail = patientQueryService.loadPatientDetail(patientId);
+        // Pre：主档不存在时跳过回写，后续开立就诊再暴露错误。
+        if (detail == null || detail.getPatient() == null) {
+            return;
+        }
+        String currentPhone = detail.getPatient().getPhone();
+        // Pre：主档已是同一号码则跳过写库与领域事件。
+        if (Objects.equals(trimmedPhone, currentPhone)) {
+            return;
+        }
+        // Cmd：回写主档 phone，供挂号列表 contactPhone 回显。
+        UpdatePatientPhoneCommand command =
+            outpatientRegistrationMapper.toUpdatePatientPhoneCommand(patientId, trimmedPhone);
+        patientDomainService.updatePatientPhone(command);
     }
 
     /**
@@ -2055,6 +2287,100 @@ public class OutpatientRegistrationAppService {
     }
 
     /**
+     * 按就诊解析挂号费收费项主键（{@code service_table = adm_healthcare_service}）。
+     *
+     * @param encounterIds 就诊主键
+     * @return 就诊 → 挂号费 chargeItem 主键集合
+     */
+    private Map<Long, LinkedHashSet<Long>> resolveRegistrationFeeChargeItemIdsByEncounter(
+        Collection<Long> encounterIds) {
+        Map<Long, LinkedHashSet<Long>> result = new HashMap<>();
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return result;
+        }
+        List<Long> idList = new ArrayList<>();
+        for (Long encounterId : encounterIds) {
+            if (encounterId != null) {
+                idList.add(encounterId);
+            }
+        }
+        if (idList.isEmpty()) {
+            return result;
+        }
+        ChargeItemQueryCommand batchCmd = new ChargeItemQueryCommand();
+        batchCmd.setEncounterIds(idList);
+        List<ChargeItem> chargeLines = chargeItemQueryService.listChargeItemsByEncounterIds(batchCmd);
+        if (chargeLines == null || chargeLines.isEmpty()) {
+            return result;
+        }
+        String healthcareServiceSlot = TableNameConstants.ADM_HEALTHCARE_SERVICE;
+        for (ChargeItem line : chargeLines) {
+            if (line == null || line.getId() == null || line.getEncounterId() == null) {
+                continue;
+            }
+            if (!healthcareServiceSlot.equals(line.getServiceTable())) {
+                continue;
+            }
+            result.computeIfAbsent(line.getEncounterId(), key -> new LinkedHashSet<>()).add(line.getId());
+        }
+        return result;
+    }
+
+    /**
+     * 挂号列表：按挂号费 chargeItem 锚定对应 SUCCESS 支付流水（供退号银联退货/补打挂号小票）。
+     *
+     * @param encounterIds 已挂号就诊主键
+     * @return 就诊 → 挂号支付流水主键
+     */
+    private Map<Long, Long> buildRegistrationFeePaymentIdsForClinicRegisterPage(List<Long> encounterIds) {
+        Map<Long, LinkedHashSet<Long>> chargeItemIdsByEncounter =
+            this.resolveRegistrationFeeChargeItemIdsByEncounter(encounterIds);
+        return paymentReconciliationQueryService.findSuccessPaymentIdsOverlappingChargeItemsByEncounter(
+            chargeItemIdsByEncounter);
+    }
+
+    /**
+     * 退号退费：选出挂载挂号费 chargeItem 的正向支付；找不到则业务失败。
+     *
+     * @param encounterId 就诊主键
+     * @return 挂号费支付读模型
+     */
+    private PaymentReconciliationQueryModel requireRegistrationFeePaymentForCancel(Long encounterId) {
+        Map<Long, LinkedHashSet<Long>> chargeItemIdsByEncounter =
+            this.resolveRegistrationFeeChargeItemIdsByEncounter(List.of(encounterId));
+        LinkedHashSet<Long> registrationChargeItemIds = chargeItemIdsByEncounter.get(encounterId);
+        if (registrationChargeItemIds == null || registrationChargeItemIds.isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                "未找到挂号费收费项，无法退号退费");
+        }
+        List<PaymentReconciliationQueryModel> hit =
+            paymentReconciliationQueryService.findPaySuccessOrRefundingOverlappingChargeItems(
+                encounterId,
+                registrationChargeItemIds);
+        if (!hit.isEmpty() && hit.get(0) != null) {
+            return hit.get(0);
+        }
+        throw new BusinessException(
+            ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+            "未找到挂号费对应的支付流水，无法退号退费");
+    }
+
+    /**
+     * 是否存在挂号支付草稿绑定的 ACTIVE 2206 预结算（有则应付取个人现金，而非原价）。
+     *
+     * @param paymentDraftId 支付草稿主键
+     * @return true 表示已有有效医保预结算
+     */
+    private boolean hasActiveRegisterFeeInsurancePreSettle(Long paymentDraftId) {
+        if (!chargeInsuranceExtension.isEnabled() || paymentDraftId == null) {
+            return false;
+        }
+        return !chargeInsuranceExtension.listActivePreSettlesByPaymentDraft(
+            new OutpatientChargePreSettleListExtensionIn().setPaymentDraftId(paymentDraftId)).isEmpty();
+    }
+
+    /**
      * 解析挂号正式结算应付：有 ACTIVE 2206 时用草稿 displayAmount，否则 chargeItem 总价。
      *
      * @param paymentDraft           支付草稿
@@ -2065,14 +2391,14 @@ public class OutpatientRegistrationAppService {
         PaymentReconciliationQueryModel paymentDraft,
         ChargeItem registrationChargeLine) {
         if (paymentDraft.getDisplayAmount() != null
-            && chargeInsuranceExtension.isEnabled()
-            && paymentDraft.getId() != null
-            && !chargeInsuranceExtension.listActivePreSettlesByPaymentDraft(
-                new OutpatientChargePreSettleListExtensionIn().setPaymentDraftId(paymentDraft.getId())).isEmpty()) {
+            && this.hasActiveRegisterFeeInsurancePreSettle(paymentDraft.getId())) {
             return paymentDraft.getDisplayAmount();
         }
         BigDecimal amount = registrationChargeLine.getTotalPrice();
-        return amount != null ? amount : BigDecimal.ZERO;
+        if (amount == null) {
+            return BigDecimal.ZERO;
+        }
+        return amount;
     }
 
     /**
@@ -2089,6 +2415,38 @@ public class OutpatientRegistrationAppService {
             }
         }
         return total;
+    }
+
+    /**
+     * 挂号正式结算前扫码门禁：含 {@code SCAN_PAY} 时须金额 &gt; 0 且已提交 {@code clientScanResult}。
+     *
+     * <p>须在调用医保 2207 之前执行，与门诊收费确认对齐。</p>
+     *
+     * @param request 挂号缴费请求
+     */
+    private void assertScanPayReadyBeforeInsuranceConfirm(PayRegisterFeeRequest request) {
+        if (request.getPaymentDetails() == null || request.getPaymentDetails().isEmpty()) {
+            return;
+        }
+        PaymentDetailDto scanLine = null;
+        for (PaymentDetailDto detail : request.getPaymentDetails()) {
+            if (detail == null) {
+                continue;
+            }
+            if (PaymentChannel.SCAN_PAY.getCode().equals(StringUtils.trimToEmpty(detail.getPayChannelCode()))) {
+                scanLine = detail;
+                break;
+            }
+        }
+        if (scanLine == null) {
+            return;
+        }
+        if (scanLine.getPayAmount() == null || scanLine.getPayAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("PAY-VAL-001", "零现金应付禁止使用扫码支付渠道，请重新预结算后缴费");
+        }
+        if (request.getClientScanResult() == null) {
+            throw new BusinessException("PAY-VAL-001", "扫码支付须提交 clientScanResult");
+        }
     }
 
     /**
@@ -2258,7 +2616,7 @@ public class OutpatientRegistrationAppService {
     }
 
     /**
-     * 挂号列表行回补合同名称、医保平台快照与参保地字典展示名。
+     * 挂号列表行回补合同名称、收费人、医保平台快照与参保地字典展示名。
      *
      * @param records                 列表 DTO
      * @param paymentDraftByEncounter 待挂号 encounter → 支付草稿 id
@@ -2270,14 +2628,33 @@ public class OutpatientRegistrationAppService {
             return;
         }
         List<Long> encounterIds = new ArrayList<>();
+        List<Long> successPaymentIds = new ArrayList<>();
         for (ClinicRegisterItemDto row : records) {
-            if (row != null && row.getEncounterId() != null) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getEncounterId() != null) {
                 encounterIds.add(row.getEncounterId());
+            }
+            // 已缴费行才有成功支付流水，用于回显收费人
+            if (row.getPaymentId() != null) {
+                successPaymentIds.add(row.getPaymentId());
             }
         }
         if (encounterIds.isEmpty()) {
             return;
         }
+        // Pre：成功支付 enterer_id → 医务人员姓名（与退费/费用明细收费人回显同源）
+        Map<Long, Long> entererIdByPaymentId =
+            paymentReconciliationQueryService.mapEntererIdByPaymentIds(successPaymentIds);
+        LinkedHashSet<Long> entererIds = new LinkedHashSet<>();
+        for (Long entererId : entererIdByPaymentId.values()) {
+            if (entererId != null) {
+                entererIds.add(entererId);
+            }
+        }
+        Map<Long, String> cashierNameByEntererId =
+            practitionerQueryService.mapDisplayNameByEntererIds(entererIds);
         Map<Long, Account> accountByEncounter = accountQueryService.mapRegistrationAccountsByEncounterIds(encounterIds);
         Map<String, String> contractNameByBusNo = new HashMap<>();
         for (Account account : accountByEncounter.values()) {
@@ -2310,6 +2687,16 @@ public class OutpatientRegistrationAppService {
             Account account = accountByEncounter.get(row.getEncounterId());
             if (account != null && StringUtils.isNotBlank(account.getContractNo())) {
                 row.setContractName(contractNameByBusNo.get(account.getContractNo().trim()));
+            }
+            if (row.getPaymentId() != null) {
+                Long entererId = entererIdByPaymentId.get(row.getPaymentId());
+                if (entererId != null) {
+                    row.setCashierName(cashierNameByEntererId.get(entererId));
+                }
+            }
+            // 退号完成：库内 CANCELLED，窗口文案统一「退号」，不展示「已取消」
+            if (EncounterStatus.CANCELLED.getCode().equals(row.getStatusEnum())) {
+                row.setStatusText(OutpatientRegistrationConstants.CLINIC_REGISTER_STATUS_TEXT_REFUNDED);
             }
             OutpatientRegistrationPlatformQueryExtensionOut snap = platformByEncounter.get(row.getEncounterId());
             if (snap != null) {

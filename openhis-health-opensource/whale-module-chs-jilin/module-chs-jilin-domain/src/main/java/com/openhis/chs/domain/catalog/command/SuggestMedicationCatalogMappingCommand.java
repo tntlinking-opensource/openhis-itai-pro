@@ -37,7 +37,8 @@ public class SuggestMedicationCatalogMappingCommand {
     private String doseFormCode;
 
     @Schema(description = "本地无候选时是否则 1312 补库后再推荐")
-    private boolean queryPlatformIfMiss = true;
+    /** 本地候选池为空时是否触发 1312 补库；选码弹窗默认 false，仅查本地镜像。 */
+    private boolean queryPlatformIfMiss = false;
 
     @Schema(description = "返回候选条数上限，默认 20")
     private Integer maxCandidates;

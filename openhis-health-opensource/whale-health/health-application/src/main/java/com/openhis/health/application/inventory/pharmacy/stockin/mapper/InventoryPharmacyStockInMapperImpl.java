@@ -54,6 +54,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -256,9 +257,14 @@ public class InventoryPharmacyStockInMapperImpl implements InventoryPharmacyStoc
                 }
             }
             LocalDateTime maxApply = null;
+            // —— 列表金额与出库/进货列表同构：同号各行 total_price 之和。——
+            BigDecimal totalAmount = BigDecimal.ZERO;
             for (SupplyRequestModel line : lines) {
                 if (line == null) {
                     continue;
+                }
+                if (line.getTotalPrice() != null) {
+                    totalAmount = totalAmount.add(line.getTotalPrice());
                 }
                 if (line.getApplyTime() != null) {
                     // 列表申请时间取同号下最晚申请时刻，表示「单据活跃时间」上界。
@@ -292,6 +298,7 @@ public class InventoryPharmacyStockInMapperImpl implements InventoryPharmacyStoc
             dto.setOriginalBusNo(head.getOriginalBusNo());
             dto.setApprovalTime(approvalTime);
             dto.setApplyTime(maxApply);
+            dto.setTotalAmount(totalAmount);
             out.add(dto);
         }
         return out;

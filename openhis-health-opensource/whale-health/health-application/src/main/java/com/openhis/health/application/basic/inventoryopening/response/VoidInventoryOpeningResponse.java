@@ -1,0 +1,28 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.openhis.health.application.basic.inventoryopening.response;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.experimental.Accessors;
+
+/**
+ * 作废期初单响应（IF-BAS-INV-OPN-15）。
+ */
+@Getter
+@Setter
+@Accessors(chain = true)
+@Schema(description = "作废期初响应")
+public class VoidInventoryOpeningResponse {
+
+    /** 已作废单号。 */
+    @Schema(description = "单号")
+    private String busNo;
+
+    /** 是否成功。 */
+    @Schema(description = "成功")
+    private Boolean success;
+}

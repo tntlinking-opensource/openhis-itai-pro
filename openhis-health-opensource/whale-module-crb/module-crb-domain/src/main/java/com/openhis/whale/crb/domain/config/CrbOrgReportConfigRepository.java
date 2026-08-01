@@ -10,7 +10,10 @@ import java.util.Optional;
 
 /**
  * 院端前置配置仓储。
+ *
+ * @deprecated 禁止使用 — 配置已迁移至 {@code CrbProperties}，保留实体仅供 Flyway V1 表兼容。
  */
+@Deprecated
 public interface CrbOrgReportConfigRepository extends JpaRepository<CrbOrgReportConfig, Long> {
 
     /**

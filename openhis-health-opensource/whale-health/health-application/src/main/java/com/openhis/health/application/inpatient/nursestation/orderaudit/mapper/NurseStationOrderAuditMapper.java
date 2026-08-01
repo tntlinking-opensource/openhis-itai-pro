@@ -54,7 +54,7 @@ public interface NurseStationOrderAuditMapper {
     String resolveTherapyEnum(String therapyType);
 
     /**
-     * 读模型骨架二次过滤：纯 DRAFT、退药/退诊疗关联行（BR-IP-AUD-002）。
+     * 读模型骨架二次过滤：纯 DRAFT、退药/退诊疗（认 refund_*_id，不认 based_on；BR-IP-AUD-002）。
      *
      * @param skeleton Q-IP-AUD-001 结果；可 null
      * @return 过滤后列表；入参 null 时返回空列表

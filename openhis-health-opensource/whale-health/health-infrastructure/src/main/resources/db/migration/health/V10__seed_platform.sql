@@ -1,15 +1,11 @@
 -- Platform seed (admin + terminology + menus + MRMS/EMR shell)
+-- 2026-07-21: demo org/users/locations/practitioners/pr_assign moved to health-dev V25
+-- 2026-07-28: cus_frequency + prt_print_binding moved from health-dev V13/V17 into this file
+-- Archive: db/seed-archive/V10__seed_platform.before_20260721_site_split.sql
 
 INSERT INTO "whale_users" ("id", "user_name", "email", "phone_number", "password_hash", "name", "surname", "is_active", "is_locked_out", "lockout_end", "access_failed_count", "extra_properties", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "ukey_id", "ukey_src_id")
 VALUES
-('1', 'admin', 'admin@example.com', NULL, '$2a$10$7H11xZICXxBlwxh2/hBRzuB0TC7wEduR4Fs2x4s7yFOn4fjrOIMuK', 'admin', NULL, true, false, NULL, 0, NULL, '2026-05-02 22:07:04.503+00', '2026-06-10 08:49:49.813+00', NULL, NULL, false, NULL, NULL, NULL, NULL),
-('322932010666430464', 'yaofang', NULL, NULL, '$2a$10$fgewpcSdDLz1V8hz5mGJs.VI/AQSxgh15vCqQXv3uExk3MQQXeNq6', '药房', NULL, true, false, NULL, 0, NULL, '2026-06-10 02:56:31.129+00', '2026-06-10 02:56:31.129+00', '1', '1', false, NULL, NULL, NULL, NULL),
-('322932096091820032', 'kuguan', NULL, NULL, '$2a$10$xmtLIpu./wIOtQvtOCasN.CxUuSv0Z27KYkoK/KsmR0862gtZd2ne', '库管', NULL, true, false, NULL, 0, NULL, '2026-06-10 02:56:51.496+00', '2026-06-10 02:57:30.134+00', '1', '1', false, NULL, NULL, NULL, NULL),
-('322932211309350912', 'shoufei', NULL, NULL, '$2a$10$aUBhg.2LPcQaoaZJcqQSZusUsUxb52Sr9oPVhfE8.M6c40RPNs4di', '收费', NULL, true, false, NULL, 0, NULL, '2026-06-10 02:57:18.966+00', '2026-06-10 02:57:18.966+00', '1', '1', false, NULL, NULL, NULL, NULL),
-('322935698131259392', 'zyyisheng', NULL, NULL, '$2a$10$WLfRePjxQHwBcz5v/qpsPejS3I.bZU1PUKocrAL5rzn.fWGoDrvey', '住院医生', NULL, true, false, NULL, 0, NULL, '2026-06-10 03:11:10.289+00', '2026-06-10 03:11:10.289+00', '1', '1', false, NULL, NULL, NULL, NULL),
-('322963602154721280', 'yisheng', NULL, NULL, '$2a$10$40qkQYyXUxyemhox33jLMOaNht/hJnwdpA8ERsbdKN2lbXWUV0vBK', '门诊医生', NULL, true, false, NULL, 0, NULL, '2026-06-10 05:02:03.127+00', '2026-06-10 05:02:03.127+00', '1', '1', false, NULL, NULL, NULL, NULL),
-('322965022853566464', 'hushi', NULL, NULL, '$2a$10$L0qwEnhMmYg/UfpMnNGA1eaEy5NhM1LogeA8ehGQBSiO86ebOpsBm', '护士', NULL, true, false, NULL, 0, NULL, '2026-06-10 05:07:41.848+00', '2026-06-10 05:08:11.113+00', '1', '1', false, NULL, NULL, NULL, NULL),
-('323022664197214208', 'xinxike', NULL, NULL, '$2a$10$yUUyPkFp8YrLgFHB3ydovuoBwaqe6mF6dcs7PMpyImY4obRTFMSMS', '信息科', NULL, true, false, NULL, 0, NULL, '2026-06-10 08:56:44.615+00', '2026-06-10 08:56:44.615+00', '1', '1', false, NULL, NULL, NULL, NULL)
+('1', 'admin', 'admin@example.com', NULL, '$2a$10$7H11xZICXxBlwxh2/hBRzuB0TC7wEduR4Fs2x4s7yFOn4fjrOIMuK', 'admin', NULL, true, false, NULL, 0, NULL, '2026-05-02 22:07:04.503+00', '2026-06-10 08:49:49.813+00', NULL, NULL, false, NULL, NULL, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
 
 INSERT INTO "whale_roles" ("id", "name", "display_name", "code", "description", "is_default", "is_static", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
@@ -25,34 +21,12 @@ ON CONFLICT ("id") DO NOTHING;
 
 INSERT INTO "whale_user_roles" ("id", "user_id", "role_id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
 VALUES
-('1', '1', '1', NULL, '2026-05-02 22:07:04.512+00', NULL, NULL, NULL, false, NULL, NULL),
-('322932010733539328', '322932010666430464', '12', '1', '2026-06-10 02:56:31.145+00', '2026-06-10 02:56:31.145+00', '1', '1', false, NULL, NULL),
-('322932096154734592', '322932096091820032', '13', '1', '2026-06-10 02:56:51.511+00', '2026-06-10 02:56:51.511+00', '1', '1', false, NULL, NULL),
-('322932211372265472', '322932211309350912', '14', '1', '2026-06-10 02:57:18.981+00', '2026-06-10 02:57:18.981+00', '1', '1', false, NULL, NULL),
-('322935698261282816', '322935698131259392', '10', '1', '2026-06-10 03:11:10.320+00', '2026-06-10 03:11:10.320+00', '1', '1', false, NULL, NULL),
-('322963602620289024', '322963602154721280', '10', '1', '2026-06-10 05:02:03.238+00', '2026-06-10 05:02:03.238+00', '1', '1', false, NULL, NULL),
-('322965022908092416', '322965022853566464', '11', '1', '2026-06-10 05:07:41.861+00', '2026-06-10 05:07:41.861+00', '1', '1', false, NULL, NULL),
-('322965878780989440', '1', '14', '1', '2026-06-10 05:11:05.917+00', '2026-06-10 05:11:05.917+00', '1', '1', false, NULL, NULL),
-('322965878881652736', '1', '10', '1', '2026-06-10 05:11:05.941+00', '2026-06-10 05:11:05.941+00', '1', '1', false, NULL, NULL),
-('322965878919401472', '1', '13', '1', '2026-06-10 05:11:05.950+00', '2026-06-10 05:11:05.950+00', '1', '1', false, NULL, NULL),
-('322965878990704640', '1', '12', '1', '2026-06-10 05:11:05.967+00', '2026-06-10 05:11:05.967+00', '1', '1', false, NULL, NULL),
-('322965879020064768', '1', '11', '1', '2026-06-10 05:11:05.974+00', '2026-06-10 05:11:05.974+00', '1', '1', false, NULL, NULL),
-('323021900313792512', '322965022853566464', '13', '1', '2026-06-10 08:53:42.491+00', '2026-06-10 08:53:42.491+00', '1', '1', false, NULL, NULL),
-('323022664272711680', '323022664197214208', '323022177255297024', '1', '2026-06-10 08:56:44.633+00', '2026-06-10 08:56:44.633+00', '1', '1', false, NULL, NULL)
+('1', '1', '1', NULL, '2026-05-02 22:07:04.512+00', NULL, NULL, NULL, false, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
-
-
-
-
 
 INSERT INTO "whale_organization_units" ("id", "code", "display_name", "parent_id", "sort_order", "is_enabled", "remark", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
 VALUES
-('322663105157926912', 'OR0007', '测试医院', NULL, 0, true, NULL, '1', '2026-06-09 09:07:59.060+00', '2026-06-09 09:07:59.060+00', '1', '1', false, NULL, NULL),
-('322663218286694400', 'OR0007.OR0008', '门诊内科', '322663105157926912', 0, true, NULL, '1', '2026-06-09 09:08:26.032+00', '2026-06-09 09:08:26.032+00', '1', '1', false, NULL, NULL),
-('322663308824940544', 'OR0007.OR0009', '住院内科', '322663105157926912', 0, true, NULL, '1', '2026-06-09 09:08:47.618+00', '2026-06-09 09:08:47.618+00', '1', '1', false, NULL, NULL),
-('322663606398226432', 'OR0007.OR0010', '处置室', '322663105157926912', 0, true, NULL, '1', '2026-06-09 09:09:58.565+00', '2026-06-09 09:09:58.565+00', '1', '1', false, NULL, NULL),
-('322663652535570432', 'OR0007.OR0011', '护理站', '322663105157926912', 0, true, NULL, '1', '2026-06-09 09:10:09.565+00', '2026-06-09 09:10:09.565+00', '1', '1', false, NULL, NULL),
-('322663815438143488', 'OR0007.OR0012', '挂号收费处', '322663105157926912', 0, true, NULL, '1', '2026-06-09 09:10:48.405+00', '2026-06-09 09:10:48.405+00', '1', '1', false, NULL, NULL)
+('322663105157926912', 'OR0007', '测试医院', NULL, 0, true, NULL, '1', '2026-06-09 09:07:59.060+00', '2026-06-09 09:07:59.060+00', '1', '1', false, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
 
 INSERT INTO "whale_role_claims" ("id", "role_id", "claim_type", "claim_value", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
@@ -194,33 +168,19 @@ ON CONFLICT ("id") DO NOTHING;
 
 INSERT INTO "whale_user_tenants" ("id", "user_id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
 VALUES
-('5', '1', '1', '2026-05-02 22:07:04.564+00', '2026-05-02 22:07:04.564+00', '1', NULL, false, NULL, NULL),
-('322934748440170496', '322932211309350912', '1', '2026-06-10 03:07:23.865+00', '2026-06-10 03:07:23.865+00', '1', '1', false, NULL, NULL),
-('322934748461142016', '322932096091820032', '1', '2026-06-10 03:07:23.870+00', '2026-06-10 03:07:23.870+00', '1', '1', false, NULL, NULL),
-('322934748473724928', '322932010666430464', '1', '2026-06-10 03:07:23.873+00', '2026-06-10 03:07:23.873+00', '1', '1', false, NULL, NULL),
-('322935698188275712', '322935698131259392', '1', '2026-06-10 03:11:10.330+00', '2026-06-10 03:11:10.330+00', '1', '1', false, NULL, NULL),
-('322963602188275712', '322963602154721280', '1', '2026-06-10 05:02:03.135+00', '2026-06-10 05:02:03.135+00', '1', '1', false, NULL, NULL),
-('322965022861955072', '322965022853566464', '1', '2026-06-10 05:07:41.850+00', '2026-06-10 05:07:41.850+00', '1', '1', false, NULL, NULL),
-('323022664205602816', '323022664197214208', '1', '2026-06-10 08:56:44.617+00', '2026-06-10 08:56:44.617+00', '1', '1', false, NULL, NULL)
+('5', '1', '1', '2026-05-02 22:07:04.564+00', '2026-05-02 22:07:04.564+00', '1', NULL, false, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
 
 INSERT INTO "whale_settings" ("id", "name", "value", "provider_name", "provider_key", "tenant_id", "description", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
 VALUES
-('322347974589943808', 'ybSwich', '0', 'G', NULL, '1', '医保开关', '2026-06-08 12:15:46.078+00', '2026-06-10 07:14:45.901+00', '1', '1', false, NULL, NULL),
-('322983522708492288', 'deviceAutoInventoryDeductSwich', '1', 'G', NULL, '1', '耗材是否自动扣库', '2026-06-10 06:21:12.557+00', '2026-06-10 06:21:12.557+00', '1', '1', false, NULL, NULL)
+('322347974589943808', 'registrationDoctorRequired', '1', 'G', NULL, '1', '挂号时医生是否必选（全局G；1必选/0非必选；种子默认必选）', '2026-06-08 12:15:46.078+00', '2026-06-10 07:14:45.901+00', '1', '1', false, NULL, NULL),
+('322983522708492288', 'deviceAutoInventoryDeductSwich', '1', 'G', NULL, '1', '耗材是否自动扣库（全局G；1开/0关；种子默认开）', '2026-06-10 06:21:12.557+00', '2026-06-10 06:21:12.557+00', '1', '1', false, NULL, NULL),
+('323100000000000001', 'inpatientStandingOrderSplittable', '1', 'G', NULL, '1', '住院长嘱是否可拆（全局G；1可拆/0不可拆；种子默认可拆）', '2026-07-18 00:00:00.000+00', '2026-07-18 00:00:00.000+00', '1', '1', false, NULL, NULL),
+('323100000000000002', 'doctorStationWesternDiagnosisSources', 'hospital_dx,general_dx', 'G', NULL, '1', '医生站西医诊断检索目录来源（逗号分隔 source_enum）', '2026-07-18 00:00:00.000+00', '2026-07-18 00:00:00.000+00', '1', '1', false, NULL, NULL),
+('323100000000000003', 'outpatientPrescriptionAmountLimitYuan', '1000', 'G', NULL, '1', '门诊处方金额上限（元；种子默认1000）', '2026-07-22 00:00:00.000+00', '2026-07-22 00:00:00.000+00', '1', '1', false, NULL, NULL),
+('323100000000000004', 'inventoryExpireWarningDays', '90', 'G', NULL, '1', '库存效期预警天数（种子默认90）', '2026-07-22 00:00:00.000+00', '2026-07-22 00:00:00.000+00', '1', '1', false, NULL, NULL),
+('323100000000000005', 'inventoryMinPackageQuantityWarning', '30', 'G', NULL, '1', '库存预警包装单位数量（种子默认30）', '2026-07-22 00:00:00.000+00', '2026-07-22 00:00:00.000+00', '1', '1', false, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
-
-
-
-
-
-
-
-
-
-
-
-
 
 INSERT INTO whale_roles (
     id, name, display_name, code, description, is_default, is_static,
@@ -248,64 +208,21 @@ INSERT INTO whale_role_claims (
      '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL)
 ON CONFLICT (id) DO NOTHING;
 
-
-
-INSERT INTO "adm_location" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "name", "bus_no", "status_enum", "operational_enum", "form_enum", "mode_enum", "type_json", "organization_id", "display_order", "py_str", "wb_str", "parent_id")
-VALUES
-('322954857622802432', '1', '2026-06-10 04:27:18.268+00', '2026-06-10 04:27:18.268+00', '1', '1', false, NULL, NULL, 0, '耗材库', 'LO0019', 'ACTIVE', 'NOT_IN_USE', 'WAREHOUSE', 'INSTANCE', '{}', '322663105141149696', 0, NULL, NULL, NULL),
-('322954885380706304', '1', '2026-06-10 04:27:24.886+00', '2026-06-10 04:27:24.886+00', '1', '1', false, NULL, NULL, 0, '西药库', 'LO0020', 'ACTIVE', 'NOT_IN_USE', 'WAREHOUSE', 'INSTANCE', '{}', '322663105141149696', 0, NULL, NULL, NULL),
-('322954919841107968', '1', '2026-06-10 04:27:33.102+00', '2026-06-10 04:27:33.102+00', '1', '1', false, NULL, NULL, 0, '中药库', 'LO0021', 'ACTIVE', 'NOT_IN_USE', 'WAREHOUSE', 'INSTANCE', '{}', '322663105141149696', 0, NULL, NULL, NULL),
-('322954949549363200', '1', '2026-06-10 04:27:40.185+00', '2026-06-10 04:27:40.185+00', '1', '1', false, NULL, NULL, 0, '门诊西药房', 'LO0022', 'ACTIVE', 'NOT_IN_USE', 'PHARMACY', 'INSTANCE', '{}', '322663105141149696', 0, NULL, NULL, NULL),
-('322954984441778176', '1', '2026-06-10 04:27:48.505+00', '2026-06-10 04:27:48.505+00', '1', '1', false, NULL, NULL, 0, '门诊中药房', 'LO0023', 'ACTIVE', 'NOT_IN_USE', 'PHARMACY', 'INSTANCE', '{}', '322663105141149696', 0, NULL, NULL, NULL),
-('322955009603407872', '1', '2026-06-10 04:27:54.503+00', '2026-06-10 04:27:54.503+00', '1', '1', false, NULL, NULL, 0, '住院西药房', 'LO0024', 'ACTIVE', 'NOT_IN_USE', 'PHARMACY', 'INSTANCE', '{}', '322663105141149696', 0, NULL, NULL, NULL),
-('322955039064199168', '1', '2026-06-10 04:28:01.527+00', '2026-06-10 04:28:01.527+00', '1', '1', false, NULL, NULL, 0, '住院中药房', 'LO0025', 'ACTIVE', 'NOT_IN_USE', 'PHARMACY', 'INSTANCE', '{}', '322663105141149696', 0, NULL, NULL, NULL),
-('322955075642724352', '1', '2026-06-10 04:28:10.248+00', '2026-06-10 04:28:10.248+00', '1', '1', false, NULL, NULL, 0, '门诊耗材房', 'LO0026', 'ACTIVE', 'NOT_IN_USE', 'PHARMACY', 'INSTANCE', '{}', '322663105141149696', 0, NULL, NULL, NULL),
-('322955098803671040', '1', '2026-06-10 04:28:15.770+00', '2026-06-10 04:28:15.770+00', '1', '1', false, NULL, NULL, 0, '住院耗材房', 'LO0027', 'ACTIVE', 'NOT_IN_USE', 'PHARMACY', 'INSTANCE', '{}', '322663105141149696', 0, NULL, NULL, NULL),
-('322955305339588608', '1', '2026-06-10 04:29:05.012+00', '2026-06-10 04:29:20.543+00', '1', '1', false, NULL, NULL, 0, '内科疗区', 'LO0028', 'ACTIVE', 'NOT_IN_USE', 'WARD', 'INSTANCE', NULL, '322663308812357632', NULL, NULL, NULL, NULL),
-('322955414072725504', '1', '2026-06-10 04:29:30.936+00', '2026-06-10 06:13:38.711+00', '1', '1', false, NULL, NULL, 0, '301', 'LO0028.LO0029', 'ACTIVE', 'NOT_IN_USE', 'HOUSE', 'INSTANCE', NULL, '322663308812357632', NULL, NULL, NULL, '322955305339588608'),
-('322955435841163264', '1', '2026-06-10 04:29:36.126+00', '2026-06-10 06:13:46.171+00', '1', '1', false, NULL, NULL, 0, '302', 'LO0028.LO0030', 'ACTIVE', 'NOT_IN_USE', 'HOUSE', 'INSTANCE', NULL, '322663308812357632', NULL, NULL, NULL, '322955305339588608'),
-('322955450206654464', '1', '2026-06-10 04:29:39.551+00', '2026-06-10 06:13:52.009+00', '1', '1', false, NULL, NULL, 0, '303', 'LO0028.LO0031', 'ACTIVE', 'NOT_IN_USE', 'HOUSE', 'INSTANCE', NULL, '322663308812357632', NULL, NULL, NULL, '322955305339588608'),
-('322955479021522944', '1', '2026-06-10 04:29:46.421+00', '2026-06-10 04:29:46.421+00', '1', '1', false, NULL, NULL, 0, '1号床', 'LO0028.LO0029.LO0032', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955414072725504'),
-('322955492829171712', '1', '2026-06-10 04:29:49.713+00', '2026-06-10 04:29:49.713+00', '1', '1', false, NULL, NULL, 0, '2号床', 'LO0028.LO0029.LO0033', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955414072725504'),
-('322955505781182464', '1', '2026-06-10 04:29:52.802+00', '2026-06-10 04:29:52.802+00', '1', '1', false, NULL, NULL, 0, '3号床', 'LO0028.LO0029.LO0034', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955414072725504'),
-('322955532368875520', '1', '2026-06-10 04:29:59.140+00', '2026-06-10 04:29:59.140+00', '1', '1', false, NULL, NULL, 0, '4号床', 'LO0028.LO0029.LO0035', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955414072725504'),
-('322955544607854592', '1', '2026-06-10 04:30:02.058+00', '2026-06-10 04:30:02.058+00', '1', '1', false, NULL, NULL, 0, '1号床', 'LO0028.LO0030.LO0036', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955435841163264'),
-('322955557694083072', '1', '2026-06-10 04:30:05.178+00', '2026-06-10 04:30:05.178+00', '1', '1', false, NULL, NULL, 0, '2号床', 'LO0028.LO0030.LO0037', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955435841163264'),
-('322955569337470976', '1', '2026-06-10 04:30:07.954+00', '2026-06-10 04:30:07.954+00', '1', '1', false, NULL, NULL, 0, '3号床', 'LO0028.LO0030.LO0038', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955435841163264'),
-('322955581840691200', '1', '2026-06-10 04:30:10.935+00', '2026-06-10 04:30:10.935+00', '1', '1', false, NULL, NULL, 0, '4号床', 'LO0028.LO0030.LO0039', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955435841163264'),
-('322955603542020096', '1', '2026-06-10 04:30:16.109+00', '2026-06-10 04:30:16.109+00', '1', '1', false, NULL, NULL, 0, '1号床', 'LO0028.LO0031.LO0040', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955450206654464'),
-('322955616741494784', '1', '2026-06-10 04:30:19.256+00', '2026-06-10 04:30:19.256+00', '1', '1', false, NULL, NULL, 0, '2号床', 'LO0028.LO0031.LO0041', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955450206654464'),
-('322955629387321344', '1', '2026-06-10 04:30:22.271+00', '2026-06-10 04:30:22.271+00', '1', '1', false, NULL, NULL, 0, '3号床', 'LO0028.LO0031.LO0042', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955450206654464'),
-('322955643350159360', '1', '2026-06-10 04:30:25.601+00', '2026-06-10 04:30:25.601+00', '1', '1', false, NULL, NULL, 0, '4号床', 'LO0028.LO0031.LO0043', 'ACTIVE', 'NOT_IN_USE', 'BED', 'INSTANCE', '{}', '322663308812357632', NULL, NULL, NULL, '322955450206654464')
-ON CONFLICT ("id") DO NOTHING;
-
 INSERT INTO "adm_organization" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "name", "bus_no", "parent_id", "type_enum", "class_enum", "status_enum", "active_flag", "display_order", "def_doctor_id", "py_str", "wb_str", "yb_no", "yb_name", "medins_id", "medins_admdvs", "medins_type", "medins_lv", "caty")
 VALUES
-('322663105141149696', '1', '2026-06-09 09:07:59.056+00', '2026-06-09 09:07:59.056+00', '1', '1', false, NULL, NULL, 0, '测试医院', 'OR0007', NULL, 'HOSPITAL', NULL, 'ACTIVE', true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-('322663218269917184', '1', '2026-06-09 09:08:26.028+00', '2026-06-09 09:08:26.028+00', '1', '1', false, NULL, NULL, 0, '门诊内科', 'OR0007.OR0008', '322663105141149696', 'DEPARTMENT', 'CLINIC', 'ACTIVE', true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-('322663308812357632', '1', '2026-06-09 09:08:47.615+00', '2026-06-09 09:08:47.615+00', '1', '1', false, NULL, NULL, 0, '住院内科', 'OR0007.OR0009', '322663105141149696', 'DEPARTMENT', 'INPATIENT', 'ACTIVE', true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-('322663606385643520', '1', '2026-06-09 09:09:58.562+00', '2026-06-09 09:37:54.930+00', '1', '1', false, NULL, NULL, 0, '处置室', 'OR0007.OR0010', '322663105141149696', 'DEPARTMENT', 'NS', 'ACTIVE', true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-('322663652522987520', '1', '2026-06-09 09:10:09.562+00', '2026-06-09 09:37:49.884+00', '1', '1', false, NULL, NULL, 0, '护理站', 'OR0007.OR0011', '322663105141149696', 'DEPARTMENT', 'NS', 'ACTIVE', true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-('322663815429754880', '1', '2026-06-09 09:10:48.402+00', '2026-06-09 09:10:48.402+00', '1', '1', false, NULL, NULL, 0, '挂号收费处', 'OR0007.OR0012', '322663105141149696', 'DEPARTMENT', 'FIN', 'ACTIVE', true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL)
+('322663105141149696', '1', '2026-06-09 09:07:59.056+00', '2026-06-09 09:07:59.056+00', '1', '1', false, NULL, NULL, 0, '测试医院', 'OR0007', NULL, 'HOSPITAL', NULL, 'ACTIVE', true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
 
 INSERT INTO "adm_practitioner" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "name", "name_json", "py_str", "wb_str", "gender_enum", "birth_date", "deceased_date", "phone", "address_province", "address_city", "address_district", "address_street", "address_json", "status_enum", "active_flag", "bus_no", "yb_no", "user_id", "org_id", "dr_profttl_code", "phar_prac_cert_no", "prsc_dr_cert_code", "signature", "kpd_code", "pos_no")
 VALUES
-('308791351298756608', '1', '2026-06-10 03:23:06.648+00', '2026-06-10 05:11:05.910+00', '1', '1', false, NULL, NULL, '0', 'admin', NULL, NULL, NULL, 'UNKNOWN', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ACTIVE', true, NULL, NULL, '1', '322663218269917184', NULL, NULL, NULL, NULL, NULL, NULL),
-('322932010683207680', '1', '2026-06-10 02:56:31.133+00', '2026-06-10 04:53:46.571+00', '1', '1', false, NULL, NULL, '0', '药房', NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ACTIVE', true, NULL, NULL, '322932010666430464', NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-('322932096108597248', '1', '2026-06-10 02:56:51.500+00', '2026-06-10 02:57:30.134+00', '1', '1', false, NULL, NULL, '0', '库管', NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ACTIVE', true, NULL, NULL, '322932096091820032', NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-('322932211326128128', '1', '2026-06-10 02:57:18.970+00', '2026-06-10 05:38:13.796+00', '1', '1', false, NULL, NULL, '0', '收费', NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ACTIVE', true, NULL, NULL, '322932211309350912', '322663815429754880', NULL, NULL, NULL, NULL, NULL, NULL),
-('322935698173202432', '1', '2026-06-10 03:11:10.299+00', '2026-06-10 04:53:21.933+00', '1', '1', false, NULL, NULL, '0', '住院医生', NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ACTIVE', true, NULL, NULL, '322935698131259392', '322663308812357632', NULL, NULL, NULL, NULL, NULL, NULL),
-('322963602326687744', '1', '2026-06-10 05:02:03.168+00', '2026-06-10 05:36:51.309+00', '1', '1', false, NULL, NULL, '0', '门诊医生', NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ACTIVE', true, NULL, NULL, '322963602154721280', '322663218269917184', NULL, NULL, NULL, NULL, NULL, NULL),
-('322965022887120896', '1', '2026-06-10 05:07:41.856+00', '2026-06-10 05:36:43.288+00', '1', '1', false, NULL, NULL, '0', '护士', NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ACTIVE', true, NULL, NULL, '322965022853566464', '322663652522987520', NULL, NULL, NULL, NULL, NULL, NULL),
-('323022664260128768', '1', '2026-06-10 08:56:44.630+00', '2026-06-10 08:56:44.630+00', '1', '1', false, NULL, NULL, '0', '信息科', NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ACTIVE', true, 'PR0015', NULL, '323022664197214208', NULL, NULL, NULL, NULL, NULL, NULL, NULL)
+('308791351298756608', '1', '2026-06-10 03:23:06.648+00', '2026-06-10 05:11:05.910+00', '1', '1', false, NULL, NULL, '0', 'admin', NULL, NULL, NULL, 'UNKNOWN', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ACTIVE', true, NULL, NULL, '1', '322663105141149696', NULL, NULL, NULL, NULL, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
 
 INSERT INTO "fin_contract" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "bus_no", "name", "category_enum", "status_enum", "active_flag", "org_id", "yb_flag", "display_order", "adm_vs", "py_str", "wb_str", "client_id", "client_secret", "username", "password", "cli_prv_key", "cli_pub_key", "server_pub_key", "scope", "grant_type", "fixmedins_code", "fixmedins_name")
 VALUES
 ('3100000000000000001', '1', '2026-05-03 06:07:04.571+00', '2026-05-03 06:07:04.571+00', '1', '1', false, NULL, NULL, 0, '1', '自费', '1', '1', true, NULL, NULL, 1, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-('3100000000000000002', '1', '2026-05-03 06:07:04.571+00', '2026-05-03 06:07:04.571+00', '1', '1', false, NULL, NULL, 0, 'H22010402403-229900', '省医保', '3', '1', true, NULL, true, 2, '229900', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
-('3100000000000000003', '1', '2026-05-03 06:07:04.571+00', '2026-05-03 06:07:04.571+00', '1', '1', false, NULL, NULL, 0, 'H22010402403-220199', '市医保', '4', '1', true, NULL, true, 3, '220199', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL)
+('3100000000000000002', '1', '2026-05-03 06:07:04.571+00', '2026-05-03 06:07:04.571+00', '1', '1', false, NULL, NULL, 0, 'H00000000000-229900', '省医保', '3', '1', true, NULL, true, 2, '229900', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+('3100000000000000003', '1', '2026-05-03 06:07:04.571+00', '2026-05-03 06:07:04.571+00', '1', '1', false, NULL, NULL, 0, 'H00000000000-220199', '市医保', '4', '1', true, NULL, true, 3, '220199', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
 
 -- ter_code_system + ter_concept (full platform terminology from V50/V51)
@@ -605,15 +522,12 @@ VALUES
 ('484', 'speed_code', '输液滴速', NULL, '1.0', '2', '1', '2026-01-22 00:57:03.283+00', NULL, '1', '1', false, NULL, NULL),
 ('485', 'priority', '优先级', NULL, '1.0', '2', '1', '2026-01-30 00:45:02.519+00', NULL, '1', '1', false, NULL, NULL),
 ('900001', 'dose_unit', '剂量单位', '剂量单位字典（如 mg、ml、IU 等）', '1.0', '2', '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900002', 'purchase_unit', '采购单位', '采购单位字典（如 箱、盒、瓶 等）', '1.0', '2', '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900003', 'stock_unit', '库存单位', '库存单位字典（如 个、支、瓶 等）', '1.0', '2', '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900004', 'sales_unit', '销售单位', '销售单位字典（如 盒、瓶、支 等）', '1.0', '2', '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900005', 'split_unit', '拆零单位', '拆零单位字典（最小使用单位，如 片、粒、ml 等）', '1.0', '2', '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
 ('900006', 'medication_category_code', '药品分类', '药品目录分类（西药/中成药/中草药/外购药品/其他）', '1.0', '2', '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
 ('900007', 'tcm_method_code', '中药用法', '中药处方用法', '1.0', '2', '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
 ('279125561775755264', 'ces', '11212', '2121', '121221', '2', '1', '2026-02-08 21:45:19.829+00', '2026-02-11 01:45:48.869+00', '1', '1', false, NULL, NULL),
 ('279125561775755265', 'unit_code', '单位编码', '使用单位、包装单位、剂量单位', '1.0', '2', '1', '2026-05-02 22:07:04.606+00', '2026-05-02 22:07:04.606+00', '1', '1', false, NULL, NULL),
-('279125561775755266', 'condition_definition_source', '疾病目录来源分类', '诊断定义目录来源：通用/慢病/病种付费/中西医等（DM-CLN-002 ConditionDefinitionSource）', '1.0', '2', '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL)
+('279125561775755266', 'condition_definition_source', '疾病目录来源分类', '诊断定义目录来源：通用/慢病/病种付费/中西医等（DM-CLN-002 ConditionDefinitionSource）', '1.0', '2', '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
+('279125561775755280', 'procedure_definition_source', '手术目录来源分类', '手术操作定义目录来源：国临手术3.0/医保手术操作等', '1.0', '2', '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
 
 
@@ -648,6 +562,32 @@ INSERT INTO "ter_code_system" (
 VALUES (
     '900010', 'mr_settlement_type_code', '病案结算类型', '三大目录病案首页费用结算分类', '1.0', '2', '1',
     '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL
+)
+ON CONFLICT ("name") DO NOTHING;
+
+
+INSERT INTO "ter_code_system" (
+    "id", "name", "title", "description", "version", "status", "tenant_id",
+    "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by"
+)
+VALUES (
+    '900011', 'ddd_unit', 'DDD单位',
+    'WHO 限定日剂量（DDD）计量单位；与 dose_unit、unit_code 分离',
+    '1.0', '2', '1',
+    '2026-07-17 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL
+)
+ON CONFLICT ("name") DO NOTHING;
+
+
+INSERT INTO "ter_code_system" (
+    "id", "name", "title", "description", "version", "status", "tenant_id",
+    "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by"
+)
+VALUES (
+    '900012', 'consciousness_code', '意识状态',
+    '住院护士站护理记录意识状态下拉（AS-IP-NUR-014）',
+    '1.0', '2', '1',
+    '2026-07-21 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL
 )
 ON CONFLICT ("name") DO NOTHING;
 
@@ -979,6 +919,7 @@ VALUES
 ('506', '225', '4', '注射给药', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-05-10 01:31:46.500+00', '2025-05-10 01:31:56.443+00', '1', '1', false, NULL, NULL),
 ('507', '225', '401', '皮下注射', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2025-05-10 01:39:07.060+00', '2025-05-10 01:39:15.236+00', '1', '1', false, NULL, NULL),
 ('508', '225', '402', '皮内注射', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2025-05-10 01:39:40.646+00', NULL, '1', '1', false, NULL, NULL),
+('509', '225', '403', '肌肉注射', '肌肉注射（药品目录导入/用药途径补齐）', NULL, '7', true, NULL, 'default', NULL, '1', '2026-07-20 00:00:00+00', NULL, '1', '1', false, NULL, NULL),
 ('510', '225', '404', '静脉注射', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-05-10 01:40:11.543+00', '2025-06-26 21:53:47.186+00', '1', '1', false, NULL, NULL),
 ('511', '225', '5', '吸入给药', NULL, NULL, '9', true, NULL, 'default', NULL, '1', '2025-05-10 01:40:50.761+00', NULL, '1', '1', false, NULL, NULL),
 ('512', '225', '6', '局部用药', NULL, NULL, '10', true, NULL, 'default', NULL, '1', '2025-05-10 01:41:03.746+00', NULL, '1', '1', false, NULL, NULL),
@@ -1221,9 +1162,10 @@ VALUES
 ('1183', '273', '2', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
 ('1184', '274', '1', '是', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
 ('1185', '274', '2', '否', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
-('1186', '275', '1', '甲类', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-05-21 22:18:10.701+00', '1', '1', false, NULL, NULL),
-('1187', '275', '3', '自费', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-05-21 22:18:05.017+00', '1', '1', false, NULL, NULL),
-('1188', '275', '2', '乙类', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-05-21 22:18:16.492+00', '1', '1', false, NULL, NULL),
+('1186', '275', '1', '自费', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-05-21 22:18:05.017+00', '1', '1', false, NULL, NULL),
+('1187', '275', '2', '甲类', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-05-21 22:18:10.701+00', '1', '1', false, NULL, NULL),
+('1188', '275', '3', '乙类', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', '2025-05-21 22:18:16.492+00', '1', '1', false, NULL, NULL),
+('9000275004', '275', '4', '丙类', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
 ('1189', '276', '1', '配偶', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
 ('1190', '276', '6', '祖父母或外祖父母', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
 ('1191', '276', '2', '子女', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
@@ -2727,6 +2669,8 @@ VALUES
 ('2639', '355', '5', '儿科西药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
 ('2640', '355', '99', '其它', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
 ('2641', '355', '6', '儿科中药饮片', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('35511', '355', '11', '急诊中成药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+('35512', '355', '12', '儿科中成药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
 ('2642', '356', '11', '西药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
 ('2643', '356', '28', '输血', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
 ('2644', '356', '12', '中成药', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2025-04-14 08:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
@@ -3745,25 +3689,6 @@ VALUES
 ('900001004', '900001', 'ml', '毫升', NULL, NULL, '4', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
 ('900001005', '900001', 'l', '升', NULL, NULL, '5', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
 ('900001006', '900001', 'IU', '国际单位', NULL, NULL, '6', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900002001', '900002', 'case', '箱', NULL, NULL, '1', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900002002', '900002', 'box', '盒', NULL, NULL, '2', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900002003', '900002', 'pack', '包', NULL, NULL, '3', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900002004', '900002', 'bottle', '瓶', NULL, NULL, '4', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900002005', '900002', 'bag', '袋', NULL, NULL, '5', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900003001', '900003', 'pcs', '个', NULL, NULL, '1', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900003002', '900003', 'bottle', '瓶', NULL, NULL, '2', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900003003', '900003', 'piece', '片', NULL, NULL, '3', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900003004', '900003', 'tablet', '粒', NULL, NULL, '4', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900003005', '900003', 'branch', '支', NULL, NULL, '5', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900004001', '900004', 'pcs', '个', NULL, NULL, '1', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900004002', '900004', 'box', '盒', NULL, NULL, '2', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900004003', '900004', 'bottle', '瓶', NULL, NULL, '3', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900004004', '900004', 'branch', '支', NULL, NULL, '4', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900005001', '900005', 'piece', '片', NULL, NULL, '1', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900005002', '900005', 'tablet', '粒', NULL, NULL, '2', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900005003', '900005', 'ml', '毫升', NULL, NULL, '3', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900005004', '900005', 'drop', '滴', NULL, NULL, '4', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
-('900005005', '900005', 'pcs', '个', NULL, NULL, '5', true, NULL, NULL, NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
 ('900006001', '900006', '2', '西药', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
 ('900006002', '900006', '1', '中成药', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
 ('900006003', '900006', '4', '中草药', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:03.745+00', NULL, '1', '1', false, NULL, NULL),
@@ -3780,14 +3705,20 @@ VALUES
 ('900006014', '279125561775755265', '9', '支', NULL, NULL, '9', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:04.606+00', '2026-05-02 22:07:04.606+00', '1', '1', false, NULL, NULL),
 ('900006015', '279125561775755265', '10', 'g', NULL, NULL, '10', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:04.606+00', '2026-05-02 22:07:04.606+00', '1', '1', false, NULL, NULL),
 ('900006016', '279125561775755265', '11', '袋', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:04.606+00', '2026-05-02 22:07:04.606+00', '1', '1', false, NULL, NULL),
-('900006017', '279125561775755266', 'general_dx', '疾病与诊断', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
-('900006018', '279125561775755266', 'chronic_spec', '特慢病诊断目录', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
-('900006019', '279125561775755266', 'disease_pkg', '按病种目录', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
-('900006020', '279125561775755266', 'paid_dx', '付费诊断', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
-('900006021', '279125561775755266', 'day_surgery_dx', '日间手术治疗病种', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
-('900006022', '279125561775755266', 'tcm_dx', '中医诊断', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
+('900006040', '279125561775755265', '12', '包', NULL, NULL, '14', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:04.606+00', '2026-05-02 22:07:04.606+00', '1', '1', false, NULL, NULL),
+('900006041', '279125561775755265', '13', '个', NULL, NULL, '15', true, NULL, 'default', NULL, '1', '2026-05-02 22:07:04.606+00', '2026-05-02 22:07:04.606+00', '1', '1', false, NULL, NULL),
+('900006033', '279125561775755266', 'hospital_dx', '院内诊断', NULL, NULL, '0', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
+('900006017', '279125561775755266', 'general_dx', '疾病与诊断目录', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
+('900006018', '279125561775755266', 'chronic_spec', '门诊慢特病种目录', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
+('900006019', '279125561775755266', 'disease_pkg', '按病种付费病种目录', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
+('900006020', '279125561775755266', 'paid_dx', '按病种付费病种目录', NULL, NULL, '4', false, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
+('900006021', '279125561775755266', 'day_surgery_dx', '日间手术治疗病种目录', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
+('900006022', '279125561775755266', 'tcm_dx', '中医疾病目录', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
 ('900006023', '279125561775755266', 'tcm_syndrome', '中医证候目录', NULL, NULL, '7', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
-('900006024', '279125561775755266', 'tumor_morph', '肿瘤形态学目录', NULL, NULL, '8', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL)
+('900006024', '279125561775755266', 'tumor_morph', '肿瘤形态学目录', NULL, NULL, '8', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
+('900006032', '279125561775755266', 'clinical_v2', '国家临床版2.0', NULL, NULL, '9', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
+('900006030', '279125561775755280', 'clinical_proc_v3', '国家临床版手术3.0', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL),
+('900006031', '279125561775755280', 'general_op', '手术操作目录', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2026-05-03 00:36:00.480+00', '2026-05-03 00:36:00.480+00', '1', '1', false, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
 
 
@@ -3927,7 +3858,8 @@ VALUES
     ('900009009', '900009', 'PHYSICAL_COOLING', '物理降温', NULL, NULL, '9', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
     ('900009010', '900009', 'MEDICATION_COOLING', '药物降温', NULL, NULL, '10', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
     ('900009011', '900009', 'TEMP_NOT_RISING', '体温不升', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
-    ('900009012', '900009', 'PULSE_DEFICIT', '脉搏短绌', NULL, NULL, '12', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+    ('900009012', '900009', 'PULSE_DEFICIT', '脉搏短绌', NULL, NULL, '12', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009013', '900009', 'TEMP_EXTRA_MEASURE', '临时加测', NULL, NULL, '13', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
 ON CONFLICT ("code_system_id", "code") DO NOTHING;
 
 
@@ -4071,6 +4003,11 @@ INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definitio
 VALUES ('3680', '255', '51', '床位服务', '住院床位费、采暖费、空调费等床位相关服务', NULL, '26', true, NULL, 'default', NULL, '1', '2026-06-18 16:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
 
+-- 诊疗目录类别 activity_category_code=52「嘱托」（AS-IP-DOR-003 · BR-IP-ORD-028）
+INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('3681', '255', '52', '嘱托', '住院嘱托医嘱（自由文本正文，执行不计费）', NULL, '31', true, NULL, 'default', NULL, '1', '2026-07-16 03:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
 
 
 INSERT INTO "ter_concept" ("id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active", "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
@@ -4115,6 +4052,45 @@ VALUES
 ('900010027', '900010', '27', '手术用一次性医用材料费', NULL, NULL, '27', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
 ('900010028', '900010', '28', '其他费', NULL, NULL, '28', true, NULL, 'default', NULL, '1', '2026-07-14 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
+
+
+-- DDD 单位（med_medication_definition.ddd_unit_code / 术语 ddd_unit）
+INSERT INTO "ter_concept" (
+    "id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order",
+    "is_active", "css_class", "list_class", "is_default", "tenant_id",
+    "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by"
+)
+VALUES
+    ('900011001', '900011', 'g', '克', 'DDD 单位：克', NULL, '1', true, NULL, 'default', NULL, '1', '2026-07-17 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900011002', '900011', 'mg', '毫克', 'DDD 单位：毫克', NULL, '2', true, NULL, 'default', NULL, '1', '2026-07-17 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900011003', '900011', 'ug', '微克', 'DDD 单位：微克（WHO mcg）', NULL, '3', true, NULL, 'default', NULL, '1', '2026-07-17 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900011004', '900011', 'ml', '毫升', 'DDD 单位：毫升', NULL, '4', true, NULL, 'default', NULL, '1', '2026-07-17 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900011005', '900011', 'IU', '国际单位', 'DDD 单位：国际单位', NULL, '5', true, NULL, 'default', NULL, '1', '2026-07-17 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900011006', '900011', 'U', '单位', 'DDD 单位：生物活性单位', NULL, '6', true, NULL, 'default', NULL, '1', '2026-07-17 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900011007', '900011', 'TU', '千单位', 'DDD 单位：千单位（Thousand Units）', NULL, '7', true, NULL, 'default', NULL, '1', '2026-07-17 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900011008', '900011', 'MU', '百万单位', 'DDD 单位：百万单位（Million Units）', NULL, '8', true, NULL, 'default', NULL, '1', '2026-07-17 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900011009', '900011', 'mmol', '毫摩尔', 'DDD 单位：毫摩尔', NULL, '9', true, NULL, 'default', NULL, '1', '2026-07-17 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900011010', '900011', 'piece', '片', 'DDD 单位：片（WHO tablet）', NULL, '10', true, NULL, 'default', NULL, '1', '2026-07-17 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("code_system_id", "code") DO NOTHING;
+
+
+INSERT INTO "ter_concept" (
+    "id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order",
+    "is_active", "css_class", "list_class", "is_default", "tenant_id",
+    "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by"
+)
+VALUES
+    ('900012001', '900012', 'CLEAR', '清醒', '意识清楚', NULL, '1', true, NULL, 'default', NULL, '1', '2026-07-21 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900012002', '900012', 'SOMNOLENCE', '嗜睡', '嗜睡', NULL, '2', true, NULL, 'default', NULL, '1', '2026-07-21 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900012003', '900012', 'CONFUSED', '意识模糊', '意识模糊', NULL, '3', true, NULL, 'default', NULL, '1', '2026-07-21 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900012004', '900012', 'STUPOR', '昏睡', '昏睡', NULL, '4', true, NULL, 'default', NULL, '1', '2026-07-21 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900012005', '900012', 'LIGHT_COMA', '浅昏迷', '浅昏迷', NULL, '5', true, NULL, 'default', NULL, '1', '2026-07-21 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900012006', '900012', 'DEEP_COMA', '深昏迷', '深昏迷', NULL, '6', true, NULL, 'default', NULL, '1', '2026-07-21 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900012007', '900012', 'UNCLEAR', '不清', '意识不清', NULL, '7', true, NULL, 'default', NULL, '1', '2026-07-21 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900012008', '900012', 'UNCONSCIOUS', '无意识', '无意识', NULL, '8', true, NULL, 'default', NULL, '1', '2026-07-21 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900012009', '900012', 'DEATH', '死亡', '死亡', NULL, '9', true, NULL, 'default', NULL, '1', '2026-07-21 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("code_system_id", "code") DO NOTHING;
+
 
 
 
@@ -4316,6 +4292,7 @@ VALUES
 ('21', 'Navigation.Device', '耗材管理', 'Navigation', '菜单入口: Device', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('22', 'Navigation.Diagnosistreatment', '诊疗管理', 'Navigation', '菜单入口: Diagnosistreatment', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('23', 'Navigation.Disease', '诊断', 'Navigation', '菜单入口: Disease', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('24', 'Navigation.OperationCatalog', '手术', 'Navigation', '菜单入口: OperationCatalog', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('25', 'Navigation.Outpatientnursestation', '门诊护士站', 'Navigation', '菜单入口: OutpatientNurseStation', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('26', 'Navigation.Inpatientnursestation', '住院护士站', 'Navigation', '菜单入口: InpatientNurseStation', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('27', 'Navigation.Reportfinance', '财务报表', 'Navigation', '菜单入口: ReportFinance', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
@@ -4328,9 +4305,9 @@ VALUES
 ('34', 'Navigation.Chargeipprepay', '预交金管理', 'Navigation', '菜单入口: ChargeIpPrepay', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('35', 'Navigation.Chargeipfee', '住院费用管理', 'Navigation', '菜单入口: ChargeIpFee', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('73', 'Navigation.Chargeipdayclose', '住院日结', 'Navigation', '菜单入口: ChargeIpDayClose', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
-('74', 'Navigation.Dispenserecordop', '门诊发退药记录', 'Navigation', '菜单入口: DispenseRecordOp', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
-('75', 'Navigation.Dispenserecordip', '住院发退药记录', 'Navigation', '菜单入口: DispenseRecordIp', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
-('76', 'Navigation.Opfeedetail', '门诊费用明细', 'Navigation', '菜单入口: OpFeeDetail', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('74', 'Navigation.Dispenserecordop', '门诊药品使用明细', 'ReportCenter', '菜单入口: DispenseRecordOp — 门诊药品使用明细（患者发退药∪科室领用）', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('75', 'Navigation.Dispenserecordip', '住院药品使用明细', 'ReportCenter', '菜单入口: DispenseRecordIp — 住院药品使用明细（患者发退药∪科室领用）', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('76', 'Navigation.Opfeedetail', '门诊费用明细', 'ReportCenter', '菜单入口: OpFeeDetail — 门诊费用汇总/明细报表（AS-RPT-008）', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('36', 'Navigation.Outpatientdoctorstation', '门诊医生站', 'Navigation', '菜单入口: OutpatientDoctorStation', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('37', 'Navigation.Inpatientdoctorstation', '住院医生站', 'Navigation', '菜单入口: InpatientDoctorStation', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('38', 'Navigation.Dispenseop', '门诊发药', 'Navigation', '菜单入口: DispenseOp', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
@@ -4409,6 +4386,7 @@ VALUES
 ('10015', 'Navigation.Device', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('10017', 'Navigation.Diagnosistreatment', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('10018', 'Navigation.Disease', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10016', 'Navigation.OperationCatalog', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('10019', 'Navigation.Dispensedoc', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('10020', 'Navigation.Dispenseip', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('10021', 'Navigation.Dispenseop', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
@@ -4543,25 +4521,29 @@ VALUES
 ('284518561658441728', 'Device', 'Device', '耗材管理', 'lucide:syringe', '/basic/devicecatalog', '/basic/devicecatalog/index', 'Navigation.Device', '2000', 16, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('284519152342274048', 'Diagnosistreatment', 'Diagnosistreatment', '诊疗管理', 'lucide:square-activity', '/basic/servicecatalog', '/basic/servicecatalog/index', 'Navigation.Diagnosistreatment', '2000', 15, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('284519592148602880', 'Disease', 'Disease', '诊断', 'lucide:heart-pulse', '/basic/diagnosiscatalog', '/basic/diagnosiscatalog/index', 'Navigation.Disease', '2000', 12, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('284519592148602900', 'OperationCatalog', 'OperationCatalog', '手术', 'lucide:scissors', '/basic/procedurecatalog', '/basic/procedurecatalog/index', 'Navigation.OperationCatalog', '2000', 13, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('301665359451131904', 'OutpatientNurseStation', 'OutpatientNurseStation', '门诊护士站', 'lucide:clipboard-list', '/outpatient/nurse-station', '/outpatient/nurse-station/index', 'Navigation.Outpatientnursestation', NULL, 6, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('301666596158443520', 'InpatientNurseStation', 'InpatientNurseStation', '住院护士站', 'lucide:bed-double', '/inpatient/nurse-station', '/inpatient/nurse-station/index', 'Navigation.Inpatientnursestation', NULL, 7, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('301696493912330240', 'Pharmacy', 'Pharmacy', '药房单据管理', 'lucide:store', '/pharmacy', '', NULL, NULL, 10, true, false, false, '', 'directory', '', '1', '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000125', 'DeptPharmacy', 'DeptPharmacy', '科室单据管理', 'lucide:building', '/inventory/department', '', NULL, NULL, 10, true, false, false, '', 'directory', '科室进销存单据', NULL, '2026-07-01 00:00:00.000+00', '2026-07-01 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000100', 'ReportManagement', 'ReportManagement', '报表管理', 'lucide:layout-dashboard', '/reports', '', NULL, NULL, 11, true, false, false, '', 'directory', 'HIS清单-报表管理', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('301699662818054144', 'ReportFinance', 'ReportFinance', '财务报表', 'lucide:receipt-text', '/reports/finance', '/reports/finance/index', 'Navigation.Reportfinance', '310400000000000100', 4, true, false, false, '', 'menu', '', '1', '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000001', 'ChargeStation', 'ChargeStation', '收费工作站', 'lucide:banknote', '/charge', '', NULL, NULL, 3, true, false, false, '', 'directory', 'HIS清单-收费工作站', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000002', 'ChargeOpRegister', 'ChargeOpRegister', '门诊挂号', 'lucide:calendar-plus', '/outpatient/charge/register', '/outpatient/charge/register/index', 'Navigation.Chargeopregister', '310400000000000001', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000003', 'ChargeOpCharge', 'ChargeOpCharge', '门诊收费', 'lucide:circle-dollar-sign', '/outpatient/charge/charge', '/outpatient/charge/charge/index', 'Navigation.Chargeopcharge', '310400000000000001', 2, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000004', 'ChargeOpRefund', 'ChargeOpRefund', '门诊退费', 'lucide:undo-2', '/outpatient/charge/refund', '/outpatient/charge/refund/index', 'Navigation.Chargeoprefund', '310400000000000001', 3, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
-('310400000000000005', 'ChargeOpDayClose', 'ChargeOpDayClose', '门诊日结', 'lucide:calendar-check', '/outpatient/charge/daily-settlement', '/outpatient/charge/daily-settlement/index', 'Navigation.Chargeopdayclose', '310400000000000001', 4, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+-- 报表中心根须先于引用其 parent_id 的子菜单（FK fk_whale_menus_parent）
+('310400000000000122', 'ReportCenterRoot', 'ReportCenterRoot', '报表中心', 'lucide:layout-dashboard', '/report-center', '', NULL, NULL, 11, true, false, false, '', 'directory', 'HIS 报表中心（费用明细、日结、药品/耗材使用明细、单据详情、调价明细、门诊挂号明细等）', NULL, '2026-06-25 00:00:00.000+00', '2026-06-25 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000005', 'ChargeOpDayClose', 'ChargeOpDayClose', '门诊日结', 'lucide:calendar-check', '/outpatient/charge/daily-settlement', '/outpatient/charge/daily-settlement/index', 'Navigation.Chargeopdayclose', '310400000000000001', 4, true, false, false, '', 'menu', '收费工作站-门诊日结', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000006', 'ChargeIpRegister', 'ChargeIpRegister', '住院登记', 'lucide:bed-single', '/inpatient/charge/register', '/inpatient/charge/register/index', 'Navigation.Chargeipregister', '310400000000000001', 5, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000007', 'ChargeIpSettle', 'ChargeIpSettle', '住院结算', 'lucide:wallet', '/inpatient/charge/settle', '/inpatient/charge/settle/index', 'Navigation.Chargeipsettle', '310400000000000001', 6, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000008', 'ChargeIpPrepay', 'ChargeIpPrepay', '预交金管理', 'lucide:coins', '/inpatient/charge/prepay', '/inpatient/charge/prepay/index', 'Navigation.Chargeipprepay', '310400000000000001', 7, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
-('310400000000000009', 'ChargeIpFee', 'ChargeIpFee', '住院费用管理', 'lucide:list-todo', '/inpatient/charge/fee', '/inpatient/charge/fee/index', 'Navigation.Chargeipfee', '310400000000000001', 8, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
-('310400000000000117', 'ChargeIpDayClose', 'ChargeIpDayClose', '住院日结', 'lucide:calendar-check', '/inpatient/charge/daily-settlement', '/inpatient/charge/daily-settlement/index', 'Navigation.Chargeipdayclose', '310400000000000001', 9, true, false, false, '', 'menu', '住院收费日结交账', NULL, '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
-('310400000000000118', 'DispenseRecordOp', 'DispenseRecordOp', '门诊发退药记录', 'lucide:clipboard-list', '/pharmacy/dispense-record/outpatient', '/pharmacy/dispense-record/outpatient/index', 'Navigation.Dispenserecordop', '301696493912330240', 3, true, false, false, '', 'menu', '门诊发退药记录查询与导出', NULL, '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
-('310400000000000119', 'DispenseRecordIp', 'DispenseRecordIp', '住院发退药记录', 'lucide:clipboard-list', '/pharmacy/dispense-record/inpatient', '/pharmacy/dispense-record/inpatient/index', 'Navigation.Dispenserecordip', '301696493912330240', 4, true, false, false, '', 'menu', '住院发退药记录查询与导出', NULL, '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000009', 'ChargeIpFee', 'ChargeIpFee', '住院费用管理', 'lucide:list-todo', '/inpatient/charge/fee', '/inpatient/charge/fee/index', 'Navigation.Chargeipfee', '310400000000000001', 9, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000117', 'ChargeIpDayClose', 'ChargeIpDayClose', '住院日结', 'lucide:calendar-check', '/inpatient/charge/daily-settlement', '/inpatient/charge/daily-settlement/index', 'Navigation.Chargeipdayclose', '310400000000000001', 8, true, false, false, '', 'menu', '收费工作站-住院日结', NULL, '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000118', 'DispenseRecordOp', 'DispenseRecordOp', '门诊药品使用明细', 'lucide:pill', '/report/medication-dispense/outpatient', '/report/medication-dispense/outpatient/index', 'Navigation.Dispenserecordop', '310400000000000122', 12, true, false, false, '', 'menu', 'AS-RPT-003 · OutpatientMedicationDispenseReportAppService', NULL, '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000119', 'DispenseRecordIp', 'DispenseRecordIp', '住院药品使用明细', 'lucide:syringe', '/report/medication-dispense/inpatient', '/report/medication-dispense/inpatient/index', 'Navigation.Dispenserecordip', '310400000000000122', 13, true, false, false, '', 'menu', 'AS-RPT-004 · InpatientMedicationDispenseReportAppService', NULL, '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000120', 'OpReport', 'OpReport', '门诊报表', 'lucide:file-bar-chart', '/outpatient/report', '', NULL, '310400000000000001', 10, true, false, false, '', 'directory', '门诊域报表（费用明细等）', NULL, '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
-('310400000000000121', 'OpFeeDetail', 'OpFeeDetail', '门诊费用明细', 'lucide:receipt', '/outpatient/report/fee-detail', '/outpatient/report/fee-detail/index', 'Navigation.Opfeedetail', '310400000000000120', 1, true, false, false, '', 'menu', '门诊费用明细查询与导出', NULL, '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000121', 'OpFeeDetail', 'OpFeeDetail', '门诊费用明细', 'lucide:receipt', '/report/fee-detail/outpatient', '/report/fee-detail/outpatient/index', 'Navigation.Opfeedetail', '310400000000000122', 1, true, false, false, '', 'menu', 'AS-RPT-008 · OutpatientFeeDetailReportAppService', NULL, '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000020', 'OutpatientDoctorStation', 'OutpatientDoctorStation', '门诊医生站', 'lucide:user-round-pen', '/outpatient/doctor-station', '/outpatient/doctor-station/index', 'Navigation.Outpatientdoctorstation', NULL, 4, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000040', 'InpatientDoctorStation', 'InpatientDoctorStation', '住院医生站', 'lucide:hospital', '/inpatient/doctor-station', '/inpatient/doctor-station/index', 'Navigation.Inpatientdoctorstation', NULL, 5, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000060', 'MedicationDispense', 'MedicationDispense', '发药管理', 'lucide:pill-bottle', '/pharmacy/dispense', '', NULL, NULL, 8, true, false, false, '', 'directory', 'HIS清单-发药管理', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
@@ -4569,7 +4551,6 @@ VALUES
 ('310400000000000062', 'DispenseIp', 'DispenseIp', '住院发药', 'lucide:truck', '/pharmacy/dispense/inpatient', '/pharmacy/dispense/inpatient/index', 'Navigation.Dispenseip', '310400000000000060', 2, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000063', 'DispenseDoc', 'DispenseDoc', '发药单据', 'lucide:file-box', '/pharmacy/dispense/documents', '/pharmacy/dispense/documents/index', 'Navigation.Dispensedoc', '310400000000000060', 3, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000081', 'WhPurchaseOrder', 'WhPurchaseOrder', '药库订货单', 'lucide:file-spreadsheet', '/inventory/warehouse/purchase-order', '/inventory/warehouse/purchase-order/index', 'Navigation.Whpurchaseorder', '284503862625177600', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
-('310400000000000100', 'ReportManagement', 'ReportManagement', '报表管理', 'lucide:layout-dashboard', '/reports', '', NULL, NULL, 11, true, false, false, '', 'directory', 'HIS清单-报表管理', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000101', 'ReportHome', 'ReportHome', '首页', 'lucide:home', '/reports/home', '/reports/home/index', 'Navigation.Reporthome', '310400000000000100', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000102', 'ReportDean', 'ReportDean', '院长', 'lucide:building-2', '/reports/dean', '/reports/dean/index', 'Navigation.Reportdean', '310400000000000100', 2, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000103', 'ReportClinical', 'ReportClinical', '临床报表', 'lucide:activity', '/reports/clinical', '/reports/clinical/index', 'Navigation.Reportclinical', '310400000000000100', 3, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
@@ -5031,15 +5012,15 @@ VALUES
     TIMESTAMP '2026-06-14 18:00:00+00', TIMESTAMP '2026-06-14 18:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
 ),
 (
-    '310400000000000111', 'WhTransferOut', 'WhTransferOut', '药库调拨出库', 'lucide:arrow-right-left',
-    '/inventory/warehouse/transfer-out', '/inventory/warehouse/transfer-out/index', '', '284503862625177600', 11,
-    TRUE, FALSE, FALSE, '', 'menu', '药库调拨出库 + 医保3502(102)', NULL,
+    '310400000000000111', 'WhTransferOut', 'WhTransferOut', '药库调出单', 'lucide:arrow-right-left',
+    '/inventory/warehouse/transfer-out', '/inventory/warehouse/transfer-out/index', 'Navigation.Whtransferout', '284503862625177600', 7,
+    TRUE, FALSE, FALSE, '', 'menu', '药库调出单 + 医保3502(102)', NULL,
     TIMESTAMP '2026-06-14 18:00:00+00', TIMESTAMP '2026-06-14 18:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
 ),
 (
-    '310400000000000112', 'WhTransferIn', 'WhTransferIn', '药库调拨入库', 'lucide:arrow-right-left',
-    '/inventory/warehouse/transfer-in', '/inventory/warehouse/transfer-in/index', '', '284503862625177600', 12,
-    TRUE, FALSE, FALSE, '', 'menu', '药房调拨入库 + 医保3502(101)', NULL,
+    '310400000000000112', 'WhTransferIn', 'WhTransferIn', '药库调入单', 'lucide:arrow-right-left',
+    '/inventory/warehouse/transfer-in', '/inventory/warehouse/transfer-in/index', 'Navigation.Whtransferin', '284503862625177600', 8,
+    TRUE, FALSE, FALSE, '', 'menu', '药库调入单 + 医保3502(101)', NULL,
     TIMESTAMP '2026-06-14 18:00:00+00', TIMESTAMP '2026-06-14 18:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
 )
 ON CONFLICT (id) DO UPDATE SET
@@ -5073,7 +5054,7 @@ VALUES
     TIMESTAMP '2026-06-14 18:00:00+00', TIMESTAMP '2026-06-14 18:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
 ),
 (
-    '310400000000000115', 'WhReturnStockIn', 'WhReturnStockIn', '退库入库', 'lucide:undo-2',
+    '310400000000000115', 'WhReturnStockIn', 'WhReturnStockIn', '退货入库', 'lucide:undo-2',
     '/inventory/warehouse/return-stock-in', '/inventory/warehouse/return-stock-in/index', '', '284503862625177600', 15,
     TRUE, FALSE, FALSE, '', 'menu', '药房/科室退库后药库只读台账', NULL,
     TIMESTAMP '2026-06-14 18:00:00+00', TIMESTAMP '2026-06-14 18:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
@@ -5115,10 +5096,10 @@ VALUES
     ('63', 'Navigation.Whgainloss', '药库损益单', 'Navigation', '菜单入口: WhGainLoss', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
     ('64', 'Navigation.Phagainloss', '药房损益单', 'Navigation', '菜单入口: PhaGainLoss', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
     ('65', 'Navigation.Deptgainloss', '科室损益单', 'Navigation', '菜单入口: DeptGainLoss', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
-    ('66', 'Navigation.Whtransferout', '药库调拨出库', 'Navigation', '菜单入口: WhTransferOut', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
-    ('67', 'Navigation.Whtransferin', '药库调拨入库', 'Navigation', '菜单入口: WhTransferIn', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('66', 'Navigation.Whtransferout', '药库调出单', 'Navigation', '菜单入口: WhTransferOut', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('67', 'Navigation.Whtransferin', '药库调入单', 'Navigation', '菜单入口: WhTransferIn', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
     ('68', 'Navigation.Phareturntowarehouse', '药房退库', 'Navigation', '菜单入口: PhaReturnToWarehouse', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
-    ('69', 'Navigation.Whreturnstockin', '退库入库', 'Navigation', '菜单入口: WhReturnStockIn', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('69', 'Navigation.Whreturnstockin', '退货入库', 'Navigation', '菜单入口: WhReturnStockIn', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
     ('70', 'Navigation.Deptreturn', '科室退库', 'Navigation', '菜单入口: DeptReturn', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
@@ -5446,7 +5427,7 @@ INSERT INTO whale_menus (
 VALUES (
     '310400000000000122', 'ReportCenterRoot', 'ReportCenterRoot', '报表中心', 'lucide:layout-dashboard',
     '/report-center', '', NULL, NULL, 11,
-    TRUE, FALSE, FALSE, '', 'directory', 'HIS 报表中心（门诊费用明细、库存明细等）', NULL,
+    TRUE, FALSE, FALSE, '', 'directory', 'HIS 报表中心（费用明细、日结、药品/耗材使用明细、单据详情、调价明细、门诊挂号明细等）', NULL,
     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
 )
 ON CONFLICT (id) DO UPDATE SET
@@ -5723,7 +5704,7 @@ VALUES
     ('310700000000000021', 'Navigation.PriceAdjustment', '调价管理', 'Navigation',
      '菜单入口: PriceAdjustment — 批量调价单与审批', NULL,
      TIMESTAMP '2026-06-27 00:00:00+00', TIMESTAMP '2026-06-27 00:00:00+00', 1, 1, FALSE, NULL, NULL),
-    ('310700000000000022', 'Navigation.PriceAdjustmentDetail', '调价明细', 'Navigation',
+    ('310700000000000022', 'Navigation.PriceAdjustmentDetail', '调价明细', 'ReportCenter',
      '菜单入口: PriceAdjustmentDetail — 已生效调价项目明细查询', NULL,
      TIMESTAMP '2026-06-27 00:00:00+00', TIMESTAMP '2026-06-27 00:00:00+00', 1, 1, FALSE, NULL, NULL)
 ON CONFLICT (id) DO UPDATE SET
@@ -5744,15 +5725,15 @@ INSERT INTO whale_menus (
 VALUES
     ('310900000000000200', 'FinanceManagement', 'FinanceManagement', '财务管理', 'lucide:landmark',
      '/finance', '', NULL, NULL, 13, TRUE, FALSE, FALSE, '', 'directory',
-     '财务域：调价管理、调价明细等', NULL,
+     '财务域：调价管理、调价明细、财务审批等', NULL,
      TIMESTAMP '2026-06-27 00:00:00+00', TIMESTAMP '2026-06-27 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
     ('310900000000000201', 'PriceAdjustment', 'PriceAdjustment', '调价管理', 'lucide:trending-up',
      '/finance/price-adjustment', '/finance/price-adjustment/index', 'Navigation.PriceAdjustment', '310900000000000200', 1,
      TRUE, FALSE, FALSE, '', 'menu', 'PriceAdjustment 批量调价单与审批', NULL,
      TIMESTAMP '2026-06-27 00:00:00+00', TIMESTAMP '2026-06-27 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
     ('310900000000000202', 'PriceAdjustmentDetail', 'PriceAdjustmentDetail', '调价明细', 'lucide:scroll-text',
-     '/finance/price-adjustment-detail', '/finance/price-adjustment-detail/index', 'Navigation.PriceAdjustmentDetail', '310900000000000200', 2,
-     TRUE, FALSE, FALSE, '', 'menu', 'PriceAdjustmentDetail 已生效调价项目明细查询', NULL,
+     '/finance/price-adjustment-detail', '/finance/price-adjustment-detail/index', 'Navigation.PriceAdjustmentDetail', '310400000000000122', 17,
+     TRUE, FALSE, FALSE, '', 'menu', '报表中心-已生效调价项目明细查询', NULL,
      TIMESTAMP '2026-06-27 00:00:00+00', TIMESTAMP '2026-06-27 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
 ON CONFLICT (id) DO UPDATE SET
     code            = EXCLUDED.code,
@@ -6025,6 +6006,13 @@ VALUES
     'Navigation.Deptissuereturn', '310400000000000125', 9,
     TRUE, FALSE, FALSE, '', 'menu', '科室退领（⑦ 须拉领用单）', NULL,
     TIMESTAMP '2026-07-01 00:00:00+00', TIMESTAMP '2026-07-01 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+),
+(
+    '310400000000000140', 'DeptPurchaseRequest', 'DeptPurchaseRequest', '科室采购申请单', 'lucide:clipboard-pen',
+    '/inventory/department/purchase-request', '/inventory/department/purchase-request/index',
+    'Navigation.Deptpurchaserequest', '310400000000000125', 0,
+    TRUE, FALSE, FALSE, '', 'menu', '科室采购申请（产品定义级申请单；同意不生成订货）', NULL,
+    TIMESTAMP '2026-07-15 00:00:00+00', TIMESTAMP '2026-07-15 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
 )
 ON CONFLICT (id) DO UPDATE SET
     code = EXCLUDED.code, name = EXCLUDED.name, display_name = EXCLUDED.display_name,
@@ -6044,7 +6032,8 @@ VALUES
     ('82', 'Navigation.Depttransferout',    '科室调出单',   'Navigation', '菜单入口: DeptTransferOut',    NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
     ('83', 'Navigation.Depttransferin',     '科室调入单',   'Navigation', '菜单入口: DeptTransferIn',     NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
     ('84', 'Navigation.Deptissue',          '科室领用单',   'Navigation', '菜单入口: DeptIssue',          NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
-    ('85', 'Navigation.Deptissuereturn',    '科室退领单',   'Navigation', '菜单入口: DeptIssueReturn',    NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+    ('85', 'Navigation.Deptissuereturn',    '科室退领单',   'Navigation', '菜单入口: DeptIssueReturn',    NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('86', 'Navigation.Deptpurchaserequest','科室采购申请单', 'Navigation', '菜单入口: DeptPurchaseRequest', NULL, TIMESTAMP '2026-07-15 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name, display_name = EXCLUDED.display_name,
     parent_name = EXCLUDED.parent_name, description = EXCLUDED.description,
@@ -6063,7 +6052,8 @@ VALUES
     ('10091', 'Navigation.Depttransferout',   'R', '1', NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
     ('10092', 'Navigation.Depttransferin',    'R', '1', NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
     ('10093', 'Navigation.Deptissue',         'R', '1', NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
-    ('10094', 'Navigation.Deptissuereturn',   'R', '1', NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+    ('10094', 'Navigation.Deptissuereturn',   'R', '1', NULL, TIMESTAMP '2026-07-01 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10095', 'Navigation.Deptpurchaserequest','R', '1', NULL, TIMESTAMP '2026-07-15 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
 ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
     is_deleted  = FALSE,
     deleted_at  = NULL,
@@ -6079,12 +6069,225 @@ VALUES
     ('310800000000000042', 'Navigation.Whgainloss',         'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
     ('310800000000000043', 'Navigation.Whtransferout',      'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
     ('310800000000000044', 'Navigation.Whtransferin',       'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
-    ('310800000000000045', 'Navigation.Whreturnstockin',    'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+    ('310800000000000045', 'Navigation.Whreturnstockin',    'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000046', 'Navigation.Deptpurchaserequest','R', '13', '1', TIMESTAMP '2026-07-15 00:00:00+00', TIMESTAMP '2026-07-15 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000047', 'Navigation.Deptpurchaserequest','R', '323022177255297024', '1', TIMESTAMP '2026-07-15 00:00:00+00', TIMESTAMP '2026-07-15 00:00:00+00', 1, 1, FALSE, NULL, NULL)
 ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
     is_deleted = FALSE,
     deleted_at = NULL,
     deleted_by = NULL,
     updated_at = TIMESTAMP '2026-07-07 00:00:00+00';
+
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310700000000000023', 'Navigation.Chsinvokelog', '医保调用日志', 'Navigation',
+    '菜单入口: ChsInvokeLog — 医保平台网关调用日志查看', NULL,
+    TIMESTAMP '2026-07-19 00:00:00+00', TIMESTAMP '2026-07-19 00:00:00+00', 1, 1, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name, display_name = EXCLUDED.display_name, parent_name = EXCLUDED.parent_name,
+    description = EXCLUDED.description, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL, updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310500000000000108', 'ChsInvokeLog', 'ChsInvokeLog', '医保调用日志', 'lucide:scroll-text',
+    '/chs/invoke-log', '/chs/invoke-log/index', 'Navigation.Chsinvokelog', '310500000000000100', 8,
+    TRUE, FALSE, FALSE, '', 'menu', 'InsuranceInvokeLogAppService · yb_invoke_log', NULL,
+    TIMESTAMP '2026-07-19 00:00:00+00', TIMESTAMP '2026-07-19 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code = EXCLUDED.code, name = EXCLUDED.name, display_name = EXCLUDED.display_name, icon = EXCLUDED.icon,
+    path = EXCLUDED.path, component = EXCLUDED.component, permission_name = EXCLUDED.permission_name,
+    parent_id = EXCLUDED.parent_id, sort_order = EXCLUDED.sort_order, is_enabled = EXCLUDED.is_enabled,
+    is_hidden = EXCLUDED.is_hidden, remark = EXCLUDED.remark, is_deleted = FALSE, deleted_at = NULL,
+    deleted_by = NULL, updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310800000000000048', 'Navigation.Chsinvokelog', 'R', '1', NULL,
+    TIMESTAMP '2026-07-19 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL
+)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL, updated_at = TIMESTAMP '2026-07-19 00:00:00+00';
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310700000000000024', 'Navigation.InventoryOpening', '库存期初', 'Navigation',
+    '菜单入口: InventoryOpening — 基础数据库存期初（BasicInventoryOpeningAppService）', NULL,
+    TIMESTAMP '2026-07-21 00:00:00+00', TIMESTAMP '2026-07-21 00:00:00+00', 1, 1, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name, display_name = EXCLUDED.display_name, parent_name = EXCLUDED.parent_name,
+    description = EXCLUDED.description, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL, updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '317100463887929351', 'InventoryOpening', 'InventoryOpening', '库存期初', 'lucide:package-open',
+    '/basic/inventory-opening', '/basic/inventory-opening/index', 'Navigation.InventoryOpening', '2000', 28,
+    TRUE, FALSE, FALSE, '', 'menu', 'BasicInventoryOpeningAppService · AS-BAS-INV-001', NULL,
+    TIMESTAMP '2026-07-21 00:00:00+00', TIMESTAMP '2026-07-21 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code = EXCLUDED.code, name = EXCLUDED.name, display_name = EXCLUDED.display_name, icon = EXCLUDED.icon,
+    path = EXCLUDED.path, component = EXCLUDED.component, permission_name = EXCLUDED.permission_name,
+    parent_id = EXCLUDED.parent_id, sort_order = EXCLUDED.sort_order, is_enabled = EXCLUDED.is_enabled,
+    is_hidden = EXCLUDED.is_hidden, remark = EXCLUDED.remark, is_deleted = FALSE, deleted_at = NULL,
+    deleted_by = NULL, updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '317100463887929361', 'Navigation.InventoryOpening', 'R', '1', NULL,
+    TIMESTAMP '2026-07-21 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL
+)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL, updated_at = TIMESTAMP '2026-07-21 00:00:00+00';
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310700000000000025', 'Navigation.Chsdetailaudittry', '事前提醒试调', 'Navigation',
+    '菜单入口: ChsDetailAuditTry — 明细审核 3101/3103 运维试调', NULL,
+    TIMESTAMP '2026-07-23 00:00:00+00', TIMESTAMP '2026-07-23 00:00:00+00', 1, 1, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name, display_name = EXCLUDED.display_name, parent_name = EXCLUDED.parent_name,
+    description = EXCLUDED.description, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL, updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310500000000000109', 'ChsDetailAuditTry', 'ChsDetailAuditTry', '事前提醒试调', 'lucide:shield-alert',
+    '/chs/detail-audit-try', '/chs/detail-audit-try/index', 'Navigation.Chsdetailaudittry', '310500000000000100', 9,
+    TRUE, FALSE, FALSE, '', 'menu', 'InsuranceDetailAuditTryAppService · 3101/3103', NULL,
+    TIMESTAMP '2026-07-23 00:00:00+00', TIMESTAMP '2026-07-23 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code = EXCLUDED.code, name = EXCLUDED.name, display_name = EXCLUDED.display_name, icon = EXCLUDED.icon,
+    path = EXCLUDED.path, component = EXCLUDED.component, permission_name = EXCLUDED.permission_name,
+    parent_id = EXCLUDED.parent_id, sort_order = EXCLUDED.sort_order, is_enabled = EXCLUDED.is_enabled,
+    is_hidden = EXCLUDED.is_hidden, remark = EXCLUDED.remark, is_deleted = FALSE, deleted_at = NULL,
+    deleted_by = NULL, updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '317107230000000109', 'Navigation.Chsdetailaudittry', 'R', '1', NULL,
+    TIMESTAMP '2026-07-23 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL
+)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL, updated_at = TIMESTAMP '2026-07-23 00:00:00+00';
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310700000000000026', 'Navigation.Chsdetailauditstats', '事前提醒统计', 'Navigation',
+    '菜单入口: ChsDetailAuditStats — 明细审核违规落库统计研讨', NULL,
+    TIMESTAMP '2026-07-24 00:00:00+00', TIMESTAMP '2026-07-24 00:00:00+00', 1, 1, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name, display_name = EXCLUDED.display_name, parent_name = EXCLUDED.parent_name,
+    description = EXCLUDED.description, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL, updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310500000000000110', 'ChsDetailAuditStats', 'ChsDetailAuditStats', '事前提醒统计', 'lucide:bar-chart-3',
+    '/chs/detail-audit-stats', '/chs/detail-audit-stats/index', 'Navigation.Chsdetailauditstats', '310500000000000100', 10,
+    TRUE, FALSE, FALSE, '', 'menu', 'InsuranceDetailAuditStatsAppService · yb_detail_audit_*', NULL,
+    TIMESTAMP '2026-07-24 00:00:00+00', TIMESTAMP '2026-07-24 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code = EXCLUDED.code, name = EXCLUDED.name, display_name = EXCLUDED.display_name, icon = EXCLUDED.icon,
+    path = EXCLUDED.path, component = EXCLUDED.component, permission_name = EXCLUDED.permission_name,
+    parent_id = EXCLUDED.parent_id, sort_order = EXCLUDED.sort_order, is_enabled = EXCLUDED.is_enabled,
+    is_hidden = EXCLUDED.is_hidden, remark = EXCLUDED.remark, is_deleted = FALSE, deleted_at = NULL,
+    deleted_by = NULL, updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '317107240000000110', 'Navigation.Chsdetailauditstats', 'R', '1', NULL,
+    TIMESTAMP '2026-07-24 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL
+)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL, updated_at = TIMESTAMP '2026-07-24 00:00:00+00';
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310700000000000027', 'Navigation.FinanceApproval', '财务审批', 'Navigation',
+    '菜单入口: FinanceApproval — 进货/退货/损益/盘点/调价财务审批', NULL,
+    TIMESTAMP '2026-07-21 00:00:00+00', TIMESTAMP '2026-07-21 00:00:00+00', 1, 1, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name, display_name = EXCLUDED.display_name, parent_name = EXCLUDED.parent_name,
+    description = EXCLUDED.description, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL, updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310900000000000203', 'FinanceApproval', 'FinanceApproval', '财务审批', 'lucide:badge-check',
+    '/finance/approval', '/finance/approval/index', 'Navigation.FinanceApproval', '310900000000000200', 3,
+    TRUE, FALSE, FALSE, '', 'menu', 'FinanceApprovalAppService · 财务审批统一列表', NULL,
+    TIMESTAMP '2026-07-21 00:00:00+00', TIMESTAMP '2026-07-21 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code = EXCLUDED.code, name = EXCLUDED.name, display_name = EXCLUDED.display_name, icon = EXCLUDED.icon,
+    path = EXCLUDED.path, component = EXCLUDED.component, permission_name = EXCLUDED.permission_name,
+    parent_id = EXCLUDED.parent_id, sort_order = EXCLUDED.sort_order, is_enabled = EXCLUDED.is_enabled,
+    is_hidden = EXCLUDED.is_hidden, remark = EXCLUDED.remark, is_deleted = FALSE, deleted_at = NULL,
+    deleted_by = NULL, updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310800000000000049', 'Navigation.FinanceApproval', 'R', '1', NULL,
+    TIMESTAMP '2026-07-21 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL
+)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL, updated_at = TIMESTAMP '2026-07-21 00:00:00+00';
 
 INSERT INTO whale_permissions (
     id, name, display_name, parent_name, description,
@@ -6097,21 +6300,51 @@ VALUES
     ('890020000000000002', 'Navigation.NurseWorkload', '护士工作量', 'Navigation',
      '菜单入口: NurseWorkload — 护士诊疗执行/耗材工作量统计', NULL,
      TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL),
-    ('890020000000000003', 'Navigation.InvDocumentDetailWarehouse', '药库单据详情', 'Navigation',
+    ('890020000000000003', 'Navigation.InvDocumentDetailWarehouse', '药库单据详情', 'ReportCenter',
      '菜单入口: InvDocumentDetailWarehouse — 药库域单据详情报表', NULL,
      TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL),
-    ('890020000000000004', 'Navigation.InvDocumentDetailPharmacy', '药房单据详情', 'Navigation',
+    ('890020000000000004', 'Navigation.InvDocumentDetailPharmacy', '药房单据详情', 'ReportCenter',
      '菜单入口: InvDocumentDetailPharmacy — 药房域单据详情报表', NULL,
      TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL),
-    ('890020000000000005', 'Navigation.InvDocumentDetailDepartment', '科室单据详情', 'Navigation',
+    ('890020000000000005', 'Navigation.InvDocumentDetailDepartment', '科室单据详情', 'ReportCenter',
      '菜单入口: InvDocumentDetailDepartment — 科室域单据详情报表', NULL,
      TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL),
-    ('890020000000000006', 'Navigation.InvDailySettlement', '库房日结', 'Navigation',
-     '菜单入口: InvDailySettlement — 库房日结对账报表', NULL,
+    ('890020000000000006', 'Navigation.InvPeriodBalanceDetail', '库房期初期末明细', 'Navigation',
+     '菜单入口: InvPeriodBalanceDetail — 库房期初期末明细对账报表', NULL,
      TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL),
     ('890020000000000007', 'Navigation.TraceNumberReport', '追溯码查询', 'Navigation',
      '菜单入口: TraceNumberReport — 追溯码查询报表（只读）', NULL,
-     TIMESTAMP '2026-07-07 12:00:00+00', TIMESTAMP '2026-07-07 12:00:00+00', 1, 1, FALSE, NULL, NULL)
+     TIMESTAMP '2026-07-07 12:00:00+00', TIMESTAMP '2026-07-07 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890020000000000008', 'Navigation.InpatientMedicationDetail', '住院用药明细', 'Navigation',
+     '菜单入口: InpatientMedicationDetail — 住院用药明细查询报表', NULL,
+     TIMESTAMP '2026-07-15 12:00:00+00', TIMESTAMP '2026-07-15 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890020000000000009', 'Navigation.OutpatientPrescriptionView', '门诊处方查看', 'Navigation',
+     '菜单入口: OutpatientPrescriptionView — 门诊处方查看报表', NULL,
+     TIMESTAMP '2026-07-15 12:00:00+00', TIMESTAMP '2026-07-15 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890020000000000010', 'Navigation.ConsumableUsageReportOp', '门诊耗材使用明细', 'ReportCenter',
+     '菜单入口: ConsumableUsageReportOp — 门诊耗材使用明细（患者发放∪科室领用）', NULL,
+     TIMESTAMP '2026-07-21 20:00:00+00', TIMESTAMP '2026-07-21 20:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890020000000000011', 'Navigation.ConsumableUsageReportIp', '住院耗材使用明细', 'ReportCenter',
+     '菜单入口: ConsumableUsageReportIp — 住院耗材使用明细（患者发放∪科室领用）', NULL,
+     TIMESTAMP '2026-07-21 20:00:00+00', TIMESTAMP '2026-07-21 20:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890020000000000012', 'Navigation.OutpatientRegistrationDetail', '门诊挂号明细', 'ReportCenter',
+     '菜单入口: OutpatientRegistrationDetail — 门诊挂号汇总/明细报表', NULL,
+     TIMESTAMP '2026-07-21 20:10:00+00', TIMESTAMP '2026-07-21 20:10:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890020000000000013', 'Navigation.InpatientFeeDetail', '住院费用明细', 'ReportCenter',
+     '菜单入口: InpatientFeeDetail — 住院费用汇总/明细报表（AS-RPT-009）', NULL,
+     TIMESTAMP '2026-07-21 20:20:00+00', TIMESTAMP '2026-07-21 20:20:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890020000000000014', 'Navigation.OpPharmacyDailySettlement', '门诊药房日结', 'Navigation',
+     '菜单入口: OpPharmacyDailySettlement — 门诊药房发药交账日结', NULL,
+     TIMESTAMP '2026-07-27 00:00:00+00', TIMESTAMP '2026-07-27 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890020000000000015', 'Navigation.IpPharmacyDailySettlement', '住院药房日结', 'Navigation',
+     '菜单入口: IpPharmacyDailySettlement — 住院药房发药交账日结', NULL,
+     TIMESTAMP '2026-07-27 00:00:00+00', TIMESTAMP '2026-07-27 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890020000000000016', 'Navigation.CashierSettlementApproval', '交账审批', 'Navigation',
+     '菜单入口: CashierSettlementApproval — 收款/药房交账审批', NULL,
+     TIMESTAMP '2026-07-27 00:00:00+00', TIMESTAMP '2026-07-27 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890020000000000017', 'Navigation.InpatientInOutDetail', '住院患者入出明细', 'ReportCenter',
+     '菜单入口: InpatientInOutDetail — 住院患者入出明细报表（AS-RPT-010）', NULL,
+     TIMESTAMP '2026-07-27 21:00:00+00', TIMESTAMP '2026-07-27 21:00:00+00', 1, 1, FALSE, NULL, NULL)
 ON CONFLICT (id) DO UPDATE SET
     name          = EXCLUDED.name,
     display_name  = EXCLUDED.display_name,
@@ -6140,29 +6373,79 @@ VALUES
      TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
     ('890010000000000003', 'InvDocumentDetailWarehouse', 'InvDocumentDetailWarehouse', '药库单据详情', 'lucide:file-spreadsheet',
      '/report/document-detail/warehouse', '/report/document-detail/warehouse/index', 'Navigation.InvDocumentDetailWarehouse',
-     '284503862625177600', 20, TRUE, FALSE, FALSE, '', 'menu',
-     'domainScope=WAREHOUSE', NULL,
+     '310400000000000122', 14, TRUE, FALSE, FALSE, '', 'menu',
+     '报表中心-药库单据详情', NULL,
      TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
     ('890010000000000004', 'InvDocumentDetailPharmacy', 'InvDocumentDetailPharmacy', '药房单据详情', 'lucide:file-spreadsheet',
      '/report/document-detail/pharmacy', '/report/document-detail/pharmacy/index', 'Navigation.InvDocumentDetailPharmacy',
-     '301696493912330240', 20, TRUE, FALSE, FALSE, '', 'menu',
-     'domainScope=PHARMACY', NULL,
+     '310400000000000122', 15, TRUE, FALSE, FALSE, '', 'menu',
+     '报表中心-药房单据详情', NULL,
      TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
     ('890010000000000005', 'InvDocumentDetailDepartment', 'InvDocumentDetailDepartment', '科室单据详情', 'lucide:file-spreadsheet',
      '/report/document-detail/department', '/report/document-detail/department/index', 'Navigation.InvDocumentDetailDepartment',
-     '310400000000000125', 20, TRUE, FALSE, FALSE, '', 'menu',
-     'domainScope=DEPARTMENT', NULL,
+     '310400000000000122', 16, TRUE, FALSE, FALSE, '', 'menu',
+     '报表中心-科室单据详情', NULL,
      TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
-    ('890010000000000006', 'InvDailySettlement', 'InvDailySettlement', '库房日结', 'lucide:calculator',
-     '/report/daily-settlement', '/report/daily-settlement/index', 'Navigation.InvDailySettlement',
+    ('890010000000000006', 'InvPeriodBalanceDetail', 'InvPeriodBalanceDetail', '库房期初期末明细', 'lucide:calculator',
+     '/report/period-balance-detail', '/report/period-balance-detail/index', 'Navigation.InvPeriodBalanceDetail',
      '310400000000000122', 7, TRUE, FALSE, FALSE, '', 'menu',
-     '期初/期末备份 + 动态列日结对账', NULL,
+     '期初/期末备份 + 动态列库房期初期末明细对账', NULL,
      TIMESTAMP '2026-07-04 12:00:00+00', TIMESTAMP '2026-07-04 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
     ('890010000000000007', 'TraceNumberReport', 'TraceNumberReport', '追溯码查询', 'lucide:scan-barcode',
      '/report/trace-number', '/report/trace-number/index', 'Navigation.TraceNumberReport',
      '310400000000000122', 8, TRUE, FALSE, FALSE, '', 'menu',
      '药品追溯码只读查询；支持 deep link', NULL,
-     TIMESTAMP '2026-07-07 12:00:00+00', TIMESTAMP '2026-07-07 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
+     TIMESTAMP '2026-07-07 12:00:00+00', TIMESTAMP '2026-07-07 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('890010000000000008', 'InpatientMedicationDetail', 'InpatientMedicationDetail', '住院用药明细', 'lucide:pill',
+     '/report/inpatient-medication-detail', '/report/inpatient-medication-detail/index', 'Navigation.InpatientMedicationDetail',
+     '310400000000000060', 8, TRUE, TRUE, FALSE, '', 'menu',
+     '发药管理-住院用药明细查询（暂隐藏）', NULL,
+     TIMESTAMP '2026-07-15 12:00:00+00', TIMESTAMP '2026-07-15 19:50:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('890010000000000009', 'OutpatientPrescriptionView', 'OutpatientPrescriptionView', '门诊处方查看', 'lucide:clipboard-list',
+     '/report/outpatient-prescription-view', '/report/outpatient-prescription-view/index', 'Navigation.OutpatientPrescriptionView',
+     '310400000000000060', 9, TRUE, FALSE, FALSE, '', 'menu',
+     '发药管理-门诊处方查看', NULL,
+     TIMESTAMP '2026-07-15 12:00:00+00', TIMESTAMP '2026-07-15 19:50:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('890010000000000010', 'ConsumableUsageReportOp', 'ConsumableUsageReportOp', '门诊耗材使用明细', 'lucide:package',
+     '/report/consumable-usage/outpatient', '/report/consumable-usage/outpatient/index', 'Navigation.ConsumableUsageReportOp', '310400000000000122', 18,
+     TRUE, FALSE, FALSE, '', 'menu', 'AS-RPT-005 · OutpatientConsumableUsageReportAppService', NULL,
+     TIMESTAMP '2026-07-21 20:00:00+00', TIMESTAMP '2026-07-21 20:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('890010000000000011', 'ConsumableUsageReportIp', 'ConsumableUsageReportIp', '住院耗材使用明细', 'lucide:package-open',
+     '/report/consumable-usage/inpatient', '/report/consumable-usage/inpatient/index', 'Navigation.ConsumableUsageReportIp', '310400000000000122', 19,
+     TRUE, FALSE, FALSE, '', 'menu', 'AS-RPT-006 · InpatientConsumableUsageReportAppService', NULL,
+     TIMESTAMP '2026-07-21 20:00:00+00', TIMESTAMP '2026-07-21 20:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('890010000000000012', 'OutpatientRegistrationDetail', 'OutpatientRegistrationDetail', '门诊挂号明细', 'lucide:calendar-check',
+     '/report/outpatient-registration-detail', '/report/outpatient-registration-detail/index', 'Navigation.OutpatientRegistrationDetail', '310400000000000122', 20,
+     TRUE, FALSE, FALSE, '', 'menu', 'AS-RPT-007 · OutpatientRegistrationDetailReportAppService', NULL,
+     TIMESTAMP '2026-07-21 20:10:00+00', TIMESTAMP '2026-07-21 20:10:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('890010000000000013', 'InpatientFeeDetail', 'InpatientFeeDetail', '住院费用明细', 'lucide:receipt',
+     '/report/fee-detail/inpatient', '/report/fee-detail/inpatient/index', 'Navigation.InpatientFeeDetail', '310400000000000122', 2,
+     TRUE, FALSE, FALSE, '', 'menu', 'AS-RPT-009 · InpatientFeeDetailReportAppService', NULL,
+     TIMESTAMP '2026-07-21 20:20:00+00', TIMESTAMP '2026-07-21 20:20:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('890010000000000014', 'OpPharmacyDailySettlement', 'OpPharmacyDailySettlement', '门诊药房日结',
+     'lucide:calendar-check', '/outpatient/pharmacy/daily-settlement',
+     '/outpatient/pharmacy/daily-settlement/index', 'Navigation.OpPharmacyDailySettlement',
+     '310400000000000060', 10, TRUE, FALSE, FALSE, '', 'menu',
+     'AS-OP-PHA-006 · OutpatientPharmacyDailySettlementAppService', NULL,
+     TIMESTAMP '2026-07-27 00:00:00+00', TIMESTAMP '2026-07-27 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('890010000000000015', 'IpPharmacyDailySettlement', 'IpPharmacyDailySettlement', '住院药房日结',
+     'lucide:calendar-check', '/inpatient/pharmacy/daily-settlement',
+     '/inpatient/pharmacy/daily-settlement/index', 'Navigation.IpPharmacyDailySettlement',
+     '310400000000000060', 11, TRUE, FALSE, FALSE, '', 'menu',
+     'AS-IP-PHA-006 · InpatientPharmacyDailySettlementAppService', NULL,
+     TIMESTAMP '2026-07-27 00:00:00+00', TIMESTAMP '2026-07-27 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('890010000000000016', 'CashierSettlementApproval', 'CashierSettlementApproval', '交账审批',
+     'lucide:badge-check', '/finance/cashier-settlement-approval',
+     '/finance/cashier-settlement-approval/index', 'Navigation.CashierSettlementApproval',
+     '310900000000000200', 4, TRUE, FALSE, FALSE, '', 'menu',
+     'AS-FIN-CS-001 · CashierSettlementApprovalAppService', NULL,
+     TIMESTAMP '2026-07-27 00:00:00+00', TIMESTAMP '2026-07-27 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('890010000000000017', 'InpatientInOutDetail', 'InpatientInOutDetail', '住院患者入出明细',
+     'lucide:bed-double', '/report/inpatient-in-out-detail',
+     '/report/inpatient-in-out-detail/index', 'Navigation.InpatientInOutDetail',
+     '310400000000000122', 21, TRUE, FALSE, FALSE, '', 'menu',
+     'AS-RPT-010 · InpatientInOutDetailReportAppService', NULL,
+     TIMESTAMP '2026-07-27 21:00:00+00', TIMESTAMP '2026-07-27 21:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
 ON CONFLICT (id) DO UPDATE SET
     code            = EXCLUDED.code,
     name            = EXCLUDED.name,
@@ -6196,7 +6479,7 @@ VALUES
      TIMESTAMP '2026-07-04 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
     ('890030000000000005', 'Navigation.InvDocumentDetailDepartment', 'R', '1', NULL,
      TIMESTAMP '2026-07-04 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
-    ('890030000000000006', 'Navigation.InvDailySettlement', 'R', '1', NULL,
+    ('890030000000000006', 'Navigation.InvPeriodBalanceDetail', 'R', '1', NULL,
      TIMESTAMP '2026-07-04 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
     ('890030000000000007', 'Navigation.TraceNumberReport', 'R', '1', NULL,
      TIMESTAMP '2026-07-07 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
@@ -6204,7 +6487,7 @@ VALUES
      TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
     ('890030000000000015', 'Navigation.InvDocumentDetailPharmacy', 'R', '12', '1',
      TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
-    ('890030000000000014', 'Navigation.InvDailySettlement', 'R', '13', '1',
+    ('890030000000000014', 'Navigation.InvPeriodBalanceDetail', 'R', '13', '1',
      TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
     ('890030000000000021', 'Navigation.PractitionerWorkload', 'R', '323022177255297024', '1',
      TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
@@ -6216,8 +6499,36 @@ VALUES
      TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
     ('890030000000000025', 'Navigation.InvDocumentDetailDepartment', 'R', '323022177255297024', '1',
      TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
-    ('890030000000000026', 'Navigation.InvDailySettlement', 'R', '323022177255297024', '1',
-     TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+    ('890030000000000026', 'Navigation.InvPeriodBalanceDetail', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890030000000000008', 'Navigation.InpatientMedicationDetail', 'R', '1', NULL,
+     TIMESTAMP '2026-07-15 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('890030000000000009', 'Navigation.OutpatientPrescriptionView', 'R', '1', NULL,
+     TIMESTAMP '2026-07-15 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('890030000000000010', 'Navigation.ConsumableUsageReportOp', 'R', '1', NULL,
+     TIMESTAMP '2026-07-21 20:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('890030000000000011', 'Navigation.ConsumableUsageReportIp', 'R', '1', NULL,
+     TIMESTAMP '2026-07-21 20:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('890030000000000012', 'Navigation.OutpatientRegistrationDetail', 'R', '1', NULL,
+     TIMESTAMP '2026-07-21 20:10:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('890030000000000016', 'Navigation.InpatientFeeDetail', 'R', '1', NULL,
+     TIMESTAMP '2026-07-21 20:20:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('890030000000000017', 'Navigation.Dispenserecordop', 'R', '1', NULL,
+     TIMESTAMP '2026-07-21 20:20:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('890030000000000018', 'Navigation.Dispenserecordip', 'R', '1', NULL,
+     TIMESTAMP '2026-07-21 20:20:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('890030000000000027', 'Navigation.InpatientMedicationDetail', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-07-15 12:00:00+00', TIMESTAMP '2026-07-15 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890030000000000028', 'Navigation.OutpatientPrescriptionView', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-07-15 12:00:00+00', TIMESTAMP '2026-07-15 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890030000000000029', 'Navigation.OpPharmacyDailySettlement', 'R', '1', NULL,
+     TIMESTAMP '2026-07-27 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('890030000000000030', 'Navigation.IpPharmacyDailySettlement', 'R', '1', NULL,
+     TIMESTAMP '2026-07-27 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('890030000000000031', 'Navigation.CashierSettlementApproval', 'R', '1', NULL,
+     TIMESTAMP '2026-07-27 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('890030000000000032', 'Navigation.InpatientInOutDetail', 'R', '1', NULL,
+     TIMESTAMP '2026-07-27 21:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
 ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
     is_deleted = FALSE,
     deleted_at = NULL,
@@ -6238,7 +6549,7 @@ VALUES
     ('310800000000000007', 'Report.Designer.View', 'R', '1', NULL, TIMESTAMP '2026-06-12 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
     ('332763182014664704', 'Navigation.PractitionerWorkload', 'R', '10', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
     ('332763296691130368', 'Navigation.NurseWorkload', 'R', '11', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
-    ('332763352089497600', 'Navigation.InvDailySettlement', 'R', '12', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('332763352089497600', 'Navigation.InvPeriodBalanceDetail', 'R', '12', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
     ('332763352064331776', 'Navigation.Invstocklist', 'R', '12', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
     ('332763352076914688', 'Navigation.Medicinereturnip', 'R', '12', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
     ('332762875805306880', 'Navigation.Deptgainloss', 'R', '13', '1', TIMESTAMP '2026-07-07 00:00:00+00', TIMESTAMP '2026-07-07 00:00:00+00', 1, 1, FALSE, NULL, NULL),
@@ -6301,122 +6612,984 @@ ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
     deleted_by = NULL,
     updated_at = EXCLUDED.updated_at;
 
--- Menu terminal state: 140 UPDATE whale_menus replayed from pre-squash V1__Init.sql (5b32d3a48)
+-- Menu terminal state: folded from 140 UPDATE whale_menus (INSERT…SELECT…ON CONFLICT)
 -- Squash must run INSERTs first, then this block (parent_id / sort_order / is_hidden).
 
-UPDATE whale_menus
-SET parent_id   = NULL,
-    sort_order  = 12,
-    is_hidden   = TRUE,
-    remark      = COALESCE(remark, '') || '；V74 已迁至隐藏，whale-print/report 统一在「报表打印」',
-    updated_at  = TIMESTAMP '2026-06-11 00:00:00+00'
+-- ========== Terminal state (INSERT…SELECT…ON CONFLICT; folded from UPDATE) ==========
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    NULL,
+    12,
+    is_enabled,
+    TRUE,
+    is_external,
+    external_url,
+    menu_type,
+    COALESCE(remark, '') || '；V74 已迁至隐藏，whale-print/report 统一在「报表打印」',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-11 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id IN (
     '310400000000000101',
     '310400000000000102',
     '310400000000000103',
     '301699662818054144'
 )
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET code            = 'ReportDesigner',
-    name            = 'ReportDesigner',
-    display_name    = '报表设计器',
-    icon            = 'lucide:pen-line',
-    path            = '/reports/designer',
-    component       = '/report/designer/index',
-    permission_name = 'Report.Designer.View',
-    sort_order      = 4,
-    remark          = 'C 类报表配置、PDF 模板绑定与发布（draft → published）',
-    updated_at      = TIMESTAMP '2026-06-13 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    remark = EXCLUDED.remark,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    'ReportDesigner',
+    'ReportDesigner',
+    '报表设计器',
+    'lucide:pen-line',
+    '/reports/designer',
+    '/report/designer/index',
+    'Report.Designer.View',
+    parent_id,
+    4,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    'C 类报表配置、PDF 模板绑定与发布（draft → published）',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-13 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310600000000000111'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET sort_order = 6,
-    updated_at = TIMESTAMP '2026-06-13 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    code = EXCLUDED.code,
+    name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    icon = EXCLUDED.icon,
+    path = EXCLUDED.path,
+    component = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    sort_order = EXCLUDED.sort_order,
+    remark = EXCLUDED.remark,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    6,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-13 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310600000000000112'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET remark = 'whale-print/report 打印模板 / 日志 / 报表设计器 / 报表中心 / 外系统报告',
-    updated_at = TIMESTAMP '2026-06-13 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    'whale-print/report 打印模板 / 日志 / 报表设计器 / 报表中心 / 外系统报告',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-13 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310400000000000100'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET sort_order = 5,
-    is_hidden  = TRUE,
-    remark     = 'C 类报表设计编辑页（可从报表模板「设计」进入）',
-    updated_at = TIMESTAMP '2026-06-13 12:00:00+00'
-WHERE id = '310600000000000111' AND is_deleted = FALSE;
-UPDATE whale_menus
-SET sort_order = 6, updated_at = TIMESTAMP '2026-06-13 12:00:00+00'
-WHERE id = '310600000000000113' AND is_deleted = FALSE;
-UPDATE whale_menus
-SET sort_order = 7, updated_at = TIMESTAMP '2026-06-13 12:00:00+00'
-WHERE id = '310600000000000112' AND is_deleted = FALSE;
-UPDATE whale_menus
-SET remark = 'whale-print/report 打印模板 / 报表模板 / 报表中心 / 外系统报告',
-    updated_at = TIMESTAMP '2026-06-13 12:00:00+00'
-WHERE id = '310400000000000100' AND is_deleted = FALSE;
-UPDATE whale_menus SET permission_name = 'Navigation.Chsreconciliation', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310500000000000103' AND is_deleted = FALSE;
-UPDATE whale_menus SET permission_name = 'Navigation.Chscatalogmappingworkbench', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310500000000000104' AND is_deleted = FALSE;
-UPDATE whale_menus SET permission_name = 'Navigation.Chsinventoryops', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310500000000000105' AND is_deleted = FALSE;
-UPDATE whale_menus SET permission_name = 'Navigation.Whreturntosupplier', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000106' AND is_deleted = FALSE;
-UPDATE whale_menus SET permission_name = 'Navigation.Deptstocktakeorder', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000107' AND is_deleted = FALSE;
-UPDATE whale_menus SET permission_name = 'Navigation.Whgainloss', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000108' AND is_deleted = FALSE;
-UPDATE whale_menus SET permission_name = 'Navigation.Phagainloss', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000109' AND is_deleted = FALSE;
-UPDATE whale_menus SET permission_name = 'Navigation.Deptgainloss', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000110' AND is_deleted = FALSE;
-UPDATE whale_menus SET permission_name = 'Navigation.Whtransferout', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000111' AND is_deleted = FALSE;
-UPDATE whale_menus SET permission_name = 'Navigation.Whtransferin', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000112' AND is_deleted = FALSE;
-UPDATE whale_menus SET permission_name = 'Navigation.Phareturntowarehouse', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000114' AND is_deleted = FALSE;
-UPDATE whale_menus SET permission_name = 'Navigation.Whreturnstockin', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000115' AND is_deleted = FALSE;
-UPDATE whale_menus SET permission_name = 'Navigation.Deptreturn', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000116' AND is_deleted = FALSE;
-UPDATE whale_menus SET permission_name = 'Navigation.Chsnationalcatalog', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310500000000000101' AND is_deleted = FALSE;
-UPDATE whale_menus SET permission_name = 'Navigation.Chscatalogdownload', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310500000000000102' AND is_deleted = FALSE;
-UPDATE whale_menus
-SET display_name = '组套模板',
-    remark       = '基础数据-组套模板',
-    updated_at   = TIMESTAMP '2026-06-24 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    remark = EXCLUDED.remark,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    5,
+    is_enabled,
+    TRUE,
+    is_external,
+    external_url,
+    menu_type,
+    'C 类报表设计编辑页（可从报表模板「设计」进入）',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-13 12:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310600000000000111' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    remark = EXCLUDED.remark,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    6,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-13 12:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310600000000000113' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    7,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-13 12:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310600000000000112' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    'whale-print/report 打印模板 / 报表模板 / 报表中心 / 外系统报告',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-13 12:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000100' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    remark = EXCLUDED.remark,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    'Navigation.Chsreconciliation',
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-17 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310500000000000103' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    'Navigation.Chscatalogmappingworkbench',
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-17 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310500000000000104' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    'Navigation.Chsinventoryops',
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-17 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310500000000000105' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    'Navigation.Whreturntosupplier',
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-17 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000106' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    'Navigation.Deptstocktakeorder',
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-17 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000107' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    'Navigation.Whgainloss',
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-17 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000108' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    'Navigation.Phagainloss',
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-17 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000109' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    'Navigation.Deptgainloss',
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-17 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000110' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    'Navigation.Whtransferout',
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-17 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000111' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    'Navigation.Whtransferin',
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-17 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000112' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    'Navigation.Phareturntowarehouse',
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-17 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000114' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    'Navigation.Whreturnstockin',
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-17 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000115' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    'Navigation.Deptreturn',
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-17 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000116' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    'Navigation.Chsnationalcatalog',
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-17 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310500000000000101' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    'Navigation.Chscatalogdownload',
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-17 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310500000000000102' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    '组套模板',
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    '基础数据-组套模板',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-24 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = 316900463887929348
   AND code = 'order_template'
   AND is_deleted = FALSE
-  AND display_name = '医嘱组套';
-UPDATE whale_menus
-SET is_deleted = TRUE,
-    deleted_at = TIMESTAMP '2026-06-24 00:00:00+00',
-    updated_at = TIMESTAMP '2026-06-24 00:00:00+00',
-    remark     = COALESCE(remark, '') || '；V89 菜单已移除'
+  AND display_name = '医嘱组套'
+ON CONFLICT (id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    remark = EXCLUDED.remark,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    COALESCE(remark, '') || '；V89 菜单已移除',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-24 00:00:00+00',
+    created_by,
+    updated_by,
+    TRUE,
+    TIMESTAMP '2026-06-24 00:00:00+00',
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310400000000000063'
   AND code = 'DispenseDoc'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET parent_id  = '310400000000000060',
-    sort_order = 6,
-    updated_at = TIMESTAMP '2026-06-24 00:00:00+00',
-    remark     = '发药管理-门诊发退药记录查询与导出'
-WHERE id = '310400000000000118'
-  AND code = 'DispenseRecordOp'
   AND is_deleted = FALSE
-  AND parent_id = '301696493912330240';
-UPDATE whale_menus
-SET parent_id  = '310400000000000060',
-    sort_order = 7,
-    updated_at = TIMESTAMP '2026-06-24 00:00:00+00',
-    remark     = '发药管理-住院发退药记录查询与导出'
-WHERE id = '310400000000000119'
-  AND code = 'DispenseRecordIp'
-  AND is_deleted = FALSE
-  AND parent_id = '301696493912330240';
-UPDATE whale_menus
-SET is_deleted = TRUE,
-    deleted_at = TIMESTAMP '2026-06-24 00:00:00+00',
-    updated_at = TIMESTAMP '2026-06-24 00:00:00+00',
-    remark     = COALESCE(remark, '') || '；V90 误挂库房管理，菜单已移除'
+ON CONFLICT (id) DO UPDATE SET
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    COALESCE(remark, '') || '；V90 误挂库房管理，菜单已移除',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-24 00:00:00+00',
+    created_by,
+    updated_by,
+    TRUE,
+    TIMESTAMP '2026-06-24 00:00:00+00',
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310400000000000107'
   AND code = 'DeptStocktakeOrder'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET is_hidden  = TRUE,
-    updated_at = TIMESTAMP '2026-06-24 00:00:00+00',
-    remark     = COALESCE(remark, '') || '；V90 库房管理侧栏暂隐藏'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    sort_order,
+    is_enabled,
+    TRUE,
+    is_external,
+    external_url,
+    menu_type,
+    COALESCE(remark, '') || '；V90 库房管理侧栏暂隐藏',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-24 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE parent_id = '284503862625177600'
   AND is_deleted = FALSE
   AND id NOT IN (
@@ -6424,349 +7597,3038 @@ WHERE parent_id = '284503862625177600'
       '313234941086273536', -- 药库出库单
       '316800463887929340', -- 药库盘点单
       '890010000000000003'  -- 药库单据详情
-  );
-UPDATE whale_menus
-SET is_hidden  = FALSE,
-    sort_order = 1,
-    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+  )
+ON CONFLICT (id) DO UPDATE SET
+    is_hidden = EXCLUDED.is_hidden,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    1,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-24 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '312881978679496704'
   AND code = 'WhPurchaseInbound'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET is_hidden  = FALSE,
-    sort_order = 2,
-    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    is_hidden = EXCLUDED.is_hidden,
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    2,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-24 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '313234941086273536'
   AND code = 'WhStockOut'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET is_hidden  = FALSE,
-    sort_order = 3,
-    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    is_hidden = EXCLUDED.is_hidden,
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    3,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-24 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '316800463887929340'
   AND code = 'WhStocktakeOrder'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET is_hidden  = TRUE,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    remark     = COALESCE(remark, '') || '；V91 报表管理侧栏暂隐藏'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    is_hidden = EXCLUDED.is_hidden,
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    sort_order,
+    is_enabled,
+    TRUE,
+    is_external,
+    external_url,
+    menu_type,
+    COALESCE(remark, '') || '；V91 报表管理侧栏暂隐藏',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310400000000000100'
   AND code = 'ReportManagement'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET is_hidden  = TRUE,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    remark     = COALESCE(remark, '') || '；V91 随报表管理暂隐藏'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    is_hidden = EXCLUDED.is_hidden,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    sort_order,
+    is_enabled,
+    TRUE,
+    is_external,
+    external_url,
+    menu_type,
+    COALESCE(remark, '') || '；V91 随报表管理暂隐藏',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE parent_id = '310400000000000100'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET parent_id  = '310400000000000122',
-    sort_order = 1,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    remark     = '报表中心-门诊费用明细查询与导出'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    is_hidden = EXCLUDED.is_hidden,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    '310400000000000122',
+    1,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    '报表中心-门诊费用明细查询与导出',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310400000000000121'
   AND code = 'OpFeeDetail'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET parent_id  = '310400000000000122',
-    sort_order = 4,
-    is_hidden  = FALSE,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    remark     = '报表中心-药库库存明细查询与导出'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    '310400000000000122',
+    4,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    '报表中心-药库库存明细查询与导出',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '313570119616827392'
   AND code = 'InvStockList'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET is_deleted = TRUE,
-    deleted_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    remark     = COALESCE(remark, '') || '；V91 门诊费用明细已迁至报表中心，目录已移除'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    COALESCE(remark, '') || '；V91 门诊费用明细已迁至报表中心，目录已移除',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    TRUE,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310400000000000120'
   AND code = 'OpReport'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET parent_id  = '310400000000000123',
-    sort_order = 1,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    remark     = '配置管理-病历模版'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    '310400000000000123',
+    1,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    '配置管理-病历模版',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '315372803691384832'
   AND code = 'EmrTemplate'
   AND is_deleted = FALSE
-  AND parent_id = '2000';
-UPDATE whale_menus
-SET parent_id  = '310400000000000123',
-    sort_order = 2,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    remark     = '配置管理-执行地点'
+  AND parent_id = '2000'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    '310400000000000123',
+    2,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    '配置管理-执行地点',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '316900463887929347'
   AND code = 'ExecuteLocation'
   AND is_deleted = FALSE
-  AND parent_id = '2000';
-UPDATE whale_menus
-SET parent_id  = '310400000000000123',
-    sort_order = 3,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    remark     = '配置管理-组套模板'
+  AND parent_id = '2000'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    '310400000000000123',
+    3,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    '配置管理-组套模板',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '316900463887929348'
   AND code = 'order_template'
   AND is_deleted = FALSE
-  AND parent_id = '2000';
-UPDATE whale_menus
-SET parent_id  = '310400000000000123',
-    sort_order = 4,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    remark     = '配置管理-取药科室'
+  AND parent_id = '2000'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    '310400000000000123',
+    4,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    '配置管理-取药科室',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '316900463887929349'
   AND code = 'service_location'
   AND is_deleted = FALSE
-  AND parent_id = '2000';
-UPDATE whale_menus
-SET parent_id  = '310400000000000123',
-    sort_order = 5,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    remark     = '配置管理-诊疗耗材绑定'
+  AND parent_id = '2000'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    '310400000000000123',
+    5,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    '配置管理-诊疗耗材绑定',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '316900463887929346'
   AND code = 'ServiceDeviceBinding'
   AND is_deleted = FALSE
-  AND parent_id = '2000';
-UPDATE whale_menus
-SET parent_id  = '310400000000000124',
-    sort_order = 1,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    remark     = '打印管理-PRT 画布打印模板（PrintJson）'
+  AND parent_id = '2000'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    '310400000000000124',
+    1,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    '打印管理-PRT 画布打印模板（PrintJson）',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310600000000000101'
   AND code = 'PrintTemplate'
   AND is_deleted = FALSE
-  AND parent_id = '2000';
-UPDATE whale_menus
-SET parent_id  = '310400000000000124',
-    sort_order = 2,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    remark     = '打印管理-PRT bindingCode→busNo 租户绑定'
+  AND parent_id = '2000'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    '310400000000000124',
+    2,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    '打印管理-PRT bindingCode→busNo 租户绑定',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310600000000000104'
   AND code = 'ReportPrintBinding'
   AND is_deleted = FALSE
-  AND parent_id = '2000';
-UPDATE whale_menus
-SET parent_id  = '310400000000000124',
-    sort_order = 3,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    remark     = '打印管理-PRT 打印审计 prt_print_event_log'
+  AND parent_id = '2000'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    '310400000000000124',
+    3,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    '打印管理-PRT 打印审计 prt_print_event_log',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310600000000000103'
   AND code = 'ReportPrintLog'
   AND is_deleted = FALSE
-  AND parent_id = '2000';
-UPDATE whale_menus
-SET parent_id  = '310400000000000124',
-    sort_order = 4,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    remark     = '打印管理-隐藏：设计从列表进入 /basic/print-template/design'
+  AND parent_id = '2000'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    '310400000000000124',
+    4,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    '打印管理-隐藏：设计从列表进入 /basic/print-template/design',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310600000000000102'
   AND code = 'PrintTemplateDesigner'
   AND is_deleted = FALSE
-  AND parent_id = '2000';
-UPDATE whale_menus
-SET sort_order = 1,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND parent_id = '2000'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    1,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '2000'
   AND code = 'basic_data'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET sort_order = 2,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    2,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310400000000000001'
   AND code = 'ChargeStation'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET sort_order = 3,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    3,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310400000000000020'
   AND code = 'OutpatientDoctorStation'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET sort_order = 4,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    4,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310400000000000040'
   AND code = 'InpatientDoctorStation'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET sort_order = 5,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    5,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '301665359451131904'
   AND code = 'OutpatientNurseStation'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET sort_order = 6,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    6,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '301666596158443520'
   AND code = 'InpatientNurseStation'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET sort_order = 7,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    7,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310400000000000060'
   AND code = 'MedicationDispense'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET display_name = '药房单据管理',
-    sort_order   = 8,
-    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    '药房单据管理',
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    8,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '301696493912330240'
   AND code = 'Pharmacy'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET display_name = '药库单据管理',
-    sort_order   = 9,
-    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    '药库单据管理',
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    9,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '284503862625177600'
   AND code = 'Warehouse'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET sort_order = 11,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    11,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310400000000000122'
   AND code = 'ReportCenterRoot'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET sort_order = 12,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    12,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310400000000000123'
   AND code = 'ConfigManagementRoot'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET sort_order = 13,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    13,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '1000'
   AND code = 'system_management'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET sort_order = 14,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    14,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310900000000000100'
   AND code = 'BookingHub'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET sort_order = 15,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    15,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310500000000000100'
   AND code = 'ChsManagement'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET sort_order = 16,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    16,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310400000000000124'
   AND code = 'PrintManagementRoot'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET sort_order = 17,
-    is_hidden  = TRUE,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    17,
+    is_enabled,
+    TRUE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310400000000000100'
   AND code = 'ReportManagement'
-  AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 1,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '284517877903003648' AND code = 'Medicine' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 2,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '284519152342274048' AND code = 'Diagnosistreatment' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 3,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '284518561658441728' AND code = 'Device' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 4,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '284519592148602880' AND code = 'Disease' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 5,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2008' AND code = 'healthcare_service_management' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 6,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2007' AND code = 'dept_management' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 7,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2004' AND code = 'ward_location_management' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 8,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2003' AND code = 'warehouse_management' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 9,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2005' AND code = 'patient_management' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 10, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2002' AND code = 'bodystructure_management' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 11, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '317000463887929350' AND code = 'specimen_definition' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 12, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '284501743746682880' AND code = 'Frequency' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 13, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '284502213630365696' AND code = 'Supplier' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 14, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2010' AND code = 'contract_management' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 99, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2001' AND code = 'codesystem_management' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 6, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000008' AND code = 'ChargeIpPrepay' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 7, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000007' AND code = 'ChargeIpSettle' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 8, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000117' AND code = 'ChargeIpDayClose' AND is_deleted = FALSE;
-UPDATE whale_menus
-SET sort_order      = 9,
-    is_hidden       = TRUE,
-    permission_name = NULL,
-    updated_at      = TIMESTAMP '2026-06-25 00:00:00+00',
-    remark          = COALESCE(remark, '') || '；V91 侧栏暂隐藏'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    1,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '284517877903003648' AND code = 'Medicine' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    2,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '284519152342274048' AND code = 'Diagnosistreatment' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    3,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '284518561658441728' AND code = 'Device' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    4,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '284519592148602880' AND code = 'Disease' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    5,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '2008' AND code = 'healthcare_service_management' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    6,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '2007' AND code = 'dept_management' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    7,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '2004' AND code = 'ward_location_management' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    8,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '2003' AND code = 'warehouse_management' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    9,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '2005' AND code = 'patient_management' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    10,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '2002' AND code = 'bodystructure_management' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    11,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '317000463887929350' AND code = 'specimen_definition' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    12,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '284501743746682880' AND code = 'Frequency' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    13,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '284502213630365696' AND code = 'Supplier' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    14,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '2010' AND code = 'contract_management' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    99,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '2001' AND code = 'codesystem_management' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    6,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000008' AND code = 'ChargeIpPrepay' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    7,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000007' AND code = 'ChargeIpSettle' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    8,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000117' AND code = 'ChargeIpDayClose' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    NULL,
+    parent_id,
+    9,
+    is_enabled,
+    TRUE,
+    is_external,
+    external_url,
+    menu_type,
+    COALESCE(remark, '') || '；V91 侧栏暂隐藏',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310400000000000009'
   AND code = 'ChargeIpFee'
-  AND is_deleted = FALSE;
-UPDATE whale_menus SET parent_id = '310400000000000060', sort_order = 2, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '313945127476793344' AND code = 'MedicineReturnOp' AND is_deleted = FALSE;
-UPDATE whale_menus SET parent_id = '310400000000000060', sort_order = 3, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000062' AND code = 'DispenseIp' AND is_deleted = FALSE;
-UPDATE whale_menus SET parent_id = '310400000000000060', sort_order = 4, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000064' AND code = 'MedicineReturnIp' AND is_deleted = FALSE;
-UPDATE whale_menus SET parent_id = '310400000000000060', sort_order = 5, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000118' AND code = 'DispenseRecordOp' AND is_deleted = FALSE;
-UPDATE whale_menus SET parent_id = '310400000000000060', sort_order = 6, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000119' AND code = 'DispenseRecordIp' AND is_deleted = FALSE;
-UPDATE whale_menus
-SET parent_id       = '301696493912330240',
-    display_name    = '药房损益单',
-    sort_order      = 9,
-    is_hidden       = TRUE,
-    permission_name = NULL,
-    updated_at      = TIMESTAMP '2026-06-25 00:00:00+00',
-    remark          = COALESCE(remark, '') || '；V91 药房管理侧栏暂隐藏'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    '310400000000000060',
+    2,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '313945127476793344' AND code = 'MedicineReturnOp' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    '310400000000000060',
+    3,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000062' AND code = 'DispenseIp' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    '310400000000000060',
+    4,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000064' AND code = 'MedicineReturnIp' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    '药房损益单',
+    icon,
+    path,
+    component,
+    NULL,
+    '301696493912330240',
+    9,
+    is_enabled,
+    TRUE,
+    is_external,
+    external_url,
+    menu_type,
+    COALESCE(remark, '') || '；V91 药房管理侧栏暂隐藏',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310400000000000109'
   AND code = 'PhaGainLoss'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET parent_id       = '301696493912330240',
-    display_name    = '药房退库单',
-    sort_order      = 14,
-    is_hidden       = TRUE,
-    permission_name = NULL,
-    updated_at      = TIMESTAMP '2026-06-25 00:00:00+00',
-    remark          = COALESCE(remark, '') || '；V91 药房管理侧栏暂隐藏'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    display_name = EXCLUDED.display_name,
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    '药房退库单',
+    icon,
+    path,
+    component,
+    NULL,
+    '301696493912330240',
+    14,
+    is_enabled,
+    TRUE,
+    is_external,
+    external_url,
+    menu_type,
+    COALESCE(remark, '') || '；V91 药房管理侧栏暂隐藏',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310400000000000114'
   AND code = 'PhaReturnToWarehouse'
-  AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 1, is_hidden = TRUE, permission_name = NULL, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000081' AND code = 'WhPurchaseOrder' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 2, is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '312881978679496704' AND code = 'WhPurchaseInbound' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 3, is_hidden = TRUE, permission_name = NULL, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000106' AND code = 'WhReturnToSupplier' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 4, is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '313234941086273536' AND code = 'WhStockOut' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 5, is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '316800463887929340' AND code = 'WhStocktakeOrder' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 6, is_hidden = TRUE, permission_name = NULL, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000108' AND code = 'WhGainLoss' AND is_deleted = FALSE;
-UPDATE whale_menus SET display_name = '药库调拨出库单', sort_order = 7, is_hidden = TRUE, permission_name = NULL, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000111' AND code = 'WhTransferOut' AND is_deleted = FALSE;
-UPDATE whale_menus SET display_name = '药库调拨入库单', sort_order = 8, is_hidden = TRUE, permission_name = NULL, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000112' AND code = 'WhTransferIn' AND is_deleted = FALSE;
-UPDATE whale_menus
-SET is_deleted = TRUE,
-    deleted_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    remark     = COALESCE(remark, '') || '；V91 菜单已移除'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    display_name = EXCLUDED.display_name,
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    NULL,
+    parent_id,
+    1,
+    is_enabled,
+    TRUE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000081' AND code = 'WhPurchaseOrder' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    2,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '312881978679496704' AND code = 'WhPurchaseInbound' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    NULL,
+    parent_id,
+    3,
+    is_enabled,
+    TRUE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000106' AND code = 'WhReturnToSupplier' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    4,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '313234941086273536' AND code = 'WhStockOut' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    5,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '316800463887929340' AND code = 'WhStocktakeOrder' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    NULL,
+    parent_id,
+    6,
+    is_enabled,
+    TRUE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000108' AND code = 'WhGainLoss' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    COALESCE(remark, '') || '；V91 菜单已移除',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    TRUE,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310400000000000110'
   AND code = 'DeptGainLoss'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET is_deleted = TRUE,
-    deleted_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    remark     = COALESCE(remark, '') || '；V91 菜单已移除'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    COALESCE(remark, '') || '；V91 菜单已移除',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    TRUE,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310400000000000116'
   AND code = 'DeptReturn'
-  AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 2,  is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310600000000000104' AND code = 'ReportPrintBinding' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 3,  is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310600000000000103' AND code = 'ReportPrintLog' AND is_deleted = FALSE;
-UPDATE whale_menus SET display_name = '打印设计器', sort_order = 24, is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310600000000000102' AND code = 'PrintTemplateDesigner' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 25, is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310600000000000101' AND code = 'PrintTemplate' AND is_deleted = FALSE;
-UPDATE whale_menus SET display_name = '排班设置', sort_order = 1, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000112' AND code = 'BookingScheduleTemplate' AND is_deleted = FALSE;
-UPDATE whale_menus SET display_name = '门诊排班', sort_order = 2, permission_name = 'Booking.OutpatientSchedule.View', updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000101' AND code = 'BookingOutpatientSchedule' AND is_deleted = FALSE;
-UPDATE whale_menus SET display_name = '号源日历', sort_order = 3, permission_name = 'Booking.SlotCalendar.View', updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000102' AND code = 'BookingSlotCalendar' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 4, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000103' AND code = 'BookingOutpatientRegister' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 5, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000104' AND code = 'BookingQueueBoard' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 6, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000110' AND code = 'BookingQueueDisplay' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 7, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000106' AND code = 'BookingMedTech' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 8, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000107' AND code = 'BookingBed' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 9, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000108' AND code = 'BookingHealthCheckup' AND is_deleted = FALSE;
-UPDATE whale_menus SET display_name = '预约策略', sort_order = 10, remark = 'BookingPolicyAppService · 挂号策略与停诊策略', updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000105' AND code = 'BookingPolicy' AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 11, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000109' AND code = 'BookingChannel' AND is_deleted = FALSE;
-UPDATE whale_menus
-SET display_name = '排班预约',
-    remark       = '门诊排班 / 号源 / 预约 / 候诊叫号 / 策略 / 模板',
-    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    updated_at = EXCLUDED.updated_at,
+    remark = EXCLUDED.remark;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    2,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310600000000000104' AND code = 'ReportPrintBinding' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    3,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310600000000000103' AND code = 'ReportPrintLog' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    '打印设计器',
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    24,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310600000000000102' AND code = 'PrintTemplateDesigner' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    25,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310600000000000101' AND code = 'PrintTemplate' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    '排班设置',
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    1,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310900000000000112' AND code = 'BookingScheduleTemplate' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    '门诊排班',
+    icon,
+    path,
+    component,
+    'Booking.OutpatientSchedule.View',
+    parent_id,
+    2,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310900000000000101' AND code = 'BookingOutpatientSchedule' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    sort_order = EXCLUDED.sort_order,
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    '号源日历',
+    icon,
+    path,
+    component,
+    'Booking.SlotCalendar.View',
+    parent_id,
+    3,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310900000000000102' AND code = 'BookingSlotCalendar' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    sort_order = EXCLUDED.sort_order,
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    4,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310900000000000103' AND code = 'BookingOutpatientRegister' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    5,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310900000000000104' AND code = 'BookingQueueBoard' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    6,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310900000000000110' AND code = 'BookingQueueDisplay' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    7,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310900000000000106' AND code = 'BookingMedTech' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    8,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310900000000000107' AND code = 'BookingBed' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    9,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310900000000000108' AND code = 'BookingHealthCheckup' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    '预约策略',
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    10,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    'BookingPolicyAppService · 挂号策略与停诊策略',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310900000000000105' AND code = 'BookingPolicy' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    sort_order = EXCLUDED.sort_order,
+    remark = EXCLUDED.remark,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    11,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310900000000000109' AND code = 'BookingChannel' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    '排班预约',
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    '门诊排班 / 号源 / 预约 / 候诊叫号 / 策略 / 模板',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id = '310900000000000100'
   AND code = 'BookingHub'
-  AND is_deleted = FALSE;
-UPDATE whale_menus
-SET is_hidden  = TRUE,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    remark = EXCLUDED.remark,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    sort_order,
+    is_enabled,
+    TRUE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
 WHERE id IN (
     '310900000000000103',
     '310900000000000104',
@@ -6777,165 +10639,859 @@ WHERE id IN (
     '310900000000000105',
     '310900000000000109'
 )
-  AND is_deleted = FALSE;
-UPDATE whale_menus SET sort_order = 1, is_hidden = FALSE, is_deleted = FALSE, deleted_at = NULL,
-    parent_id = '301696493912330240',
-    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Phstockin'), updated_at = NOW()
-WHERE id = '313295483593297921' AND code = 'PhStockIn';
-UPDATE whale_menus SET sort_order = 2, is_hidden = FALSE, is_deleted = FALSE, deleted_at = NULL,
-    parent_id = '301696493912330240',
-    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Phstocktakeorder'), updated_at = NOW()
-WHERE id = '316800463887929341' AND code = 'PhStocktakeOrder';
-UPDATE whale_menus SET parent_id = '301696493912330240', display_name = '药房损益单',
-    sort_order = 3, is_hidden = FALSE, is_deleted = FALSE, deleted_at = NULL,
-    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Phagainloss'), updated_at = NOW()
-WHERE id = '310400000000000109' AND code = 'PhaGainLoss';
-UPDATE whale_menus SET parent_id = '301696493912330240', display_name = '药房退库单',
-    sort_order = 4, is_hidden = FALSE, is_deleted = FALSE, deleted_at = NULL,
-    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Phareturntowarehouse'), updated_at = NOW()
-WHERE id = '310400000000000114' AND code = 'PhaReturnToWarehouse';
-UPDATE whale_menus SET
-    parent_id = '310400000000000125', display_name = '科室退库单', sort_order = 3,
-    is_hidden = FALSE, is_enabled = TRUE, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL,
-    permission_name = 'Navigation.Deptreturn', path = '/inventory/department/dept-return',
-    component = '/inventory/department/dept-return/index', updated_at = NOW()
-WHERE id = '310400000000000116' AND code = 'DeptReturn';
-UPDATE whale_menus SET
-    parent_id = '310400000000000125', display_name = '科室盘点单', sort_order = 6,
-    is_hidden = FALSE, is_enabled = TRUE, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL,
-    permission_name = 'Navigation.Deptstocktakeorder', updated_at = NOW()
-WHERE id = '310400000000000107' AND code = 'DeptStocktakeOrder';
-UPDATE whale_menus SET
-    parent_id = '310400000000000125', display_name = '科室损益单', sort_order = 7,
-    is_hidden = FALSE, is_enabled = TRUE, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL,
-    permission_name = 'Navigation.Deptgainloss', updated_at = NOW()
-WHERE id = '310400000000000110' AND code = 'DeptGainLoss';
-UPDATE whale_menus SET parent_id = '284503862625177600', sort_order = 1, is_hidden = FALSE, is_deleted = FALSE,
-    deleted_at = NULL, deleted_by = NULL,
-    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Whpurchaseorder'), updated_at = NOW()
-WHERE id = '310400000000000081' AND code = 'WhPurchaseOrder';
-UPDATE whale_menus SET parent_id = '284503862625177600', sort_order = 2, is_hidden = FALSE, is_deleted = FALSE,
-    deleted_at = NULL, deleted_by = NULL, updated_at = NOW()
-WHERE id = '312881978679496704' AND code = 'WhPurchaseInbound';
-UPDATE whale_menus SET parent_id = '284503862625177600', sort_order = 3, is_hidden = FALSE, is_deleted = FALSE,
-    deleted_at = NULL, deleted_by = NULL, updated_at = NOW()
-WHERE id = '313234941086273536' AND code = 'WhStockOut';
-UPDATE whale_menus SET parent_id = '284503862625177600', sort_order = 4, is_hidden = FALSE, is_deleted = FALSE,
-    deleted_at = NULL, deleted_by = NULL, updated_at = NOW()
-WHERE id = '316800463887929340' AND code = 'WhStocktakeOrder';
-UPDATE whale_menus SET parent_id = '284503862625177600', sort_order = 5, is_hidden = FALSE, is_deleted = FALSE,
-    deleted_at = NULL, deleted_by = NULL,
-    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Whreturntosupplier'), updated_at = NOW()
-WHERE id = '310400000000000106' AND code = 'WhReturnToSupplier';
-UPDATE whale_menus SET parent_id = '284503862625177600', display_name = '药库损益单', sort_order = 6,
-    is_hidden = FALSE, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL,
-    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Whgainloss'), updated_at = NOW()
-WHERE id = '310400000000000108' AND code = 'WhGainLoss';
-UPDATE whale_menus SET parent_id = '284503862625177600', display_name = '药库调拨出库单', sort_order = 7,
-    is_hidden = FALSE, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL,
-    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Whtransferout'), updated_at = NOW()
-WHERE id = '310400000000000111' AND code = 'WhTransferOut';
-UPDATE whale_menus SET parent_id = '284503862625177600', display_name = '药库调拨入库单', sort_order = 8,
-    is_hidden = FALSE, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL,
-    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Whtransferin'), updated_at = NOW()
-WHERE id = '310400000000000112' AND code = 'WhTransferIn';
-UPDATE whale_menus SET parent_id = '284503862625177600', display_name = '退库入库', sort_order = 9,
-    is_hidden = FALSE, is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL,
-    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Whreturnstockin'), updated_at = NOW()
-WHERE id = '310400000000000115' AND code = 'WhReturnStockIn';
-UPDATE whale_menus SET parent_id = '310400000000000122', sort_order = 4, is_hidden = FALSE, is_deleted = FALSE,
-    deleted_at = NULL, deleted_by = NULL,
-    permission_name = COALESCE(NULLIF(permission_name, ''), 'Navigation.Invstocklist'), updated_at = NOW()
-WHERE id = '313570119616827392' AND code = 'InvStockList';
-UPDATE whale_menus SET parent_id = '310400000000000125', updated_at = NOW()
-WHERE parent_id = '310400000000000130' AND is_deleted = FALSE;
-UPDATE whale_menus SET
-    is_deleted = TRUE, deleted_at = NOW(), deleted_by = 1, updated_at = NOW()
-WHERE id = '310400000000000130' AND code = 'DeptPharmacy' AND is_deleted = FALSE;
-UPDATE whale_menus SET
-    name = 'DeptPharmacy',
-    display_name = '科室单据管理',
-    path = '/inventory/department',
-    component = '',
-    menu_type = 'directory',
-    permission_name = NULL,
-    is_enabled = TRUE,
-    is_hidden = FALSE,
-    is_deleted = FALSE,
-    deleted_at = NULL,
-    deleted_by = NULL,
-    updated_at = NOW()
-WHERE id = '310400000000000125'
-  AND code = 'DeptPharmacy';
-UPDATE whale_menus SET
-    name = 'Warehouse',
-    display_name = '药库单据管理',
-    path = '/inventory',
-    component = '',
-    menu_type = 'directory',
-    permission_name = NULL,
-    is_enabled = TRUE,
-    is_hidden = FALSE,
-    is_deleted = FALSE,
-    deleted_at = NULL,
-    deleted_by = NULL,
-    updated_at = NOW()
-WHERE id = '284503862625177600'
-  AND code = 'Warehouse';
-UPDATE whale_menus SET
-    name = 'ReportCenterRoot',
-    display_name = '报表中心',
-    path = '/report-center',
-    component = '',
-    menu_type = 'directory',
-    permission_name = NULL,
-    is_enabled = TRUE,
-    is_hidden = FALSE,
-    is_deleted = FALSE,
-    deleted_at = NULL,
-    deleted_by = NULL,
-    updated_at = NOW()
-WHERE id = '310400000000000122'
-  AND code = 'ReportCenterRoot';
-UPDATE whale_menus SET parent_id = '284503862625177600', sort_order = 20, is_hidden = FALSE, is_enabled = TRUE,
-    is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL, updated_at = TIMESTAMP '2026-07-07 00:00:00+00'
-WHERE id = '890010000000000003' AND code = 'InvDocumentDetailWarehouse' AND is_deleted = FALSE;
-UPDATE whale_menus SET parent_id = '301696493912330240', sort_order = 20, is_hidden = FALSE, is_enabled = TRUE,
-    is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL, updated_at = TIMESTAMP '2026-07-07 00:00:00+00'
-WHERE id = '890010000000000004' AND code = 'InvDocumentDetailPharmacy' AND is_deleted = FALSE;
-UPDATE whale_menus SET parent_id = '310400000000000125', sort_order = 20, is_hidden = FALSE, is_enabled = TRUE,
-    is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL, updated_at = TIMESTAMP '2026-07-07 00:00:00+00'
-WHERE id = '890010000000000005' AND code = 'InvDocumentDetailDepartment' AND is_deleted = FALSE;
--- 12. 权限分组：配置管理 / 打印管理 / 报表中心 + 子权限归组 + 管理员授权
--- ---------------------------------------------------------------------------
-INSERT INTO whale_permissions (
-    id, name, display_name, parent_name, description,
-    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
-)
-VALUES
-    ('310700000000000016', 'ConfigManagement', '配置管理', NULL,
-     'HIS 配置管理入口权限分组（病历/执行地点/组套/取药科室/耗材绑定）', NULL,
-     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
-    ('310700000000000017', 'PrintManagement', '打印管理', NULL,
-     'HIS 打印管理入口权限分组（PRT 模板/绑定/日志）', NULL,
-     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
-    ('310700000000000018', 'ReportCenter', '报表中心', NULL,
-     'HIS 报表中心入口权限分组（门诊费用明细等）', NULL,
-     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+  AND is_deleted = FALSE
 ON CONFLICT (id) DO UPDATE SET
-    name          = EXCLUDED.name,
-    display_name  = EXCLUDED.display_name,
-    parent_name   = EXCLUDED.parent_name,
-    description   = EXCLUDED.description,
-    is_deleted    = FALSE,
-    deleted_at    = NULL,
-    deleted_by    = NULL,
-    updated_at    = EXCLUDED.updated_at;
+    is_hidden = EXCLUDED.is_hidden,
+    updated_at = EXCLUDED.updated_at;
 
--- 配置类 Navigation 权限归入 ConfigManagement
-UPDATE whale_permissions
-SET parent_name = 'ConfigManagement',
-    updated_at  = TIMESTAMP '2026-06-25 00:00:00+00'
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    COALESCE(NULLIF(permission_name, ''), 'Navigation.Phstockin'),
+    '301696493912330240',
+    1,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '313295483593297921' AND code = 'PhStockIn'
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    parent_id = EXCLUDED.parent_id,
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    COALESCE(NULLIF(permission_name, ''), 'Navigation.Phstocktakeorder'),
+    '301696493912330240',
+    2,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '316800463887929341' AND code = 'PhStocktakeOrder'
+ON CONFLICT (id) DO UPDATE SET
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    parent_id = EXCLUDED.parent_id,
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    '药房损益单',
+    icon,
+    path,
+    component,
+    COALESCE(NULLIF(permission_name, ''), 'Navigation.Phagainloss'),
+    '301696493912330240',
+    3,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000109' AND code = 'PhaGainLoss'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    display_name = EXCLUDED.display_name,
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    '药房退库单',
+    icon,
+    path,
+    component,
+    COALESCE(NULLIF(permission_name, ''), 'Navigation.Phareturntowarehouse'),
+    '301696493912330240',
+    4,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000114' AND code = 'PhaReturnToWarehouse'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    display_name = EXCLUDED.display_name,
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    '科室退库单',
+    icon,
+    '/inventory/department/dept-return',
+    '/inventory/department/dept-return/index',
+    'Navigation.Deptreturn',
+    '310400000000000125',
+    3,
+    TRUE,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    NULL,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000116' AND code = 'DeptReturn'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    display_name = EXCLUDED.display_name,
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    is_enabled = EXCLUDED.is_enabled,
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    deleted_by = EXCLUDED.deleted_by,
+    permission_name = EXCLUDED.permission_name,
+    path = EXCLUDED.path,
+    component = EXCLUDED.component,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    '科室盘点单',
+    icon,
+    path,
+    component,
+    'Navigation.Deptstocktakeorder',
+    '310400000000000125',
+    6,
+    TRUE,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    NULL,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000107' AND code = 'DeptStocktakeOrder'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    display_name = EXCLUDED.display_name,
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    is_enabled = EXCLUDED.is_enabled,
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    deleted_by = EXCLUDED.deleted_by,
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    '科室损益单',
+    icon,
+    path,
+    component,
+    'Navigation.Deptgainloss',
+    '310400000000000125',
+    7,
+    TRUE,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    NULL,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000110' AND code = 'DeptGainLoss'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    display_name = EXCLUDED.display_name,
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    is_enabled = EXCLUDED.is_enabled,
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    deleted_by = EXCLUDED.deleted_by,
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    COALESCE(NULLIF(permission_name, ''), 'Navigation.Whpurchaseorder'),
+    '284503862625177600',
+    1,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    NULL,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000081' AND code = 'WhPurchaseOrder'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    deleted_by = EXCLUDED.deleted_by,
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    '284503862625177600',
+    2,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    NULL,
+    keep_alive
+FROM whale_menus
+WHERE id = '312881978679496704' AND code = 'WhPurchaseInbound'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    deleted_by = EXCLUDED.deleted_by,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    '284503862625177600',
+    3,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    NULL,
+    keep_alive
+FROM whale_menus
+WHERE id = '313234941086273536' AND code = 'WhStockOut'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    deleted_by = EXCLUDED.deleted_by,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    '284503862625177600',
+    4,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    NULL,
+    keep_alive
+FROM whale_menus
+WHERE id = '316800463887929340' AND code = 'WhStocktakeOrder'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    deleted_by = EXCLUDED.deleted_by,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    COALESCE(NULLIF(permission_name, ''), 'Navigation.Whreturntosupplier'),
+    '284503862625177600',
+    5,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    NULL,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000106' AND code = 'WhReturnToSupplier'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    deleted_by = EXCLUDED.deleted_by,
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    '药库损益单',
+    icon,
+    path,
+    component,
+    COALESCE(NULLIF(permission_name, ''), 'Navigation.Whgainloss'),
+    '284503862625177600',
+    6,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    NULL,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000108' AND code = 'WhGainLoss'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    display_name = EXCLUDED.display_name,
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    deleted_by = EXCLUDED.deleted_by,
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    '退货入库',
+    icon,
+    path,
+    component,
+    COALESCE(NULLIF(permission_name, ''), 'Navigation.Whreturnstockin'),
+    '284503862625177600',
+    9,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    NULL,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000115' AND code = 'WhReturnStockIn'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    display_name = EXCLUDED.display_name,
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    deleted_by = EXCLUDED.deleted_by,
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    COALESCE(NULLIF(permission_name, ''), 'Navigation.Invstocklist'),
+    '310400000000000122',
+    4,
+    is_enabled,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    NULL,
+    keep_alive
+FROM whale_menus
+WHERE id = '313570119616827392' AND code = 'InvStockList'
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    deleted_by = EXCLUDED.deleted_by,
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    '310400000000000125',
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE parent_id = '310400000000000130' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    parent_id,
+    sort_order,
+    is_enabled,
+    is_hidden,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    TRUE,
+    NOW(),
+    1,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000130' AND code = 'DeptPharmacy' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    deleted_by = EXCLUDED.deleted_by,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    'DeptPharmacy',
+    '科室单据管理',
+    icon,
+    '/inventory/department',
+    '',
+    NULL,
+    parent_id,
+    sort_order,
+    TRUE,
+    FALSE,
+    is_external,
+    external_url,
+    'directory',
+    remark,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    NULL,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000125'
+  AND code = 'DeptPharmacy'
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    path = EXCLUDED.path,
+    component = EXCLUDED.component,
+    menu_type = EXCLUDED.menu_type,
+    permission_name = EXCLUDED.permission_name,
+    is_enabled = EXCLUDED.is_enabled,
+    is_hidden = EXCLUDED.is_hidden,
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    deleted_by = EXCLUDED.deleted_by,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    'Warehouse',
+    '药库单据管理',
+    icon,
+    '/inventory',
+    '',
+    NULL,
+    parent_id,
+    sort_order,
+    TRUE,
+    FALSE,
+    is_external,
+    external_url,
+    'directory',
+    remark,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    NULL,
+    keep_alive
+FROM whale_menus
+WHERE id = '284503862625177600'
+  AND code = 'Warehouse'
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    path = EXCLUDED.path,
+    component = EXCLUDED.component,
+    menu_type = EXCLUDED.menu_type,
+    permission_name = EXCLUDED.permission_name,
+    is_enabled = EXCLUDED.is_enabled,
+    is_hidden = EXCLUDED.is_hidden,
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    deleted_by = EXCLUDED.deleted_by,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    'ReportCenterRoot',
+    '报表中心',
+    icon,
+    '/report-center',
+    '',
+    NULL,
+    parent_id,
+    sort_order,
+    TRUE,
+    FALSE,
+    is_external,
+    external_url,
+    'directory',
+    remark,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    NULL,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000122'
+  AND code = 'ReportCenterRoot'
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    path = EXCLUDED.path,
+    component = EXCLUDED.component,
+    menu_type = EXCLUDED.menu_type,
+    permission_name = EXCLUDED.permission_name,
+    is_enabled = EXCLUDED.is_enabled,
+    is_hidden = EXCLUDED.is_hidden,
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    deleted_by = EXCLUDED.deleted_by,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    name,
+    display_name,
+    'ConfigManagement',
+    description,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by
+FROM whale_permissions
 WHERE name IN (
     'Navigation.Emrtemplate',
     'Navigation.Executelocation',
@@ -6944,12 +11500,29 @@ WHERE name IN (
     'Navigation.ActivityDeviceBinding'
 )
   AND is_deleted = FALSE
-  AND parent_name = 'Navigation';
+  AND parent_name = 'Navigation'
+ON CONFLICT (id) DO UPDATE SET
+    parent_name = EXCLUDED.parent_name,
+    updated_at = EXCLUDED.updated_at;
 
--- 打印类 Print 权限归入 PrintManagement
-UPDATE whale_permissions
-SET parent_name = 'PrintManagement',
-    updated_at  = TIMESTAMP '2026-06-25 00:00:00+00'
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    name,
+    display_name,
+    'PrintManagement',
+    description,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by
+FROM whale_permissions
 WHERE name IN (
     'Print.Templates.View',
     'Print.Templates.Design',
@@ -6957,104 +11530,303 @@ WHERE name IN (
     'Print.PrintBinding.View'
 )
   AND is_deleted = FALSE
-  AND parent_name = 'BasicData';
+  AND parent_name = 'BasicData'
+ON CONFLICT (id) DO UPDATE SET
+    parent_name = EXCLUDED.parent_name,
+    updated_at = EXCLUDED.updated_at;
 
--- 门诊费用明细归入 ReportCenter
-UPDATE whale_permissions
-SET parent_name = 'ReportCenter',
-    updated_at  = TIMESTAMP '2026-06-25 00:00:00+00'
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    name,
+    display_name,
+    'ReportCenter',
+    description,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by
+FROM whale_permissions
 WHERE name = 'Navigation.Opfeedetail'
   AND is_deleted = FALSE
-  AND parent_name = 'Navigation';
+  AND parent_name = 'Navigation'
+ON CONFLICT (id) DO UPDATE SET
+    parent_name = EXCLUDED.parent_name,
+    updated_at = EXCLUDED.updated_at;
 
--- 管理员（R / 1）补三个一级分组授权
-INSERT INTO whale_permission_grants (
-    id, permission_name, provider_name, provider_key,
-    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
 )
-VALUES
-    ('310800000000000016', 'ConfigManagement', 'R', '1', NULL,
-     TIMESTAMP '2026-06-25 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
-    ('310800000000000017', 'PrintManagement', 'R', '1', NULL,
-     TIMESTAMP '2026-06-25 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
-    ('310800000000000018', 'ReportCenter', 'R', '1', NULL,
-     TIMESTAMP '2026-06-25 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
-ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
-    is_deleted = FALSE,
-    deleted_at = NULL,
-    deleted_by = NULL,
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00';
-
--- ---------------------------------------------------------------------------
-
--- Platform terminal patches from pre-squash V1__Init.sql
--- qrtz: 6 INSERT blocks
--- permission UPDATEs: 15
--- grant UPDATEs: 9
-
--- --- whale_permissions terminal UPDATE chain ---
-UPDATE whale_permissions
-SET display_name = '报表中心',
-    description  = '菜单入口: ReportCenter — 已发布 C 类报表查询/导出/打印',
-    updated_at   = TIMESTAMP '2026-06-13 00:00:00+00'
+SELECT
+    id,
+    name,
+    '报表中心',
+    parent_name,
+    '菜单入口: ReportCenter — 已发布 C 类报表查询/导出/打印',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-13 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by
+FROM whale_permissions
 WHERE name = 'Report.Center.View'
-  AND is_deleted = FALSE;
-UPDATE whale_permissions
-SET display_name = '报表设计器',
-    description = '菜单入口: ReportDesigner — SQL/表头/表底/筛选器设计',
-    updated_at = TIMESTAMP '2026-06-13 12:00:00+00'
-WHERE name = 'Report.Designer.View' AND is_deleted = FALSE;
-UPDATE whale_permissions
-SET display_name = '组套模板',
-    updated_at   = TIMESTAMP '2026-06-24 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    description = EXCLUDED.description,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    name,
+    '报表设计器',
+    parent_name,
+    '菜单入口: ReportDesigner — SQL/表头/表底/筛选器设计',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-13 12:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by
+FROM whale_permissions
+WHERE name = 'Report.Designer.View' AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    description = EXCLUDED.description,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    name,
+    '组套模板',
+    parent_name,
+    description,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-24 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by
+FROM whale_permissions
 WHERE id = 56
   AND name = 'Navigation.OrderTemplate'
   AND is_deleted = FALSE
-  AND display_name = '医嘱组套';
-UPDATE whale_permissions
-SET is_deleted = TRUE,
-    deleted_at = TIMESTAMP '2026-06-24 00:00:00+00',
-    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+  AND display_name = '医嘱组套'
+ON CONFLICT (id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    name,
+    display_name,
+    parent_name,
+    description,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-24 00:00:00+00',
+    created_by,
+    updated_by,
+    TRUE,
+    TIMESTAMP '2026-06-24 00:00:00+00',
+    deleted_by
+FROM whale_permissions
 WHERE id = 40
   AND name = 'Navigation.Dispensedoc'
-  AND is_deleted = FALSE;
-UPDATE whale_permissions
-SET is_deleted = TRUE,
-    deleted_at = TIMESTAMP '2026-06-24 00:00:00+00',
-    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    name,
+    display_name,
+    parent_name,
+    description,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-24 00:00:00+00',
+    created_by,
+    updated_by,
+    TRUE,
+    TIMESTAMP '2026-06-24 00:00:00+00',
+    deleted_by
+FROM whale_permissions
 WHERE id = 62
   AND name = 'Navigation.Deptstocktakeorder'
-  AND is_deleted = FALSE;
-UPDATE whale_permissions
-SET display_name = '诊疗耗材绑定',
-    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    name,
+    '诊疗耗材绑定',
+    parent_name,
+    description,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by
+FROM whale_permissions
 WHERE name = 'Navigation.ActivityDeviceBinding'
-  AND is_deleted = FALSE;
-UPDATE whale_permissions
-SET display_name = '打印设计器',
-    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    name,
+    '打印设计器',
+    parent_name,
+    description,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by
+FROM whale_permissions
 WHERE name = 'Print.Templates.Design'
-  AND is_deleted = FALSE;
-UPDATE whale_permissions
-SET display_name = '排班设置',
-    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    name,
+    '排班设置',
+    parent_name,
+    description,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by
+FROM whale_permissions
 WHERE name = 'Booking.Template.View'
-  AND is_deleted = FALSE;
-UPDATE whale_permissions
-SET display_name = '排班预约',
-    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    name,
+    '排班预约',
+    parent_name,
+    description,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by
+FROM whale_permissions
 WHERE name = 'Booking'
-  AND is_deleted = FALSE;
-UPDATE whale_permissions
-SET name         = 'Booking.OutpatientSchedule.View',
-    display_name = '门诊排班',
-    description  = '菜单入口: BookingOutpatientSchedule',
-    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    'Booking.OutpatientSchedule.View',
+    '门诊排班',
+    parent_name,
+    '菜单入口: BookingOutpatientSchedule',
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by
+FROM whale_permissions
 WHERE name = 'Booking.Schedule.View'
-  AND is_deleted = FALSE;
-UPDATE whale_permissions
-SET parent_name = 'ConfigManagement',
-    updated_at  = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    description = EXCLUDED.description,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    name,
+    display_name,
+    'ConfigManagement',
+    description,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by
+FROM whale_permissions
 WHERE name IN (
     'Navigation.Emrtemplate',
     'Navigation.Executelocation',
@@ -7063,10 +11835,29 @@ WHERE name IN (
     'Navigation.ActivityDeviceBinding'
 )
   AND is_deleted = FALSE
-  AND parent_name = 'Navigation';
-UPDATE whale_permissions
-SET parent_name = 'PrintManagement',
-    updated_at  = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND parent_name = 'Navigation'
+ON CONFLICT (id) DO UPDATE SET
+    parent_name = EXCLUDED.parent_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    name,
+    display_name,
+    'PrintManagement',
+    description,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by
+FROM whale_permissions
 WHERE name IN (
     'Print.Templates.View',
     'Print.Templates.Design',
@@ -7074,35 +11865,150 @@ WHERE name IN (
     'Print.PrintBinding.View'
 )
   AND is_deleted = FALSE
-  AND parent_name = 'BasicData';
-UPDATE whale_permissions
-SET parent_name = 'ReportCenter',
-    updated_at  = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND parent_name = 'BasicData'
+ON CONFLICT (id) DO UPDATE SET
+    parent_name = EXCLUDED.parent_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    name,
+    display_name,
+    'ReportCenter',
+    description,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by
+FROM whale_permissions
 WHERE name = 'Navigation.Opfeedetail'
   AND is_deleted = FALSE
-  AND parent_name = 'Navigation';
-UPDATE whale_permissions SET display_name = '药房退库单', is_deleted = FALSE, deleted_at = NULL, updated_at = NOW()
-WHERE id = '68' AND name = 'Navigation.Phareturntowarehouse';
-UPDATE whale_permissions SET is_deleted = FALSE, deleted_at = NULL, updated_at = NOW()
-WHERE id IN ('62','65','70') AND name IN ('Navigation.Deptstocktakeorder','Navigation.Deptgainloss','Navigation.Deptreturn');
+  AND parent_name = 'Navigation'
+ON CONFLICT (id) DO UPDATE SET
+    parent_name = EXCLUDED.parent_name,
+    updated_at = EXCLUDED.updated_at;
 
--- --- whale_permission_grants terminal UPDATE chain ---
-UPDATE whale_permission_grants
-SET is_deleted = TRUE,
-    deleted_at = TIMESTAMP '2026-06-24 00:00:00+00',
-    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    name,
+    '药房退库单',
+    parent_name,
+    description,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    deleted_by
+FROM whale_permissions
+WHERE id = '68' AND name = 'Navigation.Phareturntowarehouse'
+ON CONFLICT (id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    name,
+    display_name,
+    parent_name,
+    description,
+    tenant_id,
+    created_at,
+    NOW(),
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    deleted_by
+FROM whale_permissions
+WHERE id IN ('62','65','70') AND name IN ('Navigation.Deptstocktakeorder','Navigation.Deptgainloss','Navigation.Deptreturn')
+ON CONFLICT (id) DO UPDATE SET
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    permission_name,
+    provider_name,
+    provider_key,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-24 00:00:00+00',
+    created_by,
+    updated_by,
+    TRUE,
+    TIMESTAMP '2026-06-24 00:00:00+00',
+    deleted_by
+FROM whale_permission_grants
 WHERE permission_name = 'Navigation.Dispensedoc'
-  AND is_deleted = FALSE;
-UPDATE whale_permission_grants
-SET is_deleted = TRUE,
-    deleted_at = TIMESTAMP '2026-06-24 00:00:00+00',
-    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    permission_name,
+    provider_name,
+    provider_key,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-24 00:00:00+00',
+    created_by,
+    updated_by,
+    TRUE,
+    TIMESTAMP '2026-06-24 00:00:00+00',
+    deleted_by
+FROM whale_permission_grants
 WHERE permission_name = 'Navigation.Deptstocktakeorder'
-  AND is_deleted = FALSE;
-UPDATE whale_permission_grants
-SET is_deleted = TRUE,
-    deleted_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    permission_name,
+    provider_name,
+    provider_key,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    TRUE,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    deleted_by
+FROM whale_permission_grants
 WHERE permission_name IN (
     'Booking.Register.View',
     'Booking.Queue.View',
@@ -7113,16 +12019,52 @@ WHERE permission_name IN (
     'Booking.Policy.View',
     'Booking.Channel.View'
 )
-  AND is_deleted = FALSE;
-UPDATE whale_permission_grants
-SET permission_name = 'Booking.OutpatientSchedule.View',
-    updated_at      = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    'Booking.OutpatientSchedule.View',
+    provider_name,
+    provider_key,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by
+FROM whale_permission_grants
 WHERE permission_name = 'Booking.Schedule.View'
-  AND is_deleted = FALSE;
-UPDATE whale_permission_grants
-SET is_deleted = TRUE,
-    deleted_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    permission_name,
+    provider_name,
+    provider_key,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    TRUE,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    deleted_by
+FROM whale_permission_grants
 WHERE provider_name = 'R'
   AND provider_key = '323022177255297024'
   AND permission_name IN (
@@ -7132,11 +12074,29 @@ WHERE provider_name = 'R'
       'Navigation.Reporthome',
       'Navigation.Reporttemplatedesigner'
   )
-  AND is_deleted = FALSE;
-UPDATE whale_permission_grants
-SET is_deleted = TRUE,
-    deleted_at = TIMESTAMP '2026-06-25 00:00:00+00',
-    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    permission_name,
+    provider_name,
+    provider_key,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    created_by,
+    updated_by,
+    TRUE,
+    TIMESTAMP '2026-06-25 00:00:00+00',
+    deleted_by
+FROM whale_permission_grants
 WHERE provider_name = 'R'
   AND provider_key = '14'
   AND permission_name IN (
@@ -7145,31 +12105,84 @@ WHERE provider_name = 'R'
       'Navigation.Reportfinance',
       'Navigation.Reporthome'
   )
-  AND is_deleted = FALSE;
-UPDATE whale_permission_grants
-SET permission_name = 'Navigation.Phareturntowarehouse',
-    is_deleted = FALSE,
-    deleted_at = NULL,
-    deleted_by = NULL,
-    updated_at = TIMESTAMP '2026-07-01 00:00:00+00'
-WHERE id = '10067';
-UPDATE whale_permission_grants
-SET is_deleted = FALSE,
-    deleted_at = NULL,
-    deleted_by = NULL,
-    updated_at = TIMESTAMP '2026-07-01 00:00:00+00'
+  AND is_deleted = FALSE
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    'Navigation.Phareturntowarehouse',
+    provider_name,
+    provider_key,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-07-01 00:00:00+00',
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    NULL
+FROM whale_permission_grants
+WHERE id = '10067'
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    deleted_by = EXCLUDED.deleted_by,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    permission_name,
+    provider_name,
+    provider_key,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-07-01 00:00:00+00',
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    NULL
+FROM whale_permission_grants
 WHERE provider_name = 'R'
   AND provider_key = '1'
   AND permission_name IN (
       'Navigation.Deptstocktakeorder',
       'Navigation.Deptgainloss',
       'Navigation.Deptreturn'
-  );
-UPDATE whale_permission_grants
-SET is_deleted = FALSE,
-    deleted_at = NULL,
-    deleted_by = NULL,
-    updated_at = TIMESTAMP '2026-07-07 00:00:00+00'
+  )
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    deleted_by = EXCLUDED.deleted_by,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    permission_name,
+    provider_name,
+    provider_key,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-07-07 00:00:00+00',
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    NULL
+FROM whale_permission_grants
 WHERE provider_name = 'R'
   AND provider_key = '13'
   AND permission_name IN (
@@ -7189,12 +12202,30 @@ WHERE provider_name = 'R'
       'Navigation.Deptissuereturn',
       'Navigation.InvDocumentDetailDepartment'
   )
-  AND is_deleted = TRUE;
-UPDATE whale_permission_grants
-SET is_deleted = FALSE,
-    deleted_at = NULL,
-    deleted_by = NULL,
-    updated_at = TIMESTAMP '2026-07-07 00:00:00+00'
+  AND is_deleted = TRUE
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    deleted_by = EXCLUDED.deleted_by,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT
+    id,
+    permission_name,
+    provider_name,
+    provider_key,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-07-07 00:00:00+00',
+    created_by,
+    updated_by,
+    FALSE,
+    NULL,
+    NULL
+FROM whale_permission_grants
 WHERE provider_name = 'R'
   AND provider_key = '323022177255297024'
   AND permission_name IN (
@@ -7209,4 +12240,1114 @@ WHERE provider_name = 'R'
       'Navigation.Deptissuereturn',
       'Navigation.InvDocumentDetailDepartment'
   )
-  AND is_deleted = TRUE;
+  AND is_deleted = TRUE
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = EXCLUDED.is_deleted,
+    deleted_at = EXCLUDED.deleted_at,
+    deleted_by = EXCLUDED.deleted_by,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id, sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark, tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+SELECT
+    id,
+    code,
+    name,
+    display_name,
+    icon,
+    path,
+    component,
+    permission_name,
+    '310400000000000060',
+    7,
+    TRUE,
+    FALSE,
+    is_external,
+    external_url,
+    menu_type,
+    remark,
+    tenant_id,
+    created_at,
+    TIMESTAMP '2026-07-15 00:00:00+00',
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by,
+    keep_alive
+FROM whale_menus
+WHERE id = '310400000000000065'
+  AND code = 'InpatientTraceAssignment'
+  AND is_deleted = FALSE
+ON CONFLICT (id) DO UPDATE SET
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    is_hidden = EXCLUDED.is_hidden,
+    is_enabled = EXCLUDED.is_enabled,
+    updated_at = EXCLUDED.updated_at;
+
+-- =============================================================================
+-- PRT 画布打印模板种子（原 health-dev V24/V16/V17 prt_template 段）
+-- 并入 platform：院点与 health-app 均出厂；可重复执行（按 id upsert）
+-- 含护理记录单（原 V17）；绑定见文末 prt_print_binding
+-- =============================================================================
+
+-- 护理记录单
+-- scenario_code = ip-nursingRecord-print；bus_no = PT202607090001
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    330512847710097408,
+    1,
+    NULL,
+    'PT202607090001',
+    '护理记录单',
+    'published',
+    1,
+    '{"schemaVersion":1,"engine":"Print","panels":[{"name":"1","index":0,"width":297,"height":210,"paperType":"A4","rotate":true,"paperHeader":0,"paperFooter":575.4,"paperNumberContinue":true,"paperNumberDisabled":true,"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"printElements":[{"printElementType":{"type":"text","title":"文本"},"options":{"top":24,"left":28.3,"field":"weekRangeLabel","width":170,"height":14,"fontSize":9,"hideTitle":true,"textAlign":"left","fontWeight":"normal","testData":"本周 07-06 ~ 07-12"}},{"printElementType":{"type":"text","title":"文本"},"options":{"top":24,"left":28.3,"field":"documentTitle","width":785.2,"height":24,"fontSize":18,"hideTitle":true,"textAlign":"center","fontWeight":"bold","testData":"某某医院 护理记录单"}},{"printElementType":{"type":"text","title":"姓名"},"options":{"top":52,"left":28.3,"title":"姓名","field":"patientName","width":72,"height":14,"fontSize":9,"testData":"小王"}},{"printElementType":{"type":"text","title":"性别"},"options":{"top":52,"left":104,"title":"性别","field":"genderEnumText","width":56,"height":14,"fontSize":9,"testData":"男"}},{"printElementType":{"type":"text","title":"年龄"},"options":{"top":52,"left":164,"title":"年龄","field":"ageText","width":56,"height":14,"fontSize":9,"testData":"25岁"}},{"printElementType":{"type":"text","title":"病室"},"options":{"top":52,"left":224,"title":"病室","field":"wardName","width":96,"height":14,"fontSize":9,"testData":"内科疗区"}},{"printElementType":{"type":"text","title":"床号"},"options":{"top":52,"left":324,"title":"床号","field":"bedNo","width":56,"height":14,"fontSize":9,"testData":""}},{"printElementType":{"type":"text","title":"病历号"},"options":{"top":52,"left":384,"title":"病历号","field":"inpatientNo","width":120,"height":14,"fontSize":9,"testData":"ZY2026-07-080002"}},{"printElementType":{"type":"text","title":"入院日期"},"options":{"top":52,"left":508,"title":"入院日期","field":"admitAtText","width":150,"height":14,"fontSize":9,"testData":"2026-07-08 15:23:14"}},{"printElementType":{"type":"text","title":"出院日期"},"options":{"top":52,"left":662,"title":"出院日期","field":"dischargeAtText","width":150,"height":14,"fontSize":9,"testData":""}},{"printElementType":{"type":"table","title":"表格","editable":true,"columnResizable":true,"isEnableDeleteRow":true,"isEnableEditField":true,"isEnableInsertRow":true,"isEnableMergeCell":true,"columnAlignEditable":true,"columnTitleEditable":true,"isEnableContextMenu":true,"isEnableDeleteColumn":true,"isEnableInsertColumn":true,"columnDisplayEditable":true,"columnDisplayIndexEditable":true},"options":{"top":72,"left":28.3,"field":"recordRows","width":785.2,"height":486,"fontSize":9,"textAlign":"center","lineHeight":12,"tableBorder":"border","tableHeaderBorder":"border","tableHeaderRepeat":"first","tableBodyRowBorder":"border","tableBodyRowHeight":22,"tableBodyCellBorder":"border","tableHeaderRowHeight":26,"tableHeaderCellBorder":"border","columns":[[{"title":"日期\n时间","field":"recordDatetime","width":68,"colspan":1,"rowspan":2,"align":"center","checked":true,"columnId":"recordDatetime"},{"title":"体温","width":43.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"temperatureGroup"},{"title":"脉搏","width":43.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"pulseGroup"},{"title":"心率","width":43.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"heartRateGroup"},{"title":"呼吸","width":43.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"respiratoryGroup"},{"title":"血压","width":43.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"bloodPressureGroup"},{"title":"意识","field":"consciousness","width":37.6,"colspan":1,"rowspan":2,"align":"center","checked":true,"columnId":"consciousness"},{"title":"瞳孔","width":67.2,"colspan":2,"rowspan":1,"align":"center","checked":true,"columnId":"pupilGroup"},{"title":"入量","width":63.2,"colspan":2,"rowspan":1,"align":"center","checked":true,"columnId":"intakeGroup"},{"title":"出量","width":98.7,"colspan":3,"rowspan":1,"align":"center","checked":true,"columnId":"outputGroup"},{"title":"病情观察及护理","field":"conditionMeasure","width":169.2,"colspan":1,"rowspan":2,"align":"center","checked":true,"columnId":"conditionMeasure"},{"title":"护士签名","field":"nurseSignature","width":63.2,"colspan":1,"rowspan":2,"align":"center","checked":true,"columnId":"nurseSignature"}],[{"title":"℃","field":"temperature","width":43.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"temperature"},{"title":"次/分","field":"pulse","width":43.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"pulse"},{"title":"次/分","field":"heartRate","width":43.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"heartRate"},{"title":"次/分","field":"respiratory","width":43.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"respiratory"},{"title":"mmHg","field":"bloodPressure","width":43.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"bloodPressure"},{"title":"左","field":"pupilLeft","width":33.6,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"pupilLeft"},{"title":"右","field":"pupilRight","width":33.6,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"pupilRight"},{"title":"名称","field":"intakeName","width":39.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"intakeName"},{"title":"ml","field":"intakeAmount","width":23.7,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"intakeAmount"},{"title":"名称","field":"outputName","width":39.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"outputName"},{"title":"ml","field":"outputAmount","width":23.7,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"outputAmount"},{"title":"颜色","field":"outputColorCharacter","width":35.5,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"outputColorCharacter"}]],"testData":"[{\"recordDatetime\":\"07-08\\n15:23\",\"temperature\":\"36.5\",\"pulse\":\"78\",\"heartRate\":\"78\",\"respiratory\":\"18\",\"bloodPressure\":\"120/80\",\"consciousness\":\"清醒\",\"pupilLeft\":\"3\",\"pupilRight\":\"3\",\"intakeName\":\"\",\"intakeAmount\":\"\",\"outputName\":\"\",\"outputAmount\":\"\",\"outputColorCharacter\":\"\",\"conditionMeasure\":\"\",\"nurseSignature\":\"\"},{\"recordDatetime\":\"07-09\\n08:00\",\"temperature\":\"36.8\",\"pulse\":\"80\",\"heartRate\":\"80\",\"respiratory\":\"19\",\"bloodPressure\":\"118/76\",\"consciousness\":\"清醒\",\"pupilLeft\":\"\",\"pupilRight\":\"\",\"intakeName\":\"口服\",\"intakeAmount\":\"200\",\"outputName\":\"尿\",\"outputAmount\":\"150\",\"outputColorCharacter\":\"淡黄\",\"conditionMeasure\":\"患者精神可，无特殊不适。\",\"nurseSignature\":\"张护士\"}]"}}]}]}'::jsonb,
+    1,
+    '{"weekRangeLabel":"本周 07-06 ~ 07-12","documentTitle":"某某医院 护理记录单","patientName":"小王","genderEnumText":"男","ageText":"25岁","wardName":"内科疗区","bedNo":"","inpatientNo":"ZY2026-07-080002","admitAtText":"2026-07-08 15:23:14","dischargeAtText":"","recordRows":[{"recordDatetime":"07-08\n15:23","temperature":"36.5","pulse":"78","heartRate":"78","respiratory":"18","bloodPressure":"120/80","consciousness":"清醒","pupilLeft":"3","pupilRight":"3","intakeName":"","intakeAmount":"","outputName":"","outputAmount":"","outputColorCharacter":"","conditionMeasure":"","nurseSignature":""},{"recordDatetime":"07-09\n08:00","temperature":"36.8","pulse":"80","heartRate":"80","respiratory":"19","bloodPressure":"118/76","consciousness":"清醒","pupilLeft":"","pupilRight":"","intakeName":"口服","intakeAmount":"200","outputName":"尿","outputAmount":"150","outputColorCharacter":"淡黄","conditionMeasure":"患者精神可，无特殊不适。","nurseSignature":"张护士"}]}'::jsonb,
+    TIMESTAMP '2026-07-09 17:00:00+08',
+    TIMESTAMP '2026-07-09 17:00:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'ip-nursingRecord-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- 门诊中药处方
+-- scenario_code = op-tcm-rx-print；bus_no = PT202607090002
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    330513847710097409,
+    1,
+    NULL,
+    'PT202607090002',
+    '门诊中药处方',
+    'published',
+    1,
+    '{"schemaVersion":1,"engine":"Print","panels":[{"name":"1","index":0,"width":148,"height":210,"paperType":"A5","paperFooter":575.4,"paperHeader":0,"printElements":[{"options":{"top":8,"left":28.3,"field":"prescriptionNo","title":"处方号","width":170.1,"height":14.2,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"处方号"}},{"options":{"top":22.7,"left":317.5,"field":"prescriptionTypeLine1","width":73.7,"height":14.2,"fontSize":9,"hideTitle":true,"textAlign":"center","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":22.7,"left":28.3,"field":"hospitalName","width":362.8,"height":22.7,"fontSize":16,"hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":36.9,"left":317.5,"field":"prescriptionTypeLine2","width":73.7,"height":14.2,"fontSize":9,"hideTitle":true,"textAlign":"center","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":51,"left":28.3,"field":"prescriptionDocumentTitle","width":362.8,"height":19.8,"fontSize":13,"hideTitle":true,"textAlign":"center","fontWeight":"bold","testData":"中药处方笺"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":79.4,"left":136.1,"field":"ageText","title":"年龄","width":107.7,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":79.4,"left":249.4,"field":"genderEnumText","title":"性别","width":107.7,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"性别"}},{"options":{"top":79.4,"left":28.3,"field":"patientName","title":"姓名","width":107.7,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":99.2,"left":28.3,"width":362.8,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":104.9,"left":136.1,"field":"feeNatureText","title":"费用性质","width":107.7,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"费用性质"}},{"options":{"top":104.9,"left":249.4,"field":"prescriptionDateText","title":"日期","width":141.7,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"日期"}},{"options":{"top":104.9,"left":28.3,"field":"orderingDepartmentName","title":"科室","width":107.7,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"科室"}},{"options":{"top":124.7,"left":28.3,"width":362.8,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":130.4,"left":28.3,"field":"encounterBusNo","title":"门诊号","width":204.1,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"门诊号"}},{"options":{"top":130.4,"left":232.4,"field":"patientPhone","title":"联系方式","width":158.7,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"联系方式"}},{"options":{"top":150.2,"left":28.3,"width":362.8,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":155.9,"left":28.3,"field":"conditionSummaryText","title":"诊断","width":362.8,"height":22.7,"fontSize":10.5,"textAlign":"left","fontWeight":"normal","testData":"咳嗽（风热犯肺）"},"printElementType":{"type":"text","title":"诊断"}},{"options":{"top":181.4,"left":28.3,"width":362.8,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":187.1,"left":28.3,"field":"rpHeading","width":56.7,"height":17,"fontSize":12,"hideTitle":true,"textAlign":"left","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":204.1,"left":28.3,"field":"tcmHerbRows","width":362.8,"height":240,"formatter":"function (data, options, templateData) {\n  var rows = templateData && templateData.tcmHerbRows;\n  if (typeof rows === ''string'') {\n    try { rows = JSON.parse(rows); } catch (e) { rows = []; }\n  }\n  if (!Array.isArray(rows)) rows = [];\n  var cellStyle = ''display:inline-block;width:25%;box-sizing:border-box;padding:0 6px 0 0;vertical-align:top;min-height:32px;font-size:10.5pt;line-height:32px;'';\n  var noteStyle = ''margin-left:2px;font-size:9.5pt;color:#333;line-height:1;white-space:nowrap;position:relative;top:-10px;'';\n  var html = [];\n  rows.forEach(function (row) {\n    html.push(''<div style=\"display:block;width:100%;margin-bottom:4px;overflow:hidden;\">'');\n    for (var i = 1; i <= 4; i++) {\n      var col = row[''col'' + i] || '''';\n      var note = row[''note'' + i] || '''';\n      html.push(''<span style=\"'' + cellStyle + ''\">'');\n      if (col) html.push(''<span>'' + col + ''</span>'');\n      if (note) html.push(''<span style=\"'' + noteStyle + ''\">'' + note + ''</span>'');\n      html.push(''</span>'');\n    }\n    html.push(''</div>'');\n  });\n  var usage = templateData && templateData.tcmUsageText ? String(templateData.tcmUsageText) : '''';\n  if (usage) {\n    html.push(''<div style=\"text-align:right;margin-top:10px;font-size:10.5pt;line-height:16px;padding-right:4px;\">'' + usage + ''</div>'');\n  }\n  html.push(''<div style=\"margin-top:4px;height:28px;width:100%;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"100%\" preserveAspectRatio=\"none\"><line x1=\"0\" y1=\"100%\" x2=\"100%\" y2=\"0\" stroke=\"#000\" stroke-width=\"1.5\" vector-effect=\"non-scaling-stroke\"/></svg></div>'');\n  return html.join('''');\n}","testData":"[{\"col1\":\"茯苓 10g\",\"note1\":\"(包煎)\",\"col2\":\"白芍 10g\",\"note2\":\"(先煎)\",\"col3\":\"\",\"note3\":\"\",\"col4\":\"\",\"note4\":\"\"}]"},"printElementType":{"type":"html","title":"HTML"}},{"options":{"top":483,"left":136.1,"field":"pricingPractitionerName","fixed":true,"title":"划价","width":113.4,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"划价"}},{"options":{"top":483,"left":249.4,"field":"prescriptionTotalPriceText","fixed":true,"title":"药费","width":141.7,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"药费"}},{"options":{"top":483,"left":28.3,"field":"orderingPractitionerName","fixed":true,"title":"医师","width":113.4,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"医师"}},{"options":{"top":502.8,"left":28.3,"fixed":true,"width":362.8,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":508.5,"left":192.8,"field":"preparerPractitionerName","fixed":true,"title":"调配","width":170.1,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"调配"}},{"options":{"top":508.5,"left":28.3,"field":"dispensingPractitionerName","fixed":true,"title":"发药","width":170.1,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"发药"}}],"paperNumberTop":573,"paperNumberLeft":389,"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":true,"paperNumberDisabled":true}]}'::jsonb,
+    1,
+    '{"prescriptionNo":"CF202601010001","hospitalName":"示例医院","prescriptionTypeLine1":"普通处方","prescriptionTypeLine2":"当日有效","prescriptionDocumentTitle":"中药处方笺","patientName":"示例患者","ageText":"28岁","genderEnumText":"男","orderingDepartmentName":"内科门诊","feeNatureText":"自费","prescriptionDateText":"2026-06-25","encounterBusNo":"MZ00001234","patientPhone":"13900139000","conditionSummaryText":"咳嗽（风热犯肺）","rpHeading":"Rp :","tcmHerbRows":[{"col1":"黄芪 20g","note1":"","col2":"当归尾 15g","note2":"","col3":"赤芍 10g","note3":"","col4":"川芎 10g","note4":""},{"col1":"炒枳实 10g","note1":"(先煎)","col2":"厚朴 10g","note2":"","col3":"神曲 15g","note3":"(后下)","col4":"","note4":""}],"tcmUsageText":"5付  每日1剂  水煎服","orderingPractitionerName":"示例医师","pricingPractitionerName":"示例划价员","prescriptionTotalPriceText":"药费：86.50元","dispensingPractitionerName":"","preparerPractitionerName":""}'::jsonb,
+    TIMESTAMP '2026-07-09 18:00:00+08',
+    TIMESTAMP '2026-07-09 22:30:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'op-tcm-rx-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- 门诊处置单
+-- scenario_code = op-treatment-print；bus_no = PT202606260004
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    328816431549911040,
+    1,
+    NULL,
+    'PT202606260004',
+    '门诊处置单',
+    'published',
+    1,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":148,"height":210,"paperType":"A5","paperFooter":595.2755905511812,"paperHeader":108,"printElements":[{"options":{"top":10,"left":34,"field":"hospitalName","width":351.6,"height":20,"fontSize":14,"hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":32,"left":34,"title":"处置单","width":351.6,"height":18,"fontSize":12,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":55,"left":35,"field":"patientName","right":130.5,"title":"姓名","width":94.5,"bottom":70.99609375,"height":16,"hCenter":62.99609375,"vCenter":83.25,"fontSize":10,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":54,"left":148.7,"field":"ageText","title":"年龄","width":88.5,"height":16,"fontSize":10,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":52.5,"left":257.5,"field":"genderEnumText","title":"性别","width":117.2,"height":16,"fontSize":10,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"性别"}},{"options":{"top":72,"left":34,"field":"orderingDepartmentName","title":"科室","width":94.5,"height":16,"fontSize":10,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"科室"}},{"options":{"top":72.5,"left":147.5,"field":"feeNatureText","title":"费用性质","width":92,"height":16,"fontSize":10,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"费用性质"}},{"options":{"top":70,"left":257.5,"field":"orderDateText","right":381,"title":"日期","width":138,"bottom":87.7421875,"height":16,"hCenter":79.7421875,"vCenter":318.75,"fontSize":10,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"日期"}},{"options":{"top":90,"left":35,"field":"encounterBusNo","right":156.75,"title":"门诊号","width":124.5,"bottom":108.25,"height":16,"hCenter":100.25,"vCenter":94.5,"fontSize":10,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"门诊号"}},{"options":{"top":90,"left":257.5,"field":"orderingPractitionerName","right":375.75,"title":"开单医生","width":118.5,"bottom":106,"height":16,"hCenter":98,"vCenter":316.5,"fontSize":10,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"开单医生"}},{"options":{"top":110,"left":34,"width":351.6,"height":2,"borderWidth":1.5},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":116,"left":34,"field":"treatmentLines","width":351.6,"height":36,"columns":[[{"align":"left","field":"itemName","fixed":false,"title":"项目名","width":158,"checked":true,"colspan":1,"rowspan":1,"columnId":"itemName"},{"align":"right","field":"unitPriceText","fixed":false,"title":"单价","width":60,"checked":true,"colspan":1,"rowspan":1,"columnId":"unitPriceText"},{"align":"right","field":"quantityText","fixed":false,"title":"数量","width":63.00000000000001,"checked":true,"colspan":1,"rowspan":1,"columnId":"quantityText"},{"align":"right","field":"executeCountText","fixed":false,"title":"执行次数","width":70.6,"checked":true,"colspan":1,"rowspan":1,"columnId":"executeCountText"}]],"fontSize":9.5,"textAlign":"left","lineHeight":16,"tableBorder":"border","tableHeaderBorder":"border","tableHeaderRepeat":"first","tableBodyRowBorder":"border","tableBodyRowHeight":20,"tableBodyCellBorder":"border","tableHeaderRowHeight":22,"tableHeaderCellBorder":"border"},"printElementType":{"type":"table","title":"表格","editable":true,"columnResizable":true,"isEnableDeleteRow":true,"isEnableEditField":true,"isEnableInsertRow":true,"isEnableMergeCell":true,"columnAlignEditable":true,"columnTitleEditable":true,"isEnableContextMenu":true,"isEnableDeleteColumn":true,"isEnableInsertColumn":true,"columnDisplayEditable":true,"columnDisplayIndexEditable":true}}],"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":true,"paperNumberDisabled":true}],"schemaVersion":1}'::jsonb,
+    1,
+    '{"ageText":"23岁","patientName":"示例患者","hospitalName":"示例医院","feeNatureText":"自费","orderDateText":"2026-06-26 14:38:04","encounterBusNo":"EN202606260013","genderEnumText":"女性","treatmentLines":[{"itemName":"20ml注射器","quantityText":"1 支","unitPriceText":"0.58 元","executeCountText":"1"},{"itemName":"静脉输液(连续输液第2瓶起每瓶加收)","quantityText":"2 次","unitPriceText":"1 元","executeCountText":"2"},{"itemName":"一次性使用输液器 带针0.55","quantityText":"1 支","unitPriceText":"0.72 元","executeCountText":"1"},{"itemName":"静脉输液","quantityText":"1 次","unitPriceText":"3 元","executeCountText":"1"}],"orderingDepartmentName":"全科","orderingPractitionerName":"示例医师"}'::jsonb,
+    TIMESTAMP '2026-06-26 16:39:06+08',
+    TIMESTAMP '2026-06-26 16:39:06+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'op-treatment-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- 门诊收费小票
+-- scenario_code = op-charge-print；bus_no = PT202606260005
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    328808320202182656,
+    1,
+    NULL,
+    'PT202606260005',
+    '门诊收费小票',
+    'published',
+    2,
+    '{"panels":[{"name":"1","index":0,"width":80,"height":200,"paperType":"roll-80mm","paperFooter":566.9291338582677,"paperHeader":34,"printElements":[{"options":{"top":8,"left":5.7,"field":"hospitalName","width":215.4,"height":16,"fontSize":11,"hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":26,"left":5.7,"title":"门诊收费明细","width":215.4,"height":14,"fontSize":9,"textAlign":"center","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":42,"left":5.7,"width":215.4,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":48,"left":5.7,"field":"patientName","title":"姓名","width":95,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":48,"left":105,"field":"genderEnumText","title":"性别","width":55,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"性别"}},{"options":{"top":48,"left":165,"field":"ageText","title":"年龄","width":56,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":64,"left":5.7,"field":"feeNatureText","title":"费用类型","width":215.4,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"费用类型"}},{"options":{"top":80,"left":5.7,"width":215.4,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":86,"left":5.7,"title":"收费项目","width":215.4,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":102,"left":5.7,"field":"chargeItemLines","width":215.4,"height":36,"columns":[[{"align":"left","field":"itemName","fixed":false,"title":"项目名称","width":88.16372093023257,"checked":true,"colspan":1,"rowspan":1,"columnId":"itemName"},{"align":"center","field":"quantityText","fixed":false,"title":"数量","width":32.05953488372093,"checked":true,"colspan":1,"rowspan":1,"columnId":"quantityText"},{"align":"right","field":"amountText","fixed":false,"title":"金额","width":48.0893023255814,"checked":true,"colspan":1,"rowspan":1,"columnId":"amountText"},{"align":"center","field":"chargeCategoryText","fixed":false,"title":"类别","width":47.08744186046513,"checked":true,"colspan":1,"rowspan":1,"columnId":"chargeCategoryText"}]],"fontSize":8,"textAlign":"left","lineHeight":14,"tableBorder":"noBorder","tableHeaderBorder":"borderBottom","tableHeaderRepeat":"first","tableBodyRowBorder":"noBorder","tableBodyRowHeight":16,"tableBodyCellBorder":"noBorder","tableHeaderRowHeight":20,"tableHeaderCellBorder":"noBorder"},"printElementType":{"type":"table","title":"表格","editable":true,"columnResizable":true,"isEnableDeleteRow":true,"isEnableEditField":true,"isEnableInsertRow":true,"isEnableMergeCell":true,"columnAlignEditable":true,"columnTitleEditable":true,"isEnableContextMenu":true,"isEnableDeleteColumn":true,"isEnableInsertColumn":true,"columnDisplayEditable":true,"columnDisplayIndexEditable":true}},{"options":{"top":142,"left":5.7,"width":215.4,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":148,"left":5.7,"title":"费用明细","width":215.4,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":166,"left":5.7,"field":"totalAmountText","title":"合计金额","width":107,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"合计金额"}},{"options":{"top":166,"left":114,"field":"poolingPayText","title":"统筹支付","width":107,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"统筹支付"}},{"options":{"top":182,"left":5.7,"field":"fundPayText","title":"基金支付","width":107,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"基金支付"}},{"options":{"top":182,"left":114,"field":"accountPayText","title":"个人账户支付","width":107,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"个人账户支付"}},{"options":{"top":198,"left":5.7,"field":"deductibleLineText","title":"起付线","width":107,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"起付线"}},{"options":{"top":198,"left":114,"field":"cashPayText","title":"现金支付","width":107,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"现金支付"}},{"options":{"top":214,"left":5.7,"field":"wechatPayText","title":"微信","width":107,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"微信"}},{"options":{"top":214,"left":114,"field":"alipayPayText","title":"支付宝","width":107,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"支付宝"}},{"options":{"top":230,"left":5.7,"field":"accountBalanceText","title":"账户余额","width":215.4,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"账户余额"}},{"options":{"top":248,"left":5.7,"width":215.4,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":254,"left":5.7,"field":"cashierName","title":"收费员","width":215.4,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"收费员"}},{"options":{"top":270,"left":5.7,"field":"chargeTimeText","title":"收费时间","width":215.4,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"收费时间"}}],"paperNumberTop":545,"paperNumberLeft":200,"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":true,"paperNumberDisabled":true}]}'::jsonb,
+    1,
+    '{"hospitalName":"示例医院","patientName":"张三","genderEnumText":"男","ageText":"45岁","feeNatureText":"省医保","chargeItemLines":[{"itemName":"血常规","quantityText":"1次","amountText":"18.00","chargeCategoryText":"化验"},{"itemName":"阿莫西林胶囊","quantityText":"1盒","amountText":"12.50","chargeCategoryText":"西药"}],"totalAmountText":"30.50","poolingPayText":"10.00","fundPayText":"10.00","accountPayText":"5.50","deductibleLineText":"0.00","cashPayText":"15.00","wechatPayText":"","alipayPayText":"","accountBalanceText":"1280.36","cashierName":"李收费","chargeTimeText":"2026-07-29 10:30:00"}'::jsonb,
+    TIMESTAMP '2026-06-26 16:06:52+08',
+    TIMESTAMP '2026-06-26 16:06:52+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'op-charge-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- 门诊处方
+-- scenario_code = op-rx-print；bus_no = PT202606260006
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    328808383859134464,
+    1,
+    NULL,
+    'PT202606260006',
+    '门诊处方',
+    'published',
+    3,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":148,"height":210,"paperType":"A5","paperFooter":575.4,"paperHeader":0,"printElements":[{"options":{"top":8,"left":28.3,"field":"prescriptionNo","title":"处方号","width":170.1,"height":14.2,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"处方号"}},{"options":{"top":22.7,"left":317.5,"field":"prescriptionTypeLine1","width":73.7,"height":14.2,"fontSize":9,"hideTitle":true,"textAlign":"center","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":22.7,"left":28.3,"field":"hospitalName","width":362.8,"height":22.7,"fontSize":16,"hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":36.9,"left":317.5,"field":"prescriptionTypeLine2","width":73.7,"height":14.2,"fontSize":9,"hideTitle":true,"textAlign":"center","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":51,"left":28.3,"field":"prescriptionDocumentTitle","width":362.8,"height":19.8,"fontSize":13,"hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":79.4,"left":136.1,"field":"ageText","title":"年龄","width":107.7,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":79.4,"left":249.4,"field":"genderEnumText","title":"性别","width":107.7,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"性别"}},{"options":{"top":79.4,"left":28.3,"field":"patientName","title":"姓名","width":107.7,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":99.2,"left":28.3,"width":362.8,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":104.9,"left":136.1,"field":"feeNatureText","title":"费用性质","width":107.7,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"费用性质"}},{"options":{"top":104.9,"left":249.4,"field":"prescriptionDateText","title":"日期","width":141.7,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"日期"}},{"options":{"top":104.9,"left":28.3,"field":"orderingDepartmentName","title":"科室","width":107.7,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"科室"}},{"options":{"top":124.7,"left":28.3,"width":362.8,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":130.4,"left":28.3,"field":"encounterBusNo","title":"门诊号","width":204.1,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"门诊号"}},{"options":{"top":130.4,"left":232.4,"field":"patientPhone","title":"联系方式","width":158.7,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"联系方式"}},{"options":{"top":150.2,"left":28.3,"width":362.8,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":155.9,"left":28.3,"field":"conditionSummaryText","title":"诊断","width":362.8,"height":22.7,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"诊断"}},{"options":{"top":181.4,"left":28.3,"width":362.8,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":187.1,"left":28.3,"field":"rpHeading","width":56.7,"height":17,"fontSize":12,"hideTitle":true,"textAlign":"left","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":204.1,"left":28.3,"field":"medicationLines","width":362.8,"height":265,"columns":[[{"align":"left","field":"medicationDisplayLeft","fixed":false,"title":"","width":295.2,"checked":true,"colspan":1,"rowspan":1,"styler2":"function(value, row, index, options) {\n  if (row.medicationLineType === ''''usage'''' || (value && String(value).indexOf(''''用法用量'''') === 0)) {\n    return { whiteSpace: ''''nowrap'''' };\n  }\n  return {};\n}","columnId":"medicationDisplayLeft","formatter2":"function(value, row, index, options) {\n  if (value == null || value === '''''''') return '''''''';\n  var text = String(value).replace(/^\\s+/, '''''''');\n  if (row.medicationLineType === ''''usage'''' || text.indexOf(''''用法用量'''') === 0) {\n    return ''''\\u3000\\u3000'''' + text;\n  }\n  return String(value);\n}"},{"align":"right","field":"medicationDisplayRight","fixed":false,"title":"","width":67.59999999999998,"checked":true,"colspan":1,"rowspan":1,"columnId":"medicationDisplayRight"}]],"lHeight":36,"fontSize":10.5,"textAlign":"left","lineHeight":18,"tableBorder":"noBorder","tableHeaderBorder":"noBorder","tableHeaderRepeat":"none","tableBodyRowBorder":"noBorder","tableBodyRowHeight":22,"tableBodyCellBorder":"noBorder","tableHeaderRowHeight":0,"tableHeaderCellBorder":"noBorder"},"printElementType":{"type":"table","title":"表格","editable":true,"columnResizable":true,"isEnableDeleteRow":true,"isEnableEditField":true,"isEnableInsertRow":true,"isEnableMergeCell":true,"columnAlignEditable":true,"columnTitleEditable":true,"isEnableContextMenu":true,"isEnableDeleteColumn":true,"isEnableInsertColumn":true,"columnDisplayEditable":true,"columnDisplayIndexEditable":true}},{"options":{"top":483.1,"left":28.3,"width":362.8,"height":30,"formatter":"function (data, options, templateData) {\n  var stroke = options.borderWidth != null && options.borderWidth !== '''''''' ? options.borderWidth : 1.5;\n  var runPct = options.slashRunRatio != null && options.slashRunRatio !== '''''''' ? options.slashRunRatio : 100;\n  return ''''<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"100%\" preserveAspectRatio=\"none\"><line x1=\"0\" y1=\"100%\" x2=\"'''' + runPct + ''''%\" y2=\"0\" stroke=\"#000\" stroke-width=\"'''' + stroke + ''''\" vector-effect=\"non-scaling-stroke\"/></svg>'''';\n}","hideTitle":true,"borderWidth":2},"printElementType":{"type":"html","title":"Rp划线"}},{"options":{"top":509.6,"left":136.1,"field":"pricingPractitionerName","fixed":true,"title":"划价","width":113.4,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"划价"}},{"options":{"top":509.6,"left":249.4,"field":"prescriptionTotalPriceText","fixed":true,"title":"药费","width":141.7,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"药费"}},{"options":{"top":509.6,"left":28.3,"field":"orderingPractitionerName","fixed":true,"title":"医师","width":113.4,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"医师"}},{"options":{"top":529.4,"left":28.3,"fixed":true,"width":362.8,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":535.1,"left":192.8,"field":"preparerPractitionerName","fixed":true,"title":"调配","width":170.1,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"调配"}},{"options":{"top":535.1,"left":28.3,"field":"dispensingPractitionerName","fixed":true,"title":"发药","width":170.1,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"发药"}}],"paperNumberTop":573,"paperNumberLeft":389,"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":true,"paperNumberDisabled":true}],"schemaVersion":1}'::jsonb,
+    1,
+    '{"ageText":"28岁","deptName":"全科","rpHeading":"Rp :","medications":[{"usage":"用法: 1片 每日两次 口服","drugName":"复方氨酚烷胺片","drugSpec":"12片×1盒"},{"usage":"用法: 0.3g 必要时口服 口服","drugName":"布洛芬缓释胶囊","drugSpec":"0.3g*20粒×1盒"},{"usage":"用法: 0.1g 每日一次 口服","drugName":"维生素C片","drugSpec":"0.1g*100片×1瓶"}],"patientName":"示例患者","contactPhone":"13800138000","hospitalName":"示例医院","patientPhone":"13900139000","documentTitle":"处方笺","feeNatureText":"自费","encounterBusNo":"MZ00001234","feeNatureLabel":"自费","genderEnumText":"男","prescriptionNo":"CF202601010001","medicationLines":[{"medicationDisplayLeft":"阿莫西林胶囊 0.25g×24粒","medicationDisplayRight":"1盒"},{"medicationLineType":"usage","medicationDisplayLeft":"用法用量：口服 每日3次 每次2粒","medicationDisplayRight":""}],"patientAgeLabel":"20岁","footerDoctorName":"示例医师","medicineFeeLabel":"25.25 元","prescriptionDate":"2026-05-27","footerDeliverName":"示例调配员","outpatientNoLabel":"EN202605270010","patientGenderLabel":"男性","conditionSummaryText":"上呼吸道感染","footerDispensingName":"示例发药员","prescriptionDateText":"2026-06-25","prescriptionTypeLine1":"普通处方","prescriptionTypeLine2":"当日有效","footerPricingClerkName":"示例划价员","orderingDepartmentName":"内科门诊","pricingPractitionerName":"示例划价员","orderingPractitionerName":"示例医师","preparerPractitionerName":"示例调配员","prescriptionDocumentTitle":"处方笺","dispensingPractitionerName":"示例发药员","prescriptionTotalPriceText":"药费：86.50元"}'::jsonb,
+    TIMESTAMP '2026-06-26 16:07:07+08',
+    TIMESTAMP '2026-06-26 16:07:07+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'op-rx-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- 门诊挂号小票
+-- scenario_code = op-reg-print；bus_no = PT202606260001
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    328809223344885760,
+    1,
+    NULL,
+    'PT202606260001',
+    '门诊挂号小票',
+    'published',
+    3,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":80,"height":200,"paperMode":"continuous","paperType":"roll-80mm","panelAngle":0,"paperHeader":34,"printElements":[{"options":{"top":8,"left":5.7,"field":"hospitalName","width":215.4,"height":16,"fontSize":11,"hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":26,"left":5.7,"title":"门诊挂号明细","width":215.4,"height":14,"fontSize":9,"textAlign":"center","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":42,"left":5.7,"width":215.4,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":48,"left":5.7,"field":"patientName","title":"姓名","width":95,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":48,"left":105,"field":"genderEnumText","title":"性别","width":55,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"性别"}},{"options":{"top":48,"left":165,"field":"ageText","title":"年龄","width":56,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":64,"left":5.7,"field":"feeNatureText","title":"费用类型","width":215.4,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"费用类型"}},{"options":{"top":80,"left":5.7,"field":"registerDepartmentName","title":"挂号科室","width":215.4,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"挂号科室"}},{"options":{"top":96,"left":5.7,"width":215.4,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":102,"left":5.7,"title":"挂号项目","width":215.4,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":118,"left":5.7,"field":"chargeItemLines","width":215.4,"height":36,"columns":[[{"align":"left","field":"itemName","fixed":false,"title":"项目名称","width":120,"checked":true,"colspan":1,"rowspan":1,"columnId":"itemName"},{"align":"right","field":"amountText","fixed":false,"title":"金额","width":48,"checked":true,"colspan":1,"rowspan":1,"columnId":"amountText"},{"align":"center","field":"chargeCategoryText","fixed":false,"title":"类别","width":47,"checked":true,"colspan":1,"rowspan":1,"columnId":"chargeCategoryText"}]],"fontSize":8,"textAlign":"left","lineHeight":14,"tableBorder":"noBorder","tableHeaderBorder":"borderBottom","tableHeaderRepeat":"first","tableBodyRowBorder":"noBorder","tableBodyRowHeight":16,"tableBodyCellBorder":"noBorder","tableHeaderRowHeight":20,"tableHeaderCellBorder":"noBorder"},"printElementType":{"type":"table","title":"表格","editable":true,"columnResizable":true,"isEnableDeleteRow":true,"isEnableEditField":true,"isEnableInsertRow":true,"isEnableMergeCell":true,"columnAlignEditable":true,"columnTitleEditable":true,"isEnableContextMenu":true,"isEnableDeleteColumn":true,"isEnableInsertColumn":true,"columnDisplayEditable":true,"columnDisplayIndexEditable":true}},{"options":{"top":158,"left":5.7,"width":215.4,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":164,"left":5.7,"title":"费用明细","width":215.4,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":182,"left":5.7,"field":"totalAmountText","title":"合计金额","width":107,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"合计金额"}},{"options":{"top":182,"left":114,"field":"poolingPayText","title":"统筹支付","width":107,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"统筹支付"}},{"options":{"top":198,"left":5.7,"field":"fundPayText","title":"基金支付","width":107,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"基金支付"}},{"options":{"top":198,"left":114,"field":"accountPayText","title":"个人账户支付","width":107,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"个人账户支付"}},{"options":{"top":214,"left":5.7,"field":"deductibleLineText","title":"起付线","width":107,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"起付线"}},{"options":{"top":214,"left":114,"field":"cashPayText","title":"现金支付","width":107,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"现金支付"}},{"options":{"top":230,"left":5.7,"field":"wechatPayText","title":"微信","width":107,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"微信"}},{"options":{"top":230,"left":114,"field":"alipayPayText","title":"支付宝","width":107,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"支付宝"}},{"options":{"top":246,"left":5.7,"field":"accountBalanceText","title":"账户余额","width":215.4,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"账户余额"}},{"options":{"top":264,"left":5.7,"width":215.4,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":270,"left":5.7,"field":"cashierName","title":"收费员","width":215.4,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"收费员"}},{"options":{"top":286,"left":5.7,"field":"chargeTimeText","title":"收费时间","width":215.4,"height":14,"fontSize":9,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"收费时间"}}],"paperNumberTop":545,"paperNumberLeft":200,"overPrintOptions":{"type":1,"content":"","opacity":0.7},"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"continuousOptions":{"tailPaddingMm":8,"maxSliceHeightMm":0,"repeatTableHeaderOnSlice":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":true,"paperNumberDisabled":true}],"schemaVersion":1}'::jsonb,
+    1,
+    '{"hospitalName":"示例医院","patientName":"李四","genderEnumText":"女","ageText":"32岁","feeNatureText":"省医保","registerDepartmentName":"内科门诊","chargeItemLines":[{"itemName":"普通号","amountText":"10.00","chargeCategoryText":"诊察"},{"itemName":"诊查费","amountText":"5.00","chargeCategoryText":"诊察"}],"totalAmountText":"15.00","poolingPayText":"0.00","fundPayText":"0.00","accountPayText":"15.00","deductibleLineText":"0.00","cashPayText":"","wechatPayText":"","alipayPayText":"","accountBalanceText":"860.20","cashierName":"王收费","chargeTimeText":"2026-07-29 09:15:00"}'::jsonb,
+    TIMESTAMP '2026-06-26 16:10:27+08',
+    TIMESTAMP '2026-06-26 16:10:27+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'op-reg-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- 输液瓶签
+-- scenario_code = op-infusionLabel-print；bus_no = PT202606260002
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    328809231234371584,
+    1,
+    NULL,
+    'PT202606260002',
+    '输液瓶签',
+    'published',
+    3,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":60,"height":50,"paperType":"label-60x50","paperFooter":142,"paperHeader":0,"printElements":[{"options":{"top":3.3,"left":4.28,"field":"patientName","title":"姓名","width":58.5,"height":10.8,"fontSize":8,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":3.3,"left":66,"field":"genderEnumText","title":"性别","width":43.88,"height":10.8,"fontSize":8,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"性别"}},{"options":{"top":3.3,"left":118.13,"field":"ageText","title":"年龄","width":36,"height":10.8,"fontSize":8,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":15,"left":4.28,"field":"registerTimeText","title":"挂号时间","width":161.55,"height":10.8,"fontSize":8,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"挂号时间"}},{"options":{"top":26.7,"left":4.28,"width":161.55,"height":1,"borderWidth":0.75},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":28,"left":4.28,"field":"medicationLines","width":161.55,"height":72,"columns":[[{"align":"left","field":"drugName","fixed":false,"title":"药品名称","width":62.75,"checked":true,"colspan":1,"rowspan":1,"columnId":"drugName"},{"align":"left","field":"specText","fixed":false,"title":"规格","width":28.54,"checked":true,"colspan":1,"rowspan":1,"columnId":"specText"},{"align":"center","field":"totalQuantityText","fixed":false,"title":"总量","width":21.04,"checked":true,"colspan":1,"rowspan":1,"columnId":"totalQuantityText"},{"align":"center","field":"usageText","fixed":false,"title":"用法","width":49.22,"checked":true,"colspan":1,"rowspan":1,"columnId":"usageText"}]],"fontSize":7,"textAlign":"left","lineHeight":11,"tableBorder":"noBorder","tableHeaderBorder":"borderBottom","tableHeaderRepeat":"first","tableBodyRowBorder":"noBorder","tableBodyRowHeight":12,"tableBodyCellBorder":"noBorder","tableHeaderRowHeight":14,"tableHeaderCellBorder":"noBorder"},"printElementType":{"type":"table","title":"表格","editable":true,"columnResizable":true,"isEnableDeleteRow":true,"isEnableEditField":true,"isEnableInsertRow":true,"isEnableMergeCell":true,"columnAlignEditable":true,"columnTitleEditable":true,"isEnableContextMenu":true,"isEnableDeleteColumn":true,"isEnableInsertColumn":true,"columnDisplayEditable":true,"columnDisplayIndexEditable":true}},{"options":{"top":118,"left":4.28,"fixed":true,"width":161.55,"height":1,"borderWidth":0.75},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":122,"left":4.28,"field":"executorName","fixed":true,"title":"执行人","width":54,"height":12,"fontSize":7.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"执行人"}},{"options":{"top":122,"left":61.5,"field":"executeTimeText","fixed":true,"title":"执行时间","width":104.25,"height":12,"fontSize":7.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"执行时间"}}],"paperNumberTop":132,"paperNumberLeft":150,"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":true,"paperNumberDisabled":true}],"schemaVersion":1}'::jsonb,
+    1,
+    '{"ageText":"35岁","patientName":"示例患者","executorName":"示例护士","genderEnumText":"男","executeTimeText":"2026-06-26 10:30","medicationLines":[{"drugName":"0.9%氯化钠注射液","specText":"250ml","usageText":"静滴","totalQuantityText":"1瓶"},{"drugName":"头孢呋辛钠","specText":"0.75g","usageText":"静滴","totalQuantityText":"2支"}],"registerTimeText":"2026-06-26 09:15"}'::jsonb,
+    TIMESTAMP '2026-06-26 16:10:29+08',
+    TIMESTAMP '2026-06-26 16:10:29+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'op-infusionLabel-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- 门诊费用日结单
+-- scenario_code = op-dailySettlement-print；bus_no = PT202606260003
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    328809238930919424,
+    1,
+    NULL,
+    'PT202606260003',
+    '门诊费用日结单',
+    'published',
+    2,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":210,"height":297,"paperType":"A4","paperFooter":841.8897637795277,"paperHeader":0,"printElements":[{"options":{"top":24,"left":28.3,"title":"门诊收费日结单","width":538.6,"height":24,"fontSize":18,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":56,"left":28.3,"field":"hospitalName","title":"当前机构","width":170,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"当前机构"}},{"options":{"top":56,"left":205,"field":"cashierName","title":"收款人姓名","width":150,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"收款人姓名"}},{"options":{"top":56,"left":362,"field":"settlementPeriodText","title":"时间","width":204.9,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"时间"}},{"options":{"top":78,"left":28.3,"width":538.6,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":88,"left":28.3,"title":"西药：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":88,"left":76.3,"field":"westernMedicineAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":88,"left":165.45,"title":"外购药品：","width":54,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":88,"left":219.45,"field":"outsourcedDrugAmountText","width":63.150000000000006,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":88,"left":302.6,"title":"中草药：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":88,"left":350.6,"field":"herbalMedicineAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":88,"left":439.75,"title":"化验：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":88,"left":487.75,"field":"labTestAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":107,"left":28.3,"title":"手术：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":107,"left":76.3,"field":"surgeryAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":107,"left":165.45,"title":"诊断：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":107,"left":213.45,"field":"diagnosisAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":107,"left":302.6,"title":"治疗：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":107,"left":350.6,"field":"treatmentAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":107,"left":439.75,"title":"护理：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":107,"left":487.75,"field":"nursingAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":126,"left":28.3,"title":"床位：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":126,"left":76.3,"field":"bedAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":126,"left":165.45,"title":"挂号费：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":126,"left":213.45,"field":"registrationFeeAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":126,"left":302.6,"title":"诊察费：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":126,"left":350.6,"field":"consultationFeeAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":126,"left":439.75,"title":"其他费：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":126,"left":487.75,"field":"otherFeeAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":145,"left":28.3,"title":"麻醉：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":145,"left":76.3,"field":"anesthesiaAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":145,"left":165.45,"title":"膳食：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":145,"left":213.45,"field":"dietAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":145,"left":302.6,"title":"输血费：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":145,"left":350.6,"field":"bloodTransfusionAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":145,"left":439.75,"title":"自备医嘱：","width":54,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":145,"left":493.75,"field":"selfPreparedOrderAmountText","width":63.150000000000006,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":164,"left":28.3,"title":"医用耗材：","width":54,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":164,"left":82.3,"field":"medicalConsumablesAmountText","width":63.150000000000006,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":164,"left":165.45,"title":"循环物质：","width":54,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":164,"left":219.45,"field":"circulatingMaterialAmountText","width":63.150000000000006,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":164,"left":302.6,"title":"物资：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":164,"left":350.6,"field":"materialAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":164,"left":439.75,"title":"办公用品：","width":54,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":164,"left":493.75,"field":"officeSuppliesAmountText","width":63.150000000000006,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":183,"left":28.3,"title":"检查：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":183,"left":76.3,"field":"examinationAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":183,"left":165.45,"title":"中成药：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":183,"left":213.45,"field":"proprietaryChineseMedicineAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":183,"left":302.6,"title":"CT：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":183,"left":350.6,"field":"ctAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":183,"left":439.75,"title":"电诊：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":183,"left":487.75,"field":"electrodiagnosisAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":204,"left":28.3,"width":538.6,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":214,"left":28.3,"title":"总收入：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":214,"left":76.3,"field":"totalIncomeAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":214,"left":165.45,"title":"微信：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":214,"left":213.45,"field":"wechatAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":214,"left":302.6,"title":"支付宝：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":214,"left":350.6,"field":"alipayAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":214,"left":439.75,"title":"网银：","width":48,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":214,"left":487.75,"field":"onlineBankingAmountText","width":69.15,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":233,"left":28.3,"title":"现金：","width":75,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":233,"left":103.3,"field":"selfPayCashTotalAmountText","width":48,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":233,"left":165.45,"title":"自费人次：","width":54,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":233,"left":219.45,"field":"selfPayVisitCountText","width":63.150000000000006,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":233,"left":302.6,"title":"省医保人次：","width":64.5,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":233,"left":367.1,"field":"provincialInsuranceVisitCountText","width":52.650000000000006,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":233,"left":439.75,"title":"市医保人次：","width":64.5,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":233,"left":504.25,"field":"municipalInsuranceVisitCountText","width":52.650000000000006,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":252,"left":28.3,"title":"省医保现金：","width":64.5,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":252,"left":92.8,"field":"provincialInsuranceCashAmountText","width":52.650000000000006,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":252,"left":165.45,"title":"省医保统筹：","width":64.5,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":252,"left":229.95,"field":"provincialInsurancePoolingAmountText","width":52.650000000000006,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":252,"left":302.6,"title":"省医保账户：","width":64.5,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":252,"left":367.1,"field":"provincialInsuranceAccountAmountText","width":52.650000000000006,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":252,"left":439.75,"title":"省医保基金：","width":64.5,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":252,"left":504.25,"field":"provincialInsuranceFundAmountText","width":52.650000000000006,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":271,"left":28.3,"title":"市医保现金：","width":64.5,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":271,"left":92.8,"field":"municipalInsuranceCashAmountText","width":52.650000000000006,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":271,"left":165.45,"title":"市医保统筹：","width":64.5,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":271,"left":229.95,"field":"municipalInsurancePoolingAmountText","width":52.650000000000006,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":271,"left":302.6,"title":"市医保账户：","width":64.5,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":271,"left":367.1,"field":"municipalInsuranceAccountAmountText","width":52.650000000000006,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":271,"left":439.75,"title":"市医保基金：","width":64.5,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":271,"left":504.25,"field":"municipalInsuranceFundAmountText","width":52.650000000000006,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":290,"left":28.3,"title":"省医保总额：","width":64.5,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":290,"left":92.8,"field":"provincialInsuranceTotalAmountText","width":52.650000000000006,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":290,"left":165.45,"title":"市医保总额：","width":64.5,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":290,"left":229.95,"field":"municipalInsuranceTotalAmountText","width":52.650000000000006,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":290,"left":302.6,"title":"自费总额：","width":75,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":290,"left":377.6,"field":"cashIncomeTotalAmountText","width":48,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":290,"left":439.75,"title":"体检人次：","width":54,"height":17,"fontSize":10.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":290,"left":493.75,"field":"physicalExamVisitCountText","width":63.150000000000006,"height":17,"fontSize":10.5,"hideTitle":true,"textAlign":"right","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}}],"paperNumberTop":819,"paperNumberLeft":565,"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":true,"paperNumberDisabled":true}],"schemaVersion":1}'::jsonb,
+    1,
+    '{"cashierName":"示例收费员","ctAmountText":"0.00 元","bedAmountText":"0.00 元","dietAmountText":"0.00 元","alipayAmountText":"0.00 元","wechatAmountText":"0.00 元","labTestAmountText":"0.00 元","nursingAmountText":"0.00 元","surgeryAmountText":"0.00 元","materialAmountText":"0.00 元","otherFeeAmountText":"-3.00 元","diagnosisAmountText":"0.00 元","treatmentAmountText":"0.00 元","anesthesiaAmountText":"0.00 元","settlementPeriodText":"2026-06-26 ~ 2026-06-26","examinationAmountText":"0.00 元","selfPayVisitCountText":"4 人","totalIncomeAmountText":"16.40 元","onlineBankingAmountText":"0.00 元","herbalMedicineAmountText":"-5.20 元","officeSuppliesAmountText":"0.00 元","outsourcedDrugAmountText":"0.00 元","pendingHandoverCountText":"4","cashIncomeTotalAmountText":"16.40 元","consultationFeeAmountText":"0.00 元","registrationFeeAmountText":"0.00 元","westernMedicineAmountText":"0.00 元","bloodTransfusionAmountText":"0.00 元","electrodiagnosisAmountText":"0.00 元","physicalExamVisitCountText":"0 人","selfPayCashTotalAmountText":"16.40 元","selfPreparedOrderAmountText":"0.00 元","medicalConsumablesAmountText":"0.00 元","circulatingMaterialAmountText":"0.00 元","municipalInsuranceCashAmountText":"0.00 元","municipalInsuranceFundAmountText":"0.00 元","municipalInsuranceVisitCountText":"0 人","municipalInsuranceTotalAmountText":"0.00 元","provincialInsuranceCashAmountText":"0.00 元","provincialInsuranceFundAmountText":"0.00 元","provincialInsuranceVisitCountText":"0 人","provincialInsuranceTotalAmountText":"0.00 元","municipalInsuranceAccountAmountText":"0.00 元","municipalInsurancePoolingAmountText":"0.00 元","proprietaryChineseMedicineAmountText":"0.00 元","provincialInsuranceAccountAmountText":"0.00 元","provincialInsurancePoolingAmountText":"0.00 元"}'::jsonb,
+    TIMESTAMP '2026-06-26 16:10:31+08',
+    TIMESTAMP '2026-06-26 16:10:31+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'op-dailySettlement-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- 检查申请单
+-- scenario_code = examination-print；bus_no = PT202606280001
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    329512847710097408,
+    1,
+    NULL,
+    'PT202606280001',
+    '检查申请单',
+    'published',
+    3,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":210,"height":148,"paperType":"A5","paperFooter":419.527559055118,"paperHeader":0,"printElements":[{"options":{"top":10,"left":28.3,"field":"hospitalName","width":538.6,"height":18,"fontSize":14,"testData":"示例医院","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":28,"left":28.3,"title":"影像检查申请单","width":538.6,"height":16,"fontSize":12,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":48,"left":28.3,"field":"patientName","title":"姓名","width":100,"height":14,"fontSize":9,"testData":"示例患者"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":48,"left":135,"field":"genderEnumText","title":"性别","width":60,"height":14,"fontSize":9,"testData":"男"},"printElementType":{"type":"text","title":"性别"}},{"options":{"top":48,"left":200,"field":"ageText","title":"年龄","width":60,"height":14,"fontSize":9,"testData":"35岁"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":48,"left":265,"field":"encounterNo","title":"门诊/住院号","width":130,"height":14,"fontSize":9,"testData":"MZ202606280001"},"printElementType":{"type":"text","title":"门诊/住院号"}},{"options":{"top":48,"left":400,"field":"departmentName","title":"科室","width":90,"height":14,"fontSize":9,"testData":"内科门诊"},"printElementType":{"type":"text","title":"科室"}},{"options":{"top":48,"left":495,"field":"bedNo","title":"床号","width":72,"height":14,"fontSize":9,"testData":""},"printElementType":{"type":"text","title":"床号"}},{"options":{"top":64,"left":28.3,"field":"orderingPractitionerName","title":"申请医师","width":120,"height":14,"fontSize":9,"testData":"示例医师"},"printElementType":{"type":"text","title":"申请医师"}},{"options":{"top":64,"left":155,"field":"orderDateText","title":"申请日期","width":180,"height":14,"fontSize":9,"testData":"2026年06月28日"},"printElementType":{"type":"text","title":"申请日期"}},{"options":{"top":82,"left":28.3,"width":538.6,"height":318,"borderColor":"#000000","borderWidth":1.5},"printElementType":{"type":"rect","title":"矩形"}},{"options":{"top":94,"left":296,"width":1,"height":294,"borderWidth":1},"printElementType":{"type":"vline","title":"竖线"}},{"options":{"top":94,"left":38,"field":"diagnosisText","title":"临床诊断","width":248,"height":22,"fontSize":9,"testData":"上呼吸道感染"},"printElementType":{"type":"text","title":"临床诊断"}},{"options":{"top":118,"left":38,"width":248,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":126,"left":38,"field":"serviceItemNameText","title":"项目名称","width":248,"height":40,"fontSize":9,"testData":"胸部CT平扫"},"printElementType":{"type":"text","title":"项目名称"}},{"options":{"top":170,"left":38,"width":248,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":178,"left":38,"field":"examSiteText","title":"检查部位","width":248,"height":40,"fontSize":9,"testData":"胸部"},"printElementType":{"type":"text","title":"检查部位"}},{"options":{"top":222,"left":38,"width":248,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":230,"left":38,"field":"precautionText","title":"注意事项","width":248,"height":146,"fontSize":9,"testData":"1. 检查前去除金属物品\n2. 增强检查需家属陪同，肾功能异常提前告知"},"printElementType":{"type":"text","title":"注意事项"}},{"options":{"top":94,"left":308,"field":"examResultText","title":"检查结果","width":248,"height":268,"fontSize":9,"testData":""},"printElementType":{"type":"text","title":"检查结果"}},{"options":{"top":366,"left":308,"width":248,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":374,"left":308,"field":"examDepartmentName","title":"检查科室","width":130,"height":14,"fontSize":9,"testData":"放射科"},"printElementType":{"type":"text","title":"检查科室"}},{"options":{"top":374,"left":450,"field":"practitionerSignName","title":"医师签字","width":106,"height":14,"fontSize":9,"testData":"示例医师"},"printElementType":{"type":"text","title":"医师签字"}}],"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":true,"paperNumberDisabled":true}],"schemaVersion":1}'::jsonb,
+    1,
+    '{"ageText":"35岁","encounterNo":"MZ202606280001","patientName":"示例患者","examSiteText":"胸部","hospitalName":"示例医院","diagnosisText":"上呼吸道感染","orderDateText":"2026年06月28日","departmentName":"内科门诊","genderEnumText":"□男  □女","precautionText":"1. 检查前去除金属物品\n2. 增强检查需家属陪同，肾功能异常提前告知","encounterTypeText":"□门诊        □住院        □急诊","examDepartmentName":"放射科","serviceItemNameText":"胸部CT平扫","practitionerSignName":"示例医师","orderingPractitionerName":"示例医师"}'::jsonb,
+    TIMESTAMP '2026-06-28 14:46:24+08',
+    TIMESTAMP '2026-06-28 14:46:24+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'examination-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- 检验申请单
+-- scenario_code = test-print；bus_no = PT202606280002
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    329513820121731072,
+    1,
+    NULL,
+    'PT202606280002',
+    '检验申请单',
+    'published',
+    2,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":210,"height":148,"paperType":"A5","paperFooter":419.527559055118,"paperHeader":0,"printElements":[{"options":{"top":10,"left":28.3,"field":"hospitalName","width":538.6,"height":18,"fontSize":14,"testData":"示例医院","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":28,"left":28.3,"title":"临床检验申请单","width":538.6,"height":16,"fontSize":12,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":48,"left":28.3,"field":"patientName","title":"姓名","width":100,"height":14,"fontSize":9,"testData":"示例患者"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":48,"left":135,"field":"genderEnumText","title":"性别","width":60,"height":14,"fontSize":9,"testData":"男"},"printElementType":{"type":"text","title":"性别"}},{"options":{"top":48,"left":200,"field":"ageText","title":"年龄","width":60,"height":14,"fontSize":9,"testData":"35岁"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":48,"left":265,"field":"encounterNo","title":"门诊/住院号","width":130,"height":14,"fontSize":9,"testData":"MZ202606280001"},"printElementType":{"type":"text","title":"门诊/住院号"}},{"options":{"top":48,"left":400,"field":"departmentName","title":"科室","width":90,"height":14,"fontSize":9,"testData":"内科门诊"},"printElementType":{"type":"text","title":"科室"}},{"options":{"top":48,"left":495,"field":"bedNo","title":"床号","width":72,"height":14,"fontSize":9,"testData":""},"printElementType":{"type":"text","title":"床号"}},{"options":{"top":64,"left":28.3,"field":"orderingPractitionerName","title":"申请医师","width":120,"height":14,"fontSize":9,"testData":"示例医师"},"printElementType":{"type":"text","title":"申请医师"}},{"options":{"top":64,"left":155,"field":"orderDateText","title":"申请日期","width":180,"height":14,"fontSize":9,"testData":"2026年06月28日"},"printElementType":{"type":"text","title":"申请日期"}},{"options":{"top":82,"left":28.3,"width":538.6,"height":318,"borderColor":"#000000","borderWidth":1.5},"printElementType":{"type":"rect","title":"矩形"}},{"options":{"top":94,"left":296,"width":1,"height":294,"borderWidth":1},"printElementType":{"type":"vline","title":"竖线"}},{"options":{"top":94,"left":38,"field":"diagnosisText","title":"临床诊断","width":248,"height":22,"fontSize":9,"testData":"上呼吸道感染"},"printElementType":{"type":"text","title":"临床诊断"}},{"options":{"top":118,"left":38,"width":248,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":126,"left":38,"field":"serviceItemNameText","title":"项目名称","width":248,"height":40,"fontSize":9,"testData":"血常规+CRP"},"printElementType":{"type":"text","title":"项目名称"}},{"options":{"top":170,"left":38,"width":248,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":178,"left":38,"field":"specimenTypeText","title":"标本类型","width":248,"height":40,"fontSize":9,"testData":"静脉血"},"printElementType":{"type":"text","title":"标本类型"}},{"options":{"top":222,"left":38,"width":248,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":230,"left":38,"field":"precautionText","title":"注意事项","width":248,"height":146,"fontSize":9,"testData":"1. 空腹8小时以上采血\n2. 采血前避免剧烈运动"},"printElementType":{"type":"text","title":"注意事项"}},{"options":{"top":94,"left":308,"field":"labResultText","title":"检验结果","width":248,"height":268,"fontSize":9,"testData":""},"printElementType":{"type":"text","title":"检验结果"}},{"options":{"top":366,"left":308,"width":248,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":374,"left":308,"field":"labDepartmentName","title":"检验科室","width":130,"height":14,"fontSize":9,"testData":"检验科"},"printElementType":{"type":"text","title":"检验科室"}},{"options":{"top":374,"left":450,"field":"practitionerSignName","title":"医师签字","width":106,"height":14,"fontSize":9,"testData":"示例医师"},"printElementType":{"type":"text","title":"医师签字"}}],"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":true,"paperNumberDisabled":true}],"schemaVersion":1}'::jsonb,
+    1,
+    '{"ageText":"35岁","encounterNo":"MZ202606280001","patientName":"示例患者","hospitalName":"示例医院","diagnosisText":"上呼吸道感染","orderDateText":"2026年06月28日","departmentName":"内科门诊","genderEnumText":"□男  □女","precautionText":"1. 空腹8小时以上采血\n2. 采血前避免剧烈运动","specimenTypeText":"□血液      □尿液      □粪便      □分泌物","encounterTypeText":"□门诊        □住院        □急诊","labDepartmentName":"检验科","serviceItemNameText":"血常规+CRP","practitionerSignName":"示例医师","orderingPractitionerName":"示例医师"}'::jsonb,
+    TIMESTAMP '2026-06-28 14:50:16+08',
+    TIMESTAMP '2026-06-28 14:50:16+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'test-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- ============================================================
+
+-- 住院护士站打印中心模板（与当前库 published 对齐；截图场景全集）
+-- 修改本文件，不做增量 migration。
+
+-- 住院输液巡视卡（A4 竖版；组药明细 + 手写滴速/时间/签名）
+-- scenario_code = ip-patrolCard-print；bus_no = PT202607190010
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    331800190001000010,
+    1,
+    NULL,
+    'PT202607190010',
+    '住院巡视卡',
+    'published',
+    1,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":210,"height":297,"paperType":"A4","paperFooter":800,"paperHeader":0,"printElements":[{"options":{"top":18,"left":24,"field":"hospitalName","width":546,"height":18,"fontSize":14,"testData":"示例医院","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":40,"left":24,"field":"documentTitle","width":546,"height":20,"fontSize":16,"testData":"输液巡视卡","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":64,"left":24,"width":546,"height":1.2,"borderWidth":1.2},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":72,"left":24,"field":"wardName","title":"病区","width":130,"height":16,"fontSize":10,"testData":"内科疗区"},"printElementType":{"type":"text","title":"病区"}},{"options":{"top":72,"left":154,"field":"bedNo","title":"床号","width":90,"height":16,"fontSize":10,"testData":"308-30","fontWeight":"bold"},"printElementType":{"type":"text","title":"床号"}},{"options":{"top":72,"left":244,"field":"patientName","title":"姓名","width":100,"height":16,"fontSize":10,"testData":"示例患者乙","fontWeight":"bold"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":72,"left":344,"field":"ageText","title":"年龄","width":80,"height":16,"fontSize":10,"testData":"69岁"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":72,"left":424,"field":"executeDateText","title":"执行日期","width":146,"height":16,"fontSize":10,"testData":"2026-07-21"},"printElementType":{"type":"text","title":"执行日期"}},{"options":{"top":96,"left":24,"field":"patrolRows","width":546,"height":640,"columns":[[{"align":"center","field":"groupNo","title":"组号","width":42,"checked":true,"columnId":"groupNo"},{"align":"left","field":"drugName","title":"药品名称","width":170,"checked":true,"columnId":"drugName"},{"align":"left","field":"specText","title":"规格","width":110,"checked":true,"columnId":"specText"},{"align":"center","field":"doseText","title":"剂量","width":60,"checked":true,"columnId":"doseText"},{"align":"center","field":"dripRate","title":"滴速","width":52,"checked":true,"columnId":"dripRate"},{"align":"center","field":"timeText","title":"时间","width":56,"checked":true,"columnId":"timeText"},{"align":"center","field":"signText","title":"签名","width":56,"checked":true,"columnId":"signText"}]],"fontSize":10,"testData":"[{\"groupNo\": \"1\", \"drugName\": \"0.9%氯化钠注射液\", \"specText\": \"100ml:0.9g/瓶\", \"doseText\": \"100ml\", \"dripRate\": \"\", \"timeText\": \"\", \"signText\": \"\"}, {\"groupNo\": \"1\", \"drugName\": \"丹红注射液\", \"specText\": \"10ml/支\", \"doseText\": \"30ml\", \"dripRate\": \"\", \"timeText\": \"\", \"signText\": \"\"}, {\"groupNo\": \"2\", \"drugName\": \"0.9%氯化钠注射液\", \"specText\": \"250ml:2.25g/袋\", \"doseText\": \"250ml\", \"dripRate\": \"\", \"timeText\": \"\", \"signText\": \"\"}, {\"groupNo\": \"2\", \"drugName\": \"注射用头孢呋辛钠\", \"specText\": \"0.75g/支\", \"doseText\": \"1.5g\", \"dripRate\": \"\", \"timeText\": \"\", \"signText\": \"\"}, {\"groupNo\": \"3\", \"drugName\": \"5%葡萄糖注射液\", \"specText\": \"250ml/袋\", \"doseText\": \"250ml\", \"dripRate\": \"\", \"timeText\": \"\", \"signText\": \"\"}, {\"groupNo\": \"3\", \"drugName\": \"注射用奥美拉唑钠\", \"specText\": \"40mg/支\", \"doseText\": \"40mg\", \"dripRate\": \"\", \"timeText\": \"\", \"signText\": \"\"}, {\"groupNo\": \"4\", \"drugName\": \"0.9%氯化钠注射液\", \"specText\": \"100ml:0.9g/瓶\", \"doseText\": \"100ml\", \"dripRate\": \"\", \"timeText\": \"\", \"signText\": \"\"}, {\"groupNo\": \"4\", \"drugName\": \"维生素C注射液\", \"specText\": \"0.5g/支\", \"doseText\": \"1.0g\", \"dripRate\": \"\", \"timeText\": \"\", \"signText\": \"\"}, {\"groupNo\": \"5\", \"drugName\": \"葡萄糖氯化钠注射液\", \"specText\": \"500ml/袋\", \"doseText\": \"500ml\", \"dripRate\": \"\", \"timeText\": \"\", \"signText\": \"\"}, {\"groupNo\": \"\", \"drugName\": \"\", \"specText\": \"\", \"doseText\": \"\", \"dripRate\": \"\", \"timeText\": \"\", \"signText\": \"\"}, {\"groupNo\": \"\", \"drugName\": \"\", \"specText\": \"\", \"doseText\": \"\", \"dripRate\": \"\", \"timeText\": \"\", \"signText\": \"\"}, {\"groupNo\": \"\", \"drugName\": \"\", \"specText\": \"\", \"doseText\": \"\", \"dripRate\": \"\", \"timeText\": \"\", \"signText\": \"\"}, {\"groupNo\": \"\", \"drugName\": \"\", \"specText\": \"\", \"doseText\": \"\", \"dripRate\": \"\", \"timeText\": \"\", \"signText\": \"\"}, {\"groupNo\": \"\", \"drugName\": \"\", \"specText\": \"\", \"doseText\": \"\", \"dripRate\": \"\", \"timeText\": \"\", \"signText\": \"\"}, {\"groupNo\": \"\", \"drugName\": \"\", \"specText\": \"\", \"doseText\": \"\", \"dripRate\": \"\", \"timeText\": \"\", \"signText\": \"\"}, {\"groupNo\": \"\", \"drugName\": \"\", \"specText\": \"\", \"doseText\": \"\", \"dripRate\": \"\", \"timeText\": \"\", \"signText\": \"\"}, {\"groupNo\": \"\", \"drugName\": \"\", \"specText\": \"\", \"doseText\": \"\", \"dripRate\": \"\", \"timeText\": \"\", \"signText\": \"\"}, {\"groupNo\": \"\", \"drugName\": \"\", \"specText\": \"\", \"doseText\": \"\", \"dripRate\": \"\", \"timeText\": \"\", \"signText\": \"\"}, {\"groupNo\": \"\", \"drugName\": \"\", \"specText\": \"\", \"doseText\": \"\", \"dripRate\": \"\", \"timeText\": \"\", \"signText\": \"\"}]","textAlign":"center","lineHeight":13,"tableBorder":"border","tableHeaderBorder":"border","tableHeaderRepeat":"page","tableBodyRowBorder":"border","tableBodyRowHeight":26,"tableBodyCellBorder":"border","tableHeaderRowHeight":26,"tableHeaderCellBorder":"border"},"printElementType":{"type":"table","title":"巡视明细","editable":true,"columnResizable":true}},{"options":{"top":760,"left":24,"field":"totalGroupsText","width":160,"height":16,"fontSize":11,"testData":"共 5 组","hideTitle":true,"textAlign":"left","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":760,"left":304,"field":"familySignLabel","width":266,"height":16,"fontSize":11,"testData":"患者家属签字：____________","hideTitle":true,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"文本"}}],"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":false,"paperNumberDisabled":true}],"schemaVersion":1}'::jsonb,
+    1,
+    '{}'::jsonb,
+    TIMESTAMP '2026-07-22 00:00:00+08',
+    TIMESTAMP '2026-07-22 00:00:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'ip-patrolCard-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- 住院输液贴 / 住院瓶签
+-- scenario_code = ip-infusionLabel-print；bus_no = PT202607190002
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    331800190001000002,
+    1,
+    NULL,
+    'PT202607190002',
+    '住院输液贴',
+    'published',
+    2,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":60,"height":50,"paperType":"label-60x50","paperFooter":142,"paperHeader":0,"printElements":[{"options":{"top":3.3,"left":4.28,"field":"patientName","title":"姓名","width":58.5,"height":10.8,"fontSize":8,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":3.3,"left":66,"field":"genderEnumText","title":"性别","width":43.88,"height":10.8,"fontSize":8,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"性别"}},{"options":{"top":3.3,"left":118.13,"field":"ageText","title":"年龄","width":36,"height":10.8,"fontSize":8,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":15,"left":4.28,"field":"registerTimeText","title":"挂号时间","width":161.55,"height":10.8,"fontSize":8,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"挂号时间"}},{"options":{"top":26.7,"left":4.28,"width":161.55,"height":1,"borderWidth":0.75},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":28,"left":4.28,"field":"medicationLines","width":161.55,"height":72,"columns":[[{"align":"left","field":"drugName","fixed":false,"title":"药品名称","width":62.75,"checked":true,"colspan":1,"rowspan":1,"columnId":"drugName"},{"align":"left","field":"specText","fixed":false,"title":"规格","width":28.54,"checked":true,"colspan":1,"rowspan":1,"columnId":"specText"},{"align":"center","field":"totalQuantityText","fixed":false,"title":"总量","width":21.04,"checked":true,"colspan":1,"rowspan":1,"columnId":"totalQuantityText"},{"align":"center","field":"usageText","fixed":false,"title":"用法","width":49.22,"checked":true,"colspan":1,"rowspan":1,"columnId":"usageText"}]],"fontSize":7,"textAlign":"left","lineHeight":11,"tableBorder":"noBorder","tableHeaderBorder":"borderBottom","tableHeaderRepeat":"first","tableBodyRowBorder":"noBorder","tableBodyRowHeight":12,"tableBodyCellBorder":"noBorder","tableHeaderRowHeight":14,"tableHeaderCellBorder":"noBorder"},"printElementType":{"type":"table","title":"表格","editable":true,"columnResizable":true,"isEnableDeleteRow":true,"isEnableEditField":true,"isEnableInsertRow":true,"isEnableMergeCell":true,"columnAlignEditable":true,"columnTitleEditable":true,"isEnableContextMenu":true,"isEnableDeleteColumn":true,"isEnableInsertColumn":true,"columnDisplayEditable":true,"columnDisplayIndexEditable":true}},{"options":{"top":118,"left":4.28,"fixed":true,"width":161.55,"height":1,"borderWidth":0.75},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":122,"left":4.28,"field":"executorName","fixed":true,"title":"执行人","width":54,"height":12,"fontSize":7.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"执行人"}},{"options":{"top":122,"left":61.5,"field":"executeTimeText","fixed":true,"title":"执行时间","width":104.25,"height":12,"fontSize":7.5,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"执行时间"}}],"paperNumberTop":132,"paperNumberLeft":150,"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":true,"paperNumberDisabled":true}],"schemaVersion":1}'::jsonb,
+    1,
+    '{"ageText":"35岁","patientName":"示例患者","executorName":"示例护士","genderEnumText":"男","executeTimeText":"2026-06-26 10:30","medicationLines":[{"drugName":"0.9%氯化钠注射液","specText":"250ml","usageText":"静滴","totalQuantityText":"1瓶"},{"drugName":"头孢呋辛钠","specText":"0.75g","usageText":"静滴","totalQuantityText":"2支"}],"registerTimeText":"2026-06-26 09:15"}'::jsonb,
+    TIMESTAMP '2026-07-22 00:00:00+08',
+    TIMESTAMP '2026-07-22 00:00:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'ip-infusionLabel-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- 体温单（占位；打印中心暂不接入）
+-- scenario_code = ip-tempSheet-print；bus_no = PT202607190003
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    331800190001000003,
+    1,
+    NULL,
+    'PT202607190003',
+    '体温单',
+    'published',
+    1,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":210,"height":297,"paperType":"A4","paperFooter":0,"paperHeader":0,"printElements":[]}],"schemaVersion":1}'::jsonb,
+    1,
+    '{}'::jsonb,
+    TIMESTAMP '2026-07-22 00:00:00+08',
+    TIMESTAMP '2026-07-22 00:00:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'ip-tempSheet-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- 住院长嘱执行记录 A4 竖版（与临嘱同版式；数据源为已执行列表）
+-- scenario_code = ip-longOrder-print；bus_no = PT202607190004
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    331800190001000004,
+    1,
+    NULL,
+    'PT202607190004',
+    '长期医嘱',
+    'published',
+    1,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":210,"height":297,"paperType":"A4","paperFooter":800,"paperHeader":0,"printElements":[{"options":{"top":18,"left":24,"field":"hospitalName","width":546,"height":22,"fontSize":17,"testData":"示例医院","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":42,"left":24,"field":"documentTitle","width":546,"height":18,"fontSize":14,"testData":"长嘱执行记录","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":66,"left":24,"width":546,"height":1.5,"borderWidth":1.5},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":76,"left":24,"field":"inpatientNo","title":"住院号","width":130,"height":15,"fontSize":9,"testData":"26060130"},"printElementType":{"type":"text","title":"住院号"}},{"options":{"top":76,"left":154,"field":"patientName","title":"姓名","width":100,"height":15,"fontSize":9,"testData":"示例患者"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":76,"left":254,"field":"genderEnumText","title":"性别","width":70,"height":15,"fontSize":9,"testData":"女"},"printElementType":{"type":"text","title":"性别"}},{"options":{"top":76,"left":324,"field":"ageText","title":"年龄","width":80,"height":15,"fontSize":9,"testData":"58岁"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":76,"left":404,"field":"departmentName","title":"科室","width":166,"height":15,"fontSize":9,"testData":"内科"},"printElementType":{"type":"text","title":"科室"}},{"options":{"top":96,"left":24,"field":"wardName","title":"病区","width":160,"height":15,"fontSize":9,"testData":"内科疗区"},"printElementType":{"type":"text","title":"病区"}},{"options":{"top":96,"left":184,"field":"roomNo","title":"病房","width":120,"height":15,"fontSize":9,"testData":"301"},"printElementType":{"type":"text","title":"病房"}},{"options":{"top":96,"left":304,"field":"bedNo","title":"床号","width":140,"height":15,"fontSize":9,"testData":"301-18"},"printElementType":{"type":"text","title":"床号"}},{"options":{"top":118,"left":24,"width":546,"height":1,"borderWidth":0.8},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":128,"left":24,"field":"orderRows","width":546,"height":620,"columns":[[{"align":"center","field":"startDateText","title":"日期","width":48,"checked":true,"columnId":"startDateText"},{"align":"center","field":"startTimeText","title":"时间","width":44,"checked":true,"columnId":"startTimeText"},{"align":"left","field":"orderContent","title":"医嘱内容","width":204,"checked":true,"columnId":"orderContent"},{"align":"center","field":"orderDoctorName","title":"开嘱医生","width":70,"checked":true,"columnId":"orderDoctorName"},{"align":"center","field":"executeNurseName","title":"执行护士","width":70,"checked":true,"columnId":"executeNurseName"},{"align":"center","field":"executeAtText","title":"执行时间","width":110,"checked":true,"columnId":"executeAtText"}]],"fontSize":9,"testData":"[{\"startDateText\": \"06-10\", \"startTimeText\": \"16:05\", \"orderContent\": \"血常规 1次\", \"orderDoctorName\": \"示例医师\", \"executeNurseName\": \"示例护士\", \"executeAtText\": \"06-10 16:07\"}, {\"startDateText\": \"06-10\", \"startTimeText\": \"16:05\", \"orderContent\": \"尿常规 1次\", \"orderDoctorName\": \"示例医师\", \"executeNurseName\": \"示例护士\", \"executeAtText\": \"06-10 16:08\"}, {\"startDateText\": \"06-10\", \"startTimeText\": \"16:05\", \"orderContent\": \"肝功能全套 1次\", \"orderDoctorName\": \"示例医师\", \"executeNurseName\": \"示例护士\", \"executeAtText\": \"06-10 16:10\"}, {\"startDateText\": \"06-10\", \"startTimeText\": \"16:20\", \"orderContent\": \"心电图检查 1次\", \"orderDoctorName\": \"示例医师\", \"executeNurseName\": \"示例护士乙\", \"executeAtText\": \"06-10 16:35\"}, {\"startDateText\": \"06-10\", \"startTimeText\": \"17:00\", \"orderContent\": \"0.9%氯化钠注射液 250ml 静滴\", \"orderDoctorName\": \"示例医师\", \"executeNurseName\": \"示例护士\", \"executeAtText\": \"06-10 17:12\"}, {\"startDateText\": \"06-10\", \"startTimeText\": \"17:00\", \"orderContent\": \"注射用头孢呋辛钠 0.75g 静滴\", \"orderDoctorName\": \"示例医师\", \"executeNurseName\": \"示例护士\", \"executeAtText\": \"06-10 17:12\"}, {\"startDateText\": \"06-11\", \"startTimeText\": \"08:30\", \"orderContent\": \"运动功能训练 1 半小时\", \"orderDoctorName\": \"示例医师乙\", \"executeNurseName\": \"示例护士丙\", \"executeAtText\": \"06-11 09:05\"}, {\"startDateText\": \"06-11\", \"startTimeText\": \"09:00\", \"orderContent\": \"二级护理\", \"orderDoctorName\": \"示例医师乙\", \"executeNurseName\": \"示例护士丙\", \"executeAtText\": \"06-11 09:10\"}, {\"startDateText\": \"06-11\", \"startTimeText\": \"10:15\", \"orderContent\": \"胸部正位片 1次\", \"orderDoctorName\": \"示例医师乙\", \"executeNurseName\": \"示例护士乙\", \"executeAtText\": \"06-11 10:40\"}, {\"startDateText\": \"06-11\", \"startTimeText\": \"14:00\", \"orderContent\": \"血糖测定 1次\", \"orderDoctorName\": \"示例医师\", \"executeNurseName\": \"示例护士\", \"executeAtText\": \"06-11 14:08\"}, {\"startDateText\": \"06-12\", \"startTimeText\": \"08:00\", \"orderContent\": \"阿司匹林肠溶片 100mg 口服 st\", \"orderDoctorName\": \"示例医师\", \"executeNurseName\": \"示例护士丙\", \"executeAtText\": \"06-12 08:15\"}, {\"startDateText\": \"06-12\", \"startTimeText\": \"09:30\", \"orderContent\": \"静脉采血 1次\", \"orderDoctorName\": \"示例医师\", \"executeNurseName\": \"示例护士\", \"executeAtText\": \"06-12 09:42\"}]","textAlign":"center","lineHeight":13,"tableBorder":"border","rowsColumnsMerge":"function(data,col,colIndex,rowIndex,tableData){if(!data||colIndex!==0)return [1,1];var date=data.startDateText||'''';if(!date)return [1,1];if(rowIndex>0&&tableData&&tableData[rowIndex-1]&&tableData[rowIndex-1].startDateText===date)return [0,1];var span=1;if(tableData){for(var i=rowIndex+1;i<tableData.length;i++){if(tableData[i]&&tableData[i].startDateText===date)span++;else break;}}return [span,1];}","tableHeaderBorder":"border","tableHeaderRepeat":"page","tableBodyRowBorder":"border","tableBodyRowHeight":22,"tableBodyCellBorder":"border","tableHeaderRowHeight":22,"rowsColumnsMergeClean":true,"tableHeaderCellBorder":"border"},"printElementType":{"type":"table","title":"临嘱执行记录","editable":true,"columnResizable":true}},{"options":{"top":764,"left":300,"field":"doctorSignLabel","fixed":true,"width":120,"height":14,"fontSize":9,"testData":"医生：","hideTitle":true},"printElementType":{"type":"text","title":"医生签名"}},{"options":{"top":764,"left":430,"field":"nurseSignLabel","fixed":true,"width":140,"height":14,"fontSize":9,"testData":"护士：","hideTitle":true},"printElementType":{"type":"text","title":"护士签名"}}],"paperNumberTop":810,"paperNumberLeft":280,"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":true,"paperNumberDisabled":false}],"schemaVersion":1}'::jsonb,
+    1,
+    '{"bedNo":"01","roomNo":"308","ageText":"45岁","wardName":"内科疗区","orderRows":[{"orderContent":"0.9%氯化钠注射液 250ml ivgtt qd","executeAtText":"07-21 09:10","startDateText":"07-21","startTimeText":"08:00","orderDoctorName":"李医生","executeNurseName":"王护士"}],"inpatientNo":"26060130","patientName":"示例患者","hospitalName":"示例医院","documentTitle":"长嘱执行记录","departmentName":"内科","genderEnumText":"男","nurseSignLabel":"护士：","doctorSignLabel":"医生："}'::jsonb,
+    TIMESTAMP '2026-07-22 00:00:00+08',
+    TIMESTAMP '2026-07-22 00:00:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'ip-longOrder-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- 住院临嘱执行记录 A4 竖版（同日日期列合并）
+-- scenario_code = ip-tempOrder-print；bus_no = PT202607190007
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    331800190001000007,
+    1,
+    NULL,
+    'PT202607190007',
+    '临时医嘱',
+    'published',
+    1,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":210,"height":297,"paperType":"A4","paperFooter":800,"paperHeader":0,"printElements":[{"options":{"top":18,"left":24,"field":"hospitalName","width":546,"height":22,"fontSize":17,"testData":"示例医院","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":42,"left":24,"field":"documentTitle","width":546,"height":18,"fontSize":14,"testData":"临嘱执行记录","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":66,"left":24,"width":546,"height":1.5,"borderWidth":1.5},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":76,"left":24,"field":"inpatientNo","title":"住院号","width":130,"height":15,"fontSize":9,"testData":"26060130"},"printElementType":{"type":"text","title":"住院号"}},{"options":{"top":76,"left":154,"field":"patientName","title":"姓名","width":100,"height":15,"fontSize":9,"testData":"示例患者"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":76,"left":254,"field":"genderEnumText","title":"性别","width":70,"height":15,"fontSize":9,"testData":"女"},"printElementType":{"type":"text","title":"性别"}},{"options":{"top":76,"left":324,"field":"ageText","title":"年龄","width":80,"height":15,"fontSize":9,"testData":"58岁"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":76,"left":404,"field":"departmentName","title":"科室","width":166,"height":15,"fontSize":9,"testData":"内科"},"printElementType":{"type":"text","title":"科室"}},{"options":{"top":96,"left":24,"field":"wardName","title":"病区","width":160,"height":15,"fontSize":9,"testData":"内科疗区"},"printElementType":{"type":"text","title":"病区"}},{"options":{"top":96,"left":184,"field":"roomNo","title":"病房","width":120,"height":15,"fontSize":9,"testData":"301"},"printElementType":{"type":"text","title":"病房"}},{"options":{"top":96,"left":304,"field":"bedNo","title":"床号","width":140,"height":15,"fontSize":9,"testData":"301-18"},"printElementType":{"type":"text","title":"床号"}},{"options":{"top":118,"left":24,"width":546,"height":1,"borderWidth":0.8},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":128,"left":24,"field":"orderRows","width":546,"height":620,"columns":[[{"align":"center","field":"startDateText","title":"日期","width":48,"checked":true,"columnId":"startDateText"},{"align":"center","field":"startTimeText","title":"时间","width":44,"checked":true,"columnId":"startTimeText"},{"align":"left","field":"orderContent","title":"医嘱内容","width":204,"checked":true,"columnId":"orderContent"},{"align":"center","field":"orderDoctorName","title":"开嘱医生","width":70,"checked":true,"columnId":"orderDoctorName"},{"align":"center","field":"executeNurseName","title":"执行护士","width":70,"checked":true,"columnId":"executeNurseName"},{"align":"center","field":"executeAtText","title":"执行时间","width":110,"checked":true,"columnId":"executeAtText"}]],"fontSize":9,"testData":"[{\"startDateText\": \"06-10\", \"startTimeText\": \"16:05\", \"orderContent\": \"血常规 1次\", \"orderDoctorName\": \"示例医师\", \"executeNurseName\": \"示例护士\", \"executeAtText\": \"06-10 16:07\"}, {\"startDateText\": \"06-10\", \"startTimeText\": \"16:05\", \"orderContent\": \"尿常规 1次\", \"orderDoctorName\": \"示例医师\", \"executeNurseName\": \"示例护士\", \"executeAtText\": \"06-10 16:08\"}, {\"startDateText\": \"06-10\", \"startTimeText\": \"16:05\", \"orderContent\": \"肝功能全套 1次\", \"orderDoctorName\": \"示例医师\", \"executeNurseName\": \"示例护士\", \"executeAtText\": \"06-10 16:10\"}, {\"startDateText\": \"06-10\", \"startTimeText\": \"16:20\", \"orderContent\": \"心电图检查 1次\", \"orderDoctorName\": \"示例医师\", \"executeNurseName\": \"示例护士乙\", \"executeAtText\": \"06-10 16:35\"}, {\"startDateText\": \"06-10\", \"startTimeText\": \"17:00\", \"orderContent\": \"0.9%氯化钠注射液 250ml 静滴\", \"orderDoctorName\": \"示例医师\", \"executeNurseName\": \"示例护士\", \"executeAtText\": \"06-10 17:12\"}, {\"startDateText\": \"06-10\", \"startTimeText\": \"17:00\", \"orderContent\": \"注射用头孢呋辛钠 0.75g 静滴\", \"orderDoctorName\": \"示例医师\", \"executeNurseName\": \"示例护士\", \"executeAtText\": \"06-10 17:12\"}, {\"startDateText\": \"06-11\", \"startTimeText\": \"08:30\", \"orderContent\": \"运动功能训练 1 半小时\", \"orderDoctorName\": \"示例医师乙\", \"executeNurseName\": \"示例护士丙\", \"executeAtText\": \"06-11 09:05\"}, {\"startDateText\": \"06-11\", \"startTimeText\": \"09:00\", \"orderContent\": \"二级护理\", \"orderDoctorName\": \"示例医师乙\", \"executeNurseName\": \"示例护士丙\", \"executeAtText\": \"06-11 09:10\"}, {\"startDateText\": \"06-11\", \"startTimeText\": \"10:15\", \"orderContent\": \"胸部正位片 1次\", \"orderDoctorName\": \"示例医师乙\", \"executeNurseName\": \"示例护士乙\", \"executeAtText\": \"06-11 10:40\"}, {\"startDateText\": \"06-11\", \"startTimeText\": \"14:00\", \"orderContent\": \"血糖测定 1次\", \"orderDoctorName\": \"示例医师\", \"executeNurseName\": \"示例护士\", \"executeAtText\": \"06-11 14:08\"}, {\"startDateText\": \"06-12\", \"startTimeText\": \"08:00\", \"orderContent\": \"阿司匹林肠溶片 100mg 口服 st\", \"orderDoctorName\": \"示例医师\", \"executeNurseName\": \"示例护士丙\", \"executeAtText\": \"06-12 08:15\"}, {\"startDateText\": \"06-12\", \"startTimeText\": \"09:30\", \"orderContent\": \"静脉采血 1次\", \"orderDoctorName\": \"示例医师\", \"executeNurseName\": \"示例护士\", \"executeAtText\": \"06-12 09:42\"}]","textAlign":"center","lineHeight":13,"tableBorder":"border","rowsColumnsMerge":"function(data,col,colIndex,rowIndex,tableData){if(!data||colIndex!==0)return [1,1];var date=data.startDateText||'''';if(!date)return [1,1];if(rowIndex>0&&tableData&&tableData[rowIndex-1]&&tableData[rowIndex-1].startDateText===date)return [0,1];var span=1;if(tableData){for(var i=rowIndex+1;i<tableData.length;i++){if(tableData[i]&&tableData[i].startDateText===date)span++;else break;}}return [span,1];}","tableHeaderBorder":"border","tableHeaderRepeat":"page","tableBodyRowBorder":"border","tableBodyRowHeight":22,"tableBodyCellBorder":"border","tableHeaderRowHeight":22,"rowsColumnsMergeClean":true,"tableHeaderCellBorder":"border"},"printElementType":{"type":"table","title":"临嘱执行记录","editable":true,"columnResizable":true}},{"options":{"top":764,"left":300,"field":"doctorSignLabel","fixed":true,"width":120,"height":14,"fontSize":9,"testData":"医生：","hideTitle":true},"printElementType":{"type":"text","title":"医生签名"}},{"options":{"top":764,"left":430,"field":"nurseSignLabel","fixed":true,"width":140,"height":14,"fontSize":9,"testData":"护士：","hideTitle":true},"printElementType":{"type":"text","title":"护士签名"}}],"paperNumberTop":810,"paperNumberLeft":280,"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":true,"paperNumberDisabled":false}],"schemaVersion":1}'::jsonb,
+    1,
+    '{}'::jsonb,
+    TIMESTAMP '2026-07-22 00:00:00+08',
+    TIMESTAMP '2026-07-22 00:00:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'ip-tempOrder-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- 住院费用清单 A4 竖版（分类明细 + 分类合计行）
+-- scenario_code = ip-feeList-print；bus_no = PT202607190006
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    331800190001000006,
+    1,
+    NULL,
+    'PT202607190006',
+    '费用清单',
+    'published',
+    1,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":210,"height":297,"paperType":"A4","paperFooter":800,"paperHeader":0,"printElements":[{"options":{"top":16,"left":24,"field":"hospitalName","width":546,"height":22,"fontSize":17,"testData":"示例医院","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":40,"left":24,"field":"documentTitle","width":546,"height":18,"fontSize":13,"testData":"住院费用清单","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":64,"left":24,"width":546,"height":1.5,"borderWidth":1.5},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":74,"left":24,"field":"inpatientNo","title":"住院号","width":136,"height":15,"fontSize":9,"testData":"26060130"},"printElementType":{"type":"text","title":"住院号"}},{"options":{"top":74,"left":160,"field":"patientName","title":"姓名","width":110,"height":15,"fontSize":9,"testData":"示例患者乙"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":74,"left":270,"field":"genderEnumText","title":"性别","width":80,"height":15,"fontSize":9,"testData":"男"},"printElementType":{"type":"text","title":"性别"}},{"options":{"top":74,"left":350,"field":"ageText","title":"年龄","width":100,"height":15,"fontSize":9,"testData":"69岁"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":74,"left":450,"field":"departmentName","title":"科室","width":120,"height":15,"fontSize":9,"testData":"内科"},"printElementType":{"type":"text","title":"科室"}},{"options":{"top":92,"left":24,"field":"wardName","title":"病区","width":136,"height":15,"fontSize":9,"testData":"内科疗区"},"printElementType":{"type":"text","title":"病区"}},{"options":{"top":92,"left":160,"field":"roomNo","title":"病房","width":110,"height":15,"fontSize":9,"testData":"308"},"printElementType":{"type":"text","title":"病房"}},{"options":{"top":92,"left":270,"field":"bedNo","title":"床号","width":120,"height":15,"fontSize":9,"testData":"308-30"},"printElementType":{"type":"text","title":"床号"}},{"options":{"top":92,"left":390,"field":"inpatientDaysText","title":"住院天数","width":180,"height":15,"fontSize":9,"testData":"1"},"printElementType":{"type":"text","title":"天数"}},{"options":{"top":110,"left":24,"field":"admitAtText","title":"入院时间","width":220,"height":15,"fontSize":9,"testData":"2026-06-22 09:51"},"printElementType":{"type":"text","title":"入院"}},{"options":{"top":110,"left":244,"field":"dischargeAtText","title":"出院时间","width":200,"height":15,"fontSize":9,"testData":"—"},"printElementType":{"type":"text","title":"出院"}},{"options":{"top":128,"left":24,"field":"admissionDiagnosis","title":"入院诊断","width":546,"height":15,"fontSize":9,"testData":"消渴病"},"printElementType":{"type":"text","title":"入院诊断"}},{"options":{"top":148,"left":24,"width":546,"height":1,"borderWidth":0.8},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":156,"left":24,"field":"prepaidAmountText","title":"预缴金额","width":180,"height":16,"fontSize":10,"testData":"2000.00","fontWeight":"bold"},"printElementType":{"type":"text","title":"预缴金额"}},{"options":{"top":156,"left":204,"field":"totalAmountText","title":"费用总额","width":180,"height":16,"fontSize":10,"testData":"1451.52","fontWeight":"bold"},"printElementType":{"type":"text","title":"费用总额"}},{"options":{"top":156,"left":384,"field":"balanceAmountText","title":"预缴余额","width":186,"height":16,"fontSize":10,"testData":"548.48","fontWeight":"bold"},"printElementType":{"type":"text","title":"预缴余额"}},{"options":{"top":178,"left":24,"width":546,"height":1.5,"borderWidth":1.5},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":186,"left":24,"field":"feeRows","width":546,"height":590,"columns":[[{"align":"left","field":"seqNo","title":"序号","width":32,"checked":true,"columnId":"seqNo","formatter":"function(value,row){if(!row)return value==null?'''':String(value);if(row.rowType===''category''||row.rowType===''subtotal''){return value||row.seqNo||row.itemName||'''';}return value==null?'''':String(value);}"},{"align":"left","field":"itemName","title":"项目名称","width":190,"checked":true,"columnId":"itemName","formatter":"function(value,row){if(!row)return value==null?'''':String(value);if(row.rowType===''category''||row.rowType===''subtotal'')return '''';return value==null?'''':String(value);}"},{"align":"left","field":"specText","title":"规格","width":78,"checked":true,"columnId":"specText","formatter":"function(value,row){if(!row||row.rowType!==''item'')return '''';return value==null?'''':String(value);}"},{"align":"center","field":"quantityUnitText","title":"数量单位","width":64,"checked":true,"columnId":"quantityUnitText","formatter":"function(value,row){if(!row||row.rowType!==''item'')return '''';return value==null?'''':String(value);}"},{"align":"center","field":"insuranceLevelText","title":"等级","width":36,"checked":true,"columnId":"insuranceLevelText","formatter":"function(value,row){if(!row||row.rowType!==''item'')return '''';return value==null?'''':String(value);}"},{"align":"right","field":"unitPriceText","title":"单价","width":70,"checked":true,"columnId":"unitPriceText","formatter":"function(value,row){if(!row||row.rowType!==''item'')return '''';return value==null?'''':String(value);}"},{"align":"right","field":"amountText","title":"金额","width":76,"checked":true,"columnId":"amountText","formatter":"function(value,row){if(!row)return value==null?'''':String(value);if(row.rowType===''category'')return '''';return value==null?'''':String(value);}"}]],"fontSize":8,"testData":"[{\"rowType\": \"category\", \"categoryName\": \"西药\", \"seqNo\": \"【西药】\", \"itemName\": \"【西药】\", \"specText\": \"\", \"quantityUnitText\": \"\", \"insuranceLevelText\": \"\", \"unitPriceText\": \"\", \"amountText\": \"\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"1\", \"itemName\": \"0.9%氯化钠注射液\", \"specText\": \"250ml\", \"quantityUnitText\": \"2瓶\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"3.80\", \"amountText\": \"7.60\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"2\", \"itemName\": \"5%葡萄糖注射液\", \"specText\": \"250ml\", \"quantityUnitText\": \"2瓶\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"3.50\", \"amountText\": \"7.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"3\", \"itemName\": \"注射用头孢呋辛钠\", \"specText\": \"0.75g\", \"quantityUnitText\": \"4支\", \"insuranceLevelText\": \"乙\", \"unitPriceText\": \"12.50\", \"amountText\": \"50.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"4\", \"itemName\": \"注射用奥美拉唑钠\", \"specText\": \"40mg\", \"quantityUnitText\": \"2支\", \"insuranceLevelText\": \"乙\", \"unitPriceText\": \"18.60\", \"amountText\": \"37.20\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"5\", \"itemName\": \"阿司匹林肠溶片\", \"specText\": \"100mg*30\", \"quantityUnitText\": \"1盒\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"8.50\", \"amountText\": \"8.50\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"6\", \"itemName\": \"二甲双胍片\", \"specText\": \"0.5g*48\", \"quantityUnitText\": \"1盒\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"9.80\", \"amountText\": \"9.80\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"7\", \"itemName\": \"胰岛素注射液\", \"specText\": \"300单位\", \"quantityUnitText\": \"1支\", \"insuranceLevelText\": \"乙\", \"unitPriceText\": \"45.00\", \"amountText\": \"45.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"8\", \"itemName\": \"维生素C注射液\", \"specText\": \"0.5g\", \"quantityUnitText\": \"2支\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"1.20\", \"amountText\": \"2.40\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"9\", \"itemName\": \"氯化钾注射液\", \"specText\": \"10ml\", \"quantityUnitText\": \"2支\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"0.85\", \"amountText\": \"1.70\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"10\", \"itemName\": \"左氧氟沙星氯化钠\", \"specText\": \"0.5g\", \"quantityUnitText\": \"1袋\", \"insuranceLevelText\": \"乙\", \"unitPriceText\": \"28.00\", \"amountText\": \"28.00\"}, {\"rowType\": \"subtotal\", \"categoryName\": \"西药\", \"seqNo\": \"西药合计金额\", \"itemName\": \"西药合计金额\", \"specText\": \"\", \"quantityUnitText\": \"\", \"insuranceLevelText\": \"\", \"unitPriceText\": \"\", \"amountText\": \"197.20\"}, {\"rowType\": \"category\", \"categoryName\": \"检查\", \"seqNo\": \"【检查】\", \"itemName\": \"【检查】\", \"specText\": \"\", \"quantityUnitText\": \"\", \"insuranceLevelText\": \"\", \"unitPriceText\": \"\", \"amountText\": \"\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"11\", \"itemName\": \"心电图检查\", \"specText\": \"\", \"quantityUnitText\": \"1次\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"25.00\", \"amountText\": \"25.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"12\", \"itemName\": \"胸部正位片\", \"specText\": \"\", \"quantityUnitText\": \"1次\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"45.00\", \"amountText\": \"45.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"13\", \"itemName\": \"腹部彩超\", \"specText\": \"\", \"quantityUnitText\": \"1次\", \"insuranceLevelText\": \"乙\", \"unitPriceText\": \"80.00\", \"amountText\": \"80.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"14\", \"itemName\": \"心脏彩超\", \"specText\": \"\", \"quantityUnitText\": \"1次\", \"insuranceLevelText\": \"乙\", \"unitPriceText\": \"120.00\", \"amountText\": \"120.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"15\", \"itemName\": \"CT平扫(胸部)\", \"specText\": \"\", \"quantityUnitText\": \"1次\", \"insuranceLevelText\": \"乙\", \"unitPriceText\": \"220.00\", \"amountText\": \"220.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"16\", \"itemName\": \"动态血压监测\", \"specText\": \"\", \"quantityUnitText\": \"1次\", \"insuranceLevelText\": \"乙\", \"unitPriceText\": \"60.00\", \"amountText\": \"60.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"17\", \"itemName\": \"肺功能检查\", \"specText\": \"\", \"quantityUnitText\": \"1次\", \"insuranceLevelText\": \"乙\", \"unitPriceText\": \"55.00\", \"amountText\": \"55.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"18\", \"itemName\": \"骨密度测定\", \"specText\": \"\", \"quantityUnitText\": \"1次\", \"insuranceLevelText\": \"丙\", \"unitPriceText\": \"90.00\", \"amountText\": \"90.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"19\", \"itemName\": \"颈动脉超声\", \"specText\": \"\", \"quantityUnitText\": \"1次\", \"insuranceLevelText\": \"乙\", \"unitPriceText\": \"75.00\", \"amountText\": \"75.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"20\", \"itemName\": \"胃镜检查\", \"specText\": \"\", \"quantityUnitText\": \"1次\", \"insuranceLevelText\": \"乙\", \"unitPriceText\": \"180.00\", \"amountText\": \"180.00\"}, {\"rowType\": \"subtotal\", \"categoryName\": \"检查\", \"seqNo\": \"检查合计金额\", \"itemName\": \"检查合计金额\", \"specText\": \"\", \"quantityUnitText\": \"\", \"insuranceLevelText\": \"\", \"unitPriceText\": \"\", \"amountText\": \"950.00\"}, {\"rowType\": \"category\", \"categoryName\": \"化验\", \"seqNo\": \"【化验】\", \"itemName\": \"【化验】\", \"specText\": \"\", \"quantityUnitText\": \"\", \"insuranceLevelText\": \"\", \"unitPriceText\": \"\", \"amountText\": \"\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"21\", \"itemName\": \"血常规\", \"specText\": \"\", \"quantityUnitText\": \"1次\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"18.00\", \"amountText\": \"18.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"22\", \"itemName\": \"尿常规\", \"specText\": \"\", \"quantityUnitText\": \"1次\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"10.00\", \"amountText\": \"10.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"23\", \"itemName\": \"血糖测定\", \"specText\": \"\", \"quantityUnitText\": \"1次\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"5.00\", \"amountText\": \"5.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"24\", \"itemName\": \"肝功能全套\", \"specText\": \"\", \"quantityUnitText\": \"1次\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"48.00\", \"amountText\": \"48.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"25\", \"itemName\": \"肾功能全套\", \"specText\": \"\", \"quantityUnitText\": \"1次\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"36.00\", \"amountText\": \"36.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"26\", \"itemName\": \"血脂四项\", \"specText\": \"\", \"quantityUnitText\": \"1次\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"32.00\", \"amountText\": \"32.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"27\", \"itemName\": \"电解质测定\", \"specText\": \"\", \"quantityUnitText\": \"1次\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"22.00\", \"amountText\": \"22.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"28\", \"itemName\": \"糖化血红蛋白\", \"specText\": \"\", \"quantityUnitText\": \"1次\", \"insuranceLevelText\": \"乙\", \"unitPriceText\": \"40.00\", \"amountText\": \"40.00\"}, {\"rowType\": \"subtotal\", \"categoryName\": \"化验\", \"seqNo\": \"化验合计金额\", \"itemName\": \"化验合计金额\", \"specText\": \"\", \"quantityUnitText\": \"\", \"insuranceLevelText\": \"\", \"unitPriceText\": \"\", \"amountText\": \"211.00\"}, {\"rowType\": \"category\", \"categoryName\": \"医用耗材\", \"seqNo\": \"【医用耗材】\", \"itemName\": \"【医用耗材】\", \"specText\": \"\", \"quantityUnitText\": \"\", \"insuranceLevelText\": \"\", \"unitPriceText\": \"\", \"amountText\": \"\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"29\", \"itemName\": \"一次性静脉采血针\", \"specText\": \"0.7*25mm\", \"quantityUnitText\": \"2支\", \"insuranceLevelText\": \"乙\", \"unitPriceText\": \"0.46\", \"amountText\": \"0.92\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"30\", \"itemName\": \"真空采血管\", \"specText\": \"5ml\", \"quantityUnitText\": \"3支\", \"insuranceLevelText\": \"乙\", \"unitPriceText\": \"0.80\", \"amountText\": \"2.40\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"31\", \"itemName\": \"一次性注射器\", \"specText\": \"5ml\", \"quantityUnitText\": \"4支\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"0.35\", \"amountText\": \"1.40\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"32\", \"itemName\": \"输液器\", \"specText\": \"带针\", \"quantityUnitText\": \"2套\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"1.80\", \"amountText\": \"3.60\"}, {\"rowType\": \"subtotal\", \"categoryName\": \"医用耗材\", \"seqNo\": \"医用耗材合计金额\", \"itemName\": \"医用耗材合计金额\", \"specText\": \"\", \"quantityUnitText\": \"\", \"insuranceLevelText\": \"\", \"unitPriceText\": \"\", \"amountText\": \"8.32\"}, {\"rowType\": \"category\", \"categoryName\": \"床位护理\", \"seqNo\": \"【床位护理】\", \"itemName\": \"【床位护理】\", \"specText\": \"\", \"quantityUnitText\": \"\", \"insuranceLevelText\": \"\", \"unitPriceText\": \"\", \"amountText\": \"\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"33\", \"itemName\": \"普通病房床位费\", \"specText\": \"\", \"quantityUnitText\": \"1日\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"30.00\", \"amountText\": \"30.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"34\", \"itemName\": \"二级护理\", \"specText\": \"\", \"quantityUnitText\": \"1日\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"22.00\", \"amountText\": \"22.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"35\", \"itemName\": \"住院诊查费\", \"specText\": \"\", \"quantityUnitText\": \"1日\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"12.00\", \"amountText\": \"12.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"36\", \"itemName\": \"静脉输液\", \"specText\": \"\", \"quantityUnitText\": \"2次\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"8.00\", \"amountText\": \"16.00\"}, {\"rowType\": \"item\", \"categoryName\": \"\", \"seqNo\": \"37\", \"itemName\": \"静脉采血\", \"specText\": \"\", \"quantityUnitText\": \"1次\", \"insuranceLevelText\": \"甲\", \"unitPriceText\": \"5.00\", \"amountText\": \"5.00\"}, {\"rowType\": \"subtotal\", \"categoryName\": \"床位护理\", \"seqNo\": \"床位护理合计金额\", \"itemName\": \"床位护理合计金额\", \"specText\": \"\", \"quantityUnitText\": \"\", \"insuranceLevelText\": \"\", \"unitPriceText\": \"\", \"amountText\": \"85.00\"}]","textAlign":"center","lineHeight":11,"tableBorder":"border","rowsColumnsMerge":"function(data,col,colIndex){if(!data)return [1,1];if(data.rowType===''category''){if(colIndex===0)return [1,7];return [1,0];}if(data.rowType===''subtotal''){if(colIndex===0)return [1,6];if(colIndex>=1&&colIndex<=5)return [1,0];return [1,1];}return [1,1];}","tableHeaderBorder":"border","tableHeaderRepeat":"first","tableBodyRowBorder":"border","tableBodyRowHeight":16,"tableBodyCellBorder":"border","tableHeaderRowHeight":20,"rowsColumnsMergeClean":true,"tableHeaderCellBorder":"border"},"printElementType":{"type":"table","title":"费用明细","editable":true,"columnResizable":true}}],"paperNumberTop":810,"paperNumberLeft":280,"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":true,"paperNumberDisabled":false}],"schemaVersion":1}'::jsonb,
+    1,
+    '{}'::jsonb,
+    TIMESTAMP '2026-07-22 00:00:00+08',
+    TIMESTAMP '2026-07-22 00:00:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'ip-feeList-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- 住院发药汇总
+-- scenario_code = ip-dispenseSummary-print；bus_no = PT202607190008
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    331800190001000008,
+    1,
+    NULL,
+    'PT202607190008',
+    '汇总领药单',
+    'published',
+    1,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":210,"height":297,"paperType":"A4","paperFooter":800,"paperHeader":0,"printElements":[{"options":{"top":16,"left":24,"field":"hospitalName","width":546,"height":22,"fontSize":17,"testData":"示例医院","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":40,"left":24,"field":"documentTitle","width":546,"height":18,"fontSize":14,"testData":"汇总领药单","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":64,"left":24,"width":546,"height":1.5,"borderWidth":1.5},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":74,"left":24,"field":"docNo","title":"单据号","width":280,"height":15,"fontSize":9,"testData":"TF2606220007059461"},"printElementType":{"type":"text","title":"单据号"}},{"options":{"top":74,"left":424,"field":"wardName","title":"药房","width":146,"height":15,"fontSize":9,"testData":"住院药房"},"printElementType":{"type":"text","title":"药房"}},{"options":{"top":94,"left":24,"field":"dispenseAtText","title":"领药时间","width":220,"height":15,"fontSize":9,"testData":"06-22 10:53"},"printElementType":{"type":"text","title":"领药时间"}},{"options":{"top":94,"left":384,"field":"applicantName","title":"申领人","width":186,"height":15,"fontSize":9,"testData":"王宇晨"},"printElementType":{"type":"text","title":"申领人"}},{"options":{"top":114,"left":24,"field":"generatedAtText","title":"生成时间","width":160,"height":15,"fontSize":9,"testData":"06-22 10:48"},"printElementType":{"type":"text","title":"生成时间"}},{"options":{"top":114,"left":184,"field":"orderCountText","title":"汇总医嘱","width":100,"height":15,"fontSize":9,"testData":"7"},"printElementType":{"type":"text","title":"医嘱数"}},{"options":{"top":114,"left":284,"field":"drugCountText","title":"药品种数","width":100,"height":15,"fontSize":9,"testData":"7"},"printElementType":{"type":"text","title":"品种数"}},{"options":{"top":114,"left":384,"field":"totalAmountText","title":"金额合计","width":186,"height":15,"fontSize":10,"testData":"252.80","fontWeight":"bold"},"printElementType":{"type":"text","title":"金额合计"}},{"options":{"top":136,"left":24,"width":546,"height":1,"borderWidth":0.8},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":146,"left":24,"field":"drugRows","width":546,"height":590,"columns":[[{"align":"center","field":"seqNo","title":"序号","width":36,"checked":true,"columnId":"seqNo"},{"align":"left","field":"drugName","title":"药品名称","width":250,"checked":true,"columnId":"drugName"},{"align":"left","field":"specText","title":"规格","width":100,"checked":true,"columnId":"specText"},{"align":"right","field":"unitPriceText","title":"单价","width":70,"checked":true,"columnId":"unitPriceText"},{"align":"center","field":"quantityUnitText","title":"数量单位","width":80,"checked":true,"columnId":"quantityUnitText"}]],"fontSize":9,"testData":"[{\"seqNo\": \"1\", \"drugName\": \"门冬胰岛素注射液\", \"specText\": \"3ml:300U\", \"unitPriceText\": \"68.50\", \"quantityUnitText\": \"1支\"}, {\"seqNo\": \"2\", \"drugName\": \"0.9%氯化钠注射液\", \"specText\": \"250ml\", \"unitPriceText\": \"3.80\", \"quantityUnitText\": \"6袋\"}]","textAlign":"center","lineHeight":13,"tableBorder":"border","tableHeaderBorder":"border","tableHeaderRepeat":"page","tableBodyRowBorder":"border","tableBodyRowHeight":22,"tableBodyCellBorder":"border","tableHeaderRowHeight":22,"tableHeaderCellBorder":"border"},"printElementType":{"type":"table","title":"药品明细","editable":true,"columnResizable":true}},{"options":{"top":754,"left":24,"field":"dispenserName","fixed":true,"title":"领药人","width":180,"height":14,"fontSize":9,"testData":"张三"},"printElementType":{"type":"text","title":"领药人"}},{"options":{"top":754,"left":240,"field":"receiverSignLabel","fixed":true,"width":200,"height":14,"fontSize":9,"testData":"领药人：","hideTitle":true},"printElementType":{"type":"text","title":"领药人"}}],"paperNumberTop":810,"paperNumberLeft":280,"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":true,"paperNumberDisabled":false}],"schemaVersion":1}'::jsonb,
+    1,
+    '{"docNo":"TF2606220007059461","drugRows":[{"seqNo":"1","drugName":"门冬胰岛素注射液","specText":"3ml:300U","unitPriceText":"68.50","quantityUnitText":"1支"},{"seqNo":"2","drugName":"0.9%氯化钠注射液","specText":"250ml","unitPriceText":"3.80","quantityUnitText":"6袋"}],"wardName":"住院药房","hospitalName":"示例医院","applicantName":"王宇晨","dispenserName":"张三","documentTitle":"汇总领药单","drugCountText":"2","dispenseAtText":"06-22 10:53","orderCountText":"2","generatedAtText":"06-22 10:48","totalAmountText":"72.30","receiverSignLabel":"领药人："}'::jsonb,
+    TIMESTAMP '2026-07-22 00:00:00+08',
+    TIMESTAMP '2026-07-22 00:00:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'ip-dispenseSummary-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- 住院发药单
+-- scenario_code = ip-dispenseSheet-print；bus_no = PT202607190009
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    331800190001000009,
+    1,
+    NULL,
+    'PT202607190009',
+    '摆药单',
+    'published',
+    1,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":210,"height":297,"paperType":"A4","paperFooter":800,"paperHeader":0,"printElements":[{"options":{"top":16,"left":24,"field":"hospitalName","width":546,"height":22,"fontSize":17,"testData":"示例医院","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":40,"left":24,"field":"documentTitle","width":546,"height":18,"fontSize":14,"testData":"摆药单","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":64,"left":24,"width":546,"height":1.5,"borderWidth":1.5},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":74,"left":24,"field":"wardName","title":"药房","width":160,"height":15,"fontSize":9,"testData":"住院药房"},"printElementType":{"type":"text","title":"药房"}},{"options":{"top":74,"left":184,"field":"periodText","title":"申请时间","width":260,"height":15,"fontSize":9,"testData":"06-22 00:00 ~ 06-22 23:59"},"printElementType":{"type":"text","title":"申请时间"}},{"options":{"top":74,"left":444,"field":"preparedByName","title":"制单","width":126,"height":15,"fontSize":9,"testData":"杨兴玉"},"printElementType":{"type":"text","title":"制单"}},{"options":{"top":96,"left":24,"width":546,"height":1,"borderWidth":0.8},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":106,"left":24,"field":"drugRows","width":546,"height":640,"columns":[[{"align":"left","field":"patientText","title":"床号姓名","width":100,"checked":true,"columnId":"patientText"},{"align":"left","field":"drugName","title":"药品名称","width":150,"checked":true,"columnId":"drugName"},{"align":"left","field":"specText","title":"规格","width":80,"checked":true,"columnId":"specText"},{"align":"center","field":"quantityUnitText","title":"数量单位","width":60,"checked":true,"columnId":"quantityUnitText"},{"align":"center","field":"doseText","title":"剂量","width":56,"checked":true,"columnId":"doseText"},{"align":"center","field":"usageText","title":"用法","width":56,"checked":true,"columnId":"usageText"},{"align":"center","field":"freqText","title":"频次","width":44,"checked":true,"columnId":"freqText"}]],"fontSize":9,"testData":"[{\"patientText\": \"308-30 示例患者乙\", \"drugName\": \"门冬胰岛素注射液\", \"specText\": \"3ml:300U\", \"quantityUnitText\": \"1支\", \"doseText\": \"4.00IU\", \"usageText\": \"皮下注射\", \"freqText\": \"bid\"}, {\"patientText\": \"308-30 示例患者乙\", \"drugName\": \"盐酸二甲双胍缓释片\", \"specText\": \"0.5g*30\", \"quantityUnitText\": \"1盒\", \"doseText\": \"2.00片\", \"usageText\": \"口服\", \"freqText\": \"bid\"}, {\"patientText\": \"308-30 示例患者乙\", \"drugName\": \"阿卡波糖片\", \"specText\": \"50mg*30\", \"quantityUnitText\": \"1盒\", \"doseText\": \"1.00片\", \"usageText\": \"口服\", \"freqText\": \"bid\"}, {\"patientText\": \"308-30 示例患者乙\", \"drugName\": \"甲钴胺片\", \"specText\": \"0.5mg*48\", \"quantityUnitText\": \"1盒\", \"doseText\": \"1.00片\", \"usageText\": \"口服\", \"freqText\": \"tid\"}, {\"patientText\": \"308-30 示例患者乙\", \"drugName\": \"胰激肽原酶肠溶片\", \"specText\": \"120iu*48\", \"quantityUnitText\": \"1盒\", \"doseText\": \"2.00片\", \"usageText\": \"口服\", \"freqText\": \"tid\"}, {\"patientText\": \"301-18 示例患者\", \"drugName\": \"阿司匹林肠溶片\", \"specText\": \"100mg*30\", \"quantityUnitText\": \"1盒\", \"doseText\": \"1.00片\", \"usageText\": \"口服\", \"freqText\": \"qd\"}, {\"patientText\": \"301-18 示例患者\", \"drugName\": \"0.9%氯化钠注射液\", \"specText\": \"250ml\", \"quantityUnitText\": \"2袋\", \"doseText\": \"250ml\", \"usageText\": \"静滴\", \"freqText\": \"qd\"}, {\"patientText\": \"301-18 示例患者\", \"drugName\": \"注射用头孢呋辛钠\", \"specText\": \"0.75g\", \"quantityUnitText\": \"2支\", \"doseText\": \"0.75g\", \"usageText\": \"静滴\", \"freqText\": \"bid\"}, {\"patientText\": \"305-06 示例患者丙\", \"drugName\": \"氨氯地平片\", \"specText\": \"5mg*28\", \"quantityUnitText\": \"1盒\", \"doseText\": \"1.00片\", \"usageText\": \"口服\", \"freqText\": \"qd\"}, {\"patientText\": \"305-06 示例患者丙\", \"drugName\": \"阿托伐他汀钙片\", \"specText\": \"20mg*7\", \"quantityUnitText\": \"1盒\", \"doseText\": \"1.00片\", \"usageText\": \"口服\", \"freqText\": \"qn\"}]","textAlign":"center","lineHeight":13,"tableBorder":"border","rowsColumnsMerge":"function(data,col,colIndex,rowIndex,tableData){if(!data||colIndex!==0)return [1,1];var key=data.patientText||'''';if(!key)return [1,1];if(rowIndex>0&&tableData&&tableData[rowIndex-1]&&tableData[rowIndex-1].patientText===key)return [0,1];var span=1;if(tableData){for(var i=rowIndex+1;i<tableData.length;i++){if(tableData[i]&&tableData[i].patientText===key)span++;else break;}}return [span,1];}","tableHeaderBorder":"border","tableHeaderRepeat":"page","tableBodyRowBorder":"border","tableBodyRowHeight":22,"tableBodyCellBorder":"border","tableHeaderRowHeight":22,"rowsColumnsMergeClean":true,"tableHeaderCellBorder":"border"},"printElementType":{"type":"table","title":"摆药明细","editable":true,"columnResizable":true}}],"paperNumberTop":810,"paperNumberLeft":280,"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":true,"paperNumberDisabled":false}],"schemaVersion":1}'::jsonb,
+    1,
+    '{"drugRows":[{"doseText":"10U","drugName":"门冬胰岛素注射液","freqText":"qd","specText":"3ml:300U","usageText":"皮下注射","patientText":"308-01 张三","quantityUnitText":"1支"}],"wardName":"住院药房","periodText":"2026-07-21 10:48","hospitalName":"示例医院","documentTitle":"摆药单","preparedByName":"王宇晨"}'::jsonb,
+    TIMESTAMP '2026-07-22 00:00:00+08',
+    TIMESTAMP '2026-07-22 00:00:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'ip-dispenseSheet-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- 住院腕带（100×20mm）
+-- scenario_code = ip-wristband-print；bus_no = PT202607210001
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    331800190001000011,
+    1,
+    NULL,
+    'PT202607210001',
+    '住院腕带',
+    'published',
+    1,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":100,"height":20,"paperType":"other","paperFooter":52,"paperHeader":0,"printElements":[{"options":{"top":4,"left":6,"field":"patientName","title":"姓名","width":95,"height":14,"fontSize":8.5,"testData":"杨有臣","hideTitle":false,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":4,"left":104,"field":"genderEnumText","title":"性别","width":55,"height":14,"fontSize":8.5,"testData":"女","hideTitle":false,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"性别"}},{"options":{"top":4,"left":161,"field":"ageText","title":"年龄","width":70,"height":14,"fontSize":8.5,"testData":"69岁","hideTitle":false,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":20,"left":6,"field":"departmentName","title":"科室","width":85,"height":14,"fontSize":8.5,"testData":"内科","hideTitle":false,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"科室"}},{"options":{"top":20,"left":94,"field":"bedNo","title":"床号","width":70,"height":14,"fontSize":8.5,"testData":"18床","hideTitle":false,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"床号"}},{"options":{"top":20,"left":166,"field":"inpatientNo","title":"住院号","width":110,"height":14,"fontSize":8.5,"testData":"26060128","hideTitle":false,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"住院号"}},{"options":{"top":36,"left":6,"field":"allergyText","title":"过敏史","width":95,"height":14,"fontSize":8.5,"testData":"无","hideTitle":false,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"过敏史"}},{"options":{"top":36,"left":104,"field":"diagnosisText","title":"诊断","width":170,"height":14,"fontSize":8.5,"testData":"中风病、运动障碍","hideTitle":false,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"诊断"}}],"watermarkOptions":{"width":80,"format":"YYYY-MM-DD HH:mm","height":80,"rotate":25,"content":"","fontSize":"10px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":false,"paperNumberDisabled":true}],"schemaVersion":1}'::jsonb,
+    1,
+    '{"bedNo":"308-30","ageText":"69岁","allergyText":"青霉素","inpatientNo":"26060130","patientName":"示例患者乙","diagnosisText":"消渴病","departmentName":"内科","genderEnumText":"男"}'::jsonb,
+    TIMESTAMP '2026-07-22 00:00:00+08',
+    TIMESTAMP '2026-07-22 00:00:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'ip-wristband-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- 住院口服药贴（50×30mm）
+-- scenario_code = ip-oralMedLabel-print；bus_no = PT202607210002
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    331800190001000012,
+    1,
+    NULL,
+    'PT202607210002',
+    '住院口服药贴',
+    'published',
+    1,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":50,"height":30,"paperType":"other","paperFooter":80,"paperHeader":0,"printElements":[{"options":{"top":3,"left":5,"field":"bedNo","title":"床位","width":55,"height":14,"fontSize":10,"testData":"308-30","hideTitle":true,"textAlign":"left","fontWeight":"bold"},"printElementType":{"type":"text","title":"床位"}},{"options":{"top":3,"left":60,"field":"patientName","title":"姓名","width":48,"height":14,"fontSize":10,"testData":"示例患者乙","hideTitle":true,"textAlign":"left","fontWeight":"bold"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":3,"left":108,"field":"ageText","title":"年龄","width":27,"height":14,"fontSize":8,"testData":"69岁","hideTitle":true,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":18,"left":5,"width":130,"height":1,"borderWidth":0.7},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":22,"left":5,"field":"drugName","title":"药品","width":130,"height":16,"fontSize":9,"testData":"盐酸二甲双胍缓释片","hideTitle":true,"textAlign":"left","fontWeight":"bold"},"printElementType":{"type":"text","title":"药品"}},{"options":{"top":40,"left":5,"field":"specText","title":"规格","width":130,"height":12,"fontSize":8,"testData":"0.5g*30片","hideTitle":false,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"规格"}},{"options":{"top":54,"left":5,"field":"doseText","title":"用量","width":130,"height":14,"fontSize":9,"testData":"2片 bid","hideTitle":false,"textAlign":"left","fontWeight":"bold"},"printElementType":{"type":"text","title":"用量"}}],"watermarkOptions":{"width":60,"format":"YYYY-MM-DD HH:mm","height":60,"rotate":25,"content":"","fontSize":"10px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":false,"paperNumberDisabled":true}],"schemaVersion":1}'::jsonb,
+    1,
+    '{"bedNo":"308-30","ageText":"69岁","doseText":"2片 bid","drugName":"盐酸二甲双胍缓释片","specText":"0.5g*30片","patientName":"示例患者乙"}'::jsonb,
+    TIMESTAMP '2026-07-22 00:00:00+08',
+    TIMESTAMP '2026-07-22 00:00:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'ip-oralMedLabel-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- 采血贴（50×30mm；姓名/性别/年龄/项目 + 条码，无 label）
+-- scenario_code = op-specimenBarcode-print；bus_no = PT202607300001
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    331800190001000013,
+    1,
+    NULL,
+    'PT202607300001',
+    '采血贴',
+    'published',
+    5,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":50,"height":30,"paperType":"other","paperFooter":80,"paperHeader":0,"printElements":[{"options":{"top":2,"left":4,"field":"patientName","title":"姓名","width":52,"height":13,"fontSize":9,"testData":"张三","hideTitle":true,"textAlign":"left","fontWeight":"bold"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":2,"left":57,"field":"genderEnumText","title":"性别","width":28,"height":13,"fontSize":9,"testData":"男","hideTitle":true,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"性别"}},{"options":{"top":2,"left":88,"field":"ageText","title":"年龄","width":48,"height":13,"fontSize":9,"testData":"35岁","hideTitle":true,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":16,"left":4,"field":"itemName","title":"项目","width":132,"height":13,"fontSize":8,"testData":"血常规","hideTitle":true,"textAlign":"left","fontWeight":"bold"},"printElementType":{"type":"text","title":"项目"}},{"options":{"top":32,"left":10,"field":"barcode","title":"条码","width":122,"height":46,"fontSize":8,"testData":"331800190001000099","hideTitle":true,"textType":"barcode","barcodeMode":"CODE128","barWidth":2,"barAutoWidth":"false","textAlign":"center","fontWeight":"normal"},"printElementType":{"type":"text","title":"条形码"}}],"watermarkOptions":{"width":60,"format":"YYYY-MM-DD HH:mm","height":60,"rotate":25,"content":"","fontSize":"10px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":false,"paperNumberDisabled":true}],"schemaVersion":1}'::jsonb,
+    1,
+    '{"patientName":"张三","genderEnumText":"男","ageText":"35岁","itemName":"血常规","barcode":"331800190001000099"}'::jsonb,
+    TIMESTAMP '2026-07-30 00:00:00+08',
+    TIMESTAMP '2026-07-30 16:54:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'op-specimenBarcode-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- =============================================================================
+-- 库房/药房/科室库存单据打印模板（三套 A4）——并入本种子，不做增量迁移
+-- inv-movement-print / inv-stocktake-print / inv-return-print
+-- =============================================================================
+
+-- 库存计价流转单
+-- scenario_code = inv-movement-print；bus_no = PT202607240001
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    331800190001000021,
+    1,
+    NULL,
+    'PT202607240001',
+    '库存计价流转单',
+    'published',
+    1,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":210,"height":297,"paperType":"A4","paperFooter":800,"paperHeader":0,"printElements":[{"options":{"top":16,"left":24,"field":"hospitalName","width":546,"height":20,"fontSize":16,"testData":"示例医院","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":38,"left":24,"field":"documentTitle","width":546,"height":17,"fontSize":13,"testData":"中心药库进货单","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":62,"left":24,"field":"docNo","title":"单据号","width":178,"height":15,"fontSize":9,"testData":"PI202607240001"},"printElementType":{"type":"text","title":"单据号"}},{"options":{"top":62,"left":210,"field":"applyTimeText","title":"制单时间","width":178,"height":15,"fontSize":9,"testData":"2026-07-24 10:30"},"printElementType":{"type":"text","title":"制单时间"}},{"options":{"top":62,"left":396,"field":"itemTypeText","title":"项目类型","width":174,"height":15,"fontSize":9,"testData":"西药"},"printElementType":{"type":"text","title":"项目类型"}},{"options":{"top":82,"left":24,"field":"sourceLocationText","title":"源位置","width":178,"height":15,"fontSize":9,"testData":"中心药库"},"printElementType":{"type":"text","title":"源位置"}},{"options":{"top":82,"left":210,"field":"supplierText","title":"供应商","width":178,"height":15,"fontSize":9,"testData":"示例医药有限公司"},"printElementType":{"type":"text","title":"供应商"}},{"options":{"top":82,"left":396,"field":"linkDocText","title":"关联单","width":174,"height":15,"fontSize":9,"testData":"PO202607200001"},"printElementType":{"type":"text","title":"关联单"}},{"options":{"top":102,"left":24,"field":"destLocationText","title":"目的位置","width":178,"height":15,"fontSize":9,"testData":""},"printElementType":{"type":"text","title":"目的位置"}},{"options":{"top":102,"left":210,"field":"invoiceNoText","title":"发票号","width":178,"height":15,"fontSize":9,"testData":"FP20260724088"},"printElementType":{"type":"text","title":"发票号"}},{"options":{"top":102,"left":396,"field":"practitionerName","title":"经手人","width":174,"height":15,"fontSize":9,"testData":"张三"},"printElementType":{"type":"text","title":"经手人"}},{"options":{"top":126,"left":24,"field":"lineRows","width":546,"height":580,"columns":[[{"align":"center","field":"seqNo","title":"序号","width":36,"checked":true,"columnId":"seqNo"},{"align":"left","field":"productName","title":"品名","width":120,"checked":true,"columnId":"productName"},{"align":"left","field":"specText","title":"规格","width":58,"checked":true,"columnId":"specText"},{"align":"left","field":"manufacturerText","title":"厂家","width":54,"checked":true,"columnId":"manufacturerText"},{"align":"center","field":"qtyUnitText","title":"数量","width":52,"checked":true,"columnId":"qtyUnitText"},{"align":"right","field":"unitPriceText","title":"单价","width":45,"checked":true,"columnId":"unitPriceText"},{"align":"right","field":"amountText","title":"金额","width":54,"checked":true,"columnId":"amountText"},{"align":"center","field":"lotNumber","title":"批号","width":55,"checked":true,"columnId":"lotNumber"},{"align":"center","field":"expiryText","title":"生产~效期","width":72,"checked":true,"columnId":"expiryText","formatter2":"function(value,row,index,options){if(value==null||value==='''')return '''';var s=String(value).trim();var parts=s.split(/[~～\\n]+/);if(parts.length<=1)return s;return parts.map(function(p){return p.trim();}).filter(Boolean).join(''<br/>'');}"}]],"fontSize":8.5,"tableHeaderFontSize":8,"testData":"[{\"seqNo\":\"1\",\"productName\":\"阿莫西林胶囊\",\"specText\":\"0.25g*24粒\",\"manufacturerText\":\"某某制药\",\"qtyUnitText\":\"10盒\",\"unitPriceText\":\"12.50\",\"amountText\":\"125.00\",\"lotNumber\":\"L20260101\",\"expiryText\":\"2026-01-01~2028-01-01\"},{\"seqNo\":\"2\",\"productName\":\"0.9%氯化钠注射液\",\"specText\":\"250ml\",\"manufacturerText\":\"某某药业\",\"qtyUnitText\":\"20袋\",\"unitPriceText\":\"3.80\",\"amountText\":\"76.00\",\"lotNumber\":\"L20260215\",\"expiryText\":\"2025-06-30~2027-06-30\"}]","textAlign":"center","lineHeight":12,"tableBorder":"border","tableHeaderBorder":"border","tableHeaderRepeat":"page","tableBodyRowBorder":"border","tableBodyRowHeight":28,"tableBodyCellBorder":"border","tableHeaderRowHeight":20,"tableHeaderCellBorder":"border"},"printElementType":{"type":"table","title":"明细","editable":true,"columnResizable":true}},{"options":{"top":720,"left":24,"field":"preparedByName","title":"制单","width":170,"height":15,"fontSize":9,"testData":"张三"},"printElementType":{"type":"text","title":"制单"}},{"options":{"top":720,"left":210,"field":"approvedByName","title":"审核","width":170,"height":15,"fontSize":9,"testData":"李四"},"printElementType":{"type":"text","title":"审核"}},{"options":{"top":720,"left":396,"field":"totalAmountText","title":"合计金额","width":174,"height":15,"fontSize":10,"testData":"201.00","fontWeight":"bold","textAlign":"right"},"printElementType":{"type":"text","title":"合计金额"}}],"paperNumberTop":810,"paperNumberLeft":280,"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":true,"paperNumberDisabled":false}],"schemaVersion":1}'::jsonb,
+    1,
+    '{"hospitalName":"示例医院","documentTitle":"中心药库进货单","docNo":"PI202607240001","applyTimeText":"2026-07-24 10:30","itemTypeText":"西药","sourceLocationText":"中心药库","supplierText":"示例医药有限公司","linkDocText":"PO202607200001","destLocationText":"","invoiceNoText":"FP20260724088","practitionerName":"张三","lineRows":[{"seqNo":"1","productName":"阿莫西林胶囊","specText":"0.25g*24粒","manufacturerText":"某某制药","qtyUnitText":"10盒","unitPriceText":"12.50","amountText":"125.00","lotNumber":"L20260101","expiryText":"2026-01-01~2028-01-01"},{"seqNo":"2","productName":"0.9%氯化钠注射液","specText":"250ml","manufacturerText":"某某药业","qtyUnitText":"20袋","unitPriceText":"3.80","amountText":"76.00","lotNumber":"L20260215","expiryText":"2025-06-30~2027-06-30"}],"totalAmountText":"201.00","preparedByName":"张三","approvedByName":"李四"}'::jsonb,
+    TIMESTAMP '2026-07-24 00:00:00+08',
+    TIMESTAMP '2026-07-24 19:30:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'inv-movement-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+
+-- 库存盘点盈亏单
+-- scenario_code = inv-stocktake-print；bus_no = PT202607240002
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    331800190001000022,
+    1,
+    NULL,
+    'PT202607240002',
+    '库存盘点盈亏单',
+    'published',
+    1,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":210,"height":297,"paperType":"A4","paperFooter":800,"paperHeader":0,"printElements":[{"options":{"top":16,"left":24,"field":"hospitalName","width":546,"height":20,"fontSize":16,"testData":"示例医院","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":38,"left":24,"field":"documentTitle","width":546,"height":17,"fontSize":13,"testData":"中心药库盘点单","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":62,"left":24,"field":"docNo","title":"单据号","width":178,"height":15,"fontSize":9,"testData":"ST202607240001"},"printElementType":{"type":"text","title":"单据号"}},{"options":{"top":62,"left":210,"field":"applyTimeText","title":"制单时间","width":178,"height":15,"fontSize":9,"testData":"2026-07-24 09:00"},"printElementType":{"type":"text","title":"制单时间"}},{"options":{"top":62,"left":396,"field":"itemTypeText","title":"项目类型","width":174,"height":15,"fontSize":9,"testData":"西药"},"printElementType":{"type":"text","title":"项目类型"}},{"options":{"top":82,"left":24,"field":"sourceLocationText","title":"源位置","width":178,"height":15,"fontSize":9,"testData":"中心药库"},"printElementType":{"type":"text","title":"源位置"}},{"options":{"top":82,"left":210,"field":"destLocationText","title":"目的位置","width":178,"height":15,"fontSize":9,"testData":""},"printElementType":{"type":"text","title":"目的位置"}},{"options":{"top":82,"left":396,"field":"practitionerName","title":"经手人","width":174,"height":15,"fontSize":9,"testData":"赵六"},"printElementType":{"type":"text","title":"经手人"}},{"options":{"top":106,"left":24,"field":"lineRows","width":546,"height":600,"columns":[[{"align":"center","field":"seqNo","title":"序号","width":36,"checked":true,"columnId":"seqNo"},{"align":"left","field":"productName","title":"品名","width":84,"checked":true,"columnId":"productName"},{"align":"left","field":"specText","title":"规格","width":48,"checked":true,"columnId":"specText"},{"align":"left","field":"manufacturerText","title":"厂家","width":44,"checked":true,"columnId":"manufacturerText"},{"align":"center","field":"lotNumber","title":"批号","width":48,"checked":true,"columnId":"lotNumber"},{"align":"center","field":"bookQtyText","title":"账面","width":40,"checked":true,"columnId":"bookQtyText"},{"align":"center","field":"actualQtyText","title":"实盘","width":40,"checked":true,"columnId":"actualQtyText"},{"align":"center","field":"diffQtyText","title":"盈亏量","width":44,"checked":true,"columnId":"diffQtyText"},{"align":"right","field":"unitPriceText","title":"单价","width":38,"checked":true,"columnId":"unitPriceText"},{"align":"right","field":"actualAmountText","title":"实盘额","width":44,"checked":true,"columnId":"actualAmountText"},{"align":"right","field":"diffAmountText","title":"盈亏额","width":44,"checked":true,"columnId":"diffAmountText"},{"align":"left","field":"reasonText","title":"原因","width":36,"checked":true,"columnId":"reasonText"}]],"fontSize":8.5,"tableHeaderFontSize":8,"testData":"[{\"seqNo\":\"1\",\"productName\":\"阿莫西林胶囊\",\"specText\":\"0.25g*24粒\",\"manufacturerText\":\"某某制药\",\"lotNumber\":\"L20260101\",\"bookQtyText\":\"100盒\",\"actualQtyText\":\"98盒\",\"diffQtyText\":\"-2盒\",\"unitPriceText\":\"12.50\",\"actualAmountText\":\"1225.00\",\"diffAmountText\":\"-25.00\",\"reasonText\":\"破损\"},{\"seqNo\":\"2\",\"productName\":\"布洛芬缓释胶囊\",\"specText\":\"0.3g*20粒\",\"manufacturerText\":\"某某药业\",\"lotNumber\":\"L20260301\",\"bookQtyText\":\"50盒\",\"actualQtyText\":\"52盒\",\"diffQtyText\":\"+2盒\",\"unitPriceText\":\"18.00\",\"actualAmountText\":\"936.00\",\"diffAmountText\":\"36.00\",\"reasonText\":\"\"}]","textAlign":"center","lineHeight":12,"tableBorder":"border","tableHeaderBorder":"border","tableHeaderRepeat":"page","tableBodyRowBorder":"border","tableBodyRowHeight":20,"tableBodyCellBorder":"border","tableHeaderRowHeight":20,"tableHeaderCellBorder":"border"},"printElementType":{"type":"table","title":"盘点明细","editable":true,"columnResizable":true}},{"options":{"top":720,"left":24,"field":"preparedByName","title":"制单","width":170,"height":15,"fontSize":9,"testData":"赵六"},"printElementType":{"type":"text","title":"制单"}},{"options":{"top":720,"left":210,"field":"approvedByName","title":"审核","width":170,"height":15,"fontSize":9,"testData":"李四"},"printElementType":{"type":"text","title":"审核"}},{"options":{"top":720,"left":396,"field":"totalAmountText","title":"盈亏合计","width":174,"height":15,"fontSize":10,"testData":"11.00","fontWeight":"bold","textAlign":"right"},"printElementType":{"type":"text","title":"盈亏合计"}}],"paperNumberTop":810,"paperNumberLeft":280,"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":true,"paperNumberDisabled":false}],"schemaVersion":1}'::jsonb,
+    1,
+    '{"hospitalName":"示例医院","documentTitle":"中心药库盘点单","docNo":"ST202607240001","applyTimeText":"2026-07-24 09:00","itemTypeText":"西药","sourceLocationText":"中心药库","destLocationText":"","practitionerName":"赵六","lineRows":[{"seqNo":"1","productName":"阿莫西林胶囊","specText":"0.25g*24粒","manufacturerText":"某某制药","lotNumber":"L20260101","bookQtyText":"100盒","actualQtyText":"98盒","diffQtyText":"-2盒","unitPriceText":"12.50","actualAmountText":"1225.00","diffAmountText":"-25.00","reasonText":"破损"},{"seqNo":"2","productName":"布洛芬缓释胶囊","specText":"0.3g*20粒","manufacturerText":"某某药业","lotNumber":"L20260301","bookQtyText":"50盒","actualQtyText":"52盒","diffQtyText":"+2盒","unitPriceText":"18.00","actualAmountText":"936.00","diffAmountText":"36.00","reasonText":""}],"totalAmountText":"11.00","preparedByName":"赵六","approvedByName":"李四"}'::jsonb,
+    TIMESTAMP '2026-07-24 00:00:00+08',
+    TIMESTAMP '2026-07-24 19:30:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'inv-stocktake-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+
+-- 库存退货单
+-- scenario_code = inv-return-print；bus_no = PT202607240003
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    331800190001000023,
+    1,
+    NULL,
+    'PT202607240003',
+    '库存退货单',
+    'published',
+    1,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":210,"height":297,"paperType":"A4","paperFooter":800,"paperHeader":0,"printElements":[{"options":{"top":16,"left":24,"field":"hospitalName","width":546,"height":20,"fontSize":16,"testData":"示例医院","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":38,"left":24,"field":"documentTitle","width":546,"height":17,"fontSize":13,"testData":"中心药库退供应商单","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":62,"left":24,"field":"docNo","title":"单据号","width":178,"height":15,"fontSize":9,"testData":"RT202607240001"},"printElementType":{"type":"text","title":"单据号"}},{"options":{"top":62,"left":210,"field":"applyTimeText","title":"制单时间","width":178,"height":15,"fontSize":9,"testData":"2026-07-24 14:20"},"printElementType":{"type":"text","title":"制单时间"}},{"options":{"top":62,"left":396,"field":"itemTypeText","title":"项目类型","width":174,"height":15,"fontSize":9,"testData":"西药"},"printElementType":{"type":"text","title":"项目类型"}},{"options":{"top":82,"left":24,"field":"sourceLocationText","title":"源位置","width":178,"height":15,"fontSize":9,"testData":"中心药库"},"printElementType":{"type":"text","title":"源位置"}},{"options":{"top":82,"left":210,"field":"supplierText","title":"供应商","width":178,"height":15,"fontSize":9,"testData":"示例医药有限公司"},"printElementType":{"type":"text","title":"供应商"}},{"options":{"top":82,"left":396,"field":"linkDocText","title":"原单号","width":174,"height":15,"fontSize":9,"testData":"PI202607200088"},"printElementType":{"type":"text","title":"原单号"}},{"options":{"top":102,"left":24,"field":"destLocationText","title":"目的位置","width":178,"height":15,"fontSize":9,"testData":""},"printElementType":{"type":"text","title":"目的位置"}},{"options":{"top":102,"left":210,"field":"practitionerName","title":"经手人","width":178,"height":15,"fontSize":9,"testData":"张三"},"printElementType":{"type":"text","title":"经手人"}},{"options":{"top":102,"left":396,"field":"invoiceNoText","title":"发票号","width":174,"height":15,"fontSize":9,"testData":""},"printElementType":{"type":"text","title":"发票号"}},{"options":{"top":126,"left":24,"field":"lineRows","width":546,"height":580,"columns":[[{"align":"center","field":"seqNo","title":"序号","width":44,"checked":true,"columnId":"seqNo"},{"align":"left","field":"productName","title":"品名","width":216,"checked":true,"columnId":"productName"},{"align":"center","field":"qtyUnitText","title":"数量","width":80,"checked":true,"columnId":"qtyUnitText"},{"align":"center","field":"lotNumber","title":"批号","width":100,"checked":true,"columnId":"lotNumber"},{"align":"left","field":"reasonText","title":"退货原因","width":106,"checked":true,"columnId":"reasonText"}]],"fontSize":8.5,"tableHeaderFontSize":8,"testData":"[{\"seqNo\":\"1\",\"productName\":\"阿莫西林胶囊\",\"qtyUnitText\":\"2盒\",\"lotNumber\":\"L20260101\",\"reasonText\":\"近效期退货\"},{\"seqNo\":\"2\",\"productName\":\"布洛芬缓释胶囊\",\"qtyUnitText\":\"1盒\",\"lotNumber\":\"L20260301\",\"reasonText\":\"包装破损\"}]","textAlign":"center","lineHeight":12,"tableBorder":"border","tableHeaderBorder":"border","tableHeaderRepeat":"page","tableBodyRowBorder":"border","tableBodyRowHeight":20,"tableBodyCellBorder":"border","tableHeaderRowHeight":20,"tableHeaderCellBorder":"border"},"printElementType":{"type":"table","title":"退货明细","editable":true,"columnResizable":true}},{"options":{"top":720,"left":24,"field":"preparedByName","title":"制单","width":170,"height":15,"fontSize":9,"testData":"张三"},"printElementType":{"type":"text","title":"制单"}},{"options":{"top":720,"left":210,"field":"approvedByName","title":"审核","width":170,"height":15,"fontSize":9,"testData":"李四"},"printElementType":{"type":"text","title":"审核"}},{"options":{"top":720,"left":396,"field":"totalAmountText","title":"合计","width":174,"height":15,"fontSize":10,"testData":"","fontWeight":"bold","textAlign":"right"},"printElementType":{"type":"text","title":"合计"}}],"paperNumberTop":810,"paperNumberLeft":280,"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":true,"paperNumberDisabled":false}],"schemaVersion":1}'::jsonb,
+    1,
+    '{"hospitalName":"示例医院","documentTitle":"中心药库退供应商单","docNo":"RT202607240001","applyTimeText":"2026-07-24 14:20","itemTypeText":"西药","sourceLocationText":"中心药库","supplierText":"示例医药有限公司","linkDocText":"PI202607200088","destLocationText":"","practitionerName":"张三","invoiceNoText":"","lineRows":[{"seqNo":"1","productName":"阿莫西林胶囊","qtyUnitText":"2盒","lotNumber":"L20260101","reasonText":"近效期退货"},{"seqNo":"2","productName":"布洛芬缓释胶囊","qtyUnitText":"1盒","lotNumber":"L20260301","reasonText":"包装破损"}],"totalAmountText":"","preparedByName":"张三","approvedByName":"李四"}'::jsonb,
+    TIMESTAMP '2026-07-24 00:00:00+08',
+    TIMESTAMP '2026-07-24 19:30:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'inv-return-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- =============================================================================
+-- 财务调价单打印模板（A4）——并入本种子，不做增量迁移
+-- fin-price-adjustment-print
+-- =============================================================================
+
+-- 调价单
+-- scenario_code = fin-price-adjustment-print；bus_no = PT202607260001
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    331800190001000024,
+    1,
+    NULL,
+    'PT202607260001',
+    '调价单',
+    'published',
+    1,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":210,"height":297,"paperType":"A4","paperFooter":800,"paperHeader":0,"printElements":[{"options":{"top":16,"left":24,"field":"hospitalName","width":546,"height":20,"fontSize":16,"testData":"示例医院","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":38,"left":24,"field":"documentTitle","width":546,"height":17,"fontSize":13,"testData":"调价单","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":62,"left":24,"field":"docNo","title":"单据号","width":178,"height":15,"fontSize":9,"testData":"PA202607260001"},"printElementType":{"type":"text","title":"单据号"}},{"options":{"top":62,"left":210,"field":"applyTimeText","title":"制单时间","width":178,"height":15,"fontSize":9,"testData":"2026-07-26 10:30:00"},"printElementType":{"type":"text","title":"制单时间"}},{"options":{"top":62,"left":396,"field":"adjustmentReasonText","title":"调价原因","width":174,"height":15,"fontSize":9,"testData":"政策调价"},"printElementType":{"type":"text","title":"调价原因"}},{"options":{"top":82,"left":24,"field":"itemTypeText","title":"项目类型","width":178,"height":15,"fontSize":9,"testData":"药品"},"printElementType":{"type":"text","title":"项目类型"}},{"options":{"top":82,"left":210,"field":"statusText","title":"状态","width":178,"height":15,"fontSize":9,"testData":"已审批"},"printElementType":{"type":"text","title":"状态"}},{"options":{"top":82,"left":396,"field":"approvedByName","title":"审核","width":174,"height":15,"fontSize":9,"testData":"李四"},"printElementType":{"type":"text","title":"审核"}},{"options":{"top":106,"left":24,"field":"lineRows","width":546,"height":580,"columns":[[{"align":"center","field":"seqNo","title":"序号","width":36,"checked":true,"columnId":"seqNo"},{"align":"left","field":"itemName","title":"项目名称","width":142,"checked":true,"columnId":"itemName"},{"align":"left","field":"specText","title":"规格","width":58,"checked":true,"columnId":"specText"},{"align":"center","field":"categoryText","title":"项目种类","width":50,"checked":true,"columnId":"categoryText"},{"align":"right","field":"oldPurchasePriceText","title":"当前进价","width":52,"checked":true,"columnId":"oldPurchasePriceText"},{"align":"right","field":"oldSellingPriceText","title":"当前售价","width":52,"checked":true,"columnId":"oldSellingPriceText"},{"align":"center","field":"quantityText","title":"库存数量","width":52,"checked":true,"columnId":"quantityText"},{"align":"right","field":"newPurchasePriceText","title":"调后进价","width":52,"checked":true,"columnId":"newPurchasePriceText"},{"align":"right","field":"newSellingPriceText","title":"调后售价","width":52,"checked":true,"columnId":"newSellingPriceText"}]],"fontSize":8.5,"tableHeaderFontSize":8,"testData":"[{\"seqNo\":\"1\",\"itemName\":\"阿莫西林胶囊\",\"specText\":\"0.25g*24粒\",\"categoryText\":\"西药\",\"oldPurchasePriceText\":\"10.00\",\"oldSellingPriceText\":\"12.50\",\"quantityText\":\"100\",\"newPurchasePriceText\":\"9.50\",\"newSellingPriceText\":\"12.00\"},{\"seqNo\":\"2\",\"itemName\":\"血常规\",\"specText\":\"\",\"categoryText\":\"检验\",\"oldPurchasePriceText\":\"—\",\"oldSellingPriceText\":\"25.00\",\"quantityText\":\"—\",\"newPurchasePriceText\":\"—\",\"newSellingPriceText\":\"28.00\"}]","textAlign":"center","lineHeight":12,"tableBorder":"border","tableHeaderBorder":"border","tableHeaderRepeat":"page","tableBodyRowBorder":"border","tableBodyRowHeight":20,"tableBodyCellBorder":"border","tableHeaderRowHeight":20,"tableHeaderCellBorder":"border"},"printElementType":{"type":"table","title":"调价明细","editable":true,"columnResizable":true}},{"options":{"top":700,"left":24,"field":"preparedByName","title":"制单","width":170,"height":15,"fontSize":9,"testData":"张三"},"printElementType":{"type":"text","title":"制单"}},{"options":{"top":700,"left":210,"field":"totalPurchaseImpactText","title":"进价盈亏","width":170,"height":15,"fontSize":10,"testData":"-50.00","fontWeight":"bold","textAlign":"right"},"printElementType":{"type":"text","title":"进价盈亏"}},{"options":{"top":700,"left":396,"field":"totalSellingImpactText","title":"售价盈亏","width":174,"height":15,"fontSize":10,"testData":"250.00","fontWeight":"bold","textAlign":"right"},"printElementType":{"type":"text","title":"售价盈亏"}}],"paperNumberTop":810,"paperNumberLeft":280,"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":true,"paperNumberDisabled":false}],"schemaVersion":1}'::jsonb,
+    1,
+    '{"hospitalName":"示例医院","documentTitle":"调价单","docNo":"PA202607260001","applyTimeText":"2026-07-26 10:30:00","adjustmentReasonText":"政策调价","itemTypeText":"药品","statusText":"已审批","approvedByName":"李四","lineRows":[{"seqNo":"1","itemName":"阿莫西林胶囊","specText":"0.25g*24粒","categoryText":"西药","oldPurchasePriceText":"10.00","oldSellingPriceText":"12.50","quantityText":"100","newPurchasePriceText":"9.50","newSellingPriceText":"12.00"},{"seqNo":"2","itemName":"血常规","specText":"","categoryText":"检验","oldPurchasePriceText":"—","oldSellingPriceText":"25.00","quantityText":"—","newPurchasePriceText":"—","newSellingPriceText":"28.00"}],"preparedByName":"张三","totalPurchaseImpactText":"-50.00","totalSellingImpactText":"250.00"}'::jsonb,
+    TIMESTAMP '2026-07-26 00:00:00+08',
+    TIMESTAMP '2026-07-26 15:00:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'fin-price-adjustment-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- =============================================================================
+-- 药房日结单打印模板（A4）——并入本种子，不做增量迁移
+-- pharmacy-dailySettlement-print（门诊/住院共用）
+-- =============================================================================
+
+-- =============================================================================
+-- 住院护士站：检查单 / 检验单打印模板（A4 竖版）
+-- 版式：双行标题 + 患者信息网格 + 轻量表格 + 页脚
+-- 横线精简：仅标题下一条区段线；表格框线保留；无患者区/页脚分隔线
+-- 手动执行；可重复执行（按 id upsert）
+-- 同步入 whale-health V10__seed_platform.sql（改种子，不做增量迁移）
+--
+-- 检查单 scenario_code = ip-examApply-print；bus_no = PT202607270001
+-- 检验单 scenario_code = ip-labApply-print；bus_no = PT202607270002
+-- tenant_id=1, organization_id=NULL
+-- =============================================================================
+
+-- 住院检查单
+-- scenario_code = ip-examApply-print；bus_no = PT202607270001
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    331800190001000025,
+    1,
+    NULL,
+    'PT202607270001',
+    '住院检查单',
+    'published',
+    1,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":210,"height":297,"paperType":"A4","paperFooter":800,"paperHeader":0,"printElements":[{"options":{"top":16,"left":24,"field":"hospitalName","width":546,"height":22,"fontSize":17,"testData":"示例医院","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":40,"left":24,"field":"documentTitle","width":546,"height":18,"fontSize":13,"testData":"住院检查单","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":64,"left":24,"width":546,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":74,"left":24,"field":"inpatientNo","title":"住院号","width":136,"height":15,"fontSize":9,"testData":"26060127"},"printElementType":{"type":"text","title":"住院号"}},{"options":{"top":74,"left":164,"field":"patientName","title":"姓名","width":120,"height":15,"fontSize":9,"testData":"示例患者"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":74,"left":292,"field":"genderEnumText","title":"性别","width":80,"height":15,"fontSize":9,"testData":"女"},"printElementType":{"type":"text","title":"性别"}},{"options":{"top":74,"left":380,"field":"ageText","title":"年龄","width":90,"height":15,"fontSize":9,"testData":"69岁"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":74,"left":478,"field":"bedNo","title":"床位","width":92,"height":15,"fontSize":9,"testData":"301-18"},"printElementType":{"type":"text","title":"床位"}},{"options":{"top":94,"left":24,"field":"departmentName","title":"科别","width":200,"height":15,"fontSize":9,"testData":"内科"},"printElementType":{"type":"text","title":"科别"}},{"options":{"top":94,"left":234,"field":"diagnosisText","title":"入院诊断","width":336,"height":15,"fontSize":9,"testData":"眩晕"},"printElementType":{"type":"text","title":"入院诊断"}},{"options":{"top":114,"left":24,"field":"examPurposeText","title":"检查目的","width":546,"height":15,"fontSize":9,"testData":""},"printElementType":{"type":"text","title":"检查目的"}},{"options":{"top":140,"left":24,"field":"itemRows","width":546,"height":560,"columns":[[{"align":"center","field":"seqNo","title":"序号","width":48,"checked":true,"columnId":"seqNo"},{"align":"left","field":"itemName","title":"检查项目","width":360,"checked":true,"columnId":"itemName"},{"align":"center","field":"quantityText","title":"数量","width":60,"checked":true,"columnId":"quantityText"},{"align":"left","field":"remarkText","title":"备注","width":78,"checked":true,"columnId":"remarkText"}]],"fontSize":9,"tableHeaderFontSize":9,"testData":"[{\"seqNo\":\"1\",\"itemName\":\"常规心电图检查(十二通道)\",\"quantityText\":\"1次\",\"remarkText\":\"\"},{\"seqNo\":\"2\",\"itemName\":\"常规心电图检查(床头心电加收)\",\"quantityText\":\"1次\",\"remarkText\":\"\"}]","textAlign":"center","lineHeight":13,"tableBorder":"border","tableHeaderBorder":"border","tableHeaderCellBorder":"border","tableHeaderRepeat":"page","tableBodyRowBorder":"border","tableBodyCellBorder":"border","tableBodyRowHeight":26,"tableHeaderRowHeight":24},"printElementType":{"type":"table","title":"检查项目","editable":true,"columnResizable":true}},{"options":{"top":720,"left":24,"field":"performOrgName","title":"执行科室","width":200,"height":15,"fontSize":9,"testData":"心电图室"},"printElementType":{"type":"text","title":"执行科室"}},{"options":{"top":720,"left":234,"field":"orderingPractitionerName","title":"申请医生","width":160,"height":15,"fontSize":9,"testData":"示例医师"},"printElementType":{"type":"text","title":"申请医生"}},{"options":{"top":720,"left":404,"title":"签名：____________","width":166,"height":15,"fontSize":9,"hideTitle":true},"printElementType":{"type":"text","title":"签名：____________"}},{"options":{"top":742,"left":24,"field":"orderDateText","title":"申请日期","width":280,"height":15,"fontSize":9,"testData":"2026年06月10日 16:07"},"printElementType":{"type":"text","title":"申请日期"}}],"paperNumberTop":810,"paperNumberLeft":280,"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":true,"paperNumberDisabled":true}],"schemaVersion":1}'::jsonb,
+    1,
+    '{"hospitalName":"示例医院","documentTitle":"住院检查单","inpatientNo":"26060127","patientName":"示例患者","genderEnumText":"女","ageText":"69岁","departmentName":"内科","bedNo":"301-18","diagnosisText":"眩晕","examPurposeText":"","itemRows":[{"seqNo":"1","itemName":"常规心电图检查(十二通道)","quantityText":"1次","remarkText":""},{"seqNo":"2","itemName":"常规心电图检查(床头心电加收)","quantityText":"1次","remarkText":""}],"performOrgName":"心电图室","orderingPractitionerName":"示例医师","orderDateText":"2026年06月10日 16:07"}'::jsonb,
+    TIMESTAMP '2026-07-27 00:00:00+08',
+    TIMESTAMP '2026-07-27 16:40:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'ip-examApply-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- 住院检验单
+-- scenario_code = ip-labApply-print；bus_no = PT202607270002
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    331800190001000026,
+    1,
+    NULL,
+    'PT202607270002',
+    '住院检验单',
+    'published',
+    1,
+    '{"engine":"Print","panels":[{"name":"1","index":0,"width":210,"height":297,"paperType":"A4","paperFooter":800,"paperHeader":0,"printElements":[{"options":{"top":16,"left":24,"field":"hospitalName","width":546,"height":22,"fontSize":17,"testData":"示例医院","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":40,"left":24,"field":"documentTitle","width":546,"height":18,"fontSize":13,"testData":"住院检验单","hideTitle":true,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":64,"left":24,"width":546,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":74,"left":24,"field":"inpatientNo","title":"住院号","width":136,"height":15,"fontSize":9,"testData":"26060127"},"printElementType":{"type":"text","title":"住院号"}},{"options":{"top":74,"left":164,"field":"patientName","title":"姓名","width":120,"height":15,"fontSize":9,"testData":"示例患者"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":74,"left":292,"field":"genderEnumText","title":"性别","width":80,"height":15,"fontSize":9,"testData":"女"},"printElementType":{"type":"text","title":"性别"}},{"options":{"top":74,"left":380,"field":"ageText","title":"年龄","width":90,"height":15,"fontSize":9,"testData":"69岁"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":74,"left":478,"field":"bedNo","title":"床位","width":92,"height":15,"fontSize":9,"testData":"301-18"},"printElementType":{"type":"text","title":"床位"}},{"options":{"top":94,"left":24,"field":"departmentName","title":"科别","width":200,"height":15,"fontSize":9,"testData":"内科"},"printElementType":{"type":"text","title":"科别"}},{"options":{"top":94,"left":234,"field":"diagnosisText","title":"临床诊断","width":336,"height":15,"fontSize":9,"testData":"眩晕"},"printElementType":{"type":"text","title":"临床诊断"}},{"options":{"top":122,"left":24,"field":"itemRows","width":546,"height":580,"columns":[[{"align":"center","field":"seqNo","title":"序号","width":40,"checked":true,"columnId":"seqNo"},{"align":"left","field":"itemName","title":"申请项目","width":150,"checked":true,"columnId":"itemName"},{"align":"left","field":"detailText","title":"明细","width":196,"checked":true,"columnId":"detailText"},{"align":"center","field":"specimenTypeText","title":"标本","width":60,"checked":true,"columnId":"specimenTypeText"},{"align":"center","field":"quantityText","title":"数量","width":48,"checked":true,"columnId":"quantityText"},{"align":"left","field":"remarkText","title":"备注","width":52,"checked":true,"columnId":"remarkText"}]],"fontSize":9,"tableHeaderFontSize":9,"testData":"[{\"seqNo\":\"1\",\"itemName\":\"血常规\",\"detailText\":\"血细胞分析\",\"specimenTypeText\":\"静脉血\",\"quantityText\":\"1次\",\"remarkText\":\"\"},{\"seqNo\":\"2\",\"itemName\":\"尿液分析\",\"detailText\":\"\",\"specimenTypeText\":\"尿液\",\"quantityText\":\"1次\",\"remarkText\":\"\"},{\"seqNo\":\"3\",\"itemName\":\"肝功13项\",\"detailText\":\"总蛋白、球蛋白、白蛋白、总胆红素、间接胆红素、直接胆红素、γ-谷氨酰基转移酶、天门冬氨酸氨基转移酶、丙氨酸氨基转移酶、胆碱酯酶、碱性磷酸酶\",\"specimenTypeText\":\"静脉血\",\"quantityText\":\"1次\",\"remarkText\":\"\"},{\"seqNo\":\"4\",\"itemName\":\"肾功3项\",\"detailText\":\"肌酐、尿酸、尿素\",\"specimenTypeText\":\"静脉血\",\"quantityText\":\"1次\",\"remarkText\":\"\"},{\"seqNo\":\"5\",\"itemName\":\"血糖\",\"detailText\":\"\",\"specimenTypeText\":\"静脉血\",\"quantityText\":\"1次\",\"remarkText\":\"\"},{\"seqNo\":\"6\",\"itemName\":\"血脂四项\",\"detailText\":\"低密度脂蛋白胆固醇、高密度脂蛋白胆固醇、甘油三酯、总胆固醇\",\"specimenTypeText\":\"静脉血\",\"quantityText\":\"1次\",\"remarkText\":\"\"},{\"seqNo\":\"7\",\"itemName\":\"糖化血红蛋白测定（免疫比浊法）\",\"detailText\":\"\",\"specimenTypeText\":\"静脉血\",\"quantityText\":\"1次\",\"remarkText\":\"\"},{\"seqNo\":\"8\",\"itemName\":\"离子3项\",\"detailText\":\"钾、钠、氯\",\"specimenTypeText\":\"静脉血\",\"quantityText\":\"1次\",\"remarkText\":\"\"}]","textAlign":"center","lineHeight":13,"tableBorder":"border","tableHeaderBorder":"border","tableHeaderCellBorder":"border","tableHeaderRepeat":"page","tableBodyRowBorder":"border","tableBodyCellBorder":"border","tableBodyRowHeight":28,"tableHeaderRowHeight":24},"printElementType":{"type":"table","title":"检验项目","editable":true,"columnResizable":true}},{"options":{"top":720,"left":24,"field":"performOrgName","title":"执行科室","width":200,"height":15,"fontSize":9,"testData":"检验科"},"printElementType":{"type":"text","title":"执行科室"}},{"options":{"top":720,"left":234,"field":"orderingPractitionerName","title":"申请医生","width":160,"height":15,"fontSize":9,"testData":"示例医师"},"printElementType":{"type":"text","title":"申请医生"}},{"options":{"top":720,"left":404,"title":"签名：____________","width":166,"height":15,"fontSize":9,"hideTitle":true},"printElementType":{"type":"text","title":"签名：____________"}},{"options":{"top":742,"left":24,"field":"orderDateText","title":"申请日期","width":280,"height":15,"fontSize":9,"testData":"2026年06月10日 16:06"},"printElementType":{"type":"text","title":"申请日期"}}],"paperNumberTop":810,"paperNumberLeft":280,"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":true,"paperNumberDisabled":true}],"schemaVersion":1}'::jsonb,
+    1,
+    '{"hospitalName":"示例医院","documentTitle":"住院检验单","inpatientNo":"26060127","patientName":"示例患者","genderEnumText":"女","ageText":"69岁","departmentName":"内科","bedNo":"301-18","diagnosisText":"眩晕","itemRows":[{"seqNo":"1","itemName":"血常规","detailText":"血细胞分析","specimenTypeText":"静脉血","quantityText":"1次","remarkText":""},{"seqNo":"2","itemName":"尿液分析","detailText":"","specimenTypeText":"尿液","quantityText":"1次","remarkText":""},{"seqNo":"3","itemName":"肝功13项","detailText":"总蛋白、球蛋白、白蛋白、总胆红素、间接胆红素、直接胆红素、γ-谷氨酰基转移酶、天门冬氨酸氨基转移酶、丙氨酸氨基转移酶、胆碱酯酶、碱性磷酸酶","specimenTypeText":"静脉血","quantityText":"1次","remarkText":""},{"seqNo":"4","itemName":"肾功3项","detailText":"肌酐、尿酸、尿素","specimenTypeText":"静脉血","quantityText":"1次","remarkText":""},{"seqNo":"5","itemName":"血糖","detailText":"","specimenTypeText":"静脉血","quantityText":"1次","remarkText":""},{"seqNo":"6","itemName":"血脂四项","detailText":"低密度脂蛋白胆固醇、高密度脂蛋白胆固醇、甘油三酯、总胆固醇","specimenTypeText":"静脉血","quantityText":"1次","remarkText":""},{"seqNo":"7","itemName":"糖化血红蛋白测定（免疫比浊法）","detailText":"","specimenTypeText":"静脉血","quantityText":"1次","remarkText":""},{"seqNo":"8","itemName":"离子3项","detailText":"钾、钠、氯","specimenTypeText":"静脉血","quantityText":"1次","remarkText":""}],"performOrgName":"检验科","orderingPractitionerName":"示例医师","orderDateText":"2026年06月10日 16:06"}'::jsonb,
+    TIMESTAMP '2026-07-27 00:00:00+08',
+    TIMESTAMP '2026-07-27 16:40:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'ip-labApply-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+-- =============================================================================
+-- cus_frequency 出厂频次（原 health-dev V13__seed_dev_03）
+-- 并入 platform V10：院点与 health-app 均出厂；可重复执行（按 id）
+-- =============================================================================
+INSERT INTO "cus_frequency" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "rate_code", "name", "cycle_type", "day_count", "day_interval", "day_times", "week_cycle_flag", "total_execution_count", "execution_period", "execution_period_unit", "applicable_scenes", "allow_cross_day", "active_flag", "sort_no")
+VALUES
+('320010001000000001', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'QD', '每日一次', 'daily', NULL, NULL, '08:00', NULL, NULL, NULL, NULL, 'all', 'same-day', true, 10),
+('320010001000000002', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'BID', '每日两次', 'daily', NULL, NULL, '08:00,18:00', NULL, NULL, NULL, NULL, 'all', 'same-day', true, 20),
+('320010001000000003', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'TID', '每日三次', 'daily', NULL, NULL, '08:00,12:00,18:00', NULL, NULL, NULL, NULL, 'all', 'same-day', true, 30),
+('320010001000000004', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'QID', '每日四次', 'daily', NULL, NULL, '06:00,12:00,18:00,22:00', NULL, NULL, NULL, NULL, 'all', 'same-day', true, 40),
+('320010001000000005', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'QAM', '每晨一次', 'daily', NULL, NULL, '08:00', NULL, NULL, NULL, NULL, 'all', 'same-day', true, 50),
+('320010001000000006', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'QN', '每晚一次', 'daily', NULL, NULL, '22:00', NULL, NULL, NULL, NULL, 'all', 'same-day', true, 60),
+('320010001000000007', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'HS', '临睡时', 'daily', NULL, NULL, '22:00', NULL, NULL, NULL, NULL, 'all', 'same-day', true, 70),
+('320010001000000008', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'AC', '饭前', 'daily', NULL, NULL, '07:30,11:30,17:30', NULL, NULL, NULL, NULL, 'outpatient,inpatient', 'same-day', true, 80),
+('320010001000000009', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'PC', '饭后', 'daily', NULL, NULL, '08:30,12:30,18:30', NULL, NULL, NULL, NULL, 'outpatient,inpatient', 'same-day', true, 90),
+('320010001000000010', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'QOD', '隔日一次', 'daily', NULL, 2, '08:00', NULL, NULL, NULL, NULL, 'all', 'same-day', true, 100),
+('320010001000000025', '1', '2026-07-28 08:00:00.000+00', '2026-07-28 08:00:00.000+00', '1', '1', false, NULL, NULL, 0, 'Q2D', '两日一次', 'daily', NULL, 2, '08:00', NULL, NULL, NULL, NULL, 'all', 'same-day', true, 101),
+('320010001000000026', '1', '2026-07-28 08:00:00.000+00', '2026-07-28 08:00:00.000+00', '1', '1', false, NULL, NULL, 0, 'Q3D', '三日一次', 'daily', NULL, 3, '08:00', NULL, NULL, NULL, NULL, 'all', 'same-day', true, 102),
+('320010001000000027', '1', '2026-07-28 08:00:00.000+00', '2026-07-28 08:00:00.000+00', '1', '1', false, NULL, NULL, 0, 'Q5D', '五日一次', 'daily', NULL, 5, '08:00', NULL, NULL, NULL, NULL, 'all', 'same-day', true, 103),
+('320010001000000028', '1', '2026-07-28 08:00:00.000+00', '2026-07-28 08:00:00.000+00', '1', '1', false, NULL, NULL, 0, 'Q8D', '八日一次', 'daily', NULL, 8, '08:00', NULL, NULL, NULL, NULL, 'all', 'same-day', true, 104),
+('320010001000000011', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'QW', '每周一次', 'weekly', NULL, NULL, '08:00', true, NULL, NULL, NULL, 'all', 'same-day', true, 110),
+('320010001000000012', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'BIW', '每周两次', 'weekly', NULL, NULL, '08:00,18:00', true, NULL, NULL, NULL, 'inpatient', 'same-day', true, 120),
+('320010001000000013', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'TIW', '每周三次', 'weekly', NULL, NULL, '08:00,12:00,18:00', true, NULL, NULL, NULL, 'inpatient', 'same-day', true, 130),
+('320010001000000014', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'Q12H', '每12小时一次', 'interval', NULL, NULL, NULL, NULL, NULL, 12, 'h', 'all', 'cross-day', true, 140),
+('320010001000000015', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'Q8H', '每8小时一次', 'interval', NULL, NULL, NULL, NULL, NULL, 8, 'h', 'all', 'cross-day', true, 150),
+('320010001000000016', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'Q6H', '每6小时一次', 'interval', NULL, NULL, NULL, NULL, NULL, 6, 'h', 'inpatient,nursing', 'cross-day', true, 160),
+('320010001000000017', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'Q4H', '每4小时一次', 'interval', NULL, NULL, NULL, NULL, NULL, 4, 'h', 'inpatient,nursing', 'cross-day', true, 170),
+('320010001000000018', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'Q3H', '每3小时一次', 'interval', NULL, NULL, NULL, NULL, NULL, 3, 'h', 'inpatient,nursing', 'cross-day', true, 180),
+('320010001000000019', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'Q2H', '每2小时一次', 'interval', NULL, NULL, NULL, NULL, NULL, 2, 'h', 'inpatient,nursing', 'cross-day', true, 190),
+('320010001000000020', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'Q1H', '每小时一次', 'interval', NULL, NULL, NULL, NULL, NULL, 1, 'h', 'inpatient,nursing', 'cross-day', true, 200),
+('320010001000000021', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:38:48.435+00', '1', '1', false, NULL, NULL, 0, 'PRN', '必要时', 'as-needed', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'all', 'same-day', true, 9),
+('320010001000000022', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'SOS', '需要时', 'as-needed', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'all', NULL, true, 220),
+('320010001000000023', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:39:05.116+00', '1', '1', false, NULL, NULL, 0, 'ST', '立即', 'fixed-count', NULL, NULL, NULL, NULL, 1, NULL, NULL, 'all', 'same-day', true, 8),
+('320010001000000024', '1', '2026-06-08 11:37:51.131+00', '2026-06-08 11:37:51.131+00', '1', '1', false, NULL, NULL, 0, 'STAT', '立即执行', 'fixed-count', NULL, NULL, NULL, NULL, 1, NULL, NULL, 'inpatient', NULL, true, 240)
+ON CONFLICT ("id") DO NOTHING;
+
+-- =============================================================================
+-- prt_print_binding 业务场景模板绑定（原 health-dev V17__seed_dev_07）
+-- 护理记录单等 prt_template 已在上方 PRT 段；此处仅绑定种子
+-- =============================================================================
+INSERT INTO "public"."prt_print_binding" (
+    "id", "tenant_id", "organization_id", "binding_code", "bus_no", "name", "enabled",
+    "created_at", "updated_at", "created_by", "updated_by", "is_deleted"
+) VALUES
+(
+    910600000000000011, 0, NULL, 'charge.cashier.receipt', 'charge_receipt', '收费小票', true,
+    '2026-06-22 00:00:00.000+00', '2026-06-22 00:00:00.000+00', 1, 1, false
+),
+(
+    910600000000000012, 0, NULL, 'outpatient.rx.print', 'outpatient_prescription', '门诊处方', true,
+    '2026-06-22 00:00:00.000+00', '2026-06-22 00:00:00.000+00', 1, 1, false
+)
+ON CONFLICT ("id") DO NOTHING;

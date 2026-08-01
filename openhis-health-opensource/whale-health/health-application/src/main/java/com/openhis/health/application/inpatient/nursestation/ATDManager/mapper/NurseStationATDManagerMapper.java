@@ -14,13 +14,10 @@ import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.Disc
 import com.openhis.health.application.inpatient.nursestation.ATDManager.request.ClearDischargedBedRequest;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.request.ExecuteBedOperationRequest;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.request.ExecuteInpatientDischargeRequest;
-import com.openhis.health.application.inpatient.nursestation.ATDManager.request.RecallInpatientDischargeRequest;
 import com.openhis.health.domain.administration.encounter.command.ClearDischargedBedCommand;
 import com.openhis.health.domain.administration.encounter.command.ExecuteInpatientNurseDischargeCommand;
-import com.openhis.health.domain.administration.encounter.command.RecallInpatientDischargeCommand;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseListQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
-import com.openhis.health.domain.workflow.servicerequest.command.RejectServiceRequestToDraftCommand;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 
 import java.time.LocalDateTime;
@@ -285,45 +282,4 @@ public interface NurseStationATDManagerMapper {
      * @return 成功响应
      */
     ClearDischargedBedResponse toClearDischargedBedResponse(Long encounterId);
-
-    /**
-     * 出院嘱退回草稿命令（召回前置，BR-IP-AUD-009）。
-     *
-     * @param serviceRequestId 出院类诊疗请求主键
-     * @param operatorId       操作人主键
-     * @param performerCheckId 校对人 practitioner 主键
-     * @param checkTime        退回时间
-     * @return 退回命令
-     */
-    RejectServiceRequestToDraftCommand toRejectDischargeServiceRequestToDraftCommand(
-        Long serviceRequestId,
-        Long operatorId,
-        Long performerCheckId,
-        LocalDateTime checkTime);
-
-    /**
-     * 出院召回请求 → 领域命令。
-     *
-     * @param request         写请求
-     * @param operatorId      操作人主键
-     * @param wardLocationId  末次已完成病区（仅已清床轨）
-     * @return 出院召回命令
-     */
-    RecallInpatientDischargeCommand toRecallInpatientDischargeCommand(
-        RecallInpatientDischargeRequest request,
-        Long operatorId,
-        Long wardLocationId);
-
-    /**
-     * 出院召回成功响应。
-     *
-     * @param encounterId           就诊主键
-     * @param targetStatusEnum      召回后状态
-     * @param requiresBedAssignment 是否须二次分床
-     * @return 成功响应
-     */
-    RecallInpatientDischargeResponse toRecallInpatientDischargeResponse(
-        Long encounterId,
-        String targetStatusEnum,
-        boolean requiresBedAssignment);
 }

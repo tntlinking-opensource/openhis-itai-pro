@@ -4,40 +4,123 @@
  */
 package com.openhis.whale.crb.application.integration;
 
+import com.openhis.whale.crb.application.support.CrbConfigMaskSupport;
 import com.openhis.whale.crb.domain.config.CrbProperties;
-import com.openhis.whale.crb.domain.push.access.CrbFrontSoftwareSsoAccess;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
 /**
- * 前置 SSO 与连通性 AppService（POST /api/app/infectiousIntegration/{methodName}）。
+ * 前置连通性探测 AppService（POST /api/app/infectiousIntegration/{methodName}）。
+ *
+ * <p><b>DOC-CONFLICT：</b>AS-CRB-MON-001-SDD IF-04 要求调用 {@code NationalFrontSoftwareClient#probeConnectivity}；
+ * 本实现仅读 {@link CrbProperties} 做配置存在性探测（application 不可依赖 gateway 发 HTTP）。</p>
  */
 @Service
 @Validated
 @RequiredArgsConstructor
 public class InfectiousIntegrationAppService {
 
-    private final CrbFrontSoftwareSsoAccess crbFrontSoftwareSsoAccess;
     private final CrbProperties crbProperties;
 
     /**
-     * 构建前置软件 SSO 跳转 token（P1 联调）。
+     * 探测前置软件配置是否齐备（不发 HTTP）。
      *
-     * @param userId 已推送 base_user 的用户 id 字符串
-     * @return token；Mock 模式下返回占位串
+     * @return 配置探测结果
      */
-    public String getFrontSoftwareSsoUrl(String userId) {
-        // Gate：无用户则无法 SSO 到前置待办
-        if (userId == null || userId.isBlank()) {
-            return "";
+    public FrontSoftwareConnectivityDto probeFrontSoftwareConnectivity() {
+        // Pre：读取 yml 绑定配置
+        CrbProperties.FrontSoftware frontSoftware = crbProperties.getFrontSoftware();
+        String baseUrl = trimToNull(frontSoftware.getBaseUrl());
+        String orgCode = trimToNull(frontSoftware.getOrgCode());
+        String license = trimToNull(frontSoftware.getLicense());
+        FrontSoftwareConnectivityDto dto = new FrontSoftwareConnectivityDto();
+        dto.setBaseUrlMasked(CrbConfigMaskSupport.maskBaseUrl(baseUrl));
+        dto.setOrgCode(orgCode);
+        boolean configured = baseUrl != null && orgCode != null && license != null;
+        dto.setConfigured(configured);
+        // 按配置项缺失给出可读提示
+        if (configured) {
+            dto.setMessage("前置 baseUrl/orgCode/license 均已配置（未执行 HTTP 探测）");
+        } else {
+            dto.setMessage("前置配置不完整：请检查 openhis.crb.front-software.*");
         }
-        // Pre：读取院端 license 配置（骨架阶段仅校验非空）
-        String license = crbProperties.getFrontSoftware().getLicense();
-        if (license == null || license.isBlank()) {
-            return "";
+        return dto;
+    }
+
+    /**
+     * 前置配置探测结果 DTO。
+     */
+    public static class FrontSoftwareConnectivityDto {
+
+        /** 是否三项配置均非空。 */
+        private boolean configured;
+
+        /** 脱敏 baseUrl。 */
+        private String baseUrlMasked;
+
+        /** 国家机构代码。 */
+        private String orgCode;
+
+        /** 人类可读说明。 */
+        private String message;
+
+        /**
+         * @return 是否已配置
+         */
+        public boolean isConfigured() {
+            return configured;
         }
-        // Cmd：委托前置 Client 换取 token
-        return crbFrontSoftwareSsoAccess.obtainSsoToken(userId);
+
+        /**
+         * @param configured 是否已配置
+         */
+        public void setConfigured(boolean configured) {
+            this.configured = configured;
+        }
+
+        /**
+         * @return 脱敏 baseUrl
+         */
+        public String getBaseUrlMasked() {
+            return baseUrlMasked;
+        }
+
+        /**
+         * @param baseUrlMasked 脱敏 baseUrl
+         */
+        public void setBaseUrlMasked(String baseUrlMasked) {
+            this.baseUrlMasked = baseUrlMasked;
+        }
+
+        /**
+         * @return 机构代码
+         */
+        public String getOrgCode() {
+            return orgCode;
+        }
+
+        /**
+         * @param orgCode 机构代码
+         */
+        public void setOrgCode(String orgCode) {
+            this.orgCode = orgCode;
+        }
+
+        /**
+         * @return 说明
+         */
+        public String getMessage() {
+            return message;
+        }
+
+        /**
+         * @param message 说明
+         */
+        public void setMessage(String message) {
+            this.message = message;
+        }
     }
 }

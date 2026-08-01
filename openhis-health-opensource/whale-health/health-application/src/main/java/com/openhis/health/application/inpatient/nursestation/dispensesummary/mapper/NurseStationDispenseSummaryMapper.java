@@ -6,6 +6,7 @@ package com.openhis.health.application.inpatient.nursestation.dispensesummary.ma
 
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.assembler.NurseStationDispenseSummaryWriteAssembler.SummaryMergeGroup;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.dto.NurseStationDispenseSummaryPatientGroupDto;
+import com.openhis.health.application.inpatient.nursestation.dispensesummary.dto.NurseStationDispenseSummaryPatientPickupGroupDto;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.dto.NurseStationDispenseSummarySlipHeaderDto;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.dto.NurseStationDispenseSummarySlipLineDto;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.request.PageMedicationSummarySlipHeadersRequest;
@@ -13,6 +14,7 @@ import com.openhis.health.application.inpatient.nursestation.dispensesummary.req
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.CancelMedicationSummaryResponse;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.CreateMedicationSummaryResponse;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.GetMedicationSummarySlipDetailResponse;
+import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.GetMedicationSummarySlipPatientDetailResponse;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.PageMedicationSummarySlipHeadersResponse;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.PagePendingDispenseSummaryLinesResponse;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.SubmitMedicationSummaryResponse;
@@ -86,6 +88,14 @@ public interface NurseStationDispenseSummaryMapper {
         String summaryNo,
         NurseStationDispenseSummarySlipHeaderDto header,
         List<NurseStationDispenseSummarySlipLineDto> lines);
+
+    /**
+     * IF-IP-SUM-09 摆药单查询响应（按患者分组、同 medReqId 合并）。
+     */
+    GetMedicationSummarySlipPatientDetailResponse toGetMedicationSummarySlipPatientDetailResponse(
+        String summaryNo,
+        NurseStationDispenseSummarySlipHeaderDto header,
+        List<NurseStationDispenseSummaryPatientPickupGroupDto> patientGroups);
 
     /**
      * 发放汇总命令。

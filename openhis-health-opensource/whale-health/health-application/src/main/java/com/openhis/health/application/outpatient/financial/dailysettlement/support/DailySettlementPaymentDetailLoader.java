@@ -19,6 +19,7 @@ import com.openhis.health.domain.share.constants.OutpatientDailySettlementConsta
 import com.openhis.health.domain.share.enums.PaymentChannel;
 import com.openhis.health.domain.share.financial.DailySettlementRefundPaymentRules;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.application.shared.financial.PaymentChannelDisplayAssembler;
 import com.openhis.health.application.shared.product.ChargeItemProductLookupHelper;
@@ -38,9 +39,11 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 日结交账 payment 明细 enrichment（项目行、支付方式；BR-OP-DCL-015）。
+ * 日结交账 payment 明细 enrichment（项目行、支付方式、行净额；BR-OP-DCL-015 / BR-OP-DCL-026）。
  *
- * <p>门诊/住院日结 Mapper 共用；读侧经 ChargeItem 与 PaymentRecDetail QueryService（B.6.4）。</p>
+ * <p>门诊/住院日结 Mapper 共用；读侧经 ChargeItem 与 PaymentRecDetail QueryService（B.6.4）。
+ * 行 {@code netAmount}：有收费明细时按带符号 charge 行额代数和回写（医保全个账头表
+ * {@code tendered}/{@code display}=0 时仍展示收费正/退费负）；无明细（预交金等）保留领域预览净额。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -90,7 +93,7 @@ public class DailySettlementPaymentDetailLoader {
     }
 
     /**
-     * 为候选 payment 行填充 chargeLines 与 payMethods。
+     * 为候选 payment 行填充 chargeLines、payMethods，并回写带符号行净额。
      *
      * @param items                   候选 payment DTO
      * @param chargeItemsByPaymentId  paymentId → 收费项
@@ -131,11 +134,13 @@ public class DailySettlementPaymentDetailLoader {
                 reverse,
                 item.getHasInsurance(),
                 item.getKindEnum()));
+            // 有收费明细：行净额改按带符号账单额，避免医保全个账两行均为 0
+            this.applySignedBillNetAmount(item);
         }
     }
 
     /**
-     * 为住院候选 payment 行填充 chargeLines 与 payMethods。
+     * 为住院候选 payment 行填充 chargeLines、payMethods，并回写带符号行净额。
      *
      * @param items                   候选 payment DTO
      * @param chargeItemsByPaymentId  paymentId → 收费项
@@ -176,7 +181,72 @@ public class DailySettlementPaymentDetailLoader {
                 reverse,
                 item.getHasInsurance(),
                 item.getKindEnum()));
+            // 有收费明细：行净额改按带符号账单额，避免医保全个账两行均为 0
+            this.applySignedBillNetAmount(item);
         }
+    }
+
+    /**
+     * 门诊行净额回写：有 chargeLines 时取带符号行额代数和（结算 2 位）；无明细保留原 netAmount。
+     *
+     * @param item 门诊交账候选行
+     */
+    private void applySignedBillNetAmount(DailySettlementPaymentItemDto item) {
+        if (item == null) {
+            return;
+        }
+        BigDecimal signedBillNet = this.sumSignedChargeLineAmounts(item.getChargeLines());
+        if (signedBillNet == null) {
+            // 无收费明细（预交金等）：保留领域 tendered−returned 带符号净额
+            return;
+        }
+        item.setNetAmount(signedBillNet);
+    }
+
+    /**
+     * 住院行净额回写：有 chargeLines 时取带符号行额代数和（结算 2 位）；无明细保留原 netAmount。
+     *
+     * @param item 住院交账候选行
+     */
+    private void applySignedBillNetAmount(InpatientDailySettlementPaymentItemDto item) {
+        if (item == null) {
+            return;
+        }
+        BigDecimal signedBillNet = this.sumSignedChargeLineAmounts(item.getChargeLines());
+        if (signedBillNet == null) {
+            // 无收费明细（预交金等）：保留领域 tendered−returned 带符号净额
+            return;
+        }
+        item.setNetAmount(signedBillNet);
+    }
+
+    /**
+     * 对已带符号的收费项目行求代数和（结算刻度）；无行时返回 null 表示不覆盖。
+     *
+     * @param chargeLines 弹窗项目行（逆向已取负）
+     * @return 结算 2 位净额；无有效行时 null
+     */
+    private BigDecimal sumSignedChargeLineAmounts(List<DailySettlementPaymentChargeLineDto> chargeLines) {
+        if (chargeLines == null || chargeLines.isEmpty()) {
+            return null;
+        }
+        BigDecimal total = BigDecimal.ZERO;
+        boolean hasLine = false;
+        for (DailySettlementPaymentChargeLineDto line : chargeLines) {
+            if (line == null) {
+                continue;
+            }
+            hasLine = true;
+            BigDecimal lineAmount = line.getLineAmount();
+            if (lineAmount == null) {
+                continue;
+            }
+            total = total.add(lineAmount);
+        }
+        if (!hasLine) {
+            return null;
+        }
+        return MonetaryAmountSupport.scaleDisplay(total);
     }
 
     /**
@@ -435,10 +505,12 @@ public class DailySettlementPaymentDetailLoader {
     }
 
     /**
-     * 交账弹窗支付方式展示：先费用性质（自费/医保），再渠道（现金/微信/统筹等）。
+     * 交账弹窗支付方式展示：前缀取 payment 合同费用性质（{@code hasInsurance}），后缀取渠道短名。
+     *
+     * <p>现金/微信等自付渠道在医保合同时须展示「医保·渠道」，禁止按渠道类型误标「自费」（BR-OP-DCL-015）。</p>
      *
      * @param payEnum      持久化 pay_enum
-     * @param hasInsurance 是否医保费用性质
+     * @param hasInsurance 是否医保费用性质（来自 payment.contract_no → fin_contract）
      * @param kindEnum     业务 kind
      * @return 展示名；无法解析时 null
      */
@@ -453,11 +525,11 @@ public class DailySettlementPaymentDetailLoader {
         if (PaymentChannel.CASHIER.equals(channel)) {
             return this.resolveCashierHandoverPayMethodDisplayName(hasInsurance, kindEnum);
         }
-        boolean insuranceLine = PaymentChannel.INSURANCE_FUND.equals(channel)
-            || PaymentChannel.INSURANCE_ACCT.equals(channel);
-        String expenseLabel = insuranceLine
-            ? OutpatientDailySettlementConstants.EXPENSE_INSURANCE_LABEL
-            : OutpatientDailySettlementConstants.EXPENSE_SELF_PAY_LABEL;
+        String expenseLabel = OutpatientDailySettlementConstants.EXPENSE_SELF_PAY_LABEL;
+        // 前缀一律跟合同费用性质，不跟渠道是否统筹/个账
+        if (hasInsurance != null && hasInsurance) {
+            expenseLabel = OutpatientDailySettlementConstants.EXPENSE_INSURANCE_LABEL;
+        }
         String channelLabel = this.resolveHandoverChannelShortLabel(channel, payEnum);
         if (StringUtils.isEmpty(channelLabel)) {
             return null;

@@ -32,4 +32,20 @@ public interface TraceNumberRepository extends JpaRepository<TraceNumber, Long>,
      * @return 主档列表
      */
     List<TraceNumber> findAllByTraceNoInAndIsDeletedFalse(Collection<String> traceNos);
+
+    /**
+     * 判断主表是否已有该品批追溯码（期初/进货曾扫码即 true；与在院态、剩余量无关）。
+     *
+     * <p>发药「有码批 / 无码批」分叉真源：无码批仅写业务行 {@code trace_no}，不写主表流水。</p>
+     *
+     * @param itemTable 品项表
+     * @param itemId    品项主键
+     * @param lotNumber 批号
+     * @return 存在未删除主档则为 true
+     */
+    boolean existsByItemTableAndItemIdAndLotNumberAndIsDeletedFalse(
+        String itemTable,
+        Long itemId,
+        String lotNumber
+    );
 }

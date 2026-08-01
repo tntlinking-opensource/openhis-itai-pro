@@ -20,6 +20,11 @@ public class AvailableInventoryModel {
     /** 主键。 */
     private Long id;
 
+    /**
+     * 库位主键；与库存行 {@code location_id} 一致。
+     */
+    private Long locationId;
+
     /** 批号号。 */
     private String lotNumber;
 

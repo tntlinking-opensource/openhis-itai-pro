@@ -4,8 +4,10 @@
  */
 package com.openhis.health.application.inpatient.doctorstation.diagnosis.mapper;
 
+import com.openhis.health.application.outpatient.doctorstation.diagnosis.support.PatientHistoryCommonDiagnosisRow;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.dto.CommonDiagnosisRowDto;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.dto.EncounterDiagnosisRowDto;
+import com.openhis.health.application.inpatient.doctorstation.diagnosis.request.DeleteEncounterDiagnosisRequest;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.request.SaveEncounterDiagnosisRequest;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.response.CommonDiagnosesResponse;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.response.ConditionDefinitionPageResponse;
@@ -14,7 +16,6 @@ import com.openhis.health.application.inpatient.doctorstation.diagnosis.response
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.response.EncounterDiagnosisResponse;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.response.SaveEncounterDiagnosisResponse;
 import com.openhis.health.domain.administration.encounter.command.BatchUpsertEncounterDiagnosisAssociationCommand;
-import com.openhis.health.domain.clinical.condition.command.SaveDoctorDiagnosisCommand;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.DoctorStationConditionDefinitionRowModel;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.whale.core.application.dto.OptionDto;
@@ -138,43 +139,40 @@ public interface InpatientDoctorStationDiagnosisMapper {
     void validateSaveEncounterDiagnosisRequest(SaveEncounterDiagnosisRequest request);
 
     /**
-     * Request → 保存诊断事实命令。
+     * 组装就诊诊断关联批量 upsert 命令（直挂 conditionDefinitionId + encounterDiagnosisId）。
      *
-     * @param request    请求
+     * @param request    原始请求
      * @param operatorId 操作人
-     * @return 领域命令
-     */
-    SaveDoctorDiagnosisCommand toSaveDoctorDiagnosisCommand(SaveEncounterDiagnosisRequest request, Long operatorId);
-
-    /**
-     * 保存事实后组装就诊诊断关联批量命令。
-     *
-     * @param request           原始请求
-     * @param savedConditionIds 与请求子项顺序一致的诊断事实 id 列表
-     * @param operatorId        操作人
      * @return 关联批量命令
      */
     BatchUpsertEncounterDiagnosisAssociationCommand toBatchUpsertEncounterDiagnosisAssociationCommand(
         SaveEncounterDiagnosisRequest request,
-        List<Long> savedConditionIds,
         Long operatorId);
 
     /**
      * 装配保存响应。
      *
-     * @param savedCount        成功条数
-     * @param savedConditionIds 诊断事实 id
+     * @param savedCount               成功条数
+     * @param savedEncounterDiagnosisIds 就诊诊断行 id
      * @return 响应
      */
-    SaveEncounterDiagnosisResponse toSaveEncounterDiagnosisResponse(int savedCount, List<Long> savedConditionIds);
+    SaveEncounterDiagnosisResponse toSaveEncounterDiagnosisResponse(int savedCount, List<Long> savedEncounterDiagnosisIds);
+
+    /**
+     * 解析删除请求中的就诊诊断行主键。
+     *
+     * @param request 删除请求
+     * @return 就诊诊断行主键
+     */
+    Long resolveDeleteEncounterDiagnosisId(DeleteEncounterDiagnosisRequest request);
 
     /**
      * Gate：删除请求参数校验。
      *
-     * @param conditionId 诊断事实 id
-     * @param encounterId 就诊 id
+     * @param encounterDiagnosisId 就诊诊断行 id
+     * @param encounterId          就诊 id
      */
-    void validateDeleteEncounterDiagnosisRequest(Long conditionId, Long encounterId);
+    void validateDeleteEncounterDiagnosisRequest(Long encounterDiagnosisId, Long encounterId);
 
     /**
      * 装配删除响应。
@@ -194,5 +192,16 @@ public interface InpatientDoctorStationDiagnosisMapper {
      */
     CommonDiagnosisRowDto toCommonDiagnosisRowDto(
         DoctorStationConditionDefinitionRowModel model,
+        Map<String, String> sourceDisplayByCode);
+
+    /**
+     * 将患者历史合并读侧行转为常用诊断快捷行。
+     *
+     * @param model               历史读侧行
+     * @param sourceDisplayByCode 来源码→展示文案
+     * @return 常用诊断行
+     */
+    CommonDiagnosisRowDto toCommonDiagnosisRowDto(
+        PatientHistoryCommonDiagnosisRow model,
         Map<String, String> sourceDisplayByCode);
 }

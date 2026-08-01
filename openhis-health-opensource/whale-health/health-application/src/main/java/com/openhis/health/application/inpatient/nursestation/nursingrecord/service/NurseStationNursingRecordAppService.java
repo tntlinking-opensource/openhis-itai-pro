@@ -124,8 +124,18 @@ public class NurseStationNursingRecordAppService {
         List<OptionDto> allOptions = terminologyOptionLoader.loadOptions(
             TerminologyCodeSystemNameConstants.VITAL_SIGNS_CODE);
         List<OptionDto> nursingOptions = filterNursingRecordVitalSignOptions(allOptions);
+        // Pre：加载意识状态术语供护理记录纸质单下拉
+        List<OptionDto> consciousnessOptions = terminologyOptionLoader.loadOptions(
+            TerminologyCodeSystemNameConstants.CONSCIOUSNESS_CODE);
         // Asm：静态配置 + 术语选项
-        return nursingRecordMapper.buildInitResponse(nursingOptions);
+        LoadNurseStationNursingRecordInitResponse response =
+            nursingRecordMapper.buildInitResponse(nursingOptions);
+        if (consciousnessOptions != null) {
+            response.setConsciousnessOptions(consciousnessOptions);
+        } else {
+            response.setConsciousnessOptions(new ArrayList<>());
+        }
+        return response;
     }
 
     /**
@@ -340,9 +350,8 @@ public class NurseStationNursingRecordAppService {
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             InpatientNurseStationConstants.EX_IP_NRC_204,
             "请重新登录后再保存");
-        Long recorderId = currentPractitionerResolver.requirePractitionerId(
-            InpatientNurseStationConstants.EX_IP_NRC_204,
-            "请重新登录后再保存");
+        // 业务分支：请求指定记录人则用之，否则回落当前登录医务人员
+        Long recorderId = resolveRecorderIdForSave(request.getRecorderId());
         // Pre：合并日期时间为 recordedAt（BR-IP-NRC-003 前置）
         LocalDateTime recordedAt = nursingRecordMapper.toRecordedAt(
             request.getRecordDate(), request.getRecordTime());
@@ -539,6 +548,27 @@ public class NurseStationNursingRecordAppService {
                 "请填写记录日期与时间");
         }
         return ex;
+    }
+
+    /**
+     * 解析保存用记录人：请求指定则校验存在，否则取当前登录医务人员。
+     *
+     * @param requestedRecorderId 请求中的记录人 id（可空）
+     * @return 非空记录人 id
+     */
+    private Long resolveRecorderIdForSave(Long requestedRecorderId) {
+        if (requestedRecorderId != null) {
+            Practitioner practitioner = practitionerQueryService.findById(requestedRecorderId);
+            if (practitioner == null) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_NRC_204,
+                    "所选护士签名无效，请重新选择");
+            }
+            return requestedRecorderId;
+        }
+        return currentPractitionerResolver.requirePractitionerId(
+            InpatientNurseStationConstants.EX_IP_NRC_204,
+            "请重新登录后再保存");
     }
 
     /**

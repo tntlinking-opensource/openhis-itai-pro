@@ -32,6 +32,7 @@ import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.PublicationStatus;
+import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.health.domain.workflow.inventoryitem.entity.InventoryItem;
 import com.openhis.health.domain.workflow.inventoryitem.entity.InventoryLock;
@@ -40,6 +41,7 @@ import com.openhis.health.domain.workflow.inventoryitem.queries.InventoryItemQue
 import com.openhis.health.domain.workflow.inventoryitem.queries.InventoryProductAggregateKey;
 import com.openhis.health.domain.workflow.inventoryitem.queries.WarehouseInventoryDetailPageQuery;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.AvailableInventoryModel;
+import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryProductLatestExpiryNearModel;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryProductQuantityAggregateModel;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryAvailSumModel;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryCatalogAvailabilityRowModel;
@@ -169,6 +171,8 @@ public class InventoryItemQueryService {
         for (InventoryItem row : candidates) {
             AvailableInventoryModel model = new AvailableInventoryModel();
             model.setId(row.getId());
+            // 调价子表按库房拆行依赖本字段；其它调用方可忽略
+            model.setLocationId(row.getLocationId());
             model.setLotNumber(row.getLotNumber());
             model.setExpirationDate(row.getExpirationDate());
             model.setQuantity(row.getQuantity());
@@ -218,6 +222,7 @@ public class InventoryItemQueryService {
             model.setLocationId(row.getLocationId());
             model.setLotNumber(row.getLotNumber());
             model.setExpirationDate(row.getExpirationDate());
+            model.setCreatedAt(row.getCreatedAt());
             model.setQuantity(row.getQuantity());
             result.add(model);
         }
@@ -485,6 +490,7 @@ public class InventoryItemQueryService {
             model.setLocationId(row.getLocationId());
             model.setLotNumber(row.getLotNumber());
             model.setExpirationDate(row.getExpirationDate());
+            model.setCreatedAt(row.getCreatedAt());
             model.setQuantity(row.getQuantity());
             result.add(model);
         }
@@ -635,6 +641,27 @@ public class InventoryItemQueryService {
     }
 
     /**
+     * 列出库房下未删除库存行（期初整库替换清账读侧 · 裁决 4B）。
+     *
+     * @param locationId 库房位置主键
+     * @return 库存读模型列表；库位空时返回空列表
+     */
+    public List<InventoryItemModel> listByLocationId(Long locationId) {
+        if (locationId == null) {
+            return new ArrayList<>();
+        }
+        List<InventoryItem> rows = inventoryItemRepository.findByLocationIdAndIsDeletedFalse(locationId);
+        List<InventoryItemModel> result = new ArrayList<>();
+        if (rows == null || rows.isEmpty()) {
+            return result;
+        }
+        for (InventoryItem row : rows) {
+            result.add(this.toItemModel(row));
+        }
+        return result;
+    }
+
+    /**
      * 乐观锁版本比对：入参或实体缺 version 时视为不匹配。
      *
      * @param id 库存项主键
@@ -719,11 +746,27 @@ public class InventoryItemQueryService {
                         cb.like(cb.lower(root.get(FieldNameConstants.LOT_NUMBER)), likeIc),
                         cb.like(cb.lower(root.get(FieldNameConstants.PY_STR)), likeIc),
                         cb.like(cb.lower(root.get(FieldNameConstants.WB_STR)), likeIc)));
+                    // B.2.1：库存选品关键字精确全等置顶
+                    KeywordExactFirstOrderSupport.applyExactFirstOrder(
+                        cq,
+                        cb,
+                        trimmed,
+                        List.of(cb.desc(root.get(FieldNameConstants.ID))),
+                        root.get(FieldNameConstants.NAME),
+                        root.get(FieldNameConstants.LOT_NUMBER),
+                        root.get(FieldNameConstants.PY_STR),
+                        root.get(FieldNameConstants.WB_STR));
                 }
             }
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
         };
-        return inventoryItemRepository.findAll(specification, pageable).map(this::toItemModel);
+        // 关键字非空时剥掉 Pageable Sort，保留 Spec 精确优先 ORDER BY
+        Pageable effective = pageable;
+        if (query != null && StringUtils.isNotEmpty(query.getKeyword())
+            && pageable != null && pageable.getSort().isSorted()) {
+            effective = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
+        }
+        return inventoryItemRepository.findAll(specification, effective).map(this::toItemModel);
     }
 
     /**
@@ -927,6 +970,16 @@ public class InventoryItemQueryService {
                         root, cb, query.getResolvedDeviceDefinitionIdsForKeyword()));
                 }
                 predicates.add(cb.or(keywordOr.toArray(new jakarta.persistence.criteria.Predicate[0])));
+                // B.2.1：库存明细关键字对冗余列精确全等置顶（定义 id 命中无法在本表做全等，仅作次级）
+                KeywordExactFirstOrderSupport.applyExactFirstOrder(
+                    cq,
+                    cb,
+                    trimmed,
+                    List.of(cb.desc(root.get(FieldNameConstants.ID))),
+                    root.get(FieldNameConstants.NAME),
+                    root.get(FieldNameConstants.LOT_NUMBER),
+                    root.get(FieldNameConstants.PY_STR),
+                    root.get(FieldNameConstants.WB_STR));
             }
             if (query.getMedicationCategoryCodes() != null && !query.getMedicationCategoryCodes().isEmpty()) {
                 predicates.add(this.medicationDefinitionItemPredicate(root, cb, query.getResolvedMedicationDefinitionIds()));
@@ -946,7 +999,7 @@ public class InventoryItemQueryService {
     }
 
     /**
-     * 库存预警：按全院品种聚合拆零数量（各库房合计，仅 quantity &gt; 0 的未删行）。
+     * 库存预警：按全院品种聚合拆零数量（各库房合计，含 quantity=0 的未删行；全院合计为 0 亦须出候选）。
      *
      * @return 聚合行列表
      */
@@ -955,8 +1008,8 @@ public class InventoryItemQueryService {
         CriteriaQuery<Object[]> cq = cb.createQuery(Object[].class);
         Root<InventoryItem> root = cq.from(InventoryItem.class);
         List<Predicate> predicates = new ArrayList<>();
+        // 全院预警须覆盖断货：不排除 quantity=0 行，合计可为 0
         predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
-        predicates.add(cb.greaterThan(root.get(FieldNameConstants.QUANTITY), BigDecimal.ZERO));
         cq.multiselect(
             root.get(FieldNameConstants.ITEM_TABLE),
             root.get(FieldNameConstants.ITEM_ID),
@@ -995,6 +1048,74 @@ public class InventoryItemQueryService {
     public long countExpireWarningInventoryRows(WarehouseInventoryDetailPageQuery query) {
         Specification<InventoryItem> specification = this.buildWarehouseInventoryDetailSpecification(query);
         return this.inventoryItemRepository.count(specification);
+    }
+
+    /**
+     * 订货快捷：按品种取在库批（quantity&gt;0）中<strong>最晚效期</strong>一批，若该批剩余天数 ≤ 阈值则返回。
+     *
+     * <p>仅本聚合 {@code wkf_inventory_item} Criteria（B.6.4）；{@code expiration_date} 为 null 的批不参与最晚竞选。
+     * 与 {@link #countExpireWarningInventoryRows} / 明细「任意近效批」口径不同（AS-INV-WHS-001 BR-WHS-PO-014）。</p>
+     *
+     * @param expireWithinDays 剩余天数阈值（含）；&lt;0 返回空列表
+     * @param itemTable        可选物品表收窄；空表示药品+耗材均参与
+     * @return 命中品种行（含最晚效期时刻）；永不为 null
+     */
+    public List<InventoryProductLatestExpiryNearModel> listProductKeysWhoseLatestLotNearExpiry(
+        int expireWithinDays,
+        String itemTable) {
+        // 非法阈值不产生快捷订货候选，避免误扫全表
+        if (expireWithinDays < 0) {
+            return List.of();
+        }
+        CriteriaBuilder cb = this.entityManager.getCriteriaBuilder();
+        CriteriaQuery<Object[]> cq = cb.createQuery(Object[].class);
+        Root<InventoryItem> root = cq.from(InventoryItem.class);
+        List<Predicate> predicates = new ArrayList<>();
+        predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+        // 仅账面量 > 0 的批参与「最晚一批」竞选
+        predicates.add(cb.greaterThan(root.get(FieldNameConstants.QUANTITY), BigDecimal.ZERO));
+        predicates.add(cb.isNotNull(root.get(FieldNameConstants.EXPIRATION_DATE)));
+        // 表头药/耗收窄：可选 item_table
+        if (StringUtils.isNotEmpty(itemTable)) {
+            predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_TABLE), itemTable.trim()));
+        }
+        // 本表 GROUP BY：品种键 + 最晚效期（禁止 JOIN 他聚合，B.6.4）
+        cq.multiselect(
+            root.get(FieldNameConstants.ITEM_TABLE),
+            root.get(FieldNameConstants.ITEM_ID),
+            cb.greatest(root.<LocalDateTime>get(FieldNameConstants.EXPIRATION_DATE)));
+        cq.where(predicates.toArray(new Predicate[0]));
+        cq.groupBy(
+            root.get(FieldNameConstants.ITEM_TABLE),
+            root.get(FieldNameConstants.ITEM_ID));
+        TypedQuery<Object[]> typedQuery = this.entityManager.createQuery(cq);
+        List<Object[]> rows = typedQuery.getResultList();
+        LocalDate today = LocalDate.now();
+        List<InventoryProductLatestExpiryNearModel> result = new ArrayList<>();
+        for (Object[] row : rows) {
+            // 投影列残缺则跳过，避免 ClassCast/NPE
+            if (row == null || row.length < 3) {
+                continue;
+            }
+            String table = (String) row[0];
+            Long itemId = (Long) row[1];
+            LocalDateTime latestExpiration = (LocalDateTime) row[2];
+            // 无表名/主键/效期则跳过
+            if (StringUtils.isEmpty(table) || itemId == null || latestExpiration == null) {
+                continue;
+            }
+            long remainingDays = ChronoUnit.DAYS.between(today, latestExpiration.toLocalDate());
+            // 剩余天数 ≤ 阈值（含已过期负数）→ 最晚一批已近效；未近效则不入结果
+            if (remainingDays > expireWithinDays) {
+                continue;
+            }
+            InventoryProductLatestExpiryNearModel model = new InventoryProductLatestExpiryNearModel();
+            model.setItemTable(table.trim());
+            model.setItemId(itemId);
+            model.setLatestExpirationDate(latestExpiration);
+            result.add(model);
+        }
+        return result;
     }
 
     /**
@@ -1213,11 +1334,10 @@ public class InventoryItemQueryService {
     }
 
     /**
-     * 门诊发药前置库存断言：库存账面数量一律为<strong>最小单位（拆零单位）</strong>； 先将发放行业务单位数量按目录换算比转为最小单位，再与候选批次可用量之和比较。
+     * 门诊发药前置库存断言：库存账面数量一律为<strong>最小单位（拆零单位）</strong>；
+     * 先将发放行业务单位数量按目录换算比转为最小单位，再与候选批次可用量之和比较。
      *
-     * <p>
-     * 若指定批号则仅累计匹配批次；批号为空则累计全部可用批次。
-     * </p>
+     * <p>若指定批号则仅累计匹配批次；批号为空则累计全部可用批次。不足时文案带药品名与批号。</p>
      *
      * @param itemTableName 物品主表名（如
      *            {@link com.openhis.health.domain.share.constants.TableNameConstants#MED_MEDICATION_DEFINITION}）
@@ -1227,15 +1347,13 @@ public class InventoryItemQueryService {
      * @param requiredQuantityInBusinessUnit 发放行业务单位下的需求数量
      * @param businessUnitCode 与发放行一致的单位编码（通常同 {@code MedicationDispense#getUnitCode()}）
      * @param productDefinition 药品产品定义读模型，用于单位换算
+     * @param productDisplayName 药品展示名；用于不足提示定位具体品种，可空则回落为「药品」
      * @throws BusinessException
      *             参数不完整、无法换算或可用量不足（{@link com.openhis.health.domain.share.constants.ErrorCodeConstants#EX_OPP_205_STOCK_OR_LOCATION_INVALID}）
      */
-    /**
-     * 发药前库存充足断言（单位换算基于 {@link com.openhis.health.domain.share.product.MedicationProductUnitConversionSource}）。
-     */
     public void assertSufficientForMedicationDispense(String itemTableName, Long medicationId, Long pharmacyLocationId,
         String lotNumber, BigDecimal requiredQuantityInBusinessUnit, String businessUnitCode,
-        MedicationProductUnitConversionSource productDefinition) {
+        MedicationProductUnitConversionSource productDefinition, String productDisplayName) {
         if (medicationId == null || pharmacyLocationId == null) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "库存断言缺少药品或库房标识");
         }
@@ -1266,14 +1384,27 @@ public class InventoryItemQueryService {
             sum = sum.add(row.getQuantity());
         }
         if (sum.compareTo(requiredInSplitUnit) < 0) {
-            throw new BusinessException(ErrorCodeConstants.EX_OPP_205_STOCK_OR_LOCATION_INVALID, "可用库存不足以覆盖待发数量");
+            throw new BusinessException(ErrorCodeConstants.EX_OPP_205_STOCK_OR_LOCATION_INVALID,
+                buildMedicationDispenseInsufficientStockMessage(productDisplayName, lotNumber));
         }
     }
 
     /**
      * 发药前库存充足断言（物理库存 − 已汇总的待发预占，GAP-EXE-003）。
      *
-     * @param reserveInSplitUnit 待发预占量（最小单位）；由 querysupport 经 MedicationDispense QS 汇总后传入
+     * <p>{@code lotNumber} 非空时本方法仅累计该批物理量；调用方传入的 {@code reserveInSplitUnit}
+     * <strong>必须</strong>已按同批号收窄（见 {@code MedicationDispenseQueryService#sumDispenseExeReserveQuantityInSplitUnit}
+     * 的 {@code lotNumber} 参数），禁止跨批预占扣减本批物理量。</p>
+     *
+     * @param itemTableName                  物品主表名
+     * @param medicationId                   药品定义主键
+     * @param pharmacyLocationId             发放库房库位主键
+     * @param lotNumber                      批号；可空表示不按批收窄物理量
+     * @param requiredQuantityInBusinessUnit 发放行业务单位需求量
+     * @param businessUnitCode               与发放行一致的单位编码
+     * @param productDefinition              单位换算源
+     * @param reserveInSplitUnit             待发预占量（最小单位）；须与 {@code lotNumber} 同口径
+     * @param productDisplayName             药品展示名；用于不足提示定位具体品种，可空则回落为「药品」
      */
     public void assertSufficientForMedicationDispenseGivenReserve(
         String itemTableName,
@@ -1283,7 +1414,8 @@ public class InventoryItemQueryService {
         BigDecimal requiredQuantityInBusinessUnit,
         String businessUnitCode,
         MedicationProductUnitConversionSource productDefinition,
-        BigDecimal reserveInSplitUnit) {
+        BigDecimal reserveInSplitUnit,
+        String productDisplayName) {
         if (medicationId == null || pharmacyLocationId == null) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "库存断言缺少药品或库房标识");
         }
@@ -1293,6 +1425,7 @@ public class InventoryItemQueryService {
         if (StringUtils.isEmpty(itemTableName)) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "库存断言缺少物品主表名");
         }
+        // Pre：预占空视为 0，避免 NPE
         BigDecimal safeReserve = reserveInSplitUnit;
         if (safeReserve == null) {
             safeReserve = BigDecimal.ZERO;
@@ -1306,6 +1439,7 @@ public class InventoryItemQueryService {
             if (row.getQuantity() == null) {
                 continue;
             }
+            // 有批号时只累计匹配批次，与预占同批口径对齐
             if (StringUtils.isNotEmpty(lotNumber)) {
                 String rowLot = row.getLotNumber();
                 if (rowLot == null) {
@@ -1317,10 +1451,30 @@ public class InventoryItemQueryService {
             }
             physicalSum = physicalSum.add(row.getQuantity());
         }
+        // Gate：净可用 = 物理(批) − 预占(同批)；不足则 EX-OPP-205
         BigDecimal netAvailable = physicalSum.subtract(safeReserve);
         if (netAvailable.compareTo(requiredInSplitUnit) < 0) {
-            throw new BusinessException(ErrorCodeConstants.EX_OPP_205_STOCK_OR_LOCATION_INVALID, "可用库存不足以覆盖待发数量");
+            throw new BusinessException(ErrorCodeConstants.EX_OPP_205_STOCK_OR_LOCATION_INVALID,
+                buildMedicationDispenseInsufficientStockMessage(productDisplayName, lotNumber));
         }
+    }
+
+    /**
+     * 组装发药库存不足提示：点名品种，有批号时一并带上，便于药房定位。
+     *
+     * @param productDisplayName 药品展示名；空则回落「药品」
+     * @param lotNumber          批号；可空
+     * @return 面向用户的不足文案
+     */
+    private static String buildMedicationDispenseInsufficientStockMessage(String productDisplayName, String lotNumber) {
+        String displayName = productDisplayName;
+        if (StringUtils.isEmpty(displayName)) {
+            displayName = "药品";
+        }
+        if (StringUtils.isNotEmpty(lotNumber)) {
+            return "【" + displayName + "】批号" + lotNumber.trim() + "可用库存不足以覆盖待发数量";
+        }
+        return "【" + displayName + "】可用库存不足以覆盖待发数量";
     }
 
     /**

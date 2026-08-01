@@ -15,10 +15,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -42,20 +45,132 @@ public class YbPersonCacheDomainService {
      */
     public Optional<YbPersonCache> findValidPersonCache(YbPersonQueryCommand command, Long tenantId) {
         String certno = resolvePersonCacheCertno(command, null);
-        if ("01".equals(trimToEmpty(command.getMdtrtCertType())) && certno != null) {
+        // 卡串每次读卡可能变化；有身份证号时优先命中稳定别名键
+        if (certno != null) {
             Optional<YbPersonCache> byCertno = findPersonCacheRow(
                 command.getContractId(), PERSON_CACHE_CERTNO_ALIAS_TYPE, certno, tenantId);
             if (byCertno.isPresent() && isPersonCacheValid(byCertno.get())) {
                 return byCertno;
             }
         }
-        Optional<YbPersonCache> byCredential = findPersonCacheRow(
-            command.getContractId(),
-            command.getMdtrtCertType(),
-            command.getMdtrtCertNo(),
-            tenantId);
-        if (byCredential.isPresent() && isPersonCacheValid(byCredential.get())) {
-            return byCredential;
+        String mdtrtCertNo = trimToEmpty(command.getMdtrtCertNo());
+        if (!isEmpty(mdtrtCertNo)) {
+            Optional<YbPersonCache> byCredential = findPersonCacheRow(
+                command.getContractId(),
+                command.getMdtrtCertType(),
+                mdtrtCertNo,
+                tenantId);
+            if (byCredential.isPresent() && isPersonCacheValid(byCredential.get())) {
+                return byCredential;
+            }
+        }
+        // Pre：仅有 03 卡串主行、无 02 别名时，按 snapshot.certno 回落（签发补 psn/参保地）
+        if (certno != null && command.getContractId() != null && tenantId != null) {
+            return findValidBySnapshotCertno(command.getContractId(), certno, tenantId);
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * 按契约 + 身份证号查找当日有效人员缓存（读卡后、尚未 2201 建档时供 5301 解析 psnNo）。
+     *
+     * @param contractId 费用性质契约主键
+     * @param idCard     患者身份证号
+     * @param tenantId   租户 ID
+     * @return 有效缓存行；参数不全或未命中时返回空
+     */
+    public Optional<YbPersonCache> findValidByContractIdAndIdCard(
+        Long contractId, String idCard, Long tenantId) {
+        if (contractId == null || tenantId == null || isEmpty(idCard)) {
+            return Optional.empty();
+        }
+        YbPersonQueryCommand command = new YbPersonQueryCommand();
+        command.setContractId(contractId);
+        command.setMdtrtCertType(PERSON_CACHE_CERTNO_ALIAS_TYPE);
+        command.setMdtrtCertNo(idCard.trim());
+        command.setCertno(idCard.trim());
+        return findValidPersonCache(command, tenantId);
+    }
+
+    /**
+     * 按契约 + 身份证号查找当日未过期的读卡主凭证缓存。
+     *
+     * <p>优先 {@code 01}/{@code 03}（电子凭证/社保卡）；若当日仅以身份证读卡则允许 {@code 02}。
+     * 避免优先命中仅作别名键的 {@code 02} 行。按 {@code cached_at} 倒序。</p>
+     *
+     * @param contractId 费用性质契约主键
+     * @param idCard     患者身份证号（匹配 snapshot.certno）
+     * @param tenantId   租户 ID
+     * @return 读卡主凭证缓存行；参数不全或未命中时返回空
+     */
+    public Optional<YbPersonCache> findValidPrimaryReadCertByContractIdAndIdCard(
+        Long contractId, String idCard, Long tenantId) {
+        if (contractId == null || tenantId == null || isEmpty(idCard)) {
+            return Optional.empty();
+        }
+        String normalized = normalizePersonCacheCertno(idCard);
+        if (normalized == null) {
+            return Optional.empty();
+        }
+        List<YbPersonCache> rows = personCacheRepository
+            .findByContractIdAndTenantIdAndIsDeletedFalseAndExpireAtAfterOrderByCachedAtDesc(
+                contractId, tenantId, LocalDateTime.now());
+        YbPersonCache fallback02 = null;
+        for (YbPersonCache row : rows) {
+            if (row == null || !isPersonCacheValid(row)) {
+                continue;
+            }
+            if (isEmpty(row.getMdtrtCertNo()) || isEmpty(row.getSnapshotJson())) {
+                continue;
+            }
+            if (!row.getSnapshotJson().toUpperCase().contains(normalized)) {
+                continue;
+            }
+            String type = trimToEmpty(row.getMdtrtCertType());
+            if ("01".equals(type) || "03".equals(type)) {
+                return Optional.of(row);
+            }
+            if ("02".equals(type) && fallback02 == null) {
+                fallback02 = row;
+            }
+        }
+        return Optional.ofNullable(fallback02);
+    }
+
+    /**
+     * @deprecated 请用 {@link #findValidPrimaryReadCertByContractIdAndIdCard}；保留兼容旧调用。
+     */
+    @Deprecated
+    public Optional<YbPersonCache> findValidElectronicCertByContractIdAndIdCard(
+        Long contractId, String idCard, Long tenantId) {
+        return findValidPrimaryReadCertByContractIdAndIdCard(contractId, idCard, tenantId)
+            .filter(row -> "01".equals(trimToEmpty(row.getMdtrtCertType())));
+    }
+
+    /**
+     * 在未过期缓存中按 snapshot 含身份证号回落命中（兼容仅写了 03 主行的场景）。
+     *
+     * @param contractId 契约 ID
+     * @param idCard     规范化前的身份证号
+     * @param tenantId   租户
+     * @return 命中行
+     */
+    private Optional<YbPersonCache> findValidBySnapshotCertno(
+        Long contractId, String idCard, Long tenantId) {
+        String normalized = normalizePersonCacheCertno(idCard);
+        if (normalized == null) {
+            return Optional.empty();
+        }
+        List<YbPersonCache> rows = personCacheRepository
+            .findByContractIdAndTenantIdAndIsDeletedFalseAndExpireAtAfterOrderByCachedAtDesc(
+                contractId, tenantId, LocalDateTime.now());
+        for (YbPersonCache row : rows) {
+            if (row == null || isEmpty(row.getSnapshotJson())) {
+                continue;
+            }
+            if (row.getSnapshotJson().toUpperCase().contains(normalized)) {
+                return Optional.of(row);
+            }
         }
         return Optional.empty();
     }
@@ -63,11 +178,15 @@ public class YbPersonCacheDomainService {
     /**
      * 将 1101 查询结果 upsert 至当日人员信息缓存（含身份证号别名键）。
      *
+     * <p>使用 {@code REQUIRES_NEW}：{@code getPersonInfo} 等查询名方法由框架开只读事务，
+     * 强制刷新仍须写缓存；独立可写事务避免「只读事务中 INSERT」。</p>
+     *
      * @param command      1101 查询命令
      * @param result       平台返回的人员信息
      * @param snapshotJson 原始应答 JSON 快照
      * @param tenantId     租户 ID
      */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void persistFrom1101(
         YbPersonQueryCommand command,
         YbPersonInfoResult result,

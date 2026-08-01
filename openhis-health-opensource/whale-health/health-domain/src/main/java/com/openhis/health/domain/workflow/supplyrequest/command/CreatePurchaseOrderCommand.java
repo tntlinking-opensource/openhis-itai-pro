@@ -57,6 +57,13 @@ public class CreatePurchaseOrderCommand extends BatchCommand<CreatePurchaseOrder
         private String purposeTypeEnum;
         /** 目标位置主键。 */
         private Long purposeLocationId;
+        /**
+         * 可选来源科室采购申请单号（{@code original_bus_no}）；空表示手工直建。
+         *
+         * <p>非空时须指向已同意 {@link com.openhis.health.domain.share.enums.SupplyType#DEPT_PURCHASE_REQUEST}，
+         * 且未被其它未删除订货占用（BR-WHS-PO-010/012）。修订时由领域自存量保留，禁止切换。</p>
+         */
+        private String originalBusNo;
         /** 供应商主键。 */
         private Long supplierId;
         /** 期望/业务时间（制单时刻，由前端传入）。 */

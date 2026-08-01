@@ -9,12 +9,14 @@ import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestDetailQueryModel;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.enums.TherapyType;
 import com.openhis.health.domain.share.product.MedicationProductUnitConversionSource;
 import com.openhis.health.domain.workflow.inventoryitem.support.MedicationProductQuantityToSplitUnitConverter;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 /**
  * 住院药嘱 {@code quantity}/{@code unit_code} 与发放行对齐口径（护士执行写发药、药房配药门禁共用）。
@@ -45,6 +47,72 @@ public final class InpatientMedicationRequestExecutionMeasureHelper {
             return requestQuantity;
         }
         return BigDecimal.ONE;
+    }
+
+    /**
+     * 按槽位解析发药数量：开嘱日首次槽且填了首日量时用 {@code firstDose}，否则用常规单次量（BR-IP-ORD-030）。
+     *
+     * @param therapyEnum     治疗类型 code
+     * @param requestQuantity 常规单次/总量
+     * @param firstDose       首日/首次用量，可空
+     * @param planTime        本槽 planTime
+     * @param firstPlanTime   开嘱日首次 planTime，可空
+     * @return 本槽发药数量
+     */
+    public static BigDecimal resolveDispenseQuantityForExecutionSlot(
+        String therapyEnum,
+        BigDecimal requestQuantity,
+        BigDecimal firstDose,
+        LocalDateTime planTime,
+        LocalDateTime firstPlanTime) {
+        if (!isLongTermTherapy(therapyEnum)) {
+            return resolveDispenseQuantityFromRequest(requestQuantity);
+        }
+        if (firstDose == null) {
+            return resolveDispenseQuantityFromRequest(requestQuantity);
+        }
+        if (!LongTermFirstExecutionSlotSupport.isFirstExecutionSlot(planTime, firstPlanTime)) {
+            return resolveDispenseQuantityFromRequest(requestQuantity);
+        }
+        // 首次槽换量：首日用量须 >0（域已校验），此处直接采用
+        return firstDose;
+    }
+
+    /**
+     * 按槽位解析发药单位：首次槽有首日单位则用之，否则常规单位。
+     *
+     * @param therapyEnum       治疗类型
+     * @param requestUnitCode   常规单位
+     * @param firstDoseUnitCode 首日单位，可空
+     * @param planTime          本槽 planTime
+     * @param firstPlanTime     首次 planTime
+     * @return 单位编码（可能 null）
+     */
+    public static String resolveDispenseUnitCodeForExecutionSlot(
+        String therapyEnum,
+        String requestUnitCode,
+        String firstDoseUnitCode,
+        LocalDateTime planTime,
+        LocalDateTime firstPlanTime) {
+        if (isLongTermTherapy(therapyEnum)
+            && LongTermFirstExecutionSlotSupport.isFirstExecutionSlot(planTime, firstPlanTime)
+            && !StringUtils.isEmpty(firstDoseUnitCode)) {
+            return firstDoseUnitCode.trim();
+        }
+        return resolveDispenseUnitCodeFromRequest(requestUnitCode);
+    }
+
+    /**
+     * 是否长期治疗类型。
+     *
+     * @param therapyEnum therapy code
+     * @return true=长期
+     */
+    private static boolean isLongTermTherapy(String therapyEnum) {
+        if (StringUtils.isEmpty(therapyEnum)) {
+            return false;
+        }
+        return TherapyType.LONG_TERM.getCode().equals(therapyEnum.trim());
     }
 
     /**

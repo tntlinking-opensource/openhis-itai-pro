@@ -45,4 +45,12 @@ public class NurseStationOrderViewDisplayContext {
 
     /** 库位 id → 名称。 */
     private Map<Long, String> locationNameById;
+
+    /** 校对人主键 + 就诊主键（SOH 分隔）→ 校对科室展示名。 */
+    private Map<String, String> performerCheckOrgDisplayByKey;
+
+    /**
+     * 药品申请主键 → 展示名（供皮试检查 companion 追加「关联：药名」）。
+     */
+    private Map<Long, String> medicationAdviceNameByRequestId;
 }

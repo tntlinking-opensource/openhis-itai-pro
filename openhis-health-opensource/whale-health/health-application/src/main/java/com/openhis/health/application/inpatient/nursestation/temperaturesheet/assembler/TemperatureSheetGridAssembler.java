@@ -15,13 +15,14 @@ import com.openhis.health.application.inpatient.nursestation.temperaturesheet.su
 import com.openhis.health.domain.diagnosis.vitalsign.queries.model.VitalSignDetailRowQueryModel;
 import com.openhis.health.domain.diagnosis.vitalsign.queries.model.VitalSignHeaderQueryModel;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -29,7 +30,10 @@ import java.util.Map;
  * 体温单日×6 槽宽表与派生元数据装配（IF-IP-TMP-02 · SDD §3.2 步骤 7～8）。
  */
 @Component
+@RequiredArgsConstructor
 public class TemperatureSheetGridAssembler {
+
+    private final TemperatureSheetRecordedAtResolver temperatureSheetRecordedAtResolver;
 
     /**
      * 装配日×6 槽宽表行与派生元数据（住院天数/周次/术后天数）。
@@ -73,7 +77,6 @@ public class TemperatureSheetGridAssembler {
         if (dateFrom == null || dateTo == null) {
             return rows;
         }
-        Map<LocalDateTime, VitalSignHeaderQueryModel> headerByRecordedAt = indexHeadersByRecordedAt(headers);
         Map<Long, List<VitalSignDetailRowQueryModel>> detailsByHeaderId =
             TemperatureSheetDetailItemHelper.indexDetailsByHeaderId(details);
         LocalDate cursor = dateFrom;
@@ -81,12 +84,10 @@ public class TemperatureSheetGridAssembler {
             TemperatureSheetGridRowDto row = new TemperatureSheetGridRowDto();
             row.setRecordDate(cursor);
             List<TemperatureSheetGridSlotCellDto> slotCells = new ArrayList<>();
+            // 图表仍 6 列：同日落在该测量区间的记录取最晚一条
             for (String timeSlot : TemperatureSheetRecordedAtResolver.TIME_SLOTS) {
-                LocalDateTime recordedAt = cursor.atTime(Integer.parseInt(timeSlot), 0);
-                slotCells.add(buildSlotCell(
-                    timeSlot,
-                    headerByRecordedAt.get(recordedAt),
-                    detailsByHeaderId));
+                VitalSignHeaderQueryModel header = resolveLatestHeaderInChartSlot(cursor, timeSlot, headers);
+                slotCells.add(buildSlotCell(timeSlot, header, detailsByHeaderId));
             }
             row.setSlotCells(slotCells);
             rows.add(row);
@@ -133,12 +134,12 @@ public class TemperatureSheetGridAssembler {
     }
 
     /**
-     * 装配指定回显日的 6 槽录入数据（含明细项与 remark 投影项）。
+     * 装配指定回显日的录入数据（按实际测量时分回显，含明细项与 remark 投影项）。
      *
      * @param focusRecordDate 回显日
      * @param headers         该日主表
      * @param details         该日明细
-     * @return 6 槽回显列表
+     * @return 回显列表（timeSlot 为 HH:mm；无记录时为空列表）
      */
     public List<TemperatureSheetFillSlotDto> assembleFillSlots(
         LocalDate focusRecordDate,
@@ -148,35 +149,72 @@ public class TemperatureSheetGridAssembler {
         if (focusRecordDate == null) {
             return fillSlots;
         }
-        Map<LocalDateTime, VitalSignHeaderQueryModel> headerByRecordedAt = indexHeadersByRecordedAt(headers);
         Map<Long, List<VitalSignDetailRowQueryModel>> detailsByHeaderId =
             TemperatureSheetDetailItemHelper.indexDetailsByHeaderId(details);
-        for (String timeSlot : TemperatureSheetRecordedAtResolver.TIME_SLOTS) {
-            LocalDateTime recordedAt = focusRecordDate.atTime(Integer.parseInt(timeSlot), 0);
-            VitalSignHeaderQueryModel header = headerByRecordedAt.get(recordedAt);
-            TemperatureSheetFillSlotDto slot = new TemperatureSheetFillSlotDto();
-            slot.setTimeSlot(timeSlot);
-            if (header != null) {
-                slot.setVitalSignId(header.getId());
-                List<TemperatureSheetDetailItemDto> itemDtos = TemperatureSheetDetailItemHelper.toItemDtos(
-                    detailsByHeaderId.get(header.getId()),
-                    header.getRemark());
-                slot.setDetailItems(itemDtos);
+        List<VitalSignHeaderQueryModel> dayHeaders = listHeadersOnDate(focusRecordDate, headers);
+        dayHeaders.sort(Comparator.comparing(VitalSignHeaderQueryModel::getRecordedAt));
+        // 按实际 recordedAt 逐条回显，供前端自选时分编辑
+        for (VitalSignHeaderQueryModel header : dayHeaders) {
+            if (header == null || header.getRecordedAt() == null) {
+                continue;
             }
+            TemperatureSheetFillSlotDto slot = new TemperatureSheetFillSlotDto();
+            slot.setTimeSlot(temperatureSheetRecordedAtResolver.formatRecordTimeHm(header.getRecordedAt()));
+            slot.setVitalSignId(header.getId());
+            List<TemperatureSheetDetailItemDto> itemDtos = TemperatureSheetDetailItemHelper.toItemDtos(
+                detailsByHeaderId.get(header.getId()),
+                header.getRemark());
+            slot.setDetailItems(itemDtos);
             fillSlots.add(slot);
         }
         return fillSlots;
     }
 
     /**
-     * 生命体征头按记录时刻建索引（同一时刻保留首条）。
+     * 取指定日、图表槽测量区间内最晚的一条体征头。
      *
-     * @param headers 体征头读模型列表
-     * @return recordedAt → 体征头
+     * @param recordDate 业务日
+     * @param chartSlot  图表槽
+     * @param headers    体征头列表
+     * @return 最晚一条；无则 null
      */
-    private Map<LocalDateTime, VitalSignHeaderQueryModel> indexHeadersByRecordedAt(
+    private VitalSignHeaderQueryModel resolveLatestHeaderInChartSlot(
+        LocalDate recordDate,
+        String chartSlot,
         List<VitalSignHeaderQueryModel> headers) {
-        Map<LocalDateTime, VitalSignHeaderQueryModel> result = new HashMap<>();
+        VitalSignHeaderQueryModel latest = null;
+        if (headers == null) {
+            return null;
+        }
+        for (VitalSignHeaderQueryModel header : headers) {
+            if (header == null || header.getRecordedAt() == null) {
+                continue;
+            }
+            if (!recordDate.equals(header.getRecordedAt().toLocalDate())) {
+                continue;
+            }
+            String resolvedSlot = temperatureSheetRecordedAtResolver.extractTimeSlot(header.getRecordedAt());
+            if (!chartSlot.equals(resolvedSlot)) {
+                continue;
+            }
+            if (latest == null || header.getRecordedAt().isAfter(latest.getRecordedAt())) {
+                latest = header;
+            }
+        }
+        return latest;
+    }
+
+    /**
+     * 筛选指定自然日的体征头。
+     *
+     * @param recordDate 业务日
+     * @param headers    体征头列表
+     * @return 当日体征头
+     */
+    private List<VitalSignHeaderQueryModel> listHeadersOnDate(
+        LocalDate recordDate,
+        List<VitalSignHeaderQueryModel> headers) {
+        List<VitalSignHeaderQueryModel> result = new ArrayList<>();
         if (headers == null) {
             return result;
         }
@@ -184,8 +222,8 @@ public class TemperatureSheetGridAssembler {
             if (header == null || header.getRecordedAt() == null) {
                 continue;
             }
-            if (!result.containsKey(header.getRecordedAt())) {
-                result.put(header.getRecordedAt(), header);
+            if (recordDate.equals(header.getRecordedAt().toLocalDate())) {
+                result.add(header);
             }
         }
         return result;

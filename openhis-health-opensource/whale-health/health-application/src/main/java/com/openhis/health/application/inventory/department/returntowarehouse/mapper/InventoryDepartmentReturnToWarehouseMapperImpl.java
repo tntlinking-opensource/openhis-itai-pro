@@ -19,6 +19,8 @@ import com.openhis.health.domain.administration.chargeitemdefinition.service.Cha
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel;
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
+import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.SupplierType;
 import com.openhis.health.domain.share.enums.SupplyCategory;
 import com.openhis.health.domain.share.enums.SupplyRequestType;
@@ -36,8 +38,12 @@ import com.openhis.health.domain.workflow.supplyrequest.command.WithdrawApproval
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.util.StringUtils;
+import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
@@ -48,6 +54,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 科室退药库装配实现：{@link InventoryDepartmentReturnToWarehouseMapper}。仅做字段搬运与枚举 code 归一；业务流程判断在应用编排层。
@@ -115,22 +122,54 @@ public class InventoryDepartmentReturnToWarehouseMapperImpl implements Inventory
     }
 
     /**
+     * 将启用医务人员列表映射为下拉选项。
+     *
+     * @param practitioners 医务人员列表
+     * @return 人员下拉选项
+     */
+    @Override
+    public List<OptionDto> toOptionDtoListFromPractitioners(List<Practitioner> practitioners) {
+        List<OptionDto> list = new ArrayList<>();
+        if (practitioners == null) {
+            return list;
+        }
+        for (Practitioner p : practitioners) {
+            if (p == null || p.getId() == null) {
+                continue;
+            }
+            Long id = p.getId();
+            String label = p.getName();
+            if (StringUtils.isEmpty(label)) {
+                label = String.valueOf(id);
+            }
+            list.add(new OptionDto(id, String.valueOf(id), label));
+        }
+        return list;
+    }
+
+    /**
      * 装配科室退药库页初始化响应。
      *
-     * @param departmentPharmacyLocationOptions  源科室药房位置选项
-     * @param warehouseLocationOptions 目的药库选项
-     * @param supplierOptions          供应商选项
+     * @param departmentPharmacyLocationOptions 源科室药房位置选项
+     * @param warehouseLocationOptions          目的药库选项
+     * @param supplierOptions                   供应商选项
+     * @param pharmacistOptions                 药师选项
+     * @param warehouseKeeperOptions            库管选项
      * @return 页初始化响应
      */
     @Override
     public LoadReturnToWarehouseFormInitResponse toLoadReturnToWarehouseFormInitResponse(
         List<WarehouseOptionDto> departmentPharmacyLocationOptions,
         List<WarehouseOptionDto> warehouseLocationOptions,
-        List<SupplierOptionDto> supplierOptions) {
+        List<SupplierOptionDto> supplierOptions,
+        List<OptionDto> pharmacistOptions,
+        List<OptionDto> warehouseKeeperOptions) {
         LoadReturnToWarehouseFormInitResponse res = new LoadReturnToWarehouseFormInitResponse();
         res.setDepartmentPharmacyLocationOptions(departmentPharmacyLocationOptions);
         res.setWarehouseLocationOptions(warehouseLocationOptions);
         res.setSupplierOptions(supplierOptions);
+        res.setPharmacistOptions(pharmacistOptions);
+        res.setWarehouseKeeperOptions(warehouseKeeperOptions);
         return res;
     }
 
@@ -150,6 +189,139 @@ public class InventoryDepartmentReturnToWarehouseMapperImpl implements Inventory
             content.add(this.toReturnToWarehouseListRowDto(row));
         }
         return PagedResultBuilder.build(new PageReturnToWarehousesResponse(), content, page);
+    }
+
+    /**
+     * 按 busNo 顺序聚合科室退库供应请求明细为列表行 DTO。
+     *
+     * @param busNoPageOrder 分页单号顺序
+     * @param detailRows     同页全部明细
+     * @return 聚合列表行
+     */
+    @Override
+    public List<ReturnToWarehouseListRowDto> toReturnToWarehouseListAggregated(
+        List<String> busNoPageOrder,
+        List<SupplyRequestModel> detailRows) {
+        List<ReturnToWarehouseListRowDto> out = new ArrayList<>();
+        if (busNoPageOrder == null || busNoPageOrder.isEmpty()) {
+            return out;
+        }
+        if (detailRows == null || detailRows.isEmpty()) {
+            return out;
+        }
+        LinkedHashMap<String, List<SupplyRequestModel>> byBusNo = new LinkedHashMap<>();
+        for (SupplyRequestModel row : detailRows) {
+            if (row == null || StringUtils.isEmpty(row.getBusNo())) {
+                continue;
+            }
+            String bn = row.getBusNo().trim();
+            byBusNo.computeIfAbsent(bn, k -> new ArrayList<>()).add(row);
+        }
+        for (String busNoRaw : busNoPageOrder) {
+            if (StringUtils.isEmpty(busNoRaw)) {
+                continue;
+            }
+            String busNo = busNoRaw.trim();
+            List<SupplyRequestModel> lines = byBusNo.get(busNo);
+            if (lines == null || lines.isEmpty()) {
+                continue;
+            }
+            SupplyRequestModel head = lines.get(0);
+            for (SupplyRequestModel line : lines) {
+                if (line == null) {
+                    continue;
+                }
+                if (!Objects.equals(head.getStatusEnum(), line.getStatusEnum())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.DEPT_RTW_102, "同号科室退库单状态头字段不一致: " + busNo);
+                }
+                if (!Objects.equals(head.getOriginalBusNo(), line.getOriginalBusNo())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.DEPT_RTW_102, "同号科室退库单来源入库单不一致: " + busNo);
+                }
+                if (!Objects.equals(head.getSourceLocationId(), line.getSourceLocationId())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.DEPT_RTW_102, "同号科室退库单源科室药房头字段不一致: " + busNo);
+                }
+                if (!Objects.equals(head.getPurposeLocationId(), line.getPurposeLocationId())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.DEPT_RTW_102, "同号科室退库单目的药库头字段不一致: " + busNo);
+                }
+            }
+            BigDecimal totalAmount = BigDecimal.ZERO;
+            LocalDateTime maxApply = null;
+            LocalDateTime maxOccurrence = null;
+            for (SupplyRequestModel line : lines) {
+                if (line == null) {
+                    continue;
+                }
+                if (line.getTotalPrice() != null) {
+                    totalAmount = totalAmount.add(line.getTotalPrice());
+                }
+                if (line.getApplyTime() != null) {
+                    if (maxApply == null || line.getApplyTime().isAfter(maxApply)) {
+                        maxApply = line.getApplyTime();
+                    }
+                }
+                if (line.getOccurrenceTime() != null) {
+                    if (maxOccurrence == null || line.getOccurrenceTime().isAfter(maxOccurrence)) {
+                        maxOccurrence = line.getOccurrenceTime();
+                    }
+                }
+            }
+            LocalDateTime approvalTime = null;
+            for (SupplyRequestModel line : lines) {
+                if (line != null && line.getApprovalTime() != null) {
+                    approvalTime = line.getApprovalTime();
+                    break;
+                }
+            }
+            ReturnToWarehouseListRowDto dto = new ReturnToWarehouseListRowDto();
+            dto.setBusNo(busNo);
+            dto.setOriginalBusNo(head.getOriginalBusNo());
+            dto.setTypeEnum(this.toApiSortSupplyType(head.getTypeEnum()));
+            dto.setStatusEnum(this.toApiSortSupplyStatus(head.getStatusEnum()));
+            dto.setCategoryEnum(this.toApiSortSupplyCategory(head.getCategoryEnum()));
+            dto.setSourceLocationId(head.getSourceLocationId());
+            dto.setPurposeLocationId(head.getPurposeLocationId());
+            dto.setSupplierId(head.getSupplierId());
+            dto.setApplicantId(head.getApplicantId());
+            dto.setApproverId(head.getApproverId());
+            dto.setTotalPrice(totalAmount);
+            dto.setTotalAmount(totalAmount);
+            if (maxApply != null) {
+                dto.setApplyTime(maxApply);
+            } else {
+                dto.setApplyTime(maxOccurrence);
+            }
+            dto.setApprovalTime(approvalTime);
+            out.add(dto);
+        }
+        return out;
+    }
+
+    /**
+     * 用聚合列表行构建科室退库单分页响应。
+     *
+     * @param mergedTotal 去重后总单数
+     * @param pageNo      页码
+     * @param pageSize    页大小
+     * @param records     列表行
+     * @return 分页响应
+     */
+    @Override
+    public PageReturnToWarehousesResponse toPageReturnToWarehousesAggregatedResponse(
+        long mergedTotal,
+        int pageNo,
+        int pageSize,
+        List<ReturnToWarehouseListRowDto> records) {
+        List<ReturnToWarehouseListRowDto> content;
+        if (records == null) {
+            content = new ArrayList<>();
+        } else {
+            content = records;
+        }
+        return PagedResultBuilder.build(new PageReturnToWarehousesResponse(), content, mergedTotal, pageNo, pageSize);
     }
 
     /**
@@ -183,16 +355,18 @@ public class InventoryDepartmentReturnToWarehouseMapperImpl implements Inventory
     }
 
     /**
-     * 将同号供应请求明细与产品读模型装配为退药库详情响应。
+     * 将同号供应请求明细、产品读模型与目录编辑提示装配为退药库详情响应。
      *
      * @param lines        供应请求明细行
-     * @param productByKey 产品定义读模型映射
+     * @param productByKey 产品定义读模型映射（复合键）
+     * @param productHints 行 id → 目录编辑提示
      * @return 详情响应
      */
     @Override
     public GetReturnToWarehouseDetailResponse toGetReturnToWarehouseDetailResponse(
         List<SupplyRequestModel> lines,
-        Map<String, ProductDefinitionDisplayDto> productByKey) {
+        Map<String, ProductDefinitionDisplayDto> productByKey,
+        Map<Long, ProductDefinitionCatalogEditorHintsDto> productHints) {
         GetReturnToWarehouseDetailResponse res = new GetReturnToWarehouseDetailResponse();
         if (lines == null || lines.isEmpty()) {
             res.setLines(new ArrayList<>());
@@ -209,24 +383,29 @@ public class InventoryDepartmentReturnToWarehouseMapperImpl implements Inventory
         res.setSourceTypeEnum(this.toApiSortSupplyRequestType(head.getSourceTypeEnum()));
         res.setPurposeTypeEnum(this.toApiSortSupplyRequestType(head.getPurposeTypeEnum()));
         res.setCategoryEnum(this.toApiSortSupplyCategory(head.getCategoryEnum()));
+        // 头行经手人/制单人回显，供编辑态下拉选中
+        res.setPractitionerId(head.getPractitionerId());
+        res.setApplicantId(head.getApplicantId());
         List<ReturnToWarehouseDetailLineDto> detailLines = new ArrayList<>();
         for (SupplyRequestModel line : lines) {
-            detailLines.add(this.toDetailLine(line, productByKey));
+            detailLines.add(this.toDetailLine(line, productByKey, productHints));
         }
         res.setLines(detailLines);
         return res;
     }
 
     /**
-     * 供应请求明细 → 退药库详情行 DTO（按产品键回填品名）。
+     * 供应请求明细 → 退药库详情行 DTO（品名/规格/厂家 + 目录编辑提示）。
      *
      * @param line         供应请求明细
      * @param productByKey 产品复合键 → 展示 DTO
+     * @param productHints 行 id → 目录编辑提示
      * @return 详情行 DTO
      */
     private ReturnToWarehouseDetailLineDto toDetailLine(
         SupplyRequestModel line,
-        Map<String, ProductDefinitionDisplayDto> productByKey) {
+        Map<String, ProductDefinitionDisplayDto> productByKey,
+        Map<Long, ProductDefinitionCatalogEditorHintsDto> productHints) {
         ReturnToWarehouseDetailLineDto dto = new ReturnToWarehouseDetailLineDto();
         dto.setId(line.getId());
         dto.setItemTable(line.getItemTable());
@@ -234,15 +413,30 @@ public class InventoryDepartmentReturnToWarehouseMapperImpl implements Inventory
         dto.setItemQuantity(line.getItemQuantity());
         dto.setUnitCode(line.getUnitCode());
         dto.setLotNumber(line.getLotNumber());
+        dto.setStartTime(line.getStartTime());
+        dto.setEndTime(line.getEndTime());
         dto.setTraceNo(line.getTraceNo());
         dto.setOccurrenceTime(line.getOccurrenceTime());
         dto.setReason(line.getReason());
         dto.setRemake(line.getRemake());
+        // 按产品复合键回填品名/规格/厂家/单位展示名，供详情数量列回显
         if (productByKey != null && line.getItemTable() != null && line.getItemId() != null) {
             String key = ProductDefinitionKeyUtil.buildCompositeKey(line.getItemTable(), line.getItemId());
             ProductDefinitionDisplayDto pr = productByKey.get(key);
             if (pr != null) {
                 dto.setProductName(pr.getProductName());
+                dto.setSpecification(pr.getTotalVolume());
+                dto.setManufacturer(pr.getManufacturer());
+                dto.setUnitCodeDictText(
+                    ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(
+                        null, line.getUnitCode(), pr));
+            }
+        }
+        // 按供应请求行 id 挂载目录编辑提示
+        if (productHints != null && line.getId() != null) {
+            ProductDefinitionCatalogEditorHintsDto hint = productHints.get(line.getId());
+            if (hint != null) {
+                dto.setProductCatalog(hint);
             }
         }
         return dto;
@@ -254,6 +448,7 @@ public class InventoryDepartmentReturnToWarehouseMapperImpl implements Inventory
      * @param request               新建请求
      * @param operatorId            操作人
      * @param applicantId           制单人员
+     * @param practitionerId        经手人
      * @param originalBusNoSnapshot 关联科室入库单号快照
      * @return 领域写命令
      */
@@ -262,6 +457,7 @@ public class InventoryDepartmentReturnToWarehouseMapperImpl implements Inventory
         CreateReturnToWarehouseRequest request,
         Long operatorId,
         Long applicantId,
+        Long practitionerId,
         String originalBusNoSnapshot) {
         return this.buildCreateReturnCommand(
             request.getOriginalBusNo(),
@@ -273,6 +469,7 @@ public class InventoryDepartmentReturnToWarehouseMapperImpl implements Inventory
             null,
             operatorId,
             applicantId,
+            practitionerId,
             originalBusNoSnapshot);
     }
 
@@ -282,6 +479,7 @@ public class InventoryDepartmentReturnToWarehouseMapperImpl implements Inventory
      * @param request               修订请求
      * @param operatorId            操作人
      * @param applicantId           制单人员
+     * @param practitionerId        经手人
      * @param originalBusNoSnapshot 关联科室入库单号快照
      * @return 领域写命令
      */
@@ -290,6 +488,7 @@ public class InventoryDepartmentReturnToWarehouseMapperImpl implements Inventory
         UpdateReturnToWarehouseRequest request,
         Long operatorId,
         Long applicantId,
+        Long practitionerId,
         String originalBusNoSnapshot) {
         return this.buildCreateReturnCommand(
             originalBusNoSnapshot,
@@ -301,6 +500,7 @@ public class InventoryDepartmentReturnToWarehouseMapperImpl implements Inventory
             request.getBusNo(),
             operatorId,
             applicantId,
+            practitionerId,
             originalBusNoSnapshot);
     }
 
@@ -316,6 +516,7 @@ public class InventoryDepartmentReturnToWarehouseMapperImpl implements Inventory
      * @param busNo                   修订时业务单号；新建为 null
      * @param operatorId              操作人
      * @param applicantId             制单人
+     * @param practitionerId          经手人
      * @param originalBusNoSnapshot   关联单号快照（优先于 originalBusNo）
      * @return 领域 CreateReturnCommand
      */
@@ -329,6 +530,7 @@ public class InventoryDepartmentReturnToWarehouseMapperImpl implements Inventory
         String busNo,
         Long operatorId,
         Long applicantId,
+        Long practitionerId,
         String originalBusNoSnapshot) {
         CreateReturnCommand command = new CreateReturnCommand();
         command.setOperatorId(operatorId);
@@ -369,6 +571,8 @@ public class InventoryDepartmentReturnToWarehouseMapperImpl implements Inventory
             item.setPurposeLocationId(purposeLocationId);
             item.setSupplierId(supplierId);
             item.setOccurrenceTime(line.getOccurrenceTime());
+            // 经手人来自请求下拉；制单人来自登录医务人员档案
+            item.setPractitionerId(practitionerId);
             item.setApplicantId(applicantId);
             item.setApplyTime(null);
             item.setReason(line.getReason());
@@ -605,7 +809,15 @@ public class InventoryDepartmentReturnToWarehouseMapperImpl implements Inventory
                 item.setOccurrenceTime(line.getOccurrenceTime());
                 item.setApplicantId(applicantId);
                 item.setApplyTime(shellApplyTime);
-                item.setReason(null);
+                // 壳单回显：退货原因/审批人与下游退库同意人对齐（禁止再置空 reason）
+                item.setReason(line.getReason());
+                item.setApproverId(operatorId);
+                LocalDateTime shellApprovalTime = line.getApprovalTime();
+                if (shellApprovalTime == null) {
+                    // 退库行尚未落审批时刻时，回落壳单制单时刻，避免 AGREE 行审批时间为空
+                    shellApprovalTime = shellApplyTime;
+                }
+                item.setApprovalTime(shellApprovalTime);
                 items.add(item);
             }
         }
@@ -663,9 +875,9 @@ public class InventoryDepartmentReturnToWarehouseMapperImpl implements Inventory
         String busNo = head.getBusNo();
         res.setOriginalBusNo(busNo);
         res.setStockInBusNo(busNo);
-        Long purposeLocationId = head.getPurposeLocationId();
-        res.setPurposeLocationId(purposeLocationId);
-        res.setSourceLocationId(purposeLocationId);
+        // —— 退库预填库位：源=入库目的科室药房；目的=入库来源药库（禁止把科室药房 id 写入「退入药库」）。——
+        res.setSourceLocationId(head.getPurposeLocationId());
+        res.setPurposeLocationId(head.getSourceLocationId());
         res.setSupplierId(head.getSupplierId());
         res.setCategoryEnum(head.getCategoryEnum());
         res.setPractitionerId(head.getPractitionerId());

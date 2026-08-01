@@ -138,12 +138,12 @@ public class ServiceApplyFormOrchestrator {
      * @param patientId              患者主键
      * @param categoryEnum           请求类别（code 或枚举名）
      * @param orgId                  整单执行科室
-     * @param conditionDefinitionId  整单绑定诊断定义；可空，非空时写入该单全部 {@code ServiceRequest.condition_definition_id}
-     * @param encounterDiagnosisId   整单绑定就诊诊断；可空，非空时与 {@code conditionDefinitionId} 成对落库 {@code encounter_diagnosis_id}
+     * @param encounterDiagnosisIds  整单绑定就诊诊断有序 ids 串；可空，非空时写入该单全部 {@code ServiceRequest.encounter_diagnosis_ids}
      * @param previousPrescriptionNo 编辑时旧申请单号；新建可空
      * @param lines                  明细行
+     * @param executionCount         整单执行次数；空或 ≤0 时回落为 1，写入该单全部行
      * @param operatorId             操作人
-     * @param chargeDraftCreator     费用草稿创建回调
+     * @param chargeDraftCreator     费用草稿创建回调；门诊注入实现，住院传 {@code null}（IF-IP-DOR-23 不挂 ChargeItem）
      * @return 新号与新建 requestId 列表
      * @throws BusinessException 旧号校验失败、行/Detail 校验失败或产品定义缺失
      */
@@ -152,10 +152,10 @@ public class ServiceApplyFormOrchestrator {
         Long patientId,
         String categoryEnum,
         Long orgId,
-        Long conditionDefinitionId,
-        Long encounterDiagnosisId,
+        String encounterDiagnosisIds,
         String previousPrescriptionNo,
         List<ServiceApplyFormLineSpec> lines,
+        Integer executionCount,
         Long operatorId,
         ChargeDraftCreator chargeDraftCreator
     ) {
@@ -166,34 +166,38 @@ public class ServiceApplyFormOrchestrator {
         if (orgId == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "整单执行科室不能为空");
         }
+        // Pre：整单执行次数统一写入各行；空或非法回落 1。
+        Integer resolvedExecutionCount = resolveApplyFormExecutionCount(executionCount);
         // Pre：解析类别；编辑时须先删旧 DRAFT 行（含 Detail 与未计费费用）。
         String resolvedCategory = resolveApplyFormCategoryCode(categoryEnum);
         if (isNotEmpty(previousPrescriptionNo)) {
             // Pre：编辑路径须校验旧号全 DRAFT 后软删，避免覆盖已签发单。
             removePreviousDraftApplyForm(encounterId, previousPrescriptionNo.trim(), resolvedCategory, operatorId);
         }
-        // Cmd：新建与编辑均取新 AR 号，逐行 createServiceRequestDraft 并由回调挂费草稿。
+        // Cmd：新建与编辑均取新 AR 号，逐行 createServiceRequestDraft；有费用回调时再挂 ChargeItem 草稿。
         String prescriptionNo = businessSequenceService.getSeqByDay(
             AggregateTypeConstants.REQUISITION_APPLICATION, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH);
         List<Long> requestIds = new ArrayList<>();
         int sortNumber = 1;
-        // Cmd：逐行校验、加载产品定义、写 ServiceRequest 与 ChargeItem 草稿（整单 org/诊断绑定透传至各行）。
+        // Cmd：逐行校验、加载产品定义、写 ServiceRequest；门诊侧回调挂费，住院侧回调为 null 则跳过。
         for (ServiceApplyFormLineSpec line : lines) {
             validateApplyFormLine(resolvedCategory, line);
             ProductDefinitionDisplayDto productRow = loadActivityProduct(line.getActivityDefinitionId());
             CreateServiceRequestDraftCommand cmd = buildCreateCommand(
-                encounterId, patientId, orgId, conditionDefinitionId, encounterDiagnosisId,
-                prescriptionNo, resolvedCategory, line, operatorId, sortNumber++, productRow);
+                encounterId, patientId, orgId, encounterDiagnosisIds,
+                prescriptionNo, resolvedCategory, line, resolvedExecutionCount, operatorId, sortNumber++, productRow);
             Long requestId = serviceRequestDomainService.createServiceRequestDraft(cmd);
             requestIds.add(requestId);
-            chargeDraftCreator.createCharge(
-                encounterId,
-                patientId,
-                requestId,
-                line.getActivityDefinitionId(),
-                line.getQuantity(),
-                line.getUnitCode(),
-                productRow);
+            if (chargeDraftCreator != null) {
+                chargeDraftCreator.createCharge(
+                    encounterId,
+                    patientId,
+                    requestId,
+                    line.getActivityDefinitionId(),
+                    line.getQuantity(),
+                    line.getUnitCode(),
+                    productRow);
+            }
         }
         // Asm：汇总新号与 requestId 列表供 AppService 写 Response。
         SaveApplyFormResult result = new SaveApplyFormResult();
@@ -281,7 +285,11 @@ public class ServiceApplyFormOrchestrator {
                 // Asm：执行科室名称来自批量 Location 解析，缺失时保持 null。
                 header.setOrgName(orgNameById.get(first.getOrgId()));
             }
-            header.setAuthoredAt(formatAuthoredInstantForApi(first.getReqAuthoredTime()));
+            LocalDateTime openedAt = first.getReqOpenedTime();
+            if (openedAt == null) {
+                openedAt = first.getReqAuthoredTime();
+            }
+            header.setReqOpenedTime(formatRequestInstantForApi(openedAt));
             header.setStatusSummary(buildStatusSummary(groupRows));
             List<ServiceApplyFormLineModel> lineDtos = new ArrayList<>();
             // Asm：组内每行投影为 IF 契约行 DTO，含明细摘要与单位展示名。
@@ -310,7 +318,7 @@ public class ServiceApplyFormOrchestrator {
         }
         // Asm：整单按开立时间倒序，与医生站列表「最新在前」一致。
         forms.sort(Comparator.comparing(
-            ServiceApplyFormHeaderModel::getAuthoredAt, Comparator.nullsLast(Comparator.reverseOrder())));
+            ServiceApplyFormHeaderModel::getReqOpenedTime, Comparator.nullsLast(Comparator.reverseOrder())));
         return forms;
     }
 
@@ -479,7 +487,7 @@ public class ServiceApplyFormOrchestrator {
     }
 
     /**
-     * 校验单行 Spec：数量/单位/Detail 白名单及类别相关必填（检查须部位、检验须样本）。
+     * 校验单行 Spec：数量/单位/Detail 白名单及类别相关必填（检查须部位；检验样本非必填）。
      *
      * @param categoryCode 已解析的申请单类别 code
      * @param line         明细行 Spec
@@ -504,7 +512,6 @@ public class ServiceApplyFormOrchestrator {
             detailItems = List.of();
         }
         boolean hasBodyStructure = false;
-        boolean hasSpecimen = false;
         for (ServiceApplyFormDetailItemSpec detail : detailItems) {
             if (detail == null) {
                 // Gate：Detail 列表中的空元素跳过，不参与白名单统计。
@@ -525,16 +532,10 @@ public class ServiceApplyFormOrchestrator {
             if (TableNameConstants.DIA_BODY_STRUCTURE.equals(targetTable)) {
                 hasBodyStructure = true;
             }
-            if (TableNameConstants.ADM_SPECIMEN_DEFINITION.equals(targetTable)) {
-                hasSpecimen = true;
-            }
         }
-        // Gate：检查类每行至少一个部位；检验类每行至少一个样本。
+        // Gate：检查类每行至少一个部位；检验类样本允许为空。
         if (SERVICE_CATEGORY_TEST.equals(categoryCode) && !hasBodyStructure) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "检查申请每行至少需要一个部位");
-        }
-        if (SERVICE_CATEGORY_PROOF.equals(categoryCode) && !hasSpecimen) {
-            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "检验申请每行至少需要一个样本");
         }
     }
 
@@ -544,11 +545,11 @@ public class ServiceApplyFormOrchestrator {
      * @param encounterId            就诊主键
      * @param patientId              患者主键
      * @param orgId                  整单执行科室
-     * @param conditionDefinitionId  整单诊断定义；可空
-     * @param encounterDiagnosisId   整单就诊诊断；可空
+     * @param encounterDiagnosisIds  整单就诊诊断有序 ids 串；可空
      * @param prescriptionNo         新 AR 申请单号
      * @param categoryCode           已解析类别 code
      * @param line                   明细行 Spec
+     * @param executionCount         已解析的整单执行次数（≥1）
      * @param operatorId             操作人
      * @param sortNumber             组内排序号
      * @param productRow             活动对应产品定义（单位校验用）
@@ -558,11 +559,11 @@ public class ServiceApplyFormOrchestrator {
         Long encounterId,
         Long patientId,
         Long orgId,
-        Long conditionDefinitionId,
-        Long encounterDiagnosisId,
+        String encounterDiagnosisIds,
         String prescriptionNo,
         String categoryCode,
         ServiceApplyFormLineSpec line,
+        Integer executionCount,
         Long operatorId,
         int sortNumber,
         ProductDefinitionDisplayDto productRow
@@ -577,7 +578,8 @@ public class ServiceApplyFormOrchestrator {
         item.setQuantity(line.getQuantity());
         item.setUnitCode(ServiceAdviceDraftCommandHelper.requireUnitCode(
             line.getUnitCode(), null, productRow));
-        item.setExecutionCount(GeneralSharedConstants.ONE);
+        // Cmd：整单执行次数写入各行（护士站可执行次数上限）。
+        item.setExecutionCount(executionCount);
         item.setCategoryEnum(categoryCode);
         item.setTherapyEnum(TherapyType.TEMPORARY.getCode());
         item.setOrgId(orgId);
@@ -587,11 +589,23 @@ public class ServiceApplyFormOrchestrator {
         item.setSortNumber(sortNumber);
         item.setNote(line.getRemark());
         // Cmd：整单诊断绑定与 IF-DOR-14 诊疗草稿同源；可空表示不绑定。
-        item.setConditionDefinitionId(conditionDefinitionId);
-        item.setEncounterDiagnosisId(encounterDiagnosisId);
+        item.setEncounterDiagnosisIds(encounterDiagnosisIds);
         item.setDetailItems(mapDetailCommands(line.getDetailItems()));
         cmd.setItem(item);
         return cmd;
+    }
+
+    /**
+     * 解析整单执行次数：空或 ≤0 回落为 1。
+     *
+     * @param executionCount 请求入参；可空
+     * @return ≥1 的执行次数
+     */
+    private static Integer resolveApplyFormExecutionCount(Integer executionCount) {
+        if (executionCount == null || executionCount <= 0) {
+            return GeneralSharedConstants.ONE;
+        }
+        return executionCount;
     }
 
     /**
@@ -694,15 +708,15 @@ public class ServiceApplyFormOrchestrator {
     }
 
     /**
-     * 将域内 LocalDateTime 格式化为 API 契约 ISO 本地时间字符串。
+     * 将域内 LocalDateTime 格式化为 API 契约 ISO 本地时间字符串（开立/签发等业务时刻通用）。
      *
-     * @param authoredTime 开立时间；可空
+     * @param requestTime 开立或签发时刻；可空
      * @return ISO 格式字符串；null 输入返回 null
      */
-    private static String formatAuthoredInstantForApi(LocalDateTime authoredTime) {
-        if (authoredTime == null) {
+    private static String formatRequestInstantForApi(LocalDateTime requestTime) {
+        if (requestTime == null) {
             return null;
         }
-        return GeneralSharedConstants.ISO_LOCAL_DATE_TIME_FORMATTER.format(authoredTime);
+        return GeneralSharedConstants.ISO_LOCAL_DATE_TIME_FORMATTER.format(requestTime);
     }
 }

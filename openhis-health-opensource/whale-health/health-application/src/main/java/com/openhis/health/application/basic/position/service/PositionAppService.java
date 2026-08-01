@@ -36,6 +36,7 @@ import com.openhis.health.domain.administration.practitionerrole.service.Practit
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.AdministrativeGender;
+import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.dto.PagedResult;
@@ -65,6 +66,10 @@ import java.util.Locale;
  * {@link PractitionerRoleDomainService} / {@link PractitionerDomainService}。
  * 可维护块由平台角色 {@link RoleStaffScopeConstants} 控制；登录科室派生同步至
  * {@code whale_user_organization_units}。</p>
+ *
+ * <p>正常用户在 {@code saveStaff} 勾选平台角色后，须保证 {@code adm_pr_assign} 至少有一条对应激活行；
+ * 尚未配置管辖科室/库位时允许 {@code org_id}/{@code location_id} 双空。勾掉角色时同步软删对应岗位行，
+ * 并与 {@code whale_user_roles} / {@code whale_user_organization_units} 联动。</p>
  */
 @Slf4j
 @Service
@@ -191,6 +196,29 @@ public class PositionAppService {
         StaffEditableScopesDto dto = new StaffEditableScopesDto();
         dto.setEditableScopes(new ArrayList<>(resolveEditableScopes(operatorId)));
         // Asm：映射可编辑范围响应
+        return dto;
+    }
+
+    /**
+     * 按所选平台角色汇总人员维护块 StaffScope（含自定义角色声明）。
+     * <p>用户管理表单联动展示「管理药房/库房」等块，仅需登录态。</p>
+     *
+     * @param request 含角色主键列表
+     * @return StaffScope 并集
+     */
+    public StaffRoleScopesDto resolveStaffScopesByRoleIds(ResolveStaffScopesRequest request) {
+        // Gate：须已登录（与 getEditableScopesForCurrentUser 同级入口）
+        currentOperatorResolver.requireOperatorId(
+                ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT, "请先登录");
+        List<Long> roleIds;
+        if (request == null) {
+            roleIds = List.of();
+        } else {
+            roleIds = request.getRoleIds();
+        }
+        StaffRoleScopesDto dto = new StaffRoleScopesDto();
+        dto.setStaffScopes(new ArrayList<>(resolveStaffScopesForRoleIds(roleIds)));
+        // Asm：映射角色 StaffScope 并集
         return dto;
     }
 
@@ -332,25 +360,57 @@ public class PositionAppService {
         }
 
         String practitionerName = resolvePractitionerName(request, user);
-        Set<String> roleStaffScopes = resolveStaffScopesForRoleIds(request.getRoleIds());
-        // Cmd：按 StaffScope 全量替换六类岗位块
-        replaceStaffScopeBlocks(practitionerId, operatorId, request, practitionerName, editableScopes, roleStaffScopes);
+        boolean adminAccount = user.getUserName() != null
+            && "admin".equalsIgnoreCase(user.getUserName().trim());
+        // Cmd：按角色 StaffScope 全量替换岗位块
+        Set<String> roleStaffScopes;
+        List<Long> assignmentWriteRoleIds = request.getRoleIds();
+        if (adminAccount) {
+            // admin 固定全角色：岗位块始终按内置全集写入（避免请求 roleIds/声明解析漏块导致「保存成功但未落库」）
+            roleStaffScopes = allStaffScopeCodes();
+            // 写入按「角色声明的能力」落 role_id：admin 以请求勾选 + 内置业务角色为候选池
+            LinkedHashSet<Long> adminWriteRoleIds = new LinkedHashSet<>();
+            if (assignmentWriteRoleIds != null) {
+                for (Long roleId : assignmentWriteRoleIds) {
+                    if (roleId != null) {
+                        adminWriteRoleIds.add(roleId);
+                    }
+                }
+            }
+            for (RoleOptionDto option : builtInBusinessRoleOptionLoader.loadAssignmentRoleOptions()) {
+                if (option != null && option.getId() != null) {
+                    adminWriteRoleIds.add(option.getId());
+                }
+            }
+            assignmentWriteRoleIds = new ArrayList<>(adminWriteRoleIds);
+        } else {
+            roleStaffScopes = resolveStaffScopesForRoleIds(request.getRoleIds());
+        }
+        replaceStaffScopeBlocks(
+            practitionerId,
+            operatorId,
+            request,
+            practitionerName,
+            editableScopes,
+            roleStaffScopes,
+            assignmentWriteRoleIds);
 
-        // Cmd 续：同步用户可登录科室
-        organizationUnitAppService.syncOrganizationUnitsForUser(userId,
-                organizationUnitLinkSyncService.resolveWhaleOrganizationUnitIds(
-                        collectLoginOrganizationIds(practitionerId)));
-
-        // 平台登录角色须在岗位块 replace 之后写入，否则 afterReplaceBlock 会按空岗位撤销 whale_user_roles。
-        // admin 自动拥有全部角色；其它用户 roleIds 为空时表示未改角色。
-        // 业务分支：admin 自动拥有全部角色；其它用户 roleIds 为空表示未改角色
-        if (user.getUserName() != null && "admin".equalsIgnoreCase(user.getUserName().trim())) {
+        // 平台登录角色与 adm_pr_assign 须在岗位块 replace 之后对齐（replace 空块可能短暂撤登录角色）。
+        // 业务分支：admin 仅「自动全角色」特例；其它用户 roleIds 为空表示未改角色
+        if (adminAccount) {
             userAppService.syncAllRolesForAdminUser(userId);
         } else if (request.getRoleIds() != null && !request.getRoleIds().isEmpty()) {
             AssignRolesRequest assignRolesRequest = new AssignRolesRequest();
             assignRolesRequest.setRoleIds(request.getRoleIds());
+            // Cmd：whale_user_roles 全量对齐所选角色
             userAppService.assignRoles(userId, assignRolesRequest);
+            // Cmd 续：adm_pr_assign 与所选角色双向对齐（补挂靠 / 废弃勾掉的角色）
+            this.syncPractitionerAssignmentsWithSelectedRoles(
+                practitionerId, operatorId, request.getRoleIds(), practitionerName);
         }
+
+        // Cmd 续：按最终岗位行同步可登录科室绑定（须在 adm_pr_assign 对齐之后）
+        userLoginOrganizationSyncService.syncForUserId(userId);
 
         // Asm：回读保存后人员详情
         return getStaffDetail(userId);
@@ -478,7 +538,8 @@ public class PositionAppService {
                 ErrorCodeConstants.PRACTITIONER_ROLE_INVALID_ARGUMENT, "请先登录后再操作岗位"));
         // Cmd：领域启用岗位
         practitionerRoleDomainService.activateRole(cmd);
-        // Cmd 续：同步登录科室
+        // Cmd 续：启用后补登录角色，并刷新可登录科室
+        this.syncUserRolesAfterActivate(cmd.resolveItems());
         this.syncLoginOrganizationsFromAssignmentCommand(cmd);
     }
 
@@ -637,7 +698,9 @@ public class PositionAppService {
     }
 
     /**
-     * 按平台角色将有效岗位分配填入人员详情六类块（含医师号源 id 汇总）。
+     * 按岗位行所属角色的 StaffScope 声明填入人员详情六类块（含医师号源 id 汇总）。
+     *
+     * <p>不再按「载体平台角色」硬分类：有药房管辖未必是药师，有病区管辖未必是护士。</p>
      *
      * @param detail          待填充详情 DTO
      * @param practitionerId  医务人员主键
@@ -652,29 +715,62 @@ public class PositionAppService {
         Set<Long> doctorServiceIds = new LinkedHashSet<>();
         List<Long> doctorAssignmentIds = new ArrayList<>();
 
+        LinkedHashSet<Long> locationIdsForForm = new LinkedHashSet<>();
+        for (PractitionerRole role : roles) {
+            if (role == null || role.getLocationId() == null) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(role.getIsDeleted()) || !Boolean.TRUE.equals(role.getActiveFlag())) {
+                continue;
+            }
+            locationIdsForForm.add(role.getLocationId());
+        }
+        Map<Long, String> formEnumByLocationId = locationQueryService.mapFormEnumCodeByIds(locationIdsForForm);
+
         for (PractitionerRole role : roles) {
             if (Boolean.TRUE.equals(role.getIsDeleted()) || !Boolean.TRUE.equals(role.getActiveFlag())) {
+                continue;
+            }
+            if (role.getRoleId() == null) {
+                continue;
+            }
+            Set<String> scopes = new LinkedHashSet<>(
+                builtInBusinessRoleOptionLoader.resolveStaffScopesForRoleId(role.getRoleId()));
+            if (scopes.isEmpty()) {
                 continue;
             }
             StaffOrgLocationItemDto row = new StaffOrgLocationItemDto();
             row.setOrgId(role.getOrgId());
             row.setLocationId(role.getLocationId());
-            Long roleId = role.getRoleId();
-            if (whaleRoleResolver.matchesPlatformRoleId(roleId, WhalePlatformRoleCodeConstants.ROLE_DOCTOR)) {
+
+            if (scopes.contains(RoleStaffScopeConstants.DOCTOR_VISIT_ORG) && role.getOrgId() != null) {
                 doctorVisit.add(row);
                 if (role.getId() != null) {
                     doctorAssignmentIds.add(role.getId());
                 }
-            } else if (whaleRoleResolver.matchesPlatformRoleId(roleId, WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE)) {
-                warehouse.add(row);
-            } else if (whaleRoleResolver.matchesPlatformRoleId(roleId, WhalePlatformRoleCodeConstants.ROLE_PHARMACIST)) {
-                pharmacy.add(row);
-            } else if (whaleRoleResolver.matchesPlatformRoleId(roleId, WhalePlatformRoleCodeConstants.ROLE_NURSE)) {
-                if (role.getLocationId() != null) {
-                    nurseWard.add(row);
+            }
+
+            boolean claimsWarehouse = scopes.contains(RoleStaffScopeConstants.WAREHOUSE_LOCATION);
+            boolean claimsPharmacy = scopes.contains(RoleStaffScopeConstants.PHARMACY_LOCATION);
+            if (role.getLocationId() != null && (claimsWarehouse || claimsPharmacy)) {
+                if (claimsWarehouse && claimsPharmacy) {
+                    if (this.isPharmacyPartyForm(formEnumByLocationId.get(role.getLocationId()))) {
+                        pharmacy.add(row);
+                    } else {
+                        warehouse.add(row);
+                    }
+                } else if (claimsPharmacy) {
+                    pharmacy.add(row);
                 } else {
-                    nurseOrg.add(row);
+                    warehouse.add(row);
                 }
+            }
+
+            if (scopes.contains(RoleStaffScopeConstants.NURSE_WARD_LOCATION) && role.getLocationId() != null) {
+                nurseWard.add(row);
+            } else if (scopes.contains(RoleStaffScopeConstants.NURSE_ORG) && role.getOrgId() != null
+                && role.getLocationId() == null) {
+                nurseOrg.add(row);
             }
         }
         detail.setDoctorVisitOrgList(doctorVisit);
@@ -694,7 +790,10 @@ public class PositionAppService {
     }
 
     /**
-     * 按请求角色与操作者可编辑块，全量替换或清空六类岗位分配。
+     * 按请求角色与操作者可编辑块，全量替换岗位分配。
+     *
+     * <p>写入 {@code adm_pr_assign.role_id} 必须是「所选角色里实际声明了该 StaffScope 的角色」，
+     * 禁止再按 scope 硬映射到药师/护士/库管等载体岗。</p>
      */
     private void replaceStaffScopeBlocks(
             Long practitionerId,
@@ -702,46 +801,80 @@ public class PositionAppService {
             SaveStaffRequest request,
             String practitionerName,
             Set<String> editableScopes,
-            Set<String> roleStaffScopes) {
+            Set<String> roleStaffScopes,
+            List<Long> selectedRoleIds) {
         if (shouldReplaceStaffScope(RoleStaffScopeConstants.DOCTOR_VISIT_ORG, editableScopes, roleStaffScopes)) {
-            List<StaffOrgLocationItemDto> rows = request.getDoctorVisitOrgList();
-            staffManagedScopeWriteGate.assertWritableOrganizationIds(collectOrganizationIds(rows));
-            List<Long> serviceIds = request.getDoctorServiceIds();
-            if (rows != null && !rows.isEmpty() && (serviceIds == null || serviceIds.isEmpty())) {
-                throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_RULE_CONFLICT,
-                        "医师出诊须配置可接诊号源");
-            }
-            replaceBlock(practitionerId, operatorId, RoleStaffScopeConstants.DOCTOR_VISIT_ORG,
-                    rows, practitionerName, true, serviceIds);
-        }
-        if (shouldReplaceStaffScope(RoleStaffScopeConstants.WAREHOUSE_LOCATION, editableScopes, roleStaffScopes)) {
-            List<StaffOrgLocationItemDto> rows = request.getWarehouseLocationList();
-            staffManagedScopeWriteGate.assertWritableLocationIds(collectLocationIds(rows));
-            replaceBlock(practitionerId, operatorId, RoleStaffScopeConstants.WAREHOUSE_LOCATION,
-                    rows, practitionerName, false, null);
-        }
-        if (shouldReplaceStaffScope(RoleStaffScopeConstants.PHARMACY_LOCATION, editableScopes, roleStaffScopes)) {
-            List<StaffOrgLocationItemDto> rows = request.getPharmacyLocationList();
-            staffManagedScopeWriteGate.assertWritableLocationIds(collectLocationIds(rows));
-            replaceBlock(practitionerId, operatorId, RoleStaffScopeConstants.PHARMACY_LOCATION,
-                    rows, practitionerName, false, null);
-        }
-        if (shouldReplaceStaffScope(RoleStaffScopeConstants.NURSE_WARD_LOCATION, editableScopes, roleStaffScopes)) {
-            List<StaffOrgLocationItemDto> nurseItems;
-            if (request.getNurseWardLocationList() != null) {
-                nurseItems = new ArrayList<>(request.getNurseWardLocationList());
-            } else {
-                nurseItems = List.of();
-            }
-            List<StaffOrgLocationItemDto> nurseWardOnly = new ArrayList<>();
-            for (StaffOrgLocationItemDto item : nurseItems) {
-                if (item != null && item.getLocationId() != null) {
-                    nurseWardOnly.add(item);
+            if (request.getDoctorVisitOrgList() != null) {
+                List<StaffOrgLocationItemDto> rows = request.getDoctorVisitOrgList();
+                staffManagedScopeWriteGate.assertWritableOrganizationIds(collectOrganizationIds(rows));
+                List<Long> serviceIds = request.getDoctorServiceIds();
+                if (!rows.isEmpty() && (serviceIds == null || serviceIds.isEmpty())) {
+                    throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_RULE_CONFLICT,
+                            "医师出诊须配置可接诊号源");
                 }
+                this.replaceBlockForClaimingRoles(
+                    practitionerId,
+                    operatorId,
+                    RoleStaffScopeConstants.DOCTOR_VISIT_ORG,
+                    selectedRoleIds,
+                    rows,
+                    practitionerName,
+                    true,
+                    serviceIds);
             }
-            staffManagedScopeWriteGate.assertWritableLocationIds(collectLocationIds(nurseWardOnly));
-            replaceBlock(practitionerId, operatorId, RoleStaffScopeConstants.NURSE_ORG,
-                    nurseItems, practitionerName, true, null);
+        }
+
+        boolean replaceWarehouse = shouldReplaceStaffScope(
+            RoleStaffScopeConstants.WAREHOUSE_LOCATION, editableScopes, roleStaffScopes)
+            && request.getWarehouseLocationList() != null;
+        boolean replacePharmacy = shouldReplaceStaffScope(
+            RoleStaffScopeConstants.PHARMACY_LOCATION, editableScopes, roleStaffScopes)
+            && request.getPharmacyLocationList() != null;
+        if (replaceWarehouse || replacePharmacy) {
+            if (replaceWarehouse) {
+                staffManagedScopeWriteGate.assertWritableLocationIds(
+                    collectLocationIds(request.getWarehouseLocationList()));
+            }
+            if (replacePharmacy) {
+                staffManagedScopeWriteGate.assertWritableLocationIds(
+                    collectLocationIds(request.getPharmacyLocationList()));
+            }
+            this.replaceInventoryBlocksForClaimingRoles(
+                practitionerId,
+                operatorId,
+                selectedRoleIds,
+                replaceWarehouse ? request.getWarehouseLocationList() : null,
+                replacePharmacy ? request.getPharmacyLocationList() : null,
+                practitionerName);
+        }
+
+        boolean replaceNurseWard = shouldReplaceStaffScope(
+            RoleStaffScopeConstants.NURSE_WARD_LOCATION, editableScopes, roleStaffScopes)
+            && request.getNurseWardLocationList() != null;
+        boolean replaceNurseOrg = shouldReplaceStaffScope(
+            RoleStaffScopeConstants.NURSE_ORG, editableScopes, roleStaffScopes)
+            && request.getNurseOrgList() != null;
+        if (replaceNurseWard || replaceNurseOrg) {
+            if (replaceNurseOrg) {
+                staffManagedScopeWriteGate.assertWritableOrganizationIds(
+                    collectOrganizationIds(request.getNurseOrgList()));
+            }
+            if (replaceNurseWard) {
+                List<StaffOrgLocationItemDto> nurseWardOnly = new ArrayList<>();
+                for (StaffOrgLocationItemDto item : request.getNurseWardLocationList()) {
+                    if (item != null && item.getLocationId() != null) {
+                        nurseWardOnly.add(item);
+                    }
+                }
+                staffManagedScopeWriteGate.assertWritableLocationIds(collectLocationIds(nurseWardOnly));
+            }
+            this.replaceNurseBlocksForClaimingRoles(
+                practitionerId,
+                operatorId,
+                selectedRoleIds,
+                replaceNurseOrg ? request.getNurseOrgList() : null,
+                replaceNurseWard ? request.getNurseWardLocationList() : null,
+                practitionerName);
         }
     }
 
@@ -775,7 +908,7 @@ public class PositionAppService {
     }
 
     /**
-     * 由请求绑定的平台角色 id 推导对应人员岗位块 scope（库房角色含药房块）。
+     * 由请求绑定的平台角色 id 推导人员岗位块 scope（读角色 StaffScope 声明，含自定义角色）。
      *
      * @param roleIds 平台角色 id 列表
      * @return 岗位块 scope code 集合
@@ -785,52 +918,367 @@ public class PositionAppService {
         if (roleIds == null || roleIds.isEmpty()) {
             return scopes;
         }
+        // 业务：逐角色读 StaffScope（声明优先，内置 code 模板兜底）
         for (Long roleId : roleIds) {
             if (roleId == null) {
                 continue;
             }
-            String code = whaleRoleResolver.findRoleCodeById(roleId);
-            if (code == null || code.isBlank()) {
-                continue;
-            }
-            String normalized = code.trim().toUpperCase(Locale.ROOT);
-            if (WhalePlatformRoleCodeConstants.ROLE_DOCTOR.equals(normalized)) {
-                scopes.add(RoleStaffScopeConstants.DOCTOR_VISIT_ORG);
-            } else if (WhalePlatformRoleCodeConstants.ROLE_NURSE.equals(normalized)) {
-                scopes.add(RoleStaffScopeConstants.NURSE_WARD_LOCATION);
-            } else if (WhalePlatformRoleCodeConstants.ROLE_PHARMACIST.equals(normalized)) {
-                scopes.add(RoleStaffScopeConstants.PHARMACY_LOCATION);
-            } else if (WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE.equals(normalized)) {
-                scopes.add(RoleStaffScopeConstants.WAREHOUSE_LOCATION);
-                scopes.add(RoleStaffScopeConstants.PHARMACY_LOCATION);
+            List<String> roleScopes = builtInBusinessRoleOptionLoader.resolveStaffScopesForRoleId(roleId);
+            for (String scope : roleScopes) {
+                if (scope != null && !scope.isBlank()) {
+                    scopes.add(scope.trim());
+                }
             }
         }
         return scopes;
     }
 
     /**
-     * 按岗位块 scope 全量替换同类型岗位分配（ReplaceByType），医师块可附带统一号源列表。
+     * 按所选平台角色全量对齐 {@code adm_pr_assign}：保留勾选角色，勾掉角色软删岗位行。
+     *
+     * <p>与 {@code whale_user_roles} 的 {@code assignRoles} 配套；调用前须已写完登录角色。</p>
+     *
+     * <p>岗位管辖行写在「实际勾选且声明了对应 StaffScope 的角色」上，不再注入内置载体角色保留集。</p>
+     *
+     * @param practitionerId   医务人员主键
+     * @param operatorId       操作人主键
+     * @param roleIds          本次保存的平台角色主键列表
+     * @param practitionerName 岗位展示名
+     */
+    private void syncPractitionerAssignmentsWithSelectedRoles(
+        Long practitionerId, Long operatorId, List<Long> roleIds, String practitionerName) {
+        if (practitionerId == null || roleIds == null || roleIds.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Long> selectedRoleIds = new LinkedHashSet<>();
+        for (Long roleId : roleIds) {
+            if (roleId != null) {
+                selectedRoleIds.add(roleId);
+            }
+        }
+        // Cmd：勾掉的角色 → 废弃对应岗位行（含带范围与双空挂靠）
+        List<Long> retiredAssignmentIds = practitionerRoleDomainService.retireAssignmentsOutsideRoleIds(
+            practitionerId, operatorId, selectedRoleIds);
+        // 业务分支：废弃后按角色再对一下登录角色（防御 replace 空块与 assignRoles 时序差）
+        LinkedHashSet<Long> retiredRoleIds = new LinkedHashSet<>();
+        for (Long assignmentId : retiredAssignmentIds) {
+            Long roleId = practitionerRoleQueryService.findRoleIdByAssignmentId(assignmentId);
+            if (roleId != null) {
+                retiredRoleIds.add(roleId);
+            }
+        }
+        for (Long roleId : retiredRoleIds) {
+            positionUserRoleSyncService.onAssignmentRemoved(practitionerId, roleId);
+        }
+        // Cmd 续：仍勾选但无激活行的角色 → 补双空挂靠
+        for (Long roleId : selectedRoleIds) {
+            practitionerRoleDomainService.ensureActiveRoleAssignmentIfAbsent(
+                practitionerId, roleId, practitionerName);
+            positionUserRoleSyncService.onAssignmentAdded(practitionerId, roleId);
+        }
+    }
+
+    /**
+     * 将岗位块行写入所有「所选且声明了该 StaffScope」的角色。
      *
      * @param practitionerId   医务人员
-     * @param operatorId         操作人
-     * @param staffScope         岗位块 scope
-     * @param rows               组织/位置行
-     * @param practitionerName   岗位展示名
-     * @param orgMode            true 时 org 为主、location 可选；false 时 location 为主
-     * @param serviceIds         医师出诊块号源（其他块传 null）
-     * @throws ValidationException 未找到对应平台角色
+     * @param operatorId       操作人
+     * @param staffScope       岗位块 scope
+     * @param selectedRoleIds  本次勾选角色
+     * @param rows             组织/位置行
+     * @param practitionerName 岗位展示名
+     * @param orgMode          true 时 org 为主
+     * @param serviceIds       医师号源；其它块传 null
      */
-    private void replaceBlock(
+    private void replaceBlockForClaimingRoles(
             Long practitionerId,
             Long operatorId,
+            String staffScope,
+            List<Long> selectedRoleIds,
+            List<StaffOrgLocationItemDto> rows,
+            String practitionerName,
+            boolean orgMode,
+            List<Long> serviceIds) {
+        List<Long> targetRoleIds = this.resolveSelectedRoleIdsClaimingScope(selectedRoleIds, staffScope);
+        if (targetRoleIds.isEmpty()) {
+            throw new ValidationException("所选角色未声明岗位能力，无法保存：" + staffScope);
+        }
+        for (Long roleId : targetRoleIds) {
+            this.replaceAssignmentsForRoleId(
+                practitionerId, operatorId, roleId, staffScope, rows, practitionerName, orgMode, serviceIds);
+        }
+    }
+
+    /**
+     * 库房/药房块按角色合并写入，避免同一角色声明两块时二次 replace 互相覆盖。
+     */
+    private void replaceInventoryBlocksForClaimingRoles(
+            Long practitionerId,
+            Long operatorId,
+            List<Long> selectedRoleIds,
+            List<StaffOrgLocationItemDto> warehouseRowsOrNull,
+            List<StaffOrgLocationItemDto> pharmacyRowsOrNull,
+            String practitionerName) {
+        boolean replaceWarehouse = warehouseRowsOrNull != null;
+        boolean replacePharmacy = pharmacyRowsOrNull != null;
+        List<Long> warehouseRoleIds = replaceWarehouse
+            ? this.resolveSelectedRoleIdsClaimingScope(
+                selectedRoleIds, RoleStaffScopeConstants.WAREHOUSE_LOCATION)
+            : List.of();
+        List<Long> pharmacyRoleIds = replacePharmacy
+            ? this.resolveSelectedRoleIdsClaimingScope(
+                selectedRoleIds, RoleStaffScopeConstants.PHARMACY_LOCATION)
+            : List.of();
+        if (replaceWarehouse && warehouseRoleIds.isEmpty()) {
+            throw new ValidationException("所选角色未声明岗位能力，无法保存："
+                + RoleStaffScopeConstants.WAREHOUSE_LOCATION);
+        }
+        if (replacePharmacy && pharmacyRoleIds.isEmpty()) {
+            throw new ValidationException("所选角色未声明岗位能力，无法保存："
+                + RoleStaffScopeConstants.PHARMACY_LOCATION);
+        }
+        LinkedHashSet<Long> targetRoleIds = new LinkedHashSet<>();
+        targetRoleIds.addAll(warehouseRoleIds);
+        targetRoleIds.addAll(pharmacyRoleIds);
+        for (Long roleId : targetRoleIds) {
+            Set<String> scopes = new LinkedHashSet<>(
+                builtInBusinessRoleOptionLoader.resolveStaffScopesForRoleId(roleId));
+            List<StaffOrgLocationItemDto> merged = new ArrayList<>();
+            if (scopes.contains(RoleStaffScopeConstants.WAREHOUSE_LOCATION)) {
+                if (replaceWarehouse && warehouseRoleIds.contains(roleId)) {
+                    merged.addAll(warehouseRowsOrNull);
+                } else {
+                    merged.addAll(this.listExistingLocationRowsForRole(
+                        practitionerId, roleId, false));
+                }
+            }
+            if (scopes.contains(RoleStaffScopeConstants.PHARMACY_LOCATION)) {
+                if (replacePharmacy && pharmacyRoleIds.contains(roleId)) {
+                    merged.addAll(pharmacyRowsOrNull);
+                } else {
+                    merged.addAll(this.listExistingLocationRowsForRole(
+                        practitionerId, roleId, true));
+                }
+            }
+            this.replaceAssignmentsForRoleId(
+                practitionerId,
+                operatorId,
+                roleId,
+                RoleStaffScopeConstants.WAREHOUSE_LOCATION,
+                merged,
+                practitionerName,
+                false,
+                null);
+        }
+    }
+
+    /**
+     * 护理科室/病区块按角色合并写入，避免同一角色声明两块时二次 replace 互相覆盖。
+     */
+    private void replaceNurseBlocksForClaimingRoles(
+            Long practitionerId,
+            Long operatorId,
+            List<Long> selectedRoleIds,
+            List<StaffOrgLocationItemDto> nurseOrgRowsOrNull,
+            List<StaffOrgLocationItemDto> nurseWardRowsOrNull,
+            String practitionerName) {
+        boolean replaceOrg = nurseOrgRowsOrNull != null;
+        boolean replaceWard = nurseWardRowsOrNull != null;
+        List<Long> orgRoleIds = replaceOrg
+            ? this.resolveSelectedRoleIdsClaimingScope(selectedRoleIds, RoleStaffScopeConstants.NURSE_ORG)
+            : List.of();
+        List<Long> wardRoleIds = replaceWard
+            ? this.resolveSelectedRoleIdsClaimingScope(
+                selectedRoleIds, RoleStaffScopeConstants.NURSE_WARD_LOCATION)
+            : List.of();
+        if (replaceOrg && orgRoleIds.isEmpty()) {
+            throw new ValidationException("所选角色未声明岗位能力，无法保存："
+                + RoleStaffScopeConstants.NURSE_ORG);
+        }
+        if (replaceWard && wardRoleIds.isEmpty()) {
+            throw new ValidationException("所选角色未声明岗位能力，无法保存："
+                + RoleStaffScopeConstants.NURSE_WARD_LOCATION);
+        }
+        LinkedHashSet<Long> targetRoleIds = new LinkedHashSet<>();
+        targetRoleIds.addAll(orgRoleIds);
+        targetRoleIds.addAll(wardRoleIds);
+        for (Long roleId : targetRoleIds) {
+            Set<String> scopes = new LinkedHashSet<>(
+                builtInBusinessRoleOptionLoader.resolveStaffScopesForRoleId(roleId));
+            List<StaffOrgLocationItemDto> merged = new ArrayList<>();
+            if (scopes.contains(RoleStaffScopeConstants.NURSE_ORG)) {
+                if (replaceOrg && orgRoleIds.contains(roleId)) {
+                    merged.addAll(nurseOrgRowsOrNull);
+                } else {
+                    merged.addAll(this.listExistingNurseOrgRowsForRole(practitionerId, roleId));
+                }
+            }
+            if (scopes.contains(RoleStaffScopeConstants.NURSE_WARD_LOCATION)) {
+                if (replaceWard && wardRoleIds.contains(roleId)) {
+                    merged.addAll(nurseWardRowsOrNull);
+                } else {
+                    merged.addAll(this.listExistingNurseWardRowsForRole(practitionerId, roleId));
+                }
+            }
+            this.replaceAssignmentsForRoleId(
+                practitionerId,
+                operatorId,
+                roleId,
+                RoleStaffScopeConstants.NURSE_WARD_LOCATION,
+                merged,
+                practitionerName,
+                true,
+                null);
+        }
+    }
+
+    /**
+     * 读取某角色下已有库位行，并按是否药房形态过滤（库房/药房同角色合并写入用）。
+     */
+    private List<StaffOrgLocationItemDto> listExistingLocationRowsForRole(
+        Long practitionerId,
+        Long roleId,
+        boolean pharmacyFormOnly) {
+        List<StaffOrgLocationItemDto> result = new ArrayList<>();
+        if (practitionerId == null || roleId == null) {
+            return result;
+        }
+        List<PractitionerRole> roles = practitionerRoleQueryService.listAllRolesByPractitioner(practitionerId);
+        LinkedHashSet<Long> locationIds = new LinkedHashSet<>();
+        for (PractitionerRole role : roles) {
+            if (role == null || !roleId.equals(role.getRoleId()) || role.getLocationId() == null) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(role.getIsDeleted()) || !Boolean.TRUE.equals(role.getActiveFlag())) {
+                continue;
+            }
+            locationIds.add(role.getLocationId());
+        }
+        Map<Long, String> formEnumByLocationId = locationQueryService.mapFormEnumCodeByIds(locationIds);
+        for (PractitionerRole role : roles) {
+            if (role == null || !roleId.equals(role.getRoleId()) || role.getLocationId() == null) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(role.getIsDeleted()) || !Boolean.TRUE.equals(role.getActiveFlag())) {
+                continue;
+            }
+            boolean pharmacyForm = this.isPharmacyPartyForm(formEnumByLocationId.get(role.getLocationId()));
+            if (pharmacyFormOnly != pharmacyForm) {
+                continue;
+            }
+            StaffOrgLocationItemDto row = new StaffOrgLocationItemDto();
+            row.setOrgId(role.getOrgId());
+            row.setLocationId(role.getLocationId());
+            result.add(row);
+        }
+        return result;
+    }
+
+    /**
+     * 读取某角色下已有护理科室行（无 location）。
+     */
+    private List<StaffOrgLocationItemDto> listExistingNurseOrgRowsForRole(Long practitionerId, Long roleId) {
+        List<StaffOrgLocationItemDto> result = new ArrayList<>();
+        if (practitionerId == null || roleId == null) {
+            return result;
+        }
+        for (PractitionerRole role : practitionerRoleQueryService.listAllRolesByPractitioner(practitionerId)) {
+            if (role == null || !roleId.equals(role.getRoleId())) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(role.getIsDeleted()) || !Boolean.TRUE.equals(role.getActiveFlag())) {
+                continue;
+            }
+            if (role.getOrgId() == null || role.getLocationId() != null) {
+                continue;
+            }
+            StaffOrgLocationItemDto row = new StaffOrgLocationItemDto();
+            row.setOrgId(role.getOrgId());
+            result.add(row);
+        }
+        return result;
+    }
+
+    /**
+     * 读取某角色下已有护理病区行（有 location）。
+     */
+    private List<StaffOrgLocationItemDto> listExistingNurseWardRowsForRole(Long practitionerId, Long roleId) {
+        List<StaffOrgLocationItemDto> result = new ArrayList<>();
+        if (practitionerId == null || roleId == null) {
+            return result;
+        }
+        for (PractitionerRole role : practitionerRoleQueryService.listAllRolesByPractitioner(practitionerId)) {
+            if (role == null || !roleId.equals(role.getRoleId())) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(role.getIsDeleted()) || !Boolean.TRUE.equals(role.getActiveFlag())) {
+                continue;
+            }
+            if (role.getLocationId() == null) {
+                continue;
+            }
+            StaffOrgLocationItemDto row = new StaffOrgLocationItemDto();
+            row.setOrgId(role.getOrgId());
+            row.setLocationId(role.getLocationId());
+            result.add(row);
+        }
+        return result;
+    }
+
+    /**
+     * 从勾选角色中筛出声明了指定 StaffScope 的角色主键。
+     *
+     * @param selectedRoleIds 勾选角色
+     * @param staffScope      StaffScope code
+     * @return 有该能力的角色主键列表
+     */
+    private List<Long> resolveSelectedRoleIdsClaimingScope(List<Long> selectedRoleIds, String staffScope) {
+        List<Long> result = new ArrayList<>();
+        if (selectedRoleIds == null || selectedRoleIds.isEmpty() || staffScope == null || staffScope.isBlank()) {
+            return result;
+        }
+        String normalizedScope = staffScope.trim();
+        for (Long roleId : selectedRoleIds) {
+            if (roleId == null) {
+                continue;
+            }
+            List<String> scopes = builtInBusinessRoleOptionLoader.resolveStaffScopesForRoleId(roleId);
+            if (scopes == null || scopes.isEmpty()) {
+                continue;
+            }
+            for (String scope : scopes) {
+                if (scope != null && normalizedScope.equals(scope.trim())) {
+                    result.add(roleId);
+                    break;
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 按单个角色主键全量替换其岗位分配行。
+     *
+     * @param practitionerId   医务人员
+     * @param operatorId       操作人
+     * @param roleId           写入的 {@code adm_pr_assign.role_id}
+     * @param staffScope       来源岗位块（医师块需挂号源）
+     * @param rows             组织/位置行
+     * @param practitionerName 岗位展示名
+     * @param orgMode          true 时 org 为主
+     * @param serviceIds       医师号源
+     */
+    private void replaceAssignmentsForRoleId(
+            Long practitionerId,
+            Long operatorId,
+            Long roleId,
             String staffScope,
             List<StaffOrgLocationItemDto> rows,
             String practitionerName,
             boolean orgMode,
             List<Long> serviceIds) {
-        Long roleId = PositionRoleApiCompat.defaultRoleIdForStaffScope(staffScope, whaleRoleResolver::findRoleIdByCode);
         if (roleId == null) {
-            throw new ValidationException("未找到岗位块对应的平台角色：" + staffScope);
+            throw new ValidationException("岗位写入角色不能为空");
         }
         ReplacePractitionerRolesByTypeCommand cmd = new ReplacePractitionerRolesByTypeCommand();
         cmd.setPractitionerId(practitionerId);
@@ -868,6 +1316,21 @@ public class PositionAppService {
         positionPractitionerRoleWriteGate.assertAssignItemsValid(cmd.getItems());
         practitionerRoleDomainService.replaceRolesByType(cmd);
         positionUserRoleSyncService.afterReplaceBlock(practitionerId, roleId);
+    }
+
+    /**
+     * 是否为药房/科室药房形态。
+     *
+     * @param formEnum Location.form_enum
+     * @return 药房方时 true
+     */
+    private boolean isPharmacyPartyForm(String formEnum) {
+        if (formEnum == null || formEnum.isBlank()) {
+            return false;
+        }
+        String normalized = formEnum.trim();
+        return LocationForm.PHARMACY.getCode().equals(normalized)
+            || LocationForm.DEPARTMENT_PHARMACY.getCode().equals(normalized);
     }
 
     /**
@@ -1210,7 +1673,31 @@ public class PositionAppService {
             Long practitionerId = practitionerRoleQueryService.findPractitionerIdByAssignmentId(assignmentId);
             Long roleId = practitionerRoleQueryService.findRoleIdByAssignmentId(assignmentId);
             if (practitionerId != null && roleId != null) {
+                // Cmd：无剩余激活岗位时撤 whale_user_roles
                 positionUserRoleSyncService.onAssignmentRemoved(practitionerId, roleId);
+            }
+        }
+    }
+
+    /**
+     * 岗位启用后同步平台用户角色绑定（补 {@code whale_user_roles}）。
+     *
+     * @param items 启用命令项
+     */
+    private void syncUserRolesAfterActivate(
+        List<ActivatePractitionerRoleCommand.ActivatePractitionerRoleItemCommand> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        for (ActivatePractitionerRoleCommand.ActivatePractitionerRoleItemCommand item : items) {
+            if (item == null || item.getAssignmentId() == null) {
+                continue;
+            }
+            Long practitionerId = practitionerRoleQueryService.findPractitionerIdByAssignmentId(item.getAssignmentId());
+            Long roleId = practitionerRoleQueryService.findRoleIdByAssignmentId(item.getAssignmentId());
+            if (practitionerId != null && roleId != null) {
+                // Cmd：启用岗位 → 幂等追加登录角色
+                positionUserRoleSyncService.onAssignmentAdded(practitionerId, roleId);
             }
         }
     }

@@ -99,15 +99,22 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
     }
 
     /**
-     * 批量执行成功响应。
+     * 批量执行成功响应（含软提示；无提示时 warnings 为空列表）。
      *
      * @param processedCount 成功槽位数
+     * @param warnings       软提示文案（BR-IP-EXE-034）；可空
      * @return 响应 DTO
      */
     @Override
-    public ExecuteNurseStationOrdersResponse toExecuteResponse(int processedCount) {
+    public ExecuteNurseStationOrdersResponse toExecuteResponse(int processedCount, List<String> warnings) {
         ExecuteNurseStationOrdersResponse response = new ExecuteNurseStationOrdersResponse();
         response.setProcessedCount(processedCount);
+        // 无软提示时回空列表，避免前端判 null
+        if (warnings == null) {
+            response.setWarnings(Collections.emptyList());
+        } else {
+            response.setWarnings(warnings);
+        }
         return response;
     }
 
@@ -165,16 +172,19 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
     }
 
     /**
-     * 完成 Procedure 执行。
+     * 完成 Procedure 执行（recorded=护士 actualTime；逻辑锚点仍为 create 时的 occurrence=planTime）。
      */
     @Override
-    public CompleteProcedureRecordCommand toCompleteProcedureRecordCommand(Long procedureId, Long operatorId) {
+    public CompleteProcedureRecordCommand toCompleteProcedureRecordCommand(
+        Long procedureId, Long operatorId, LocalDateTime recordedTime) {
         CompleteProcedureRecordCommand command = new CompleteProcedureRecordCommand();
         command.setProcedureId(procedureId);
         command.setOperatorId(operatorId);
         // 护士站执行无结构化报告，固定结果文案
         command.setResultText(InpatientNurseStationConstants.INPATIENT_NURSE_EXECUTE_PROCEDURE_RESULT_TEXT);
         command.setReportJson(null);
+        // 展示/事实时间：actualTime；发药 plannedDispenseTime 与账单 occurrence 仍用 planTime
+        command.setRecordedTime(recordedTime);
         return command;
     }
 
@@ -226,6 +236,7 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
         command.setMedReqId(medReqId);
         command.setProcedureId(procedureId);
         command.setPlannedDispenseTime(planTime);
+        // 参数语义：频次计划槽位（汇总领药勾选时间点）；实际执行时分在 Procedure.recorded，不写本字段
         command.setLocationId(locationId);
         command.setLotNumber(lotNumber);
         command.setQuantity(quantity);
@@ -421,6 +432,7 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
         Long patientId,
         String basedOnTable,
         Long basedOnId,
+        Long packageId,
         Long operatorId) {
         CreateExecutedDeviceOrderCommand command = new CreateExecutedDeviceOrderCommand();
         command.setOperatorId(operatorId);
@@ -435,6 +447,8 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
         line.setPatientId(patientId);
         line.setBasedOnTable(basedOnTable);
         line.setBasedOnId(basedOnId);
+        // 与主药嘱组套对齐（成组输液绑耗材共用一份时取代表行 package_id）
+        line.setPackageId(packageId);
         command.setItems(List.of(line));
         return command;
     }

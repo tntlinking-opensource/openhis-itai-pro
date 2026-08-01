@@ -28,6 +28,7 @@ class WiChsJpaRepositoryScanOverlapTest {
     /** 与 ChsModuleDomainAutoConfiguration 保持同步。 */
     private static final List<String> CHS_REPOSITORY_PACKAGES = List.of(
             "com.openhis.chs.domain.catalog.repository",
+            "com.openhis.chs.domain.notice.repository",
             "com.openhis.chs.domain.inpatient.repository",
             "com.openhis.chs.domain.inventory.repository",
             "com.openhis.chs.domain.outpatient.repository",

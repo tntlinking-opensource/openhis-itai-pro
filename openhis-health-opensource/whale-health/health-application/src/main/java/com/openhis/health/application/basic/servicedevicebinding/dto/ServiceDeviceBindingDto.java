@@ -20,8 +20,11 @@ public class ServiceDeviceBindingDto {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
 
-    /** 绑定范围业务码（如全院 HOSPITAL）。 */
+    /** 绑定范围业务码（OUTPATIENT / INPATIENT；历史 HOSPITAL）。 */
     private String rangeCode;
+
+    /** 绑定范围展示文案（enrich）。 */
+    private String rangeName;
 
     /** 绑定类型码：USAGE / ACTIVITY。 */
     private String typeCode;

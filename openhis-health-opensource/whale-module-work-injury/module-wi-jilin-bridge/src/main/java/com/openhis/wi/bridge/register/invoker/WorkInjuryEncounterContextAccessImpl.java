@@ -45,7 +45,12 @@ public class WorkInjuryEncounterContextAccessImpl implements WorkInjuryEncounter
                 .setQualificationValid(valid)
                 .setApprovalStatusLabel(resolveApprovalLabel(anchor))
                 .setContractId(anchor.getContractId())
-                .setNeeds2301Upload(workInjury && !valid);
+                .setNeeds2301Upload(workInjury && !valid)
+                .setPsnNo(anchor.getPsnNo())
+                .setInjureAffirmId(anchor.getInjureAffirmId())
+                .setQualificationId(anchor.getQualificationId())
+                .setQualificationStatus(anchor.getQualificationStatus())
+                .setMedType(anchor.getMedType());
     }
 
     private String resolveApprovalLabel(YbWiEncounterAnchor anchor) {

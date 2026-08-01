@@ -83,8 +83,10 @@ public interface GeneralSharedConstants {
 
     /**
      * 身份证号正则（18 位）。
+     * <p>出生「日」段为 {@code (0[1-9]|[12]\\d|3[01])}，覆盖 01–31（含 10、20）；
+     * 旧写法 {@code ([0-2][1-9]|3[0-1])} 会误杀生日为 10/20 号的证件。</p>
      */
-    String ID_CARD_REGEX = "^[1-9]\\d{5}(18|19|20)\\d{2}(0[1-9]|1[0-2])([0-2][1-9]|3[0-1])\\d{3}[0-9Xx]$";
+    String ID_CARD_REGEX = "^[1-9]\\d{5}(18|19|20)\\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\\d|3[01])\\d{3}[0-9Xx]$";
 
     /**
      * 证件类型：居民身份证。
@@ -188,7 +190,7 @@ public interface GeneralSharedConstants {
 
     /**
      * ISO-8601 无时区本地日期时间格式化器（{@link DateTimeFormatter#ISO_LOCAL_DATE_TIME}，日期与时间以 {@code T} 分隔）。
-     * <p>用于 API 字符串字段需与常见 JSON {@code LocalDateTime} 序列化形态对齐的场景（如医生站医嘱列表开立时刻 {@code authoredAt}）。</p>
+     * <p>用于 API 字符串字段需与常见 JSON {@code LocalDateTime} 序列化形态对齐的场景（如医生站医嘱列表 {@code reqOpenedTime}/{@code reqAuthoredTime}）。</p>
      * <p>若产品契约固定为 {@code yyyy-MM-dd HH:mm:ss}（空格分隔），应使用 {@link #DATE_TIME_FORMATTER}，二者不可混用以免前端解析失败。</p>
      */
     DateTimeFormatter ISO_LOCAL_DATE_TIME_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
@@ -236,7 +238,7 @@ public interface GeneralSharedConstants {
     String ZERO = "0";
 
     /**
-     * {@code whale_settings} 开关型配置开启值（如自动扣库、学生开关等）。
+     * {@code whale_settings} 开关型配置开启值（如自动扣库、挂号医生必选、住院长嘱可拆等）。
      */
     String WHALE_SETTING_SWITCH_ON = "1";
 
@@ -244,5 +246,22 @@ public interface GeneralSharedConstants {
      * 皮试检查诊疗项目名称（与主数据 {@code ActivityDefinition.name} 精确匹配；对齐初版 {@code SKIN_TEST_INSPECTION}）。
      */
     String SKIN_TEST_INSPECTION_ACTIVITY_NAME = "皮试检查";
+
+    /**
+     * 嘱托诊疗项目名称（与主数据 {@code ActivityDefinition.name} 精确匹配；
+     * {@code category_code=52} / {@code ServiceRequestCategoryConstants.SERVICE_CATEGORY_ENTRUST}；
+     * 对齐 AS-IP-DOR-003 · BR-IP-ORD-028）。
+     */
+    String ENTRUST_ACTIVITY_NAME = "嘱托";
+
+    /**
+     * 选品/目录展示用术语映射软缓存 TTL（毫秒）：字典变更不频繁，短窗复用避免每页重建十余张码表。
+     */
+    long PRODUCT_DEFINITION_SELECTION_TERMINOLOGY_CACHE_TTL_MS = 300_000L;
+
+    /**
+     * 取药科室模板（按机构）软缓存 TTL（毫秒）：选品连翻/连搜时复用，避免重复全量加载机构模板。
+     */
+    long SERVICE_LOCATION_TEMPLATE_ORG_CACHE_TTL_MS = 120_000L;
 
 }

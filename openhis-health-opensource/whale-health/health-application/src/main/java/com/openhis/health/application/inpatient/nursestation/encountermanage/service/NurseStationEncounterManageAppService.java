@@ -35,6 +35,9 @@ import com.openhis.health.application.basic.administration.support.PractitionerR
 import com.openhis.health.application.inpatient.nursestation.ATDManager.support.InpatientPatientQueueNursingLevelEnrichAssembler;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.support.dto.InpatientPatientQueueNursingLevelDisplayRow;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.support.NurseStationOrderViewListAssembler;
+import com.openhis.health.application.shared.advice.LongTermFirstExecutionSlotSupport;
+import com.openhis.health.domain.custom.frequency.queries.model.FrequencyExecutionTimePointQueryModel;
+import com.openhis.health.domain.custom.frequency.service.FrequencyQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.administration.account.entity.Account;
@@ -69,6 +72,7 @@ import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.enums.EventStatus;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
+import com.openhis.health.domain.share.enums.TherapyType;
 import com.openhis.health.domain.share.utils.EncounterParticipantRoleDisplayUtil;
 import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
@@ -173,6 +177,9 @@ public class NurseStationEncounterManageAppService {
     /** 医嘱执行列表排除口径（待执行计数与 IF-IP-EXE-01 对齐）。 */
     private final NurseStationOrderViewListAssembler nurseStationOrderViewListAssembler;
 
+    /** 频次展开（长期医嘱当日计划时点数，供待执行计数对比净完成）。 */
+    private final FrequencyQueryService frequencyQueryService;
+
     /** 术语下拉（adm_cond_code 等）。 */
     private final TerminologyOptionLoader terminologyOptionLoader;
 
@@ -268,8 +275,8 @@ public class NurseStationEncounterManageAppService {
             // Gate：任务筛选 code 须在白名单内或为空（BR-IP-NUR-007）。
             String taskFilterCode = this.resolveNurseStationTaskFilterFromRequest(request);
             this.assertTaskFilterAllowed(taskFilterCode);
-            // Gate：列表状态筛选须在 STATUS_FILTER 白名单内或为空（BR-IP-NUR-012）。
-            this.assertNurseStationStatusFilterAllowed(request.getNurseStationStatusFilter());
+            // Gate：列表状态筛选已废止（召回入口迁结算页）；非空一律拒绝。
+            this.assertNurseStationStatusFilterRemoved(request.getNurseStationStatusFilter());
             List<Location> managedWards = managedWardLocationIdsResolver.listManagedActiveWardsOrEmpty();
             List<Long> managedWardIds = this.extractWardLocationIds(managedWards);
             Map<String, String> houseNameByBusNo = this.buildHouseNameByBusNoIndex(managedWards);
@@ -307,13 +314,16 @@ public class NurseStationEncounterManageAppService {
             // Pre：当前页批量账户，禁止 N+1（BR-IP-NUR-006）。
             Map<Long, Account> accountByEncounterId =
                 accountQueryService.mapRegistrationAccountsByEncounterIds(pageEncounterIds);
+            // Pre：费用性质展示优先医保账户 contract_no（与医生站/门诊同口径）
+            Map<Long, String> contractNoByEncounterId =
+                accountQueryService.mapPreferredContractNoByEncounterIds(pageEncounterIds);
             // Pre：病情优先级读模型未投影，批量查就诊主档回填列表卡片。
             Map<Long, String> priorityEnumByEncounterId =
                 encounterQueryService.mapPriorityEnumByEncounterIds(pageEncounterIds);
             Map<Long, NurseStationTaskCountBundle> taskCounts =
                 this.buildTaskCountsForEncounters(pageEncounterIds, executionDate);
             Map<Long, InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay> displayOverlay =
-                inpatientInfoQueueDisplayAssembler.buildOverlay(page.getContent());
+                inpatientInfoQueueDisplayAssembler.buildOverlay(page.getContent(), contractNoByEncounterId);
             Map<Long, NurseStationQueueDisplayEnrichment> enrichmentByEncounterId =
                 this.buildDisplayEnrichment(page.getContent(), houseNameByBusNo);
             Map<Long, BigDecimal> pendingSettlementByEncounterId =
@@ -409,10 +419,13 @@ public class NurseStationEncounterManageAppService {
             Map<Long, Account> accountByEncounterId =
                 accountQueryService.mapRegistrationAccountsByEncounterIds(singleEncounter);
             Account account = accountByEncounterId.get(encounterId);
+            Map<Long, String> contractNoByEncounterId =
+                accountQueryService.mapPreferredContractNoByEncounterIds(singleEncounter);
             Map<Long, NurseStationTaskCountBundle> taskCounts =
                 this.buildTaskCountsForEncounters(singleEncounter, LocalDate.now());
             Map<Long, InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay> displayOverlay =
-                inpatientInfoQueueDisplayAssembler.buildOverlay(Collections.singletonList(contextRow));
+                inpatientInfoQueueDisplayAssembler.buildOverlay(
+                    Collections.singletonList(contextRow), contractNoByEncounterId);
             Map<Long, NurseStationQueueDisplayEnrichment> enrichmentByEncounterId =
                 this.buildDisplayEnrichment(Collections.singletonList(contextRow), houseNameByBusNo);
             Map<Long, BigDecimal> pendingSettlementByEncounterId =
@@ -619,21 +632,17 @@ public class NurseStationEncounterManageAppService {
     }
 
     /**
-     * 校验护士站列表状态筛选 code（BR-IP-NUR-012）。
+     * 列表状态筛选已废止：仅允许空（默认在院）；召回入口在收银台结算页。
      *
      * @param statusFilter 请求中的 {@code nurseStationStatusFilter}
      */
-    private void assertNurseStationStatusFilterAllowed(String statusFilter) {
+    private void assertNurseStationStatusFilterRemoved(String statusFilter) {
         if (StringUtils.isEmpty(statusFilter)) {
-            return;
-        }
-        String trimmed = statusFilter.trim();
-        if (InpatientNurseStationConstants.STATUS_FILTER_SETTLED_DISCHARGED.equals(trimmed)) {
             return;
         }
         throw new BusinessException(
             ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
-            "列表状态筛选参数不合法");
+            "列表状态筛选已停用，请刷新后重试");
     }
 
     /**
@@ -799,6 +808,15 @@ public class NurseStationEncounterManageAppService {
     /**
      * 批量计算就诊维度任务计数（BR-IP-NUR-004/005）。
      *
+     * <p><b>校 pendingAuditCount</b>：药品+诊疗中 {@code status=ACTIVE} 且来源为医生开立的行数；
+     * 不计护士划价及其它非医生开立来源；与校对列表一致<strong>禁止用 based_on 排除</strong>
+     *（BR-IP-AUD-002）。住院退药不造负向 Request；{@code refund_*_id}/负数量仅为门诊同源防御。</p>
+     * <p><b>执 pendingExecuteCount</b>：药品+诊疗中 {@code status=VERIFIED}、非停嘱、医生开立，且
+     * <b>开嘱日起至统计日截止前仍有未终态计划槽</b>的医嘱行数（与待执行 Tab 对齐：含跨日未完成临时/出院带药与昨日未完成长期槽；
+     * 已执行与不执行均为终态，不算待执行；按行 +1 不按槽累加）；
+     * 不计护士划价、床位滚费、转科/出院/护理级别；
+     * <strong>皮试检查 companion SR 与皮试药均计入</strong>（执行/计费走 AS-IP-NUR-004，结果登记见 AS-IP-NUR-011）。</p>
+     *
      * @param encounterIds  就诊主键集合
      * @param executionDate 待执行统计自然日
      * @return encounterId → 计数包
@@ -828,7 +846,7 @@ public class NurseStationEncounterManageAppService {
         String activeCode = RequestStatus.ACTIVE.getCode();
         String verifiedCode = RequestStatus.VERIFIED.getCode();
         String stoppedCode = RequestStatus.STOPPED.getCode();
-        String nursePricingSourceCode = GenerateSource.NURSE_PRICING.getCode();
+        String doctorPrescriptionSourceCode = GenerateSource.DOCTOR_PRESCRIPTION.getCode();
         List<MedicationRequest> activeMeds =
             medicationRequestQueryService.listByEncounterIdsAndStatusEnum(idSet, activeCode);
         List<ServiceRequest> activeServices =
@@ -837,8 +855,12 @@ public class NurseStationEncounterManageAppService {
             if (row == null || row.getEncounterId() == null) {
                 continue;
             }
-            // 护士划价来源不计入待校对（BR-IP-NUR-004）。
-            if (nursePricingSourceCode.equals(row.getGenerateSourceEnum())) {
+            // 校：仅医生开立 ACTIVE；护士划价/滚费等非医生开立一律不计（BR-IP-NUR-004）。
+            if (!doctorPrescriptionSourceCode.equals(row.getGenerateSourceEnum())) {
+                continue;
+            }
+            // 校：退药/派生关联行不进校对队列，计数同步排除（BR-IP-AUD-002；否则会出现「校 N、西药/中药均空」）。
+            if (this.isExcludedFromPendingAuditCountMedication(row)) {
                 continue;
             }
             NurseStationTaskCountBundle bundle = result.get(row.getEncounterId());
@@ -850,8 +872,12 @@ public class NurseStationEncounterManageAppService {
             if (row == null || row.getEncounterId() == null) {
                 continue;
             }
-            // 护士划价来源不计入待校对（兼容历史 ACTIVE 脏数据）。
-            if (nursePricingSourceCode.equals(row.getGenerateSourceEnum())) {
+            // 校：诊疗同口径，仅医生开立 ACTIVE。
+            if (!doctorPrescriptionSourceCode.equals(row.getGenerateSourceEnum())) {
+                continue;
+            }
+            // 校：退诊疗/负向派生行不进校对队列，计数同步排除（BR-IP-AUD-002）。
+            if (this.isExcludedFromPendingAuditCountService(row)) {
                 continue;
             }
             NurseStationTaskCountBundle bundle = result.get(row.getEncounterId());
@@ -864,32 +890,74 @@ public class NurseStationEncounterManageAppService {
         List<ServiceRequest> verifiedServices =
             serviceRequestQueryService.listByEncounterIdsAndStatusEnum(idSet, verifiedCode);
         List<Procedure> procedures = procedureQueryService.listByEncounterIds(idSet);
-        LocalDateTime dayStart = executionDate.atStartOfDay();
         LocalDateTime dayEnd = executionDate.plusDays(1).atStartOfDay();
-        Map<String, Integer> netCompletedByAnchor = this.buildNetCompletedByAnchorForDay(
-            procedures, dayStart, dayEnd);
+        // Pre：按请求锚点索引 Procedure，供跨日计划槽终态判定（与 IF-IP-EXE-01 待执行 Tab 对齐）。
+        Map<String, List<Procedure>> proceduresByAnchor = this.indexProceduresByRequestAnchor(procedures);
         this.addPendingExecuteForMedicationRequests(
-            verifiedMeds, stoppedCode, netCompletedByAnchor, result);
+            verifiedMeds,
+            stoppedCode,
+            doctorPrescriptionSourceCode,
+            dayEnd,
+            proceduresByAnchor,
+            result);
         this.addPendingExecuteForServiceRequests(
-            verifiedServices, stoppedCode, netCompletedByAnchor, result);
+            verifiedServices,
+            stoppedCode,
+            doctorPrescriptionSourceCode,
+            dayEnd,
+            proceduresByAnchor,
+            result);
         return result;
     }
 
     /**
-     * 当日窗口内按请求锚点统计净 COMPLETED 次数（完成 − 取消，BR-NUR-005 口径）。
+     * 药品行是否应排除出待校对计数（与校对列表 BR-IP-AUD-002 同源）。
      *
-     * @param procedures 执行记录列表
-     * @param dayStart   自然日起点（含）
-     * @param dayEnd     自然日终点（不含）
-     * @return 请求锚点 → 净次数
+     * <p>住院退药不造负向 Request；{@code refund_medicine_id} 排除仅为门诊同源防御。
+     * 禁止用 based_on 顶替。</p>
+     *
+     * @param row 药品申请
+     * @return true 表示负向药嘱行（住院正常数据通常不命中），不计校
      */
-    private Map<String, Integer> buildNetCompletedByAnchorForDay(
-        List<Procedure> procedures,
-        LocalDateTime dayStart,
-        LocalDateTime dayEnd) {
-        Map<String, Integer> netByAnchor = new HashMap<>();
+    private boolean isExcludedFromPendingAuditCountMedication(MedicationRequest row) {
+        if (row == null) {
+            return true;
+        }
+        return row.getRefundMedicineId() != null;
+    }
+
+    /**
+     * 诊疗行是否应排除出待校对计数（与校对列表 BR-IP-AUD-002 同源）。
+     *
+     * <p>住院取消执行回退账单，不造负向诊嘱 Request；{@code refund_service_id}/负数量仅为防御。
+     * 禁止因 based_on 排除（皮试检查等可挂 based_on）。</p>
+     *
+     * @param row 诊疗申请
+     * @return true 表示负向诊嘱行（住院正常数据通常不命中），不计校
+     */
+    private boolean isExcludedFromPendingAuditCountService(ServiceRequest row) {
+        if (row == null) {
+            return true;
+        }
+        if (row.getRefundServiceId() != null) {
+            return true;
+        }
+        if (row.getQuantity() != null && row.getQuantity().signum() < 0) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 按 request_table + request_id 锚点索引执行记录。
+     *
+     * @param procedures 就诊下执行记录
+     * @return 锚点 → Procedure 列表
+     */
+    private Map<String, List<Procedure>> indexProceduresByRequestAnchor(List<Procedure> procedures) {
+        Map<String, List<Procedure>> byAnchor = new HashMap<>();
         if (procedures == null || procedures.isEmpty()) {
-            return netByAnchor;
+            return byAnchor;
         }
         char separator = GeneralSharedConstants.PRODUCT_DEFINITION_COMPOSITE_KEY_SEPARATOR;
         for (Procedure procedure : procedures) {
@@ -897,48 +965,36 @@ public class NurseStationEncounterManageAppService {
                 || StringUtils.isEmpty(procedure.getRequestTable())) {
                 continue;
             }
-            LocalDateTime occurred = procedure.getOccurrenceTime();
-            if (occurred == null) {
-                occurred = procedure.getRecordedTime();
-            }
-            if (occurred == null) {
-                continue;
-            }
-            if (occurred.isBefore(dayStart) || !occurred.isBefore(dayEnd)) {
-                continue;
-            }
             String anchor = procedure.getRequestTable() + separator + procedure.getRequestId();
-            int delta = 0;
-            if (EventStatus.COMPLETED.getCode().equals(procedure.getStatusEnum())) {
-                delta = 1;
+            List<Procedure> bucket = byAnchor.get(anchor);
+            if (bucket == null) {
+                bucket = new ArrayList<>();
+                byAnchor.put(anchor, bucket);
             }
-            if (EventStatus.isCancelExecutionStatusCode(procedure.getStatusEnum())) {
-                delta = -1;
-            }
-            if (delta == 0) {
-                continue;
-            }
-            Integer current = netByAnchor.get(anchor);
-            if (current == null) {
-                current = 0;
-            }
-            netByAnchor.put(anchor, current + delta);
+            bucket.add(procedure);
         }
-        return netByAnchor;
+        return byAnchor;
     }
 
     /**
-     * 将 VERIFIED 药品请求中「非停嘱且当日净执行=0」的行计入待执行条数。
+     * 将 VERIFIED 药品请求中「医生开立、非停嘱、截止日前仍有未终态计划槽」的行计入待执行（按医嘱行 +1）。
      *
-     * @param requests             药品申请列表
-     * @param stoppedCode          停嘱状态 code
-     * @param netCompletedByAnchor 当日净执行索引
-     * @param result               输出计数包
+     * <p>窗口 = 开嘱日起～统计日结束（含跨日未完成槽、临时/出院带药不限开立日）；
+     * 已执行与不执行均为终态；日三次须各槽终态满才不计；与待执行 Tab 行口径对齐。</p>
+     *
+     * @param requests                     药品申请列表
+     * @param stoppedCode                  停嘱状态 code
+     * @param doctorPrescriptionSourceCode 医生开立来源 code
+     * @param dayEnd                       统计日终点（不含）
+     * @param proceduresByAnchor           请求锚点 → Procedure
+     * @param result                       输出计数包
      */
     private void addPendingExecuteForMedicationRequests(
         List<MedicationRequest> requests,
         String stoppedCode,
-        Map<String, Integer> netCompletedByAnchor,
+        String doctorPrescriptionSourceCode,
+        LocalDateTime dayEnd,
+        Map<String, List<Procedure>> proceduresByAnchor,
         Map<Long, NurseStationTaskCountBundle> result) {
         if (requests == null || requests.isEmpty()) {
             return;
@@ -949,34 +1005,55 @@ public class NurseStationEncounterManageAppService {
             if (row == null || row.getEncounterId() == null || row.getId() == null) {
                 continue;
             }
+            // 执：已停嘱不计入。
             if (stoppedCode.equals(row.getStatusEnum())) {
                 continue;
             }
-            String anchor = requestTable + separator + row.getId();
-            if (this.hasPositiveNetCompleted(netCompletedByAnchor, anchor)) {
+            // 执：仅医生开立。
+            if (!doctorPrescriptionSourceCode.equals(row.getGenerateSourceEnum())) {
                 continue;
             }
-            NurseStationTaskCountBundle bundle = result.get(row.getEncounterId());
-            if (bundle != null) {
-                bundle.setPendingExecuteCount(bundle.getPendingExecuteCount() + 1);
+            // 待执行槽展开左界：优先开立时刻，回落签发，再回落创建审计时间。
+            LocalDateTime openedTime = row.getReqOpenedTime();
+            if (openedTime == null) {
+                openedTime = row.getReqAuthoredTime();
+            }
+            if (openedTime == null) {
+                openedTime = row.getCreatedAt();
+            }
+            String anchor = requestTable + separator + row.getId();
+            List<Procedure> requestProcedures = proceduresByAnchor.get(anchor);
+            // 截止日前仍有 pending/hedged pending 槽 → 整行计 1。
+            if (this.hasUnfinishedExecuteSlots(
+                row.getTherapyEnum(),
+                row.getRateCode(),
+                openedTime,
+                dayEnd,
+                requestProcedures)) {
+                NurseStationTaskCountBundle bundle = result.get(row.getEncounterId());
+                if (bundle != null) {
+                    bundle.setPendingExecuteCount(bundle.getPendingExecuteCount() + 1);
+                }
             }
         }
     }
 
     /**
-     * 将 VERIFIED 诊疗请求中「非停嘱且当日净执行=0」的行计入待执行条数。
+     * 将 VERIFIED 诊疗请求中「医生开立、非停嘱、截止日前仍有未终态计划槽」的行计入待执行。
      *
-     * <p>排除转科/出院/护理级别、护士划价、床位滚费（与 IF-IP-EXE-01 列表口径一致）。</p>
-     *
-     * @param requests             诊疗申请列表
-     * @param stoppedCode          停嘱状态 code
-     * @param netCompletedByAnchor 当日净执行索引
-     * @param result               输出计数包
+     * @param requests                     诊疗申请列表
+     * @param stoppedCode                  停嘱状态 code
+     * @param doctorPrescriptionSourceCode 医生开立来源 code
+     * @param dayEnd                       统计日终点（不含）
+     * @param proceduresByAnchor           请求锚点 → Procedure
+     * @param result                       输出计数包
      */
     private void addPendingExecuteForServiceRequests(
         List<ServiceRequest> requests,
         String stoppedCode,
-        Map<String, Integer> netCompletedByAnchor,
+        String doctorPrescriptionSourceCode,
+        LocalDateTime dayEnd,
+        Map<String, List<Procedure>> proceduresByAnchor,
         Map<Long, NurseStationTaskCountBundle> result) {
         if (requests == null || requests.isEmpty()) {
             return;
@@ -990,22 +1067,38 @@ public class NurseStationEncounterManageAppService {
             if (stoppedCode.equals(row.getStatusEnum())) {
                 continue;
             }
+            if (!doctorPrescriptionSourceCode.equals(row.getGenerateSourceEnum())) {
+                continue;
+            }
             if (this.shouldExcludeServiceRequestFromPendingExecuteCount(row)) {
                 continue;
             }
-            String anchor = requestTable + separator + row.getId();
-            if (this.hasPositiveNetCompleted(netCompletedByAnchor, anchor)) {
-                continue;
+            // 待执行槽展开左界：优先开立时刻，回落签发，再回落创建审计时间。
+            LocalDateTime openedTime = row.getReqOpenedTime();
+            if (openedTime == null) {
+                openedTime = row.getReqAuthoredTime();
             }
-            NurseStationTaskCountBundle bundle = result.get(row.getEncounterId());
-            if (bundle != null) {
-                bundle.setPendingExecuteCount(bundle.getPendingExecuteCount() + 1);
+            if (openedTime == null) {
+                openedTime = row.getCreatedAt();
+            }
+            String anchor = requestTable + separator + row.getId();
+            List<Procedure> requestProcedures = proceduresByAnchor.get(anchor);
+            if (this.hasUnfinishedExecuteSlots(
+                row.getTherapyEnum(),
+                row.getRateCode(),
+                openedTime,
+                dayEnd,
+                requestProcedures)) {
+                NurseStationTaskCountBundle bundle = result.get(row.getEncounterId());
+                if (bundle != null) {
+                    bundle.setPendingExecuteCount(bundle.getPendingExecuteCount() + 1);
+                }
             }
         }
     }
 
     /**
-     * 待执行计数是否排除该诊疗申请（与 {@link NurseStationOrderViewListAssembler#isExcludedFromNurseStationExecuteList} 同源）。
+     * 待执行计数是否排除该诊疗申请（与执行列表 {@code shouldExcludeExecuteRow} 同源；皮试检查计入待执行）。
      *
      * @param row 诊疗申请
      * @return true 表示不计入 pendingExecuteCount
@@ -1014,14 +1107,15 @@ public class NurseStationEncounterManageAppService {
         if (row == null) {
             return true;
         }
-        // 护士划价不经执行 Tab（BR-IP-NUR-005）。
+        // 护士划价不进执行 Tab。
         if (GenerateSource.NURSE_PRICING.getCode().equals(row.getGenerateSourceEnum())) {
             return true;
         }
-        // 床位滚费配置长期 SR 禁止手动执行（BR-IP-ARG-019）。
+        // 床位滚费自动行不进手动执行。
         if (GenerateSource.AUTO_ROLL_FEES.getCode().equals(row.getGenerateSourceEnum())) {
             return true;
         }
+        // 转科/出院/护理级别等特殊诊疗类别。
         if (nurseStationOrderViewListAssembler.isExcludedFromNurseStationExecuteList(row.getCategoryEnum())) {
             return true;
         }
@@ -1029,22 +1123,279 @@ public class NurseStationEncounterManageAppService {
     }
 
     /**
-     * 判断请求锚点在当日是否已有正向净执行（已完成次数大于 0）。
+     * 截止日前是否仍有未终态计划槽（pending / hedged pending）。
      *
-     * @param netCompletedByAnchor 当日净执行索引
-     * @param anchor               请求锚点
-     * @return true 表示当日已执行过
+     * <p>临时/出院带药：整单单槽，不限开立是否为统计日（跨日未完成仍计）。
+     * 长期：频次展开至 {@code dayEnd}，任一计划点未终态（已执行/不执行）即计。</p>
+     *
+     * @param therapyEnum        长临 code
+     * @param rateCode           频次；长期必填
+     * @param openedTime         开立时刻（{@code req_opened_time}；空回落后的锚点）
+     * @param dayEnd             统计截止（不含）
+     * @param requestProcedures  该请求下 Procedure；可空
+     * @return true 表示应计入待执行行
      */
-    private boolean hasPositiveNetCompleted(Map<String, Integer> netCompletedByAnchor, String anchor) {
-        if (netCompletedByAnchor == null || anchor == null) {
+    private boolean hasUnfinishedExecuteSlots(
+        String therapyEnum,
+        String rateCode,
+        LocalDateTime openedTime,
+        LocalDateTime dayEnd,
+        List<Procedure> requestProcedures) {
+        if (openedTime == null || dayEnd == null) {
             return false;
         }
-        Integer net = netCompletedByAnchor.get(anchor);
-        if (net == null) {
+        // 开立晚于截止：尚无计划。
+        if (!openedTime.isBefore(dayEnd)) {
             return false;
         }
-        if (net > 0) {
+        List<Procedure> procedures = requestProcedures;
+        if (procedures == null) {
+            procedures = Collections.emptyList();
+        }
+        // 临时 / 出院带药：整单单槽 = 开立时刻；已执行或不执行终态则不计。
+        if (!TherapyType.LONG_TERM.getCode().equals(therapyEnum)) {
+            return this.isTemporarySlotStillPending(procedures);
+        }
+        if (StringUtils.isEmpty(rateCode)) {
+            // 长期无频次无法展开，与执行列表剔除一致。
+            return false;
+        }
+        Set<LocalDateTime> planned = this.resolveLongTermPlannedTimesThrough(rateCode, openedTime, dayEnd);
+        if (planned.isEmpty()) {
+            // 必要时等无时钟点：无计划槽，不计待执行。
+            return false;
+        }
+        for (LocalDateTime planTime : planned) {
+            if (planTime == null) {
+                continue;
+            }
+            // 任一计划点仍 pending / hedged pending → 整行待执行。
+            if (this.isLongTermOccurrenceStillPending(procedures, planTime)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 临时/出院带药整单是否仍待执行（净 COMPLETED 或 不执行终态则否；对冲后仍待执行）。
+     *
+     * @param procedures 该请求 Procedure
+     * @return true 表示仍待执行
+     */
+    private boolean isTemporarySlotStillPending(List<Procedure> procedures) {
+        if (procedures == null || procedures.isEmpty()) {
             return true;
+        }
+        // 存在未被对冲的净 COMPLETED → 已执行终态。
+        if (this.findLastNetCompletedProcedure(procedures) != null) {
+            return false;
+        }
+        Procedure finalRecord = this.pickLatestProcedure(procedures);
+        if (finalRecord == null) {
+            return true;
+        }
+        String status = finalRecord.getStatusEnum();
+        // 不执行是终态，不算待执行。
+        if (EventStatus.STOPPED.getCode().equals(status)) {
+            return false;
+        }
+        if (EventStatus.isCancelExecutionStatusCode(status)) {
+            // 带 refund 的取消 = 对冲后净值仍待执行。
+            if (finalRecord.getRefundId() != null) {
+                return true;
+            }
+            // 孤立取消：列表进取消 Tab，不进待执行。
+            return false;
+        }
+        if (EventStatus.COMPLETED.getCode().equals(status)) {
+            // 末态 COMPLETED 已被对冲 → 仍待执行。
+            if (this.isProcedureOffsetByCancel(procedures, finalRecord.getId())) {
+                return true;
+            }
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 长期单 occurrence 是否仍待执行。
+     *
+     * @param procedures 该请求全部 Procedure
+     * @param planTime   计划时点
+     * @return true 表示该点仍 pending / hedged pending
+     */
+    private boolean isLongTermOccurrenceStillPending(List<Procedure> procedures, LocalDateTime planTime) {
+        List<Procedure> group = this.findProceduresAtOccurrence(procedures, planTime);
+        if (group.isEmpty()) {
+            // 尚无 Procedure → 待执行。
+            return true;
+        }
+        Procedure finalRecord = this.pickLatestProcedure(group);
+        if (finalRecord == null) {
+            return true;
+        }
+        String status = finalRecord.getStatusEnum();
+        if (EventStatus.COMPLETED.getCode().equals(status)) {
+            // 已被取消对冲 → 净值待执行。
+            if (this.isProcedureOffsetByCancel(procedures, finalRecord.getId())) {
+                return true;
+            }
+            return false;
+        }
+        // 不执行终态，不算待执行。
+        if (EventStatus.STOPPED.getCode().equals(status)) {
+            return false;
+        }
+        if (EventStatus.isCancelExecutionStatusCode(status)) {
+            if (finalRecord.getRefundId() != null) {
+                return true;
+            }
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 长期频次展开至统计截止（含开立日首次槽裁剪）。
+     *
+     * @param rateCode   频次
+     * @param openedTime 开立时刻（{@code req_opened_time}）
+     * @param dayEnd     截止（不含）
+     * @return 计划时点集合
+     */
+    private Set<LocalDateTime> resolveLongTermPlannedTimesThrough(
+        String rateCode,
+        LocalDateTime openedTime,
+        LocalDateTime dayEnd) {
+        LocalDateTime expandStart = openedTime.toLocalDate().atStartOfDay();
+        if (!dayEnd.isAfter(expandStart)) {
+            return Collections.emptySet();
+        }
+        List<LocalDateTime> rawTimes = new ArrayList<>();
+        try {
+            List<FrequencyExecutionTimePointQueryModel> points =
+                frequencyQueryService.computeExecutionTimePoints(rateCode, expandStart, dayEnd);
+            for (FrequencyExecutionTimePointQueryModel point : points) {
+                if (point != null && point.getExecutionAt() != null) {
+                    rawTimes.add(point.getExecutionAt());
+                }
+            }
+        } catch (BusinessException ex) {
+            return Collections.emptySet();
+        }
+        return LongTermFirstExecutionSlotSupport.applyOpenedDayFirstSlotRule(rawTimes, openedTime);
+    }
+
+    /**
+     * 按 occurrence 对齐查找 Procedure（秒级，忽略纳米）。
+     *
+     * @param procedures 请求下 Procedure
+     * @param planTime   计划时点
+     * @return 同 occurrence 组
+     */
+    private List<Procedure> findProceduresAtOccurrence(List<Procedure> procedures, LocalDateTime planTime) {
+        List<Procedure> group = new ArrayList<>();
+        if (procedures == null || planTime == null) {
+            return group;
+        }
+        LocalDateTime normalizedPlan = planTime.withNano(0);
+        for (Procedure procedure : procedures) {
+            if (procedure == null || procedure.getOccurrenceTime() == null) {
+                continue;
+            }
+            if (procedure.getOccurrenceTime().withNano(0).equals(normalizedPlan)) {
+                group.add(procedure);
+            }
+        }
+        return group;
+    }
+
+    /**
+     * 取 id 最大的 Procedure 作为组内末态。
+     *
+     * @param procedures Procedure 列表
+     * @return 末态行；空则 null
+     */
+    private Procedure pickLatestProcedure(List<Procedure> procedures) {
+        if (procedures == null || procedures.isEmpty()) {
+            return null;
+        }
+        Procedure latest = null;
+        for (Procedure procedure : procedures) {
+            if (procedure == null || procedure.getId() == null) {
+                continue;
+            }
+            if (latest == null || procedure.getId() > latest.getId()) {
+                latest = procedure;
+            }
+        }
+        return latest;
+    }
+
+    /**
+     * 取未被 CANCEL 对冲的最后一条 COMPLETED。
+     *
+     * @param procedures 请求下 Procedure
+     * @return 净 COMPLETED；无则 null
+     */
+    private Procedure findLastNetCompletedProcedure(List<Procedure> procedures) {
+        if (procedures == null || procedures.isEmpty()) {
+            return null;
+        }
+        List<Procedure> completed = new ArrayList<>();
+        for (Procedure procedure : procedures) {
+            if (procedure == null) {
+                continue;
+            }
+            if (EventStatus.COMPLETED.getCode().equals(procedure.getStatusEnum())) {
+                completed.add(procedure);
+            }
+        }
+        completed.sort((left, right) -> {
+            Long leftId = left.getId();
+            Long rightId = right.getId();
+            if (leftId == null && rightId == null) {
+                return 0;
+            }
+            if (leftId == null) {
+                return -1;
+            }
+            if (rightId == null) {
+                return 1;
+            }
+            return leftId.compareTo(rightId);
+        });
+        for (int index = completed.size() - 1; index >= 0; index--) {
+            Procedure row = completed.get(index);
+            if (!this.isProcedureOffsetByCancel(procedures, row.getId())) {
+                return row;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * COMPLETED 是否已被 CANCEL.refund_id 对冲。
+     *
+     * @param procedures           同请求 Procedure
+     * @param completedProcedureId COMPLETED 主键
+     * @return true 表示已被对冲
+     */
+    private boolean isProcedureOffsetByCancel(List<Procedure> procedures, Long completedProcedureId) {
+        if (procedures == null || completedProcedureId == null) {
+            return false;
+        }
+        for (Procedure sibling : procedures) {
+            if (sibling == null) {
+                continue;
+            }
+            if (!EventStatus.isCancelExecutionStatusCode(sibling.getStatusEnum())) {
+                continue;
+            }
+            if (completedProcedureId.equals(sibling.getRefundId())) {
+                return true;
+            }
         }
         return false;
     }

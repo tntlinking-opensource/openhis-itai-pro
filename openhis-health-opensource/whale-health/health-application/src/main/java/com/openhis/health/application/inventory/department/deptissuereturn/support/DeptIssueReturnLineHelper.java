@@ -13,6 +13,7 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -222,6 +223,8 @@ public final class DeptIssueReturnLineHelper {
             snap.setReturnableQuantity(returnableByKey.getOrDefault(key, BigDecimal.ZERO));
             snap.setUnitCode(ref.getUnitCode());
             snap.setPrice(ref.getPrice());
+            snap.setEndTime(ref.getEndTime());
+            snap.setRemake(ref.getRemake());
             snapshots.add(snap);
         }
         return snapshots;
@@ -312,6 +315,10 @@ public final class DeptIssueReturnLineHelper {
         private String unitCode;
         /** 源行落库单价。 */
         private BigDecimal price;
+        /** 源领用行批号效期止点。 */
+        private LocalDateTime endTime;
+        /** 源领用行备注。 */
+        private String remake;
 
         public String getItemTable() {
             return itemTable;
@@ -375,6 +382,34 @@ public final class DeptIssueReturnLineHelper {
 
         public void setPrice(BigDecimal price) {
             this.price = price;
+        }
+
+        /**
+         * @return 源领用行效期止点
+         */
+        public LocalDateTime getEndTime() {
+            return endTime;
+        }
+
+        /**
+         * @param endTime 源领用行效期止点
+         */
+        public void setEndTime(LocalDateTime endTime) {
+            this.endTime = endTime;
+        }
+
+        /**
+         * @return 源领用行备注
+         */
+        public String getRemake() {
+            return remake;
+        }
+
+        /**
+         * @param remake 源领用行备注
+         */
+        public void setRemake(String remake) {
+            this.remake = remake;
         }
     }
 

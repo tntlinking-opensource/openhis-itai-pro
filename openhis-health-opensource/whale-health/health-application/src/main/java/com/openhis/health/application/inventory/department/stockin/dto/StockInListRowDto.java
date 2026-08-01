@@ -11,6 +11,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -71,12 +72,24 @@ public class StockInListRowDto {
     @Schema(description = "申请人主键")
     private Long applicantId;
 
+    /** 制单人展示名（与出库列表 {@code creatorName} 同构）。 */
+    @Schema(description = "制单人展示名")
+    private String creatorName;
+
     @JsonSerialize(using = ToStringSerializer.class)
     /** 审批人主键。 */
     @Schema(description = "审批人主键")
     private Long approverId;
 
+    /** 审批人展示名。 */
+    @Schema(description = "审批人展示名")
+    private String approverName;
+
     /** 关联上游业务单号（系统生成时展示出库单号）。 */
     @Schema(description = "关联上游业务单号（系统生成时展示出库单号）")
     private String originalBusNo;
+
+    /** 同号各行 {@code totalPrice} 之和（侧栏卡片总金额）。 */
+    @Schema(description = "同号各行 totalPrice 之和")
+    private BigDecimal totalAmount;
 }

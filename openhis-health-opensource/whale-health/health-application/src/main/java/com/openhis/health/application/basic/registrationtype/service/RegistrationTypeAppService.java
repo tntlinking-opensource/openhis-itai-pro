@@ -26,6 +26,7 @@ import com.openhis.health.domain.administration.healthcareservice.service.Health
 import com.openhis.health.domain.administration.healthcareservice.service.HealthcareServiceQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.DailySettlementSharedConstants;
+import com.openhis.health.domain.share.enums.HealthcareServiceStatus;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.whale.core.application.exception.EntityNotFoundException;
 import com.openhis.whale.core.application.exception.ValidationException;
@@ -63,14 +64,16 @@ public class RegistrationTypeAppService {
     private final CurrentPractitionerResolver currentPractitionerResolver;
 
     /**
-     * 列出全部挂号类型（注册场景下的医疗服务），并为每条补充当前销售价金额（元）。
+     * 列出挂号类型维护台数据（启用/停用/草稿），并为每条补充当前销售价金额（元）。
+     *
+     * <p>挂号业务下拉仍走领域 {@code listServicesForRegistration}（仅 ACTIVE）；本接口供基础资料维护页使用。</p>
      *
      * @return DTO 列表
      */
     public List<RegistrationTypeDto> getRegistrationTypeList() {
         // Gate：只读列表，不写库
-        // Pre：拉取全部挂号类型医疗服务并批量解析销售价
-        List<HealthcareService> all = healthcareServiceQueryService.listServicesForRegistration();
+        // Pre：拉取维护台可见挂号类型并批量解析销售价（含停用，便于启用/删除）
+        List<HealthcareService> all = healthcareServiceQueryService.listServicesForRegistrationManage();
         Map<Long, BigDecimal> saleAmountByServiceId = loadSaleAmountMap(all);
         // Asm：投影为 DTO 列表
         List<RegistrationTypeDto> result = new ArrayList<>();
@@ -196,6 +199,8 @@ public class RegistrationTypeAppService {
     /**
      * 作废挂号类型并移除其下全部实例定价。
      *
+     * <p>领域仅允许草稿/停用态废弃；启用态先停用再作废，避免维护页「删除不生效」。</p>
+     *
      * @param id 医疗服务主键
      * @throws ValidationException id 为空时
      * @throws EntityNotFoundException 记录不存在时
@@ -211,6 +216,16 @@ public class RegistrationTypeAppService {
         }
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.HEALTHCARE_SERVICE_INVALID_ARGUMENT, "请先登录后再删除挂号类型");
+        // Cmd：启用态不可直接废弃，先停用再作废（对齐 BR-HCS-005）
+        if (HealthcareServiceStatus.ACTIVE.getCode().equals(entity.getStatusEnum())) {
+            RetireHealthcareServiceCommand retireCommand = new RetireHealthcareServiceCommand();
+            retireCommand.setOperatorId(operatorId);
+            RetireHealthcareServiceCommand.Item retireItem = new RetireHealthcareServiceCommand.Item();
+            retireItem.setServiceId(id);
+            retireItem.setReason(REASON_DEACTIVATE_BY_APP);
+            retireCommand.setItem(retireItem);
+            healthcareServiceDomainService.retireService(retireCommand);
+        }
         // Cmd：作废医疗服务
         AbolishHealthcareServiceCommand command = new AbolishHealthcareServiceCommand();
         command.setOperatorId(operatorId);

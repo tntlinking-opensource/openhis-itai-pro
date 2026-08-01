@@ -5,6 +5,7 @@
 package com.openhis.whale.core.infrastructure.web;
 
 import com.openhis.whale.core.application.dto.Result;
+import com.openhis.whale.core.infrastructure.version.ProductVersionFiles;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthComponent;
@@ -20,7 +21,7 @@ import java.util.Map;
 
 /**
  * 健康检查Controller
- * 提供简单的健康检查端点
+ * 提供简单的健康检查端点（公开，登录页可读取 version；版本只来自 VERSION 文件）
  */
 @RestController
 @RequestMapping("/api/health")
@@ -34,6 +35,8 @@ public class HealthCheckController {
         Map<String, Object> health = new HashMap<>();
         health.put("status", "UP");
         health.put("timestamp", LocalDateTime.now());
+        ProductVersionFiles.readDisplayVersion(HealthCheckController.class)
+                .ifPresent(version -> health.put("version", version));
 
         // 如果 HealthEndpoint 可用，使用它获取详细的健康信息
         if (healthEndpoint != null) {

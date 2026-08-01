@@ -61,29 +61,66 @@ public class ProductDefinitionCatalogPageLoader {
         List<String> tables = this.resolveTables(query);
         // 单表路径：条件下推至对应定义 QueryService，避免无意义 merge。
         if (tables.size() == 1) {
-            return this.pageSingleTable(tables.get(0), query, pageable);
+            Page<ProductDefinitionDisplayDto> single = this.pageSingleTable(tables.get(0), query, pageable);
+            this.enrichPageContent(single.getContent());
+            return single;
         }
         // 多表路径：各表仍 DB 分页（perTablePageable），合并后截取本页上限（目录「全部」Tab 口径；非全量内存分页）。
         // DOC-CONFLICT：total 为各表 total 之和，与「全局精确 total」存在偏差，与历史 RM 行为一致。
-        int perTable = Math.max(1, pageable.getPageSize() / tables.size());
+        // 预选主键回查：结果已由 prepickedProductKeys 限定，不得再按表数均分 pageSize，
+        // 否则同表多项（如历史医嘱复用整次就诊）会被截断后误报「目录中未找到」。
+        boolean prepickedLookup = this.hasPrepickedProductKeys(query);
+        int perTable;
+        // 预选回查：每表用完整 pageSize，避免按表均分后同表多项被截断
+        if (prepickedLookup) {
+            perTable = pageable.getPageSize();
+        } else {
+            // 目录「全部」Tab：按表均分 pageSize，合并后再截到本页上限
+            perTable = Math.max(1, pageable.getPageSize() / tables.size());
+        }
         Pageable perTablePageable = PageRequest.of(pageable.getPageNumber(), perTable, pageable.getSort());
         List<ProductDefinitionDisplayDto> merged = new ArrayList<>();
         long total = 0L;
+        // 逐物理表分页拉取后合并，供「全部」Tab 或预选多表回查
         for (String table : tables) {
             Page<ProductDefinitionDisplayDto> slice = this.pageSingleTable(table, query, perTablePageable);
             merged.addAll(slice.getContent());
             total += slice.getTotalElements();
         }
-        int end = Math.min(merged.size(), pageable.getPageSize());
+        int mergeCap;
+        // 预选回查：合并上限放宽为 pageSize×表数，保证各表预选行都能进入结果
+        if (prepickedLookup) {
+            mergeCap = pageable.getPageSize() * tables.size();
+        } else {
+            // 普通目录页：合并后仍截到请求 pageSize
+            mergeCap = pageable.getPageSize();
+        }
+        int end = Math.min(merged.size(), mergeCap);
         List<ProductDefinitionDisplayDto> pageRows;
+        // 有合并行则截取本页；无行返回空列表避免 subList 越界
         if (end > 0) {
             pageRows = merged.subList(0, end);
         } else {
             pageRows = List.of();
         }
         Page<ProductDefinitionDisplayDto> result = new PageImpl<>(pageRows, pageable, total);
+        // Asm：术语展示仅对最终页行回填一次，避免单表 map 内重复 hydrate
         this.enrichPageContent(result.getContent());
         return result;
+    }
+
+    /**
+     * 是否携带预选产品主键（历史医嘱/组套回填等按 ID 批量拉目录）。
+     *
+     * @param query 目录分页条件；允许 null
+     * @return 存在非空 prepickedProductKeys 时为 true
+     */
+    private boolean hasPrepickedProductKeys(ProductDefinitionCatalogPageQuery query) {
+        // 无查询或未带预选键：走普通目录分页均分口径
+        if (query == null || query.getPrepickedProductKeys() == null) {
+            return false;
+        }
+        return !query.getPrepickedProductKeys().isEmpty();
     }
 
     /**
@@ -127,7 +164,6 @@ public class ProductDefinitionCatalogPageLoader {
             }
         }
         Page<ProductDefinitionDisplayDto> result = new PageImpl<>(rows, page.getPageable(), page.getTotalElements());
-        this.enrichPageContent(result.getContent());
         return result;
     }
 
@@ -146,7 +182,6 @@ public class ProductDefinitionCatalogPageLoader {
             }
         }
         Page<ProductDefinitionDisplayDto> result = new PageImpl<>(rows, page.getPageable(), page.getTotalElements());
-        this.enrichPageContent(result.getContent());
         return result;
     }
 
@@ -165,7 +200,6 @@ public class ProductDefinitionCatalogPageLoader {
             }
         }
         Page<ProductDefinitionDisplayDto> result = new PageImpl<>(rows, page.getPageable(), page.getTotalElements());
-        this.enrichPageContent(result.getContent());
         return result;
     }
 
@@ -227,6 +261,7 @@ public class ProductDefinitionCatalogPageLoader {
         query.setProductTableNames(rmQuery.getProductTableNames());
         query.setCategoryCode(rmQuery.getCategoryCode());
         query.setExcludeMedicationCategoryCodes(rmQuery.getExcludeMedicationCategoryCodes());
+        query.setExcludeCategoryCodes(rmQuery.getExcludeCategoryCodes());
         query.setActiveFlag(rmQuery.getActiveFlag());
         query.setSupplierId(rmQuery.getSupplierId());
         query.setManufacturer(rmQuery.getManufacturer());
@@ -254,6 +289,10 @@ public class ProductDefinitionCatalogPageLoader {
         int pageSize = effective.getBoundedPageSize();
         if (pageSize > GeneralSharedConstants.PRODUCT_DEFINITION_RM_PAGE_SIZE_MAX) {
             pageSize = GeneralSharedConstants.PRODUCT_DEFINITION_RM_PAGE_SIZE_MAX;
+        }
+        // B.2.1：关键字非空时勿带 Sort，避免覆盖各定义表 Spec 内「精确优先」ORDER BY
+        if (StringUtils.isNotEmpty(effective.getKeyword())) {
+            return PageRequest.of(effective.springPageIndex(), pageSize);
         }
         return PageRequest.of(
             effective.springPageIndex(),

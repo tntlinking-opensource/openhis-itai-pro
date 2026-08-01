@@ -32,7 +32,7 @@ public class ServiceApplyFormHeaderModel {
     private String orgName;
 
     /** 组内首行开立时间，ISO-8601 local 字符串。 */
-    private String authoredAt;
+    private String reqOpenedTime;
 
     /** 组内状态摘要（如全草稿、已签发、含已签发）。 */
     private String statusSummary;

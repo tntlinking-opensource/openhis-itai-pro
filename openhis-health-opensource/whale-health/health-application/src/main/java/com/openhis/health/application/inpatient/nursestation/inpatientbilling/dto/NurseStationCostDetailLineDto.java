@@ -65,10 +65,20 @@ public class NurseStationCostDetailLineDto {
     @Schema(description = "账单行合计")
     private BigDecimal totalPrice;
 
-    /** 业务时间（划价/净 Procedure 执行时刻）。 */
+    /**
+     * 逻辑业务时间（划价/滚费 = 账单 occurrence；医嘱执行 = Procedure.occurrence_time）。
+     * <p>日期过滤与倒序锚本字段；页面「业务时间」列优先读 {@link #displayDateTime}。</p>
+     */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
-    @Schema(description = "业务时间")
+    @Schema(description = "逻辑业务时间（occurrence）")
     private LocalDateTime businessDateTime;
+
+    /**
+     * 页面展示时间（医嘱执行 = Procedure.recorded_time；划价/滚费 = 同 businessDateTime）。
+     */
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    @Schema(description = "展示时间（执行/划价事实时刻）")
+    private LocalDateTime displayDateTime;
 
     /** 费用状态 code。 */
     @Schema(description = "费用状态 code")

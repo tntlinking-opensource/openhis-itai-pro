@@ -15,8 +15,8 @@ import lombok.experimental.Accessors;
 @Accessors(chain = true)
 public class Wi9102QualificationRow {
 
-    /** 审批资格 ID；UI 选择键 → anchor。 */
-    @JSONField(name = "qualification_id")
+    /** 审批资格 ID；UI 选择键 → anchor。吉林院点 9102 常返回 referral_id。 */
+    @JSONField(name = "qualification_id", alternateNames = { "referral_id", "qualificationId", "referralId" })
     private String qualificationId;
 
     /** 审批类型 approveType。 */

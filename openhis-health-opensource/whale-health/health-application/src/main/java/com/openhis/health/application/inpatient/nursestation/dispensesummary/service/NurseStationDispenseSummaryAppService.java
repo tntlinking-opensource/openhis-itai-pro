@@ -14,24 +14,29 @@ import com.openhis.health.application.inpatient.nursestation.dispensesummary.ass
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.assembler.NurseStationDispenseSummaryWriteAssembler.SummaryMergeGroup;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.dto.CreateMedicationSummaryDispenseItemDto;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.dto.NurseStationDispenseSummaryPatientGroupDto;
+import com.openhis.health.application.inpatient.nursestation.dispensesummary.dto.NurseStationDispenseSummaryPatientPickupGroupDto;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.dto.NurseStationDispenseSummarySlipHeaderDto;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.dto.NurseStationDispenseSummarySlipLineDto;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.mapper.NurseStationDispenseSummaryMapper;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.request.CancelMedicationSummaryRequest;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.request.CreateMedicationSummaryRequest;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.request.GetMedicationSummarySlipDetailRequest;
+import com.openhis.health.application.inpatient.nursestation.dispensesummary.request.GetMedicationSummarySlipPatientDetailRequest;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.request.PageMedicationSummarySlipHeadersRequest;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.request.PagePendingDispenseSummaryLinesRequest;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.request.SubmitMedicationSummaryRequest;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.CancelMedicationSummaryResponse;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.CreateMedicationSummaryResponse;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.GetMedicationSummarySlipDetailResponse;
+import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.GetMedicationSummarySlipPatientDetailResponse;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.PageMedicationSummarySlipHeadersResponse;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.PagePendingDispenseSummaryLinesResponse;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.SubmitMedicationSummaryResponse;
 import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.application.inpatient.pharmacy.dispense.support.InpatientMedicationDispenseChargePricingLoader;
 import com.openhis.health.application.inpatient.pharmacy.summarydispense.support.MedicationSummarySlipLoader;
+import com.openhis.health.application.shared.option.FrequencyOptionLoader;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
@@ -39,19 +44,25 @@ import com.openhis.health.domain.administration.encounter.queries.InpatientEncou
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
+import com.openhis.health.domain.clinical.procedure.entity.Procedure;
+import com.openhis.health.domain.clinical.procedure.service.ProcedureQueryService;
 import com.openhis.health.domain.medication.medicationdispense.command.SummarizeMedicationDispensesCommand;
 import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispensePickupPendingQueryModel;
+import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSummaryItemQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseDomainService;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
+import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
+import com.openhis.health.domain.share.enums.TherapyType;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyByBusNoQuery;
@@ -75,15 +86,17 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.time.LocalDateTime;
 
 /**
- * 住院护士站汇总领药应用服务（AS-IP-NUR-010，IF-IP-SUM-01～05、08）。
+ * 住院护士站汇总领药应用服务（AS-IP-NUR-010，IF-IP-SUM-01～05、08～09）。
  *
  * <p>职责边界：</p>
  * <ul>
- *   <li><b>IF-IP-SUM-01</b>：待汇总明细分页 + 就诊/医嘱/时间点分组展示</li>
+ *   <li><b>IF-IP-SUM-01</b>：待汇总明细分页 + 就诊/医嘱/时间点分组展示（排除出院带药，**BR-IP-SUM-016**）</li>
  *   <li><b>IF-IP-SUM-02/03</b>：已生成汇总单头/合并明细查询</li>
- *   <li><b>IF-IP-SUM-04</b>：按药房拆单、itemId+单价合并、拆零写 SupplyRequest（PENDING_APPROVAL）+ 发放行 SUMMARIZED</li>
+ *   <li><b>IF-IP-SUM-09</b>：摆药单查询（按患者分组，同 medReqId 合并数量）</li>
+ *   <li><b>IF-IP-SUM-04</b>：按药房拆单、itemId+单价合并、拆零写 SupplyRequest（PENDING_APPROVAL）+ 发放行 SUMMARIZED；拒绝出院带药</li>
  *   <li><b>IF-IP-SUM-05</b>：汇总 Tab 发送 → submitApproval（APPROVAL）</li>
  *   <li><b>IF-IP-SUM-08</b>：待发送汇总单撤销 → 释放发放行 + 逻辑删除 Supply 汇总单</li>
  * </ul>
@@ -121,8 +134,14 @@ public class NurseStationDispenseSummaryAppService {
     private final SupplyRequestDomainService supplyRequestDomainService;
     /** 位置名称展示。 */
     private final LocationQueryService locationQueryService;
+    /** 执行记录批量读（领药时间列 recorded_time）。 */
+    private final ProcedureQueryService procedureQueryService;
     /** 药品目录批量读侧（展示 + unitBands）。 */
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
+    /** 用法等术语码表。 */
+    private final TerminologyOptionLoader terminologyOptionLoader;
+    /** 频次主数据码表。 */
+    private final FrequencyOptionLoader frequencyOptionLoader;
     /** Request/Query/Command/Response 映射。 */
     private final NurseStationDispenseSummaryMapper nurseStationDispenseSummaryMapper;
     /** 待汇总/汇总 Tab 列表分组装配。 */
@@ -165,7 +184,7 @@ public class NurseStationDispenseSummaryAppService {
             String therapyEnum = nurseStationDispenseSummaryMapper.resolveTherapyEnum(request.getTherapyFilter());
             List<MedicationRequestListQueryModel> executeOrders =
                 medicationRequestQueryService.listInpatientNurseStationExecuteOrders(visibleEncounterIds, therapyEnum);
-            // Pre ⑤：按 tcmFlag 收窄 medReqIds
+            // Pre ⑤：按 tcmFlag 收窄 medReqIds，并剔除出院带药（BR-IP-SUM-016）
             List<Long> resolvedMedReqIds = nurseStationDispenseSummaryListAssembler.resolveMedReqIds(
                 executeOrders, request.getMedicineCategoryTab());
             Map<Long, MedicationRequestListQueryModel> medReqById = this.indexMedReqById(executeOrders);
@@ -184,10 +203,13 @@ public class NurseStationDispenseSummaryAppService {
             Set<Long> locationIds = this.collectLocationIdsFromPendingPage(page);
             Map<Long, Location> locationById = nurseStationDispenseSummaryListAssembler.indexLocations(
                 this.loadLocations(locationIds));
+            // Pre ⑨b：批量挂接 Procedure.recorded_time（领药时间列展示；勾选仍锚 plannedDispenseTime）
+            Map<Long, LocalDateTime> recordedTimeByProcedureId =
+                this.indexRecordedTimeByProcedureIdFromPendingPage(page);
             // Asm ⑩：就诊→医嘱→时间点分组
             List<NurseStationDispenseSummaryPatientGroupDto> groups =
                 nurseStationDispenseSummaryListAssembler.buildPatientGroups(
-                    page, medReqById, productByKey, encounterById, locationById);
+                    page, medReqById, productByKey, encounterById, locationById, recordedTimeByProcedureId);
             // Asm ⑪：分页响应
             return nurseStationDispenseSummaryMapper.toPagePendingDispenseSummaryLinesResponse(page, groups);
         } catch (BusinessException ex) {
@@ -284,6 +306,77 @@ public class NurseStationDispenseSummaryAppService {
     }
 
     /**
+     * IF-IP-SUM-09：查询汇总单摆药明细（按患者分组，同 medReqId 合并数量）。
+     *
+     * <p>与 IF-IP-SUM-03 的差异：03 按药品+单价合并看整单领药量；本接口回答「这张汇总单领回来的药分别给了哪些患者」，
+     * 数量展示口径与 03 一致（{@code displayQuantityText} 满包+余量）。</p>
+     *
+     * @param request summaryNo
+     * @return 单头 + 患者分组摆药行
+     */
+    public GetMedicationSummarySlipPatientDetailResponse getMedicationSummarySlipPatientDetail(
+        GetMedicationSummarySlipPatientDetailRequest request) {
+        try {
+            // Gate ①：summaryNo 非空
+            if (request == null || StringUtils.isEmpty(request.getSummaryNo())) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_SUM_103,
+                    "汇总单不存在或已失效，请刷新");
+            }
+            String summaryNo = request.getSummaryNo().trim();
+            // Pre ②：汇总单号下发放行（含 medReqId / 剂量用法频次）
+            List<MedicationDispenseSummaryItemQueryModel> dispenseRows =
+                medicationDispenseQueryService.listMedicationDispensesBySummaryNo(summaryNo);
+            if (dispenseRows.isEmpty()) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_SUM_103,
+                    "汇总单不存在或已失效，请刷新");
+            }
+            // Pre ③：单头（复用 IF-02 装配；顺带校验 type 27 单仍存在）
+            NurseStationDispenseSummarySlipHeaderDto header = this.loadSlipHeaderBySummaryNo(summaryNo);
+            // Pre ④：就诊上下文（床号/姓名）+ 病房（房间）名
+            List<Long> encounterIds = this.collectEncounterIdsFromSummaryItems(dispenseRows);
+            Map<Long, InpatientEncounterContextQueryModel> encounterById =
+                this.loadEncounterContextByIds(encounterIds);
+            Map<Long, String> houseNameByEncounterId = this.resolveHouseNameByEncounterId(encounterById);
+            // Pre ⑤：药品申请（剂量/用法/频次真源；发放行常未落这些字段）
+            Map<Long, MedicationRequestListQueryModel> medReqById =
+                this.indexMedReqById(medicationRequestQueryService.listMedicationRequestListModelsByIds(
+                    this.collectMedReqIdsFromSummaryItems(dispenseRows)));
+            // Pre ⑥：药品展示 + 用法/频次/剂量单位码表
+            Map<String, ProductDefinitionDisplayDto> productByKey =
+                productDefinitionDisplayTerminologyAssembler.loadAsMap(
+                    this.collectProductLookupsFromSummaryItems(dispenseRows));
+            Map<String, String> methodLabelByCode =
+                terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.METHOD_CODE);
+            Map<String, String> rateLabelByCode = frequencyOptionLoader.buildRateLabelMap();
+            Map<String, String> doseUnitLabelByCode =
+                terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.DOSE_UNIT);
+            // Asm ⑦：按患者 + medReqId 合并，回填剂量用法频次与病房床号
+            List<NurseStationDispenseSummaryPatientPickupGroupDto> patientGroups =
+                nurseStationDispenseSummaryListAssembler.buildPatientPickupGroups(
+                    dispenseRows,
+                    productByKey,
+                    encounterById,
+                    houseNameByEncounterId,
+                    medReqById,
+                    methodLabelByCode,
+                    rateLabelByCode,
+                    doseUnitLabelByCode);
+            // Asm ⑧：响应
+            return nurseStationDispenseSummaryMapper.toGetMedicationSummarySlipPatientDetailResponse(
+                summaryNo, header, patientGroups);
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            log.error("getMedicationSummarySlipPatientDetail failed", ex);
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_SUM_102,
+                "加载失败，请稍后重试");
+        }
+    }
+
+    /**
      * IF-IP-SUM-04：汇总保存（唯一写路径之一；同事务整批 BR-IP-SUM-012）。
      *
      * @param request 勾选发放行
@@ -312,6 +405,8 @@ public class NurseStationDispenseSummaryAppService {
             }
             // Pre ④：PREPARATION 且无 summaryNo
             this.assertAllDispensesSummarizable(dispenses);
+            // Pre ④b：禁止出院带药进汇总（BR-IP-SUM-016 / BR-IP-ORD-029⑥）
+            this.assertNoDischargeMedicationDispenses(dispenses);
             // Pre ⑤：ChargeItem 只读定价
             Map<Long, ChargeItem> chargeByDispenseId = this.loadChargeByDispenseId(request, dispenses);
             // Pre ⑥：药品 unitBands 源
@@ -635,6 +730,37 @@ public class NurseStationDispenseSummaryAppService {
     }
 
     /**
+     * 勾选发放行不得挂接出院带药药嘱（**BR-IP-SUM-016** / **BR-IP-ORD-029⑥** → EX-IP-SUM-207）。
+     *
+     * <p>出院带药执行后仅走药房按患者逐行发药（AS-IP-PHA-001），禁止写入汇总领药单。</p>
+     *
+     * @param dispenses 待汇总发放行
+     * @throws BusinessException 任一行对应 {@link TherapyType#DISCHARGE_MEDICATION}
+     */
+    private void assertNoDischargeMedicationDispenses(List<MedicationDispense> dispenses) {
+        Set<Long> medReqIds = new HashSet<>();
+        for (MedicationDispense dispense : dispenses) {
+            if (dispense != null && dispense.getMedReqId() != null) {
+                medReqIds.add(dispense.getMedReqId());
+            }
+        }
+        // 无药嘱锚则无法判定 therapy；交由后续账单/合并校验拒绝
+        if (medReqIds.isEmpty()) {
+            return;
+        }
+        List<MedicationRequest> medReqs = medicationRequestQueryService.listByIds(medReqIds);
+        for (MedicationRequest medReq : medReqs) {
+            // 出院带药不得汇总：患者须到药房按人发药
+            if (medReq != null
+                && TherapyType.DISCHARGE_MEDICATION.getCode().equals(medReq.getTherapyEnum())) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_SUM_207,
+                    "出院带药不可汇总领药，请到药房按患者发药");
+            }
+        }
+    }
+
+    /**
      * 调用领域汇总发放并映射无效状态为 EX-IP-SUM-201。
      *
      * @param command 领域汇总命令
@@ -872,6 +998,139 @@ public class NurseStationDispenseSummaryAppService {
     }
 
     /**
+     * 从汇总单发放明细收集药品定义批量查询键（去重；IF-IP-SUM-09）。
+     *
+     * @param dispenseRows 汇总单号下发放行
+     * @return ProductDefinition 批量 lookup 列表
+     */
+    private List<ProductDefinitionBatchLookup> collectProductLookupsFromSummaryItems(
+        List<MedicationDispenseSummaryItemQueryModel> dispenseRows) {
+        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
+        Set<String> dedupe = new HashSet<>();
+        if (dispenseRows == null) {
+            return lookups;
+        }
+        for (MedicationDispenseSummaryItemQueryModel row : dispenseRows) {
+            if (row == null || row.getMedicationId() == null) {
+                continue;
+            }
+            String key = ProductDefinitionKeyUtil.buildCompositeKey(
+                TableNameConstants.MED_MEDICATION_DEFINITION, row.getMedicationId());
+            if (dedupe.add(key)) {
+                ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+                lookup.setProductTableName(TableNameConstants.MED_MEDICATION_DEFINITION);
+                lookup.setProductDefinitionId(row.getMedicationId());
+                lookups.add(lookup);
+            }
+        }
+        return lookups;
+    }
+
+    /**
+     * 从汇总单发放明细收集 encounterId（去重保序；IF-IP-SUM-09）。
+     *
+     * @param dispenseRows 汇总单号下发放行
+     * @return encounterId 列表
+     */
+    private List<Long> collectEncounterIdsFromSummaryItems(
+        List<MedicationDispenseSummaryItemQueryModel> dispenseRows) {
+        LinkedHashSet<Long> ids = new LinkedHashSet<>();
+        if (dispenseRows == null) {
+            return new ArrayList<>();
+        }
+        for (MedicationDispenseSummaryItemQueryModel row : dispenseRows) {
+            if (row != null && row.getEncounterId() != null) {
+                ids.add(row.getEncounterId());
+            }
+        }
+        return new ArrayList<>(ids);
+    }
+
+    /**
+     * 从汇总单发放明细收集 medReqId（去重保序；IF-IP-SUM-09）。
+     *
+     * @param dispenseRows 汇总单号下发放行
+     * @return medReqId 列表
+     */
+    private List<Long> collectMedReqIdsFromSummaryItems(
+        List<MedicationDispenseSummaryItemQueryModel> dispenseRows) {
+        LinkedHashSet<Long> ids = new LinkedHashSet<>();
+        if (dispenseRows == null) {
+            return new ArrayList<>();
+        }
+        for (MedicationDispenseSummaryItemQueryModel row : dispenseRows) {
+            if (row != null && row.getMedReqId() != null) {
+                ids.add(row.getMedReqId());
+            }
+        }
+        return new ArrayList<>(ids);
+    }
+
+    /**
+     * 按就诊活动床解析病房（HOUSE）名称：床位 parentId → 病房名。
+     *
+     * @param encounterById 就诊上下文
+     * @return encounterId → 病房名
+     */
+    private Map<Long, String> resolveHouseNameByEncounterId(
+        Map<Long, InpatientEncounterContextQueryModel> encounterById) {
+        Map<Long, String> houseNameByEncounterId = new HashMap<>();
+        if (encounterById == null || encounterById.isEmpty()) {
+            return houseNameByEncounterId;
+        }
+        Set<Long> bedIds = new HashSet<>();
+        for (InpatientEncounterContextQueryModel encounter : encounterById.values()) {
+            if (encounter != null && encounter.getBedId() != null) {
+                bedIds.add(encounter.getBedId());
+            }
+        }
+        if (bedIds.isEmpty()) {
+            return houseNameByEncounterId;
+        }
+        Map<Long, Location> bedById = locationQueryService.loadLocationEntityMapByIds(bedIds);
+        Set<Long> houseIds = new HashSet<>();
+        for (Location bed : bedById.values()) {
+            if (bed != null && bed.getParentId() != null) {
+                houseIds.add(bed.getParentId());
+            }
+        }
+        Map<Long, String> houseNameById = locationQueryService.mapNamesByIds(houseIds);
+        for (Map.Entry<Long, InpatientEncounterContextQueryModel> entry : encounterById.entrySet()) {
+            InpatientEncounterContextQueryModel encounter = entry.getValue();
+            if (encounter == null || encounter.getBedId() == null) {
+                continue;
+            }
+            Location bed = bedById.get(encounter.getBedId());
+            if (bed == null || bed.getParentId() == null) {
+                continue;
+            }
+            String houseName = houseNameById.get(bed.getParentId());
+            if (StringUtils.isNotEmpty(houseName)) {
+                houseNameByEncounterId.put(entry.getKey(), houseName);
+            }
+        }
+        return houseNameByEncounterId;
+    }
+
+    /**
+     * 按就诊 id 批量加载住院上下文（床号/姓名；IF-IP-SUM-09 展示用，不二次做病区门控）。
+     *
+     * @param encounterIds 就诊 id
+     * @return encounterId → 上下文
+     */
+    private Map<Long, InpatientEncounterContextQueryModel> loadEncounterContextByIds(List<Long> encounterIds) {
+        Map<Long, InpatientEncounterContextQueryModel> map = new HashMap<>();
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return map;
+        }
+        InpatientEncounterPageQuery query =
+            nurseStationDispenseSummaryMapper.toInpatientEncounterPageQuery(encounterIds, null);
+        List<InpatientEncounterContextQueryModel> rows =
+            EncounterContextReader.listInpatientEncounterContexts(query);
+        return this.indexEncounters(rows, encounterIds);
+    }
+
+    /**
      * 从待发药分页收集 locationId 集合（展示用）。
      *
      * @param page 待发药分页
@@ -888,6 +1147,39 @@ public class NurseStationDispenseSummaryAppService {
             }
         }
         return ids;
+    }
+
+    /**
+     * 待汇总页按 procedureId 批量挂接 {@code recorded_time}（领药时间列展示轴）。
+     *
+     * <p>勾选/截止逻辑仍锚 {@code plannedDispenseTime}；本方法仅补展示用执行时刻。</p>
+     *
+     * @param page 待汇总发放分页
+     * @return procedureId → recorded_time；无 procedure 或无 recorded 时不入 Map
+     */
+    private Map<Long, LocalDateTime> indexRecordedTimeByProcedureIdFromPendingPage(
+        Page<MedicationDispensePickupPendingQueryModel> page) {
+        Map<Long, LocalDateTime> recordedByProcedureId = new HashMap<>();
+        if (page == null || page.getContent() == null || page.getContent().isEmpty()) {
+            return recordedByProcedureId;
+        }
+        Set<Long> procedureIds = new HashSet<>();
+        for (MedicationDispensePickupPendingQueryModel row : page.getContent()) {
+            if (row != null && row.getProcedureId() != null) {
+                procedureIds.add(row.getProcedureId());
+            }
+        }
+        if (procedureIds.isEmpty()) {
+            return recordedByProcedureId;
+        }
+        List<Procedure> procedures = procedureQueryService.listByIds(procedureIds);
+        for (Procedure procedure : procedures) {
+            if (procedure == null || procedure.getId() == null || procedure.getRecordedTime() == null) {
+                continue;
+            }
+            recordedByProcedureId.put(procedure.getId(), procedure.getRecordedTime());
+        }
+        return recordedByProcedureId;
     }
 
     /**

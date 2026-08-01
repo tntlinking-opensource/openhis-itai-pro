@@ -334,10 +334,18 @@ public class EncounterContextReader {
         } else {
             effective = new ClinicRegisterPageQuery();
         }
-        Pageable pageable = PageRequest.of(
-            effective.springPageIndex(),
-            effective.getBoundedPageSize(),
-            Sort.by(Sort.Order.desc(FieldNameConstants.CREATED_AT)));
+        // B.2.1：关键字非空时无 Sort，保留 Spec 诊断精确优先 ORDER BY
+        Pageable pageable;
+        if (StringUtils.isNotEmpty(effective.getKeyword())) {
+            pageable = PageRequest.of(
+                effective.springPageIndex(),
+                effective.getBoundedPageSize());
+        } else {
+            pageable = PageRequest.of(
+                effective.springPageIndex(),
+                effective.getBoundedPageSize(),
+                Sort.by(Sort.Order.desc(FieldNameConstants.CREATED_AT)));
+        }
         return encounterQueryService.pageEncounterEntities(
             encounterContextCriteriaSupport.clinicRegisterSpecification(effective), pageable);
     }
@@ -383,6 +391,9 @@ public class EncounterContextReader {
     /**
      * 门诊就诊上下文分页（AMB，机构会话收窄）。
      *
+     * <p>排序见 {@code EncounterContextCriteriaSupport#resolveOutpatientListSort}：
+     * 待诊开始时间升序、在诊接诊时间降序；多状态并集挂 CASE 分桶 ORDER BY。</p>
+     *
      * @param query 门诊分页查询；null 时使用空查询
      * @param scope 会话收窄范围；null 时不收窄
      * @return 就诊实体分页
@@ -403,12 +414,30 @@ public class EncounterContextReader {
             effectiveScope = EncounterSessionScope.empty();
         }
         Sort sort = encounterContextCriteriaSupport.resolveOutpatientListSort(effective);
-        Pageable pageable = PageRequest.of(
-            effective.springPageIndex(),
-            effective.getBoundedPageSize(),
-            sort);
-        return encounterQueryService.pageEncounterEntities(
-            encounterContextCriteriaSupport.outpatientSpecification(effective, effectiveScope), pageable);
+        // B.2.1：关键字非空时勿带 Sort，保留 Spec/分桶 Spec 内精确优先 ORDER BY
+        Pageable pageable;
+        if (StringUtils.isNotEmpty(effective.getKeyword())) {
+            pageable = PageRequest.of(
+                effective.springPageIndex(),
+                effective.getBoundedPageSize());
+        } else {
+            pageable = PageRequest.of(
+                effective.springPageIndex(),
+                effective.getBoundedPageSize(),
+                sort);
+        }
+        // 多状态并集：Sort 为 unsorted，改挂 CASE 分桶 ORDER BY（待诊 startTime 升序 / 在诊 receptionTime 降序）
+        Specification<Encounter> specification =
+            encounterContextCriteriaSupport.outpatientSpecification(effective, effectiveScope);
+        if (encounterContextCriteriaSupport.isMultiStatusOutpatientQuery(effective)) {
+            String trimmedKeyword = null;
+            if (StringUtils.isNotEmpty(effective.getKeyword())) {
+                trimmedKeyword = effective.getKeyword().trim();
+            }
+            specification = specification.and(
+                encounterContextCriteriaSupport.doctorStationUnionOrderSpecification(trimmedKeyword));
+        }
+        return encounterQueryService.pageEncounterEntities(specification, pageable);
     }
 
     /**
@@ -435,7 +464,13 @@ public class EncounterContextReader {
         Sort sort = Sort.by(
             Sort.Order.desc(FieldNameConstants.START_TIME),
             Sort.Order.desc(FieldNameConstants.ID));
-        Pageable pageable = PageRequest.of(pageIndex, pageSize, sort);
+        // B.2.1：关键字非空时无 Sort，保留 Spec 精确优先 ORDER BY
+        Pageable pageable;
+        if (StringUtils.isNotEmpty(effective.getKeyword())) {
+            pageable = PageRequest.of(pageIndex, pageSize);
+        } else {
+            pageable = PageRequest.of(pageIndex, pageSize, sort);
+        }
         return encounterQueryService.pageEncounterEntities(
             encounterContextCriteriaSupport.nurseStationOutpatientSpecification(effective), pageable);
     }

@@ -15,13 +15,13 @@ import java.util.List;
 /**
  * IF-BAS-OTL-08：预览组套套用明细响应。
  *
- * <p>仅返回头行结构（定义 id、默认数量/频次/用法等）；<strong>不含</strong>目录 enrich、实时单价与
- * {@code defaultDispenseLocationId}。前端须以行内 id 调 IF-DOR-11 / IF-IP-PRC-01
- * {@code prepickedProductKeys} 补齐展示与定价（与 AS-BAS-MST-017 BR-OTL-028 一致）。</p>
+ * <p>返回头行结构（定义 id、默认数量/频次/用法等），并回填目录展示名（{@code productName} 等）。
+ * <strong>不含</strong>实时单价与 {@code defaultDispenseLocationId}。前端须以行内 id 调 IF-DOR-11 / IF-IP-PRC-01
+ * {@code prepickedProductKeys} 补齐定价与库位（与 AS-BAS-MST-017 BR-OTL-028 一致）。</p>
  */
 @Data
 @Accessors(chain = true)
-@Schema(description = "预览组套套用响应（结构 only，无价/无库位 enrich）")
+@Schema(description = "预览组套套用响应（含目录展示名；无价/无库位 enrich）")
 public class PreviewOrderTemplateApplyResponse {
 
     @Schema(description = "组套头")

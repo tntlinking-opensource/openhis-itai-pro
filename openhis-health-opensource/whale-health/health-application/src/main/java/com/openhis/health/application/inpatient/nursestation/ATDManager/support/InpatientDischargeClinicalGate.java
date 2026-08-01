@@ -34,7 +34,8 @@ import java.util.Map;
 /**
  * 住院出院临床门禁（AS-IP-NUR-002 ATD-03/04/05 与 AS-IP-FIN-003 出院全结 Pre 共用）。
  *
- * <p>口径：长期未停嘱、临时未完结、待发/待退药须清零后方可办理出院或出院全结结算。</p>
+ * <p>口径：长期未停嘱、临时未完结、待发/待退药须清零，方可办理出院或出院全结结算。
+ * 已核发缺追溯码改为前端软提示（{@code listMissingDispenseTraceTips}），本门禁不再硬拦。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -67,6 +68,7 @@ public class InpatientDischargeClinicalGate {
                 InpatientNurseStationConstants.EX_IP_ATD_303,
                 "患者有待取的药品，请先取药");
         }
+        // 追溯码缺码：不再硬拦；由前端 listMissingDispenseTraceTips 提示后仍可清床
     }
 
     /**
@@ -475,38 +477,24 @@ public class InpatientDischargeClinicalGate {
     }
 
     /**
-     * 药品退药关联行识别（与 004 同源）。
+     * 药品退药负向 Request 防御识别（住院退药不造负向药嘱；认 {@code refund_medicine_id}；禁止用 based_on）。
      *
      * @param row 药品请求
-     * @return true 表示退药派生行
+     * @return true 表示负向药嘱行（住院正常数据通常不命中）
      */
     private boolean isRefundDerivativeMedication(MedicationRequestListQueryModel row) {
-        if (row.getBasedOnId() == null || StringUtils.isBlank(row.getBasedOnTable())) {
-            return false;
-        }
-        String table = row.getBasedOnTable().trim();
-        if (TableNameConstants.MED_MEDICATION_REQUEST.equalsIgnoreCase(table)) {
-            return true;
-        }
-        if (TableNameConstants.WKF_SERVICE_REQUEST.equalsIgnoreCase(table)) {
-            return true;
-        }
-        return false;
+        return row.getRefundMedicineId() != null;
     }
 
     /**
-     * 诊疗退药/退诊疗关联行识别。
+     * 诊疗退诊疗负向 Request 防御识别（住院取消执行回退账单，不造负向诊嘱；认 {@code refund_service_id}/负数量；禁止用 based_on）。
      *
      * @param row 诊疗请求
-     * @return true 表示应排除
+     * @return true 表示负向诊嘱行（住院正常数据通常不命中）
      */
     private boolean isRefundDerivativeService(ServiceRequestListModel row) {
-        if (row.getBasedOnId() != null && StringUtils.isNotBlank(row.getBasedOnTable())) {
-            String table = row.getBasedOnTable().trim();
-            if (TableNameConstants.MED_MEDICATION_REQUEST.equalsIgnoreCase(table)
-                || TableNameConstants.WKF_SERVICE_REQUEST.equalsIgnoreCase(table)) {
-                return true;
-            }
+        if (row.getRefundServiceId() != null) {
+            return true;
         }
         if (row.getQuantity() != null && row.getQuantity().signum() < 0) {
             return true;

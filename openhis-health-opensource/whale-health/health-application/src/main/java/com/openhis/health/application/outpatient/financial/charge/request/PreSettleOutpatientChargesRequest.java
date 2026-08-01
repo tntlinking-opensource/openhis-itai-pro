@@ -42,4 +42,12 @@ public class PreSettleOutpatientChargesRequest {
 
     /** 医疗类别（可选，默认普通门诊 11）。 */
     private String medType;
+
+    /**
+     * 公费收费模式（Campus ADR-CMP-001 D5）。
+     *
+     * <p>{@code SELF_PAY_GF} / {@code AFTER_YB_GF}；空则不拆公费。
+     * 真实改支付草稿见 {@code TODO(ADR-CMP-001 D5/D12)}，本字段先落契约供前端联调。</p>
+     */
+    private String gfChargeMode;
 }
